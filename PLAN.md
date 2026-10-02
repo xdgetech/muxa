@@ -5,7 +5,8 @@ live state per session, and owns the session lifecycle: new worktree, new
 window, close. It runs on the Mac mini; you reach it from the laptop over
 `ssh` + tmux, and from the phone through Claude Code Remote Control.
 
-Status: plan only. Nothing is built yet.
+Status: phases 1–3 are built and tested (`bats tests`). Phase 4 is next, in
+`xdgetech/orch`.
 
 The orchestrator is [`xdgetech/orch`](https://github.com/xdgetech/orch).
 Paths like `dispatch.sh`, `poll.sh` and `scripts/lib/worktree.sh` are in that repo.
@@ -101,7 +102,7 @@ The plugin never reads orchestrator files. The orchestrator never draws UI.
 
 | Feature | Key / trigger |
 |---|---|
-| State from Claude hooks into `@agent_state` | `UserPromptSubmit`, `PreToolUse`, `Notification`, `Stop`, `SessionEnd` |
+| State from Claude hooks into `@agent_state` | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PermissionRequest`, `Notification`, `Stop`, `StopFailure`, `SessionEnd` |
 | State from Codex | `notify` in `~/.codex/config.toml` |
 | Status bar counts: `◐ 2 · ● 3` | always on |
 | Tree sidebar on the left, live refresh | `prefix + b` show/hide |
@@ -109,7 +110,7 @@ The plugin never reads orchestrator files. The orchestrator never draws UI.
 | Move in the tree | `j` / `k`, `Enter` switch and leave, `Esc` leave |
 | New task: worktree + session + AI pane \| terminal pane | `n` in the tree, `prefix + N` |
 | Extra window in the selected worktree, same layout | `c` in the tree |
-| **Open the worktree in the IDE** | `o` in the tree, `prefix + o` |
+| **Open the worktree in the IDE** | `o` in the tree, `prefix + O` (`prefix + o` stays tmux's next pane) |
 | Safe close: only when clean and merged, else warn | `x` in the tree |
 | Rename | `r` in the tree |
 | Pane preview of the selected row | fzf preview |
@@ -190,12 +191,15 @@ flowchart LR
 
 1. **One sidebar pane per window, not one pane that moves.** A tmux hook
    (`after-new-window`) adds a narrow sidebar to each new window. All sidebars
-   read the same tmux state, and the cursor position is kept in a shared file.
+   read the same tmux state. A new sidebar starts with its cursor on its own
+   session, which is simpler than sharing a cursor file and is what you want
+   after switching windows.
    Alternative: one pane moved with `join-pane` on each window switch. That
    keeps one process, but it flickers and dies with its window.
-2. **Refresh by push, not by polling.** Each sidebar runs fzf with `--listen`
-   and records its port in a pane option. `state.sh` calls `refresh.sh`, which
-   POSTs `reload` to each port. A slow fallback reload (every ~10 s) covers a
+2. **Refresh by push, not by polling.** Each sidebar runs fzf with
+   `--listen=<unix socket>` and records the socket in the pane option
+   `@agents_sock`. `state.sh` calls `refresh.sh`, which POSTs `reload` to each
+   socket. A slow fallback reload (every ~10 s) covers a
    missed signal.
 3. **Worktree logic stays in one place.** `new.sh` creates the worktree through
    a configurable command, `@agents_worktree_cmd`. The default is a plain
@@ -236,7 +240,7 @@ Done when: the tree updates within a second of a state change, and
    the session. `layout.sh` splits the window into tree | AI pane | terminal
    pane, starts `claude --remote-control` in the AI pane, and focuses it.
 2. `c` opens an extra window in the selected worktree, with the same layout.
-3. `ide.sh`: `o` / `prefix + o`, local and remote form.
+3. `ide.sh`: `o` / `prefix + O`, local and remote form.
 4. `close.sh`: refuses unless the worktree is clean and the branch is merged
    (`gh pr view` or `git branch --merged`); then kills the session and removes
    the worktree. The branch is kept.
@@ -267,11 +271,11 @@ attached while it runs, and disappears after its PR merges.
 
 - **Width.** The sidebar takes about 25 columns in every window. `prefix + b`
   hides it.
-- **Codex state.** Its `notify` fires on turn complete. Not verified yet
-  whether it also fires on an approval prompt. Without it, Codex never shows `◐`.
-- **fzf `--listen` with a random port.** Check how the port is exposed
-  (`$FZF_PORT`) in the installed fzf version. fzf is not installed yet:
-  `brew install fzf`.
+- **Codex state.** Verified: `notify` sends only `agent-turn-complete`, never
+  an approval prompt. A Codex pane shows `○` after each turn and nothing else.
+- **Two names, one option.** A pane option falls back to the global option of
+  the same name. So the sidebar marker is `@agents_sidebar_pane`, apart from
+  the global on/off switch `@agents_sidebar`.
 - **Remote Control isolation.** Server mode does not pass `--mcp-config` to the
   sessions it creates. Phase 4 step 4 uses `claude --remote-control` per
   session instead, which keeps the flags. Verify.
