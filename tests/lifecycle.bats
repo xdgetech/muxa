@@ -45,6 +45,7 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
 @test "close refuses a worktree with uncommitted changes" {
   new feature/dirty
   wt="$(tx show-options -t =feature-dirty: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
   touch "$wt/new-file"
   run "$ROOT/scripts/close.sh" feature-dirty
   [ "$status" -eq 1 ]
@@ -55,6 +56,7 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
 @test "close refuses an unmerged branch" {
   new feature/work
   wt="$(tx show-options -t =feature-work: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
   git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
   run "$ROOT/scripts/close.sh" feature-work
   [ "$status" -eq 1 ]
@@ -74,6 +76,7 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
 @test "close --keep leaves the worktree" {
   new feature/keep
   wt="$(tx show-options -t =feature-keep: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
   git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
   run "$ROOT/scripts/close.sh" --keep feature-keep
   [ "$status" -eq 0 ]
