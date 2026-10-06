@@ -21,7 +21,7 @@ hook() { printf '%s' "$1" | TMUX_PANE="$PANE" "$ROOT/hooks/claude-hook.sh"; }
   [ "$(pane_opt "$PANE" @agent_state)" = waiting ]
 
   hook '{"hook_event_name":"Stop","session_id":"abc"}'
-  [ "$(pane_opt "$PANE" @agent_state)" = idle ]
+  [ "$(pane_opt "$PANE" @agent_state)" = done ]
 
   hook '{"hook_event_name":"StopFailure","session_id":"abc","error_type":"rate_limit"}'
   [ "$(pane_opt "$PANE" @agent_state)" = error ]
@@ -46,9 +46,9 @@ hook() { printf '%s' "$1" | TMUX_PANE="$PANE" "$ROOT/hooks/claude-hook.sh"; }
   [ -z "$(pane_opt "$PANE" @agent_state)" ]
 }
 
-@test "codex turn complete marks the pane idle" {
+@test "codex turn complete marks the pane done" {
   TMUX_PANE="$PANE" "$ROOT/hooks/codex-notify.sh" '{"type":"agent-turn-complete","turn-id":"1"}'
-  [ "$(pane_opt "$PANE" @agent_state)" = idle ]
+  [ "$(pane_opt "$PANE" @agent_state)" = done ]
 }
 
 @test "status bar counts sessions by their most urgent pane" {
@@ -60,6 +60,51 @@ hook() { printf '%s' "$1" | TMUX_PANE="$PANE" "$ROOT/hooks/claude-hook.sh"; }
   "$ROOT/scripts/state.sh" set "$p1" running
   "$ROOT/scripts/state.sh" set "$p2" waiting
   status="$(tx show-options -gqv @agents_status)"
-  [[ "$status" == *"◐ 1 "* ]]
-  [[ "$status" == *"● 1 "* ]]
+  [[ "$status" == *"🙋 1 "* ]]
+  [[ "$status" == *"⚡ 1 "* ]]
+}
+
+@test "a state change records when it happened" {
+  before="$(date +%s)"
+  "$ROOT/scripts/state.sh" set "$PANE" running
+  at="$(pane_opt "$PANE" @agent_state_at)"
+  [ "$at" -ge "$before" ]
+  [ "$at" -le "$(date +%s)" ]
+}
+
+# notify.sh runs in the background; give it time to write.
+notified() { sleep 0.5; cat "$TMPDIR/notified" 2>/dev/null; }
+
+@test "notifies when the agent needs input, finishes, or fails" {
+  printf '#!/bin/sh\necho "$1|$2" >>"%s/notified"\n' "$TMPDIR" >"$TMPDIR/rec"
+  chmod +x "$TMPDIR/rec"
+  tx set-option -g @agents_notify on
+  tx set-option -g @agents_notify_cmd "$TMPDIR/rec"
+  "$ROOT/scripts/state.sh" set "$PANE" idle
+  "$ROOT/scripts/state.sh" set "$PANE" running
+  "$ROOT/scripts/state.sh" set "$PANE" waiting
+  "$ROOT/scripts/state.sh" set "$PANE" running
+  "$ROOT/scripts/state.sh" set "$PANE" done
+  "$ROOT/scripts/state.sh" set "$PANE" idle
+  "$ROOT/scripts/state.sh" set "$PANE" error
+  run notified
+  [ "${#lines[@]}" -eq 3 ]
+  [[ "$output" == *"base|needs your input"* ]]
+  [[ "$output" == *"base|finished"* ]]
+  [[ "$output" == *"base|failed"* ]]
+}
+
+@test "notifications follow the event list and the off switch" {
+  printf '#!/bin/sh\necho "$1|$2" >>"%s/notified"\n' "$TMPDIR" >"$TMPDIR/rec"
+  chmod +x "$TMPDIR/rec"
+  tx set-option -g @agents_notify_cmd "$TMPDIR/rec"
+  tx set-option -g @agents_notify on
+  tx set-option -g @agents_notify_events waiting
+  "$ROOT/scripts/state.sh" set "$PANE" error
+  "$ROOT/scripts/state.sh" set "$PANE" waiting
+  tx set-option -g @agents_notify off
+  "$ROOT/scripts/state.sh" set "$PANE" running
+  "$ROOT/scripts/state.sh" set "$PANE" waiting
+  run notified
+  [ "$output" = "base|needs your input" ]
 }

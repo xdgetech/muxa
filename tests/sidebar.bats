@@ -23,7 +23,7 @@ sidebars_in() { tx list-panes -t "$1" -F '#{@agents_sidebar_pane}' | grep -c '^1
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'base'"
   work="$(tx list-panes -t base: -F '#{pane_id} #{@agents_sidebar_pane}' | awk '$2!=1{print $1}')"
   "$ROOT/scripts/state.sh" set "$work" waiting
-  wait_for "tx capture-pane -p -t '$sb' | grep -q '◐ base'"
+  wait_for "tx capture-pane -p -t '$sb' | grep -q '🙋 base'"
 }
 
 @test "toggle off removes every sidebar, on brings them back" {
@@ -44,4 +44,25 @@ sidebars_in() { tx list-panes -t "$1" -F '#{@agents_sidebar_pane}' | grep -c '^1
 
 @test "status-right shows the agent counts" {
   [[ "$(tx show-options -gqv status-right)" == '#{@agents_status}'* ]]
+}
+
+@test "a sidebar is reloaded only when its rows change" {
+  wait_for '[ "$(sidebars_in base:)" -eq 1 ]'
+  sb="$(tx list-panes -t base: -F '#{pane_id} #{@agents_sidebar_pane}' | awk '$2==1{print $1}')"
+  wait_for "tx capture-pane -p -t '$sb' | grep -q 'base'"
+  tx pipe-pane -O -t "$sb" "cat >>'$TMPDIR/drawn'"
+  sleep 0.3
+  : >"$TMPDIR/drawn"
+  "$ROOT/scripts/refresh.sh"
+  sleep 0.5
+  [ ! -s "$TMPDIR/drawn" ]
+  tx new-session -d -s added
+  "$ROOT/scripts/refresh.sh"
+  wait_for "tx capture-pane -p -t '$sb' | grep -q 'added'"
+}
+
+@test "the footer shows the details of the row under the cursor" {
+  wait_for '[ "$(sidebars_in base:)" -eq 1 ]'
+  sb="$(tx list-panes -t base: -F '#{pane_id} #{@agents_sidebar_pane}' | awk '$2==1{print $1}')"
+  wait_for "tx capture-pane -p -t '$sb' | grep -q 'base · no agent'"
 }

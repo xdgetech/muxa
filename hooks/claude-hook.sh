@@ -21,7 +21,7 @@ case "$event" in
       permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input) state=waiting ;;
       *) exit 0 ;;
     esac ;;
-  Stop) state=idle ;;
+  Stop) state=done ;;
   StopFailure) state=error ;;
   SessionEnd) state="" ;;
   *) exit 0 ;;

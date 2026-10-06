@@ -140,7 +140,7 @@ The plugin never reads orchestrator files. The orchestrator never draws UI.
 | `@agent_pr` / `@agent_pr_state` kept up to date | `poll.sh`; `gh pr view`, cached, for manual sessions |
 | Resume a dispatched `claude -p` run interactively | `R` in the tree → `claude --resume <id> --remote-control` in the AI pane |
 | Context-aware launch for company repos | `@agents_launch_cmd` (see phase 4) |
-| Alert when a session starts waiting | tmux `display-message` + bell |
+| Alert when a session starts waiting | done: OSC 777 desktop notification from `notify.sh` |
 
 ### Left out on purpose
 
@@ -152,7 +152,7 @@ opening a single file, running tests.
 
 This repo, loaded with TPM (`set -g @plugin 'xdgetech/tmux-agents'`;
 TPM needs access to the private repo through your git credentials). Bash + fzf. Target
-tmux ≥ 3.3 (the Mac mini has 3.5a). Needs a Nerd Font for icons.
+tmux ≥ 3.4 (the Mac mini has 3.5a): notifications use `allow-passthrough all`.
 
 ```
 tmux-agents/
@@ -160,10 +160,13 @@ tmux-agents/
 ├─ scripts/
 │  ├─ state.sh            # set / get @agent_state; roll-up per session
 │  ├─ tree.sh             # print tree rows for fzf, from list-sessions/list-panes
-│  ├─ sidebar.sh          # the fzf sidebar pane (--listen, keys, preview)
+│  ├─ sidebar.sh          # the fzf sidebar pane (--listen, keys, details footer)
+│  ├─ sidebar-pos.sh      # fzf pos() of a sidebar's own session
+│  ├─ detail.sh           # footer: details of the row under the cursor
 │  ├─ sidebar-toggle.sh   # prefix+b; adds a sidebar to every window
 │  ├─ focus.sh            # prefix+Tab in and out
-│  ├─ refresh.sh          # send `reload` to every sidebar's fzf
+│  ├─ refresh.sh          # send `reload` to each sidebar whose rows changed
+│  ├─ notify.sh           # desktop notification on a state change
 │  ├─ new.sh              # worktree + session + AI pane | terminal pane
 │  ├─ layout.sh           # tree | AI | terminal split for a window
 │  ├─ ide.sh              # open in IDE (local, or remote command via OSC 52)
@@ -181,6 +184,7 @@ tmux-agents/
 flowchart LR
   A[claude / codex in a pane] -- hook --> S[state.sh]
   S -- set-option @agent_state --> T[(tmux options)]
+  S --> N[notify.sh]
   S --> R[refresh.sh]
   R -- POST reload --> F[sidebar fzf in each window]
   F -- tree.sh reads --> T

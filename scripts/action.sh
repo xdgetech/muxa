@@ -28,8 +28,11 @@ sidebar_pane() {
   t list-panes -F "#{pane_id}${TAB}#{@agents_sidebar_pane}" | awk -F'\t' '$2 == "1" { print $1; exit }'
 }
 
+# Leaves the sidebar only after the switch, so the old window does not redraw
+# before you see the new one.
 go() {
-  local s idx p
+  local s idx p old
+  old="$(t display-message -p '#{?@agents_sidebar_pane,#{window_id},}')"
   case "$target" in
     s:*) s="${target#s:}"; t switch-client -t "=$s" || return 1 ;;
     w:*) s="$(session_of "$target")"; idx="${target##*:}"
@@ -38,6 +41,9 @@ go() {
   esac
   p="$(work_pane "=$s:")"
   [ -n "$p" ] && t select-pane -t "$p"
+  # Not "#{window_id}" without -t: that is the sidebar's own window, from TMUX_PANE.
+  [ -n "$old" ] && [ "$old" != "$(t display-message -p -t "=$s:" '#{window_id}')" ] && out "$old"
+  return 0
 }
 
 # Before switching away, give the current window its work pane back, so
@@ -47,9 +53,12 @@ leave_sidebar() {
   return 0
 }
 
+# Out of the sidebar in <window>, default the current one: the last pane, else the work pane.
 out() {
-  t select-pane -l 2>/dev/null && [ "$(t display-message -p '#{@agents_sidebar_pane}')" != 1 ] && return 0
-  local p; p="$(work_pane)"
+  local w="${1:-}" p
+  t last-pane ${w:+-t "$w"} 2>/dev/null &&
+    [ "$(t display-message -p ${w:+-t "$w"} '#{@agents_sidebar_pane}')" != 1 ] && return 0
+  p="$(work_pane "$w")"
   [ -n "$p" ] && t select-pane -t "$p"
 }
 
@@ -93,7 +102,7 @@ win() {
 }
 
 case "$verb" in
-  go|new|win|close|keep) leave_sidebar ;;
+  new|win|close|keep) leave_sidebar ;;
 esac
 
 case "$verb" in

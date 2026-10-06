@@ -8,8 +8,10 @@ setup_server() {
   TMPDIR="$(mktemp -d /tmp/ta.XXXXXX)"
   export TMPDIR
   export TMUX_AGENTS_SOCKET="ta-$$-${BATS_TEST_NUMBER}"
-  tx -f /dev/null new-session -d -s base -x 200 -y 50
+  # Outside any git repo, so the tree shows no branch for it.
+  tx -f /dev/null new-session -d -s base -x 200 -y 50 -c "$TMPDIR"
   tx set-option -g @agents_check_gh off
+  tx set-option -g @agents_notify off
 }
 
 teardown_server() {

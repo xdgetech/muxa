@@ -19,8 +19,9 @@ teardown() { kill "$CLIENT_PID" 2>/dev/null || true; teardown_server; }
 
 key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
 
-# Move the sidebar cursor to a row, by the text it shows.
-select_row() { wait_for "tx capture-pane -p -t '$SB' | grep -q '▌.*$1'" ; }
+# Wait until the sidebar cursor is on a row, by the text it shows. The cursor
+# row is the one with the grey (236) background.
+select_row() { wait_for "tx capture-pane -e -p -t '$SB' | grep -q '48;5;236m.*$1'" ; }
 active() { tx display-message -p -c "$C" "#{$1}"; }
 
 @test "prefix+Tab moves into the sidebar and back" {
@@ -73,4 +74,19 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   key y
   wait_for '! tx has-session -t =feature-one 2>/dev/null'
   [ ! -d "$wt" ]
+}
+
+@test "a finished turn stays done until you look at its window" {
+  ai="$(tx list-panes -t feature-one: -F '#{pane_id} #{@agents_role}' | awk '$2 == "ai" { print $1 }')"
+  "$ROOT/scripts/state.sh" set "$ai" done
+  [ "$(pane_opt "$ai" @agent_state)" = done ]
+  tx switch-client -c "$C" -t =feature-one
+  wait_for "[ \"\$(pane_opt '$ai' @agent_state)\" = idle ]"
+}
+
+@test "a turn that finishes while you watch is idle at once" {
+  p="$(tx list-panes -t base: -F '#{pane_id} #{@agents_sidebar_pane}' | awk '$2 != 1 { print $1 }')"
+  "$ROOT/scripts/state.sh" set "$p" running
+  "$ROOT/scripts/state.sh" set "$p" done
+  [ "$(pane_opt "$p" @agent_state)" = idle ]
 }

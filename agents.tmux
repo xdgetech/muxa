@@ -12,8 +12,6 @@ default @agents_split 50
 default @agents_launch_cmd "claude --remote-control"
 default @agents_ide_cmd cursor
 default @agents_ide_mode auto
-default @agents_icon_repo ""
-default @agents_icon_window ""
 default @agents_key_focus Tab
 default @agents_key_toggle b
 default @agents_key_new N
@@ -34,6 +32,10 @@ t set-hook -g 'client-resized[73]' "run-shell -b \"'$S/sidebar-toggle.sh' sync\"
 t set-hook -g 'client-attached[73]' "run-shell -b \"'$S/sidebar-toggle.sh' sync\""
 t set-hook -g 'pane-exited[73]' "run-shell -b \"'$S/sidebar-toggle.sh' reap\""
 t set-hook -g 'after-kill-pane[73]' "run-shell -b \"'$S/sidebar-toggle.sh' reap\""
+# Looking at a window marks its finished turns as seen.
+for h in client-focus-in client-session-changed session-window-changed; do
+  t set-hook -g "${h}[73]" "run-shell -b \"'$S/state.sh' seen\""
+done
 for h in session-closed session-renamed window-renamed window-linked window-unlinked; do
   t set-hook -g "${h}[74]" "$refresh_cmd"
 done

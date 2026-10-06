@@ -6,18 +6,41 @@ its own git worktree, with the AI pane on the left and a terminal on the right.
 
 ```
 ┌─ tree ───────────────┬─ AI session ─────────┬─ terminal ─────────┐
-│  lisk-sdk           │                      │                    │
-│ ├ ● AGT-123          │  claude              │  git, gh, tests    │
-│ └ ◐ AGT-130 #1834    │                      │                    │
+│ 📂 lisk-sdk          │                      │                    │
+│ ▎⚡ AGT-123           │  claude              │  git, gh, tests    │
+│ ▎  ⚡ 0 main          │                      │                    │
+│ ▎     1 tests        │                      │                    │
+│  🙋 AGT-130 #1834    │                      │                    │
+│  💤 fix-retry ✅     │                      │                    │
+│──────────────────────│                      │                    │
+│ ⚡ AGT-123 · working │                      │                    │
+│ ⎇ feat/login         │                      │                    │
+│ 📁 lisk-sdk-feat-log │                      │                    │
+│ n new c win o ide x  │                      │                    │
 └──────────────────────┴──────────────────────┴────────────────────┘
-● running  ◐ waiting for you  ○ idle  ✓ PR merged  ✕ error
+🙋 needs you  ❌ error  ⚡ working  🏁 finished, not seen yet  💤 idle  ✅ PR merged
 ```
+
+A finished turn shows 🏁 until you look at its window, then 💤.
+One line per session. `▎` marks the session you are in, and only that session
+lists its windows. The footer shows the row under the cursor: its state and for
+how long, its branch (read live from git), its worktree, PR and window count.
+
+## Notifications
+
+You get a desktop notification when an agent needs your input, finishes a
+turn, or fails, but not for the pane you are looking at. The plugin sends OSC
+777 through tmux passthrough, so it works over SSH in terminals that show it
+(Ghostty, WezTerm, kitty). It sets `allow-passthrough all` only on panes that
+notify. Claude Code can also notify on its own: if you get two, set its
+`preferredNotifChannel` to `notifications_disabled`, or `@agents_notify` to `off`.
+Skipping the pane you look at needs `set -g focus-events on`.
 
 The design and the remaining phases are in [PLAN.md](PLAN.md).
 
 ## Install
 
-Needs tmux ≥ 3.3, fzf ≥ 0.65 (tested with 0.74), jq, curl, git, and a Nerd Font for the icons.
+Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 
 1. Add to `~/.tmux.conf`, then press `prefix + I`:
 
@@ -71,6 +94,12 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_min_width` | `100` | narrower clients (a phone) get no tree |
 | `@agents_split` | `50` | terminal pane width, % |
 | `@agents_check_gh` | `on` | ask `gh` whether the PR is merged before `x` |
+| `@agents_icon_waiting` / `_error` / `_running` / `_idle` / `_done` | `🙋` / `❌` / `⚡` / `💤` / `🏁` | agent states, in the tree and the status bar |
+| `@agents_icon_repo` / `_merged` / `_window` / `_branch` | `📂` / `✅` / none / `⎇` | |
+| `@agents_footer` | `n new c win o ide x close` | last line of the tree's footer |
+| `@agents_notify` | `on` | desktop notifications |
+| `@agents_notify_events` | `waiting done error` | which changes notify; `done` means a finished turn |
+| `@agents_notify_cmd` | | command that sends the notification instead, gets `<session> <message>` (e.g. `terminal-notifier`, ntfy) |
 | `@agents_key_focus` / `_toggle` / `_new` / `_ide` | `Tab` / `b` / `N` / `O` | |
 
 ## Test

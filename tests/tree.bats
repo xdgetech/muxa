@@ -13,11 +13,11 @@ tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
   tx set-option -t =a-task: @agent_repo app
   run tree
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "r:app	 app" ]
-  [[ "${lines[1]}" == "s:a-task	├ "*"a-task" ]]
-  [[ "${lines[2]}" == "s:b-task	└ "*"b-task" ]]
-  [ "${lines[3]}" = "r:~	 sessions" ]
-  [[ "${lines[4]}" == "s:base	└ "*"base" ]]
+  [ "${lines[0]}" = "r:app	📂 app" ]
+  [ "${lines[1]}" = "s:a-task	    a-task" ]
+  [ "${lines[2]}" = "s:b-task	    b-task" ]
+  [ "${lines[3]}" = "r:~	📂 sessions" ]
+  [ "${lines[4]}" = "s:base	    base" ]
 }
 
 @test "a session shows its most urgent state and its PR" {
@@ -28,23 +28,39 @@ tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
   tx set-option -p -t "$p1" @agent_state running
   tx set-option -p -t "$p2" @agent_state waiting
   run tree
-  [[ "${lines[1]}" == "s:base	└ ◐ base #1834" ]]
+  [ "${lines[1]}" = "s:base	 🙋 base #1834" ]
 }
 
-@test "merged PR shows a check unless the agent is busy" {
+# The check used to replace the state icon; now both show.
+@test "a merged PR shows a check next to the state" {
+  tx set-option -t =base: @agent_pr 1834
   tx set-option -t =base: @agent_pr_state merged
+  tx set-option -p -t base @agent_state running
   run tree
-  [[ "${lines[1]}" == *"✓ base" ]]
+  [ "${lines[1]}" = "s:base	 ⚡ base ✅" ]
 }
 
-@test "windows are listed only when a session has more than one" {
+@test "state icons come from the options" {
+  tx set-option -g @agents_icon_idle zz
+  tx set-option -p -t base @agent_state idle
   run tree
-  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[1]}" = "s:base	 zz base" ]
+}
+
+# Windows used to be listed under every session with more than one.
+@test "windows are listed only under the sidebar's own session" {
   tx new-window -d -t base: -n tests
+  tx new-session -d -s other
+  tx new-window -d -t other: -n logs
   run tree
-  [ "${#lines[@]}" -eq 4 ]
-  [[ "${lines[2]}" == "w:base:0	  ├ "* ]]
-  [[ "${lines[3]}" == "w:base:1	  └ "*"1:tests" ]]
+  [ "${#lines[@]}" -eq 3 ]
+  p="$(tx display-message -p -t base:0 '#{pane_id}')"
+  run tree "$p"
+  [ "${#lines[@]}" -eq 5 ]
+  [ "${lines[1]}" = "s:base	▎   base" ]
+  [[ "${lines[2]}" == "w:base:0	▎     0 "* ]]
+  [ "${lines[3]}" = "w:base:1	▎     1 tests" ]
+  [ "${lines[4]}" = "s:other	    other" ]
 }
 
 @test "sidebar panes do not count toward a session's state" {
@@ -52,5 +68,5 @@ tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
   tx set-option -p -t "$p" @agents_sidebar_pane 1
   tx set-option -p -t "$p" @agent_state waiting
   run tree
-  [[ "${lines[1]}" != *"◐"* ]]
+  [[ "${lines[1]}" != *"🙋"* ]]
 }
