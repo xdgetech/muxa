@@ -104,6 +104,14 @@ watched_windows() {
     awk -F'\t' -v need="$need" 'need == "" || $2 ~ /(^|,)focused(,|$)/ { print $1 }'
 }
 
+# A Claude background job runs outside tmux, so its hooks get no TMUX_PANE.
+# Its pane is the one agent pane in the job's directory. None or several: no pane.
+agent_pane_in() {
+  [ -n "$1" ] || return 0
+  t list-panes -a -F "#{pane_id}${TAB}#{pane_current_path}${TAB}#{@agent_session_id}" 2>/dev/null |
+    awk -F'\t' -v d="$1" '$2 == d && $3 != "" { n++; p = $1 } END { if (n == 1) print p }'
+}
+
 is_watched() {
   local w
   w="$(t display-message -p -t "$1" '#{window_id}' 2>/dev/null)" || return 1

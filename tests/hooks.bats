@@ -46,6 +46,27 @@ hook() { printf '%s' "$1" | TMUX_PANE="$PANE" "$ROOT/hooks/claude-hook.sh"; }
   [ -z "$(pane_opt "$PANE" @agent_state)" ]
 }
 
+# A background job's hooks run outside tmux; tmux reports macOS /tmp as /private/tmp.
+bg_hook() { printf '%s' "$1" | env -u TMUX_PANE "$ROOT/hooks/claude-hook.sh"; }
+pane_dir() { pane_opt "$PANE" pane_current_path; }
+
+@test "a background job updates the agent pane in its directory" {
+  hook '{"hook_event_name":"SessionStart","session_id":"own"}'
+  bg_hook '{"hook_event_name":"UserPromptSubmit","session_id":"job","cwd":"'"$(pane_dir)"'"}'
+  [ "$(pane_opt "$PANE" @agent_state)" = running ]
+  [ "$(pane_opt "$PANE" @agent_session_id)" = own ]
+}
+
+@test "a background job changes nothing when several agent panes share its directory" {
+  hook '{"hook_event_name":"SessionStart","session_id":"own"}'
+  other="$(tx split-window -t base -c "$(pane_dir)" -P -F '#{pane_id}')"
+  printf '%s' '{"hook_event_name":"SessionStart","session_id":"two"}' | TMUX_PANE="$other" "$ROOT/hooks/claude-hook.sh"
+  wait_for "[ \"\$(pane_opt '$other' pane_current_path)\" = '$(pane_dir)' ]"
+  bg_hook '{"hook_event_name":"UserPromptSubmit","session_id":"job","cwd":"'"$(pane_dir)"'"}'
+  [ "$(pane_opt "$PANE" @agent_state)" = idle ]
+  [ "$(pane_opt "$other" @agent_state)" = idle ]
+}
+
 @test "codex turn complete marks the pane done" {
   TMUX_PANE="$PANE" "$ROOT/hooks/codex-notify.sh" '{"type":"agent-turn-complete","turn-id":"1"}'
   [ "$(pane_opt "$PANE" @agent_state)" = done ]

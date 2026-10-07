@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # Claude Code hook: maps a hook event (JSON on stdin) to the pane's agent state.
-# Does nothing outside tmux. Installed by scripts/install-claude-hooks.sh.
-[ -n "${TMUX_PANE:-}" ] || exit 0
+# Outside tmux it updates only a background job's pane (see agent_pane_in).
+# Installed by scripts/install-claude-hooks.sh.
 command -v jq >/dev/null || exit 0
+. "$(dirname "$0")/../scripts/lib.sh"
 
 input="$(cat)"
 # Unit separator, not tab: read would merge empty tab-separated fields.
-fields="$(printf '%s' "$input" | jq -r '[.hook_event_name, .session_id, .tool_name, .notification_type] | map(. // "") | join("\u001f")' 2>/dev/null)" || exit 0
-IFS=$'\037' read -r event sid tool ntype <<EOF
+fields="$(printf '%s' "$input" | jq -r '[.hook_event_name, .session_id, .tool_name, .notification_type, .cwd] | map(. // "") | join("\u001f")' 2>/dev/null)" || exit 0
+IFS=$'\037' read -r event sid tool ntype cwd <<EOF
 $fields
 EOF
+
+pane="${TMUX_PANE:-}"
+if [ -z "$pane" ]; then
+  pane="$(agent_pane_in "$cwd")"
+  [ -n "$pane" ] || exit 0
+  # The job has its own session id; the pane keeps the one of its own agent.
+  sid=""
+fi
 
 case "$event" in
   SessionStart) state=idle ;;
@@ -27,4 +36,4 @@ case "$event" in
   *) exit 0 ;;
 esac
 
-exec "$(dirname "$0")/../scripts/state.sh" set "$TMUX_PANE" "$state" "$sid"
+exec "$AGENTS_SCRIPTS/state.sh" set "$pane" "$state" "$sid"

@@ -57,6 +57,9 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
    ```
 
    Undo with `--uninstall`.
+
+   A Claude background job runs outside tmux. Its state goes to the one Claude
+   pane in the job's directory. With two such panes, it shows nowhere.
 3. Optional, Codex: in `~/.codex/config.toml` set
    `notify = ["<plugin dir>/hooks/codex-notify.sh"]`. Codex reports only the end
    of a turn, so a Codex pane shows `○` and nothing else.
