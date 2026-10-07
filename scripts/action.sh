@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # What the sidebar keys and the prefix bindings do.
 # Usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|rename> [target]
+#        action.sh <next|prev|attention> | jump <key>
 # Targets come from tree.sh: r:<repo>, s:<session>, w:<session>:<window index>.
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -73,6 +74,51 @@ focus() {
   [ -n "$p" ] && t select-pane -t "$p"
 }
 
+# Sessions in the order and numbering of the tree.
+tree_sessions() { "$S/tree.sh" | awk -F'\t' '$1 ~ /^s:/ { print substr($1, 3) }'; }
+
+current_session() { t display-message -p '#{session_name}'; }
+
+# Go to the session <n> rows after the current one in the tree, wrapping around.
+step() {
+  local s
+  s="$(tree_sessions | awk -v cur="$(current_session)" -v d="$1" '
+    { o[NR] = $0; if ($0 == cur) c = NR }
+    END { if (NR) print o[c ? (c - 1 + d + NR) % NR + 1 : 1] }')"
+  [ -n "$s" ] && target="s:$s" && go
+}
+
+# Go to the session the tree labels <key>.
+jump() {
+  local n s
+  n="$(awk -v keys="$AGENTS_JUMP_KEYS" -v k="$1" 'BEGIN { print (length(k) == 1 ? index(keys, k) : 0) }')"
+  [ "$n" -gt 0 ] || return 0
+  s="$(tree_sessions | sed -n "${n}p")"
+  [ -n "$s" ] || { say "no task $1"; return 0; }
+  target="s:$s" && go
+}
+
+# Go to the most urgent session that needs you: needs input, then error, then
+# finished. Ties go to the first one after the current session in the tree.
+attention() {
+  local s
+  s="$({
+    t list-panes -a -F "R${TAB}#{session_name}${TAB}#{@agent_state}"
+    tree_sessions | sed "s/^/O${TAB}/"
+  } | awk -F'\t' -v cur="$(current_session)" "$AGENTS_AWK_STATE"'
+    $1 == "R" { r = rank($3); if (r > best[$2]) best[$2] = r; next }
+    { o[++n] = $2; if ($2 == cur) c = n }
+    END {
+      for (i = 1; i <= n; i++) {
+        x = o[(c + i - 1) % n + 1]; r = best[x]
+        if ((r == 5 || r == 4 || r == 2) && r > top) { top = r; pick = x }
+      }
+      print pick
+    }')"
+  [ -n "$s" ] || { say "no task needs you"; return 0; }
+  target="s:$s" && go
+}
+
 # Repo for a new task: the selected row's repo, else the current pane's.
 repo_for() {
   local s dir
@@ -107,6 +153,10 @@ esac
 
 case "$verb" in
   go) go ;;
+  next) step 1 ;;
+  prev) step -1 ;;
+  jump) jump "$target" ;;
+  attention) attention ;;
   out) out ;;
   focus) focus ;;
   new) new ;;
@@ -122,5 +172,5 @@ case "$verb" in
   rename)
     s="$(session_of "$target")" || exit 0
     t command-prompt -I "$s" -p "rename:" "rename-session -t '=$s' '%%'" ;;
-  *) echo "usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|rename> [target]" >&2; exit 2 ;;
+  *) echo "usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|rename> [target] | <next|prev|attention> | jump <key>" >&2; exit 2 ;;
 esac

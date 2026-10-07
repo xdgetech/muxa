@@ -17,11 +17,26 @@ default @agents_key_toggle b
 default @agents_key_new N
 # prefix+o is tmux's "next pane"; keep it.
 default @agents_key_ide O
+# Same meaning as tmux's own ( and ), in tree order.
+default @agents_key_next ')'
+default @agents_key_prev '('
+default @agents_key_attention a
+# prefix + j, then 1-9 or a-z: the task with that label in the tree.
+default @agents_key_jump j
 
 t bind-key "$(opt @agents_key_focus Tab)" run-shell -b "'$S/action.sh' focus"
 t bind-key "$(opt @agents_key_toggle b)" run-shell -b "'$S/sidebar-toggle.sh' toggle"
 t bind-key "$(opt @agents_key_new N)" run-shell -b "'$S/action.sh' new"
 t bind-key "$(opt @agents_key_ide O)" run-shell -b "'$S/action.sh' ide-current"
+t bind-key "$(opt @agents_key_next ')')" run-shell -b "'$S/action.sh' next"
+t bind-key "$(opt @agents_key_prev '(')" run-shell -b "'$S/action.sh' prev"
+t bind-key "$(opt @agents_key_attention a)" run-shell -b "'$S/action.sh' attention"
+t bind-key "$(opt @agents_key_jump j)" switch-client -T agents-jump
+keys="$AGENTS_JUMP_KEYS"
+while [ -n "$keys" ]; do
+  k="${keys%"${keys#?}"}"; keys="${keys#?}"
+  t bind-key -T agents-jump "$k" run-shell -b "'$S/action.sh' jump $k"
+done
 
 # Index 73 keeps these hooks apart from the user's own entries.
 ensure_cmd="run-shell -b \"'$S/sidebar-toggle.sh' ensure '#{window_id}'\""

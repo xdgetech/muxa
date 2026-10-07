@@ -23,6 +23,12 @@ t set-option -p -t "$pane" @agents_sock "$sock"
 ticker=$!
 trap 'kill "$ticker" 2>/dev/null; rm -f "$sock" "$rows"' EXIT
 
+# 1-9 go to the numbered task, like prefix + j then the number. Letters stay tree keys.
+jumps=""
+for i in 1 2 3 4 5 6 7 8 9; do
+  jumps="$jumps${jumps:+,}$i:execute-silent($act jump $i)+transform($home)"
+done
+
 # fzf exits on ctrl-c; start it again so the sidebar never dies.
 # Leaving the sidebar puts its cursor back on its own session, so every sidebar
 # you switch to has its cursor on the session you picked.
@@ -47,6 +53,7 @@ while :; do
     --bind "q:execute-silent($act out)+transform($home)" \
     --bind "n:execute-silent($act new {1}),c:execute-silent($act win {1})" \
     --bind "o:execute-silent($act ide {1}),r:execute-silent($act rename {1})" \
-    --bind "x:execute-silent($act close {1}),X:execute-silent($act keep {1})"
+    --bind "x:execute-silent($act close {1}),X:execute-silent($act keep {1})" \
+    --bind "$jumps"
   sleep 0.2
 done

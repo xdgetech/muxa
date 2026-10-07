@@ -7,11 +7,11 @@ its own git worktree, with the AI pane on the left and a terminal on the right.
 ```
 ┌─ tree ───────────────┬─ AI session ─────────┬─ terminal ─────────┐
 │ 📂 lisk-sdk          │                      │                    │
-│ ▎⚡ AGT-123           │  claude              │  git, gh, tests    │
-│ ▎  ⚡ 0 main          │                      │                    │
-│ ▎     1 tests        │                      │                    │
-│  🙋 AGT-130 #1834    │                      │                    │
-│  💤 fix-retry ✅     │                      │                    │
+│ ▎1 ⚡ AGT-123         │  claude              │  git, gh, tests    │
+│ ▎    ⚡ 0 main        │                      │                    │
+│ ▎       1 tests      │                      │                    │
+│  2 🙋 AGT-130 #1834  │                      │                    │
+│  3 💤 fix-retry ✅   │                      │                    │
 │──────────────────────│                      │                    │
 │ ⚡ AGT-123 · working │                      │                    │
 │ ⎇ feat/login         │                      │                    │
@@ -22,9 +22,10 @@ its own git worktree, with the AI pane on the left and a terminal on the right.
 ```
 
 A finished turn shows 🏁 until you look at its window, then 💤.
-One line per session. `▎` marks the session you are in, and only that session
-lists its windows. The footer shows the row under the cursor: its state and for
-how long, its branch (read live from git), its worktree, PR and window count.
+One line per session, labelled `1`–`9` then `a`–`z` for the jump keys. `▎`
+marks the session you are in, and only that session lists its windows. The
+footer shows the row under the cursor: its state and for how long, its branch
+(read live from git), its worktree, PR and window count.
 
 ## Notifications
 
@@ -72,9 +73,13 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 | `prefix + b` | show or hide the tree |
 | `prefix + N` | new task: asks for repo and branch |
 | `prefix + O` | open the current task in the IDE |
+| `prefix + )` / `prefix + (` | next / previous task, in tree order |
+| `prefix + j`, then `1`–`9` or `a`–`z` | the task with that label in the tree |
+| `prefix + a` | the task that needs you most: 🙋, then ❌, then 🏁 |
 
-In the tree: `j`/`k` move, `Enter` go to the task, `Esc` leave, `n` new task,
-`c` new window in the task's worktree, `o` IDE, `r` rename, `R` reload.
+In the tree: `j`/`k` move, `Enter` go to the task, `1`–`9` go to that task
+(letters only through `prefix + j`), `Esc` leave, `n` new task, `c` new window
+in the task's worktree, `o` IDE, `r` rename, `R` reload.
 `x` closes the session and removes the worktree, but only when it is clean and
 merged. `X` closes the session and keeps the worktree. The branch is always kept.
 
@@ -100,6 +105,7 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_icon_waiting` / `_error` / `_running` / `_idle` / `_done` | `🙋` / `❌` / `⚡` / `💤` / `🏁` | agent states, in the tree and the status bar |
 | `@agents_icon_repo` / `_merged` / `_window` / `_branch` | `📂` / `✅` / none / `⎇` | |
 | `@agents_footer` | `n new c win o ide x close` | last line of the tree's footer |
+| `@agents_key_next` / `_prev` / `_attention` / `_jump` | `)` / `(` / `a` / `j` | prefix keys to switch tasks |
 | `@agents_notify` | `on` | desktop notifications |
 | `@agents_notify_events` | `waiting done error` | which changes notify; `done` means a finished turn |
 | `@agents_notify_cmd` | | command that sends the notification instead, gets `<session> <message>` (e.g. `terminal-notifier`, ntfy) |

@@ -16,6 +16,11 @@ AGENTS_AWK_STATE='
   function sword(r) { return r==5 ? "needs you" : r==4 ? "error" : r==3 ? "working" : r==2 ? "done" : r==1 ? "idle" : "no agent" }
 '
 
+# Keys that jump to the 1st, 2nd, ... session of the tree, as tree.sh labels them.
+# Letters work only after prefix + j: the tree uses some of them for its own keys.
+# shellcheck disable=SC2034  # used by scripts that source this file
+AGENTS_JUMP_KEYS=123456789abcdefghijklmnopqrstuvwxyz
+
 # awk with the state icons from the @agents_icon_* options, read in one tmux call.
 # LC_ALL=C: byte order for sorting, so the "~" group sorts after every repo.
 awk_states() {

@@ -90,3 +90,39 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   "$ROOT/scripts/state.sh" set "$p" done
   [ "$(pane_opt "$p" @agent_state)" = idle ]
 }
+
+# The tree is: app / 1 feature-one, then sessions / 2 base.
+@test "prefix+) and prefix+( go to the next and previous task in tree order" {
+  key C-b ')'
+  wait_for '[ "$(active session_name)" = feature-one ]'
+  [ "$(active @agents_role)" = ai ]
+  key C-b '('
+  wait_for '[ "$(active session_name)" = base ]'
+}
+
+@test "prefix+j then a number goes to that task" {
+  key C-b j 1
+  wait_for '[ "$(active session_name)" = feature-one ]'
+  key C-b j 2
+  wait_for '[ "$(active session_name)" = base ]'
+}
+
+@test "prefix+j then a letter goes to the 10th task and on" {
+  for i in 1 2 3 4 5 6 7 8; do tx new-session -d -s "x$i"; done
+  key C-b j a
+  wait_for '[ "$(active session_name)" = x8 ]'
+}
+
+@test "a number in the sidebar goes to that task" {
+  key C-b Tab
+  key 1
+  wait_for '[ "$(active session_name)" = feature-one ]'
+  [ -z "$(active @agents_sidebar_pane)" ]
+}
+
+@test "prefix+a goes to the task that needs you" {
+  ai="$(tx list-panes -t feature-one: -F '#{pane_id} #{@agents_role}' | awk '$2 == "ai" { print $1 }')"
+  "$ROOT/scripts/state.sh" set "$ai" waiting
+  key C-b a
+  wait_for '[ "$(active session_name)" = feature-one ]'
+}

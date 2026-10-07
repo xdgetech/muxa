@@ -108,6 +108,8 @@ The plugin never reads orchestrator files. The orchestrator never draws UI.
 | Tree sidebar on the left, live refresh | `prefix + b` show/hide |
 | Move into the tree and back | `prefix + Tab` |
 | Move in the tree | `j` / `k`, `Enter` switch and leave, `Esc` leave |
+| Switch tasks without the tree | `prefix + )` / `(` next and previous, `prefix + j` then `1`–`9` / `a`–`z`, `1`–`9` in the tree |
+| Go to the task that needs you | `prefix + a` |
 | New task: worktree + session + AI pane \| terminal pane | `n` in the tree, `prefix + N` |
 | Extra window in the selected worktree, same layout | `c` in the tree |
 | **Open the worktree in the IDE** | `o` in the tree, `prefix + O` (`prefix + o` stays tmux's next pane) |
