@@ -45,6 +45,7 @@ t set-hook -g 'session-created[73]' "$ensure_cmd"
 t set-hook -g 'after-new-window[73]' "$ensure_cmd"
 t set-hook -g 'client-resized[73]' "run-shell -b \"'$S/sidebar-toggle.sh' sync\""
 t set-hook -g 'client-attached[73]' "run-shell -b \"'$S/sidebar-toggle.sh' sync\""
+t set-hook -g 'window-resized[73]' "run-shell -b \"'$S/sidebar-toggle.sh' fit '#{window_id}'\""
 t set-hook -g 'pane-exited[73]' "run-shell -b \"'$S/sidebar-toggle.sh' reap\""
 t set-hook -g 'after-kill-pane[73]' "run-shell -b \"'$S/sidebar-toggle.sh' reap\""
 # Looking at a window marks its finished turns as seen.

@@ -100,7 +100,7 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_sidebar` | `on` | |
 | `@agents_sidebar_width` | `28` | |
 | `@agents_min_width` | `100` | narrower clients (a phone) get no tree |
-| `@agents_split` | `50` | terminal pane width, % |
+| `@agents_split` | `50` | terminal pane width, % of a new task window. Showing, hiding or resizing the tree keeps the current split |
 | `@agents_check_gh` | `on` | ask `gh` whether the PR is merged before `x` |
 | `@agents_icon_waiting` / `_error` / `_running` / `_idle` / `_done` | `🙋` / `❌` / `⚡` / `💤` / `🏁` | agent states, in the tree and the status bar |
 | `@agents_icon_repo` / `_merged` / `_window` / `_branch` | `📂` / `✅` / none / `⎇` | |
