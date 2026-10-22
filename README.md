@@ -64,6 +64,12 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 3. Optional, Codex: in `~/.codex/config.toml` set
    `notify = ["<plugin dir>/hooks/codex-notify.sh"]`. Codex reports only the end
    of a turn, so a Codex pane shows `○` and nothing else.
+4. Optional, Claude skill: lets a Claude session create, list and close tasks,
+   also over Remote Control. Link it on the machine that runs tmux:
+
+   ```sh
+   ln -s ~/.tmux/plugins/tmux-agents/skills/tmux-agents ~/.claude/skills/tmux-agents
+   ```
 
 ## Keys
 
