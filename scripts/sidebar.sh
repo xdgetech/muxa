@@ -54,6 +54,7 @@ while :; do
     --bind "n:execute-silent($act new {1}),c:execute-silent($act win {1})" \
     --bind "o:execute-silent($act ide {1}),r:execute-silent($act rename {1})" \
     --bind "x:execute-silent($act close {1}),X:execute-silent($act keep {1})" \
+    --bind "ctrl-x:execute-silent($act force {1})" \
     --bind "$jumps"
   sleep 0.2
 done

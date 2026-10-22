@@ -81,7 +81,9 @@ In the tree: `j`/`k` move, `Enter` go to the task, `1`–`9` go to that task
 (letters only through `prefix + j`), `Esc` leave, `n` new task, `c` new window
 in the task's worktree, `o` IDE, `r` rename, `R` reload.
 `x` closes the session and removes the worktree, but only when it is clean and
-merged. `X` closes the session and keeps the worktree. The branch is always kept.
+merged. `X` closes the session and keeps the worktree. `ctrl-x` removes the
+worktree even when the branch is not merged, but still not when it has
+uncommitted changes. The branch is always kept.
 
 Over SSH, `o` cannot start the IDE on your laptop. It copies
 `cursor --remote ssh-remote+<host> <worktree>` to the laptop's clipboard

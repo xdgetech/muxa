@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What the sidebar keys and the prefix bindings do.
-# Usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|rename> [target]
+# Usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|force|rename> [target]
 #        action.sh <next|prev|attention> | jump <key>
 # Targets come from tree.sh: r:<repo>, s:<session>, w:<session>:<window index>.
 set -u
@@ -148,7 +148,7 @@ win() {
 }
 
 case "$verb" in
-  new|win|close|keep) leave_sidebar ;;
+  new|win|close|keep|force) leave_sidebar ;;
 esac
 
 case "$verb" in
@@ -169,8 +169,11 @@ case "$verb" in
   keep)
     s="$(session_of "$target")" || exit 0
     t confirm-before -p "close $s and keep its worktree? (y/n)" "run-shell -b \"'$S/close.sh' --keep '$s'\"" ;;
+  force)
+    s="$(session_of "$target")" || exit 0
+    t confirm-before -p "close $s and remove its worktree, even if unmerged? (y/n)" "run-shell -b \"'$S/close.sh' --force '$s'\"" ;;
   rename)
     s="$(session_of "$target")" || exit 0
     t command-prompt -I "$s" -p "rename:" "rename-session -t '=$s' '%%'" ;;
-  *) echo "usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|rename> [target] | <next|prev|attention> | jump <key>" >&2; exit 2 ;;
+  *) echo "usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|force|rename> [target] | <next|prev|attention> | jump <key>" >&2; exit 2 ;;
 esac

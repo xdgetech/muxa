@@ -36,7 +36,7 @@ remove_wt=0
 if [ "$keep" = 0 ] && [ -n "$wt" ] && [ -d "$wt" ]; then
   [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] \
     || die "$s has uncommitted changes. Commit or stash them, or press X to close and keep the worktree."
-  [ "$force" = 1 ] || merged || die "$s is not merged. Press X to close and keep the worktree."
+  [ "$force" = 1 ] || merged || die "$s is not merged. Press X to close and keep the worktree, or ctrl-x to remove it anyway."
   remove_wt=1
 fi
 

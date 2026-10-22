@@ -76,6 +76,21 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   [ ! -d "$wt" ]
 }
 
+@test "ctrl-x then y removes the worktree of an unmerged task" {
+  wt="$(tx show-options -t =feature-one: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
+  git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
+  key C-b Tab
+  key k
+  key k
+  select_row feature-one
+  key C-x
+  sleep 0.5
+  key y
+  wait_for '! tx has-session -t =feature-one 2>/dev/null'
+  [ ! -d "$wt" ]
+}
+
 @test "a finished turn stays done until you look at its window" {
   ai="$(tx list-panes -t feature-one: -F '#{pane_id} #{@agents_role}' | awk '$2 == "ai" { print $1 }')"
   "$ROOT/scripts/state.sh" set "$ai" done
