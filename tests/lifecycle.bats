@@ -108,3 +108,26 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ "$status" -ne 0 ]
   grep -q "could not create a worktree for bad..name: .*bad..name" "$TMPDIR/tmux-agents-$(id -u)/agents.log"
 }
+
+@test "close --force removes an unmerged worktree and keeps the branch" {
+  new feature/force
+  wt="$(tx show-options -t =feature-force: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
+  git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
+  run "$ROOT/scripts/close.sh" --force feature-force
+  [ "$status" -eq 0 ]
+  ! tx has-session -t =feature-force
+  [ ! -d "$wt" ]
+  git -C "$REPO" show-ref --verify -q refs/heads/feature/force
+}
+
+@test "close --force still refuses uncommitted changes" {
+  new feature/force-dirty
+  wt="$(tx show-options -t =feature-force-dirty: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
+  touch "$wt/new-file"
+  run "$ROOT/scripts/close.sh" --force feature-force-dirty
+  [ "$status" -eq 1 ]
+  tx has-session -t =feature-force-dirty
+  [ -d "$wt" ]
+}

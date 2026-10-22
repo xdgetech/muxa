@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Closes a task session. Without --keep it also removes the worktree, but only
 # when nothing can be lost: no uncommitted changes, and the branch is merged.
-# The branch itself is always kept.
-# Usage: close.sh [--keep] <session>
+# --force skips the merged check. The branch itself is always kept.
+# Usage: close.sh [--keep|--force] <session>
 set -u
 . "$(dirname "$0")/lib.sh"
 
-keep=0
-[ "${1:-}" = --keep ] && { keep=1; shift; }
+keep=0 force=0
+case "${1:-}" in
+  --keep) keep=1; shift ;;
+  --force) force=1; shift ;;
+esac
 s="${1:-}"
-[ -n "$s" ] || die "usage: close.sh [--keep] <session>"
+[ -n "$s" ] || die "usage: close.sh [--keep|--force] <session>"
 t has-session -t "=$s" 2>/dev/null || die "no session $s"
 
 wt="$(target_opt "=$s:" @agent_worktree)"
@@ -33,7 +36,7 @@ remove_wt=0
 if [ "$keep" = 0 ] && [ -n "$wt" ] && [ -d "$wt" ]; then
   [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] \
     || die "$s has uncommitted changes. Commit or stash them, or press X to close and keep the worktree."
-  merged || die "$s is not merged. Press X to close and keep the worktree."
+  [ "$force" = 1 ] || merged || die "$s is not merged. Press X to close and keep the worktree."
   remove_wt=1
 fi
 
