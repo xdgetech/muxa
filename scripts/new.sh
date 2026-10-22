@@ -46,20 +46,33 @@ default_worktree() {
     git -C "$main" worktree add -q --track -b "$branch" "$path" "origin/$branch"
   else
     git -C "$main" worktree add -q -b "$branch" "$path" "${base:-$(default_base "$main")}"
-  fi 2>>"$(agents_log_file)" || return 1
+  fi 2>"$err" || return 1
   printf '%s\n' "$path"
+}
+
+# Git refuses a second worktree on a branch, and the main checkout is never a task's worktree.
+in_main_checkout() {
+  [ -z "$(existing_worktree)" ] && [ "$(git -C "$main" branch --show-current 2>/dev/null)" = "$branch" ]
 }
 
 # @agents_worktree_cmd lets the orchestrator own worktree creation: it gets
 # <main repo> <branch> <base> and prints the worktree path on its last line.
 cmd="$(opt @agents_worktree_cmd '')"
+err="$(agents_run_dir)/new-$$.err"
+trap 'rm -f "$err"' EXIT
 if [ -n "$cmd" ]; then
   # shellcheck disable=SC2086  # a command path, optionally with its own flags
-  wt="$($cmd "$main" "$branch" "$base" 2>>"$(agents_log_file)" | tail -n 1)"
+  wt="$($cmd "$main" "$branch" "$base" 2>"$err" | tail -n 1)"
 else
+  in_main_checkout && die "$branch is checked out in the main checkout $main. Switch it to another branch there, then open the task again."
   wt="$(default_worktree)"
 fi
-[ -n "$wt" ] && [ -d "$wt" ] || die "no worktree for $branch in $main. Details: $(agents_log_file)"
+[ -s "$err" ] && log "$(cat "$err")"
+if [ -z "$wt" ] || [ ! -d "$wt" ]; then
+  why="$(sed -n 's/^fatal: //p' "$err" 2>/dev/null | head -n 1)"
+  [ -n "$why" ] || why="$(sed '/^$/d' "$err" 2>/dev/null | tail -n 1)"
+  die "could not create a worktree for $branch: ${why:-see $(agents_log_file)}"
+fi
 
 name="$(session_name_for "${task:-$branch}")"
 if t has-session -t "=$name" 2>/dev/null; then

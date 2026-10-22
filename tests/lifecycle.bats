@@ -94,3 +94,17 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ "$status" -eq 0 ]
   [ "$(tx show-options -t =feature-custom: -qv @agent_worktree)" = "$custom" ]
 }
+
+@test "new explains a branch that is checked out in the main checkout" {
+  git -C "$REPO" switch -q -c feature/here
+  run new feature/here
+  [ "$status" -ne 0 ]
+  grep -q "feature/here is checked out in the main checkout" "$TMPDIR/tmux-agents-$(id -u)/agents.log"
+  ! tx has-session -t =feature-here 2>/dev/null
+}
+
+@test "new shows why git could not create the worktree" {
+  run new 'bad..name'
+  [ "$status" -ne 0 ]
+  grep -q "could not create a worktree for bad..name: .*bad..name" "$TMPDIR/tmux-agents-$(id -u)/agents.log"
+}
