@@ -102,11 +102,12 @@ default_base() {
 
 # Windows someone is looking at: each attached client's current window, when its
 # terminal has focus. With focus-events off tmux cannot tell, so every client counts.
+# A control-mode client (tmux -C) is a program, not a person, so it never counts.
 watched_windows() {
   local need=focused
   [ "$(t show-options -gv focus-events 2>/dev/null)" = on ] || need=""
   t list-clients -F "#{window_id}${TAB}#{client_flags}" 2>/dev/null |
-    awk -F'\t' -v need="$need" 'need == "" || $2 ~ /(^|,)focused(,|$)/ { print $1 }'
+    awk -F'\t' -v need="$need" '$2 !~ /(^|,)control-mode(,|$)/ && (need == "" || $2 ~ /(^|,)focused(,|$)/) { print $1 }'
 }
 
 # A Claude background job runs outside tmux, so its hooks get no TMUX_PANE.

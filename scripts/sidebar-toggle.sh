@@ -11,8 +11,12 @@ set -u
 width() { opt @agents_sidebar_width 28; }
 is_on() { [ "$(opt @agents_sidebar on)" = on ]; }
 
+# A control-mode client (tmux -C) has no screen: its width is not a real one.
+is_control_client() { [ "$(t display-message -p '#{client_control_mode}' 2>/dev/null)" = 1 ]; }
+
 too_narrow() {
   local w
+  is_control_client && return 1
   w="$(t display-message -p '#{client_width}' 2>/dev/null)"
   [ -n "$w" ] && [ "$w" -lt "$(opt @agents_min_width 100)" ]
 }
@@ -110,6 +114,7 @@ case "${1:-}" in
   ensure) [ -n "${2:-}" ] && ! too_narrow && ensure "$2" ;;
   fit) [ -n "${2:-}" ] && fit "$2" ;;
   sync)
+    is_control_client && exit 0
     if too_narrow; then
       kill_all
     elif is_on; then
