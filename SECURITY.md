@@ -1,0 +1,21 @@
+# Security
+
+## Reporting
+
+Report vulnerabilities privately through GitHub's "Report a vulnerability" (Security tab). Do not open a public issue.
+
+## Threat model
+
+muxa gives a remote device keyboard access to your terminal sessions. That is shell access. The design keeps the attack surface to what SSH already exposes.
+
+- **Transport:** the bridge runs as an SSH exec command. It opens no port. Authentication, encryption and host identity come from SSH. The app pins the host key on first use and stores its ed25519 key in the device Keychain, readable only when the device is unlocked.
+- **Restrict the key.** An SSH key that can run the bridge can also run a shell, unless you restrict it. Add the app's public key to `~/.ssh/authorized_keys` with a forced command:
+
+  ```
+  command="~/.local/bin/muxa-bridge",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA... muxa-ipad
+  ```
+
+  The key can then reach your sessions only through the bridge. The bridge sends keystrokes only to panes that already exist, and only on explicit requests.
+- **Input from the client is untrusted.** Requests have a size cap. Pane and session ids are validated. Every value placed in a tmux command line goes through one quoting function, so no request can add tmux commands or expand variables.
+- **Terminal content is untrusted** and is passed through as data. The bridge never logs pane bytes. Logs contain ids, sizes and errors only.
+- **Out of scope:** an attacker who already has a shell as your user, and a compromised SSH server.

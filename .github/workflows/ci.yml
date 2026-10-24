@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # tmux 3.2a (ubuntu-22.04, the minimum), 3.4 (ubuntu-24.04), latest (Homebrew).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tmux, bats, shellcheck (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tmux bats shellcheck
+
+      - name: Install tmux, bats, shellcheck (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux bats-core shellcheck
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Isolate tmux sockets
+        run: |
+          echo "TMUX_TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          tmux -V
+
+      - run: make check
+      - run: make repro
+      - run: make test-tmux

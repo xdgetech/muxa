@@ -1,0 +1,7 @@
+/target
+.DS_Store
+# Xcode / SwiftPM
+apple/**/.build/
+apple/**/xcuserdata/
+apple/**/DerivedData/
+*.xcuserstate
