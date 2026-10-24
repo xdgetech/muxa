@@ -35,6 +35,8 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `MUXA_RECORD_SCENARIOS=1 cargo test -p muxa-bridge --features tmux-integration --test stream` | re-records `protocol/fixtures/scenarios/`. |
 | `make sandbox` / `make sandbox-down` | an isolated tmux server (`-L muxa-sandbox`) with two agent + shell sessions. |
 | `scripts/layout-snapshot.sh record -L <socket>` | record a layout; `diff before after` proves nothing changed. |
+| `muxa-cli --bridge 'muxa-bridge --socket muxa-sandbox' watch demo-a` | the reference client against the sandbox (Ctrl-] leaves). |
+| `MUXA_LIVE=1 scripts/live-check.sh SESSION` | **humans only**: the before/after layout proof on the real server. Agents never set `MUXA_LIVE`. |
 
 ## Invariants
 
