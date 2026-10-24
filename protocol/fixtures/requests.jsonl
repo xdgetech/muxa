@@ -1,0 +1,9 @@
+{"type":"ping","id":1}
+{"type":"list","id":2}
+{"type":"watch","id":3,"pane":"%12"}
+{"type":"unwatch","id":4}
+{"type":"keys","id":5,"pane":"%12","keys":["C-c","Up","S-Enter"]}
+{"type":"text","id":6,"pane":"%12","text":"echo \"é😀\" $HOME"}
+{"type":"bytes","id":7,"pane":"%12","data":"G1tBw6k="}
+{"type":"paste","id":8,"pane":"%12","text":"line one\nline two\n"}
+{"type":"bye","id":9}

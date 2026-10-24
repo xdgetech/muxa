@@ -19,7 +19,7 @@ The `refresh-client -C` workaround for narrow-client plugins was considered and 
 | Fact | Script |
 |---|---|
 | `%output` arrives only for panes in the control client's current session. After `switch-client`, it arrives for the new session's panes. | `scripts/repro/output-scope.sh` |
-| `%output` escapes only bytes below 0x20 and `\` (as `\ooo`). Every other byte, including invalid UTF-8, is passed raw. Read lines as bytes. | to be covered by the Phase 2 unit tests |
+| `%output` escapes only bytes below 0x20 and `\` (as `\ooo`). Every other byte, including invalid UTF-8, is passed raw. Read lines as bytes. | `scripts/repro/output-raw-bytes.sh` |
 | While a program uses the alternate screen, `capture-pane` shows the alternate screen and `capture-pane -a` shows the primary one. | `scripts/repro/alt-capture.sh` |
 
 ## Commands

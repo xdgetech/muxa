@@ -12,3 +12,11 @@ workspace = true
 [features]
 # Tests that start throwaway tmux servers (tmux -L muxa-test-*). Needs tmux >= 3.2.
 tmux-integration = []
+
+[dependencies]
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["process", "io-util", "sync", "rt", "macros", "time"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time"] }

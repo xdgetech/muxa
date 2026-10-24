@@ -69,6 +69,8 @@ Crates: `tokio` (process, io), `serde`/`serde_json`, `base64`, `bytes`, `thiserr
 
 ## Phases
 
+Status: Phase 1 done. Phase 2 done (`crates/muxa-tmux`, `crates/muxa-protocol`, `protocol/PROTOCOL.md` + fixtures). The tmux-agents control-client fix is in a draft PR, and the author's checkout runs it.
+
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:
      - `docs/plan.md` (this plan);
@@ -108,7 +110,7 @@ Crates: `tokio` (process, io), `serde`/`serde_json`, `base64`, `bytes`, `thiserr
    - Role sources as described above.
    - Protocol v1:
      - the bridge sends `hello` first, with the tmux version and capability flags;
-     - `gen` on `screen`/`output`;
+     - `watch` (the id of the watch request) on `screen`/`output`/`pane-gone`, so a client drops messages from an older watch;
      - `id` echoed on errors;
      - a `bye` request, because Citadel's exec stdin cannot signal EOF.
      - Ships with fixtures.
