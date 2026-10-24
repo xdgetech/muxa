@@ -30,6 +30,9 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `make check` | fmt, clippy, unit tests, shellcheck, harness tests. Must be green before every commit. |
 | `make test-tmux` | integration tests on throwaway tmux servers. |
 | `make repro` | re-checks every tmux fact in `docs/findings/`. |
+| `MUXA_STREAM_RUNS=200 make test-tmux` | more random cut points for the snapshot/stream stress test (default 50). |
+| `MUXA_TEST_PLUGIN=<plugin.tmux> make test-tmux` | also checks that a real layout plugin keeps its layout. |
+| `MUXA_RECORD_SCENARIOS=1 cargo test -p muxa-bridge --features tmux-integration --test stream` | re-records `protocol/fixtures/scenarios/`. |
 | `make sandbox` / `make sandbox-down` | an isolated tmux server (`-L muxa-sandbox`) with two agent + shell sessions. |
 | `scripts/layout-snapshot.sh record -L <socket>` | record a layout; `diff before after` proves nothing changed. |
 

@@ -79,7 +79,8 @@ def blocked(command):
 
 def blocked_fallback(command):
     """For commands shlex cannot parse: any tmux word without -L/-S anywhere."""
-    if not re.search(r"(^|[\s;&|`(])tmux(\s|$)", command):
+    # Only tmux in command position: at a line start or after ; & | ( `.
+    if not re.search(r"(^|[;&|`(])\s*tmux(\s|$)", command, re.MULTILINE):
         return False
     return not re.search(r"\s-[A-Za-z]*[LS]", command) and " -V" not in command
 

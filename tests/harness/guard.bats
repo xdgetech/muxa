@@ -11,7 +11,8 @@ guard() {
   local c
   for c in 'tmux ls' 'tmux list-sessions' 'cd x && tmux attach' 'FOO=1 tmux ls' \
     "bash -lc 'tmux ls'" 'echo $(tmux display -p x)' 'echo `tmux ls`' \
-    '/opt/homebrew/bin/tmux ls' 'tmux -f /dev/null new -d' 'env tmux ls'; do
+    '/opt/homebrew/bin/tmux ls' 'tmux -f /dev/null new -d' 'env tmux ls' \
+    $'echo \'x\ntmux ls'; do
     run guard "$c"
     [ "$status" -eq 2 ] || { echo "not blocked: $c"; return 1; }
     [[ "$output" == *"muxa guard"* ]]
@@ -23,7 +24,7 @@ guard() {
   for c in 'tmux -L muxa-test ls' 'tmux -S /tmp/s ls' 'tmux -uL x ls' \
     'tmux -f /dev/null -L x new -d' 'tmux -V' 'echo tmux' 'grep tmux file' \
     'git commit -m "fix tmux ls"' 'scripts/tmux-sandbox.sh up' 'ls | grep tmux' \
-    "echo 'unbalanced"; do
+    "echo 'unbalanced" $'cat > f <<EOF\n// loads a real tmux plugin (it\'s opt-in)\nEOF'; do
     run guard "$c"
     [ "$status" -eq 0 ] || { echo "blocked: $c"; return 1; }
   done

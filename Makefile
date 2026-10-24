@@ -20,7 +20,7 @@ test:
 
 # Integration tests on throwaway tmux servers (tmux >= 3.2).
 test-tmux:
-	cargo test --workspace --features muxa-tmux/tmux-integration
+	cargo test --workspace --features muxa-tmux/tmux-integration,muxa-bridge/tmux-integration
 
 test-harness:
 	bats tests/harness

@@ -59,7 +59,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `result` | `id` (absent only for an unreadable request), optional `error {code, message}`, optional `sessions` |
 | `screen` | `watch`, `pane`, `cols`, `rows`, `data` |
 | `output` | `watch`, `pane`, `data` |
-| `sessions-changed` | none. Send `list` again. |
+| `sessions-changed` | none. Send `list` again. Best effort: tmux reports pane changes only for the bridge's current session, so also re-list whenever the session list is shown. |
 | `pane-gone` | `watch`, `pane`, optional `reason` |
 | `bye` | `reason` |
 

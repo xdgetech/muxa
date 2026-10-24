@@ -69,7 +69,10 @@ Crates: `tokio` (process, io), `serde`/`serde_json`, `base64`, `bytes`, `thiserr
 
 ## Phases
 
-Status: Phase 1 done. Phase 2 done (`crates/muxa-tmux`, `crates/muxa-protocol`, `protocol/PROTOCOL.md` + fixtures). The tmux-agents control-client fix is in a draft PR, and the author's checkout runs it.
+Status:
+- Phases 1–3 done: harness; `muxa-tmux` and `muxa-protocol`; the bridge with integration and stress tests.
+- Phase 4 done as a draft PR in tmux-agents. The author's checkout runs it. `crates/muxa-bridge/tests/plugin.rs` fails against tmux-agents `main` and passes with the fix.
+- Next: Phase 5.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:

@@ -178,3 +178,108 @@ async fn never_changes_the_window_size() {
     snapshot(&client, server.first_pane()).await.unwrap();
     assert_eq!(size(), before);
 }
+
+/// Open question from docs/findings: hooks fired by our own commands must not
+/// produce reply blocks that land in our reply queue.
+#[tokio::test]
+async fn hook_output_does_not_misalign_replies() {
+    let server = Server::start();
+    server.tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        "other",
+        "-x",
+        "80",
+        "-y",
+        "24",
+        "sh",
+    ]);
+    server.tmux(&[
+        "set-hook",
+        "-g",
+        "client-session-changed[90]",
+        "display-message -p hooked",
+    ]);
+    server.tmux(&[
+        "set-hook",
+        "-g",
+        "client-session-changed[91]",
+        "run-shell 'echo hooked-shell'",
+    ]);
+    server.tmux(&[
+        "set-hook",
+        "-g",
+        "client-attached[90]",
+        "display-message -p attached",
+    ]);
+    let (client, _notes) = Client::attach(&server.options(), None).unwrap();
+    for (i, target) in ["other", "work", "other", "work"].iter().enumerate() {
+        client
+            .command(&format!("switch-client -t ={target}"))
+            .await
+            .unwrap();
+        let reply = client
+            .command(&format!("display-message -p check-{i}"))
+            .await
+            .unwrap();
+        assert_eq!(
+            reply.lines,
+            vec![format!("check-{i}").into_bytes()],
+            "after switching to {target}"
+        );
+    }
+}
+
+/// Open question from docs/findings: does a notification ever arrive inside
+/// a reply block? A pane prints digits only (never '%') while we snapshot
+/// another pane; any reply line starting with '%' would be a notification.
+#[tokio::test]
+async fn notifications_never_arrive_inside_reply_blocks() {
+    let server = Server::start();
+    let noisy = server.first_pane();
+    let quiet: PaneId = server
+        .tmux(&[
+            "split-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            "work",
+            "sh",
+        ])
+        .parse()
+        .unwrap();
+    let (client, mut notes) = Client::attach(&server.options(), None).unwrap();
+    send_text(
+        &client,
+        noisy,
+        "i=0; while :; do i=$((i+1)); echo $i $i $i $i; done",
+    )
+    .await
+    .unwrap();
+    muxa_tmux::send_keys(&client, noisy, &["Enter".into()])
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let mut outputs_between = 0;
+    for _ in 0..200 {
+        let screen = snapshot(&client, quiet).await.unwrap();
+        assert!(
+            !screen.data.windows(8).any(|w| w == b"%output "),
+            "a notification landed inside a reply"
+        );
+        while let Ok(n) = notes.try_recv() {
+            outputs_between += usize::from(n.output().is_some());
+        }
+    }
+    muxa_tmux::send_keys(&client, noisy, &["C-c".into()])
+        .await
+        .unwrap();
+    assert!(
+        outputs_between > 0,
+        "the noisy pane produced no output; the test proved nothing"
+    );
+}

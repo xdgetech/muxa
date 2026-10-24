@@ -30,7 +30,22 @@ The `refresh-client -C` workaround for narrow-client plugins was considered and 
 | Name targets are ambiguous: `-t b` resolved to window `bash` in the current session, not to session `b`. Always target by id (`$n`, `@n`, `%n`). | `scripts/repro/name-targets.sh` |
 | A double-quoted argument with `\"`, `\$`, `\\` and `\ooo` escapes carries any text intact. `send-keys -H` passes raw bytes, including UTF-8. | `scripts/repro/input-encoding.sh` |
 
-## Open questions (tested in Phase 3)
+## Answered in Phase 3
 
-- Can a notification arrive inside a `%begin`/`%end` block on tmux 3.2–3.7? The man page says never. The tmux 3.8 changelog mentions queuing notifications so they are not sent inside blocks.
-- Do blocks from hooks that our own commands trigger (for example `client-session-changed` after `switch-client`) arrive flagged as ours (flags `1`)?
+| Fact | Test |
+|---|---|
+| No notification arrived inside a `%begin`/`%end` block across 200 snapshots taken while another pane streamed output. The parser needs no defensive handling. | `crates/muxa-tmux/tests/tmux_smoke.rs` `notifications_never_arrive_inside_reply_blocks` |
+| Hooks triggered by our own `switch-client` (`display-message`, `run-shell`) do not put blocks into our reply queue. | `crates/muxa-tmux/tests/tmux_smoke.rs` `hook_output_does_not_misalign_replies` |
+| When the session a control client is attached to is destroyed, tmux detaches the client (`detach-on-destroy`, default on). The bridge sends `pane-gone`, then `bye`. The client reconnects. Reattaching inside the bridge is an M3 item. | `crates/muxa-bridge/tests/bridge.rs` `follows_the_pane_across_sessions_resizes_and_exit` |
+| A snapshot plus the stream after it reproduces tmux's screen and cursor exactly. Checked on 50 random cut points per run, with colors, cursor moves, CJK, erase-line, a scroll region and the alternate screen. | `crates/muxa-bridge/tests/stream.rs` |
+
+## Emulator differences (client risk)
+
+Found with vt100 as the test oracle. Both are emulator behaviors, not bridge errors: the bridge forwards the same bytes either way. Check SwiftTerm for both in Phase 6.
+
+| Behavior | tmux (and xterm) | vt100 0.18 |
+|---|---|---|
+| Scroll region and the alternate screen | one region for the terminal | one region per screen; switching screens switches regions |
+| Cursor after DECSTBM (`ESC[t;br`) | home of the screen (0,0) | top of the new region |
+
+A TUI that sets a region and switches screens without resetting it can render differently on the client. Mainstream TUIs reset the region before switching.
