@@ -90,6 +90,9 @@ struct PaneScreen: View {
             } label: {
                 Label("Fit", systemImage: "textformat.size")
             }
+            if model.canReadDocs {
+                Button("Documents", systemImage: "doc.text") { model.openReader() }
+            }
             Button("Sessions", systemImage: "rectangle.stack") { model.showSwitcher = true }
             Button("Disconnect", systemImage: "xmark.circle") { Task { await model.disconnect() } }
         }

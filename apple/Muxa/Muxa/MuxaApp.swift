@@ -39,6 +39,9 @@ struct PaneCommands: Commands {
             Button("Pretty / Raw") { model.setPretty(!model.showsPretty) }
                 .keyboardShortcut("r")
                 .disabled(!model.canShowPretty)
+            Button("Documents…") { model.openReader() }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(!model.canReadDocs)
             Button("Previous Session") { Task { await model.step(-1) } }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
             Button("Next Session") { Task { await model.step(1) } }

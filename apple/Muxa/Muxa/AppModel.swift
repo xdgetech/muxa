@@ -33,6 +33,11 @@ final class AppModel {
     private var stayDisconnected = false
     /// Agent panes the user switched to Raw. Every other agent pane shows Pretty when it can.
     private(set) var rawPanes: Set<String> = []
+    var showReader = false
+    private(set) var docListing: DocListing?
+    private(set) var docError: String?
+    /// The document last read in each session, opened again next time.
+    private var lastDocs: [String: String] = [:]
 
     init() {
         #if DEBUG
@@ -249,6 +254,48 @@ final class AppModel {
     func sendPrompt(_ text: String) {
         session.paste(text)
         session.send(keys: ["Enter"])
+    }
+
+    // MARK: Reader
+
+    var canReadDocs: Bool { session.canReadDocs && currentPane != nil }
+
+    func openReader() {
+        guard canReadDocs else { return }
+        showReader = true
+    }
+
+    func closeReader() {
+        showReader = false
+        Task { await session.closeDocument() }
+        refocusPane()
+    }
+
+    func loadDocs() async {
+        guard let pane = currentPane else { return }
+        docError = nil
+        do {
+            docListing = try await session.documents(pane: pane.id)
+        } catch {
+            docError = PaneSession.describe(error)
+        }
+    }
+
+    /// The last one read in this session, else the plan, else the README, else the first.
+    var preferredDoc: String? {
+        guard let entries = docListing?.entries, !entries.isEmpty else { return nil }
+        if let id = currentSession?.id, let last = lastDocs[id], entries.contains(where: { $0.path == last }) {
+            return last
+        }
+        return entries.first { $0.kind == .plan }?.path
+            ?? entries.first { $0.path.lowercased() == "readme.md" }?.path
+            ?? entries.first?.path
+    }
+
+    func openDoc(_ path: String) async {
+        guard let pane = currentPane else { return }
+        if let id = currentSession?.id { lastDocs[id] = path }
+        await session.openDocument(pane: pane.id, path: path)
     }
 
     func retryChat() async {

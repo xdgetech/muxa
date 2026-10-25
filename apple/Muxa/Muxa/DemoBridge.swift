@@ -12,6 +12,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private let lock = NSLock()
     private var watch: UInt64 = 0
     private var chat: (id: UInt64, seq: UInt64, count: Int)?
+    private var openDoc: UInt64?
     /// The last paste into %1, sent as a prompt when Enter follows.
     private var prompt: String?
     static let chatPane = "%1"
@@ -47,7 +48,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     init() {
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs"]))
     }
 
     func send(_ line: Data) async throws {
@@ -77,6 +78,27 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             emitChat(reset: true, entries: Self.conversation, status: .running)
         case .unchat(let id):
             lock.withLock { chat = nil }
+            ok(id)
+        case .docs(let id, _):
+            emit(.docList(DocListing(docs: id, root: "app", entries: Self.docs.map(\.info))))
+            ok(id)
+        case .doc(let id, _, let path):
+            guard let doc = Self.docs.first(where: { $0.info.path == path }) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not listed"), sessions: nil))
+                return
+            }
+            lock.withLock { openDoc = id }
+            ok(id)
+            emit(.docContent(doc: id, path: path, text: doc.text, mtime: 1))
+            // The agent keeps writing its plan: an update arrives while it is open.
+            if doc.info.kind == .plan {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
+                    guard let self, self.lock.withLock({ self.openDoc }) == id else { return }
+                    self.emit(.docContent(doc: id, path: path, text: doc.text + Self.planUpdate, mtime: 2))
+                }
+            }
+        case .undoc(let id):
+            lock.withLock { openDoc = nil }
             ok(id)
         case .keys(let id, let pane, let keys):
             ok(id)
@@ -127,6 +149,50 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             chat: id, seq: seq, reset: reset, entries: entries, status: Agent(state: status, since: since),
             agent: reset ? "claude-code" : nil)))
     }
+
+    static let planUpdate = "\n## Update\n\nUpdated by the agent while you read.\n"
+
+    static let docs: [(info: DocInfo, text: String)] = [
+        (DocInfo(path: "plans/demo-plan.md", kind: .plan, title: "Reader plan", mtime: 1), """
+            # Reader plan
+
+            ## Context
+
+            Plans and designs are read on the iPad. \(String(repeating: "Long context keeps this page scrolling. ", count: 30))
+
+            ## Phases
+
+            1. List the documents.
+            2. Render them with diagrams.
+            3. Follow changes.
+
+            ## Risks
+
+            \(String(repeating: "A long section about risks. ", count: 40))
+            """),
+        (DocInfo(path: "README.md", kind: .repo, mtime: 1), """
+            # App
+
+            | Command | Use |
+            |---|---|
+            | `make check` | every check |
+            | `make sandbox` | a test server |
+
+            See the [design](docs/design.md), or the [website](https://example.com).
+            """),
+        (DocInfo(path: "docs/design.md", kind: .repo, mtime: 1), """
+            # Design
+
+            ```mermaid
+            flowchart LR
+              iPad[iPad app] --> Bridge[muxa bridge] --> Tmux[tmux server]
+            ```
+
+            ```swift
+            let answer = 42
+            ```
+            """),
+    ]
 
     static let conversation: [ChatEntry] = [
         ChatEntry(id: "u:1", kind: .user, text: "Fix the failing test in the parser"),

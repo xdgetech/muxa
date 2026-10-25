@@ -20,7 +20,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents. |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
-| `apple/Muxa` | the iPad app (SwiftUI). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo (DEBUG). |
+| `apple/Muxa` | the iPad app (SwiftUI). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo (DEBUG). |
 | `scripts/` | harness: sandbox, layout snapshot, repro scripts, the agent guard hook. |
 | `tests/harness/` | bats tests for the harness itself. |
 

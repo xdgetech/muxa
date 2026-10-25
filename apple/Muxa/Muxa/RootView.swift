@@ -31,6 +31,9 @@ struct RootView: View {
         .sheet(isPresented: $model.showSwitcher, onDismiss: model.refocusPane) {
             SessionSwitcher()
         }
+        .fullScreenCover(isPresented: $model.showReader, onDismiss: model.refocusPane) {
+            ReaderScreen()
+        }
     }
 }
 

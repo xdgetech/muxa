@@ -36,6 +36,8 @@ flowchart LR
 3. In the app, tap **+** to add a host with its address and user. Under "First Connection", enter your password once. The app logs in with it, adds its own key to `~/.ssh/authorized_keys` (restricted to the bridge), and forgets the password. To add the key by hand instead, copy the line the app shows.
 4. When asked, compare the host key fingerprint with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` before you trust it. Later connections use the key only.
 
+Documents: Cmd+Shift+D opens the Reader for the shown pane. It lists that session's Claude plan and the Markdown files of its git repo, renders them with mermaid diagrams without any network access, and updates as the files change.
+
 Keys: Cmd+K switch session, Cmd+J agent/terminal, Cmd+Shift+[ and ] previous/next session, Cmd+1…9 session by number. Every other key goes to the pane.
 
 ## Pane roles

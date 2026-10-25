@@ -125,6 +125,49 @@ final class DemoTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    /// The Reader lists the plan first, renders tables, code and mermaid, follows
+    /// links between documents, and shows the plan again when the agent edits it.
+    @MainActor
+    func testReaderRendersDocumentsAndFollowsChanges() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.typeKey("d", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.staticTexts["Reader plan"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["README.md"].exists)
+
+        // The plan opens first; the agent's edit shows up without a reload.
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.staticTexts["Phases"].waitForExistence(timeout: 10))
+        XCTAssertTrue(web.staticTexts["Updated by the agent while you read."].waitForExistence(timeout: 10))
+        save("reader-plan")
+
+        app.staticTexts["README.md"].tap()
+        XCTAssertTrue(web.staticTexts["make sandbox"].waitForExistence(timeout: 10))
+        // A web link asks before leaving; a relative link opens the document here.
+        web.links["website"].tap()
+        let open = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'Open example.com'")).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        // On iPad the question is a popover: tapping outside it says no.
+        app.otherElements["PopoverDismissRegion"].firstMatch.tap()
+        XCTAssertTrue(open.waitForNonExistence(timeout: 5))
+        web.links["design"].tap()
+        XCTAssertTrue(web.staticTexts["Design"].waitForExistence(timeout: 10))
+        // The diagram is drawn, not shown as code.
+        XCTAssertTrue(web.staticTexts["muxa bridge"].waitForExistence(timeout: 10))
+        XCTAssertFalse(web.staticTexts["flowchart LR"].exists)
+        save("reader-design")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        save("reader-design-landscape")
+        XCUIDevice.shared.orientation = .portrait
+
+        app.buttons["Done"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+    }
+
     /// The pane gets the keyboard back after a sheet, and a new host can be saved.
     @MainActor
     func testFocusReturnsAfterTheSwitcherAndAHostCanBeAdded() throws {
