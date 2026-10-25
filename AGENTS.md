@@ -31,6 +31,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `make test-tmux` | integration tests on throwaway tmux servers. |
 | `make repro` | re-checks every tmux fact in `docs/findings/`. |
 | `make test-apple` | MuxaKit tests (macOS, Xcode toolchain): protocol fixtures, SwiftTerm scenario replay, the pane session. Prefix `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` when xcode-select points to the Command Line Tools. |
+| `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
 | `MUXA_STREAM_RUNS=200 make test-tmux` | more random cut points for the snapshot/stream stress test (default 50). |
 | `MUXA_TEST_PLUGIN=<plugin.tmux> make test-tmux` | also checks that a real layout plugin keeps its layout. |
 | `MUXA_RECORD_SCENARIOS=1 cargo test -p muxa-bridge --features tmux-integration --test stream` | re-records `protocol/fixtures/scenarios/`. |

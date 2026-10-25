@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -29,6 +29,11 @@ test-harness:
 # Command Line Tools: DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer make test-apple
 test-apple:
 	swift test --package-path apple/MuxaKit
+
+# Also runs PaneSession against the real bridge on a throwaway tmux server.
+test-apple-tmux:
+	cargo build -p muxa-bridge
+	MUXA_TEST_BRIDGE=$(CURDIR)/target/debug/muxa-bridge swift test --package-path apple/MuxaKit
 
 lint-sh:
 	$(SHELLCHECK) -x $(SHELL_SCRIPTS)

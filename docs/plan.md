@@ -73,7 +73,8 @@ Status:
 - Phases 1–3 done: harness; `muxa-tmux` and `muxa-protocol`; the bridge with integration and stress tests.
 - Phase 4 done: the fix is on tmux-agents `main`. `crates/muxa-bridge/tests/plugin.rs` fails without the fix and passes with it.
 - Phase 5 done: `muxa-cli`, the install into `~/.local/bin`, and `scripts/live-check.sh`. The author's live check on the real server (tmux 3.7c, 17 sessions): roles classified, no layout change.
-- Next: Phase 6.
+- Phase 6 done: `apple/MuxaKit` with `MuxaProtocol`, `MuxaTransport` (SSH via Citadel, a local process channel) and `MuxaSession` (`PaneSession`, `HeadlessScreen`). SwiftTerm rebuilds both recorded streams exactly. It keeps one scroll region per screen, like vt100 (`docs/findings/`). `PaneSession` passes against the real bridge on a throwaway tmux server. The SSH channel is built but not yet run against a server: that happens in the Phase 7 acceptance run.
+- Next: Phase 7.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:
@@ -155,7 +156,7 @@ Status:
 
    Verifiable by: the diff is empty. Then open the first draft PR (bridge).
 
-6. **`apple/MuxaKit`** (works with Command Line Tools, so it does not wait for Xcode). The platforms are `.iOS(.v17), .macOS(.v15)`, because Citadel's `withExec` needs macOS 15 for `swift test`:
+6. **`apple/MuxaKit`** (needs Xcode's toolchain: the Command Line Tools lack the swift-testing macros). The platforms are `.iOS(.v17), .macOS(.v15)`, because Citadel's `withExec` needs macOS 15 for `swift test`:
    - `MuxaProtocol`: Codable, tested against `protocol/fixtures`.
    - `MuxaTransport`: Citadel `withExec`, line framing, a 15 s ping, `bye` on close, a pinned host key, and an ed25519 key in the Keychain. `WhenUnlockedThisDeviceOnly` works because reconnect only happens in the foreground.
    - `PaneSession`: connecting → listing → watching. On `screen`, it resizes the terminal, then feeds the data.

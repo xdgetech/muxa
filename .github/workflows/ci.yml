@@ -48,4 +48,9 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - run: make test-apple
+      - run: brew install tmux
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Isolate tmux sockets
+        run: echo "TMUX_TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - run: make test-apple-tmux
