@@ -7,3 +7,5 @@
 {"type":"bytes","id":7,"pane":"%12","data":"G1tBw6k="}
 {"type":"paste","id":8,"pane":"%12","text":"line one\nline two\n"}
 {"type":"bye","id":9}
+{"type":"chat","id":10,"pane":"%12"}
+{"type":"unchat","id":11}

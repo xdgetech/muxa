@@ -13,7 +13,7 @@ mod roles;
 mod snapshot;
 
 pub use client::{Client, MAX_LINE, Notifications, Options};
-pub use discover::{AgentState, AgentStatus, Pane, Role, Session, list_sessions, locate};
+pub use discover::{AgentState, AgentStatus, Pane, Role, Session, list_sessions, locate, pane};
 pub use error::Error;
 pub use escape::{decode_output, quote};
 pub use ids::{PaneId, SessionId, WindowId};

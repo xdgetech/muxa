@@ -3,13 +3,15 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub const USAGE: &str =
-    "usage: muxa-bridge [--tmux PATH] [--socket NAME] [--idle-timeout SECONDS] [--version]
+pub const USAGE: &str = "usage: muxa-bridge [--tmux PATH] [--socket NAME] [--idle-timeout SECONDS]
+                   [--agent-dir AGENT=PATH]... [--version]
 
 Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
   --tmux PATH             tmux binary (default: Homebrew, /usr/local/bin, then PATH)
   --socket NAME           tmux -L socket name (default: the user's default server)
   --idle-timeout SECONDS  exit after this long without a request (default: 60)
+  --agent-dir AGENT=PATH  where an agent keeps its data, e.g. claude-code=~/.claude
+                          (default: claude-code=$HOME/.claude)
 Logs go to stderr; MUXA_LOG sets the level (default: warn).";
 
 /// Non-interactive SSH sessions often lack Homebrew's directories in PATH.
@@ -29,6 +31,8 @@ pub struct Args {
     pub tmux: Option<PathBuf>,
     pub socket: Option<String>,
     pub idle: Duration,
+    /// Agent adapter id -> data directory.
+    pub agent_dirs: Vec<(String, PathBuf)>,
 }
 
 pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Action, lexopt::Error> {
@@ -38,12 +42,25 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
         tmux: None,
         socket: None,
         idle: DEFAULT_IDLE,
+        agent_dirs: Vec::new(),
     };
     while let Some(arg) = parser.next()? {
         match arg {
             Long("tmux") => out.tmux = Some(parser.value()?.into()),
             Long("socket") => out.socket = Some(parser.value()?.string()?),
             Long("idle-timeout") => out.idle = Duration::from_secs(parser.value()?.parse()?),
+            Long("agent-dir") => {
+                let value = parser.value()?.string()?;
+                let Some((agent, dir)) = value
+                    .split_once('=')
+                    .filter(|(a, d)| !a.is_empty() && !d.is_empty())
+                else {
+                    return Err(lexopt::Error::from(format!(
+                        "--agent-dir wants AGENT=PATH, got {value:?}"
+                    )));
+                };
+                out.agent_dirs.push((agent.to_owned(), dir.into()));
+            }
             Long("version") => return Ok(Action::Version),
             Long("help") | Short('h') => return Ok(Action::Help),
             _ => return Err(arg.unexpected()),
@@ -85,13 +102,26 @@ mod tests {
     #[test]
     fn parses_flags() {
         assert_eq!(
-            parse_strs(&["--tmux", "/x/tmux", "--socket", "s", "--idle-timeout", "5"]).unwrap(),
+            parse_strs(&[
+                "--tmux",
+                "/x/tmux",
+                "--socket",
+                "s",
+                "--idle-timeout",
+                "5",
+                "--agent-dir",
+                "claude-code=/tmp/c=d",
+            ])
+            .unwrap(),
             Action::Serve(Args {
                 tmux: Some("/x/tmux".into()),
                 socket: Some("s".into()),
-                idle: Duration::from_secs(5)
+                idle: Duration::from_secs(5),
+                agent_dirs: vec![("claude-code".into(), "/tmp/c=d".into())],
             })
         );
+        assert!(parse_strs(&["--agent-dir", "/no/agent"]).is_err());
+        assert!(parse_strs(&["--agent-dir", "claude-code="]).is_err());
         assert_eq!(parse_strs(&["--version"]).unwrap(), Action::Version);
         assert!(parse_strs(&["--bogus"]).is_err());
         assert!(parse_strs(&["--idle-timeout", "x"]).is_err());

@@ -1,6 +1,8 @@
 //! `muxa-bridge`: serves the muxa protocol on stdin/stdout, started over SSH.
 
+mod agents;
 mod args;
+mod chat;
 mod convert;
 mod lines;
 mod server;
@@ -46,6 +48,10 @@ fn main() -> ExitCode {
             socket: args.socket,
         },
         idle: args.idle,
+        agents: std::sync::Arc::new(agents::Registry::standard(
+            &args.agent_dirs.into_iter().collect(),
+            std::env::var_os("HOME").map(std::path::PathBuf::from),
+        )),
     };
 
     let runtime = match tokio::runtime::Builder::new_current_thread()

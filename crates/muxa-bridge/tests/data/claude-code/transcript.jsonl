@@ -1,0 +1,17 @@
+{"type":"mode","mode":"default"}
+{"type":"user","uuid":"u1","parentUuid":null,"isSidechain":false,"message":{"role":"user","content":"Fix the failing test"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","isSidechain":false,"message":{"id":"msg_1","role":"assistant","content":[{"type":"thinking","thinking":"private","signature":"x"}]}}
+{"type":"assistant","uuid":"a2","parentUuid":"a1","isSidechain":false,"message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"Running the tests **first**."}]}}
+{"type":"assistant","uuid":"a3","parentUuid":"a2","isSidechain":false,"message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"cargo test\necho done","description":"Run tests"},"caller":{}}]}}
+{"type":"user","uuid":"u2","parentUuid":"a3","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_1","type":"tool_result","content":"test result: FAILED. 1 failed","is_error":true}]}}
+{"type":"assistant","uuid":"s1","parentUuid":"a3","isSidechain":true,"message":{"id":"msg_side","role":"assistant","content":[{"type":"text","text":"a subagent's reply"}]}}
+{"type":"user","uuid":"m1","parentUuid":"u2","isSidechain":false,"isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Caveat: injected context"}]}}
+{"type":"assistant","uuid":"a4","parentUuid":"u2","isSidechain":false,"message":{"id":"msg_2","role":"assistant","content":[{"type":"text","text":"The test expects a trailing newline."}]}}
+{"type":"assistant","uuid":"a5","parentUuid":"a4","isSidechain":false,"message":{"id":"msg_2","role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"Edit","input":{"file_path":"src/lib.rs","old_string":"a","new_string":"b"},"caller":{}}]}}
+{"type":"user","uuid":"u3","parentUuid":"a5","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_2","type":"tool_result","content":[{"type":"text","text":"The file was updated."}]}]}}
+{"type":"user","uuid":"u4","parentUuid":"u3","isSidechain":false,"message":{"role":"user","content":"<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>"}}
+{"type":"user","uuid":"u5","parentUuid":"u4","isSidechain":false,"message":{"role":"user","content":"<local-command-stdout>Set model to opus</local-command-stdout>"}}
+{"type":"user","uuid":"u6","parentUuid":"u5","isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}
+{"type":"attachment","uuid":"x1","attachment":{"type":"file"}}
+not json at all
+{"type":"user","uuid":"u7","parentUuid":"u6","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_gone","type":"tool_result","content":"result of a call before the cut"}]}}

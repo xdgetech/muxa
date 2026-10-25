@@ -47,6 +47,8 @@ sequenceDiagram
 | `text` | `id`, `pane`, `text` | typed literally |
 | `bytes` | `id`, `pane`, `data` | raw key bytes, for clients that encode keys themselves |
 | `paste` | `id`, `pane`, `text` | pasted; bracketed when the program enabled bracketed paste |
+| `chat` | `id`, `pane` | follow the agent conversation in this pane (capability `chat`); replaces the previous chat |
+| `unchat` | `id` | stop `chat-entries` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -61,9 +63,11 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `output` | `watch`, `pane`, `data` |
 | `sessions-changed` | none. Send `list` again. Best effort: tmux reports pane changes only for the bridge's current session, so also re-list whenever the session list is shown. |
 | `pane-gone` | `watch`, `pane`, optional `reason` |
+| `chat-entries` | `chat`, `seq`, optional `reset`, `entries[]`, optional `status {state, since}`, optional `agent`, optional `truncated` |
+| `chat-ended` | `chat`, `reason` |
 | `bye` | `reason` |
 
-Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `tmux`, `internal`.
+Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `tmux`, `internal`.
 
 ### Sessions
 
@@ -78,6 +82,20 @@ A session has `id`, `name`, optional `repo`, `branch`, `worktree`, `task`, and `
 - **Roles come from tags only**, never from screen content: `@muxa_role`, then agent-runner tags, then `unknown`. Clients do not show `hidden` panes.
 - **Agent/Terminal toggle:** when a session has no `agent`/`shell` roles, the client may treat the pane in the same window whose `shellForeground` is true as the terminal. If there is none, it disables the toggle.
 - **Agent state** (`running`, `waiting`, `idle`, `done`, `error`) is present only when an agent runner reports it. `since` is epoch seconds. When `shellForeground` is true, the state is likely stale: show it as such, or as unknown.
+
+## Chat
+
+A bridge with the `chat` capability can follow the conversation of a coding agent through an agent adapter (`docs/agents.md`). The pane itself is unaffected: watching and typing work as before.
+
+1. `chat {pane}` answers `result`. On success, `chat-entries` messages follow. Each carries `chat`, the id of the chat request. The client drops any whose `chat` is not its latest chat request.
+2. `unsupported` means no adapter knows the program in that pane. Show the terminal instead.
+3. `seq` grows by one per message of a chat.
+4. `reset: true` clears the list first. It comes first, and again whenever the bridge resends everything, for example after the client fell behind or the agent started a new conversation. On a reset, `agent` names the adapter (`claude-code`), and `truncated: true` says older history exists but was not sent.
+5. Each entry has `id`, `kind` (`user`, `assistant`, `tool`, `notice`), `text`, and for a tool call `tool {name, summary, result?, error?}`. An entry replaces any earlier entry with the same `id`. A tool call is sent first without `result` and again when its result arrives.
+6. `status` is the agent's state when the message was sent, with `since` in epoch seconds. Absent means unknown, for example when the pane is back at a shell. A message with no entries carries a status change alone.
+7. `chat-ended` says the chat stopped, for example because the agent exited. Send `chat` again to follow a new one.
+
+Entries are made by the bridge from the agent's own records, which are private formats. Expect missing kinds rather than wrong ones. `assistant` text is markdown.
 
 ## Rendering a pane
 

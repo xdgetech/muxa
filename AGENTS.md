@@ -17,7 +17,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 |---|---|
 | `crates/muxa-tmux` | control-mode client, quoting, discovery, snapshot, input. The only code that talks to tmux. |
 | `crates/muxa-protocol` | wire types and version. Must match `protocol/PROTOCOL.md` and `protocol/fixtures`. |
-| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. |
+| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`). |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
 | `apple/Muxa` | the iPad app (SwiftUI). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo (DEBUG). |
@@ -52,7 +52,7 @@ Breaking one of these breaks the product promise. Each has a reason in `docs/fin
 2. **Never change the size or layout of a window or pane.** The bridge attaches with `-f ignore-size`. It never sends `refresh-client -C`, `resize-pane`, `resize-window`, `select-window`, `select-pane`, or `refresh-client -A '%p:off'`.
 3. **Target tmux objects by id** (`$n`, `@n`, `%n`), never by name. Names resolve ambiguously.
 4. **Untrusted input stays data.** Pane ids are validated. Every value placed in a tmux command line goes through the quoting function in `muxa-tmux`. No other path builds command lines.
-5. **Pane bytes never reach logs.** Log ids, sizes and errors, not terminal content.
+5. **Pane bytes and agent transcripts never reach logs.** Log ids, sizes and errors, not terminal or conversation content.
 6. **No invented agent state.** Report the state an adapter supplies, with its age. Otherwise report `unknown`.
 7. **Read tmux output as bytes.** `%output` carries raw non-UTF-8 bytes.
 
@@ -81,5 +81,5 @@ Breaking one of these breaks the product promise. Each has a reason in `docs/fin
 
 ## Git
 
-- Work on a branch. Commits use `<type>: <description>` (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`). The subject is at most 72 characters.
-- Open pull requests as drafts. A human marks them ready.
+- For now, commits go straight to `main` after `make check`. Commits use `<type>: <description>` (`feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`). The subject is at most 72 characters.
+- When pull requests are used again, open them as drafts. A human marks them ready.

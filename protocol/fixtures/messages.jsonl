@@ -9,3 +9,7 @@
 {"type":"pane-gone","watch":3,"pane":"%12"}
 {"type":"pane-gone","watch":3,"pane":"%12","reason":"tmux: server exited"}
 {"type":"bye","reason":"idle timeout"}
+{"type":"result","id":10,"error":{"code":"unsupported","message":"no agent adapter knows the program in pane %12"}}
+{"type":"chat-entries","chat":10,"seq":1,"reset":true,"entries":[{"id":"u:1","kind":"user","text":"Fix the failing test"},{"id":"a:m1","kind":"assistant","text":"Running the tests **first**."},{"id":"t:call1","kind":"tool","tool":{"name":"Bash","summary":"cargo test","result":"1 failed"}}],"status":{"state":"running","since":1767225600},"agent":"claude-code","truncated":true}
+{"type":"chat-entries","chat":10,"seq":2,"entries":[{"id":"t:call1","kind":"tool","tool":{"name":"Bash","summary":"cargo test","result":"error: could not compile","error":true}},{"id":"n:2","kind":"notice","text":"Interrupted"}]}
+{"type":"chat-ended","chat":10,"reason":"the transcript was removed"}

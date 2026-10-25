@@ -17,6 +17,10 @@ public enum Message: Equatable, Sendable {
     case sessionsChanged
     /// The watched pane no longer exists.
     case paneGone(watch: UInt64, pane: String, reason: String?)
+    /// New or changed entries of a chat; see `ChatUpdate`.
+    case chatEntries(ChatUpdate)
+    /// The chat stopped, e.g. the agent exited.
+    case chatEnded(chat: UInt64, reason: String)
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -35,6 +39,8 @@ public struct ErrorBody: Codable, Equatable, Sendable {
 
 public enum ErrorCode: Equatable, Sendable {
     case badRequest, invalidPane, noPane, unsupportedKey, tooLarge, tmux, `internal`
+    /// No agent adapter knows the program in the pane.
+    case unsupported
     /// A code added by a newer bridge.
     case other(String)
 }
@@ -43,7 +49,7 @@ extension ErrorCode: Codable {
     private static let names: [(ErrorCode, String)] = [
         (.badRequest, "bad-request"), (.invalidPane, "invalid-pane"), (.noPane, "no-pane"),
         (.unsupportedKey, "unsupported-key"), (.tooLarge, "too-large"), (.tmux, "tmux"),
-        (.internal, "internal"),
+        (.internal, "internal"), (.unsupported, "unsupported"),
     ]
 
     public var name: String {
@@ -65,7 +71,7 @@ extension ErrorCode: Codable {
 extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
-        case watch, pane, cols, rows, data, reason
+        case watch, pane, cols, rows, data, reason, chat
     }
 
     public init(from decoder: any Decoder) throws {
@@ -102,6 +108,12 @@ extension Message: Codable {
                 watch: try c.decode(UInt64.self, forKey: .watch),
                 pane: try c.decode(String.self, forKey: .pane),
                 reason: try c.decodeIfPresent(String.self, forKey: .reason))
+        case "chat-entries":
+            self = .chatEntries(try ChatUpdate(from: decoder))
+        case "chat-ended":
+            self = .chatEnded(
+                chat: try c.decode(UInt64.self, forKey: .chat),
+                reason: try c.decode(String.self, forKey: .reason))
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -142,6 +154,13 @@ extension Message: Codable {
             try c.encode(watch, forKey: .watch)
             try c.encode(pane, forKey: .pane)
             try c.encodeIfPresent(reason, forKey: .reason)
+        case .chatEntries(let update):
+            try c.encode("chat-entries", forKey: .type)
+            try update.encode(to: encoder)
+        case .chatEnded(let chat, let reason):
+            try c.encode("chat-ended", forKey: .type)
+            try c.encode(chat, forKey: .chat)
+            try c.encode(reason, forKey: .reason)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)

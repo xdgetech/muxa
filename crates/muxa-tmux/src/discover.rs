@@ -56,6 +56,8 @@ pub struct Pane {
     pub command: String,
     pub path: String,
     pub dead: bool,
+    /// The pane's first process (`pane_pid`); 0 when tmux did not report one.
+    pub pid: u32,
     /// The foreground process is a shell. An agent state on such a pane is
     /// likely stale: the agent exited without telling its runner.
     pub shell_foreground: bool,
@@ -76,7 +78,7 @@ pub struct Session {
 const SEP: char = '\u{1f}';
 
 /// The list-panes format, one entry per field, joined by \x1f.
-const FIELDS: [&str; 21] = [
+const FIELDS: [&str; 22] = [
     "session_id",
     "session_name",
     "window_id",
@@ -99,6 +101,7 @@ const FIELDS: [&str; 21] = [
     "@agent_worktree",
     "@agent_task",
     "window_index",
+    "pane_pid",
 ];
 
 fn format(fields: &[&str]) -> String {
@@ -113,6 +116,25 @@ pub async fn list_sessions(client: &Client) -> Result<Vec<Session>, Error> {
         .command(&format!("list-panes -a -F {}", format(&FIELDS)))
         .await?;
     Ok(parse_sessions(&reply.lines))
+}
+
+/// One pane and the name of its session. Roles of a single pane are resolved
+/// without its window's other panes, so legacy agent inference does not apply.
+pub async fn pane(client: &Client, pane: PaneId) -> Result<(String, Pane), Error> {
+    let filter = quote(&format!("#{{==:#{{pane_id}},{pane}}}"));
+    let reply = client
+        .command(&format!("list-panes -a -f {filter} -F {}", format(&FIELDS)))
+        .await?;
+    parse_sessions(&reply.lines)
+        .into_iter()
+        .find_map(|s| {
+            let name = s.name;
+            s.panes
+                .into_iter()
+                .find(|p| p.id == pane)
+                .map(|p| (name, p))
+        })
+        .ok_or(Error::NoPane(pane))
 }
 
 /// The session and window that hold `pane`.
@@ -199,6 +221,7 @@ pub(crate) fn parse_sessions(lines: &[Vec<u8>]) -> Vec<Session> {
             command,
             path: row.get("pane_current_path").to_owned(),
             dead: row.get("pane_dead") == "1",
+            pid: row.get("pane_pid").parse().unwrap_or(0),
             agent: None,
         });
         tags[i].push(PaneTags {
@@ -240,6 +263,7 @@ mod tests {
                 ("pane_width", "100"),
                 ("pane_height", "40"),
                 ("pane_current_command", "zsh"),
+                ("pane_pid", "4242"),
                 ("@agent_repo", "app"),
                 ("@agent_branch", "feat/x"),
             ]),
@@ -267,6 +291,8 @@ mod tests {
             (100, 40)
         );
         assert!(sessions[0].panes[0].shell_foreground);
+        assert_eq!(sessions[0].panes[0].pid, 4242);
+        assert_eq!(sessions[0].panes[1].pid, 0);
         assert!(!sessions[0].panes[1].shell_foreground);
         assert_eq!(sessions[1].repo, None);
     }

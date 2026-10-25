@@ -109,6 +109,7 @@ mod tests {
             command: command.into(),
             path: String::new(),
             dead: false,
+            pid: 0,
             shell_foreground: is_shell(command),
             agent: None,
         }

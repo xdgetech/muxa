@@ -210,7 +210,7 @@ public final class PaneSession {
             Task { try? await refresh() }
         case .bye(let reason):
             Task { await teardown(reason: reason) }
-        case .screen, .output, .paneGone, .unknown:
+        case .screen, .output, .paneGone, .chatEntries, .chatEnded, .unknown:
             break
         }
     }

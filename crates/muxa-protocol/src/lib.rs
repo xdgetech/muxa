@@ -50,6 +50,16 @@ pub enum Request {
         pane: String,
         text: String,
     },
+    /// Follow the conversation of the agent in this pane, through an agent
+    /// adapter. Needs the `chat` capability. Replaces the current chat;
+    /// `chat-entries` for it carry this request's id as `chat`.
+    Chat {
+        id: u64,
+        pane: String,
+    },
+    Unchat {
+        id: u64,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -67,6 +77,8 @@ impl Request {
             | Request::Text { id, .. }
             | Request::Bytes { id, .. }
             | Request::Paste { id, .. }
+            | Request::Chat { id, .. }
+            | Request::Unchat { id }
             | Request::Bye { id } => *id,
         }
     }
@@ -118,8 +130,64 @@ pub enum Message {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// New or changed entries of a chat. An entry replaces any earlier one with
+    /// the same id; `reset` first clears the list. `status` is the agent's state
+    /// now, absent when unknown. `seq` grows by one per message of a chat.
+    ChatEntries {
+        chat: u64,
+        seq: u64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        reset: bool,
+        entries: Vec<ChatEntry>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<Agent>,
+        /// On a reset: the adapter that reads this agent, e.g. `claude-code`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent: Option<String>,
+        /// On a reset: earlier history exists but was not sent.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        truncated: bool,
+    },
+    /// The chat stopped, e.g. the agent's transcript became unreadable.
+    ChatEnded { chat: u64, reason: String },
     /// The bridge is exiting.
     Bye { reason: String },
+}
+
+/// One item of an agent conversation, the same for every agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEntry {
+    /// Stable within a chat; a later entry with the same id replaces this one.
+    pub id: String,
+    pub kind: ChatKind,
+    /// The prompt, the reply (markdown), or the notice. Empty for a tool call.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<ChatTool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatKind {
+    User,
+    Assistant,
+    Tool,
+    Notice,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatTool {
+    pub name: String,
+    /// One line about the call, e.g. the command or the file.
+    pub summary: String,
+    /// The start of the result, once it arrived.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub error: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,6 +204,8 @@ pub enum ErrorCode {
     NoPane,
     UnsupportedKey,
     TooLarge,
+    /// No agent adapter knows the program in this pane.
+    Unsupported,
     Tmux,
     Internal,
 }

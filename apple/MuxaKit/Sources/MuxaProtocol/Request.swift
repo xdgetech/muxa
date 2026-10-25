@@ -15,13 +15,17 @@ public enum Request: Equatable, Sendable {
     case bytes(id: UInt64, pane: String, data: Data)
     /// Pasted, bracketed when the program asked for it.
     case paste(id: UInt64, pane: String, text: String)
+    /// Follow the conversation of the agent in this pane. Needs the `chat`
+    /// capability. `chat-entries` for it carry this request's id as `chat`.
+    case chat(id: UInt64, pane: String)
+    case unchat(id: UInt64)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
     public var id: UInt64 {
         switch self {
-        case .ping(let id), .list(let id), .unwatch(let id), .bye(let id),
-            .watch(let id, _), .keys(let id, _, _), .text(let id, _, _),
+        case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .bye(let id),
+            .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
             .bytes(let id, _, _), .paste(let id, _, _):
             id
         }
@@ -40,8 +44,12 @@ extension Request: Codable {
         case .list(let id): try c.head("list", id)
         case .unwatch(let id): try c.head("unwatch", id)
         case .bye(let id): try c.head("bye", id)
+        case .unchat(let id): try c.head("unchat", id)
         case .watch(let id, let pane):
             try c.head("watch", id)
+            try c.encode(pane, forKey: .pane)
+        case .chat(let id, let pane):
+            try c.head("chat", id)
             try c.encode(pane, forKey: .pane)
         case .keys(let id, let pane, let keys):
             try c.head("keys", id)
@@ -73,6 +81,8 @@ extension Request: Codable {
         case "unwatch": self = .unwatch(id: id)
         case "bye": self = .bye(id: id)
         case "watch": self = .watch(id: id, pane: try pane())
+        case "chat": self = .chat(id: id, pane: try pane())
+        case "unchat": self = .unchat(id: id)
         case "keys": self = .keys(id: id, pane: try pane(), keys: try c.decode([String].self, forKey: .keys))
         case "text": self = .text(id: id, pane: try pane(), text: try c.decode(String.self, forKey: .text))
         case "paste": self = .paste(id: id, pane: try pane(), text: try c.decode(String.self, forKey: .text))
