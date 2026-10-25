@@ -68,6 +68,9 @@ test-app: app-project
 IOS_BUILD = build/ios
 install-ipad: app-project
 	@test -n "$(MUXA_DEVICE)" || { echo "set MUXA_DEVICE (see: xcrun devicectl list devices)"; exit 2; }
+	@# Over SSH the login keychain stays locked, and codesign then fails with errSecInternalComponent.
+	@if [ -n "$$SSH_CONNECTION" ]; then echo "unlocking the login keychain for codesign"; \
+		security unlock-keychain $$HOME/Library/Keychains/login.keychain-db; fi
 	$(XCODEBUILD) -destination 'generic/platform=iOS' -derivedDataPath $(IOS_BUILD) -allowProvisioningUpdates build
 	xcrun devicectl device install app --device '$(MUXA_DEVICE)' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app
 	xcrun devicectl device process launch --terminate-existing --device '$(MUXA_DEVICE)' \
