@@ -5,6 +5,10 @@ S="$AGENTS_SCRIPTS"
 
 default() { [ -n "$(t show-options -gqv "$1")" ] || t set-option -g "$1" "$2"; }
 
+# Where other tools find new.sh (see "For other tools" in the README). Set on
+# every load, so it follows the checkout when it moves.
+t set-option -g @agents_scripts "$S"
+
 default @agents_sidebar on
 default @agents_sidebar_width 28
 default @agents_min_width 100

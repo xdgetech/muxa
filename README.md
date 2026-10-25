@@ -119,6 +119,23 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_notify_cmd` | | command that sends the notification instead, gets `<session> <message>` (e.g. `terminal-notifier`, ntfy) |
 | `@agents_key_focus` / `_toggle` / `_new` / `_ide` | `Tab` / `b` / `N` / `O` | |
 
+## For other tools
+
+Other tools, such as [muxa](https://github.com/xdgetech/muxa), read and start
+tasks through the names below. They stay stable; a change to one is a breaking change.
+
+- `@agents_scripts`: global option, the directory of these scripts. Set on every load.
+- `new.sh <repo dir> <branch> [--base REF] [--task ID] --no-switch` starts a task,
+  or finds the running one for the branch. It prints the session name on its last
+  line. On failure it exits non-zero. A tool must pass `--no-switch`: without it,
+  the attached client moves to the new session.
+- `TMUX_AGENTS_SOCKET`: when set, the scripts use `tmux -L <it>`.
+- Session options: `@agent_repo` (repo name), `@agent_repo_dir` (main checkout),
+  `@agent_branch`, `@agent_worktree`, `@agent_task`.
+- Pane options: `@agents_role` (`ai` or `term`), `@agents_sidebar_pane` (`1` on the
+  tree), `@agent_state` (`running`, `waiting`, `idle`, `done`, `error`),
+  `@agent_state_at` (epoch seconds), `@agent_session_id`.
+
 ## Test
 
 ```sh

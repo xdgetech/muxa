@@ -34,6 +34,11 @@ attach_control() {
   [ "$(pane_opt "$work" @agent_state)" = done ]
 }
 
+@test "the plugin tells a bridge where new.sh is" {
+  [ "$(tx show-options -gqv @agents_scripts)" = "$ROOT/scripts" ]
+  [ -x "$(tx show-options -gqv @agents_scripts)/new.sh" ]
+}
+
 @test "a window made by a control client gets a sidebar" {
   attach_control
   echo "new-window -d -t base: -n made-by-control" >&4
