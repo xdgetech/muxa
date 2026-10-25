@@ -52,6 +52,7 @@ sequenceDiagram
 | `docs` | `id`, `pane` | list the pane's Markdown documents (capability `docs`); a `doc-list` comes before the `result` |
 | `doc` | `id`, `pane`, `path` | open a listed document and follow it; replaces the open document |
 | `undoc` | `id` | stop `doc-content` |
+| `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -71,13 +72,14 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `doc-list` | `docs`, optional `root`, `entries[] {path, kind, title?, mtime?}`, optional `truncated` |
 | `doc-content` | `doc`, `path`, `text`, optional `mtime` |
 | `doc-ended` | `doc`, `reason` |
+| `task-created` | `task`, `session` |
 | `bye` | `reason` |
 
-Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `tmux`, `internal`.
+Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `tmux`, `internal`.
 
 ### Sessions
 
-A session has `id`, `name`, optional `repo`, `branch`, `worktree`, `task`, and `panes`. A pane has:
+A session has `id`, `name`, optional `repo`, `repoDir` (the repo's main checkout, absolute), `branch`, `worktree`, `task`, and `panes`. A pane has:
 - `id`, `window`, `index`, `cols`, `rows`;
 - `command`: the foreground process;
 - `path`, `dead`;
@@ -111,6 +113,15 @@ A bridge with the `docs` capability serves the Markdown documents that belong to
 2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more.
 3. `doc {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `doc-content` with the whole text, and again whenever the file changes (checked every second). The client drops any whose `doc` is not its latest doc request.
 4. `doc-ended` says the document is no longer readable, for example removed, larger than 2 MiB, or a symlink to outside its directory.
+
+## Tasks
+
+A bridge with the `tasks` capability starts tasks: a git worktree on a branch, and a new tmux session with an agent in it.
+
+1. `new-task {repo, branch, base?}`. `repo` is an absolute path inside the repo, for example a session's `repoDir`. `base` is where a new branch starts; the repo's default branch when absent.
+2. On success the bridge sends `task-created {task, session}`, then `result`. `task` is the request id. `session` is the session's name; list again to find its panes. A branch that already has a session gets that session, not a second one.
+3. A wrong `repo`, `branch` or `base` is `bad-request`. A failed launch is `task-failed`; the message says why. A launch can take several seconds, and other requests are answered meanwhile.
+4. The new session is detached. No attached client moves, and no existing window or pane changes.
 
 ## Rendering a pane
 

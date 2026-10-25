@@ -2,7 +2,7 @@
 {"type":"result","id":1}
 {"type":"result","id":3,"error":{"code":"no-pane","message":"pane %12 not found"}}
 {"type":"result","error":{"code":"bad-request","message":"expected value at line 1 column 1"}}
-{"type":"result","id":2,"sessions":[{"id":"$1","name":"feature-auth","repo":"app","branch":"feat/auth","worktree":"/work/app-feat-auth","panes":[{"id":"%11","window":"@4","index":0,"role":"hidden","cols":28,"rows":50,"command":"bash","path":"/work/app-feat-auth","dead":false,"shellForeground":true},{"id":"%12","window":"@4","index":1,"role":"agent","cols":85,"rows":50,"command":"claude","path":"/work/app-feat-auth","dead":false,"shellForeground":false,"agent":{"state":"waiting","since":1792855617}},{"id":"%13","window":"@4","index":2,"role":"shell","cols":85,"rows":50,"command":"zsh","path":"/work/app-feat-auth","dead":false,"shellForeground":true}]},{"id":"$2","name":"scratch","panes":[{"id":"%20","window":"@9","index":0,"role":"unknown","cols":200,"rows":50,"command":"vim","path":"/tmp","dead":false,"shellForeground":false}]}]}
+{"type":"result","id":2,"sessions":[{"id":"$1","name":"feature-auth","repo":"app","repoDir":"/work/app","branch":"feat/auth","worktree":"/work/app-feat-auth","panes":[{"id":"%11","window":"@4","index":0,"role":"hidden","cols":28,"rows":50,"command":"bash","path":"/work/app-feat-auth","dead":false,"shellForeground":true},{"id":"%12","window":"@4","index":1,"role":"agent","cols":85,"rows":50,"command":"claude","path":"/work/app-feat-auth","dead":false,"shellForeground":false,"agent":{"state":"waiting","since":1792855617}},{"id":"%13","window":"@4","index":2,"role":"shell","cols":85,"rows":50,"command":"zsh","path":"/work/app-feat-auth","dead":false,"shellForeground":true}]},{"id":"$2","name":"scratch","panes":[{"id":"%20","window":"@9","index":0,"role":"unknown","cols":200,"rows":50,"command":"vim","path":"/tmp","dead":false,"shellForeground":false}]}]}
 {"type":"screen","watch":3,"pane":"%12","cols":85,"rows":50,"data":"G2MbWzA7MUhoaQ=="}
 {"type":"output","watch":3,"pane":"%12","data":"/2hlbGxvDQo="}
 {"type":"sessions-changed"}
@@ -16,3 +16,5 @@
 {"type":"doc-list","docs":12,"root":"app","entries":[{"path":"plans/sleepy-bonbon.md","kind":"plan","title":"Reader plan","mtime":1767225600},{"path":"README.md","kind":"repo","mtime":1767225000},{"path":"docs/plan.md","kind":"repo"}],"truncated":true}
 {"type":"doc-content","doc":13,"path":"docs/plan.md","text":"# Plan\n\n```mermaid\nflowchart LR\n  A --> B\n```\n","mtime":1767225660}
 {"type":"doc-ended","doc":13,"reason":"the file was removed"}
+{"type":"task-created","task":15,"session":"feat-search"}
+{"type":"result","id":15,"error":{"code":"task-failed","message":"could not create a worktree for feat/search: a branch named 'feat/search' already exists"}}

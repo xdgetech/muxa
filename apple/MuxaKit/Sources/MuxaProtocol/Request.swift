@@ -24,6 +24,9 @@ public enum Request: Equatable, Sendable {
     /// Open a listed document and follow its changes; `doc-content` carries this id as `doc`.
     case doc(id: UInt64, pane: String, path: String)
     case undoc(id: UInt64)
+    /// Start a task on `branch` of the repo at `repo` (capability `tasks`); a
+    /// `task-created` comes first. `base` is where a new branch starts.
+    case newTask(id: UInt64, repo: String, branch: String, base: String?)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -31,7 +34,7 @@ public enum Request: Equatable, Sendable {
         switch self {
         case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
             .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
-            .bytes(let id, _, _), .paste(let id, _, _):
+            .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _):
             id
         }
     }
@@ -39,7 +42,7 @@ public enum Request: Equatable, Sendable {
 
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
-        case type, id, pane, keys, text, data, path
+        case type, id, pane, keys, text, data, path, repo, branch, base
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -58,6 +61,11 @@ extension Request: Codable {
             try c.head("doc", id)
             try c.encode(pane, forKey: .pane)
             try c.encode(path, forKey: .path)
+        case .newTask(let id, let repo, let branch, let base):
+            try c.head("new-task", id)
+            try c.encode(repo, forKey: .repo)
+            try c.encode(branch, forKey: .branch)
+            try c.encodeIfPresent(base, forKey: .base)
         case .watch(let id, let pane):
             try c.head("watch", id)
             try c.encode(pane, forKey: .pane)
@@ -99,6 +107,11 @@ extension Request: Codable {
         case "undoc": self = .undoc(id: id)
         case "docs": self = .docs(id: id, pane: try pane())
         case "doc": self = .doc(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
+        case "new-task":
+            self = .newTask(
+                id: id, repo: try c.decode(String.self, forKey: .repo),
+                branch: try c.decode(String.self, forKey: .branch),
+                base: try c.decodeIfPresent(String.self, forKey: .base))
         case "keys": self = .keys(id: id, pane: try pane(), keys: try c.decode([String].self, forKey: .keys))
         case "text": self = .text(id: id, pane: try pane(), text: try c.decode(String.self, forKey: .text))
         case "paste": self = .paste(id: id, pane: try pane(), text: try c.decode(String.self, forKey: .text))

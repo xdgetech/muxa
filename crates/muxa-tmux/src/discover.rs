@@ -69,6 +69,8 @@ pub struct Session {
     pub id: SessionId,
     pub name: String,
     pub repo: Option<String>,
+    /// The repo's main checkout, absolute.
+    pub repo_dir: Option<String>,
     pub branch: Option<String>,
     pub worktree: Option<String>,
     pub task: Option<String>,
@@ -78,7 +80,7 @@ pub struct Session {
 const SEP: char = '\u{1f}';
 
 /// The list-panes format, one entry per field, joined by \x1f.
-const FIELDS: [&str; 22] = [
+const FIELDS: [&str; 23] = [
     "session_id",
     "session_name",
     "window_id",
@@ -97,6 +99,7 @@ const FIELDS: [&str; 22] = [
     "@agent_state",
     "@agent_state_at",
     "@agent_repo",
+    "@agent_repo_dir",
     "@agent_branch",
     "@agent_worktree",
     "@agent_task",
@@ -200,6 +203,7 @@ pub(crate) fn parse_sessions(lines: &[Vec<u8>]) -> Vec<Session> {
                     id: session,
                     name: row.get("session_name").to_owned(),
                     repo: row.opt("@agent_repo"),
+                    repo_dir: row.opt("@agent_repo_dir"),
                     branch: row.opt("@agent_branch"),
                     worktree: row.opt("@agent_worktree"),
                     task: row.opt("@agent_task"),
@@ -265,6 +269,7 @@ mod tests {
                 ("pane_current_command", "zsh"),
                 ("pane_pid", "4242"),
                 ("@agent_repo", "app"),
+                ("@agent_repo_dir", "/src/app"),
                 ("@agent_branch", "feat/x"),
             ]),
             row(&[
@@ -285,6 +290,7 @@ mod tests {
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0].name, "feat");
         assert_eq!(sessions[0].repo.as_deref(), Some("app"));
+        assert_eq!(sessions[0].repo_dir.as_deref(), Some("/src/app"));
         assert_eq!(sessions[0].panes.len(), 2);
         assert_eq!(
             (sessions[0].panes[0].cols, sessions[0].panes[0].rows),

@@ -76,6 +76,17 @@ pub enum Request {
     Undoc {
         id: u64,
     },
+    /// Start a task: a worktree of `repo` on `branch`, and a session with an agent
+    /// in it. Needs the `tasks` capability. A `task-created` comes before the `result`.
+    NewTask {
+        id: u64,
+        /// An absolute path inside the repo, e.g. a session's `repoDir`.
+        repo: String,
+        branch: String,
+        /// Where a new branch starts; the repo's default branch when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -98,6 +109,7 @@ impl Request {
             | Request::Docs { id, .. }
             | Request::Doc { id, .. }
             | Request::Undoc { id }
+            | Request::NewTask { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -190,6 +202,8 @@ pub enum Message {
     },
     /// The open document is no longer readable, e.g. it was removed.
     DocEnded { doc: u64, reason: String },
+    /// The session a `new-task` made or found, sent just before its `result`.
+    TaskCreated { task: u64, session: String },
     /// The bridge is exiting.
     Bye { reason: String },
 }
@@ -267,6 +281,8 @@ pub enum ErrorCode {
     TooLarge,
     /// No agent adapter knows the program in this pane.
     Unsupported,
+    /// The task launcher failed; the message says why.
+    TaskFailed,
     Tmux,
     Internal,
 }
@@ -278,6 +294,9 @@ pub struct Session {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// The repo's main checkout, absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

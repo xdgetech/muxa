@@ -3,18 +3,21 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var name: String
     public var repo: String?
+    /// The repo's main checkout, absolute.
+    public var repoDir: String?
     public var branch: String?
     public var worktree: String?
     public var task: String?
     public var panes: [Pane]
 
     public init(
-        id: String, name: String, repo: String? = nil, branch: String? = nil,
+        id: String, name: String, repo: String? = nil, repoDir: String? = nil, branch: String? = nil,
         worktree: String? = nil, task: String? = nil, panes: [Pane]
     ) {
         self.id = id
         self.name = name
         self.repo = repo
+        self.repoDir = repoDir
         self.branch = branch
         self.worktree = worktree
         self.task = task

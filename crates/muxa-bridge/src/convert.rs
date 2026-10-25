@@ -13,6 +13,7 @@ fn session(s: tmux::Session) -> wire::Session {
         id: s.id.to_string(),
         name: s.name,
         repo: s.repo,
+        repo_dir: s.repo_dir,
         branch: s.branch,
         worktree: s.worktree,
         task: s.task,

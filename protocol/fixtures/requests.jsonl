@@ -12,3 +12,4 @@
 {"type":"docs","id":12,"pane":"%12"}
 {"type":"doc","id":13,"pane":"%12","path":"docs/plan.md"}
 {"type":"undoc","id":14}
+{"type":"new-task","id":15,"repo":"/work/app","branch":"feat/search","base":"origin/main"}

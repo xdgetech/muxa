@@ -14,6 +14,7 @@ use crate::chat::{self, ChatTask};
 use crate::convert::{self, error_body};
 use crate::docs::{self, DocTask};
 use crate::lines::{self, Line};
+use crate::tasks::{self, TaskError};
 use crate::watch::{Command, Watcher};
 
 /// The largest request line, e.g. a paste.
@@ -28,6 +29,7 @@ pub struct Config {
     pub tmux: Options,
     pub idle: Duration,
     pub agents: Arc<Registry>,
+    pub tasks: Arc<tasks::Config>,
 }
 
 /// Why the session ended.
@@ -80,7 +82,7 @@ where
         protocol: muxa_protocol::VERSION,
         bridge: env!("CARGO_PKG_VERSION").into(),
         tmux: tmux_version,
-        capabilities: vec!["chat".into(), "docs".into()],
+        capabilities: vec!["chat".into(), "docs".into(), "tasks".into()],
     };
     if out.send(hello).await.is_err() {
         return End::WriterFailed;
@@ -118,6 +120,7 @@ where
         watch: cmd_tx,
         chat: chat_tx,
         docs: doc_tx,
+        tasks: Arc::clone(&config.tasks),
     };
 
     let end = tokio::select! {
@@ -204,6 +207,7 @@ struct Worker {
     watch: mpsc::Sender<Command>,
     chat: mpsc::Sender<chat::Command>,
     docs: mpsc::Sender<docs::Command>,
+    tasks: Arc<tasks::Config>,
 }
 
 impl Worker {
@@ -320,6 +324,35 @@ impl Worker {
             Request::Undoc { id } => {
                 return handoff(&self.docs, |ack| docs::Command::Close { id, ack }, "docs").await;
             }
+            // A launch takes seconds; keystrokes must not wait for it.
+            Request::NewTask {
+                id,
+                repo,
+                branch,
+                base,
+            } => {
+                let client = Arc::clone(&self.client);
+                let config = Arc::clone(&self.tasks);
+                let out = self.out.clone();
+                tokio::spawn(async move {
+                    let error =
+                        match start_task(&client, &config, &repo, &branch, base.as_deref()).await {
+                            Ok(session) => {
+                                let _ = out.send(Message::TaskCreated { task: id, session }).await;
+                                None
+                            }
+                            Err(e) => Some(task_error(&e)),
+                        };
+                    let _ = out
+                        .send(Message::Result {
+                            id: Some(id),
+                            error,
+                            sessions: None,
+                        })
+                        .await;
+                });
+                return None;
+            }
             Request::Unchat { id } => {
                 return handoff(&self.chat, |ack| chat::Command::Stop { id, ack }, "chat").await;
             }
@@ -349,6 +382,31 @@ impl Worker {
         make: impl FnOnce(oneshot::Sender<()>) -> Command,
     ) -> Option<Result<(), ErrorBody>> {
         handoff(&self.watch, make, "pane watcher").await
+    }
+}
+
+async fn start_task(
+    client: &Client,
+    config: &tasks::Config,
+    repo: &str,
+    branch: &str,
+    base: Option<&str>,
+) -> Result<String, TaskError> {
+    let req = tasks::validate(repo, branch, base).await?;
+    let launcher = tasks::pick(config, client).await;
+    let result = launcher.launch(client, &req).await;
+    match &result {
+        Ok(_) => tracing::info!(launcher = launcher.id(), "task started"),
+        Err(e) => tracing::warn!(launcher = launcher.id(), error = %e, "task failed"),
+    }
+    result
+}
+
+fn task_error(e: &TaskError) -> ErrorBody {
+    match e {
+        TaskError::Invalid(m) => error_body(ErrorCode::BadRequest, m.clone()),
+        TaskError::Failed(m) => error_body(ErrorCode::TaskFailed, m.clone()),
+        TaskError::Tmux(e) => convert::error(e),
     }
 }
 

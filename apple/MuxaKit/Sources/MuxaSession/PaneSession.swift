@@ -54,6 +54,8 @@ public final class PaneSession {
     @ObservationIgnored private var docId: UInt64?
     /// `doc-list` messages waiting for their `result`.
     @ObservationIgnored private var listings: [UInt64: DocListing] = [:]
+    /// Session names from `task-created`, by request id, until the result arrives.
+    @ObservationIgnored private var createdTasks: [UInt64: String] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
     /// Ids of input requests in flight; their results only matter when they fail.
     @ObservationIgnored private var inputs: Set<UInt64> = []
@@ -186,6 +188,24 @@ public final class PaneSession {
         try? await request { .undoc(id: $0) }
     }
 
+    public var canStartTasks: Bool { capabilities.contains("tasks") }
+
+    /// Starts a task on `branch` of the repo at `repo`, and returns its session's
+    /// name once the session list has it.
+    public func newTask(repo: String, branch: String, base: String?) async throws -> String {
+        var requestId: UInt64 = 0
+        try await request { id in
+            requestId = id
+            return .newTask(id: id, repo: repo, branch: branch, base: base)
+        }
+        // The name arrives just before the result.
+        guard let name = createdTasks.removeValue(forKey: requestId) else {
+            throw Failure.bridge(ErrorBody(code: .internal, message: "the bridge did not name the task's session"))
+        }
+        try await refresh()
+        return name
+    }
+
     /// Asks for the watched pane's whole screen again, e.g. after the view lost it.
     public func resync() async {
         guard let pane = watchedPane else { return }
@@ -303,6 +323,8 @@ public final class PaneSession {
             chat?.ended = reason
         case .docList(let listing):
             listings[listing.docs] = listing
+        case .taskCreated(let task, let session):
+            createdTasks[task] = session
         case .docContent(let id, _, let text, let mtime) where id == docId:
             doc?.text = text
             doc?.mtime = mtime
@@ -341,6 +363,7 @@ public final class PaneSession {
         chatId = nil
         docId = nil
         listings = [:]
+        createdTasks = [:]
         inputs = []
         let failed = pending
         pending = [:]

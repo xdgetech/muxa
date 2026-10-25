@@ -48,6 +48,15 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
         case .docs(let id, _):
             emit(.docList(DocListing(docs: id, root: "app", entries: docs)))
             emit(.result(id: id, error: nil, sessions: nil))
+        case .newTask(let id, _, let branch, _):
+            if branch.hasPrefix("-") {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "bad branch"), sessions: nil))
+                return
+            }
+            let name = branch.replacingOccurrences(of: "/", with: "-")
+            sessions.append(Session(id: "$9", name: name, panes: []))
+            emit(.taskCreated(task: id, session: name))
+            emit(.result(id: id, error: nil, sessions: nil))
         case .chat(let id, let pane) where unsupportedChats.contains(pane):
             emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "no adapter"), sessions: nil))
         case .bye: out.finish()
@@ -72,6 +81,23 @@ struct PaneSessionTests {
             return bridge
         }
         return (session, screen, bridge)
+    }
+
+    @Test func aNewTaskReturnsItsSessionAfterListingAgain() async throws {
+        let bridge = FakeBridge()
+        bridge.capabilities = ["tasks"]
+        let (session, _, _) = try await connected(bridge)
+        #expect(session.canStartTasks)
+        let name = try await session.newTask(repo: "/w/app", branch: "feat/x", base: nil)
+        #expect(name == "feat-x")
+        #expect(session.sessions.map(\.name).contains("feat-x"))
+        #expect(bridge.received.contains {
+            if case .newTask(_, "/w/app", "feat/x", nil) = $0 { true } else { false }
+        })
+
+        await #expect(throws: PaneSession.Failure.self) {
+            try await session.newTask(repo: "/w/app", branch: "-x", base: nil)
+        }
     }
 
     @Test func connectReadsHelloAndLists() async throws {

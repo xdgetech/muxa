@@ -7,6 +7,7 @@ mod convert;
 mod docs;
 mod lines;
 mod server;
+mod tasks;
 mod watch;
 
 use std::process::ExitCode;
@@ -43,11 +44,18 @@ fn main() -> ExitCode {
         eprintln!("muxa-bridge: tmux not found; pass --tmux PATH");
         return ExitCode::from(2);
     };
+    let tasks = tasks::Config {
+        launcher: args.task_launcher,
+        command: args.task_command,
+        tmux: tmux.clone(),
+        socket: args.socket.clone(),
+    };
     let config = server::Config {
         tmux: muxa_tmux::Options {
             tmux,
             socket: args.socket,
         },
+        tasks: std::sync::Arc::new(tasks),
         idle: args.idle,
         agents: std::sync::Arc::new(agents::Registry::standard(
             &args.agent_dirs.into_iter().collect(),
