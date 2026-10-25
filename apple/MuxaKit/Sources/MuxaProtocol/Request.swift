@@ -33,6 +33,9 @@ public enum Request: Equatable, Sendable {
     /// Start a task on `branch` of the repo at `repo` (capability `tasks`); a
     /// `task-created` comes first. `base` is where a new branch starts.
     case newTask(id: UInt64, repo: String, branch: String, base: String?)
+    /// Close a task's session (capability `close-task`). The worktree goes only as
+    /// `mode` allows, never with uncommitted changes; the branch stays.
+    case closeTask(id: UInt64, session: String, mode: CloseMode)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -41,7 +44,7 @@ public enum Request: Equatable, Sendable {
         case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
             .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
-            .changes(let id, _), .diff(let id, _, _), .undiff(let id):
+            .changes(let id, _), .diff(let id, _, _), .undiff(let id), .closeTask(let id, _, _):
             id
         }
     }
@@ -49,7 +52,7 @@ public enum Request: Equatable, Sendable {
 
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
-        case type, id, pane, keys, text, data, path, repo, branch, base
+        case type, id, pane, keys, text, data, path, repo, branch, base, session, mode
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -62,6 +65,10 @@ extension Request: Codable {
         case .unchat(let id): try c.head("unchat", id)
         case .undoc(let id): try c.head("undoc", id)
         case .undiff(let id): try c.head("undiff", id)
+        case .closeTask(let id, let session, let mode):
+            try c.head("close-task", id)
+            try c.encode(session, forKey: .session)
+            try c.encode(mode, forKey: .mode)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -121,6 +128,10 @@ extension Request: Codable {
         case "unchat": self = .unchat(id: id)
         case "undoc": self = .undoc(id: id)
         case "undiff": self = .undiff(id: id)
+        case "close-task":
+            self = .closeTask(
+                id: id, session: try c.decode(String.self, forKey: .session),
+                mode: try c.decode(CloseMode.self, forKey: .mode))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff": self = .diff(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
         case "docs": self = .docs(id: id, pane: try pane())
@@ -146,4 +157,14 @@ extension KeyedEncodingContainer<Request.Key> {
         try encode(type, forKey: .type)
         try encode(id, forKey: .id)
     }
+}
+
+/// What happens to a task's worktree when it closes.
+public enum CloseMode: String, Codable, Sendable {
+    /// Remove it when the branch is merged; otherwise refuse.
+    case close
+    /// Keep it.
+    case keep
+    /// Remove it even when the branch is not merged.
+    case force
 }

@@ -16,3 +16,4 @@
 {"type":"changes","id":16,"pane":"%12"}
 {"type":"diff","id":17,"pane":"%12","path":"src/main.rs"}
 {"type":"undiff","id":18}
+{"type":"close-task","id":19,"session":"$3","mode":"keep"}

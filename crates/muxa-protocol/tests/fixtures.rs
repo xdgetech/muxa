@@ -26,7 +26,7 @@ fn round_trip<T: DeserializeOwned + Serialize>(file: &str) -> usize {
 
 #[test]
 fn requests_round_trip() {
-    assert_eq!(round_trip::<Request>("requests.jsonl"), 18);
+    assert_eq!(round_trip::<Request>("requests.jsonl"), 19);
 }
 
 #[test]

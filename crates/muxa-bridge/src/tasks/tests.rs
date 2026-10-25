@@ -114,14 +114,18 @@ async fn requests_are_checked_at_the_boundary() {
 #[tokio::test]
 async fn a_new_branch_gets_a_worktree_and_a_second_launch_reuses_it() {
     let app = repo("worktree");
-    let first = builtin::worktree(&request(&app, "feat/x")).await.unwrap();
+    let first = builtin::worktree(&request(&app, "feat/x"))
+        .await
+        .unwrap()
+        .path;
     assert_eq!(first, worktree_path(&app, "feat/x"));
     assert_eq!(sh(&first, &["branch", "--show-current"]), "feat/x");
     // From inside the worktree, the main checkout is still the repo.
     assert_eq!(main_checkout(&first).await.unwrap(), app);
 
     let again = builtin::worktree(&request(&first, "feat/x")).await.unwrap();
-    assert_eq!(again, first);
+    assert_eq!(again.path, first);
+    assert_eq!(again.main, app);
 }
 
 #[tokio::test]

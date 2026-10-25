@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use muxa_protocol::{ErrorBody, ErrorCode, Message, Request};
+use muxa_protocol::{CloseMode, ErrorBody, ErrorCode, Message, Request};
 use muxa_tmux::{Client, Options, PaneId};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::{mpsc, oneshot};
@@ -88,6 +88,7 @@ where
             "docs".into(),
             "tasks".into(),
             "changes".into(),
+            "close-task".into(),
         ],
     };
     if out.send(hello).await.is_err() {
@@ -417,6 +418,25 @@ impl Worker {
                 });
                 return None;
             }
+            Request::CloseTask { id, session, mode } => {
+                let client = Arc::clone(&self.client);
+                let config = Arc::clone(&self.tasks);
+                let out = self.out.clone();
+                tokio::spawn(async move {
+                    let error = close_task(&client, &config, &session, mode)
+                        .await
+                        .err()
+                        .map(|e| task_error(&e));
+                    let _ = out
+                        .send(Message::Result {
+                            id: Some(id),
+                            error,
+                            sessions: None,
+                        })
+                        .await;
+                });
+                return None;
+            }
             Request::Unchat { id } => {
                 return handoff(&self.chat, |ack| chat::Command::Stop { id, ack }, "chat").await;
             }
@@ -462,6 +482,26 @@ async fn start_task(
     match &result {
         Ok(_) => tracing::info!(launcher = launcher.id(), "task started"),
         Err(e) => tracing::warn!(launcher = launcher.id(), error = %e, "task failed"),
+    }
+    result
+}
+
+async fn close_task(
+    client: &Client,
+    config: &tasks::Config,
+    session: &str,
+    mode: CloseMode,
+) -> Result<(), TaskError> {
+    let task = tasks::find_task(client, session).await?;
+    let launcher = tasks::pick(config, client).await;
+    let result = launcher.close(client, &task, mode).await;
+    match &result {
+        Ok(()) => {
+            tracing::info!(launcher = launcher.id(), session = %task.id, ?mode, "task closed")
+        }
+        Err(e) => {
+            tracing::warn!(launcher = launcher.id(), session = %task.id, error = %e, "closing failed")
+        }
     }
     result
 }

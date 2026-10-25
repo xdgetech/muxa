@@ -11,7 +11,8 @@ use std::pin::Pin;
 use std::process::Output;
 use std::time::Duration;
 
-use muxa_tmux::Client;
+use muxa_protocol::CloseMode;
+use muxa_tmux::{Client, SessionId};
 use tokio::process::Command;
 
 /// A whole launch, worktree and session, at most.
@@ -40,6 +41,17 @@ pub enum TaskError {
 }
 
 pub type Launch<'a> = Pin<Box<dyn Future<Output = Result<String, TaskError>> + Send + 'a>>;
+pub type Closing<'a> = Pin<Box<dyn Future<Output = Result<(), TaskError>> + Send + 'a>>;
+
+/// A task's session, as its tags describe it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskSession {
+    pub id: SessionId,
+    pub name: String,
+    pub worktree: PathBuf,
+    /// The main checkout; None for sessions tagged before it was recorded.
+    pub repo_dir: Option<PathBuf>,
+}
 
 /// A way to start tasks. One instance serves every request.
 pub trait TaskLauncher: Send + Sync {
@@ -48,6 +60,35 @@ pub trait TaskLauncher: Send + Sync {
     /// Starts the task, or finds the one already running for the branch, and
     /// returns its session name. It must never move an attached client.
     fn launch<'a>(&'a self, client: &'a Client, req: &'a TaskRequest) -> Launch<'a>;
+    /// Closes the task's session, and removes its worktree as `mode` allows.
+    /// A worktree with uncommitted changes is never removed; the branch is kept.
+    fn close<'a>(
+        &'a self,
+        client: &'a Client,
+        task: &'a TaskSession,
+        mode: CloseMode,
+    ) -> Closing<'a>;
+}
+
+/// The task session with this id; only a session with a worktree is a task.
+pub async fn find_task(client: &Client, id: &str) -> Result<TaskSession, TaskError> {
+    let id: SessionId = id
+        .parse()
+        .map_err(|_| TaskError::Invalid(format!("{id:?} is not a session id")))?;
+    let sessions = muxa_tmux::list_sessions(client).await?;
+    let s = sessions
+        .into_iter()
+        .find(|s| s.id == id)
+        .ok_or_else(|| TaskError::Invalid(format!("session {id} does not exist")))?;
+    let worktree = s.worktree.ok_or_else(|| {
+        TaskError::Invalid(format!("{} is not a task: it has no worktree", s.name))
+    })?;
+    Ok(TaskSession {
+        id,
+        name: s.name,
+        worktree: worktree.into(),
+        repo_dir: s.repo_dir.map(PathBuf::from),
+    })
 }
 
 /// How the bridge starts tasks, from its flags.

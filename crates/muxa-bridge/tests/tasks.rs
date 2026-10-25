@@ -244,3 +244,167 @@ async fn bad_requests_start_nothing() {
     }
     assert_eq!(sessions(&server), ["work"]);
 }
+
+async fn close_task(
+    bridge: &mut Bridge,
+    session: &str,
+    mode: &str,
+) -> Option<muxa_protocol::ErrorBody> {
+    let result = bridge
+        .request(json!({"type": "close-task", "session": session, "mode": mode}))
+        .await;
+    let Message::Result { error, .. } = result else {
+        panic!("{result:?}")
+    };
+    error
+}
+
+fn commit_in(dir: &Path, file: &str) {
+    std::fs::write(dir.join(file), "work\n").unwrap();
+    git(dir, &["add", "."]);
+    git(
+        dir,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "work",
+        ],
+    );
+}
+
+#[tokio::test]
+async fn the_builtin_launcher_closes_only_what_can_be_lost_safely() {
+    let server = Server::start();
+    let repo = Repo::new("close");
+    let (mut bridge, hello) = Bridge::start(
+        &server,
+        &["--task-launcher", "builtin", "--task-command", "sleep 600"],
+    )
+    .await;
+    let Message::Hello { capabilities, .. } = hello else {
+        panic!("{hello:?}")
+    };
+    assert!(capabilities.contains(&"close-task".to_owned()));
+    let worktrees = repo.root.join("repos/.worktrees");
+
+    // A task with work on its branch, watched by this bridge.
+    new_task(&mut bridge, &repo.app, "feat/x").await;
+    let x = server.tmux(&["display-message", "-p", "-t", "=feat-x:", "#{session_id}"]);
+    assert_eq!(
+        server.tmux(&["show-options", "-v", "-t", "=feat-x:", "@agent_worktree"]),
+        worktrees.join("app-feat-x").display().to_string()
+    );
+    let wt = worktrees.join("app-feat-x");
+    let pane = server.pane("=feat-x:");
+    let watch = bridge.request(json!({"type": "watch", "pane": pane})).await;
+    assert!(
+        matches!(watch, Message::Result { error: None, .. }),
+        "{watch:?}"
+    );
+
+    std::fs::write(wt.join("README.md"), "changed\n").unwrap();
+    let error = close_task(&mut bridge, &x, "force")
+        .await
+        .expect("closed with changes");
+    assert_eq!(error.code, ErrorCode::TaskFailed);
+    assert!(
+        error.message.contains("uncommitted changes"),
+        "{}",
+        error.message
+    );
+
+    git(&wt, &["checkout", "--", "README.md"]);
+    commit_in(&wt, "work.txt");
+    let error = close_task(&mut bridge, &x, "close")
+        .await
+        .expect("closed unmerged");
+    assert!(error.message.contains("not merged"), "{}", error.message);
+    assert!(sessions(&server).contains(&"feat-x".to_owned()));
+
+    // Keep: the session goes, the worktree stays, and this bridge keeps working.
+    assert_eq!(close_task(&mut bridge, &x, "keep").await, None);
+    assert!(!sessions(&server).contains(&"feat-x".to_owned()));
+    assert!(wt.join("work.txt").is_file());
+    let ping = bridge.request(json!({"type": "ping"})).await;
+    assert!(
+        matches!(ping, Message::Result { error: None, .. }),
+        "{ping:?}"
+    );
+
+    // A branch with nothing new is merged: its worktree goes, the branch stays.
+    new_task(&mut bridge, &repo.app, "feat/y").await;
+    let y = server.tmux(&["display-message", "-p", "-t", "=feat-y:", "#{session_id}"]);
+    assert_eq!(close_task(&mut bridge, &y, "close").await, None);
+    assert!(!worktrees.join("app-feat-y").exists());
+    git(
+        &repo.app,
+        &["rev-parse", "--verify", "-q", "refs/heads/feat/y"],
+    );
+
+    // Force removes an unmerged worktree, still keeping the branch.
+    new_task(&mut bridge, &repo.app, "feat/z").await;
+    let z = server.tmux(&["display-message", "-p", "-t", "=feat-z:", "#{session_id}"]);
+    commit_in(&worktrees.join("app-feat-z"), "z.txt");
+    assert_eq!(close_task(&mut bridge, &z, "force").await, None);
+    assert!(!worktrees.join("app-feat-z").exists());
+    git(
+        &repo.app,
+        &["rev-parse", "--verify", "-q", "refs/heads/feat/z"],
+    );
+}
+
+#[tokio::test]
+async fn sessions_without_a_worktree_are_not_tasks() {
+    let server = Server::start();
+    let (mut bridge, _) = Bridge::start(&server, &["--task-launcher", "builtin"]).await;
+    let work = server.tmux(&["display-message", "-p", "-t", "=work:", "#{session_id}"]);
+    for session in [work.as_str(), "$999", "work"] {
+        let error = close_task(&mut bridge, session, "close")
+            .await
+            .expect("closed");
+        assert_eq!(error.code, ErrorCode::BadRequest, "{session}");
+    }
+    assert_eq!(sessions(&server), ["work"]);
+}
+
+#[tokio::test]
+async fn tmux_agents_closes_with_its_own_script() {
+    let server = Server::start();
+    let repo = Repo::new("agents-close");
+    let scripts = repo.root.join("scripts");
+    let new_sh = fake_new_sh(&scripts, false);
+    std::fs::write(
+        scripts.join("close.sh"),
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            scripts.join("close-args").display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(
+        scripts.join("close.sh"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let flag = format!("tmux-agents={}", new_sh.display());
+    let (mut bridge, _) = Bridge::start(&server, &["--task-launcher", &flag]).await;
+    new_task(&mut bridge, &repo.app, "feat/x").await;
+    let id = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        "=fake-task:",
+        "#{session_id}",
+    ]);
+    server.tmux(&["set-option", "-t", &id, "@agent_worktree", "/somewhere"]);
+
+    assert_eq!(close_task(&mut bridge, &id, "keep").await, None);
+    let args = std::fs::read_to_string(scripts.join("close-args")).unwrap();
+    assert_eq!(args.lines().collect::<Vec<_>>(), ["--keep", "fake-task"]);
+}

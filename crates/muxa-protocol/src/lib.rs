@@ -103,6 +103,15 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         base: Option<String>,
     },
+    /// Close a task's session: one with a worktree. Needs the `close-task`
+    /// capability. The worktree is removed only as `mode` allows, and never
+    /// with uncommitted changes; the branch is kept.
+    CloseTask {
+        id: u64,
+        /// `$n`
+        session: String,
+        mode: CloseMode,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -129,6 +138,7 @@ impl Request {
             | Request::Changes { id, .. }
             | Request::Diff { id, .. }
             | Request::Undiff { id }
+            | Request::CloseTask { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -269,6 +279,17 @@ pub enum DocKind {
     Repo,
     /// Written by the pane's agent outside the repo.
     Plan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CloseMode {
+    /// Remove the worktree when the branch is merged; otherwise refuse.
+    Close,
+    /// Keep the worktree.
+    Keep,
+    /// Remove the worktree even when the branch is not merged.
+    Force,
 }
 
 /// A file that differs from HEAD.

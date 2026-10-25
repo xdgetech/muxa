@@ -56,6 +56,7 @@ sequenceDiagram
 | `diff` | `id`, `pane`, `path` | show a listed file's diff and follow it; replaces the open diff |
 | `undiff` | `id` | stop `diff-content` |
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
+| `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -138,6 +139,12 @@ A bridge with the `tasks` capability starts tasks: a git worktree on a branch, a
 2. On success the bridge sends `task-created {task, session}`, then `result`. `task` is the request id. `session` is the session's name; list again to find its panes. A branch that already has a session gets that session, not a second one.
 3. A wrong `repo`, `branch` or `base` is `bad-request`. A failed launch is `task-failed`; the message says why. A launch can take several seconds, and other requests are answered meanwhile.
 4. The new session is detached. No attached client moves, and no existing window or pane changes.
+5. `close-task {session, mode}` closes a task: a session with a `worktree`. `session` is its id. Other sessions are `bad-request`. `mode` says what happens to the worktree:
+   - `close`: removed when the branch is merged; otherwise the request fails and nothing changes.
+   - `keep`: kept.
+   - `force`: removed even when the branch is not merged.
+
+   A worktree with uncommitted changes is never removed: the request fails and nothing changes. The branch is always kept. Clients attached to the session, the bridge's own included, move to the most recently used other session before it closes. The `result` comes when it is closed; a failure is `task-failed` with the reason.
 
 ## Rendering a pane
 
