@@ -1,5 +1,5 @@
 // Shared settings. Put your own team and bundle id in Local.xcconfig (not checked in):
 //   DEVELOPMENT_TEAM = ABCDE12345
 //   MUXA_BUNDLE_ID = com.example.muxa
-MUXA_BUNDLE_ID = app.muxa.Muxa
+MUXA_BUNDLE_ID = xdge.tech.Muxa
 #include? "Local.xcconfig"
