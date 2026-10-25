@@ -225,6 +225,8 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     }
 
     private func contentChanged(reset: Bool) {
+        // A new screen starts at its top; the last pane's scroll position means nothing here.
+        if reset { scroll.contentOffset = .zero }
         let wasVisible = reset || cursorWasVisible
         // SwiftTerm moves its caret after the feed is processed.
         DispatchQueue.main.async { [weak self] in

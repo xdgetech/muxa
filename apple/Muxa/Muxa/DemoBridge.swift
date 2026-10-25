@@ -44,7 +44,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             Pane(id: "%4", window: "@3", index: 0, role: .shell, cols: 100, rows: 60, command: "zsh",
                  path: "/tmp", dead: false, shellForeground: true),
         ]),
+        // A tall agent with its prompt at the bottom, beside a shell that has just started.
+        Session(id: "$6", name: "pair", panes: [
+            Pane(id: "%7", window: "@6", index: 0, role: .agent, cols: 100, rows: 60, command: "claude",
+                 path: "/tmp", dead: false, shellForeground: false),
+            Pane(id: "%8", window: "@6", index: 1, role: .shell, cols: 100, rows: 60, command: "zsh",
+                 path: "/tmp", dead: false, shellForeground: true),
+        ]),
     ]
+    /// Shells with nothing run yet: a title bar on the first row and the prompt under it.
+    static let freshShells: Set<String> = ["%8"]
 
     init() {
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
@@ -226,6 +235,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     static func screen(for p: Pane) -> Data {
         let cols = Int(p.cols), rows = Int(p.rows)
         var s = "\u{1b}c"
+        if freshShells.contains(p.id) {
+            s += "\u{1b}[1;1H\u{1b}[7m" + "\(p.command) — pane \(p.id) \(cols)x\(rows)".padding(toLength: cols, withPad: " ", startingAt: 0)
+            s += "\u{1b}[0m\u{1b}[2;1H$ "
+            return Data(s.utf8)
+        }
         let ruler = (0..<cols).map { String($0 % 10) }.joined()
         s += "\u{1b}[1;1H\u{1b}[36m" + ruler + "\u{1b}[0m"
         s += "\u{1b}[2;1H\u{1b}[1m\(p.command) — pane \(p.id) \(cols)x\(rows)\u{1b}[0m"

@@ -30,6 +30,7 @@ public final class PaneTerminalView: UIView, PaneRenderer {
     private var fed = false
     private let replies = DropReplies()
     private var fitted: (size: CGSize, cols: Int, rows: Int, mode: FitMode)?
+    private var cell: CGSize?
 
     public override init(frame: CGRect) {
         terminalView = TerminalView(frame: .zero, font: nil, options: TerminalOptions(cols: 80, rows: 24, scrollback: 0))
@@ -65,9 +66,15 @@ public final class PaneTerminalView: UIView, PaneRenderer {
         onUpdate(false)
     }
 
-    /// The cursor cell, in this view's coordinates.
+    /// The cursor cell, in this view's coordinates. Read from the emulator: SwiftTerm
+    /// moves its caret view on a later frame, so the caret can still be the last screen's.
     public var cursorFrame: CGRect {
-        terminalView.convert(terminalView.caretFrame, to: self)
+        guard let cell else { return .zero }
+        let cursor = terminalView.terminalStateSnapshot().cursor
+        let origin = terminalView.frame.origin
+        return CGRect(
+            x: origin.x + cell.width * CGFloat(cursor.col), y: origin.y + cell.height * CGFloat(cursor.row),
+            width: cell.width, height: cell.height)
     }
 
     /// The height the grid needs at `width` in `.width` mode.
@@ -104,6 +111,7 @@ public final class PaneTerminalView: UIView, PaneRenderer {
         let fontSize = metrics.largestFontSize(cols: cols, rows: fitMode == .whole ? rows : nil, in: size)
         let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         let cell = metrics.cell(for: font)
+        self.cell = cell
 
         // Less than one cell of slack, so SwiftTerm's floor(frame / cell) is exactly the grid.
         let width = cell.width * CGFloat(cols) + min(0.5, cell.width / 2)

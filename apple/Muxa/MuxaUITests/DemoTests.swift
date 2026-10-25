@@ -74,6 +74,32 @@ final class DemoTests: XCTestCase {
         XCTAssertEqual(pane.frame.minY, reading, accuracy: 1)
     }
 
+    /// A fresh shell opened from a tall agent pane shows its first row: the view
+    /// does not keep the agent's scroll position or cursor.
+    @MainActor
+    func testFreshShellShowsItsTopAfterTheAgent() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        pane.typeKey("6", modifierFlags: .command)
+        XCTAssertTrue(waitFor(pane, containing: "pane %7 100x60"))
+        sleep(1)
+        let window = app.windows.firstMatch.frame
+        // The agent's prompt is near the bottom, so the view scrolled down to it.
+        XCTAssertLessThan(pane.frame.minY, window.minY)
+
+        pane.typeKey("j", modifierFlags: .command)
+        XCTAssertTrue(waitFor(pane, containing: "pane %8 100x60"))
+        sleep(1)
+        XCTAssertGreaterThanOrEqual(pane.frame.minY, window.minY, "the shell's first row is scrolled out of view")
+        save("landscape-fresh-shell")
+    }
+
     /// The agent pane opens as a chat; prompts reach the same pane; Raw is one key away.
     @MainActor
     func testPrettyViewSendsPromptsAndSwitchesToRaw() throws {
