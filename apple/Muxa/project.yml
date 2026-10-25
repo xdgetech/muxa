@@ -1,7 +1,7 @@
 # Generates Muxa.xcodeproj (not checked in): `make app-project`, or `xcodegen` in this directory.
 name: Muxa
 options:
-  bundleIdPrefix: xdge.tech
+  bundleIdPrefix: tech.xdge
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
