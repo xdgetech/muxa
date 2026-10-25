@@ -10,16 +10,24 @@ struct SessionSwitcher: View {
 
     var body: some View {
         NavigationStack {
-            List(matches) { s in
-                Button {
-                    open(s)
-                } label: {
-                    SessionRow(session: s, current: s.id == model.currentSession?.id)
+            List {
+                ForEach(matches.groupedByRepo(), id: \.repo) { group in
+                    Section {
+                        ForEach(group.sessions) { s in
+                            Button {
+                                open(s)
+                            } label: {
+                                SessionRow(session: s, current: s.id == model.currentSession?.id)
+                            }
+                        }
+                    } header: {
+                        RepoHeader(repo: group.repo)
+                    }
                 }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
             .onSubmit(of: .search) {
-                if let first = matches.first { open(first) }
+                if let first = matches.groupedByRepo().first?.sessions.first { open(first) }
             }
             .navigationTitle("Sessions")
             .navigationBarTitleDisplayMode(.inline)
@@ -59,7 +67,8 @@ struct SessionRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.name).font(.headline)
-                if let detail = [session.repo, session.branch].compactMap({ $0 }).joined(separator: " · ").nonEmpty {
+                // The repo is the section header; the branch tells sessions apart.
+                if let detail = [session.branch, session.task].compactMap({ $0 }).joined(separator: " · ").nonEmpty {
                     Text(detail).font(.caption).foregroundStyle(.secondary)
                 }
             }

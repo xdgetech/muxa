@@ -32,3 +32,32 @@ extension Agent {
         shellForeground ? nil : state
     }
 }
+
+/// Sessions of one repo, as the agent runner tags them (`@agent_repo`).
+public struct RepoGroup: Equatable, Sendable {
+    /// Nil for sessions without a repo tag.
+    public var repo: String?
+    public var sessions: [Session]
+}
+
+extension Array where Element == Session {
+    /// Groups by repo, in the order each repo first appears in tmux's list, with
+    /// untagged sessions last. Within a group, tmux's order is kept.
+    public func groupedByRepo() -> [RepoGroup] {
+        var groups: [RepoGroup] = []
+        var untagged: [Session] = []
+        for session in self {
+            guard let repo = session.repo, !repo.isEmpty else {
+                untagged.append(session)
+                continue
+            }
+            if let i = groups.firstIndex(where: { $0.repo == repo }) {
+                groups[i].sessions.append(session)
+            } else {
+                groups.append(RepoGroup(repo: repo, sessions: [session]))
+            }
+        }
+        if !untagged.isEmpty { groups.append(RepoGroup(repo: nil, sessions: untagged)) }
+        return groups
+    }
+}

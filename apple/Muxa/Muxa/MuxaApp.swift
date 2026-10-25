@@ -36,6 +36,9 @@ struct PaneCommands: Commands {
             Button("Agent / Terminal") { Task { await model.toggleAgentTerminal() } }
                 .keyboardShortcut("j")
                 .disabled(model.counterpart == nil)
+            Button("Pretty / Raw") { model.setPretty(!model.showsPretty) }
+                .keyboardShortcut("r")
+                .disabled(!model.canShowPretty)
             Button("Previous Session") { Task { await model.step(-1) } }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
             Button("Next Session") { Task { await model.step(1) } }

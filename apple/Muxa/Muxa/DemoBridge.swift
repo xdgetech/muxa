@@ -3,13 +3,18 @@ import Foundation
 import MuxaProtocol
 import MuxaTransport
 
-/// An in-app bridge for the simulator (launch argument `-demo`): two sessions,
-/// fixed-size panes, and typed text echoed back. No SSH, no tmux.
+/// An in-app bridge for the simulator (launch argument `-demo`): a few sessions,
+/// fixed-size panes, typed text echoed back, and a chat for the agent pane %1.
+/// No SSH, no tmux.
 final class DemoBridge: BridgeChannel, @unchecked Sendable {
     let lines: AsyncThrowingStream<Data, any Error>
     private let out: AsyncThrowingStream<Data, any Error>.Continuation
     private let lock = NSLock()
     private var watch: UInt64 = 0
+    private var chat: (id: UInt64, seq: UInt64, count: Int)?
+    /// The last paste into %1, sent as a prompt when Enter follows.
+    private var prompt: String?
+    static let chatPane = "%1"
 
     static let sessions = [
         Session(id: "$1", name: "feature-auth", repo: "app", branch: "feat/auth", panes: [
@@ -18,6 +23,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                  agent: Agent(state: .waiting, since: UInt64(Date().timeIntervalSince1970) - 90)),
             Pane(id: "%2", window: "@1", index: 1, role: .shell, cols: 100, rows: 30, command: "zsh",
                  path: "/work", dead: false, shellForeground: true),
+        ]),
+        Session(id: "$4", name: "fix-login", repo: "app", branch: "fix/login", panes: [
+            Pane(id: "%5", window: "@4", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
+                 path: "/work", dead: false, shellForeground: false,
+                 agent: Agent(state: .idle, since: UInt64(Date().timeIntervalSince1970) - 600)),
+        ]),
+        Session(id: "$5", name: "docs-site", repo: "docs", branch: "main", panes: [
+            Pane(id: "%6", window: "@5", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
+                 path: "/docs", dead: false, shellForeground: false,
+                 agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970) - 20)),
         ]),
         Session(id: "$2", name: "scratch", panes: [
             Pane(id: "%3", window: "@2", index: 0, role: .unknown, cols: 132, rows: 43, command: "vim",
@@ -32,7 +47,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     init() {
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: []))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat"]))
     }
 
     func send(_ line: Data) async throws {
@@ -50,9 +65,24 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             echo(pane, Data(text.utf8))
         case .paste(let id, let pane, let text):
             ok(id)
+            if pane == Self.chatPane { lock.withLock { prompt = text } }
             echo(pane, Data(text.replacingOccurrences(of: "\n", with: "\r\n").utf8))
+        case .chat(let id, let pane):
+            guard pane == Self.chatPane else {
+                emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "no agent adapter knows this pane"), sessions: nil))
+                return
+            }
+            ok(id)
+            lock.withLock { chat = (id, 0, 0) }
+            emitChat(reset: true, entries: Self.conversation, status: .running)
+        case .unchat(let id):
+            lock.withLock { chat = nil }
+            ok(id)
         case .keys(let id, let pane, let keys):
             ok(id)
+            if pane == Self.chatPane, keys == ["Enter"], let text = lock.withLock({ prompt.take() }) {
+                answer(text)
+            }
             for key in keys {
                 switch key {
                 case "Enter": echo(pane, Data("\r\n$ ".utf8))
@@ -70,6 +100,52 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     func close() async { out.finish() }
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }
+
+    /// The demo agent: echoes a prompt, and `/wait` makes it wait for an answer.
+    private func answer(_ text: String) {
+        let n = lock.withLock { () -> Int in
+            chat?.count += 1
+            return chat?.count ?? 0
+        }
+        let user = ChatEntry(id: "u:demo\(n)", kind: .user, text: text)
+        if text == "/wait" {
+            emitChat(entries: [user], status: .waiting)
+        } else {
+            let reply = ChatEntry(id: "a:demo\(n)", kind: .assistant, text: "You said: **\(text)**")
+            emitChat(entries: [user, reply], status: .idle)
+        }
+    }
+
+    private func emitChat(reset: Bool = false, entries: [ChatEntry], status: AgentState) {
+        guard let (id, seq) = lock.withLock({ () -> (UInt64, UInt64)? in
+            guard chat != nil else { return nil }
+            chat?.seq += 1
+            return chat.map { ($0.id, $0.seq) }
+        }) else { return }
+        let since = UInt64(Date().timeIntervalSince1970)
+        emit(.chatEntries(ChatUpdate(
+            chat: id, seq: seq, reset: reset, entries: entries, status: Agent(state: status, since: since),
+            agent: reset ? "claude-code" : nil)))
+    }
+
+    static let conversation: [ChatEntry] = [
+        ChatEntry(id: "u:1", kind: .user, text: "Fix the failing test in the parser"),
+        ChatEntry(id: "a:1", kind: .assistant, text: "I'll run the tests first to see what fails."),
+        ChatEntry(id: "t:1", kind: .tool, tool: ChatTool(
+            name: "Bash", summary: "cargo test -p parser", result: "test parses_empty ... FAILED", error: true)),
+        ChatEntry(id: "a:2", kind: .assistant, text: """
+            `parses_empty` expects an empty list, but the parser returns `None`:
+
+            ```rust
+            pub fn parse(input: &str) -> Option<Vec<Item>> {
+                if input.is_empty() { return None; }
+            ```
+
+            I'll return an empty list instead.
+            """),
+        ChatEntry(id: "t:2", kind: .tool, tool: ChatTool(name: "Edit", summary: "src/parser.rs", result: "Updated 1 line.")),
+        ChatEntry(id: "n:1", kind: .notice, text: "/model opus"),
+    ]
 
     private func echo(_ pane: String, _ data: Data) {
         let w = lock.withLock { watch }
@@ -93,6 +169,14 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         // A tall pane keeps its prompt near the bottom, like an agent's composer.
         s += "\u{1b}[\(rows > 50 ? rows - 1 : 6);1H$ "
         return Data(s.utf8)
+    }
+}
+
+private extension Optional {
+    /// The value, leaving nil behind.
+    mutating func take() -> Wrapped? {
+        defer { self = nil }
+        return self
     }
 }
 #endif

@@ -33,6 +33,12 @@ public final class PaneSession {
     public private(set) var paneGoneReason: String?
     /// The last failed input or command, for a short notice in the UI.
     public private(set) var lastError: String?
+    /// What the bridge supports beyond the base protocol, from `hello`.
+    public private(set) var capabilities: [String] = []
+    /// The followed agent conversation, kept across reconnects like the watch.
+    public private(set) var chat: ChatLog?
+    /// Panes whose program no agent adapter knows; they show only the terminal.
+    public private(set) var unsupportedChats: Set<String> = []
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -42,6 +48,7 @@ public final class PaneSession {
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private var nextId: UInt64 = 0
     @ObservationIgnored private var watchId: UInt64?
+    @ObservationIgnored private var chatId: UInt64?
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
     /// Ids of input requests in flight; their results only matter when they fail.
     @ObservationIgnored private var inputs: Set<UInt64> = []
@@ -62,6 +69,8 @@ public final class PaneSession {
             watchedPane = nil
             paneGoneReason = nil
             sessions = []
+            chat = nil
+            unsupportedChats = []
         }
         phase = .connecting
         do {
@@ -71,6 +80,10 @@ public final class PaneSession {
             phase = .connected
             try await refresh()
             if let pane = watchedPane { try await watch(pane: pane) }
+            if let pane = chat?.pane {
+                chat = nil
+                await follow(pane: pane)
+            }
         } catch {
             await teardown(reason: Self.describe(error))
             throw error
@@ -98,6 +111,34 @@ public final class PaneSession {
             self.watchId = id
             return .watch(id: id, pane: pane)
         }
+    }
+
+    public var canChat: Bool { capabilities.contains("chat") }
+
+    /// Follows the agent conversation in `pane`. A pane no adapter knows is
+    /// remembered in `unsupportedChats`; other failures end up in `chat.ended`.
+    public func follow(pane: String) async {
+        guard canChat, !unsupportedChats.contains(pane) else { return }
+        if chat?.pane == pane, chat?.ended == nil { return }
+        chat = ChatLog(pane: pane)
+        do {
+            try await request { id in
+                self.chatId = id
+                return .chat(id: id, pane: pane)
+            }
+        } catch Failure.bridge(let body) where body.code == .unsupported {
+            unsupportedChats.insert(pane)
+            if chat?.pane == pane { chat = nil }
+        } catch {
+            if chat?.pane == pane { chat?.ended = Self.describe(error) }
+        }
+    }
+
+    public func unfollow() async {
+        guard chat != nil else { return }
+        chat = nil
+        chatId = nil
+        try? await request { .unchat(id: $0) }
     }
 
     public func send(keys: [String]) { fire { .keys(id: $0, pane: $1, keys: keys) } }
@@ -184,9 +225,10 @@ public final class PaneSession {
     private func receive(_ line: Data) {
         guard let message = try? Wire.decodeMessage(line) else { return }
         switch message {
-        case .hello(let version, _, let tmux, _):
+        case .hello(let version, _, let tmux, let capabilities):
             if version == protocolVersion {
                 tmuxVersion = tmux
+                self.capabilities = capabilities
                 hello?.resume()
             } else {
                 hello?.resume(throwing: Failure.protocolMismatch(bridge: version))
@@ -204,6 +246,10 @@ public final class PaneSession {
             renderer?.reset(cols: Int(cols), rows: Int(rows), data: data)
         case .output(let watch, _, let data) where watch == watchId:
             renderer?.feed(data)
+        case .chatEntries(let update) where update.chat == chatId:
+            chat?.apply(update)
+        case .chatEnded(let id, let reason) where id == chatId:
+            chat?.ended = reason
         case .paneGone(let watch, _, let reason) where watch == watchId:
             paneGoneReason = reason ?? "the pane closed"
         case .sessionsChanged:
@@ -239,6 +285,7 @@ public final class PaneSession {
         }
         writer = nil
         watchId = nil
+        chatId = nil
         inputs = []
         let failed = pending
         pending = [:]

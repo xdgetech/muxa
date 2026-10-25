@@ -68,3 +68,19 @@ struct PaneChoiceTests {
         #expect(s.counterpart(of: "%1") == nil)
     }
 }
+
+struct RepoGroupTests {
+    func session(_ name: String, repo: String?) -> Session {
+        Session(id: "$\(name)", name: name, repo: repo, panes: [])
+    }
+
+    @Test func groupsByRepoInFirstSeenOrderWithUntaggedLast() {
+        let sessions = [
+            session("a1", repo: "app"), session("x", repo: nil), session("b1", repo: "api"),
+            session("a2", repo: "app"), session("y", repo: ""), session("b2", repo: "api"),
+        ]
+        let groups = sessions.groupedByRepo()
+        #expect(groups.map(\.repo) == ["app", "api", nil])
+        #expect(groups.map { $0.sessions.map(\.name) } == [["a1", "a2"], ["b1", "b2"], ["x", "y"]])
+    }
+}

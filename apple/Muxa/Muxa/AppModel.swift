@@ -31,6 +31,8 @@ final class AppModel {
     private var afterTrust: AfterTrust?
     /// The user pressed Disconnect: returning to the foreground does not reconnect.
     private var stayDisconnected = false
+    /// Agent panes the user switched to Raw. Every other agent pane shows Pretty when it can.
+    private(set) var rawPanes: Set<String> = []
 
     init() {
         #if DEBUG
@@ -148,8 +150,14 @@ final class AppModel {
 
     // MARK: Panes
 
+    /// Sessions with a pane to show, grouped by repo like the desktop's session list.
+    var sessionGroups: [RepoGroup] {
+        session.sessions.filter { $0.defaultPane != nil }.groupedByRepo()
+    }
+
+    /// The sessions in the order shown, which Cmd+1…9 and Cmd+Shift+[ ] follow.
     var visibleSessions: [Session] {
-        session.sessions.filter { $0.defaultPane != nil }
+        sessionGroups.flatMap(\.sessions)
     }
 
     var currentSession: Session? {
@@ -202,6 +210,60 @@ final class AppModel {
             try await session.watch(pane: pane)
         } catch {
             connectError = PaneSession.describe(error)
+            return
+        }
+        // The pane stays watched in Pretty, so Raw is instant and pane-gone still arrives.
+        if let current = currentPane, current.isAgentSide {
+            await session.follow(pane: current.id)
+        } else {
+            await session.unfollow()
+        }
+    }
+
+    // MARK: Pretty and Raw
+
+    /// The agent pane has a conversation the bridge can follow.
+    var canShowPretty: Bool {
+        guard let pane = currentPane else { return false }
+        return pane.isAgentSide && session.canChat && !session.unsupportedChats.contains(pane.id)
+    }
+
+    var showsPretty: Bool {
+        guard let pane = currentPane else { return false }
+        return canShowPretty && !rawPanes.contains(pane.id)
+    }
+
+    func setPretty(_ pretty: Bool) {
+        guard let pane = currentPane, canShowPretty else { return }
+        if pretty { rawPanes.remove(pane.id) } else { rawPanes.insert(pane.id) }
+        refocusPane()
+    }
+
+    /// The chat for the shown pane, once the bridge follows it.
+    var chat: ChatLog? {
+        guard let log = session.chat, log.pane == currentPane?.id else { return nil }
+        return log
+    }
+
+    /// Sends a prompt as one paste, so a multi-line prompt stays one prompt, then Enter.
+    func sendPrompt(_ text: String) {
+        session.paste(text)
+        session.send(keys: ["Enter"])
+    }
+
+    func retryChat() async {
+        guard let pane = currentPane else { return }
+        await session.follow(pane: pane.id)
+    }
+}
+
+extension Pane {
+    /// The agent side of a session: tagged as the agent, or untagged and not at a shell.
+    var isAgentSide: Bool {
+        switch role {
+        case .agent: true
+        case .shell: false
+        case .hidden, .unknown: !shellForeground
         }
     }
 }

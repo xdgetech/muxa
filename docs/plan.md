@@ -75,7 +75,16 @@ Status:
 - Phase 5 done: `muxa-cli`, the install into `~/.local/bin`, and `scripts/live-check.sh`. The author's live check on the real server (tmux 3.7c, 17 sessions): roles classified, no layout change.
 - Phase 6 done: `apple/MuxaKit` with `MuxaProtocol`, `MuxaTransport` (SSH via Citadel, a local process channel) and `MuxaSession` (`PaneSession`, `HeadlessScreen`). SwiftTerm rebuilds both recorded streams exactly. It keeps one scroll region per screen, like vt100 (`docs/findings/`). `PaneSession` passes against the real bridge on a throwaway tmux server. The SSH channel is built but not yet run against a server: that happens in the Phase 7 acceptance run.
 - Phase 7 built: the iPad app (`apple/Muxa`) with the fixed-grid view (ADR 0004), ConnectView with trust on first use and the restricted `authorized_keys` line, the Cmd+K switcher with agent state and age, the Agent/Terminal toggle, all shortcuts, and reconnect on return to the foreground. `make test-app` passes on the iPad mini simulator against the in-app demo bridge: typed text, Ctrl chords, Cmd+J and Cmd+2 reach the pane; 100x30 and 132x43 fit exactly in portrait and landscape. Waiting for the author's acceptance run on the iPad: it needs a signing team in `apple/Muxa/Config/Local.xcconfig` and the app's key in `authorized_keys`.
-- Follow-ups: IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard.
+- Phase 7: the author ran the app on an iPad mini and connected over SSH with the one-time password setup.
+- Round 2, after the first real use (plan reviewed by Fable):
+  1. Wide views fit the pane's width and scroll, following the cursor (ADR 0004).
+  2. Saved hosts and a standard iOS split view, with sessions grouped by repo like the desktop list.
+  3. The `chat` protocol and the agent adapter layer, with Claude Code first (ADR 0005, `docs/agents.md`).
+  4. The Pretty view: the agent's conversation as messages with a composer and quick keys. Raw (the terminal) is one key away (Cmd+R).
+
+  Waiting for the author's acceptance run on the iPad: saved-host reconnect, landscape, and Pretty on a real Claude Code session, including a permission prompt.
+- Known: in full `make test-app` runs, XCTest sometimes waits 60 s per step for animations to settle after a switch from Pretty to Raw. The checks still pass. Single runs do not show it (3 of 3).
+- Follow-ups: IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:

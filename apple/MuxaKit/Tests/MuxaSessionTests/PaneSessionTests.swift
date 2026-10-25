@@ -19,6 +19,9 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
                  command: "claude", path: "/w", dead: false, shellForeground: false),
         ])
     ]
+    var capabilities: [String] = []
+    /// Panes whose `chat` is answered with `unsupported`.
+    var unsupportedChats: Set<String> = []
     /// Screen data sent after each successful watch.
     var screen = Data("\u{1b}chello".utf8)
 
@@ -29,7 +32,7 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     var received: [Request] { lock.withLock { _received } }
     var closed: Bool { lock.withLock { _closed } }
 
-    func start() { emit(.hello(protocol: protocolVersion, bridge: "test", tmux: "3.7c", capabilities: [])) }
+    func start() { emit(.hello(protocol: protocolVersion, bridge: "test", tmux: "3.7c", capabilities: capabilities)) }
 
     func emit(_ message: Message) { out.yield(try! Wire.encode(message)) }
 
@@ -41,6 +44,8 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
         case .watch(let id, let pane):
             emit(.result(id: id, error: nil, sessions: nil))
             emit(.screen(watch: id, pane: pane, cols: 20, rows: 5, data: screen))
+        case .chat(let id, let pane) where unsupportedChats.contains(pane):
+            emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "no adapter"), sessions: nil))
         case .bye: out.finish()
         default: emit(.result(id: req.id, error: nil, sessions: nil))
         }

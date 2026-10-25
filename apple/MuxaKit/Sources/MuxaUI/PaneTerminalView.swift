@@ -21,6 +21,9 @@ public final class PaneTerminalView: UIView, PaneRenderer {
     }
     /// Called after new bytes or a new screen, so a scroll view can follow the cursor.
     public var onUpdate: (_ reset: Bool) -> Void = { _ in }
+    /// Called when a new screen brings a new grid size, before it is fitted and fed:
+    /// a resize after the feed would clear the screen.
+    public var onGridChange: () -> Void = {}
     private let replies = DropReplies()
     private var fitted: (size: CGSize, cols: Int, rows: Int, mode: FitMode)?
 
@@ -37,8 +40,10 @@ public final class PaneTerminalView: UIView, PaneRenderer {
     required init?(coder: NSCoder) { nil }
 
     public func reset(cols: Int, rows: Int, data: Data) {
+        let changed = max(cols, 1) != self.cols || max(rows, 1) != self.rows
         self.cols = max(cols, 1)
         self.rows = max(rows, 1)
+        if changed { onGridChange() }
         fit(force: true)
         terminalView.feed(byteArray: [UInt8](data)[...])
         onUpdate(true)

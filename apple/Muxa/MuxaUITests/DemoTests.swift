@@ -8,9 +8,13 @@ final class DemoTests: XCTestCase {
         app.launchArguments = ["-demo"]
         app.launch()
 
+        // The agent pane opens in Pretty; Cmd+R shows the terminal.
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.typeKey("r", modifierFlags: .command)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
-        XCTAssertTrue(pane.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        XCTAssertTrue(waitForFocus(pane))
 
         pane.typeText("hello")
         XCTAssertTrue(waitFor(pane, containing: "$ hello"))
@@ -20,8 +24,8 @@ final class DemoTests: XCTestCase {
         // Cmd+J: the terminal side of the same session.
         pane.typeKey("j", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %2 100x30"))
-        // Cmd+2: the second session, a bigger pane.
-        pane.typeKey("2", modifierFlags: .command)
+        // Cmd+4: the fourth session in the sidebar's repo order, a bigger pane.
+        pane.typeKey("4", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %3 132x43"))
         save("portrait-132x43")
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -42,7 +46,7 @@ final class DemoTests: XCTestCase {
 
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
-        pane.typeKey("3", modifierFlags: .command)
+        pane.typeKey("5", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %4 100x60"))
 
         // The grid stays exactly 100x60: the last row holds 99 cells and an X in column 100.
@@ -70,6 +74,57 @@ final class DemoTests: XCTestCase {
         XCTAssertEqual(pane.frame.minY, reading, accuracy: 1)
     }
 
+    /// The agent pane opens as a chat; prompts reach the same pane; Raw is one key away.
+    @MainActor
+    func testPrettyViewSendsPromptsAndSwitchesToRaw() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Fix the failing test in the parser"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["cargo test -p parser"].exists)
+        save("pretty-portrait")
+
+        composer.tap()
+        composer.typeText("hello")
+        app.buttons["send"].tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "You said")).firstMatch
+            .waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["hello"].exists)
+
+        // The prompt went into the pane itself.
+        composer.typeKey("r", modifierFlags: .command)
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(waitFor(pane, containing: "$ hello"))
+        pane.typeKey("r", modifierFlags: .command)
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+
+        // While the agent waits on a prompt, Send is off and the answer keys show.
+        composer.tap()
+        composer.typeText("/wait")
+        app.buttons["send"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["waiting"].firstMatch.waitForExistence(timeout: 5))
+        composer.typeText("x")
+        XCTAssertFalse(app.buttons["send"].isEnabled)
+        XCTAssertTrue(app.buttons["quick-1"].exists)
+        save("pretty-waiting")
+
+        // The shell side is always Raw, and a pane no adapter knows opens in Raw.
+        composer.typeKey("j", modifierFlags: .command)
+        XCTAssertTrue(waitFor(pane, containing: "pane %2 100x30"))
+        XCTAssertFalse(app.descendants(matching: .any)["view-mode"].firstMatch.exists)
+        pane.typeKey("4", modifierFlags: .command)
+        XCTAssertTrue(waitFor(pane, containing: "pane %3 132x43"))
+        XCTAssertFalse(app.descendants(matching: .any)["chat"].firstMatch.exists)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        pane.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        save("pretty-landscape")
+        XCUIDevice.shared.orientation = .portrait
+    }
+
     /// The pane gets the keyboard back after a sheet, and a new host can be saved.
     @MainActor
     func testFocusReturnsAfterTheSwitcherAndAHostCanBeAdded() throws {
@@ -77,9 +132,12 @@ final class DemoTests: XCTestCase {
         app.launchArguments = ["-demo"]
         app.launch()
 
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.typeKey("r", modifierFlags: .command)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
-        XCTAssertTrue(pane.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        XCTAssertTrue(waitForFocus(pane))
         save("portrait-pane")
 
         pane.typeKey("k", modifierFlags: .command)
@@ -93,6 +151,10 @@ final class DemoTests: XCTestCase {
         // The sidebar: hosts, and the connected host's sessions.
         app.buttons["Show Sidebar"].firstMatch.tap()
         XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
+        // Sessions are grouped by repo, untagged ones last.
+        XCTAssertTrue(app.staticTexts["app"].exists)
+        XCTAssertTrue(app.staticTexts["docs"].exists)
+        XCTAssertTrue(app.staticTexts["Other Sessions"].exists)
         save("sidebar")
         app.buttons["Add Host"].firstMatch.tap()
         let address = app.textFields["host-address"]
@@ -114,6 +176,11 @@ final class DemoTests: XCTestCase {
         sleep(1)
         let png = XCUIScreen.main.screenshot().pngRepresentation
         try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+    }
+
+    private func waitForFocus(_ element: XCUIElement) -> Bool {
+        let exp = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: element)
+        return XCTWaiter.wait(for: [exp], timeout: 5) == .completed
     }
 
     private func waitFor(_ element: XCUIElement, containing text: String) -> Bool {

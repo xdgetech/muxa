@@ -23,15 +23,21 @@ struct Sidebar: View {
                 }
                 .onMove { model.hosts.move(fromOffsets: $0, toOffset: $1) }
             }
-            if model.isConnected, let host = model.currentHost {
-                Section(host.title) {
-                    ForEach(Array(model.visibleSessions.enumerated()), id: \.element.id) { index, s in
-                        Button {
-                            Task { await model.open(s) }
-                        } label: {
-                            SessionRow(session: s, current: s.id == model.currentSession?.id, number: index + 1)
+            if model.isConnected {
+                let numbers = Dictionary(
+                    uniqueKeysWithValues: model.visibleSessions.enumerated().map { ($1.id, $0 + 1) })
+                ForEach(model.sessionGroups, id: \.repo) { group in
+                    Section {
+                        ForEach(group.sessions) { s in
+                            Button {
+                                Task { await model.open(s) }
+                            } label: {
+                                SessionRow(session: s, current: s.id == model.currentSession?.id, number: numbers[s.id])
+                            }
+                            .foregroundStyle(.primary)
                         }
-                        .foregroundStyle(.primary)
+                    } header: {
+                        RepoHeader(repo: group.repo)
                     }
                 }
             }
@@ -91,5 +97,18 @@ struct HostRow: View {
         }
         .foregroundStyle(.primary)
         .accessibilityIdentifier("host-\(host.title)")
+    }
+}
+
+/// A repo's section header; sessions without a repo tag come last.
+struct RepoHeader: View {
+    let repo: String?
+
+    var body: some View {
+        if let repo {
+            Label(repo, systemImage: "folder")
+        } else {
+            Label("Other Sessions", systemImage: "rectangle.stack")
+        }
     }
 }

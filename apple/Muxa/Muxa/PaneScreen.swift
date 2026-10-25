@@ -10,8 +10,12 @@ struct PaneScreen: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Fits above an on-screen keyboard, so every row stays visible.
-            PaneHost(session: model.session, fit: fit, focus: model.focusRequest)
+            // Fits above an on-screen keyboard, so every row stays visible. It stays
+            // under the Pretty view so switching back is instant.
+            PaneHost(session: model.session, fit: fit, focus: model.showsPretty ? nil : model.focusRequest)
+            if model.showsPretty {
+                ChatView(log: model.chat)
+            }
             if let notice {
                 Text(notice)
                     .font(.callout)
@@ -23,7 +27,7 @@ struct PaneScreen: View {
         }
         .background(.black)
         .navigationTitle(model.currentSession?.name ?? "Sessions")
-        .paneSubtitle(model.currentPane.map(AgentBadge.summary) ?? "")
+        .paneSubtitle(subtitle)
         .navigationBarTitleDisplayMode(.inline)
         // The bar sits on the black pane, so it uses dark text and controls.
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -35,6 +39,21 @@ struct PaneScreen: View {
             }
         }
         .toolbar { toolbar }
+        // Leaving Pretty, by the toggle or by opening another pane, returns the keyboard.
+        .onChange(of: model.showsPretty) { _, pretty in
+            if !pretty { model.refocusPane() }
+        }
+    }
+
+    /// The adapter's state in Pretty, the pane's tags otherwise.
+    private var subtitle: String {
+        guard let pane = model.currentPane else { return "" }
+        if model.showsPretty, let status = model.chat?.status {
+            var tagged = pane
+            tagged.agent = status
+            return AgentBadge.summary(tagged)
+        }
+        return AgentBadge.summary(pane)
     }
 
     private var notice: String? {
@@ -45,6 +64,15 @@ struct PaneScreen: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
+            if model.canShowPretty {
+                Picker("View", selection: prettyBinding) {
+                    Label("Pretty", systemImage: "text.bubble").tag(true)
+                    Label("Raw", systemImage: "terminal").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .accessibilityIdentifier("view-mode")
+            }
             Picker("Pane", selection: toggleBinding) {
                 Text("Agent").tag(Role.agent)
                 Text("Terminal").tag(Role.shell)
@@ -67,6 +95,10 @@ struct PaneScreen: View {
         }
     }
 
+    private var prettyBinding: Binding<Bool> {
+        Binding(get: { model.showsPretty }, set: { model.setPretty($0) })
+    }
+
     /// Agent when the shown pane is the agent side, else Terminal.
     private var toggleBinding: Binding<Role> {
         Binding(
@@ -79,12 +111,7 @@ struct PaneScreen: View {
     }
 
     private var isAgentSide: Bool {
-        guard let pane = model.currentPane else { return true }
-        switch pane.role {
-        case .agent: return true
-        case .shell: return false
-        case .hidden, .unknown: return !pane.shellForeground
-        }
+        model.currentPane?.isAgentSide ?? true
     }
 }
 
@@ -106,7 +133,8 @@ struct PaneHost: UIViewRepresentable {
     /// Nil picks the mode from the view's shape.
     var fit: PaneTerminalView.FitMode?
     /// A new value takes the keyboard back, for example after a sheet closed.
-    var focus: Int
+    /// Nil while another view (Pretty) has the keyboard.
+    var focus: Int?
 
     func makeUIView(context: Context) -> PaneContainer {
         let view = PaneContainer()
@@ -124,9 +152,10 @@ struct PaneHost: UIViewRepresentable {
 
     func updateUIView(_ view: PaneContainer, context: Context) {
         view.fitOverride = fit
-        if view.focusRequest != focus {
+        if let focus, view.focusRequest != focus {
             view.focusRequest = focus
-            view.input.becomeFirstResponder()
+            // After SwiftUI has removed whatever held the keyboard (a sheet, the composer).
+            DispatchQueue.main.async { view.input.becomeFirstResponder() }
         }
     }
 }
@@ -163,6 +192,7 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         input.screenText = { [terminal] in terminal.screenText }
         input.addGestureRecognizer(UITapGestureRecognizer(target: input, action: #selector(UIResponder.becomeFirstResponder)))
         terminal.onUpdate = { [weak self] reset in self?.contentChanged(reset: reset) }
+        terminal.onGridChange = { [weak self] in self?.layoutContent() }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -174,6 +204,11 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        layoutContent()
+    }
+
+    /// Sizes the scroll content to the grid in the current mode.
+    private func layoutContent() {
         scroll.frame = bounds
         let mode = mode
         terminal.fitMode = mode

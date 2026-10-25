@@ -11,6 +11,10 @@ configFiles:
 packages:
   MuxaKit:
     path: ../MuxaKit
+  # Markdown with code blocks for agent replies (MIT).
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    exactVersion: 2.4.1
 targets:
   Muxa:
     type: application
@@ -19,6 +23,7 @@ targets:
     dependencies:
       - package: MuxaKit
         products: [MuxaProtocol, MuxaTransport, MuxaSession, MuxaUI]
+      - package: MarkdownUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(MUXA_BUNDLE_ID)
