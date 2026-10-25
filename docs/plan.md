@@ -71,8 +71,8 @@ Crates: `tokio` (process, io), `serde`/`serde_json`, `base64`, `bytes`, `thiserr
 
 Status:
 - Phases 1–3 done: harness; `muxa-tmux` and `muxa-protocol`; the bridge with integration and stress tests.
-- Phase 4 done as a draft PR in tmux-agents. The author's checkout runs it. `crates/muxa-bridge/tests/plugin.rs` fails against tmux-agents `main` and passes with the fix.
-- Phase 5 built: `muxa-cli`, the install into `~/.local/bin`, and `scripts/live-check.sh` (dry-run on the sandbox: no layout change). Waiting for the author to run the live check on a real session.
+- Phase 4 done: the fix is on tmux-agents `main`. `crates/muxa-bridge/tests/plugin.rs` fails without the fix and passes with it.
+- Phase 5 done: `muxa-cli`, the install into `~/.local/bin`, and `scripts/live-check.sh`. The author's live check on the real server (tmux 3.7c, 17 sessions): roles classified, no layout change.
 - Next: Phase 6.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
