@@ -39,6 +39,8 @@ public final class PaneSession {
     public private(set) var chat: ChatLog?
     /// Panes whose program no agent adapter knows; they show only the terminal.
     public private(set) var unsupportedChats: Set<String> = []
+    /// The document open in the Reader, kept across reconnects.
+    public private(set) var doc: DocLog?
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -49,6 +51,9 @@ public final class PaneSession {
     @ObservationIgnored private var nextId: UInt64 = 0
     @ObservationIgnored private var watchId: UInt64?
     @ObservationIgnored private var chatId: UInt64?
+    @ObservationIgnored private var docId: UInt64?
+    /// `doc-list` messages waiting for their `result`.
+    @ObservationIgnored private var listings: [UInt64: DocListing] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
     /// Ids of input requests in flight; their results only matter when they fail.
     @ObservationIgnored private var inputs: Set<UInt64> = []
@@ -71,6 +76,7 @@ public final class PaneSession {
             sessions = []
             chat = nil
             unsupportedChats = []
+            doc = nil
         }
         phase = .connecting
         do {
@@ -83,6 +89,10 @@ public final class PaneSession {
             if let pane = chat?.pane {
                 chat = nil
                 await follow(pane: pane)
+            }
+            if let open = doc {
+                doc = nil
+                await openDocument(pane: open.pane, path: open.path)
             }
         } catch {
             await teardown(reason: Self.describe(error))
@@ -139,6 +149,41 @@ public final class PaneSession {
         chat = nil
         chatId = nil
         try? await request { .unchat(id: $0) }
+    }
+
+    public var canReadDocs: Bool { capabilities.contains("docs") }
+
+    /// The pane's documents: its agent's first, then its repo's.
+    public func documents(pane: String) async throws -> DocListing {
+        var requestId: UInt64 = 0
+        try await request { id in
+            requestId = id
+            return .docs(id: id, pane: pane)
+        }
+        // The list arrives just before the result.
+        return listings.removeValue(forKey: requestId) ?? DocListing(docs: requestId, entries: [])
+    }
+
+    /// Opens a listed document and follows its changes. A failure ends up in `doc.ended`.
+    public func openDocument(pane: String, path: String) async {
+        guard canReadDocs else { return }
+        if doc?.pane == pane, doc?.path == path, doc?.ended == nil { return }
+        doc = DocLog(pane: pane, path: path)
+        do {
+            try await request { id in
+                self.docId = id
+                return .doc(id: id, pane: pane, path: path)
+            }
+        } catch {
+            if doc?.path == path { doc?.ended = Self.describe(error) }
+        }
+    }
+
+    public func closeDocument() async {
+        guard doc != nil else { return }
+        doc = nil
+        docId = nil
+        try? await request { .undoc(id: $0) }
     }
 
     public func send(keys: [String]) { fire { .keys(id: $0, pane: $1, keys: keys) } }
@@ -250,13 +295,21 @@ public final class PaneSession {
             chat?.apply(update)
         case .chatEnded(let id, let reason) where id == chatId:
             chat?.ended = reason
+        case .docList(let listing):
+            listings[listing.docs] = listing
+        case .docContent(let id, _, let text, let mtime) where id == docId:
+            doc?.text = text
+            doc?.mtime = mtime
+            doc?.ended = nil
+        case .docEnded(let id, let reason) where id == docId:
+            doc?.ended = reason
         case .paneGone(let watch, _, let reason) where watch == watchId:
             paneGoneReason = reason ?? "the pane closed"
         case .sessionsChanged:
             Task { try? await refresh() }
         case .bye(let reason):
             Task { await teardown(reason: reason) }
-        case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docList, .docContent, .docEnded, .unknown:
+        case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown:
             break
         }
     }
@@ -267,13 +320,27 @@ public final class PaneSession {
             if let reason, phase == .connecting { phase = .disconnected(reason: reason) }
             return
         }
+        // Everything shared is reset before the first await: a new connect can start
+        // while this one drains, and must not lose its own state to it.
         self.channel = nil
         phase = .disconnected(reason: reason ?? "disconnected")
         tasks.forEach { $0.cancel() }
         tasks = []
+        let writer = self.writer
+        self.writer = nil
         // Let queued lines (a final `bye`) go out, but do not wait on a dead link.
         outbox?.finish()
         outbox = nil
+        watchId = nil
+        chatId = nil
+        docId = nil
+        listings = [:]
+        inputs = []
+        let failed = pending
+        pending = [:]
+        failed.values.forEach { $0.resume(throwing: Failure.notConnected) }
+        hello?.resume(throwing: Failure.notConnected)
+        hello = nil
         if let writer {
             let drained = Task { await writer.value }
             let timeout = Task {
@@ -283,15 +350,6 @@ public final class PaneSession {
             await drained.value
             timeout.cancel()
         }
-        writer = nil
-        watchId = nil
-        chatId = nil
-        inputs = []
-        let failed = pending
-        pending = [:]
-        failed.values.forEach { $0.resume(throwing: Failure.notConnected) }
-        hello?.resume(throwing: Failure.notConnected)
-        hello = nil
         await channel.close()
     }
 

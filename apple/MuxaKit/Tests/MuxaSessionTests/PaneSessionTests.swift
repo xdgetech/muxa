@@ -20,6 +20,7 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
         ])
     ]
     var capabilities: [String] = []
+    var docs: [DocInfo] = []
     /// Panes whose `chat` is answered with `unsupported`.
     var unsupportedChats: Set<String> = []
     /// Screen data sent after each successful watch.
@@ -44,6 +45,9 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
         case .watch(let id, let pane):
             emit(.result(id: id, error: nil, sessions: nil))
             emit(.screen(watch: id, pane: pane, cols: 20, rows: 5, data: screen))
+        case .docs(let id, _):
+            emit(.docList(DocListing(docs: id, root: "app", entries: docs)))
+            emit(.result(id: id, error: nil, sessions: nil))
         case .chat(let id, let pane) where unsupportedChats.contains(pane):
             emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "no adapter"), sessions: nil))
         case .bye: out.finish()
