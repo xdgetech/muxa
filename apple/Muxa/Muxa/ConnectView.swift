@@ -7,7 +7,8 @@ struct ConnectView: View {
     @State private var host = ""
     @State private var port = "22"
     @State private var user = ""
-    @State private var command = "~/.local/bin/muxa-bridge"
+    @State private var command = SSHTarget.defaultCommand
+    @State private var password = ""
     @State private var connecting = false
 
     var body: some View {
@@ -30,11 +31,26 @@ struct ConnectView: View {
                 }
                 Section {
                     Button(connecting ? "Connecting…" : "Connect") { Task { await connect() } }
-                        .disabled(connecting || host.isEmpty || user.isEmpty || Int(port) == nil)
+                        .disabled(connecting || !targetIsValid)
                         .keyboardShortcut(.defaultAction)
                     if let error = model.connectError ?? reason {
                         Text(error).foregroundStyle(.red)
                     }
+                }
+                Section {
+                    SecureField("Password for \(user.isEmpty ? "the user" : user)", text: $password)
+                        .textContentType(.password)
+                    Button(connecting ? "Setting up…" : "Add this iPad's key and connect") {
+                        Task { await setUpKey() }
+                    }
+                    .disabled(connecting || !targetIsValid || password.isEmpty)
+                    if let message = model.setupMessage {
+                        Text(message).foregroundStyle(.red)
+                    }
+                } header: {
+                    Text("First time on this host")
+                } footer: {
+                    Text("Logs in once with your password and adds this iPad's key to ~/.ssh/authorized_keys, restricted to the bridge. The password is not stored.")
                 }
                 Section {
                     if let line = model.authorizedKeyLine() {
@@ -46,7 +62,7 @@ struct ConnectView: View {
                 } header: {
                     Text("This iPad's key")
                 } footer: {
-                    Text("Add this line to ~/.ssh/authorized_keys on the host. It lets the key run only the bridge.")
+                    Text("Or add this line to ~/.ssh/authorized_keys on the host yourself. It lets the key run only the bridge.")
                 }
                 if let hostKey = model.target?.hostKey {
                     Section("Trusted host key") {
@@ -73,16 +89,31 @@ struct ConnectView: View {
         command = t.command
     }
 
+    private var targetIsValid: Bool { !host.isEmpty && !user.isEmpty && Int(port) != nil }
+
     private func connect() async {
         connecting = true
         defer { connecting = false }
+        saveTarget()
+        await model.connect()
+    }
+
+    private func setUpKey() async {
+        connecting = true
+        defer { connecting = false }
+        saveTarget()
+        let entered = password
+        password = ""
+        await model.setUpKey(password: entered)
+    }
+
+    private func saveTarget() {
         let trimmed = host.trimmingCharacters(in: .whitespaces)
         // A new host or user starts without a trusted key.
         let sameHost = model.target?.host == trimmed && model.target?.port == Int(port)
         model.target = SSHTarget(
             host: trimmed, port: Int(port) ?? 22, user: user, command: command,
             hostKey: sameHost ? model.target?.hostKey : nil)
-        await model.connect()
     }
 }
 
@@ -106,7 +137,7 @@ struct TrustHostSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        model.untrustedKey = nil
+                        model.cancelTrust()
                         dismiss()
                     }
                 }

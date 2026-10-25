@@ -15,6 +15,9 @@ final class AppModel {
     /// A host key waiting for the user's decision on first use (or after it changed).
     var untrustedKey: HostKey?
     var connectError: String?
+    var setupMessage: String?
+    /// Kept only while the trust sheet is up during key setup, then cleared.
+    private var pendingSetupPassword: String?
     var showSwitcher = false
     /// Set by a DEBUG launch argument: an in-app bridge instead of SSH.
     var demo = false
@@ -54,7 +57,37 @@ final class AppModel {
     func trust(_ key: HostKey) async {
         untrustedKey = nil
         target?.hostKey = key
-        await connect()
+        if let password = pendingSetupPassword {
+            await setUpKey(password: password)
+        } else {
+            await connect()
+        }
+    }
+
+    func cancelTrust() {
+        untrustedKey = nil
+        pendingSetupPassword = nil
+    }
+
+    /// Logs in once with `password`, adds this device's key to the host, then connects.
+    func setUpKey(password: String) async {
+        pendingSetupPassword = nil
+        connectError = nil
+        setupMessage = nil
+        guard let target else { return }
+        do {
+            let key = try ClientKeyStore.loadOrCreate()
+            let line = try KeySetup.authorizedLine(for: key, command: target.command, comment: Self.keyComment)
+            _ = try await KeySetup.install(line, on: target, password: password)
+            await connect()
+        } catch TransportError.hostKeyMismatch(let presented) {
+            pendingSetupPassword = password
+            untrustedKey = presented
+        } catch TransportError.notAuthorized {
+            setupMessage = "The host refused the password. Check the user and password."
+        } catch {
+            setupMessage = PaneSession.describe(error)
+        }
     }
 
     func disconnect() async {
@@ -71,10 +104,11 @@ final class AppModel {
     /// The public key line for `~/.ssh/authorized_keys`, restricted to the bridge.
     func authorizedKeyLine() -> String? {
         guard let key = try? ClientKeyStore.loadOrCreate() else { return nil }
-        let command = target?.command ?? "~/.local/bin/muxa-bridge"
-        return "command=\"\(command)\",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding "
-            + key.authorizedKey(comment: "muxa-ipad")
+        return try? KeySetup.authorizedLine(
+            for: key, command: target?.command ?? SSHTarget.defaultCommand, comment: Self.keyComment)
     }
+
+    private static let keyComment = "muxa-ipad"
 
     // MARK: Panes
 

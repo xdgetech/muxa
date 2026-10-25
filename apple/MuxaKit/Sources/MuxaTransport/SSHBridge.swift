@@ -13,7 +13,9 @@ public struct SSHTarget: Codable, Hashable, Sendable {
     /// The host key accepted on first use. Nil until the user has confirmed one.
     public var hostKey: HostKey?
 
-    public init(host: String, port: Int = 22, user: String, command: String = "~/.local/bin/muxa-bridge", hostKey: HostKey? = nil) {
+    public static let defaultCommand = "~/.local/bin/muxa-bridge"
+
+    public init(host: String, port: Int = 22, user: String, command: String = defaultCommand, hostKey: HostKey? = nil) {
         self.host = host
         self.port = port
         self.user = user
@@ -44,6 +46,7 @@ public final class SSHBridge: BridgeChannel {
                 connectTimeout: .seconds(15))
         } catch {
             if let presented = check.rejected { throw TransportError.hostKeyMismatch(presented: presented) }
+            if case SSHClientError.allAuthenticationOptionsFailed = error { throw TransportError.notAuthorized }
             throw TransportError.failed("cannot connect to \(target.host): \(error)")
         }
         return try await SSHBridge(client: client, command: target.command)
@@ -114,7 +117,7 @@ private actor Writer {
 }
 
 /// Accepts only the pinned host key, and remembers a rejected one for the caller.
-private final class HostKeyCheck: NIOSSHClientServerAuthenticationDelegate, @unchecked Sendable {
+final class HostKeyCheck: NIOSSHClientServerAuthenticationDelegate, @unchecked Sendable {
     private let pinned: HostKey?
     private let lock = NSLock()
     private var _rejected: HostKey?

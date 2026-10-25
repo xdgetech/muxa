@@ -13,7 +13,8 @@ struct RootView: View {
             }
         }
         .sheet(item: $model.untrustedKey) { key in
-            TrustHostSheet(key: key)
+            // Only Trust or Cancel closes it, so a held setup password is always cleared.
+            TrustHostSheet(key: key).interactiveDismissDisabled()
         }
         .sheet(isPresented: $model.showSwitcher) {
             SessionSwitcher()

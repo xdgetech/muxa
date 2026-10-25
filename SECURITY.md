@@ -9,7 +9,7 @@ Report vulnerabilities privately through GitHub's "Report a vulnerability" (Secu
 muxa gives a remote device keyboard access to your terminal sessions. That is shell access. The design keeps the attack surface to what SSH already exposes.
 
 - **Transport:** the bridge runs as an SSH exec command. It opens no port. Authentication, encryption and host identity come from SSH. The app pins the host key on first use and stores its ed25519 key in the device Keychain, readable only when the device is unlocked.
-- **Restrict the key.** An SSH key that can run the bridge can also run a shell, unless you restrict it. Add the app's public key to `~/.ssh/authorized_keys` with a forced command:
+- **Restrict the key.** An SSH key that can run the bridge can also run a shell, unless you restrict it. The app adds its public key to `~/.ssh/authorized_keys` with a forced command. The setup uses your password for one login after the host key is trusted, and does not store it. You can also add the line by hand:
 
   ```
   command="~/.local/bin/muxa-bridge",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA... muxa-ipad

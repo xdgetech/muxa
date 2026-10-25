@@ -17,6 +17,8 @@ public enum TransportError: Error, Equatable, Sendable {
     case closed
     /// The host presented a key that does not match the pinned one, or no key is pinned yet.
     case hostKeyMismatch(presented: HostKey)
+    /// The host refused every login method offered: an unknown key or a wrong password.
+    case notAuthorized
     case failed(String)
 }
 

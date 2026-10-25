@@ -251,6 +251,8 @@ public final class PaneSession {
         case Failure.noHello: "the bridge did not start. Check that muxa-bridge is installed on the host."
         case Failure.notConnected: "not connected"
         case TransportError.hostKeyMismatch: "the host key changed or is not trusted yet"
+        case TransportError.notAuthorized: "the host does not accept this iPad's key yet. Set it up with your password."
+        case TransportError.failed(let message): message
         default: String(describing: error)
         }
     }
