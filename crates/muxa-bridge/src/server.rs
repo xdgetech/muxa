@@ -121,6 +121,7 @@ where
         chat: chat_tx,
         docs: doc_tx,
         tasks: Arc::clone(&config.tasks),
+        agents: Arc::clone(&config.agents),
     };
 
     let end = tokio::select! {
@@ -208,6 +209,7 @@ struct Worker {
     chat: mpsc::Sender<chat::Command>,
     docs: mpsc::Sender<docs::Command>,
     tasks: Arc<tasks::Config>,
+    agents: Arc<Registry>,
 }
 
 impl Worker {
@@ -251,7 +253,19 @@ impl Worker {
                 .map(drop),
             Request::List { id } => {
                 return match timed(muxa_tmux::list_sessions(client)).await {
-                    Ok(sessions) => {
+                    Ok(mut sessions) => {
+                        let agents = Arc::clone(&self.agents);
+                        let sessions = tokio::task::spawn_blocking(move || {
+                            crate::sessions::enrich(&mut sessions, &agents);
+                            sessions
+                        })
+                        .await;
+                        let Ok(sessions) = sessions else {
+                            return Some(Err(error_body(
+                                ErrorCode::Internal,
+                                "listing sessions failed",
+                            )));
+                        };
                         let msg = Message::Result {
                             id: Some(id),
                             error: None,

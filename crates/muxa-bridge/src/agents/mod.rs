@@ -50,6 +50,12 @@ pub trait AgentAdapter: Send + Sync {
         procs: &Processes,
     ) -> Result<Option<Box<dyn ChatSource>>, Error>;
 
+    /// This adapter's agent runs in `pane`. Cheaper than `open`; it decides a
+    /// pane's role when no tag does.
+    fn claims(&self, _pane: &PaneInfo, _procs: &Processes) -> bool {
+        false
+    }
+
     /// Documents the agent in `pane` is writing, such as its current plan.
     fn documents(&self, _pane: &PaneInfo, _procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
         Ok(Vec::new())
@@ -121,6 +127,11 @@ impl Registry {
             docs.extend(adapter.documents(pane, &procs)?);
         }
         Ok(docs)
+    }
+
+    /// Some adapter sees its agent running in `pane`.
+    pub fn claims(&self, pane: &PaneInfo, procs: &Processes) -> bool {
+        self.adapters.iter().any(|a| a.claims(pane, procs))
     }
 
     pub fn open(&self, pane: &PaneInfo) -> Result<Option<Opened>, Error> {

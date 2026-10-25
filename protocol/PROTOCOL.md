@@ -87,7 +87,8 @@ A session has `id`, `name`, optional `repo`, `repoDir` (the repo's main checkout
 - `shellForeground`;
 - optional `agent {state, since}`.
 
-- **Roles come from tags only**, never from screen content: `@muxa_role`, then agent-runner tags, then `unknown`. Clients do not show `hidden` panes.
+- **Roles never come from screen content.** In order: `@muxa_role`, then agent-runner tags, then, in a window with no agent pane, the pane where an agent adapter sees its agent running (the window's other untagged panes are then `shell`), then `unknown`. Clients do not show `hidden` panes.
+- **Repo without tags:** a session without `@agent_repo_dir` gets `repo` and `repoDir` from the git repo of its first visible pane, also when that pane is in a worktree.
 - **Agent/Terminal toggle:** when a session has no `agent`/`shell` roles, the client may treat the pane in the same window whose `shellForeground` is true as the terminal. If there is none, it disables the toggle.
 - **Agent state** (`running`, `waiting`, `idle`, `done`, `error`) is present only when an agent runner reports it. `since` is epoch seconds. When `shellForeground` is true, the state is likely stale: show it as such, or as unknown.
 

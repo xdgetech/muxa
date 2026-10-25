@@ -7,6 +7,7 @@ mod convert;
 mod docs;
 mod lines;
 mod server;
+mod sessions;
 mod tasks;
 mod watch;
 

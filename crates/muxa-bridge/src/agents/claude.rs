@@ -46,6 +46,10 @@ impl AgentAdapter for ClaudeAdapter {
             .map(|s| Box::new(ClaudeSource::new(self.dir.clone(), s)) as Box<dyn ChatSource>))
     }
 
+    fn claims(&self, pane: &PaneInfo, procs: &Processes) -> bool {
+        find_session(&self.dir, pane, procs).is_ok_and(|s| s.is_some())
+    }
+
     /// The plan of the instance in `pane`: every transcript line names it as `slug`,
     /// and plan mode writes it to `plans/<slug>.md`.
     fn documents(&self, pane: &PaneInfo, procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
