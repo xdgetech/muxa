@@ -9,6 +9,7 @@ struct MuxaApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
+                .tint(Theme.accent)
                 .task { await model.resume() }
         }
         .onChange(of: scenePhase) { _, phase in

@@ -13,12 +13,12 @@ struct Sidebar: View {
                 ForEach(model.hosts.hosts) { host in
                     HostRow(host: host, state: state(of: host)) { connect(host) }
                         .contextMenu {
-                            Button("Edit", systemImage: "pencil") { editing = HostDraft(host) }
-                            Button("Delete", systemImage: "trash", role: .destructive) { model.hosts.delete(host.id) }
+                            Button("Edit", systemImage: Icon.edit) { editing = HostDraft(host) }
+                            Button("Delete", systemImage: Icon.delete, role: .destructive) { model.hosts.delete(host.id) }
                         }
                         .swipeActions {
-                            Button("Delete", systemImage: "trash", role: .destructive) { model.hosts.delete(host.id) }
-                            Button("Edit", systemImage: "pencil") { editing = HostDraft(host) }
+                            Button("Delete", systemImage: Icon.delete, role: .destructive) { model.hosts.delete(host.id) }
+                            Button("Edit", systemImage: Icon.edit) { editing = HostDraft(host) }
                         }
                 }
                 .onMove { model.hosts.move(fromOffsets: $0, toOffset: $1) }
@@ -42,14 +42,14 @@ struct Sidebar: View {
                 }
             }
             if let error = model.hosts.storageError {
-                Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+                Section { Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure) }
             }
         }
         .listStyle(.sidebar)
         .navigationTitle("muxa")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Add Host", systemImage: "plus") { editing = HostDraft() }
+                Button("Add Host", systemImage: Icon.add) { editing = HostDraft() }
             }
             ToolbarItem(placement: .secondaryAction) { EditButton() }
         }
@@ -77,8 +77,8 @@ struct HostRow: View {
     var body: some View {
         Button(action: action) {
             HStack {
-                Image(systemName: "desktopcomputer")
-                    .foregroundStyle(state == .connected ? Color.green : Color.secondary)
+                Image(systemName: Icon.host)
+                    .foregroundStyle(.secondary)
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(host.title).font(.body)
@@ -90,7 +90,9 @@ struct HostRow: View {
                 Spacer()
                 switch state {
                 case .connecting: ProgressView()
-                case .connected: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                case .connected:
+                    Circle().fill(Theme.connected).frame(width: 8, height: 8)
+                        .accessibilityLabel("Connected")
                 case .idle: EmptyView()
                 }
             }
@@ -106,9 +108,9 @@ struct RepoHeader: View {
 
     var body: some View {
         if let repo {
-            Label(repo, systemImage: "folder")
+            Label(repo, systemImage: Icon.repo)
         } else {
-            Label("Other Sessions", systemImage: "rectangle.stack")
+            Label("Other Sessions", systemImage: Icon.session)
         }
     }
 }

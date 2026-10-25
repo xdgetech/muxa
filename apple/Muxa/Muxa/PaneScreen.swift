@@ -25,13 +25,13 @@ struct PaneScreen: View {
                     .padding(.bottom, 12)
             }
         }
-        .background(.black)
+        .background(Theme.terminal)
         .navigationTitle(model.currentSession?.name ?? "Sessions")
         .paneSubtitle(subtitle)
         .navigationBarTitleDisplayMode(.inline)
-        // The bar sits on the black pane, so it uses dark text and controls.
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbarBackground(.black, for: .navigationBar)
+        // Over the black terminal the bar is dark; over the chat it matches the chat.
+        .toolbarColorScheme(model.showsPretty ? nil : .dark, for: .navigationBar)
+        .toolbarBackground(model.showsPretty ? Theme.chatBackground : Theme.terminal, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarTitleMenu {
             ForEach(model.visibleSessions) { s in
@@ -64,58 +64,50 @@ struct PaneScreen: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if model.canShowPretty {
-                Picker("View", selection: prettyBinding) {
-                    Label("Pretty", systemImage: "text.bubble").tag(true)
-                    Label("Raw", systemImage: "terminal").tag(false)
+            Picker("View", selection: viewBinding) {
+                ForEach(model.paneViews, id: \.self) { view in
+                    Text(Self.title(view)).tag(view)
                 }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .accessibilityIdentifier("view-mode")
-            }
-            Picker("Pane", selection: toggleBinding) {
-                Text("Agent").tag(Role.agent)
-                Text("Terminal").tag(Role.shell)
             }
             .pickerStyle(.segmented)
             .fixedSize()
-            .disabled(model.counterpart == nil)
+            .accessibilityIdentifier("view-mode")
+            if model.canReadDocs {
+                Button("Documents", systemImage: Icon.document) { model.openReader() }
+            }
             Menu {
-                Picker("Fit", selection: $fit) {
+                Picker(selection: $fit) {
                     Label("Automatic", systemImage: "rectangle.dashed").tag(PaneTerminalView.FitMode?.none)
                     Label("Fit Width", systemImage: "arrow.left.and.right").tag(PaneTerminalView.FitMode?.some(.width))
                     Label("Fit Whole Pane", systemImage: "arrow.up.left.and.arrow.down.right")
                         .tag(PaneTerminalView.FitMode?.some(.whole))
+                } label: {
+                    Label("Terminal Size", systemImage: Icon.fit)
+                }
+                .pickerStyle(.menu)
+                Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
+                Divider()
+                Button("Disconnect", systemImage: Icon.disconnect, role: .destructive) {
+                    Task { await model.disconnect() }
                 }
             } label: {
-                Label("Fit", systemImage: "textformat.size")
+                Label("More", systemImage: Icon.more)
             }
-            if model.canReadDocs {
-                Button("Documents", systemImage: "doc.text") { model.openReader() }
-            }
-            Button("Sessions", systemImage: "rectangle.stack") { model.showSwitcher = true }
-            Button("Disconnect", systemImage: "xmark.circle") { Task { await model.disconnect() } }
         }
     }
 
-    private var prettyBinding: Binding<Bool> {
-        Binding(get: { model.showsPretty }, set: { model.setPretty($0) })
+    static func title(_ view: AppModel.PaneView) -> String {
+        switch view {
+        case .chat: "Chat"
+        case .agent: "Agent"
+        case .shell: "Shell"
+        }
     }
 
-    /// Agent when the shown pane is the agent side, else Terminal.
-    private var toggleBinding: Binding<Role> {
-        Binding(
-            get: { isAgentSide ? .agent : .shell },
-            set: { want in
-                if want != (isAgentSide ? .agent : .shell) {
-                    Task { await model.toggleAgentTerminal() }
-                }
-            })
+    private var viewBinding: Binding<AppModel.PaneView> {
+        Binding(get: { model.paneView }, set: { view in Task { await model.show(view) } })
     }
 
-    private var isAgentSide: Bool {
-        model.currentPane?.isAgentSide ?? true
-    }
 }
 
 extension View {
@@ -142,6 +134,7 @@ struct PaneHost: UIViewRepresentable {
     func makeUIView(context: Context) -> PaneContainer {
         let view = PaneContainer()
         session.renderer = view.terminal
+        view.terminal.onScreenLost = { [session] in Task { await session.resync() } }
         view.input.onOutput = { [session] output in
             switch output {
             case .keys(let keys): session.send(keys: keys)

@@ -114,12 +114,28 @@ final class DemoTests: XCTestCase {
         // The shell side is always Raw, and a pane no adapter knows opens in Raw.
         composer.typeKey("j", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %2 100x30"))
-        XCTAssertFalse(app.descendants(matching: .any)["view-mode"].firstMatch.exists)
+        // One switch for the session: Chat and Agent are the agent pane, Shell this one.
+        let segments = app.segmentedControls["view-mode"]
+        XCTAssertTrue(segments.buttons["Shell"].isSelected)
+        segments.buttons["Chat"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        segments.buttons["Agent"].tap()
+        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        segments.buttons["Shell"].tap()
+        XCTAssertTrue(waitFor(pane, containing: "pane %2 100x30"))
+        assertToolbarDoesNotOverlap(app)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        assertToolbarDoesNotOverlap(app)
+        XCUIDevice.shared.orientation = .portrait
         pane.typeKey("4", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %3 132x43"))
         XCTAssertFalse(app.descendants(matching: .any)["chat"].firstMatch.exists)
+        XCTAssertFalse(segments.buttons["Chat"].exists)
         XCUIDevice.shared.orientation = .landscapeLeft
         pane.typeKey("1", modifierFlags: .command)
+        // The pane was last shown as Agent, and opens that way again.
+        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        segments.buttons["Chat"].tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
         save("pretty-landscape")
         XCUIDevice.shared.orientation = .portrait
@@ -219,6 +235,23 @@ final class DemoTests: XCTestCase {
         sleep(1)
         let png = XCUIScreen.main.screenshot().pngRepresentation
         try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+    }
+
+    /// The pane's bar: no two controls cover each other.
+    @MainActor
+    private func assertToolbarDoesNotOverlap(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        sleep(1)
+        let bar = app.navigationBars.firstMatch
+        let segmented = bar.segmentedControls.allElementsBoundByIndex.map { $0.frame }
+        // A segment's own buttons sit inside its control; compare the control instead.
+        let buttons = bar.buttons.allElementsBoundByIndex.filter { $0.isHittable }.map { $0.frame }
+            .filter { b in !segmented.contains { $0.insetBy(dx: -2, dy: -2).contains(CGPoint(x: b.midX, y: b.midY)) } }
+        let tops = (buttons + segmented).filter { !$0.isEmpty && $0.width < bar.frame.width / 2 }
+        for (i, a) in tops.enumerated() {
+            for b in tops[(i + 1)...] where !a.contains(b) && !b.contains(a) {
+                XCTAssertFalse(a.insetBy(dx: 1, dy: 1).intersects(b.insetBy(dx: 1, dy: 1)), "\(a) overlaps \(b)", file: file, line: line)
+            }
+        }
     }
 
     private func waitForFocus(_ element: XCUIElement) -> Bool {

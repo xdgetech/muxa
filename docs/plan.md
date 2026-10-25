@@ -84,7 +84,8 @@ Status:
 
   Waiting for the author's acceptance run on the iPad: saved-host reconnect, landscape, and Pretty on a real Claude Code session, including a permission prompt.
 - Reader: the pane's Markdown documents (its Claude plan first, then the repo's) rendered offline with mermaid diagrams, following file changes (ADR 0006). Opened with the Documents button or Cmd+Shift+D. Waiting for the author's run on real documents.
-- Known: in full `make test-app` runs, XCTest sometimes waits 60 s per step for animations to settle after a switch from Pretty to Raw. The checks still pass. Single runs do not show it (3 of 3).
+- Fixed: a screen that arrived before the pane had a size was cleared by the later fallback resize. The grid is now set before every feed, and a fallback after a feed asks the bridge for the screen again. Since then the full `make test-app` run no longer waits on animations after a switch from Pretty to Raw (one run so far; before, about every other run).
+- Look: one accent color (indigo) and one icon per concept (`Theme.swift`, `Assets.xcassets`); one Chat / Agent / Shell switch; the chat on an off-white page like the agents' own apps.
 - Follow-ups: IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:

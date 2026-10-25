@@ -24,6 +24,10 @@ public final class PaneTerminalView: UIView, PaneRenderer {
     /// Called when a new screen brings a new grid size, before it is fitted and fed:
     /// a resize after the feed would clear the screen.
     public var onGridChange: () -> Void = {}
+    /// The grid had to be reset after a screen was fed, which cleared it: ask the
+    /// bridge for the screen again.
+    public var onScreenLost: () -> Void = {}
+    private var fed = false
     private let replies = DropReplies()
     private var fitted: (size: CGSize, cols: Int, rows: Int, mode: FitMode)?
 
@@ -45,7 +49,14 @@ public final class PaneTerminalView: UIView, PaneRenderer {
         self.rows = max(rows, 1)
         if changed { onGridChange() }
         fit(force: true)
+        // Before any layout the view has no size and fit does nothing; the grid must
+        // still be right before the feed, when resizing clears nothing.
+        let grid = terminalView.terminalDimensions
+        if grid.cols != self.cols || grid.rows != self.rows {
+            terminalView.resize(cols: self.cols, rows: self.rows)
+        }
         terminalView.feed(byteArray: [UInt8](data)[...])
+        fed = true
         onUpdate(true)
     }
 
@@ -102,10 +113,14 @@ public final class PaneTerminalView: UIView, PaneRenderer {
         // The font last: setting it recomputes cols and rows from the frame just set.
         if terminalView.font.pointSize != fontSize { terminalView.font = font }
 
-        // A fallback: it soft-resets, which is harmless only before a screen is fed.
+        // A fallback. It soft-resets, which clears a screen already fed.
         let grid = terminalView.terminalDimensions
         if grid.cols != cols || grid.rows != rows {
             terminalView.resize(cols: cols, rows: rows)
+            if fed {
+                fed = false
+                onScreenLost()
+            }
         }
     }
 }

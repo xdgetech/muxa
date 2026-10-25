@@ -227,10 +227,58 @@ final class AppModel {
 
     // MARK: Pretty and Raw
 
+    /// What the pane area shows: the agent as a chat or as its terminal, or the shell.
+    enum PaneView: Hashable {
+        case chat, agent, shell
+    }
+
+    /// The agent side and the shell side of the shown session, whichever is open.
+    var agentPane: Pane? {
+        guard let pane = currentPane else { return nil }
+        return pane.isAgentSide ? pane : counterpart
+    }
+
+    var shellPane: Pane? {
+        guard let pane = currentPane else { return nil }
+        return pane.isAgentSide ? counterpart : pane
+    }
+
+    var paneView: PaneView {
+        guard let pane = currentPane, pane.isAgentSide else { return .shell }
+        return showsPretty ? .chat : .agent
+    }
+
+    /// The views the shown session has; Chat only where an adapter knows the agent.
+    var paneViews: [PaneView] {
+        var views: [PaneView] = []
+        if let agent = agentPane {
+            if chatPossible(agent) { views.append(.chat) }
+            views.append(.agent)
+        }
+        if shellPane != nil { views.append(.shell) }
+        return views
+    }
+
+    func show(_ view: PaneView) async {
+        switch view {
+        case .chat, .agent:
+            guard let agent = agentPane else { return }
+            if agent.id != currentPane?.id { await watch(agent.id) }
+            setPretty(view == .chat)
+        case .shell:
+            guard let shell = shellPane, shell.id != currentPane?.id else { return }
+            await watch(shell.id)
+        }
+    }
+
+    private func chatPossible(_ pane: Pane) -> Bool {
+        pane.isAgentSide && session.canChat && !session.unsupportedChats.contains(pane.id)
+    }
+
     /// The agent pane has a conversation the bridge can follow.
     var canShowPretty: Bool {
         guard let pane = currentPane else { return false }
-        return pane.isAgentSide && session.canChat && !session.unsupportedChats.contains(pane.id)
+        return chatPossible(pane)
     }
 
     var showsPretty: Bool {

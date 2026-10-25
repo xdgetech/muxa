@@ -38,6 +38,8 @@ targets:
           UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: muxa connects to your host over SSH.
         CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
   MuxaUITests:
     type: bundle.ui-testing
     platform: iOS

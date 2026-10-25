@@ -186,6 +186,12 @@ public final class PaneSession {
         try? await request { .undoc(id: $0) }
     }
 
+    /// Asks for the watched pane's whole screen again, e.g. after the view lost it.
+    public func resync() async {
+        guard let pane = watchedPane else { return }
+        try? await watch(pane: pane)
+    }
+
     public func send(keys: [String]) { fire { .keys(id: $0, pane: $1, keys: keys) } }
     public func send(text: String) { fire { .text(id: $0, pane: $1, text: text) } }
     public func send(bytes: Data) { fire { .bytes(id: $0, pane: $1, data: bytes) } }

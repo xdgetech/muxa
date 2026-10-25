@@ -37,13 +37,13 @@ struct ReaderScreen: View {
     private var list: some View {
         List(selection: $selection) {
             if let error = model.docError {
-                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure)
             }
             let plans = matches.filter { $0.kind == .plan }
             if !plans.isEmpty {
                 Section("Plan") {
                     ForEach(plans) { doc in
-                        DocRow(title: doc.title ?? Self.name(doc.path), detail: Self.name(doc.path), icon: "list.bullet.clipboard")
+                        DocRow(title: doc.title ?? Self.name(doc.path), detail: Self.name(doc.path), icon: Icon.plan)
                             .tag(doc.path)
                     }
                 }
@@ -51,7 +51,7 @@ struct ReaderScreen: View {
             ForEach(folders, id: \.folder) { group in
                 Section(group.folder.isEmpty ? (model.docListing?.root ?? "Repository") : group.folder) {
                     ForEach(group.docs) { doc in
-                        DocRow(title: Self.name(doc.path), detail: nil, icon: "doc.text").tag(doc.path)
+                        DocRow(title: Self.name(doc.path), detail: nil, icon: Icon.document).tag(doc.path)
                     }
                 }
             }
@@ -61,7 +61,7 @@ struct ReaderScreen: View {
         }
         .overlay {
             if model.docListing?.entries.isEmpty == true {
-                ContentUnavailableView("No Documents", systemImage: "doc.text",
+                ContentUnavailableView("No Documents", systemImage: Icon.document,
                                        description: Text("This pane is not in a git repository with Markdown files."))
             }
         }
@@ -117,13 +117,13 @@ struct ReaderScreen: View {
                         }
                     }
             } else if let ended = doc.ended {
-                ContentUnavailableView("Can't Open \(Self.name(doc.path))", systemImage: "exclamationmark.triangle",
+                ContentUnavailableView("Can't Open \(Self.name(doc.path))", systemImage: Icon.warning,
                                        description: Text(ended))
             } else {
                 ProgressView()
             }
         } else {
-            ContentUnavailableView("Pick a Document", systemImage: "doc.text")
+            ContentUnavailableView("Pick a Document", systemImage: Icon.document)
         }
     }
 

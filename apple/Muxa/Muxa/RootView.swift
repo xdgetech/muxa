@@ -49,7 +49,7 @@ struct DetailView: View {
             ProgressView("Connecting to \(host.title)…")
         } else if let error = model.connectError ?? reason, let host = model.currentHost {
             ContentUnavailableView {
-                Label("Can't Connect to \(host.title)", systemImage: "exclamationmark.triangle")
+                Label("Can't Connect to \(host.title)", systemImage: Icon.warning)
             } description: {
                 Text(error)
             } actions: {
@@ -62,7 +62,7 @@ struct DetailView: View {
                                    description: Text("No tmux session on this host has a pane to show."))
         } else if model.hosts.hosts.isEmpty {
             ContentUnavailableView {
-                Label("Add a Host", systemImage: "desktopcomputer")
+                Label("Add a Host", systemImage: Icon.host)
             } description: {
                 Text("muxa connects over SSH to the Mac or Linux machine where your tmux sessions run.")
             } actions: {

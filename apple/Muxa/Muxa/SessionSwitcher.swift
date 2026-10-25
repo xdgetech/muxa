@@ -77,7 +77,7 @@ struct SessionRow: View {
                 AgentBadge(pane: pane)
             }
             if current {
-                Image(systemName: "checkmark").foregroundStyle(.tint)
+                Image(systemName: "checkmark").foregroundStyle(Theme.accent)
             }
             if let number, number <= 9 {
                 Text("⌘\(number)").font(.caption.monospaced()).foregroundStyle(.tertiary)
@@ -94,7 +94,7 @@ struct AgentBadge: View {
         if let agent = pane.agent {
             if let state = agent.shown(shellForeground: pane.shellForeground) {
                 HStack(spacing: 4) {
-                    Circle().fill(color(state)).frame(width: 8, height: 8)
+                    Circle().fill(Theme.state(state)).frame(width: 8, height: 8)
                     Text(state.rawValue)
                     if let since = agent.since {
                         Text(Self.age(since)).foregroundStyle(.secondary)
@@ -118,15 +118,6 @@ struct AgentBadge: View {
         return "\(state.rawValue)\(age) · \(size)"
     }
 
-    private func color(_ s: AgentState) -> Color {
-        switch s {
-        case .running: .blue
-        case .waiting: .orange
-        case .idle: .gray
-        case .done: .green
-        case .error: .red
-        }
-    }
 
     private static func age(_ since: UInt64) -> String {
         let seconds = max(0, Int(Date().timeIntervalSince1970) - Int(since))
