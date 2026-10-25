@@ -70,6 +70,44 @@ final class DemoTests: XCTestCase {
         XCTAssertEqual(pane.frame.minY, reading, accuracy: 1)
     }
 
+    /// The pane gets the keyboard back after a sheet, and a new host can be saved.
+    @MainActor
+    func testFocusReturnsAfterTheSwitcherAndAHostCanBeAdded() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        save("portrait-pane")
+
+        pane.typeKey("k", modifierFlags: .command)
+        let close = app.buttons["Close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+        app.typeText("back")
+        XCTAssertTrue(waitFor(pane, containing: "$ back"))
+
+        // The sidebar: hosts, and the connected host's sessions.
+        app.buttons["Show Sidebar"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
+        save("sidebar")
+        app.buttons["Add Host"].firstMatch.tap()
+        let address = app.textFields["host-address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        app.textFields["host-name"].tap()
+        app.typeText("Build box")
+        address.tap()
+        app.typeText("box.example")
+        app.textFields["host-user"].tap()
+        app.typeText("dev")
+        save("host-editor")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.buttons["host-Build box"].waitForExistence(timeout: 5))
+    }
+
     /// Set MUXA_SCREENSHOT_DIR (TEST_RUNNER_MUXA_SCREENSHOT_DIR for xcodebuild) to keep screenshots.
     private func save(_ name: String) {
         guard let dir = ProcessInfo.processInfo.environment["MUXA_SCREENSHOT_DIR"] else { return }

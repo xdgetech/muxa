@@ -52,6 +52,8 @@ struct SessionSwitcher: View {
 struct SessionRow: View {
     let session: Session
     let current: Bool
+    /// Shown as its Cmd+number shortcut when it has one.
+    var number: Int?
 
     var body: some View {
         HStack {
@@ -68,6 +70,9 @@ struct SessionRow: View {
             if current {
                 Image(systemName: "checkmark").foregroundStyle(.tint)
             }
+            if let number, number <= 9 {
+                Text("⌘\(number)").font(.caption.monospaced()).foregroundStyle(.tertiary)
+            }
         }
     }
 }
@@ -83,7 +88,7 @@ struct AgentBadge: View {
                     Circle().fill(color(state)).frame(width: 8, height: 8)
                     Text(state.rawValue)
                     if let since = agent.since {
-                        Text(age(since)).foregroundStyle(.secondary)
+                        Text(Self.age(since)).foregroundStyle(.secondary)
                     }
                 }
                 .font(.caption)
@@ -93,6 +98,15 @@ struct AgentBadge: View {
         } else {
             Text(pane.command).font(.caption.monospaced()).foregroundStyle(.secondary)
         }
+    }
+
+    /// One line for a title: "waiting 1m · 100×30", or the command when no adapter reports.
+    static func summary(_ pane: Pane) -> String {
+        let size = "\(pane.cols)×\(pane.rows)"
+        guard let agent = pane.agent else { return "\(pane.command) · \(size)" }
+        guard let state = agent.shown(shellForeground: pane.shellForeground) else { return "unknown (stale) · \(size)" }
+        let age = agent.since.map { " " + Self.age($0) } ?? ""
+        return "\(state.rawValue)\(age) · \(size)"
     }
 
     private func color(_ s: AgentState) -> Color {
@@ -105,7 +119,7 @@ struct AgentBadge: View {
         }
     }
 
-    private func age(_ since: UInt64) -> String {
+    private static func age(_ since: UInt64) -> String {
         let seconds = max(0, Int(Date().timeIntervalSince1970) - Int(since))
         switch seconds {
         case ..<60: return "\(seconds)s"

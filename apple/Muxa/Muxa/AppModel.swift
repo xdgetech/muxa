@@ -4,111 +4,147 @@ import MuxaSession
 import MuxaTransport
 import Observation
 
-/// App state: the saved host, the connection, and which pane is shown.
+/// App state: the saved hosts, the connection, and which pane is shown.
 @MainActor
 @Observable
 final class AppModel {
     let session = PaneSession()
-    var target: SSHTarget? {
-        didSet { Self.save(target) }
-    }
+    let hosts: HostStore
+    /// The host the session belongs to: connected, connecting, or last tried.
+    private(set) var currentHostID: UUID?
+    private(set) var connecting = false
     /// A host key waiting for the user's decision on first use (or after it changed).
     var untrustedKey: HostKey?
     var connectError: String?
-    var setupMessage: String?
-    /// Kept only while the trust sheet is up during key setup, then cleared.
-    private var pendingSetupPassword: String?
     var showSwitcher = false
+    /// Bumped when a sheet closes, so the pane takes the keyboard back.
+    private(set) var focusRequest = 0
     /// Set by a DEBUG launch argument: an in-app bridge instead of SSH.
-    var demo = false
+    let demo: Bool
+
+    /// What to do once the user trusts the presented host key. A setup password is
+    /// held only while the trust sheet is up.
+    private enum AfterTrust {
+        case connect
+        case setUp(password: String)
+    }
+    private var afterTrust: AfterTrust?
+    /// The user pressed Disconnect: returning to the foreground does not reconnect.
+    private var stayDisconnected = false
 
     init() {
-        target = Self.load()
         #if DEBUG
         demo = ProcessInfo.processInfo.arguments.contains("-demo")
+        #else
+        demo = false
         #endif
+        if demo {
+            hosts = HostStore(file: nil)
+            let host = Host(name: "Demo", target: SSHTarget(host: Self.demoHost, user: "demo"))
+            hosts.upsert(host)
+            hosts.markUsed(host.id)
+        } else {
+            hosts = HostStore(file: HostStore.defaultFile)
+        }
     }
 
     // MARK: Connection
 
     var isConnected: Bool { session.phase == .connected }
+    var currentHost: Host? { hosts.host(currentHostID) }
 
-    func connect() async {
+    func connect(to id: UUID) async {
+        guard let host = hosts.host(id) else { return }
+        let sameHost = id == currentHostID
+        currentHostID = id
+        hosts.markUsed(id)
+        stayDisconnected = false
         connectError = nil
-        if demo {
-            #if DEBUG
-            try? await session.connect { DemoBridge() }
-            await openDefaultPane()
-            #endif
-            return
-        }
-        guard let target else { return }
+        connecting = true
+        defer { connecting = false }
         do {
-            let key = try ClientKeyStore.loadOrCreate()
-            try await session.connect { try await SSHBridge.connect(to: target, key: key) }
+            try await session.connect({ try await self.open(host) }, samePanes: sameHost)
             await openDefaultPane()
         } catch TransportError.hostKeyMismatch(let presented) {
+            afterTrust = .connect
             untrustedKey = presented
         } catch {
             connectError = PaneSession.describe(error)
         }
     }
 
+    private func open(_ host: Host) async throws -> any BridgeChannel {
+        #if DEBUG
+        if demo, host.target.host == Self.demoHost { return DemoBridge() }
+        #endif
+        return try await SSHBridge.connect(to: host.target, key: ClientKeyStore.loadOrCreate())
+    }
+
     func trust(_ key: HostKey) async {
         untrustedKey = nil
-        target?.hostKey = key
-        if let password = pendingSetupPassword {
-            await setUpKey(password: password)
-        } else {
-            await connect()
+        let next = afterTrust
+        afterTrust = nil
+        guard var host = currentHost else { return }
+        host.target.hostKey = key
+        hosts.upsert(host)
+        switch next {
+        case .setUp(let password): await setUpKey(on: host.id, password: password)
+        case .connect, nil: await connect(to: host.id)
         }
     }
 
     func cancelTrust() {
         untrustedKey = nil
-        pendingSetupPassword = nil
+        afterTrust = nil
     }
 
     /// Logs in once with `password`, adds this device's key to the host, then connects.
-    func setUpKey(password: String) async {
-        pendingSetupPassword = nil
+    func setUpKey(on id: UUID, password: String) async {
+        guard let host = hosts.host(id) else { return }
+        currentHostID = id
         connectError = nil
-        setupMessage = nil
-        guard let target else { return }
         do {
             let key = try ClientKeyStore.loadOrCreate()
-            let line = try KeySetup.authorizedLine(for: key, command: target.command, comment: Self.keyComment)
-            _ = try await KeySetup.install(line, on: target, password: password)
-            await connect()
+            let line = try KeySetup.authorizedLine(for: key, command: host.target.command, comment: Self.keyComment)
+            _ = try await KeySetup.install(line, on: host.target, password: password)
+            await connect(to: id)
         } catch TransportError.hostKeyMismatch(let presented) {
-            pendingSetupPassword = password
+            afterTrust = .setUp(password: password)
             untrustedKey = presented
         } catch TransportError.notAuthorized {
-            setupMessage = "The host refused the password. Check the user and password."
+            connectError = "The host refused the password. Check the user and password."
         } catch {
-            setupMessage = PaneSession.describe(error)
+            connectError = PaneSession.describe(error)
         }
     }
 
     func disconnect() async {
+        stayDisconnected = true
         await session.disconnect()
     }
 
-    /// The scene came back: reconnect and show the same pane again.
-    func resume() async {
-        guard target != nil || demo else { return }
-        if case .connected = session.phase { return }
-        await connect()
+    /// Leaving for the background: close cleanly so the bridge exits, and come back later.
+    func suspend() async {
+        await session.disconnect()
     }
 
-    /// The public key line for `~/.ssh/authorized_keys`, restricted to the bridge.
-    func authorizedKeyLine() -> String? {
+    /// Launch or return to the foreground: reconnect to the last host and pane.
+    func resume() async {
+        guard !stayDisconnected, !isConnected, !connecting else { return }
+        guard let id = currentHostID ?? hosts.lastUsed, hosts.host(id) != nil else { return }
+        await connect(to: id)
+    }
+
+    func refocusPane() { focusRequest += 1 }
+
+    /// The public key line for `~/.ssh/authorized_keys`, restricted to `command`.
+    func authorizedKeyLine(command: String) -> String? {
         guard let key = try? ClientKeyStore.loadOrCreate() else { return nil }
-        return try? KeySetup.authorizedLine(
-            for: key, command: target?.command ?? SSHTarget.defaultCommand, comment: Self.keyComment)
+        return try? KeySetup.authorizedLine(for: key, command: command, comment: Self.keyComment)
     }
 
     private static let keyComment = "muxa-ipad"
+    private static let demoHost = "demo.invalid"
 
     // MARK: Panes
 
@@ -167,22 +203,5 @@ final class AppModel {
         } catch {
             connectError = PaneSession.describe(error)
         }
-    }
-
-    // MARK: Storage
-
-    private static let key = "target"
-
-    private static func load() -> SSHTarget? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(SSHTarget.self, from: data)
-    }
-
-    private static func save(_ target: SSHTarget?) {
-        guard let target, let data = try? JSONEncoder().encode(target) else {
-            UserDefaults.standard.removeObject(forKey: key)
-            return
-        }
-        UserDefaults.standard.set(data, forKey: key)
     }
 }

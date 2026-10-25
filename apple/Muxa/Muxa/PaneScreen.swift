@@ -9,72 +9,62 @@ struct PaneScreen: View {
     @State private var fit: PaneTerminalView.FitMode?
 
     var body: some View {
-        VStack(spacing: 0) {
-            bar
-            ZStack(alignment: .bottom) {
-                // Fits above an on-screen keyboard, so every row stays visible.
-                PaneHost(session: model.session, fit: fit)
-                if let notice {
-                    Text(notice)
-                        .font(.callout)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(.thinMaterial, in: Capsule())
-                        .padding(.bottom, 12)
-                }
+        ZStack(alignment: .bottom) {
+            // Fits above an on-screen keyboard, so every row stays visible.
+            PaneHost(session: model.session, fit: fit, focus: model.focusRequest)
+            if let notice {
+                Text(notice)
+                    .font(.callout)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.bottom, 12)
             }
         }
         .background(.black)
+        .navigationTitle(model.currentSession?.name ?? "Sessions")
+        .paneSubtitle(model.currentPane.map(AgentBadge.summary) ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        // The bar sits on the black pane, so it uses dark text and controls.
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarTitleMenu {
+            ForEach(model.visibleSessions) { s in
+                Button(s.name) { Task { await model.open(s) } }
+            }
+        }
+        .toolbar { toolbar }
     }
 
     private var notice: String? {
         if let gone = model.session.paneGoneReason { return "Pane closed: \(gone). Cmd+K to pick another." }
-        if model.session.watchedPane == nil { return "Cmd+K to pick a session." }
-        return model.session.lastError
+        return model.connectError
     }
 
-    private var bar: some View {
-        HStack(spacing: 12) {
-            Button {
-                model.showSwitcher = true
-            } label: {
-                HStack(spacing: 6) {
-                    Text(model.currentSession?.name ?? "Sessions").font(.headline)
-                    Image(systemName: "chevron.down").font(.caption)
-                }
-            }
-            if let pane = model.currentPane { AgentBadge(pane: pane) }
-            Spacer()
-            if let pane = model.currentPane {
-                Text("\(pane.cols)×\(pane.rows)").font(.caption.monospaced()).foregroundStyle(.secondary)
-            }
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
             Picker("Pane", selection: toggleBinding) {
                 Text("Agent").tag(Role.agent)
                 Text("Terminal").tag(Role.shell)
             }
             .pickerStyle(.segmented)
-            .frame(width: 180)
+            .fixedSize()
             .disabled(model.counterpart == nil)
             Menu {
                 Picker("Fit", selection: $fit) {
                     Label("Automatic", systemImage: "rectangle.dashed").tag(PaneTerminalView.FitMode?.none)
                     Label("Fit Width", systemImage: "arrow.left.and.right").tag(PaneTerminalView.FitMode?.some(.width))
-                    Label("Fit Whole Pane", systemImage: "arrow.up.left.and.arrow.down.right").tag(PaneTerminalView.FitMode?.some(.whole))
+                    Label("Fit Whole Pane", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .tag(PaneTerminalView.FitMode?.some(.whole))
                 }
             } label: {
-                Image(systemName: "textformat.size")
+                Label("Fit", systemImage: "textformat.size")
             }
-            .accessibilityLabel("Fit")
-            Button {
-                Task { await model.disconnect() }
-            } label: {
-                Image(systemName: "xmark.circle")
-            }
-            .accessibilityLabel("Disconnect")
+            Button("Sessions", systemImage: "rectangle.stack") { model.showSwitcher = true }
+            Button("Disconnect", systemImage: "xmark.circle") { Task { await model.disconnect() } }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.bar)
     }
 
     /// Agent when the shown pane is the agent side, else Terminal.
@@ -98,11 +88,25 @@ struct PaneScreen: View {
     }
 }
 
+extension View {
+    /// The agent state and pane size under the title, where the system supports it.
+    @ViewBuilder
+    func paneSubtitle(_ text: String) -> some View {
+        if #available(iOS 26, *) {
+            navigationSubtitle(text)
+        } else {
+            self
+        }
+    }
+}
+
 /// The terminal view with a key input view over it, wired to the session.
 struct PaneHost: UIViewRepresentable {
     let session: PaneSession
     /// Nil picks the mode from the view's shape.
     var fit: PaneTerminalView.FitMode?
+    /// A new value takes the keyboard back, for example after a sheet closed.
+    var focus: Int
 
     func makeUIView(context: Context) -> PaneContainer {
         let view = PaneContainer()
@@ -120,6 +124,10 @@ struct PaneHost: UIViewRepresentable {
 
     func updateUIView(_ view: PaneContainer, context: Context) {
         view.fitOverride = fit
+        if view.focusRequest != focus {
+            view.focusRequest = focus
+            view.input.becomeFirstResponder()
+        }
     }
 }
 
@@ -130,6 +138,7 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     let input = KeyInputView()
     private let scroll = UIScrollView()
     private var cursorWasVisible = true
+    var focusRequest = 0
 
     var fitOverride: PaneTerminalView.FitMode? {
         didSet { if fitOverride != oldValue { setNeedsLayout() } }

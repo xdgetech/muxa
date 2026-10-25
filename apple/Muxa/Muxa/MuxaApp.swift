@@ -16,7 +16,7 @@ struct MuxaApp: App {
                 switch phase {
                 case .active: await model.resume()
                 // iOS suspends the app soon after; leave cleanly so the bridge exits.
-                case .background: await model.disconnect()
+                case .background: await model.suspend()
                 default: break
                 }
             }

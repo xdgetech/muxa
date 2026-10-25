@@ -55,9 +55,14 @@ public final class PaneSession {
     // MARK: Lifecycle
 
     /// Opens a channel, waits for `hello`, and lists sessions. On a reconnect it
-    /// watches the same pane again.
-    public func connect(_ open: Opener) async throws {
+    /// watches the same pane again, unless `samePanes` is false (another host).
+    public func connect(_ open: Opener, samePanes: Bool = true) async throws {
         await teardown(reason: nil)
+        if !samePanes {
+            watchedPane = nil
+            paneGoneReason = nil
+            sessions = []
+        }
         phase = .connecting
         do {
             let channel = try await open()
