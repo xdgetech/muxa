@@ -9,3 +9,4 @@ apple/**/DerivedData/
 # XcodeGen output
 apple/Muxa/Muxa.xcodeproj/
 apple/Muxa/Config/Local.xcconfig
+/build

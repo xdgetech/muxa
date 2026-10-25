@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app install-ipad lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -52,6 +52,17 @@ build-app: app-project
 # UI test against the in-app demo bridge; no host needed.
 test-app: app-project
 	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM)' test
+
+# Builds, signs, installs and launches the app on a paired iPad (USB or "Connect via network").
+# MUXA_DEVICE is the device name or identifier from `xcrun devicectl list devices`.
+# Over SSH, unlock the keychain first: security unlock-keychain ~/Library/Keychains/login.keychain-db
+IOS_BUILD = build/ios
+install-ipad: app-project
+	@test -n "$(MUXA_DEVICE)" || { echo "set MUXA_DEVICE (see: xcrun devicectl list devices)"; exit 2; }
+	$(XCODEBUILD) -destination 'generic/platform=iOS' -derivedDataPath $(IOS_BUILD) -allowProvisioningUpdates build
+	xcrun devicectl device install app --device '$(MUXA_DEVICE)' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app
+	xcrun devicectl device process launch --terminate-existing --device '$(MUXA_DEVICE)' \
+		"$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app/Info.plist)"
 
 # Re-checks every tmux fact the design relies on (docs/findings/tmux-control-mode.md).
 repro:
