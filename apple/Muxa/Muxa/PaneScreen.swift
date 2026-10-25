@@ -73,7 +73,16 @@ struct PaneScreen: View {
             .fixedSize()
             .accessibilityIdentifier("view-mode")
             if model.canReadDocs {
-                Button("Documents", systemImage: Icon.document) { model.openReader() }
+                Button { model.openReader() } label: {
+                    // A dot when the repo has uncommitted changes to look at.
+                    Image(systemName: Icon.document)
+                        .overlay(alignment: .topTrailing) {
+                            if model.changeCount > 0 {
+                                Circle().fill(Theme.accent).frame(width: 7, height: 7).offset(x: 3, y: -2)
+                            }
+                        }
+                }
+                .accessibilityLabel(model.changeCount > 0 ? "Documents, \(model.changeCount) changed files" : "Documents")
             }
             Menu {
                 Picker(selection: $fit) {

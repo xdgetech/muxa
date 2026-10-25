@@ -67,3 +67,50 @@ img { max-width: 100%; }
 ul, ol { padding-left: 1.6em; }
 li + li { margin-top: 0.25em; }
 input[type=checkbox] { margin-right: 0.4em; }
+
+/* Diffs, laid out like GitHub's unified view. */
+:root {
+  --add-bg: #e6ffec;
+  --add-num: #ccffd8;
+  --del-bg: #ffebe9;
+  --del-num: #ffd7d5;
+  --hunk-bg: #ddf4ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --add-bg: rgba(46, 160, 67, 0.15);
+    --add-num: rgba(46, 160, 67, 0.3);
+    --del-bg: rgba(248, 81, 73, 0.15);
+    --del-num: rgba(248, 81, 73, 0.3);
+    --hunk-bg: rgba(56, 139, 253, 0.15);
+  }
+}
+
+main.diff { max-width: none; padding: 0 0 64px; overflow-wrap: normal; }
+.diff-scroll { overflow-x: auto; }
+table.diff {
+  display: table;
+  margin: 0;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.82em;
+  line-height: 1.5;
+}
+table.diff td { border: 0; padding: 0 10px; vertical-align: top; }
+table.diff td.num {
+  width: 1%;
+  min-width: 3ch;
+  text-align: right;
+  color: var(--muted);
+  user-select: none;
+  -webkit-user-select: none;
+}
+table.diff td.code { white-space: pre; width: 100%; }
+table.diff tr.add td { background: var(--add-bg); }
+table.diff tr.add td.num { background: var(--add-num); }
+table.diff tr.del td { background: var(--del-bg); }
+table.diff tr.del td.num { background: var(--del-num); }
+table.diff tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding-top: 4px; padding-bottom: 4px; }
+table.diff tr.note td.code { color: var(--muted); font-style: italic; }

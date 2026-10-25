@@ -40,6 +40,8 @@ final class AppModel {
     private var newTaskAfterSwitcher: TaskDraft?
     private(set) var docListing: DocListing?
     private(set) var docError: String?
+    /// The shown pane's uncommitted changes, as last listed.
+    private(set) var changeListing: ChangeListing?
     /// The document last read in each session, opened again next time.
     private var lastDocs: [String: String] = [:]
 
@@ -221,6 +223,8 @@ final class AppModel {
             connectError = PaneSession.describe(error)
             return
         }
+        changeListing = nil
+        Task { await loadChanges() }
         // The pane stays watched in Pretty, so Raw is instant and pane-gone still arrives.
         if let current = currentPane, current.isAgentSide {
             await session.follow(pane: current.id)
@@ -319,7 +323,11 @@ final class AppModel {
 
     func closeReader() {
         showReader = false
-        Task { await session.closeDocument() }
+        Task {
+            await session.closeDocument()
+            await session.closeDiff()
+            await loadChanges()
+        }
         refocusPane()
     }
 
@@ -331,6 +339,26 @@ final class AppModel {
         } catch {
             docError = PaneSession.describe(error)
         }
+        await loadChanges()
+    }
+
+    /// Lists the shown pane's changes; a failure only hides them.
+    func loadChanges() async {
+        guard session.canShowChanges, let pane = currentPane else {
+            changeListing = nil
+            return
+        }
+        let listing = try? await session.changes(pane: pane.id)
+        // Another pane may be shown by now.
+        if currentPane?.id == pane.id { changeListing = listing }
+    }
+
+    var changeCount: Int { changeListing?.entries.count ?? 0 }
+
+    func openDiff(_ path: String) async {
+        guard let pane = currentPane else { return }
+        await session.closeDocument()
+        await session.openDiff(pane: pane.id, path: path)
     }
 
     /// The last one read in this session, else the plan, else the README, else the first.
@@ -347,6 +375,7 @@ final class AppModel {
     func openDoc(_ path: String) async {
         guard let pane = currentPane else { return }
         if let id = currentSession?.id { lastDocs[id] = path }
+        await session.closeDiff()
         await session.openDocument(pane: pane.id, path: path)
     }
 

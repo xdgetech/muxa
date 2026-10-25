@@ -80,10 +80,65 @@
     slugs.clear();
     const html = DOMPurify.sanitize(marked.parse(text), { USE_PROFILES: { html: true } });
     const doc = document.getElementById("doc");
+    doc.className = "";
     doc.innerHTML = html;
     current = path;
     await drawDiagrams(doc);
     restore(a);
+    post({ type: "rendered", path });
+  };
+
+  // One row of the diff table. Cells are text only: nothing in a diff becomes HTML.
+  function row(kind, oldNo, newNo, text) {
+    const tr = document.createElement("tr");
+    tr.className = kind;
+    for (const [cls, value] of [["num", oldNo], ["num", newNo], ["code", text]]) {
+      const td = document.createElement("td");
+      td.className = cls;
+      td.textContent = value === null ? "" : String(value);
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+
+  // A unified diff as GitHub shows it: both line numbers, then the line with its sign.
+  window.renderDiff = function (text, path, first) {
+    const y = first ? 0 : window.scrollY;
+    const table = document.createElement("table");
+    table.className = "diff";
+    let oldNo = 0;
+    let newNo = 0;
+    let inHunk = false;
+    for (const line of text.split("\n")) {
+      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      if (hunk) {
+        oldNo = Number(hunk[1]);
+        newNo = Number(hunk[2]);
+        inHunk = true;
+        table.appendChild(row("hunk", null, null, line));
+      } else if (!inHunk) {
+        // The header before the first hunk: names and modes, already in the title.
+        continue;
+      } else if (line.startsWith("+")) {
+        table.appendChild(row("add", null, newNo++, line));
+      } else if (line.startsWith("-")) {
+        table.appendChild(row("del", oldNo++, null, line));
+      } else if (line.startsWith(" ")) {
+        table.appendChild(row("ctx", oldNo++, newNo++, line));
+      } else if (line.startsWith("\\")) {
+        table.appendChild(row("note", null, null, line.slice(2)));
+      } else if (line.startsWith("diff --git")) {
+        inHunk = false;
+      }
+    }
+    const scroll = document.createElement("div");
+    scroll.className = "diff-scroll";
+    scroll.appendChild(table);
+    const doc = document.getElementById("doc");
+    doc.className = "diff";
+    doc.replaceChildren(scroll);
+    current = path;
+    window.scrollTo(0, y);
     post({ type: "rendered", path });
   };
 

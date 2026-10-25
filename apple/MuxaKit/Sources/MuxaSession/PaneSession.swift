@@ -41,6 +41,8 @@ public final class PaneSession {
     public private(set) var unsupportedChats: Set<String> = []
     /// The document open in the Reader, kept across reconnects.
     public private(set) var doc: DocLog?
+    /// The open diff, kept across reconnects.
+    public private(set) var diff: DiffLog?
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -52,6 +54,8 @@ public final class PaneSession {
     @ObservationIgnored private var watchId: UInt64?
     @ObservationIgnored private var chatId: UInt64?
     @ObservationIgnored private var docId: UInt64?
+    @ObservationIgnored private var diffId: UInt64?
+    @ObservationIgnored private var changeListings: [UInt64: ChangeListing] = [:]
     /// `doc-list` messages waiting for their `result`.
     @ObservationIgnored private var listings: [UInt64: DocListing] = [:]
     /// Session names from `task-created`, by request id, until the result arrives.
@@ -79,6 +83,7 @@ public final class PaneSession {
             chat = nil
             unsupportedChats = []
             doc = nil
+            diff = nil
         }
         phase = .connecting
         do {
@@ -95,6 +100,10 @@ public final class PaneSession {
             if let open = doc {
                 doc = nil
                 await openDocument(pane: open.pane, path: open.path)
+            }
+            if let open = diff {
+                diff = nil
+                await openDiff(pane: open.pane, path: open.path)
             }
         } catch {
             await teardown(reason: Self.describe(error))
@@ -186,6 +195,41 @@ public final class PaneSession {
         doc = nil
         docId = nil
         try? await request { .undoc(id: $0) }
+    }
+
+    public var canShowChanges: Bool { capabilities.contains("changes") }
+
+    /// The files of the pane's repo that differ from HEAD.
+    public func changes(pane: String) async throws -> ChangeListing {
+        var requestId: UInt64 = 0
+        try await request { id in
+            requestId = id
+            return .changes(id: id, pane: pane)
+        }
+        // The list arrives just before the result.
+        return changeListings.removeValue(forKey: requestId) ?? ChangeListing(changes: requestId, entries: [])
+    }
+
+    /// Opens a listed file's diff and follows it. A failure ends up in `diff.ended`.
+    public func openDiff(pane: String, path: String) async {
+        guard canShowChanges else { return }
+        if diff?.pane == pane, diff?.path == path, diff?.ended == nil { return }
+        diff = DiffLog(pane: pane, path: path)
+        do {
+            try await request { id in
+                self.diffId = id
+                return .diff(id: id, pane: pane, path: path)
+            }
+        } catch {
+            if diff?.path == path { diff?.ended = Self.describe(error) }
+        }
+    }
+
+    public func closeDiff() async {
+        guard diff != nil else { return }
+        diff = nil
+        diffId = nil
+        try? await request { .undiff(id: $0) }
     }
 
     public var canStartTasks: Bool { capabilities.contains("tasks") }
@@ -323,6 +367,14 @@ public final class PaneSession {
             chat?.ended = reason
         case .docList(let listing):
             listings[listing.docs] = listing
+        case .changeList(let listing):
+            changeListings[listing.changes] = listing
+        case .diffContent(let id, _, let text, let binary) where id == diffId:
+            diff?.text = text
+            diff?.binary = binary
+            diff?.ended = nil
+        case .diffEnded(let id, let reason) where id == diffId:
+            diff?.ended = reason
         case .taskCreated(let task, let session):
             createdTasks[task] = session
         case .docContent(let id, _, let text, let mtime) where id == docId:
@@ -338,7 +390,7 @@ public final class PaneSession {
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .changeList, .diffContent, .diffEnded:
+            .diffContent, .diffEnded:
             break
         }
     }
@@ -363,7 +415,9 @@ public final class PaneSession {
         watchId = nil
         chatId = nil
         docId = nil
+        diffId = nil
         listings = [:]
+        changeListings = [:]
         createdTasks = [:]
         inputs = []
         let failed = pending

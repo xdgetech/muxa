@@ -13,6 +13,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var watch: UInt64 = 0
     private var chat: (id: UInt64, seq: UInt64, count: Int)?
     private var openDoc: UInt64?
+    private var openDiff: UInt64?
     /// The last paste into %1, sent as a prompt when Enter follows.
     private var prompt: String?
     /// Grows when a task starts.
@@ -61,7 +62,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     init() {
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes"]))
     }
 
     func send(_ line: Data) async throws {
@@ -115,6 +116,27 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.startTask(id: id, repo: repo, branch: branch)
             }
+        case .changes(let id, _):
+            emit(.changeList(ChangeListing(changes: id, root: "app", entries: Self.changes.map(\.info))))
+            ok(id)
+        case .diff(let id, _, let path):
+            guard let change = Self.changes.first(where: { $0.info.path == path }) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not changed"), sessions: nil))
+                return
+            }
+            lock.withLock { openDiff = id }
+            ok(id)
+            emit(.diffContent(diff: id, path: path, text: change.diff, binary: change.diff == nil))
+            // The agent keeps editing: the diff grows while it is open.
+            if let diff = change.diff {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
+                    guard let self, self.lock.withLock({ self.openDiff }) == id else { return }
+                    self.emit(.diffContent(diff: id, path: path, text: diff + Self.diffUpdate, binary: false))
+                }
+            }
+        case .undiff(let id):
+            lock.withLock { openDiff = nil }
+            ok(id)
         case .undoc(let id):
             lock.withLock { openDoc = nil }
             ok(id)
@@ -188,6 +210,40 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             chat: id, seq: seq, reset: reset, entries: entries, status: Agent(state: status, since: since),
             agent: reset ? "claude-code" : nil)))
     }
+
+    static let diffUpdate = "+    // checked by the agent\n"
+
+    static let changes: [(info: ChangeInfo, diff: String?)] = [
+        (ChangeInfo(path: "src/parser.rs", status: .modified, added: 2, removed: 1), """
+            diff --git a/src/parser.rs b/src/parser.rs
+            index 3b18e51..a9c2f04 100644
+            --- a/src/parser.rs
+            +++ b/src/parser.rs
+            @@ -10,7 +10,8 @@ use crate::item::Item;
+             /// Parses a list of items.
+             pub fn parse(input: &str) -> Option<Vec<Item>> {
+            -    if input.is_empty() { return None; }
+            +    if input.is_empty() {
+            +        return Some(Vec::new());
+            +    }
+                 let items = split(input)?;
+                 Some(items)
+             }
+
+            """),
+        (ChangeInfo(path: "docs/notes.md", status: .untracked, added: 3, removed: 0), """
+            diff --git a/docs/notes.md b/docs/notes.md
+            new file mode 100644
+            --- /dev/null
+            +++ b/docs/notes.md
+            @@ -0,0 +1,3 @@
+            +# Notes
+            +
+            +Empty input is a valid, empty list.
+
+            """),
+        (ChangeInfo(path: "assets/logo.png", status: .added), nil),
+    ]
 
     static let planUpdate = "\n## Update\n\nUpdated by the agent while you read.\n"
 

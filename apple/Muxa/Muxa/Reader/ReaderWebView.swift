@@ -1,12 +1,15 @@
 import SwiftUI
 import WebKit
 
-/// Shows one Markdown document with the bundled renderer (`reader.html`). The
+/// Shows one Markdown document, or one unified diff, with the bundled renderer (`reader.html`). The
 /// page loads nothing else: its CSP allows no network, and every navigation but
 /// the first is refused here. Links come back through `onLink`.
 struct ReaderWebView: UIViewRepresentable {
+    enum Kind: Equatable { case markdown, diff }
+
     let text: String
     let path: String
+    var kind: Kind = .markdown
     /// A link's `href` and the document it was in.
     var onLink: (_ href: String, _ from: String) -> Void
 
@@ -29,7 +32,7 @@ struct ReaderWebView: UIViewRepresentable {
 
     func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.onLink = onLink
-        context.coordinator.show(text: text, path: path)
+        context.coordinator.show(Shown(text: text, path: path, kind: kind))
     }
 
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
@@ -42,8 +45,8 @@ struct ReaderWebView: UIViewRepresentable {
         private weak var view: WKWebView?
         private var page: URL?
         private var loaded = false
-        private var wanted: (text: String, path: String)?
-        private var shown: (text: String, path: String)?
+        private var wanted: Shown?
+        private var shown: Shown?
 
         func load(into view: WKWebView) {
             self.view = view
@@ -52,18 +55,19 @@ struct ReaderWebView: UIViewRepresentable {
             view.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
         }
 
-        func show(text: String, path: String) {
-            wanted = (text, path)
+        func show(_ content: Shown) {
+            wanted = content
             render()
         }
 
         private func render() {
-            guard loaded, let view, let wanted, shown?.text != wanted.text || shown?.path != wanted.path else { return }
+            guard loaded, let view, let wanted, shown != wanted else { return }
             // A new document starts at the top; an update keeps the reading position.
-            let first = shown?.path != wanted.path
+            let first = shown?.path != wanted.path || shown?.kind != wanted.kind
             shown = wanted
             guard let text = Self.jsonString(wanted.text), let path = Self.jsonString(wanted.path) else { return }
-            view.evaluateJavaScript("render(\(text), \(path), \(first))") { _, _ in }
+            let function = wanted.kind == .diff ? "renderDiff" : "render"
+            view.evaluateJavaScript("\(function)(\(text), \(path), \(first))") { _, _ in }
         }
 
         /// A JSON string literal is a valid JavaScript string literal.
@@ -92,6 +96,12 @@ struct ReaderWebView: UIViewRepresentable {
             else { return }
             onLink(href, body["from"] as? String ?? "")
         }
+    }
+
+    struct Shown: Equatable {
+        let text: String
+        let path: String
+        let kind: Kind
     }
 
     private final class WeakHandler: NSObject, WKScriptMessageHandler {

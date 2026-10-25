@@ -15,6 +15,9 @@ enum Theme {
     static let connected = Color.green
     static let attention = Color.orange
     static let failure = Color.red
+    /// Lines a change adds and removes.
+    static let added = Color.green
+    static let removed = Color.red
 
     static func state(_ s: AgentState) -> Color {
         switch s {

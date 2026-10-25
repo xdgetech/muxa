@@ -21,6 +21,7 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     ]
     var capabilities: [String] = []
     var docs: [DocInfo] = []
+    var changes: [ChangeInfo] = []
     /// Panes whose `chat` is answered with `unsupported`.
     var unsupportedChats: Set<String> = []
     /// Screen data sent after each successful watch.
@@ -47,6 +48,9 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             emit(.screen(watch: id, pane: pane, cols: 20, rows: 5, data: screen))
         case .docs(let id, _):
             emit(.docList(DocListing(docs: id, root: "app", entries: docs)))
+            emit(.result(id: id, error: nil, sessions: nil))
+        case .changes(let id, _):
+            emit(.changeList(ChangeListing(changes: id, root: "app", entries: changes)))
             emit(.result(id: id, error: nil, sessions: nil))
         case .newTask(let id, _, let branch, _):
             if branch.hasPrefix("-") {

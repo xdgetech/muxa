@@ -100,6 +100,39 @@ final class DemoTests: XCTestCase {
         save("landscape-fresh-shell")
     }
 
+    /// The Reader lists uncommitted changes first; a diff reads like GitHub's and
+    /// follows the file.
+    @MainActor
+    func testChangesShowTheirDiffs() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
+
+        composer.typeKey("d", modifierFlags: [.command, .shift])
+        let parser = app.descendants(matching: .any)["change-src/parser.rs"].firstMatch
+        XCTAssertTrue(parser.waitForExistence(timeout: 5))
+        parser.tap()
+        let web = app.webViews.firstMatch
+        let added = web.staticTexts.containing(NSPredicate(format: "label CONTAINS 'return Some(Vec::new());'")).firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 10))
+        // Line numbers from the hunk header: the new line is 12.
+        XCTAssertTrue(web.staticTexts["12"].exists)
+        let update = web.staticTexts.containing(NSPredicate(format: "label CONTAINS 'checked by the agent'")).firstMatch
+        XCTAssertTrue(update.waitForExistence(timeout: 10))
+        save("reader-diff")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        save("reader-diff-landscape")
+        XCUIDevice.shared.orientation = .portrait
+
+        app.descendants(matching: .any)["change-assets/logo.png"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Binary File"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+    }
+
     /// Cmd+N starts a task in the shown session's repo; a failure stays in the
     /// sheet, a success opens the new session.
     @MainActor
@@ -126,7 +159,7 @@ final class DemoTests: XCTestCase {
         app.buttons["task-start"].tap()
         XCTAssertTrue(app.navigationBars.descendants(matching: .any)["feat-search"].firstMatch.waitForExistence(timeout: 10))
         save("new-task-opened")
-        XCTAssertFalse(branch.exists)
+        XCTAssertTrue(branch.waitForNonExistence(timeout: 5), "the sheet closes")
     }
 
     /// The agent pane opens as a chat; prompts reach the same pane; Raw is one key away.

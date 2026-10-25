@@ -71,3 +71,42 @@ struct DocSessionTests {
         #expect(docIds(bridge).isEmpty)
     }
 }
+
+@MainActor
+struct DiffSessionTests {
+    private func diffIds(_ bridge: FakeBridge) -> [UInt64] {
+        bridge.received.compactMap { if case .diff(let id, _, _) = $0 { id } else { nil } }
+    }
+
+    @Test func listsChangesThenFollowsADiff() async throws {
+        let bridge = FakeBridge()
+        bridge.capabilities = ["changes"]
+        bridge.changes = [ChangeInfo(path: "a.rs", status: .modified, added: 1, removed: 1), ChangeInfo(path: "logo.png", status: .added)]
+        let session = PaneSession()
+        try await session.connect {
+            bridge.start()
+            return bridge
+        }
+        let listing = try await session.changes(pane: "%1")
+        #expect(listing.entries.map(\.path) == ["a.rs", "logo.png"])
+
+        await session.openDiff(pane: "%1", path: "a.rs")
+        let first = try #require(diffIds(bridge).last)
+        #expect(session.diff?.loaded == false)
+        bridge.emit(.diffContent(diff: first, path: "a.rs", text: "@@ -1 +1 @@\n-a\n+b\n", binary: false))
+        try await waitUntil { session.diff?.text?.contains("+b") == true }
+
+        // A diff for an earlier request is dropped once another is open.
+        await session.openDiff(pane: "%1", path: "logo.png")
+        let second = try #require(diffIds(bridge).last)
+        bridge.emit(.diffContent(diff: first, path: "a.rs", text: "stale", binary: false))
+        bridge.emit(.diffContent(diff: second, path: "logo.png", text: nil, binary: true))
+        try await waitUntil { session.diff?.binary == true }
+        #expect(session.diff?.text == nil)
+        bridge.emit(.diffEnded(diff: second, reason: "logo.png has no changes now"))
+        try await waitUntil { session.diff?.ended == "logo.png has no changes now" }
+
+        await session.closeDiff()
+        #expect(session.diff == nil)
+    }
+}
