@@ -86,7 +86,14 @@ Status:
 - Reader: the pane's Markdown documents (its Claude plan first, then the repo's) rendered offline with mermaid diagrams, following file changes (ADR 0006). Opened with the Documents button or Cmd+Shift+D. Waiting for the author's run on real documents.
 - Fixed: a screen that arrived before the pane had a size was cleared by the later fallback resize. The grid is now set before every feed, and a fallback after a feed asks the bridge for the screen again. Since then the full `make test-app` run no longer waits on animations after a switch from Pretty to Raw (one run so far; before, about every other run).
 - Look: one accent color (indigo) and one icon per concept (`Theme.swift`, `Assets.xcassets`); one Chat / Agent / Shell switch; the chat on an off-white page like the agents' own apps.
-- Follow-ups: IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
+- Round 3, after daily use (ADR 0007):
+  1. A new pane screen opens at its top. Its cursor comes from the emulator, not from SwiftTerm's caret view, which moves a frame later.
+  2. New tasks from the iPad (Cmd+N, the repo headers, the switcher, the More menu), through tmux-agents' `new.sh` or the built-in launcher.
+  3. Without tmux-agents tags, sessions get their repo from git and their agent pane from the adapters.
+  4. The Reader lists uncommitted changes and shows each file's diff like GitHub's unified view, following the file.
+
+  Waiting for the author's run on the iPad: a real task in a real repo, a fresh shell in landscape, and real diffs.
+- Follow-ups: closing a task from the iPad (it removes a worktree, so it needs its own decision), IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:

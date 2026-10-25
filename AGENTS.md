@@ -17,7 +17,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 |---|---|
 | `crates/muxa-tmux` | control-mode client, quoting, discovery, snapshot, input. The only code that talks to tmux. |
 | `crates/muxa-protocol` | wire types and version. Must match `protocol/PROTOCOL.md` and `protocol/fixtures`. |
-| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents. |
+| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents, `src/changes/` its diffs, and `src/tasks/` starts new tasks (ADR 0007). |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
 | `apple/Muxa` | the iPad app (SwiftUI). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo (DEBUG). |
@@ -52,7 +52,7 @@ Breaking one of these breaks the product promise. Each has a reason in `docs/fin
 2. **Never change the size or layout of a window or pane.** The bridge attaches with `-f ignore-size`. It never sends `refresh-client -C`, `resize-pane`, `resize-window`, `select-window`, `select-pane`, or `refresh-client -A '%p:off'`.
 3. **Target tmux objects by id** (`$n`, `@n`, `%n`), never by name. Names resolve ambiguously.
 4. **Untrusted input stays data.** Pane ids are validated. Every value placed in a tmux command line goes through the quoting function in `muxa-tmux`. No other path builds command lines.
-5. **Pane bytes, agent transcripts and documents never reach logs.** Log ids, paths, sizes and errors, not terminal, conversation or document content.
+5. **Pane bytes, agent transcripts, documents and diffs never reach logs.** Log ids, paths, sizes and errors, not terminal, conversation, document or diff content.
 6. **No invented agent state.** Report the state an adapter supplies, with its age. Otherwise report `unknown`.
 7. **Read tmux output as bytes.** `%output` carries raw non-UTF-8 bytes.
 
