@@ -15,22 +15,26 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var openDoc: UInt64?
     /// The last paste into %1, sent as a prompt when Enter follows.
     private var prompt: String?
+    /// Grows when a task starts.
+    private var sessions = DemoBridge.initialSessions
     static let chatPane = "%1"
+    /// A branch whose task fails, to show the error.
+    static let failingBranch = "taken"
 
-    static let sessions = [
-        Session(id: "$1", name: "feature-auth", repo: "app", branch: "feat/auth", panes: [
+    static let initialSessions = [
+        Session(id: "$1", name: "feature-auth", repo: "app", repoDir: "/src/app", branch: "feat/auth", panes: [
             Pane(id: "%1", window: "@1", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/work", dead: false, shellForeground: false,
                  agent: Agent(state: .waiting, since: UInt64(Date().timeIntervalSince1970) - 90)),
             Pane(id: "%2", window: "@1", index: 1, role: .shell, cols: 100, rows: 30, command: "zsh",
                  path: "/work", dead: false, shellForeground: true),
         ]),
-        Session(id: "$4", name: "fix-login", repo: "app", branch: "fix/login", panes: [
+        Session(id: "$4", name: "fix-login", repo: "app", repoDir: "/src/app", branch: "fix/login", panes: [
             Pane(id: "%5", window: "@4", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/work", dead: false, shellForeground: false,
                  agent: Agent(state: .idle, since: UInt64(Date().timeIntervalSince1970) - 600)),
         ]),
-        Session(id: "$5", name: "docs-site", repo: "docs", branch: "main", panes: [
+        Session(id: "$5", name: "docs-site", repo: "docs", repoDir: "/src/docs", branch: "main", panes: [
             Pane(id: "%6", window: "@5", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/docs", dead: false, shellForeground: false,
                  agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970) - 20)),
@@ -57,18 +61,18 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     init() {
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks"]))
     }
 
     func send(_ line: Data) async throws {
         let req = try Wire.decodeRequest(line)
         switch req {
         case .list(let id):
-            emit(.result(id: id, error: nil, sessions: Self.sessions))
+            emit(.result(id: id, error: nil, sessions: lock.withLock { sessions }))
         case .watch(let id, let pane):
             lock.withLock { watch = id }
             emit(.result(id: id, error: nil, sessions: nil))
-            guard let p = Self.sessions.flatMap(\.panes).first(where: { $0.id == pane }) else { return }
+            guard let p = lock.withLock({ sessions }).flatMap(\.panes).first(where: { $0.id == pane }) else { return }
             emit(.screen(watch: id, pane: pane, cols: p.cols, rows: p.rows, data: Self.screen(for: p)))
         case .text(let id, let pane, let text):
             ok(id)
@@ -106,6 +110,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                     self.emit(.docContent(doc: id, path: path, text: doc.text + Self.planUpdate, mtime: 2))
                 }
             }
+        case .newTask(let id, let repo, let branch, _):
+            // A launch takes a moment on a real host too.
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.startTask(id: id, repo: repo, branch: branch)
+            }
         case .undoc(let id):
             lock.withLock { openDoc = nil }
             ok(id)
@@ -129,6 +138,27 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     }
 
     func close() async { out.finish() }
+
+    private func startTask(id: UInt64, repo: String, branch: String) {
+        guard branch != Self.failingBranch else {
+            emit(.result(id: id, error: ErrorBody(
+                code: .taskFailed, message: "could not create a worktree for \(branch): a branch named '\(branch)' already exists"),
+                sessions: nil))
+            return
+        }
+        let name = branch.replacingOccurrences(of: "/", with: "-")
+        lock.withLock {
+            guard !sessions.contains(where: { $0.name == name }) else { return }
+            let n = 20 + sessions.count
+            let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 100, rows: 30,
+                            command: "claude", path: repo, dead: false, shellForeground: false)
+            let repoName = repo.split(separator: "/").last.map(String.init)
+            sessions.append(Session(id: "$\(n)", name: name, repo: repoName, repoDir: repo, branch: branch, panes: [pane]))
+        }
+        emit(.taskCreated(task: id, session: name))
+        emit(.result(id: id, error: nil, sessions: nil))
+        emit(.sessionsChanged)
+    }
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }
 

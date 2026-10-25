@@ -86,6 +86,9 @@ struct PaneScreen: View {
                 }
                 .pickerStyle(.menu)
                 Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
+                if model.canStartTasks {
+                    Button("New Task…", systemImage: Icon.newTask) { model.startNewTask() }
+                }
                 Divider()
                 Button("Disconnect", systemImage: Icon.disconnect, role: .destructive) {
                     Task { await model.disconnect() }

@@ -35,6 +35,11 @@ struct SessionSwitcher: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
+                if model.canStartTasks {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("New Task", systemImage: Icon.newTask) { model.startNewTask() }
+                    }
+                }
             }
             // The list can be stale: tmux reports changes only for the bridge's session.
             .task { try? await model.session.refresh() }

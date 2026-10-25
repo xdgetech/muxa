@@ -34,6 +34,10 @@ final class AppModel {
     /// Agent panes the user switched to Raw. Every other agent pane shows Pretty when it can.
     private(set) var rawPanes: Set<String> = []
     var showReader = false
+    /// The New Task sheet, with the repo it starts in.
+    var newTask: TaskDraft?
+    /// Asked for from the session switcher: shown once the switcher has closed.
+    private var newTaskAfterSwitcher: TaskDraft?
     private(set) var docListing: DocListing?
     private(set) var docError: String?
     /// The document last read in each session, opened again next time.
@@ -344,6 +348,40 @@ final class AppModel {
         guard let pane = currentPane else { return }
         if let id = currentSession?.id { lastDocs[id] = path }
         await session.openDocument(pane: pane.id, path: path)
+    }
+
+    // MARK: Tasks
+
+    var canStartTasks: Bool { isConnected && session.canStartTasks }
+
+    /// Opens the New Task sheet in `repoDir`, else the shown session's repo.
+    func startNewTask(in repoDir: String? = nil) {
+        guard canStartTasks else { return }
+        let dir = repoDir ?? currentSession?.repoDir ?? session.sessions.knownRepos.first?.dir ?? ""
+        // One sheet at a time.
+        if showSwitcher {
+            newTaskAfterSwitcher = TaskDraft(repoDir: dir)
+            showSwitcher = false
+        } else {
+            newTask = TaskDraft(repoDir: dir)
+        }
+    }
+
+    func switcherClosed() {
+        if let draft = newTaskAfterSwitcher {
+            newTaskAfterSwitcher = nil
+            newTask = draft
+        } else {
+            refocusPane()
+        }
+    }
+
+    /// Starts the task and shows its session. Throws what the bridge said went wrong.
+    func start(_ draft: TaskDraft) async throws {
+        guard let req = draft.request else { return }
+        let name = try await session.newTask(repo: req.repo, branch: req.branch, base: req.base)
+        newTask = nil
+        if let s = session.sessions.first(where: { $0.name == name }) { await open(s) }
     }
 
     func retryChat() async {

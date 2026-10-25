@@ -34,6 +34,9 @@ struct PaneCommands: Commands {
         CommandMenu("Panes") {
             Button("Switch Session…") { model.showSwitcher = true }
                 .keyboardShortcut("k")
+            Button("New Task…") { model.startNewTask() }
+                .keyboardShortcut("n")
+                .disabled(!model.canStartTasks)
             Button("Agent / Terminal") { Task { await model.toggleAgentTerminal() } }
                 .keyboardShortcut("j")
                 .disabled(model.counterpart == nil)

@@ -28,8 +28,14 @@ struct RootView: View {
             // Only Trust or Cancel closes it, so a held setup password is always cleared.
             TrustHostSheet(key: key).interactiveDismissDisabled()
         }
-        .sheet(isPresented: $model.showSwitcher, onDismiss: model.refocusPane) {
+        .sheet(isPresented: $model.showSwitcher, onDismiss: model.switcherClosed) {
             SessionSwitcher()
+        }
+        .sheet(
+            isPresented: Binding(get: { model.newTask != nil }, set: { if !$0 { model.newTask = nil } }),
+            onDismiss: model.refocusPane
+        ) {
+            if let draft = model.newTask { NewTaskSheet(draft: draft) }
         }
         .fullScreenCover(isPresented: $model.showReader, onDismiss: model.refocusPane) {
             ReaderScreen()

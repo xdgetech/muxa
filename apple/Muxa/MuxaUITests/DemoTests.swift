@@ -100,6 +100,35 @@ final class DemoTests: XCTestCase {
         save("landscape-fresh-shell")
     }
 
+    /// Cmd+N starts a task in the shown session's repo; a failure stays in the
+    /// sheet, a success opens the new session.
+    @MainActor
+    func testANewTaskOpensItsSession() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+
+        composer.typeKey("n", modifierFlags: .command)
+        let branch = app.textFields["task-branch"]
+        XCTAssertTrue(branch.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForFocus(branch))
+        branch.typeText("taken")
+        app.buttons["task-start"].tap()
+        let error = app.descendants(matching: .any)["task-error"].firstMatch
+        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        XCTAssertTrue(error.label.contains("already exists"), error.label)
+        save("new-task-error")
+
+        branch.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 5) + "feat/search")
+        XCTAssertFalse(error.exists, "editing clears the error")
+        app.buttons["task-start"].tap()
+        XCTAssertTrue(app.navigationBars.descendants(matching: .any)["feat-search"].firstMatch.waitForExistence(timeout: 10))
+        save("new-task-opened")
+        XCTAssertFalse(branch.exists)
+    }
+
     /// The agent pane opens as a chat; prompts reach the same pane; Raw is one key away.
     @MainActor
     func testPrettyViewSendsPromptsAndSwitchesToRaw() throws {

@@ -37,7 +37,7 @@ struct Sidebar: View {
                             .foregroundStyle(.primary)
                         }
                     } header: {
-                        RepoHeader(repo: group.repo)
+                        RepoHeader(repo: group.repo, newTask: newTaskAction(group))
                     }
                 }
             }
@@ -60,6 +60,12 @@ struct Sidebar: View {
         guard host.id == model.currentHostID else { return .idle }
         if model.connecting { return .connecting }
         return model.isConnected ? .connected : .idle
+    }
+
+    /// Only a repo the host knows the path of can get a task.
+    private func newTaskAction(_ group: RepoGroup) -> (() -> Void)? {
+        guard model.canStartTasks, group.repo != nil, let dir = group.sessions.first?.repoDir else { return nil }
+        return { model.startNewTask(in: dir) }
     }
 
     private func connect(_ host: Host) {
@@ -105,12 +111,22 @@ struct HostRow: View {
 /// A repo's section header; sessions without a repo tag come last.
 struct RepoHeader: View {
     let repo: String?
+    /// Shown as a button that starts a task in this repo.
+    var newTask: (() -> Void)?
 
     var body: some View {
-        if let repo {
-            Label(repo, systemImage: Icon.repo)
-        } else {
-            Label("Other Sessions", systemImage: Icon.session)
+        HStack {
+            if let repo {
+                Label(repo, systemImage: Icon.repo)
+            } else {
+                Label("Other Sessions", systemImage: Icon.session)
+            }
+            if let newTask, let repo {
+                Spacer()
+                Button("New Task in \(repo)", systemImage: Icon.add, action: newTask)
+                    .labelStyle(.iconOnly)
+                    .accessibilityIdentifier("new-task-\(repo)")
+            }
         }
     }
 }
