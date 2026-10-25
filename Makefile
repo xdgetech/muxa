@@ -67,10 +67,15 @@ test-app: app-project
 IOS_BUILD = build/ios
 install-ipad: app-project
 	@test -n "$(MUXA_DEVICE)" || { echo "set MUXA_DEVICE (see: xcrun devicectl list devices)"; exit 2; }
-	@# Over SSH the login keychain stays locked, and codesign then fails with errSecInternalComponent.
-	@if [ -n "$$SSH_CONNECTION" ]; then echo "unlocking the login keychain for codesign"; \
-		security unlock-keychain $$HOME/Library/Keychains/login.keychain-db; fi
-	$(XCODEBUILD) -destination 'generic/platform=iOS' -derivedDataPath $(IOS_BUILD) -allowProvisioningUpdates build
+	@mkdir -p $(IOS_BUILD)
+	@# Over SSH the login keychain is locked, and codesign fails with only errSecInternalComponent.
+	@set -o pipefail; $(XCODEBUILD) -destination 'generic/platform=iOS' -derivedDataPath $(IOS_BUILD) \
+		-allowProvisioningUpdates build 2>&1 | tee $(IOS_BUILD)/xcodebuild.log || { \
+		if grep -q errSecInternalComponent $(IOS_BUILD)/xcodebuild.log; then \
+			echo; echo "codesign could not use the signing key: the login keychain is locked."; \
+			echo "Unlock it, then run make install-ipad again:"; \
+			echo "  security unlock-keychain ~/Library/Keychains/login.keychain-db"; \
+		fi; exit 1; }
 	xcrun devicectl device install app --device '$(MUXA_DEVICE)' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app
 	xcrun devicectl device process launch --terminate-existing --device '$(MUXA_DEVICE)' \
 		"$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app/Info.plist)"
