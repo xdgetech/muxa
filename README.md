@@ -69,4 +69,15 @@ Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Coding agents: [`AGENTS.md`]
 
 ## License
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+| Part | License |
+|---|---|
+| The bridge, the protocol and the terminal client (`crates/`, `protocol/`, `scripts/`) | [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option |
+| The iPad app and its Swift package (`apple/`) | [GPL-3.0-only](apple/LICENSE) |
+
+The protocol and the bridge are permissive so that anyone can build another client or an agent adapter. The app is GPL. The author also offers it under a separate commercial license, which is how it is distributed on the App Store. For a commercial license, open an issue or contact the author.
+
+Bundled third-party code and its licenses: [`NOTICE`](NOTICE).
+
+"muxa" and the muxa icon are the author's trademarks. A fork must use another name and icon.
+
+muxa works with agents such as Claude Code and Codex by running their official command-line tools in your own terminal. It is not made, endorsed or supported by Anthropic or OpenAI, and it never handles their sign-in or credentials.

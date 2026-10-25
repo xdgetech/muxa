@@ -1,0 +1,21 @@
+muxa
+Copyright the muxa author.
+
+This repository contains or bundles the following third-party code. Each keeps
+its own license.
+
+Bundled in the iPad app (apple/Muxa/Muxa/Reader/vendor/):
+- marked 15.0.12, MIT. marked.LICENSE.md
+- mermaid 11.6.0, MIT. mermaid.LICENSE
+- DOMPurify 3.2.6, Apache-2.0 or MPL-2.0. purify.LICENSE
+
+Swift packages the app depends on (fetched by Swift Package Manager, pinned in
+apple/MuxaKit/Package.resolved):
+- SwiftTerm, MIT
+- Citadel, MIT
+- swift-nio, swift-nio-ssh, swift-crypto and related Apple packages, Apache-2.0
+- swift-markdown-ui (MarkdownUI), NetworkImage, MIT
+- swift-cmark, BSD-2-Clause
+
+Rust crates the bridge and the CLI depend on are listed in Cargo.lock; their
+licenses are MIT, Apache-2.0 or compatible permissive licenses.

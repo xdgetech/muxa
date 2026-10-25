@@ -29,4 +29,12 @@ If your `shellcheck` lives elsewhere: `make check SHELLCHECK="<command>"`.
 
 ## License
 
-By contributing, you agree that your contributions are dual-licensed under MIT OR Apache-2.0, as is the project.
+Each part keeps its license (see the README): `crates/`, `protocol/` and `scripts/` are MIT OR Apache-2.0, and `apple/` is GPL-3.0-only.
+
+**Contributor license agreement.** The app is also offered under a commercial license, so a contribution to `apple/` needs your permission for that. By opening a pull request that changes `apple/`, you agree that:
+
+1. you wrote the contribution, or have the right to submit it;
+2. it is licensed under GPL-3.0-only, like the rest of `apple/`;
+3. you also grant the author a perpetual, worldwide, non-exclusive, royalty-free license to use, change and distribute it under other licenses, including commercial ones.
+
+Contributions outside `apple/` are licensed MIT OR Apache-2.0 and need nothing more.
