@@ -5,3 +5,7 @@ apple/**/.build/
 apple/**/xcuserdata/
 apple/**/DerivedData/
 *.xcuserstate
+
+# XcodeGen output
+apple/Muxa/Muxa.xcodeproj/
+apple/Muxa/Config/Local.xcconfig

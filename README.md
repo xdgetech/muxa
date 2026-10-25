@@ -2,7 +2,7 @@
 
 Work on the AI coding agents you already run in tmux, from an iPad with a keyboard. muxa does not change your desktop layout.
 
-> **Status: pre-alpha.** The design is verified and the harness is in place. The bridge and the app are not built yet. See [`docs/plan.md`](docs/plan.md).
+> **Status: pre-alpha.** The bridge, a terminal client and the iPad app are built and tested. The first run on a real iPad is next. See [`docs/plan.md`](docs/plan.md).
 
 ## The idea
 
@@ -29,6 +29,15 @@ flowchart LR
 - Host: macOS or Linux, tmux ≥ 3.2, an SSH server.
 - Client: iPadOS 17+. iPhone and Android come later.
 
+## Setup
+
+1. On the host: `cargo install --path crates/muxa-bridge --root ~/.local`.
+2. Build the app: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`.
+3. In the app, enter the host and user. Copy the key line it shows into `~/.ssh/authorized_keys` on the host. It restricts the key to the bridge.
+4. Connect, and compare the host key fingerprint with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` before you trust it.
+
+Keys: Cmd+K switch session, Cmd+J agent/terminal, Cmd+Shift+[ and ] previous/next session, Cmd+1…9 session by number. Every other key goes to the pane.
+
 ## Pane roles
 
 muxa shows an "Agent" and a "Terminal" view per session. It finds them in this order:
@@ -50,6 +59,8 @@ When muxa attaches, tmux runs your `client-attached` and `client-resized` hooks.
 make check      # fmt, clippy, tests, shellcheck, harness tests
 make sandbox    # an isolated tmux server to play with: tmux -L muxa-sandbox attach
 make repro      # re-check the tmux facts the design relies on
+make test-apple # Swift package tests (Xcode toolchain)
+make test-app   # iPad app UI test in the simulator, against a built-in demo bridge
 ```
 
 Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Coding agents: [`AGENTS.md`](AGENTS.md). Security: [`SECURITY.md`](SECURITY.md).

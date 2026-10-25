@@ -243,7 +243,8 @@ public final class PaneSession {
         await channel.close()
     }
 
-    nonisolated static func describe(_ error: any Error) -> String {
+    /// A message for the user, saying what to do next where there is something to do.
+    public nonisolated static func describe(_ error: any Error) -> String {
         switch error {
         case Failure.bridge(let body): body.message
         case Failure.protocolMismatch(let v): "the bridge speaks protocol \(v); this app speaks \(protocolVersion). Update one of them."

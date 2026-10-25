@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -37,6 +37,21 @@ test-apple-tmux:
 
 lint-sh:
 	$(SHELLCHECK) -x $(SHELL_SCRIPTS)
+
+# The iPad app. The Xcode project is generated from apple/Muxa/project.yml (XcodeGen).
+# SwiftTerm has a build plugin; command-line builds skip Xcode's trust prompt for it.
+MUXA_SIM ?= iPad mini (A17 Pro)
+XCODEBUILD = xcodebuild -project apple/Muxa/Muxa.xcodeproj -scheme Muxa -skipPackagePluginValidation
+
+app-project:
+	cd apple/Muxa && xcodegen generate
+
+build-app: app-project
+	$(XCODEBUILD) -destination 'generic/platform=iOS Simulator' build
+
+# UI test against the in-app demo bridge; no host needed.
+test-app: app-project
+	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM)' test
 
 # Re-checks every tmux fact the design relies on (docs/findings/tmux-control-mode.md).
 repro:

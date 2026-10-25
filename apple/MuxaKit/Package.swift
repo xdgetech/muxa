@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "MuxaProtocol", targets: ["MuxaProtocol"]),
         .library(name: "MuxaTransport", targets: ["MuxaTransport"]),
         .library(name: "MuxaSession", targets: ["MuxaSession"]),
+        .library(name: "MuxaUI", targets: ["MuxaUI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.99.1"),
@@ -30,6 +31,11 @@ let package = Package(
         .target(
             name: "MuxaSession",
             dependencies: ["MuxaProtocol", "MuxaTransport", .product(name: "SwiftTerm", package: "SwiftTerm")]
+        ),
+        // UIKit views for the app; empty on macOS.
+        .target(
+            name: "MuxaUI",
+            dependencies: ["MuxaSession", .product(name: "SwiftTerm", package: "SwiftTerm")]
         ),
         .testTarget(
             name: "MuxaProtocolTests",

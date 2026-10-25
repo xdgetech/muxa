@@ -74,7 +74,8 @@ Status:
 - Phase 4 done: the fix is on tmux-agents `main`. `crates/muxa-bridge/tests/plugin.rs` fails without the fix and passes with it.
 - Phase 5 done: `muxa-cli`, the install into `~/.local/bin`, and `scripts/live-check.sh`. The author's live check on the real server (tmux 3.7c, 17 sessions): roles classified, no layout change.
 - Phase 6 done: `apple/MuxaKit` with `MuxaProtocol`, `MuxaTransport` (SSH via Citadel, a local process channel) and `MuxaSession` (`PaneSession`, `HeadlessScreen`). SwiftTerm rebuilds both recorded streams exactly. It keeps one scroll region per screen, like vt100 (`docs/findings/`). `PaneSession` passes against the real bridge on a throwaway tmux server. The SSH channel is built but not yet run against a server: that happens in the Phase 7 acceptance run.
-- Next: Phase 7.
+- Phase 7 built: the iPad app (`apple/Muxa`) with the fixed-grid view (ADR 0004), ConnectView with trust on first use and the restricted `authorized_keys` line, the Cmd+K switcher with agent state and age, the Agent/Terminal toggle, all shortcuts, and reconnect on return to the foreground. `make test-app` passes on the iPad mini simulator against the in-app demo bridge: typed text, Ctrl chords, Cmd+J and Cmd+2 reach the pane; 100x30 and 132x43 fit exactly in portrait and landscape. Waiting for the author's acceptance run on the iPad: it needs a signing team in `apple/Muxa/Config/Local.xcconfig` and the app's key in `authorized_keys`.
+- Follow-ups: IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:
@@ -174,9 +175,9 @@ Status:
    - Shortcuts: Cmd+K, Cmd+J, Cmd+Shift+[ ], Cmd+1…9. Only Cmd chords are taken.
    - On return to foreground: reconnect → `hello` → `list` → `watch(last pane)`.
 
-   Verifiable by: an `xcodebuild` simulator build, then the Phase A acceptance run on the iPad mini plus the Phase 5 diff. Then open the second draft PR (app).
+   Verifiable by: an `xcodebuild` simulator build, then the Phase A acceptance run on the iPad mini plus the Phase 5 diff. 
 
-Commits on a feature branch, one or more per phase. PRs are always drafts.
+Commits go straight to `main` for now (the author's decision, 2026-10-25). Before that, phases 2–5 were draft PRs.
 
 ## Risks
 

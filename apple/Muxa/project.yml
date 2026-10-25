@@ -1,0 +1,55 @@
+# Generates Muxa.xcodeproj (not checked in): `make app-project`, or `xcodegen` in this directory.
+name: Muxa
+options:
+  bundleIdPrefix: app.muxa
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: Config/Muxa.xcconfig
+  Release: Config/Muxa.xcconfig
+packages:
+  MuxaKit:
+    path: ../MuxaKit
+targets:
+  Muxa:
+    type: application
+    platform: iOS
+    sources: [Muxa]
+    dependencies:
+      - package: MuxaKit
+        products: [MuxaProtocol, MuxaTransport, MuxaSession, MuxaUI]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(MUXA_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "2"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: muxa
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >-
+          UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
+          UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: muxa connects to your host over SSH.
+        CODE_SIGN_STYLE: Automatic
+  MuxaUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [MuxaUITests]
+    dependencies:
+      - target: Muxa
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(MUXA_BUNDLE_ID).uitests
+        TARGETED_DEVICE_FAMILY: "2"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Muxa:
+    build:
+      targets:
+        Muxa: all
+        MuxaUITests: [test]
+    test:
+      targets: [MuxaUITests]

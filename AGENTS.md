@@ -19,7 +19,8 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `crates/muxa-protocol` | wire types and version. Must match `protocol/PROTOCOL.md` and `protocol/fixtures`. |
 | `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
-| `apple/` | Swift package `MuxaKit` and the iPad app. |
+| `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
+| `apple/Muxa` | the iPad app (SwiftUI). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo (DEBUG). |
 | `scripts/` | harness: sandbox, layout snapshot, repro scripts, the agent guard hook. |
 | `tests/harness/` | bats tests for the harness itself. |
 
@@ -32,6 +33,8 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `make repro` | re-checks every tmux fact in `docs/findings/`. |
 | `make test-apple` | MuxaKit tests (macOS, Xcode toolchain): protocol fixtures, SwiftTerm scenario replay, the pane session. Prefix `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` when xcode-select points to the Command Line Tools. |
 | `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
+| `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the iPad app, or run its UI test against the in-app demo bridge (`MUXA_SIM` picks the simulator). |
+| `TEST_RUNNER_MUXA_SCREENSHOT_DIR=<dir> make test-app` | also keeps the UI test's portrait and landscape screenshots. |
 | `MUXA_STREAM_RUNS=200 make test-tmux` | more random cut points for the snapshot/stream stress test (default 50). |
 | `MUXA_TEST_PLUGIN=<plugin.tmux> make test-tmux` | also checks that a real layout plugin keeps its layout. |
 | `MUXA_RECORD_SCENARIOS=1 cargo test -p muxa-bridge --features tmux-integration --test stream` | re-records `protocol/fixtures/scenarios/`. |

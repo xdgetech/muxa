@@ -54,3 +54,5 @@ jobs:
       - name: Isolate tmux sockets
         run: echo "TMUX_TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - run: make test-apple-tmux
+      - run: brew install xcodegen
+      - run: make build-app

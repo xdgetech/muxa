@@ -3,8 +3,9 @@ import Foundation
 import NIOSSH
 
 /// An SSH public key in OpenSSH text form (`ssh-ed25519 AAAA…`).
-public struct HostKey: Codable, Hashable, Sendable {
+public struct HostKey: Codable, Hashable, Sendable, Identifiable {
     public let openSSH: String
+    public var id: String { openSSH }
 
     public init(openSSH: String) throws {
         let parsed = try NIOSSHPublicKey(openSSHPublicKey: openSSH)
