@@ -64,7 +64,6 @@ test-app: app-project
 
 # Builds, signs, installs and launches the app on a paired iPad (USB or "Connect via network").
 # MUXA_DEVICE is the device name or identifier from `xcrun devicectl list devices`.
-# Over SSH, unlock the keychain first: security unlock-keychain ~/Library/Keychains/login.keychain-db
 IOS_BUILD = build/ios
 install-ipad: app-project
 	@test -n "$(MUXA_DEVICE)" || { echo "set MUXA_DEVICE (see: xcrun devicectl list devices)"; exit 2; }
