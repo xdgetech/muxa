@@ -31,7 +31,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `make check` | fmt, clippy, unit tests, shellcheck, harness tests. Must be green before every commit. |
 | `make test-tmux` | integration tests on throwaway tmux servers. |
 | `make repro` | re-checks every tmux fact in `docs/findings/`. |
-| `make test-apple` | MuxaKit tests (macOS, Xcode toolchain): protocol fixtures, SwiftTerm scenario replay, the pane session. Prefix `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` when xcode-select points to the Command Line Tools. |
+| `make test-apple` | MuxaKit tests (macOS, Xcode toolchain): protocol fixtures, SwiftTerm scenario replay, the pane session. The Makefile uses `/Applications/Xcode.app` when xcode-select points to the Command Line Tools; set `DEVELOPER_DIR` to use another Xcode. |
 | `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
 | `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the iPad app, or run its UI test against the in-app demo bridge (`MUXA_SIM` picks the simulator). |
 | `MUXA_DEVICE=<name or id> make install-ipad` | **humans only**: build, sign and run on a paired iPad. It creates signing assets on the developer's Apple account. |

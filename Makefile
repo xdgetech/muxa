@@ -4,6 +4,16 @@
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
 
+# xcodebuild and the swift-testing macros need Xcode, not the Command Line Tools.
+# Use Xcode when xcode-select points to the tools and Xcode is installed.
+ifeq ($(origin DEVELOPER_DIR),undefined)
+ifneq ($(findstring CommandLineTools,$(shell xcode-select -p 2>/dev/null)),)
+ifneq ($(wildcard /Applications/Xcode.app/Contents/Developer),)
+export DEVELOPER_DIR := /Applications/Xcode.app/Contents/Developer
+endif
+endif
+endif
+
 check: fmt-check clippy test lint-sh test-harness
 
 fmt:
@@ -25,8 +35,7 @@ test-tmux:
 test-harness:
 	bats tests/harness
 
-# MuxaKit on macOS. Needs Xcode's toolchain (swift-testing). When xcode-select points to the
-# Command Line Tools: DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer make test-apple
+# MuxaKit on macOS. Needs Xcode's toolchain (swift-testing); see DEVELOPER_DIR above.
 test-apple:
 	swift test --package-path apple/MuxaKit
 
