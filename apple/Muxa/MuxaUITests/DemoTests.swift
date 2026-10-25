@@ -30,6 +30,46 @@ final class DemoTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    /// A pane taller than a landscape view fits the width, scrolls, and follows the
+    /// cursor until the user scrolls away from it.
+    @MainActor
+    func testLandscapeFitsWidthAndFollowsTheCursor() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        pane.typeKey("3", modifierFlags: .command)
+        XCTAssertTrue(waitFor(pane, containing: "pane %4 100x60"))
+
+        // The grid stays exactly 100x60: the last row holds 99 cells and an X in column 100.
+        let rows = (pane.value as? String ?? "").components(separatedBy: "\n")
+        XCTAssertTrue(rows.contains { $0.count == 100 && $0.hasSuffix("X") }, "no 100-column last row")
+
+        // Fit width: the grid spans the window and is taller than it.
+        let window = app.windows.firstMatch.frame
+        sleep(1)
+        XCTAssertEqual(pane.frame.width, window.width, accuracy: 1)
+        XCTAssertGreaterThan(pane.frame.height, window.height)
+        // The cursor sits near the bottom, so the view scrolled down to it.
+        XCTAssertLessThan(pane.frame.minY, window.minY)
+        save("landscape-fit-width-100x60")
+
+        // Scrolling up to read stops the following, even when output arrives.
+        let followed = pane.frame.minY
+        pane.swipeDown()
+        sleep(1)
+        let reading = pane.frame.minY
+        XCTAssertGreaterThan(reading, followed + 50)
+        pane.typeText("x")
+        XCTAssertTrue(waitFor(pane, containing: "$ x"))
+        sleep(1)
+        XCTAssertEqual(pane.frame.minY, reading, accuracy: 1)
+    }
+
     /// Set MUXA_SCREENSHOT_DIR (TEST_RUNNER_MUXA_SCREENSHOT_DIR for xcodebuild) to keep screenshots.
     private func save(_ name: String) {
         guard let dir = ProcessInfo.processInfo.environment["MUXA_SCREENSHOT_DIR"] else { return }

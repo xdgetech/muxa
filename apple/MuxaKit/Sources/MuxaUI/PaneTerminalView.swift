@@ -7,11 +7,22 @@ import UIKit
 /// It never asks for another size: the pane belongs to the desktop layout.
 @MainActor
 public final class PaneTerminalView: UIView, PaneRenderer {
+    /// `.whole` fits the whole grid in the view. `.width` fits the columns only:
+    /// the grid is then taller than the view, and a scroll view around it shows a part.
+    public enum FitMode: Sendable {
+        case whole, width
+    }
+
     public let terminalView: TerminalView
     public private(set) var cols = 80
     public private(set) var rows = 24
+    public var fitMode: FitMode = .whole {
+        didSet { if fitMode != oldValue { setNeedsLayout() } }
+    }
+    /// Called after new bytes or a new screen, so a scroll view can follow the cursor.
+    public var onUpdate: (_ reset: Bool) -> Void = { _ in }
     private let replies = DropReplies()
-    private var fitted: (size: CGSize, cols: Int, rows: Int)?
+    private var fitted: (size: CGSize, cols: Int, rows: Int, mode: FitMode)?
 
     public override init(frame: CGRect) {
         terminalView = TerminalView(frame: .zero, font: nil, options: TerminalOptions(cols: 80, rows: 24, scrollback: 0))
@@ -30,10 +41,30 @@ public final class PaneTerminalView: UIView, PaneRenderer {
         self.rows = max(rows, 1)
         fit(force: true)
         terminalView.feed(byteArray: [UInt8](data)[...])
+        onUpdate(true)
     }
 
     public func feed(_ data: Data) {
         terminalView.feed(byteArray: [UInt8](data)[...])
+        onUpdate(false)
+    }
+
+    /// The cursor cell, in this view's coordinates.
+    public var cursorFrame: CGRect {
+        terminalView.convert(terminalView.caretFrame, to: self)
+    }
+
+    /// The height the grid needs at `width` in `.width` mode.
+    public func gridHeight(forWidth width: CGFloat) -> CGFloat {
+        let metrics = CellMetrics(scale: displayScale)
+        let size = CGSize(width: width, height: .greatestFiniteMagnitude)
+        let font = UIFont.monospacedSystemFont(
+            ofSize: metrics.largestFontSize(cols: cols, rows: nil, in: size), weight: .regular)
+        return (metrics.cell(for: font).height * CGFloat(rows)).rounded(.up) + 1
+    }
+
+    private var displayScale: CGFloat {
+        max(window?.screen.scale ?? traitCollection.displayScale, 1)
     }
 
     /// The screen as text, for VoiceOver and UI tests.
@@ -50,12 +81,11 @@ public final class PaneTerminalView: UIView, PaneRenderer {
     private func fit(force: Bool) {
         let size = bounds.size
         guard size.width > 0, size.height > 0 else { return }
-        if !force, let f = fitted, f.size == size, f.cols == cols, f.rows == rows { return }
-        fitted = (size, cols, rows)
+        if !force, let f = fitted, f.size == size, f.cols == cols, f.rows == rows, f.mode == fitMode { return }
+        fitted = (size, cols, rows, fitMode)
 
-        let scale = window?.screen.scale ?? traitCollection.displayScale
-        let metrics = CellMetrics(scale: max(scale, 1))
-        let fontSize = metrics.largestFontSize(cols: cols, rows: rows, in: size)
+        let metrics = CellMetrics(scale: displayScale)
+        let fontSize = metrics.largestFontSize(cols: cols, rows: fitMode == .whole ? rows : nil, in: size)
         let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         let cell = metrics.cell(for: font)
 
@@ -88,10 +118,13 @@ struct CellMetrics {
             height: max(1, ceil(height * scale) / scale))
     }
 
-    func largestFontSize(cols: Int, rows: Int, in size: CGSize) -> CGFloat {
+    /// With `rows` nil, only the width limits the font.
+    func largestFontSize(cols: Int, rows: Int?, in size: CGSize) -> CGFloat {
         func fits(_ s: CGFloat) -> Bool {
             let c = cell(for: UIFont.monospacedSystemFont(ofSize: s, weight: .regular))
-            return c.width * CGFloat(cols) + 1 <= size.width && c.height * CGFloat(rows) + 1 <= size.height
+            guard c.width * CGFloat(cols) + 1 <= size.width else { return false }
+            guard let rows else { return true }
+            return c.height * CGFloat(rows) + 1 <= size.height
         }
         // Cell size grows with the font size, so search it.
         var low: CGFloat = 2, high: CGFloat = 64

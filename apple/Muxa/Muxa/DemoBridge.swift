@@ -23,6 +23,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             Pane(id: "%3", window: "@2", index: 0, role: .unknown, cols: 132, rows: 43, command: "vim",
                  path: "/tmp", dead: false, shellForeground: false),
         ]),
+        // Taller than a landscape iPad at a readable size: it needs fit width and scrolling.
+        Session(id: "$3", name: "tall", panes: [
+            Pane(id: "%4", window: "@3", index: 0, role: .shell, cols: 100, rows: 60, command: "zsh",
+                 path: "/tmp", dead: false, shellForeground: true),
+        ]),
     ]
 
     init() {
@@ -85,7 +90,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         s += "\u{1b}[4;1H日本語 ✓ é  \u{1b}[31mred\u{1b}[32m green\u{1b}[34m blue\u{1b}[0m"
         s += "\u{1b}[\(rows);1H\u{1b}[7m" + String(repeating: " ", count: cols - 1) + "\u{1b}[0m"
         s += "\u{1b}[\(rows);\(cols)HX"
-        s += "\u{1b}[6;1H$ "
+        // A tall pane keeps its prompt near the bottom, like an agent's composer.
+        s += "\u{1b}[\(rows > 50 ? rows - 1 : 6);1H$ "
         return Data(s.utf8)
     }
 }
