@@ -41,11 +41,11 @@ The `refresh-client -C` workaround for narrow-client plugins was considered and 
 
 ## Emulator differences (client risk)
 
-Found with vt100 as the test oracle. Both are emulator behaviors, not bridge errors: the bridge forwards the same bytes either way. Check SwiftTerm for both in Phase 6.
+Found with vt100 as the test oracle. Both are emulator behaviors, not bridge errors: the bridge forwards the same bytes either way. SwiftTerm checked in `apple/MuxaKit/Tests/MuxaSessionTests/EmulatorTests.swift`.
 
-| Behavior | tmux (and xterm) | vt100 0.18 |
-|---|---|---|
-| Scroll region and the alternate screen | one region for the terminal | one region per screen; switching screens switches regions |
-| Cursor after DECSTBM (`ESC[t;br`) | home of the screen (0,0) | top of the new region |
+| Behavior | tmux (and xterm) | vt100 0.18 | SwiftTerm 1.99 |
+|---|---|---|---|
+| Scroll region and the alternate screen | one region for the terminal | one region per screen; switching screens switches regions | one region per screen, like vt100 |
+| Cursor after DECSTBM (`ESC[t;br`) | home of the screen (0,0) | top of the new region | (0,0), like tmux |
 
-A TUI that sets a region and switches screens without resetting it can render differently on the client. Mainstream TUIs reset the region before switching.
+A TUI that sets a region and switches screens without resetting it can render differently on the client. Mainstream TUIs reset the region before switching. The snapshot sets the region after `1049h`, so a fresh `screen` is always right; only later output can hit this. The tmux side was checked with `printf '\033[3;5r\033[?1049h…'` in a 20x10 pane: the line feed scrolled the region on the alternate screen.

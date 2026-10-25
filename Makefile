@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -24,6 +24,11 @@ test-tmux:
 
 test-harness:
 	bats tests/harness
+
+# MuxaKit on macOS. Needs Xcode's toolchain (swift-testing). When xcode-select points to the
+# Command Line Tools: DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer make test-apple
+test-apple:
+	swift test --package-path apple/MuxaKit
 
 lint-sh:
 	$(SHELLCHECK) -x $(SHELL_SCRIPTS)
