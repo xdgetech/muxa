@@ -9,3 +9,6 @@
 {"type":"bye","id":9}
 {"type":"chat","id":10,"pane":"%12"}
 {"type":"unchat","id":11}
+{"type":"docs","id":12,"pane":"%12"}
+{"type":"doc","id":13,"pane":"%12","path":"docs/plan.md"}
+{"type":"undoc","id":14}

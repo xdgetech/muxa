@@ -11,7 +11,7 @@
 {"type":"user","uuid":"u3","parentUuid":"a5","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_2","type":"tool_result","content":[{"type":"text","text":"The file was updated."}]}]}}
 {"type":"user","uuid":"u4","parentUuid":"u3","isSidechain":false,"message":{"role":"user","content":"<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>"}}
 {"type":"user","uuid":"u5","parentUuid":"u4","isSidechain":false,"message":{"role":"user","content":"<local-command-stdout>Set model to opus</local-command-stdout>"}}
-{"type":"user","uuid":"u6","parentUuid":"u5","isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}
+{"type":"user","uuid":"u6","parentUuid":"u5","isSidechain":false,"slug":"sample-plan","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}
 {"type":"attachment","uuid":"x1","attachment":{"type":"file"}}
 not json at all
-{"type":"user","uuid":"u7","parentUuid":"u6","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"toolu_gone","type":"tool_result","content":"result of a call before the cut"}]}}
+{"type":"user","uuid":"u7","parentUuid":"u6","isSidechain":false,"slug":"sample-plan","message":{"role":"user","content":[{"tool_use_id":"toolu_gone","type":"tool_result","content":"result of a call before the cut"}]}}

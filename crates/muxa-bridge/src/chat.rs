@@ -235,7 +235,7 @@ impl ChatTask {
     }
 }
 
-async fn pane_info(client: &Client, pane: PaneId) -> Result<PaneInfo, ErrorBody> {
+pub(crate) async fn pane_info(client: &Client, pane: PaneId) -> Result<PaneInfo, ErrorBody> {
     let found = tokio::time::timeout(COMMAND_TIMEOUT, muxa_tmux::pane(client, pane))
         .await
         .map_err(|_| error_body(ErrorCode::Tmux, "tmux did not answer in time"))?;

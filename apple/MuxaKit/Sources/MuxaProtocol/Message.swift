@@ -21,6 +21,12 @@ public enum Message: Equatable, Sendable {
     case chatEntries(ChatUpdate)
     /// The chat stopped, e.g. the agent exited.
     case chatEnded(chat: UInt64, reason: String)
+    /// The documents for a `docs` request, just before its `result`.
+    case docList(DocListing)
+    /// The whole text of the open document, first and after every change.
+    case docContent(doc: UInt64, path: String, text: String, mtime: UInt64?)
+    /// The open document is no longer readable.
+    case docEnded(doc: UInt64, reason: String)
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -71,7 +77,7 @@ extension ErrorCode: Codable {
 extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
-        case watch, pane, cols, rows, data, reason, chat
+        case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime
     }
 
     public init(from decoder: any Decoder) throws {
@@ -113,6 +119,18 @@ extension Message: Codable {
         case "chat-ended":
             self = .chatEnded(
                 chat: try c.decode(UInt64.self, forKey: .chat),
+                reason: try c.decode(String.self, forKey: .reason))
+        case "doc-list":
+            self = .docList(try DocListing(from: decoder))
+        case "doc-content":
+            self = .docContent(
+                doc: try c.decode(UInt64.self, forKey: .doc),
+                path: try c.decode(String.self, forKey: .path),
+                text: try c.decode(String.self, forKey: .text),
+                mtime: try c.decodeIfPresent(UInt64.self, forKey: .mtime))
+        case "doc-ended":
+            self = .docEnded(
+                doc: try c.decode(UInt64.self, forKey: .doc),
                 reason: try c.decode(String.self, forKey: .reason))
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
@@ -160,6 +178,19 @@ extension Message: Codable {
         case .chatEnded(let chat, let reason):
             try c.encode("chat-ended", forKey: .type)
             try c.encode(chat, forKey: .chat)
+            try c.encode(reason, forKey: .reason)
+        case .docList(let listing):
+            try c.encode("doc-list", forKey: .type)
+            try listing.encode(to: encoder)
+        case .docContent(let doc, let path, let text, let mtime):
+            try c.encode("doc-content", forKey: .type)
+            try c.encode(doc, forKey: .doc)
+            try c.encode(path, forKey: .path)
+            try c.encode(text, forKey: .text)
+            try c.encodeIfPresent(mtime, forKey: .mtime)
+        case .docEnded(let doc, let reason):
+            try c.encode("doc-ended", forKey: .type)
+            try c.encode(doc, forKey: .doc)
             try c.encode(reason, forKey: .reason)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)

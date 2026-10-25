@@ -49,6 +49,9 @@ sequenceDiagram
 | `paste` | `id`, `pane`, `text` | pasted; bracketed when the program enabled bracketed paste |
 | `chat` | `id`, `pane` | follow the agent conversation in this pane (capability `chat`); replaces the previous chat |
 | `unchat` | `id` | stop `chat-entries` |
+| `docs` | `id`, `pane` | list the pane's Markdown documents (capability `docs`); a `doc-list` comes before the `result` |
+| `doc` | `id`, `pane`, `path` | open a listed document and follow it; replaces the open document |
+| `undoc` | `id` | stop `doc-content` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -65,6 +68,9 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `pane-gone` | `watch`, `pane`, optional `reason` |
 | `chat-entries` | `chat`, `seq`, optional `reset`, `entries[]`, optional `status {state, since}`, optional `agent`, optional `truncated` |
 | `chat-ended` | `chat`, `reason` |
+| `doc-list` | `docs`, optional `root`, `entries[] {path, kind, title?, mtime?}`, optional `truncated` |
+| `doc-content` | `doc`, `path`, `text`, optional `mtime` |
+| `doc-ended` | `doc`, `reason` |
 | `bye` | `reason` |
 
 Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `tmux`, `internal`.
@@ -96,6 +102,15 @@ A bridge with the `chat` capability can follow the conversation of a coding agen
 7. `chat-ended` says the chat stopped, for example because the agent exited. Send `chat` again to follow a new one.
 
 Entries are made by the bridge from the agent's own records, which are private formats. Expect missing kinds rather than wrong ones. `assistant` text is markdown.
+
+## Documents
+
+A bridge with the `docs` capability serves the Markdown documents that belong to a pane, for reading.
+
+1. `docs {pane}` sends `doc-list`, then `result`. `docs` in the list is the request id.
+2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more.
+3. `doc {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `doc-content` with the whole text, and again whenever the file changes (checked every second). The client drops any whose `doc` is not its latest doc request.
+4. `doc-ended` says the document is no longer readable, for example removed, larger than 2 MiB, or a symlink to outside its directory.
 
 ## Rendering a pane
 

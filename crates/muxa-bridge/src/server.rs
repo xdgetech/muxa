@@ -12,6 +12,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::agents::Registry;
 use crate::chat::{self, ChatTask};
 use crate::convert::{self, error_body};
+use crate::docs::{self, DocTask};
 use crate::lines::{self, Line};
 use crate::watch::{Command, Watcher};
 
@@ -79,7 +80,7 @@ where
         protocol: muxa_protocol::VERSION,
         bridge: env!("CARGO_PKG_VERSION").into(),
         tmux: tmux_version,
-        capabilities: vec!["chat".into()],
+        capabilities: vec!["chat".into(), "docs".into()],
     };
     if out.send(hello).await.is_err() {
         return End::WriterFailed;
@@ -99,6 +100,16 @@ where
         )
         .run(),
     );
+    let (doc_tx, doc_rx) = mpsc::channel(8);
+    let docs = tokio::spawn(
+        DocTask::new(
+            Arc::clone(&client),
+            out.clone(),
+            doc_rx,
+            Arc::clone(&config.agents),
+        )
+        .run(),
+    );
     let (req_tx, req_rx) = mpsc::channel(64);
     let reader = tokio::spawn(read_requests(input, req_tx, out.clone()));
     let worker = Worker {
@@ -106,6 +117,7 @@ where
         out: out.clone(),
         watch: cmd_tx,
         chat: chat_tx,
+        docs: doc_tx,
     };
 
     let end = tokio::select! {
@@ -115,6 +127,7 @@ where
     reader.abort();
     watcher.abort();
     chats.abort();
+    docs.abort();
     if end == End::Idle {
         let _ = out
             .send(Message::Bye {
@@ -190,6 +203,7 @@ struct Worker {
     out: mpsc::Sender<Message>,
     watch: mpsc::Sender<Command>,
     chat: mpsc::Sender<chat::Command>,
+    docs: mpsc::Sender<docs::Command>,
 }
 
 impl Worker {
@@ -270,6 +284,41 @@ impl Worker {
                     }
                     Err(e) => Some(Err(convert::error(&e))),
                 };
+            }
+            // Document results come from the docs task, after the list or ahead of the content.
+            Request::Docs { id, pane } => {
+                return match pane.parse::<PaneId>() {
+                    Ok(pane) => {
+                        handoff(
+                            &self.docs,
+                            |ack| docs::Command::List { id, pane, ack },
+                            "docs",
+                        )
+                        .await
+                    }
+                    Err(e) => Some(Err(convert::error(&e))),
+                };
+            }
+            Request::Doc { id, pane, path } => {
+                return match pane.parse::<PaneId>() {
+                    Ok(pane) => {
+                        handoff(
+                            &self.docs,
+                            |ack| docs::Command::Open {
+                                id,
+                                pane,
+                                path,
+                                ack,
+                            },
+                            "docs",
+                        )
+                        .await
+                    }
+                    Err(e) => Some(Err(convert::error(&e))),
+                };
+            }
+            Request::Undoc { id } => {
+                return handoff(&self.docs, |ack| docs::Command::Close { id, ack }, "docs").await;
             }
             Request::Unchat { id } => {
                 return handoff(&self.chat, |ack| chat::Command::Stop { id, ack }, "chat").await;

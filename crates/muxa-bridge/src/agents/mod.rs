@@ -49,6 +49,21 @@ pub trait AgentAdapter: Send + Sync {
         pane: &PaneInfo,
         procs: &Processes,
     ) -> Result<Option<Box<dyn ChatSource>>, Error>;
+
+    /// Documents the agent in `pane` is writing, such as its current plan.
+    fn documents(&self, _pane: &PaneInfo, _procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
+        Ok(Vec::new())
+    }
+}
+
+/// A document an agent keeps outside the repo, e.g. a plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentDoc {
+    /// Shown to the user, e.g. the file name.
+    pub name: String,
+    pub path: PathBuf,
+    /// Files may only be served from inside this directory.
+    pub root: PathBuf,
 }
 
 /// One agent conversation, polled for changes.
@@ -96,6 +111,16 @@ impl Registry {
             adapters.push(Box::new(claude::ClaudeAdapter::new(dir)));
         }
         Self::new(adapters)
+    }
+
+    /// Every adapter's documents for `pane`.
+    pub fn documents(&self, pane: &PaneInfo) -> Result<Vec<AgentDoc>, Error> {
+        let procs = Processes::list()?;
+        let mut docs = Vec::new();
+        for adapter in &self.adapters {
+            docs.extend(adapter.documents(pane, &procs)?);
+        }
+        Ok(docs)
     }
 
     pub fn open(&self, pane: &PaneInfo) -> Result<Option<Opened>, Error> {

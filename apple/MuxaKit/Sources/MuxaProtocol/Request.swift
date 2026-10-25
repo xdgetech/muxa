@@ -19,12 +19,17 @@ public enum Request: Equatable, Sendable {
     /// capability. `chat-entries` for it carry this request's id as `chat`.
     case chat(id: UInt64, pane: String)
     case unchat(id: UInt64)
+    /// This pane's Markdown documents (capability `docs`); a `doc-list` comes first.
+    case docs(id: UInt64, pane: String)
+    /// Open a listed document and follow its changes; `doc-content` carries this id as `doc`.
+    case doc(id: UInt64, pane: String, path: String)
+    case undoc(id: UInt64)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
     public var id: UInt64 {
         switch self {
-        case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .bye(let id),
+        case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
             .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
             .bytes(let id, _, _), .paste(let id, _, _):
             id
@@ -34,7 +39,7 @@ public enum Request: Equatable, Sendable {
 
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
-        case type, id, pane, keys, text, data
+        case type, id, pane, keys, text, data, path
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -45,6 +50,14 @@ extension Request: Codable {
         case .unwatch(let id): try c.head("unwatch", id)
         case .bye(let id): try c.head("bye", id)
         case .unchat(let id): try c.head("unchat", id)
+        case .undoc(let id): try c.head("undoc", id)
+        case .docs(let id, let pane):
+            try c.head("docs", id)
+            try c.encode(pane, forKey: .pane)
+        case .doc(let id, let pane, let path):
+            try c.head("doc", id)
+            try c.encode(pane, forKey: .pane)
+            try c.encode(path, forKey: .path)
         case .watch(let id, let pane):
             try c.head("watch", id)
             try c.encode(pane, forKey: .pane)
@@ -83,6 +96,9 @@ extension Request: Codable {
         case "watch": self = .watch(id: id, pane: try pane())
         case "chat": self = .chat(id: id, pane: try pane())
         case "unchat": self = .unchat(id: id)
+        case "undoc": self = .undoc(id: id)
+        case "docs": self = .docs(id: id, pane: try pane())
+        case "doc": self = .doc(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
         case "keys": self = .keys(id: id, pane: try pane(), keys: try c.decode([String].self, forKey: .keys))
         case "text": self = .text(id: id, pane: try pane(), text: try c.decode(String.self, forKey: .text))
         case "paste": self = .paste(id: id, pane: try pane(), text: try c.decode(String.self, forKey: .text))

@@ -21,6 +21,7 @@ trait ChatSource: Send {
 
 - **`open`** gets the pane (`id`, session name, `pane_pid`, path, whether a shell is in front) and a snapshot of the process tree. It returns `None` when its agent is not running in that pane. The registry (`Registry::standard`) asks the adapters in order, and the first source wins.
 - **`poll`** runs every 500 ms on the blocking pool. It returns `Reset` (replace everything) or `Upsert` (add an entry, or replace the one with the same id). A source keeps whatever state it needs, for example to pair a tool call with its later result. `Error::Gone` ends the chat, for example when the agent exited.
+- **`documents`** (optional, empty by default) returns files the agent keeps outside the repo, such as its plan, for the Reader. Each comes with the directory it must stay in.
 - **The chat task** (`src/chat.rs`) is agent-neutral. It owns the protocol side: sequence numbers, batching, resending after the client fell behind, and checking the pane every 2 s.
 
 ## Rules for an adapter
@@ -52,4 +53,5 @@ Codex, for example, would find its process below `pane_pid` and tail its rollout
   - `isSidechain` (subagents) and `isMeta` lines are skipped, and so is thinking.
 - `/clear` and `/resume` keep the process but change `sessionId`. The source then resets to the new transcript.
 - After `/compact` or a rewind, the file is not linear. The chat may show messages that Claude Code no longer shows.
+- Every transcript line names the session's plan as `slug`. Plan mode writes it to `~/.claude/plans/<slug>.md`, which `documents` returns.
 - A permission prompt is not in the transcript while it waits. `status: waiting` is how a client learns about it.

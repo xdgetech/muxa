@@ -11,7 +11,7 @@ use muxa_protocol::{Agent, AgentState, ChatEntry, ChatKind, ChatTool};
 use serde_json::Value;
 
 use super::tail::{INITIAL_TAIL, JsonlTail, Poll};
-use super::{AgentAdapter, ChatEvent, ChatSource, Error, PaneInfo, Processes};
+use super::{AgentAdapter, AgentDoc, ChatEvent, ChatSource, Error, PaneInfo, Processes};
 
 pub const ID: &str = "claude-code";
 /// Entries sent on a reset.
@@ -44,6 +44,37 @@ impl AgentAdapter for ClaudeAdapter {
     ) -> Result<Option<Box<dyn ChatSource>>, Error> {
         Ok(find_session(&self.dir, pane, procs)?
             .map(|s| Box::new(ClaudeSource::new(self.dir.clone(), s)) as Box<dyn ChatSource>))
+    }
+
+    /// The plan of the instance in `pane`: every transcript line names it as `slug`,
+    /// and plan mode writes it to `plans/<slug>.md`.
+    fn documents(&self, pane: &PaneInfo, procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
+        let Some(session) = find_session(&self.dir, pane, procs)? else {
+            return Ok(Vec::new());
+        };
+        let Some(path) = transcript(&self.dir, &session) else {
+            return Ok(Vec::new());
+        };
+        let (_, lines, _) = JsonlTail::open(&path, INITIAL_TAIL)?;
+        let slug = lines.iter().rev().find_map(|l| {
+            let v: Value = serde_json::from_slice(l).ok()?;
+            Some(v.get("slug")?.as_str()?.to_owned())
+        });
+        let plans = self.dir.join("plans");
+        Ok(slug
+            .filter(|s| valid_slug(s))
+            .map(|s| plans.join(format!("{s}.md")))
+            .filter(|p| p.is_file())
+            .map(|path| AgentDoc {
+                name: path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                path,
+                root: plans,
+            })
+            .into_iter()
+            .collect())
     }
 }
 
@@ -114,6 +145,14 @@ fn state(s: &str) -> Option<AgentState> {
         "idle" => Some(AgentState::Idle),
         _ => None,
     }
+}
+
+/// A plan's slug becomes a file name; allow only lowercase words and dashes.
+fn valid_slug(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// The session id becomes part of a path; allow nothing but a UUID's characters.

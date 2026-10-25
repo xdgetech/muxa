@@ -4,6 +4,7 @@ mod agents;
 mod args;
 mod chat;
 mod convert;
+mod docs;
 mod lines;
 mod server;
 mod watch;

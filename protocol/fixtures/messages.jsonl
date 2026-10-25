@@ -13,3 +13,6 @@
 {"type":"chat-entries","chat":10,"seq":1,"reset":true,"entries":[{"id":"u:1","kind":"user","text":"Fix the failing test"},{"id":"a:m1","kind":"assistant","text":"Running the tests **first**."},{"id":"t:call1","kind":"tool","tool":{"name":"Bash","summary":"cargo test","result":"1 failed"}}],"status":{"state":"running","since":1767225600},"agent":"claude-code","truncated":true}
 {"type":"chat-entries","chat":10,"seq":2,"entries":[{"id":"t:call1","kind":"tool","tool":{"name":"Bash","summary":"cargo test","result":"error: could not compile","error":true}},{"id":"n:2","kind":"notice","text":"Interrupted"}]}
 {"type":"chat-ended","chat":10,"reason":"the transcript was removed"}
+{"type":"doc-list","docs":12,"root":"app","entries":[{"path":"plans/sleepy-bonbon.md","kind":"plan","title":"Reader plan","mtime":1767225600},{"path":"README.md","kind":"repo","mtime":1767225000},{"path":"docs/plan.md","kind":"repo"}],"truncated":true}
+{"type":"doc-content","doc":13,"path":"docs/plan.md","text":"# Plan\n\n```mermaid\nflowchart LR\n  A --> B\n```\n","mtime":1767225660}
+{"type":"doc-ended","doc":13,"reason":"the file was removed"}

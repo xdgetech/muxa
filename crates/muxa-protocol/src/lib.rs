@@ -60,6 +60,22 @@ pub enum Request {
     Unchat {
         id: u64,
     },
+    /// The Markdown documents for this pane: its repo's, and its agent's (a plan).
+    /// Needs the `docs` capability. A `doc-list` comes before the `result`.
+    Docs {
+        id: u64,
+        pane: String,
+    },
+    /// Open one of the documents `docs` listed, and follow its changes. Replaces
+    /// the open document; `doc-content` for it carries this request's id as `doc`.
+    Doc {
+        id: u64,
+        pane: String,
+        path: String,
+    },
+    Undoc {
+        id: u64,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -79,6 +95,9 @@ impl Request {
             | Request::Paste { id, .. }
             | Request::Chat { id, .. }
             | Request::Unchat { id }
+            | Request::Docs { id, .. }
+            | Request::Doc { id, .. }
+            | Request::Undoc { id }
             | Request::Bye { id } => *id,
         }
     }
@@ -150,8 +169,50 @@ pub enum Message {
     },
     /// The chat stopped, e.g. the agent's transcript became unreadable.
     ChatEnded { chat: u64, reason: String },
+    /// The documents for a `docs` request, sent just before its `result`.
+    DocList {
+        docs: u64,
+        /// The repo's top directory name, when the pane is in a git repo.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        root: Option<String>,
+        entries: Vec<DocInfo>,
+        /// More documents exist than were listed.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        truncated: bool,
+    },
+    /// The whole text of the open document, first and after every change.
+    DocContent {
+        doc: u64,
+        path: String,
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mtime: Option<u64>,
+    },
+    /// The open document is no longer readable, e.g. it was removed.
+    DocEnded { doc: u64, reason: String },
     /// The bridge is exiting.
     Bye { reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocInfo {
+    /// What to send in `doc`: relative to the repo for `repo`, `plans/<name>` for `plan`.
+    pub path: String,
+    pub kind: DocKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Epoch seconds of the last change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtime: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DocKind {
+    Repo,
+    /// Written by the pane's agent outside the repo.
+    Plan,
 }
 
 /// One item of an agent conversation, the same for every agent.
