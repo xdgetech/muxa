@@ -1,0 +1,70 @@
+import Foundation
+
+/// A file of the pane's repo that differs from HEAD.
+public struct ChangeInfo: Codable, Equatable, Identifiable, Sendable {
+    public enum Status: String, Codable, Sendable {
+        case modified, added, deleted, renamed, untracked, conflicted
+        /// A status added by a newer bridge.
+        case other
+
+        public init(from decoder: any Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Status(rawValue: raw) ?? .other
+        }
+    }
+
+    /// Relative to the repo; what to send in `diff`.
+    public var path: String
+    public var status: Status
+    /// The path before a rename.
+    public var oldPath: String?
+    /// Lines added and removed; nil for a binary file.
+    public var added: UInt32?
+    public var removed: UInt32?
+
+    public var id: String { path }
+
+    public init(path: String, status: Status, oldPath: String? = nil, added: UInt32? = nil, removed: UInt32? = nil) {
+        self.path = path
+        self.status = status
+        self.oldPath = oldPath
+        self.added = added
+        self.removed = removed
+    }
+}
+
+/// The body of a `change-list` message.
+public struct ChangeListing: Codable, Equatable, Sendable {
+    /// The id of the `changes` request.
+    public var changes: UInt64
+    /// The repo's top directory name.
+    public var root: String?
+    public var entries: [ChangeInfo]
+    /// More files changed than were listed.
+    public var truncated: Bool
+
+    public init(changes: UInt64, root: String? = nil, entries: [ChangeInfo], truncated: Bool = false) {
+        self.changes = changes
+        self.root = root
+        self.entries = entries
+        self.truncated = truncated
+    }
+
+    private enum Key: String, CodingKey { case changes, root, entries, truncated }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        changes = try c.decode(UInt64.self, forKey: .changes)
+        root = try c.decodeIfPresent(String.self, forKey: .root)
+        entries = try c.decode([ChangeInfo].self, forKey: .entries)
+        truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(changes, forKey: .changes)
+        try c.encodeIfPresent(root, forKey: .root)
+        try c.encode(entries, forKey: .entries)
+        if truncated { try c.encode(true, forKey: .truncated) }
+    }
+}

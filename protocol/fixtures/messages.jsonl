@@ -18,3 +18,7 @@
 {"type":"doc-ended","doc":13,"reason":"the file was removed"}
 {"type":"task-created","task":15,"session":"feat-search"}
 {"type":"result","id":15,"error":{"code":"task-failed","message":"could not create a worktree for feat/search: a branch named 'feat/search' already exists"}}
+{"type":"change-list","changes":16,"root":"app","entries":[{"path":"src/main.rs","status":"modified","added":3,"removed":1},{"path":"src/lib.rs","status":"renamed","oldPath":"src/old.rs","added":0,"removed":0},{"path":"logo.png","status":"added"},{"path":"notes.md","status":"untracked","added":2,"removed":0}],"truncated":true}
+{"type":"diff-content","diff":17,"path":"src/main.rs","text":"diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,2 +1,2 @@\n fn main() {\n-    old();\n+    new();\n"}
+{"type":"diff-content","diff":17,"path":"logo.png","binary":true}
+{"type":"diff-ended","diff":17,"reason":"src/main.rs has no changes now"}

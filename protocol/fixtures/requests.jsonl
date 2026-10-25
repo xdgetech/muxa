@@ -13,3 +13,6 @@
 {"type":"doc","id":13,"pane":"%12","path":"docs/plan.md"}
 {"type":"undoc","id":14}
 {"type":"new-task","id":15,"repo":"/work/app","branch":"feat/search","base":"origin/main"}
+{"type":"changes","id":16,"pane":"%12"}
+{"type":"diff","id":17,"pane":"%12","path":"src/main.rs"}
+{"type":"undiff","id":18}

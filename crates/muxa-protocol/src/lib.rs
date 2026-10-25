@@ -76,6 +76,22 @@ pub enum Request {
     Undoc {
         id: u64,
     },
+    /// The files that differ from HEAD in this pane's git repo, untracked ones
+    /// included. Needs the `changes` capability. A `change-list` comes before the `result`.
+    Changes {
+        id: u64,
+        pane: String,
+    },
+    /// Show the diff of one listed file, and follow it. Replaces the open diff;
+    /// `diff-content` for it carries this request's id as `diff`.
+    Diff {
+        id: u64,
+        pane: String,
+        path: String,
+    },
+    Undiff {
+        id: u64,
+    },
     /// Start a task: a worktree of `repo` on `branch`, and a session with an agent
     /// in it. Needs the `tasks` capability. A `task-created` comes before the `result`.
     NewTask {
@@ -110,6 +126,9 @@ impl Request {
             | Request::Doc { id, .. }
             | Request::Undoc { id }
             | Request::NewTask { id, .. }
+            | Request::Changes { id, .. }
+            | Request::Diff { id, .. }
+            | Request::Undiff { id }
             | Request::Bye { id } => *id,
         }
     }
@@ -202,6 +221,29 @@ pub enum Message {
     },
     /// The open document is no longer readable, e.g. it was removed.
     DocEnded { doc: u64, reason: String },
+    /// The changed files for a `changes` request, sent just before its `result`.
+    ChangeList {
+        changes: u64,
+        /// The repo's top directory name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        root: Option<String>,
+        entries: Vec<ChangeInfo>,
+        /// More files changed than were listed.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        truncated: bool,
+    },
+    /// The unified diff of the open file, first and after every change. A
+    /// binary file has no text.
+    DiffContent {
+        diff: u64,
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        binary: bool,
+    },
+    /// The open diff stopped, e.g. the file has no changes any more.
+    DiffEnded { diff: u64, reason: String },
     /// The session a `new-task` made or found, sent just before its `result`.
     TaskCreated { task: u64, session: String },
     /// The bridge is exiting.
@@ -227,6 +269,35 @@ pub enum DocKind {
     Repo,
     /// Written by the pane's agent outside the repo.
     Plan,
+}
+
+/// A file that differs from HEAD.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeInfo {
+    /// Relative to the repo; what to send in `diff`.
+    pub path: String,
+    pub status: ChangeStatus,
+    /// The path before a rename.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
+    /// Lines added and removed; absent for a binary file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeStatus {
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Untracked,
+    /// A merge conflict.
+    Conflicted,
 }
 
 /// One item of an agent conversation, the same for every agent.

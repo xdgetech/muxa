@@ -24,6 +24,12 @@ public enum Request: Equatable, Sendable {
     /// Open a listed document and follow its changes; `doc-content` carries this id as `doc`.
     case doc(id: UInt64, pane: String, path: String)
     case undoc(id: UInt64)
+    /// The files that differ from HEAD in the pane's repo (capability `changes`);
+    /// a `change-list` comes first.
+    case changes(id: UInt64, pane: String)
+    /// Show and follow one listed file's diff; `diff-content` carries this id as `diff`.
+    case diff(id: UInt64, pane: String, path: String)
+    case undiff(id: UInt64)
     /// Start a task on `branch` of the repo at `repo` (capability `tasks`); a
     /// `task-created` comes first. `base` is where a new branch starts.
     case newTask(id: UInt64, repo: String, branch: String, base: String?)
@@ -34,7 +40,8 @@ public enum Request: Equatable, Sendable {
         switch self {
         case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
             .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
-            .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _):
+            .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
+            .changes(let id, _), .diff(let id, _, _), .undiff(let id):
             id
         }
     }
@@ -54,6 +61,14 @@ extension Request: Codable {
         case .bye(let id): try c.head("bye", id)
         case .unchat(let id): try c.head("unchat", id)
         case .undoc(let id): try c.head("undoc", id)
+        case .undiff(let id): try c.head("undiff", id)
+        case .changes(let id, let pane):
+            try c.head("changes", id)
+            try c.encode(pane, forKey: .pane)
+        case .diff(let id, let pane, let path):
+            try c.head("diff", id)
+            try c.encode(pane, forKey: .pane)
+            try c.encode(path, forKey: .path)
         case .docs(let id, let pane):
             try c.head("docs", id)
             try c.encode(pane, forKey: .pane)
@@ -105,6 +120,9 @@ extension Request: Codable {
         case "chat": self = .chat(id: id, pane: try pane())
         case "unchat": self = .unchat(id: id)
         case "undoc": self = .undoc(id: id)
+        case "undiff": self = .undiff(id: id)
+        case "changes": self = .changes(id: id, pane: try pane())
+        case "diff": self = .diff(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
         case "docs": self = .docs(id: id, pane: try pane())
         case "doc": self = .doc(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
         case "new-task":

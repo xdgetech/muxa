@@ -2,6 +2,7 @@
 
 mod agents;
 mod args;
+mod changes;
 mod chat;
 mod convert;
 mod docs;

@@ -27,6 +27,12 @@ public enum Message: Equatable, Sendable {
     case docContent(doc: UInt64, path: String, text: String, mtime: UInt64?)
     /// The open document is no longer readable.
     case docEnded(doc: UInt64, reason: String)
+    /// The changed files for a `changes` request, just before its `result`.
+    case changeList(ChangeListing)
+    /// The unified diff of the open file, first and after every change; nil text for a binary file.
+    case diffContent(diff: UInt64, path: String, text: String?, binary: Bool)
+    /// The open diff stopped, e.g. the file has no changes any more.
+    case diffEnded(diff: UInt64, reason: String)
     /// The session a `new-task` made or found, just before its `result`.
     case taskCreated(task: UInt64, session: String)
     /// The bridge is exiting.
@@ -81,7 +87,7 @@ extension ErrorCode: Codable {
 extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
-        case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session
+        case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary
     }
 
     public init(from decoder: any Decoder) throws {
@@ -135,6 +141,18 @@ extension Message: Codable {
         case "doc-ended":
             self = .docEnded(
                 doc: try c.decode(UInt64.self, forKey: .doc),
+                reason: try c.decode(String.self, forKey: .reason))
+        case "change-list":
+            self = .changeList(try ChangeListing(from: decoder))
+        case "diff-content":
+            self = .diffContent(
+                diff: try c.decode(UInt64.self, forKey: .diff),
+                path: try c.decode(String.self, forKey: .path),
+                text: try c.decodeIfPresent(String.self, forKey: .text),
+                binary: try c.decodeIfPresent(Bool.self, forKey: .binary) ?? false)
+        case "diff-ended":
+            self = .diffEnded(
+                diff: try c.decode(UInt64.self, forKey: .diff),
                 reason: try c.decode(String.self, forKey: .reason))
         case "task-created":
             self = .taskCreated(
@@ -199,6 +217,19 @@ extension Message: Codable {
         case .docEnded(let doc, let reason):
             try c.encode("doc-ended", forKey: .type)
             try c.encode(doc, forKey: .doc)
+            try c.encode(reason, forKey: .reason)
+        case .changeList(let listing):
+            try c.encode("change-list", forKey: .type)
+            try listing.encode(to: encoder)
+        case .diffContent(let diff, let path, let text, let binary):
+            try c.encode("diff-content", forKey: .type)
+            try c.encode(diff, forKey: .diff)
+            try c.encode(path, forKey: .path)
+            try c.encodeIfPresent(text, forKey: .text)
+            if binary { try c.encode(true, forKey: .binary) }
+        case .diffEnded(let diff, let reason):
+            try c.encode("diff-ended", forKey: .type)
+            try c.encode(diff, forKey: .diff)
             try c.encode(reason, forKey: .reason)
         case .taskCreated(let task, let session):
             try c.encode("task-created", forKey: .type)

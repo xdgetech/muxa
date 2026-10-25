@@ -52,6 +52,9 @@ sequenceDiagram
 | `docs` | `id`, `pane` | list the pane's Markdown documents (capability `docs`); a `doc-list` comes before the `result` |
 | `doc` | `id`, `pane`, `path` | open a listed document and follow it; replaces the open document |
 | `undoc` | `id` | stop `doc-content` |
+| `changes` | `id`, `pane` | list the files that differ from HEAD in the pane's repo (capability `changes`); a `change-list` comes before the `result` |
+| `diff` | `id`, `pane`, `path` | show a listed file's diff and follow it; replaces the open diff |
+| `undiff` | `id` | stop `diff-content` |
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
@@ -72,6 +75,9 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `doc-list` | `docs`, optional `root`, `entries[] {path, kind, title?, mtime?}`, optional `truncated` |
 | `doc-content` | `doc`, `path`, `text`, optional `mtime` |
 | `doc-ended` | `doc`, `reason` |
+| `change-list` | `changes`, optional `root`, `entries[] {path, status, oldPath?, added?, removed?}`, optional `truncated` |
+| `diff-content` | `diff`, `path`, optional `text`, optional `binary` |
+| `diff-ended` | `diff`, `reason` |
 | `task-created` | `task`, `session` |
 | `bye` | `reason` |
 
@@ -114,6 +120,15 @@ A bridge with the `docs` capability serves the Markdown documents that belong to
 2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more.
 3. `doc {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `doc-content` with the whole text, and again whenever the file changes (checked every second). The client drops any whose `doc` is not its latest doc request.
 4. `doc-ended` says the document is no longer readable, for example removed, larger than 2 MiB, or a symlink to outside its directory.
+
+## Changes
+
+A bridge with the `changes` capability shows what differs from HEAD in a pane's git repo, for reading. Staged and unstaged changes count as one.
+
+1. `changes {pane}` sends `change-list`, then `result`. `changes` in the list is the request id.
+2. Each entry has `path` (relative to the repo) and `status`: `modified`, `added`, `deleted`, `renamed` (with `oldPath`), `untracked` or `conflicted`. `added` and `removed` count lines; they are absent for a binary file. Untracked files that git ignores are not listed. At most 2000, in path order; `truncated` says there were more.
+3. `diff {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `diff-content` with the file's whole unified diff (`git diff` against HEAD; for an untracked file, against nothing), and again whenever it changes (checked every 2 seconds). A binary file has `binary: true` and no `text`.
+4. `diff-ended` says the diff stopped, for example the file has no changes any more, or the diff is larger than 2 MiB.
 
 ## Tasks
 
