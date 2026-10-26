@@ -73,7 +73,7 @@ tmux-agents does not notify for a window shown on an attached client, for exampl
 muxa shows an "Agent" and a "Terminal" view per session. It finds them in this order:
 1. the pane option `@muxa_role` (`agent` or `shell`), which you can set yourself: `tmux set-option -p -t <pane> @muxa_role agent`;
 2. tags set by agent runners such as tmux-agents (`@agents_role`, `@agent_state`);
-3. in a window without such tags, the pane where muxa finds a running agent it knows (Claude Code). The window's other panes become terminals;
+3. in a window without such tags, the pane where muxa finds a running agent it knows (Claude Code or Codex). The window's other panes become terminals;
 4. otherwise the role is unknown. The other pane in the window that runs a shell becomes the terminal.
 
 Sessions are grouped by repo: tmux-agents' `@agent_repo`, or else the git repo of the session's first pane.

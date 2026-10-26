@@ -1,5 +1,5 @@
 //! Agent state changes reach the client as `sessions-changed`: from a tag, and
-//! from Claude Code's own session file when there is no tag.
+//! and from an agent's own records when there is no tag.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -7,6 +7,7 @@ mod common;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use common::codex::CodexDir;
 use common::{Bridge, Server};
 use muxa_protocol::{AgentState, Message};
 use serde_json::{Value, json};
@@ -119,4 +120,25 @@ async fn an_untagged_agents_own_state_is_followed() {
     write("waiting");
     assert!(changed(&mut bridge).await, "the change was not announced");
     assert_eq!(state_of(&mut bridge, pane).await, Some(AgentState::Waiting));
+}
+
+#[tokio::test]
+async fn an_untagged_codex_turn_is_followed() {
+    let server = Server::start();
+    let codex = CodexDir::new("states");
+    let (pane, cwd) = codex.start(&server, &["new-session", "-d", "-s", "plain"]);
+    let rollout = codex.rollout(&cwd);
+    let (mut bridge, _) = Bridge::start(&server, &["--agent-dir", &codex.arg()]).await;
+    assert_eq!(state_of(&mut bridge, &pane).await, Some(AgentState::Idle));
+    settle(&mut bridge).await;
+
+    CodexDir::append(
+        &rollout,
+        r#"{"type":"event_msg","payload":{"type":"task_started","started_at":1792135900}}"#,
+    );
+    assert!(changed(&mut bridge).await, "the change was not announced");
+    assert_eq!(
+        state_of(&mut bridge, &pane).await,
+        Some(AgentState::Running)
+    );
 }

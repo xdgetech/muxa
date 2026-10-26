@@ -8,6 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use common::codex::CodexDir;
 use common::{Bridge, Server};
 use muxa_protocol::{AgentState, ErrorCode, Message};
 use serde_json::{Value, json};
@@ -200,4 +201,30 @@ async fn the_chat_ends_when_the_agent_exits() {
         }
     }
     assert!(Path::new(&claude.transcript).exists());
+}
+
+#[tokio::test]
+async fn follows_codex_by_its_process_and_rollout() {
+    let server = Server::start();
+    let codex = CodexDir::new("follow");
+    let (pane, cwd) = codex.start(&server, &["new-window", "-d"]);
+    codex.rollout(&cwd);
+
+    let (mut bridge, _) = Bridge::start(&server, &["--agent-dir", &codex.arg()]).await;
+    assert!(is_ok(
+        &bridge.request(json!({"type": "chat", "pane": pane})).await
+    ));
+    let (_, seq, reset, ids, status) = entries(&mut bridge).await;
+    assert_eq!((seq, reset), (1, true));
+    assert_eq!(
+        ids,
+        [
+            "m:msg_user_2",
+            "m:msg_asst_1",
+            "t:call_exec_1",
+            "t:call_shell_1",
+            "m:msg_asst_2"
+        ]
+    );
+    assert_eq!(status, Some(AgentState::Idle));
 }

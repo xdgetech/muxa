@@ -2,7 +2,7 @@
 
 The chat view ("Pretty") shows a coding agent's conversation as messages instead of a terminal. The bridge builds it from what the agent itself records. An **agent adapter** knows one agent: where it keeps its records and how to read them. The rest of muxa, including the protocol and the apps, never sees an agent's own format.
 
-Adapters live in `crates/muxa-bridge/src/agents/`. Claude Code (`claude.rs`) is the first one.
+Adapters live in `crates/muxa-bridge/src/agents/`: Claude Code (`claude.rs`) and Codex (`codex.rs`). `log.rs` holds the bounded entry list they share.
 
 ## Contract
 
@@ -27,7 +27,7 @@ trait ChatSource: Send {
 
 ## Rules for an adapter
 
-1. **Find the agent by facts, not guesses.** Match it to the pane by ids the agent records, and check that its process still runs inside the pane (`Processes::is_within`). Pane ids restart with the tmux server, so match the session name too. If nothing matches, return `None`; the client then shows the terminal.
+1. **Find the agent by facts, not guesses.** Match it to the pane by ids the agent records, and check that its process still runs inside the pane (`Processes::is_within`). When the agent records no pane, as Codex does, match its process by name and its files by cwd and time, and document the limits. Pane ids restart with the tmux server, so match the session name too. If nothing matches, return `None`; the client then shows the terminal.
 2. **Skip what you don't understand.** Agent formats are private and change. An unknown line or field is dropped, never turned into a made-up entry.
 3. **Report state only when the agent records it** (AGENTS.md, invariant 6). When the pane is back at a shell (`shell_foreground`), report `None`.
 4. **Never log content.** Log ids, sizes and errors. Transcripts get the same rule as pane bytes (invariant 5).
@@ -40,8 +40,6 @@ trait ChatSource: Send {
 1. Add `src/agents/<agent>.rs` with the adapter and its source.
 2. Add it to `Registry::standard`, with a default data directory. `--agent-dir <id>=PATH` overrides it.
 3. Add the sample files and unit tests, and an integration test like `tests/chat.rs`.
-
-Codex, for example, would find its process below `pane_pid` and tail its rollout file under `~/.codex/sessions/`.
 
 **Planned, not built:** an external adapter, an executable named on the command line with `--agent-exec NAME=PATH`, that receives the pane info as JSON and prints entries. It would plug in as one more `ChatSource`. The bridge will never search `PATH` for adapters.
 
@@ -72,3 +70,20 @@ trait TaskLauncher: Send + Sync {
 - After `/compact` or a rewind, the file is not linear. The chat may show messages that Claude Code no longer shows.
 - Every transcript line names the session's plan as `slug`. Plan mode writes it to `~/.claude/plans/<slug>.md`, which `documents` returns.
 - A permission prompt is not in the transcript while it waits. `status: waiting` is how a client learns about it.
+
+## Codex
+
+Checked with Codex CLI 0.160.0.
+
+- Codex records no pane and no pid. The adapter finds a process named `codex` below `pane_pid` (`Processes::named_within`) and takes its start time from `ps`.
+- `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`: one conversation. The first line, `session_meta`, holds its `cwd`. The adapter follows the newest rollout whose `cwd` is the pane's path and that was written since the process started. Day directories from the day before the start are searched.
+- `response_item` lines hold the conversation:
+  - `message` with role `user` or `assistant`. `developer` messages, the `# AGENTS.md` text and whole tagged blocks such as `<environment_context>` are Codex's own context and are skipped.
+  - `function_call` and `custom_tool_call` (for example `exec`), paired with their `*_output` by `call_id`.
+  - `reasoning` is skipped.
+- `event_msg` lines `task_started` and `task_complete` give the state, Running or Idle, with `started_at` and `completed_at` as its time. `turn_aborted` is Idle.
+- Codex does not record an approval prompt, so a Codex agent never shows `waiting`.
+- Every 4 s the source checks that the process still runs, and switches to a newer rollout (`/new`).
+- Limits:
+  - Two Codex instances in one directory are not told apart. Both panes follow the newest rollout.
+  - A resumed conversation from an older day directory is not found.

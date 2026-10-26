@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 
+pub mod codex;
+
 static NEXT: AtomicU32 = AtomicU32::new(0);
 pub const WAIT: Duration = Duration::from_secs(5);
 

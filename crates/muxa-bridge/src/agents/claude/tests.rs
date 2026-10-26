@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use super::*;
+use crate::agents::log::MAX_ENTRIES;
 
 const SAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/claude-code");
 const SESSION_ID: &str = "0b8c3c0e-1111-4a2b-9c3d-000000000001";
@@ -14,7 +15,7 @@ fn normalize(text: &str) -> Vec<ChatEntry> {
     for line in text.lines() {
         conv.apply(line.as_bytes());
     }
-    conv.entries
+    conv.log.all().to_vec()
 }
 
 fn pane() -> PaneInfo {
@@ -127,7 +128,7 @@ fn a_result_updates_its_call_and_reports_the_change() {
         changed[0].tool.as_ref().unwrap().result.as_deref(),
         Some("fn main")
     );
-    assert_eq!(conv.entries.len(), 1);
+    assert_eq!(conv.log.len(), 1);
 }
 
 #[test]

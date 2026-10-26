@@ -4,11 +4,14 @@
 //! Every function here may block (files, `ps`); callers run them on the blocking pool.
 
 pub mod claude;
+pub mod codex;
+pub mod log;
 pub mod tail;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::{Duration, SystemTime};
 
 use muxa_protocol::{Agent, ChatEntry};
 
@@ -118,10 +121,17 @@ impl Registry {
         let claude = dirs
             .get(claude::ID)
             .cloned()
-            .or_else(|| home.map(|h| h.join(".claude")));
+            .or_else(|| home.as_ref().map(|h| h.join(".claude")));
+        let codex = dirs
+            .get(codex::ID)
+            .cloned()
+            .or_else(|| home.map(|h| h.join(".codex")));
         let mut adapters: Vec<Box<dyn AgentAdapter>> = Vec::new();
         if let Some(dir) = claude {
             adapters.push(Box::new(claude::ClaudeAdapter::new(dir)));
+        }
+        if let Some(dir) = codex {
+            adapters.push(Box::new(codex::CodexAdapter::new(dir)));
         }
         Self::new(adapters)
     }
@@ -152,17 +162,25 @@ impl Registry {
     }
 }
 
-/// A snapshot of the process tree: each pid's parent.
-#[derive(Debug, Default, Clone)]
+/// A snapshot of the process tree: each pid's parent, and its age and name when known.
+#[derive(Debug, Clone)]
 pub struct Processes {
     parent: HashMap<u32, u32>,
+    info: HashMap<u32, (Duration, String)>,
+    at: SystemTime,
+}
+
+impl Default for Processes {
+    fn default() -> Self {
+        Self::parse("")
+    }
 }
 
 impl Processes {
     /// `ps` works the same on macOS and Linux and needs no extra crate or `unsafe`.
     pub fn list() -> Result<Self, Error> {
         let out = Command::new("ps")
-            .args(["-A", "-o", "pid=,ppid="])
+            .args(["-A", "-o", "pid=,ppid=,etime=,comm="])
             .output()
             .map_err(|e| Error::Processes(e.to_string()))?;
         if !out.status.success() {
@@ -171,15 +189,52 @@ impl Processes {
         Ok(Self::parse(&String::from_utf8_lossy(&out.stdout)))
     }
 
+    /// Lines of `pid ppid [etime command]`. `command` is a name on Linux and a path
+    /// on macOS, and may contain spaces.
     pub fn parse(text: &str) -> Self {
-        let parent = text
-            .lines()
-            .filter_map(|l| {
-                let mut f = l.split_whitespace();
-                Some((f.next()?.parse().ok()?, f.next()?.parse().ok()?))
-            })
+        let mut parent = HashMap::new();
+        let mut info = HashMap::new();
+        for line in text.lines() {
+            let mut f = line.split_whitespace();
+            let (Some(Ok(pid)), Some(Ok(ppid))) =
+                (f.next().map(str::parse), f.next().map(str::parse))
+            else {
+                continue;
+            };
+            parent.insert(pid, ppid);
+            if let (Some(age), Some(command)) = (f.next().and_then(elapsed), f.next()) {
+                let rest: Vec<&str> = f.collect();
+                let command = if rest.is_empty() {
+                    command.to_owned()
+                } else {
+                    format!("{command} {}", rest.join(" "))
+                };
+                let name = command.rsplit('/').next().unwrap_or("").to_owned();
+                info.insert(pid, (age, name));
+            }
+        }
+        Self {
+            parent,
+            info,
+            at: SystemTime::now(),
+        }
+    }
+
+    /// The processes named `name` at or below `root`.
+    pub fn named_within(&self, name: &str, root: u32) -> Vec<u32> {
+        let mut pids: Vec<u32> = self
+            .info
+            .iter()
+            .filter(|(pid, (_, n))| n == name && self.is_within(**pid, root))
+            .map(|(pid, _)| *pid)
             .collect();
-        Self { parent }
+        pids.sort_unstable();
+        pids
+    }
+
+    /// When `pid` started, to the second.
+    pub fn started(&self, pid: u32) -> Option<SystemTime> {
+        self.at.checked_sub(self.info.get(&pid)?.0)
     }
 
     /// `pid` is alive and is `root` or runs below it.
@@ -202,9 +257,46 @@ impl Processes {
     }
 }
 
+/// `ps` elapsed time: `[[dd-]hh:]mm:ss`.
+fn elapsed(s: &str) -> Option<Duration> {
+    let (days, clock) = match s.split_once('-') {
+        Some((d, rest)) => (d.parse::<u64>().ok()?, rest),
+        None => (0, s),
+    };
+    let mut secs = 0u64;
+    let parts: Vec<&str> = clock.split(':').collect();
+    if !(2..=3).contains(&parts.len()) {
+        return None;
+    }
+    for part in parts {
+        secs = secs * 60 + part.parse::<u64>().ok()?;
+    }
+    Some(Duration::from_secs(days * 86_400 + secs))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_and_ages_come_from_ps() {
+        let procs = Processes::parse(
+            "  1     0 21-15:34:52 /sbin/launchd\n 100     1    01:02 -zsh\n 200   100 1:00:05 /opt/homebrew/bin/codex\n 300   200    00:03 /Applications/My App.app/x\n",
+        );
+        assert_eq!(procs.named_within("codex", 100), vec![200]);
+        assert!(procs.named_within("codex", 1).contains(&200));
+        assert!(
+            procs.named_within("x", 100).contains(&300),
+            "a path with spaces"
+        );
+        let age = procs
+            .at
+            .duration_since(procs.started(200).unwrap())
+            .unwrap();
+        assert_eq!(age, Duration::from_secs(3605));
+        assert_eq!(elapsed("2-00:00:01"), Some(Duration::from_secs(172_801)));
+        assert_eq!(elapsed("junk"), None);
+    }
 
     #[test]
     fn descendants_are_within_their_pane() {

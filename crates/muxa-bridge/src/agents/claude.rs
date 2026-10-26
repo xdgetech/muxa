@@ -10,17 +10,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use muxa_protocol::{Agent, AgentState, ChatEntry, ChatKind, ChatTool};
 use serde_json::Value;
 
+use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, cap};
 use super::tail::{INITIAL_TAIL, JsonlTail, Poll};
 use super::{AgentAdapter, AgentDoc, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
 pub const ID: &str = "claude-code";
-/// Entries sent on a reset.
-const INITIAL_ENTRIES: usize = 200;
-/// Entries kept for resends; older ones are dropped.
-const MAX_ENTRIES: usize = 500;
-const MAX_TEXT: usize = 64 << 10;
-const MAX_RESULT: usize = 2 << 10;
-const MAX_SUMMARY: usize = 200;
 
 pub struct ClaudeAdapter {
     dir: PathBuf,
@@ -281,8 +275,8 @@ impl ClaudeSource {
         for line in &lines {
             self.conv.apply(line);
         }
-        let all = self.conv.entries.len();
-        let entries = self.conv.entries[all.saturating_sub(INITIAL_ENTRIES)..].to_vec();
+        let all = self.conv.log.len();
+        let entries = self.conv.log.recent();
         Ok(self.mark_reset(entries, cut || all > INITIAL_ENTRIES))
     }
 
@@ -326,8 +320,7 @@ impl ChatSource for ClaudeSource {
     }
 
     fn entries(&self) -> Vec<ChatEntry> {
-        let all = self.conv.entries.len();
-        self.conv.entries[all.saturating_sub(INITIAL_ENTRIES)..].to_vec()
+        self.conv.log.recent()
     }
 
     fn status(&self) -> Option<Agent> {
@@ -339,8 +332,7 @@ impl ChatSource for ClaudeSource {
 /// that share `message.id`; a tool's result arrives later in a user line.
 #[derive(Default)]
 struct Conversation {
-    entries: Vec<ChatEntry>,
-    index: HashMap<String, usize>,
+    log: EntryLog,
     /// tool_use id -> entry id
     tools: HashMap<String, String>,
 }
@@ -414,7 +406,7 @@ impl Conversation {
         let use_id = block.get("tool_use_id")?.as_str()?;
         // A result whose call was before the initial cut has nothing to attach to.
         let entry_id = self.tools.get(use_id)?.clone();
-        let mut entry = self.entries[*self.index.get(&entry_id)?].clone();
+        let mut entry = self.log.get(&entry_id)?.clone();
         let tool = entry.tool.as_mut()?;
         tool.result = Some(cap(&result_text(block.get("content")), MAX_RESULT));
         tool.error = block
@@ -433,8 +425,8 @@ impl Conversation {
                         continue;
                     };
                     let id = format!("a:{message_id}");
-                    let merged = match self.index.get(&id) {
-                        Some(&i) => format!("{}\n\n{text}", self.entries[i].text),
+                    let merged = match self.log.get(&id) {
+                        Some(e) => format!("{}\n\n{text}", e.text),
                         None => text.to_owned(),
                     };
                     changed.push(self.upsert(ChatEntry {
@@ -471,29 +463,12 @@ impl Conversation {
     }
 
     fn upsert(&mut self, entry: ChatEntry) -> ChatEntry {
-        match self.index.get(&entry.id) {
-            Some(&i) => self.entries[i] = entry.clone(),
-            None => {
-                self.index.insert(entry.id.clone(), self.entries.len());
-                self.entries.push(entry.clone());
-                if self.entries.len() > MAX_ENTRIES + MAX_ENTRIES / 5 {
-                    self.trim();
-                }
-            }
+        let (entry, trimmed) = self.log.upsert(entry);
+        if trimmed {
+            let log = &self.log;
+            self.tools.retain(|_, id| log.contains(id));
         }
         entry
-    }
-
-    fn trim(&mut self) {
-        let drop = self.entries.len() - MAX_ENTRIES;
-        self.entries.drain(..drop);
-        self.index = self
-            .entries
-            .iter()
-            .enumerate()
-            .map(|(i, e)| (e.id.clone(), i))
-            .collect();
-        self.tools.retain(|_, id| self.index.contains_key(id));
     }
 }
 
@@ -533,18 +508,6 @@ fn between<'a>(text: &'a str, open: &str, close: &str) -> Option<&'a str> {
     let start = text.find(open)? + open.len();
     let end = text[start..].find(close)? + start;
     Some(text[start..end].trim())
-}
-
-/// At most `max` bytes, cut on a character boundary, with an ellipsis when cut.
-fn cap(text: &str, max: usize) -> String {
-    if text.len() <= max {
-        return text.to_owned();
-    }
-    let mut end = max;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}…", &text[..end])
 }
 
 #[cfg(test)]

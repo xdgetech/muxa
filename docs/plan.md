@@ -12,7 +12,7 @@ What works today:
   - saved hosts, one-time password setup of a restricted key, and host keys pinned on first use;
   - sessions grouped by repo, with each agent's state and its age;
   - the Agent / Terminal switch, and every keyboard shortcut in the README;
-  - Chat: a Claude Code conversation as messages, with a composer and quick keys (ADR 0005, `docs/agents.md`);
+  - Chat: a Claude Code or Codex conversation as messages, with a composer and quick keys (ADR 0005, `docs/agents.md`);
   - the Reader: the pane's plan, the repo's Markdown files and its uncommitted changes, rendered offline (ADR 0006, 0007);
   - starting and closing tasks, with or without tmux-agents (ADR 0007);
   - a banner when an agent in another session waits, finishes or fails (ADR 0008);
@@ -22,7 +22,6 @@ What works today:
 
 - An Esc / Ctrl / arrow bar for the on-screen keyboard in the terminal view.
 - Native approval cards for agent permission prompts.
-- A Codex adapter.
 
 ## Later
 
