@@ -10,6 +10,17 @@ extension KeyInputView {
 
     public func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
         let text = markedText ?? ""
+        // A kana keyboard composes even a lone letter: with Ctrl from the bar, that
+        // letter is the chord. The delegate calls make the input method drop it.
+        if keyBar.control, !composition.isComposing, !text.isEmpty,
+            case .keys = keyBar.peek(.text(text))
+        {
+            inputDelegate?.textWillChange(self)
+            let chord = keyBar.type(.text(text))
+            inputDelegate?.textDidChange(self)
+            send(chord)
+            return
+        }
         let end = text.utf16.count
         // NSNotFound: no selection; the caret goes after the text.
         let selection = selectedRange.location == NSNotFound

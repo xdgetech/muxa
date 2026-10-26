@@ -16,11 +16,11 @@ What works today:
   - the Reader: the pane's plan, the repo's Markdown files and its uncommitted changes, rendered offline (ADR 0006, 0007);
   - starting and closing tasks, with or without tmux-agents (ADR 0007);
   - a banner when an agent in another session waits, finishes or fails (ADR 0008);
-  - Japanese input in the pane.
+  - Japanese input in the pane;
+  - a bar with Esc, Tab, Ctrl and the arrows above the on-screen keyboard.
 
 ## Next
 
-- An Esc / Ctrl / arrow bar for the on-screen keyboard in the terminal view.
 - Native approval cards for agent permission prompts.
 
 ## Later

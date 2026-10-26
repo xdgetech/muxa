@@ -1,4 +1,5 @@
 #if canImport(UIKit)
+import GameController
 import MuxaSession
 import UIKit
 
@@ -6,6 +7,7 @@ import UIKit
 /// names; typed text goes through `insertText`. Cmd chords pass on to the app.
 /// An input method's composition (Japanese, Chinese) is shown at the cursor and
 /// sent only when committed; the text input plumbing is in KeyInputView+TextInput.
+/// Above the on-screen keyboard, a `KeyBarView` adds the keys it lacks.
 @MainActor
 public final class KeyInputView: UIView, UITextInput {
     public var onOutput: (KeyMap.Output) -> Void = { _ in }
@@ -16,6 +18,8 @@ public final class KeyInputView: UIView, UITextInput {
     public var caretFrame: () -> CGRect = { .zero }
 
     var composition = Composition()
+    var keyBar = KeyBar()
+    private var keyBarView: KeyBarView?
     let compositionLabel = UILabel()
     public weak var inputDelegate: UITextInputDelegate?
     public lazy var tokenizer: UITextInputTokenizer = UITextInputStringTokenizer(textInput: self)
@@ -30,6 +34,9 @@ public final class KeyInputView: UIView, UITextInput {
         // shortcuts) as a bar over the bottom of the pane. The pane has no use for them.
         inputAssistantItem.leadingBarButtonGroups = []
         inputAssistantItem.trailingBarButtonGroups = []
+        for name in [Notification.Name.GCKeyboardDidConnect, .GCKeyboardDidDisconnect] {
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardsChanged), name: name, object: nil)
+        }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -42,17 +49,43 @@ public final class KeyInputView: UIView, UITextInput {
     public var hasText: Bool { true }
 
     public func insertText(_ text: String) {
-        send(composition.insert(text))
+        send(keyBar.type(composition.insert(text)))
     }
 
     public func deleteBackward() {
-        send(composition.deleteBackward())
+        send(keyBar.type(composition.deleteBackward()))
     }
 
-    /// Sends what the composition gave back, and redraws the composition.
+    /// Sends what the composition gave back, and redraws the composition and the bar.
     func send(_ output: KeyMap.Output) {
         if output != .none { onOutput(output) }
         showComposition()
+        keyBarView?.show(keyBar)
+    }
+
+    // A hardware keyboard has these keys, and the bar would cover the pane's bottom rows.
+    public override var inputAccessoryView: UIView? {
+        guard GCKeyboard.coalesced == nil else { return nil }
+        if let keyBarView { return keyBarView }
+        let view = KeyBarView()
+        view.onTap = { [weak self] key in self?.tap(key) }
+        keyBarView = view
+        return view
+    }
+
+    @objc nonisolated private func keyboardsChanged() {
+        Task { @MainActor [weak self] in self?.reloadInputViews() }
+    }
+
+    /// A bar key ends any composition first, as Return would, so the order typed is kept.
+    func tap(_ key: KeyBar.Key) {
+        if composition.isComposing {
+            inputDelegate?.textWillChange(self)
+            let committed = composition.commit()
+            inputDelegate?.textDidChange(self)
+            send(committed)
+        }
+        send(keyBar.tap(key))
     }
 
     /// The marked text over the cursor cell, underlined, kept inside the view.

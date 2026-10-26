@@ -132,6 +132,34 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(waitFor(pane, containing: "$ 日本語"))
     }
 
+    /// The bar above the on-screen keyboard sends the keys it lacks; Ctrl is one-shot.
+    @MainActor
+    func testKeyBarSendsKeysTheKeyboardLacks() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        // A tap, not Cmd+R: after a hardware key, iPadOS shows no software keyboard.
+        app.buttons["Agent"].firstMatch.tap()
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+
+        tapWhenReady(app.buttons["keybar-escape"])
+        XCTAssertTrue(waitFor(pane, containing: "<Escape>"))
+        app.buttons["keybar-up"].tap()
+        XCTAssertTrue(waitFor(pane, containing: "<Up>"))
+        // Ctrl is one-shot. The chord wins also when the keyboard composes letters (kana).
+        app.buttons["keybar-control"].tap()
+        XCTAssertTrue(app.buttons["keybar-control"].isSelected)
+        app.keyboards.keys["c"].tap()
+        XCTAssertTrue(waitFor(pane, containing: "<C-c>"))
+        XCTAssertFalse(app.buttons["keybar-control"].isSelected)
+        // The input method kept nothing of the chord: a bar key would send it first.
+        app.buttons["keybar-escape"].tap()
+        XCTAssertTrue(waitFor(pane, containing: "<C-c><Escape>"))
+        save("keybar")
+    }
+
     /// The Reader lists uncommitted changes first; a diff reads like GitHub's and
     /// follows the file.
     @MainActor
