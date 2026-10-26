@@ -69,7 +69,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `result` | `id` (absent only for an unreadable request), optional `error {code, message}`, optional `sessions` |
 | `screen` | `watch`, `pane`, `cols`, `rows`, `data` |
 | `output` | `watch`, `pane`, `data` |
-| `sessions-changed` | none. Send `list` again. Best effort: tmux reports pane changes only for the bridge's current session, so also re-list whenever the session list is shown. |
+| `sessions-changed` | none. Send `list` again. Sent when tmux reports a structural change, and when an agent pane's role or state changed (checked every 2 seconds). Best effort: tmux reports pane changes only for the bridge's current session, so also re-list whenever the session list is shown. |
 | `pane-gone` | `watch`, `pane`, optional `reason` |
 | `chat-entries` | `chat`, `seq`, optional `reset`, `entries[]`, optional `status {state, since}`, optional `agent`, optional `truncated` |
 | `chat-ended` | `chat`, `reason` |
@@ -97,7 +97,7 @@ A session has `id`, `name`, optional `repo`, `repoDir` (the repo's main checkout
 - **Roles never come from screen content.** In order: `@muxa_role`, then agent-runner tags, then, in a window with no agent pane, the pane where an agent adapter sees its agent running (the window's other untagged panes are then `shell`), then `unknown`. Clients do not show `hidden` panes.
 - **Repo without tags:** a session without `@agent_repo_dir` gets `repo` and `repoDir` from the git repo of its first visible pane, also when that pane is in a worktree.
 - **Agent/Terminal toggle:** when a session has no `agent`/`shell` roles, the client may treat the pane in the same window whose `shellForeground` is true as the terminal. If there is none, it disables the toggle.
-- **Agent state** (`running`, `waiting`, `idle`, `done`, `error`) is present only when an agent runner reports it. `since` is epoch seconds. When `shellForeground` is true, the state is likely stale: show it as such, or as unknown.
+- **Agent state** (`running`, `waiting`, `idle`, `done`, `error`) is present only when an agent runner reports it, or, for a pane without a state tag, when the agent itself records it (for Claude Code, its session file). `since` is epoch seconds. When `shellForeground` is true, the state is likely stale: show it as such, or as unknown.
 
 ## Chat
 

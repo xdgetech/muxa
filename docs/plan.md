@@ -93,7 +93,14 @@ Status:
   4. The Reader lists uncommitted changes and shows each file's diff like GitHub's unified view, following the file.
 
   Waiting for the author's run on the iPad: a real task in a real repo, a fresh shell in landscape, and real diffs.
-- Follow-ups: closing a task from the iPad (it removes a worktree, so it needs its own decision), IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
+- Round 4 (ADR 0007, 0008):
+  1. Closing a task from the iPad, with tmux-agents' three choices: close (removes a merged worktree), keep the worktree, or remove it anyway. Uncommitted changes are never removed.
+  2. The bridge follows agent states every 2 seconds, from tags or from the agent's own files, and tells the client.
+  3. A banner in the app when an agent elsewhere waits, finishes, or fails.
+  4. While the app is closed: the README shows tmux-agents' notifier with ntfy.
+
+  Waiting for the author's run on the iPad: closing a real task, and a banner from a real agent.
+- Follow-ups: muxa's own push while the app is closed (APNs needs a relay server), IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:

@@ -21,8 +21,10 @@ From the iPad, the user wants to start new work the way they do on the desktop (
   - The session name is the branch with `.`, `:`, `/` and space as `-`.
   - It starts a detached session running the agent command (`--task-command`, default `claude`) in one pane tagged `@muxa_role agent`.
   - It makes no layout and no sidebar; those belong to tmux-agents.
+- **Closing a task, behind `close-task`, follows tmux-agents' `close.sh`.** Only a session with a worktree tag is a task. `close` removes the worktree when the branch is merged, `keep` keeps it, and `force` removes it anyway. A worktree with uncommitted changes is never removed, and the branch is always kept. With tmux-agents, its `close.sh` runs. The built-in launcher checks the same things itself (merged means `merge-base --is-ancestor HEAD <default branch>`; it does not ask `gh`) and removes the worktree without `--force`. It tags the sessions it makes with tmux-agents' session tags, so they close the same way.
+- **Closing moves the clients on that session**, the bridge's own and the desktop's, to the most recently used other session first. Otherwise tmux would detach them, and the bridge would end. tmux-agents does the same. Closing the last session is refused.
 - **A new session never touches an existing one.** It is created with `new-session -d`. No client is switched, and no existing window or pane changes (invariant 2 holds). A branch that already has a session gets that session.
-- **Without tags, the bridge fills in what tags would say.** A session without `@agent_repo_dir` gets its repo from the git repo of its first visible pane. In a window with no agent pane, a pane where an agent adapter sees its agent (`AgentAdapter::claims`) becomes the agent, and the window's other untagged panes become shells. Tags always win.
+- **Without tags, the bridge fills in what tags would say.** A session without `@agent_repo_dir` gets its repo from the git repo of its first visible pane. In a window with no agent pane, a pane where an agent adapter sees its agent (`AgentAdapter::find`) becomes the agent, and the window's other untagged panes become shells. Tags always win.
 - **Uncommitted changes are listed and followed like documents (ADR 0006).**
   - The bridge lists what differs from HEAD (`git status`, untracked files included).
   - A `diff` must name a listed path.
