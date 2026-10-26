@@ -201,6 +201,8 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         input.backgroundColor = .clear
         input.accessibilityIdentifier = "pane"
         input.screenText = { [terminal] in terminal.screenText }
+        // The input view has the grid's frame, so the terminal's coordinates are its own.
+        input.caretFrame = { [terminal] in terminal.cursorFrame }
         input.addGestureRecognizer(UITapGestureRecognizer(target: input, action: #selector(UIResponder.becomeFirstResponder)))
         terminal.onUpdate = { [weak self] reset in self?.contentChanged(reset: reset) }
         terminal.onGridChange = { [weak self] in self?.layoutContent() }

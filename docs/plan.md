@@ -100,7 +100,7 @@ Status:
   4. While the app is closed: the README shows tmux-agents' notifier with ntfy.
 
   Waiting for the author's run on the iPad: closing a real task, and a banner from a real agent.
-- Follow-ups: muxa's own push while the app is closed (APNs needs a relay server), IME input (`UITextInput`), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
+- Follow-ups: muxa's own push while the app is closed (APNs needs a relay server), an Esc/Ctrl/arrow bar for the on-screen keyboard in Raw, native approval cards, a Codex adapter.
 
 1. **Harness first.** Everything an agent or contributor needs to work safely, before any feature code:
    - Docs:

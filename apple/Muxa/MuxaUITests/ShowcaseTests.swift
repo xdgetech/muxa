@@ -4,6 +4,11 @@ import XCTest
 /// Runs only when MUXA_SHOWCASE_DIR is set: `make screenshots`.
 final class ShowcaseTests: XCTestCase {
     private var dir: URL!
+    override class func setUp() {
+        super.setUp()
+        AnimationIdle.bound
+    }
+
 
     override func setUpWithError() throws {
         let path = ProcessInfo.processInfo.environment["MUXA_SHOWCASE_DIR"]

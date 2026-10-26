@@ -17,5 +17,6 @@ The client must show a pane at its real cols x rows and never resize it. SwiftTe
 ## Consequences
 
 - If SwiftTerm changes how it measures cells, the grid can be off by one. A fallback calls `resize(cols:rows:)` when the derived size differs.
-- `UIKeyInput` has no marked text, so IME composition (for example Japanese input) is not supported yet. It needs `UITextInput`.
+- IME composition (for example Japanese input) needs marked text, so `KeyInputView` implements `UITextInput` over a document that holds only the composition. The composition is drawn over the cursor cell and sent as text only when committed. While it is open, Return, Escape, arrows and Backspace go to the input method, not to tmux.
+- With `UITextInput`, iPadOS shows its keyboard assistant bar (input mode, dictation, shortcuts) after a hardware key. The pane empties the bar's groups, so nothing covers its bottom rows. The bar's glass still animates without end. XCTest waits for animations before each step, so the UI tests replace that wait with a fixed 0.5 seconds (`MuxaUITests/AnimationIdle.swift`, a private XCTest method). A new Xcode can rename it; the tests then print a warning and run slowly again.
 - Contributors need XcodeGen (`brew install xcodegen`). A generated project avoids merge conflicts in `project.pbxproj`.

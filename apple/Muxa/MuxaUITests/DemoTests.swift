@@ -2,6 +2,11 @@ import XCTest
 
 /// Drives the app against its in-app demo bridge (`-demo`): no host needed.
 final class DemoTests: XCTestCase {
+    override class func setUp() {
+        super.setUp()
+        AnimationIdle.bound
+    }
+
     @MainActor
     func testTypingReachesThePaneAndShortcutsSwitch() throws {
         let app = XCUIApplication()
@@ -100,6 +105,33 @@ final class DemoTests: XCTestCase {
         save("landscape-fresh-shell")
     }
 
+    /// Japanese input: the pane gets the converted text once, never the kana on the way.
+    /// Needs the simulator's Japanese (Romaji) keyboard; skipped without it.
+    @MainActor
+    func testJapaneseInputIsSentWhenCommitted() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        // A tap, not Cmd+R: after a hardware key, iPadOS shows no software keyboard.
+        app.buttons["Agent"].firstMatch.tap()
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+
+        // The Japanese keyboard's key that switches between Roman letters and kana.
+        let kana = app.keyboards.keys["Switch to Roman keys"]
+        try XCTSkipUnless(kana.waitForExistence(timeout: 3), "no Japanese keyboard on this simulator")
+        if app.keyboards.keys["Fullwidth"].exists { kana.tap() }
+        for key in ["n", "i", "h", "o", "n", "g", "o"] { app.keyboards.keys[key].tap() }
+        // The candidate bar above the keys.
+        let candidate = app.descendants(matching: .any).matching(NSPredicate(format: "label == '日本語'")).firstMatch
+        XCTAssertTrue(candidate.waitForExistence(timeout: 5))
+        XCTAssertFalse(waitFor(pane, containing: "$ に"), "kana reached the pane before the commit")
+        save("japanese-composing")
+        candidate.tap()
+        XCTAssertTrue(waitFor(pane, containing: "$ 日本語"))
+    }
+
     /// The Reader lists uncommitted changes first; a diff reads like GitHub's and
     /// follows the file.
     @MainActor
@@ -127,7 +159,7 @@ final class DemoTests: XCTestCase {
         save("reader-diff-landscape")
         XCUIDevice.shared.orientation = .portrait
 
-        app.descendants(matching: .any)["change-assets/logo.png"].firstMatch.tap()
+        tapWhenReady(app.descendants(matching: .any)["change-assets/logo.png"].firstMatch)
         XCTAssertTrue(app.staticTexts["Binary File"].waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
@@ -164,7 +196,7 @@ final class DemoTests: XCTestCase {
 
         func closeShown(_ choice: String) {
             app.buttons["More"].tap()
-            app.buttons["Close Task…"].tap()
+            tapWhenReady(app.buttons["Close Task…"])
             let button = app.buttons[choice]
             XCTAssertTrue(button.waitForExistence(timeout: 5))
             button.tap()
@@ -392,6 +424,15 @@ final class DemoTests: XCTestCase {
                 XCTAssertFalse(a.insetBy(dx: 1, dy: 1).intersects(b.insetBy(dx: 1, dy: 1)), "\(a) overlaps \(b)", file: file, line: line)
             }
         }
+    }
+
+    /// Steps wait a bounded time for animations (`AnimationIdle`): wait until a menu
+    /// or a rotation has put the element where a tap reaches it.
+    @MainActor
+    private func tapWhenReady(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let exp = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [exp], timeout: 5), .completed, file: file, line: line)
+        element.tap()
     }
 
     private func waitForFocus(_ element: XCUIElement) -> Bool {
