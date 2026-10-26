@@ -2,14 +2,13 @@
 
 Instructions for coding agents working in this repo. Humans: see `README.md` and `CONTRIBUTING.md`.
 
-muxa lets you work on your **existing** tmux panes from an iPad, without changing the desktop layout. A Rust bridge runs on the host over SSH and speaks tmux control mode. Native clients render one pane at its real size. Status: pre-alpha. The roadmap and current phase are in `docs/plan.md`.
+muxa lets you work on your **existing** tmux panes from an iPad, without changing the desktop layout. A Rust bridge runs on the host over SSH and speaks tmux control mode. Native clients render one pane at its real size. Status: pre-alpha. The status and roadmap are in `docs/plan.md`.
 
 ## Read first
 
-1. `docs/plan.md`: phases, what is in scope now, the definition of done per phase.
+1. `docs/plan.md`: status, what comes next, the design in short, and how each part is verified.
 2. `docs/findings/tmux-control-mode.md`: verified tmux behavior. Do not re-derive it; extend it.
 3. `docs/adr/`: decisions and why. Do not reverse one silently. Propose a new ADR instead.
-4. `docs/product-brief.md`: the original product brief.
 
 ## Map
 
@@ -63,7 +62,7 @@ Breaking one of these breaks the product promise. Each has a reason in `docs/fin
 - `make check` is green. When the change touches tmux behavior, `make test-tmux` and `make repro` are green too.
 - New tmux behavior you rely on has a script in `scripts/repro/` and a row in `docs/findings/tmux-control-mode.md`.
 - A decision that a reviewer could reasonably make differently gets an ADR in `docs/adr/`.
-- `docs/plan.md` still describes reality. Update it when a phase finishes or the design changes.
+- `docs/plan.md` still describes reality. Update it when a feature ships or the design changes.
 - A change to the wire format updates `protocol/PROTOCOL.md`, the fixtures and the Rust and Swift types together, and bumps the version when the change is incompatible.
 
 ## Conventions

@@ -2,7 +2,7 @@
 
 Work on the AI coding agents you already run in tmux, from an iPad with a keyboard. muxa does not change your desktop layout.
 
-> **Status: pre-alpha.** The bridge, a terminal client and the iPad app are built and tested. The first run on a real iPad is next. See [`docs/plan.md`](docs/plan.md).
+> **Status: pre-alpha.** The bridge, a terminal client and the iPad app are built, tested, and run on a real iPad. The app is not on the App Store yet. See [`docs/plan.md`](docs/plan.md).
 
 <p>
   <img src="docs/images/chat.jpg" width="49%" alt="An agent's conversation as a native chat, waiting for an answer">
