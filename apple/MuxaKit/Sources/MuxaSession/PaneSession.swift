@@ -232,6 +232,15 @@ public final class PaneSession {
         try? await request { .undiff(id: $0) }
     }
 
+    public var canCloseTasks: Bool { capabilities.contains("close-task") }
+
+    /// Closes a task's session, then lists again. Throws the bridge's reason
+    /// when nothing was closed.
+    public func closeTask(session: String, mode: CloseMode) async throws {
+        try await request { .closeTask(id: $0, session: session, mode: mode) }
+        try await refresh()
+    }
+
     public var canStartTasks: Bool { capabilities.contains("tasks") }
 
     /// Starts a task on `branch` of the repo at `repo`, and returns its session's

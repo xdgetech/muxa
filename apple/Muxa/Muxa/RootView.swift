@@ -37,6 +37,27 @@ struct RootView: View {
         ) {
             if let draft = model.newTask { NewTaskSheet(draft: draft) }
         }
+        .confirmationDialog(
+            "Close \(model.closingTask?.name ?? "Task")?",
+            isPresented: Binding(get: { model.closingTask != nil }, set: { if !$0 { model.closingTask = nil } }),
+            titleVisibility: .visible,
+            presenting: model.closingTask
+        ) { task in
+            Button("Close") { Task { await model.close(task, mode: .close) } }
+            Button("Close and Keep Worktree") { Task { await model.close(task, mode: .keep) } }
+            Button("Remove Worktree Anyway", role: .destructive) { Task { await model.close(task, mode: .force) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Close removes the worktree only when the branch is merged. Uncommitted changes are never removed, and the branch is kept.")
+        }
+        .alert(
+            "Can't Close the Task",
+            isPresented: Binding(get: { model.closeError != nil }, set: { if !$0 { model.closeError = nil } })
+        ) {
+            Button("OK", role: .cancel) { model.refocusPane() }
+        } message: {
+            Text(model.closeError ?? "")
+        }
         .fullScreenCover(isPresented: $model.showReader, onDismiss: model.refocusPane) {
             ReaderScreen()
         }

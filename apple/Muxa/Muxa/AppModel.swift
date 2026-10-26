@@ -36,6 +36,10 @@ final class AppModel {
     var showReader = false
     /// The New Task sheet, with the repo it starts in.
     var newTask: TaskDraft?
+    /// The task waiting for the user to pick how to close it.
+    var closingTask: Session?
+    /// Why the last close failed; nothing was closed then.
+    var closeError: String?
     /// Asked for from the session switcher: shown once the switcher has closed.
     private var newTaskAfterSwitcher: TaskDraft?
     private(set) var docListing: DocListing?
@@ -411,6 +415,24 @@ final class AppModel {
         let name = try await session.newTask(repo: req.repo, branch: req.branch, base: req.base)
         newTask = nil
         if let s = session.sessions.first(where: { $0.name == name }) { await open(s) }
+    }
+
+    var canCloseTasks: Bool { isConnected && session.canCloseTasks }
+
+    /// Only a session with a worktree is a task.
+    func canClose(_ s: Session) -> Bool { canCloseTasks && s.worktree != nil }
+
+    func close(_ s: Session, mode: CloseMode) async {
+        closingTask = nil
+        let wasShown = s.id == currentSession?.id
+        do {
+            try await session.closeTask(session: s.id, mode: mode)
+        } catch {
+            closeError = PaneSession.describe(error)
+            return
+        }
+        if wasShown, let next = visibleSessions.first { await open(next) }
+        refocusPane()
     }
 
     func retryChat() async {

@@ -45,6 +45,7 @@ enum Icon {
     static let disconnect = "xmark.circle"
     static let add = "plus"
     static let newTask = "plus.square.on.square"
+    static let closeTask = "xmark.square"
     static let edit = "pencil"
     static let delete = "trash"
     static let warning = "exclamationmark.triangle"

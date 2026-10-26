@@ -35,6 +35,11 @@ struct Sidebar: View {
                                 SessionRow(session: s, current: s.id == model.currentSession?.id, number: numbers[s.id])
                             }
                             .foregroundStyle(.primary)
+                            .contextMenu {
+                                if model.canClose(s) {
+                                    Button("Close Task…", systemImage: Icon.closeTask) { model.closingTask = s }
+                                }
+                            }
                         }
                     } header: {
                         RepoHeader(repo: group.repo, newTask: newTaskAction(group))

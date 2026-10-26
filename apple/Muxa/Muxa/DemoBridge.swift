@@ -23,14 +23,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     static let failingBranch = "taken"
 
     static let initialSessions = [
-        Session(id: "$1", name: "feature-auth", repo: "app", repoDir: "/src/app", branch: "feat/auth", panes: [
+        Session(id: "$1", name: "feature-auth", repo: "app", repoDir: "/src/app", branch: "feat/auth",
+                worktree: "/src/.worktrees/app-feat-auth", panes: [
             Pane(id: "%1", window: "@1", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/work", dead: false, shellForeground: false,
                  agent: Agent(state: .waiting, since: UInt64(Date().timeIntervalSince1970) - 90)),
             Pane(id: "%2", window: "@1", index: 1, role: .shell, cols: 100, rows: 30, command: "zsh",
                  path: "/work", dead: false, shellForeground: true),
         ]),
-        Session(id: "$4", name: "fix-login", repo: "app", repoDir: "/src/app", branch: "fix/login", panes: [
+        Session(id: "$4", name: "fix-login", repo: "app", repoDir: "/src/app", branch: "fix/login",
+                worktree: "/src/.worktrees/app-fix-login", panes: [
             Pane(id: "%5", window: "@4", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/work", dead: false, shellForeground: false,
                  agent: Agent(state: .idle, since: UInt64(Date().timeIntervalSince1970) - 600)),
@@ -62,7 +64,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     init() {
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task"]))
     }
 
     func send(_ line: Data) async throws {
@@ -137,6 +139,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .undiff(let id):
             lock.withLock { openDiff = nil }
             ok(id)
+        case .closeTask(let id, let session, let mode):
+            closeTask(id: id, session: session, mode: mode)
         case .undoc(let id):
             lock.withLock { openDoc = nil }
             ok(id)
@@ -178,6 +182,25 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             sessions.append(Session(id: "$\(n)", name: name, repo: repoName, repoDir: repo, branch: branch, panes: [pane]))
         }
         emit(.taskCreated(task: id, session: name))
+        emit(.result(id: id, error: nil, sessions: nil))
+        emit(.sessionsChanged)
+    }
+
+    /// fix-login is not merged, so only keep and force close it.
+    private func closeTask(id: UInt64, session: String, mode: CloseMode) {
+        let found = lock.withLock { sessions.first { $0.id == session } }
+        guard let found, found.worktree != nil else {
+            emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(session) is not a task"), sessions: nil))
+            return
+        }
+        if found.name == "fix-login", mode == .close {
+            emit(.result(id: id, error: ErrorBody(
+                code: .taskFailed,
+                message: "fix-login is not merged. Close it and keep the worktree, or remove the worktree anyway."),
+                sessions: nil))
+            return
+        }
+        lock.withLock { sessions.removeAll { $0.id == session } }
         emit(.result(id: id, error: nil, sessions: nil))
         emit(.sessionsChanged)
     }

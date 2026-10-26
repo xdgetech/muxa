@@ -133,6 +133,41 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
     }
 
+    /// Closing the shown task opens the next one; a refused close says why and
+    /// leaves the task open.
+    @MainActor
+    func testClosingTasks() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        // The bar carries the shown session's name.
+        let title = { (name: String) in app.navigationBars[name] }
+        XCTAssertTrue(title("feature-auth").waitForExistence(timeout: 5))
+
+        func closeShown(_ choice: String) {
+            app.buttons["More"].tap()
+            app.buttons["Close Task…"].tap()
+            let button = app.buttons[choice]
+            XCTAssertTrue(button.waitForExistence(timeout: 5))
+            button.tap()
+        }
+
+        closeShown("Close")
+        XCTAssertTrue(title("fix-login").waitForExistence(timeout: 10))
+
+        closeShown("Close")
+        let alert = app.alerts["Can't Close the Task"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertTrue(alert.staticTexts.containing(NSPredicate(format: "label CONTAINS 'not merged'")).firstMatch.exists)
+        save("close-task-refused")
+        alert.buttons["OK"].tap()
+        XCTAssertTrue(title("fix-login").exists)
+
+        closeShown("Close and Keep Worktree")
+        XCTAssertTrue(title("docs-site").waitForExistence(timeout: 10))
+    }
+
     /// Cmd+N starts a task in the shown session's repo; a failure stays in the
     /// sheet, a success opens the new session.
     @MainActor
