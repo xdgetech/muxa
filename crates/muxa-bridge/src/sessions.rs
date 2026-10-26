@@ -1,6 +1,6 @@
 //! Fills in what tmux-agents' tags would say for sessions that have none: the
-//! repo from git, and the agent pane from the agent adapters. Tags always win.
-//! Blocking (git, `ps`); run it on the blocking pool.
+//! repo from git, and the agent pane and its state from the agent adapters.
+//! Tags always win. Blocking (git, `ps`); run it on the blocking pool.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -8,20 +8,51 @@ use std::process::Command;
 
 use muxa_tmux::{Pane, Role, Session, WindowId};
 
-use crate::agents::{PaneInfo, Processes, Registry};
+use crate::agents::{Found, PaneInfo, Processes, Registry};
+use crate::convert;
 
 pub fn enrich(sessions: &mut [Session], agents: &Registry) {
     fill_repos(sessions);
-    if sessions.iter().any(|s| !untagged_windows(s).is_empty()) {
-        match Processes::list() {
-            Ok(procs) => {
-                for s in sessions.iter_mut() {
-                    claim_agents(s, agents, &procs);
-                }
+    fill_agents(sessions, agents);
+}
+
+/// Agent panes and states that no tag gives. Lists processes only when some
+/// pane needs an adapter.
+pub fn fill_agents(sessions: &mut [Session], agents: &Registry) {
+    if !sessions.iter().any(needs_adapter) {
+        return;
+    }
+    match Processes::list() {
+        Ok(procs) => {
+            for s in sessions.iter_mut() {
+                claim_agents(s, agents, &procs);
+                fill_states(s, agents, &procs);
             }
-            Err(e) => tracing::warn!(error = %e, "cannot find agent panes"),
+        }
+        Err(e) => tracing::warn!(error = %e, "cannot find agent panes"),
+    }
+}
+
+fn needs_adapter(s: &Session) -> bool {
+    !untagged_windows(s).is_empty() || s.panes.iter().any(stateless_agent)
+}
+
+fn stateless_agent(p: &Pane) -> bool {
+    p.role == Role::Agent && p.agent.is_none()
+}
+
+/// An agent pane tagged without a state, e.g. by `@muxa_role`, gets the state its adapter sees.
+fn fill_states(s: &mut Session, agents: &Registry, procs: &Processes) {
+    let name = s.name.clone();
+    for p in s.panes.iter_mut().filter(|p| stateless_agent(p)) {
+        if let Some(found) = agents.find(&info(&name, p), procs) {
+            set_status(p, &found);
         }
     }
+}
+
+fn set_status(p: &mut Pane, found: &Found) {
+    p.agent = found.status.as_ref().map(convert::agent_status);
 }
 
 /// A session without `@agent_repo_dir` gets the repo of its first visible pane.
@@ -88,15 +119,26 @@ fn untagged_windows(s: &Session) -> Vec<WindowId> {
 /// window's other untagged panes are its shells.
 fn claim_agents(s: &mut Session, agents: &Registry, procs: &Processes) {
     for window in untagged_windows(s) {
-        let claimed = s.panes.iter().position(|p| {
-            p.window == window && p.role == Role::Unknown && agents.claims(&info(&s.name, p), procs)
+        let claimed = s.panes.iter().enumerate().find_map(|(i, p)| {
+            let candidate = p.window == window && p.role == Role::Unknown;
+            candidate
+                .then(|| agents.find(&info(&s.name, p), procs))
+                .flatten()
+                .map(|found| (i, found))
         });
-        let Some(agent) = claimed else { continue };
+        let Some((agent, found)) = claimed else {
+            continue;
+        };
         for (i, p) in s.panes.iter_mut().enumerate() {
             if p.window != window || p.role != Role::Unknown {
                 continue;
             }
-            p.role = if i == agent { Role::Agent } else { Role::Shell };
+            if i == agent {
+                p.role = Role::Agent;
+                set_status(p, &found);
+            } else {
+                p.role = Role::Shell;
+            }
         }
     }
 }

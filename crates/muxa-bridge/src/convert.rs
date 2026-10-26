@@ -73,3 +73,17 @@ pub fn error_body(code: wire::ErrorCode, message: impl Into<String>) -> wire::Er
         message: message.into(),
     }
 }
+
+/// An adapter's state, in tmux's terms, so it travels with the tag-made ones.
+pub fn agent_status(a: &wire::Agent) -> tmux::AgentStatus {
+    tmux::AgentStatus {
+        state: match a.state {
+            wire::AgentState::Running => tmux::AgentState::Running,
+            wire::AgentState::Waiting => tmux::AgentState::Waiting,
+            wire::AgentState::Idle => tmux::AgentState::Idle,
+            wire::AgentState::Done => tmux::AgentState::Done,
+            wire::AgentState::Error => tmux::AgentState::Error,
+        },
+        since: a.since,
+    }
+}

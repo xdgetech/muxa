@@ -50,16 +50,23 @@ pub trait AgentAdapter: Send + Sync {
         procs: &Processes,
     ) -> Result<Option<Box<dyn ChatSource>>, Error>;
 
-    /// This adapter's agent runs in `pane`. Cheaper than `open`; it decides a
-    /// pane's role when no tag does.
-    fn claims(&self, _pane: &PaneInfo, _procs: &Processes) -> bool {
-        false
+    /// This adapter's agent, when it runs in `pane`, and its state. Cheaper than
+    /// `open`; it decides a pane's role and state when no tag does.
+    fn find(&self, _pane: &PaneInfo, _procs: &Processes) -> Option<Found> {
+        None
     }
 
     /// Documents the agent in `pane` is writing, such as its current plan.
     fn documents(&self, _pane: &PaneInfo, _procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
         Ok(Vec::new())
     }
+}
+
+/// An agent an adapter sees in a pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// As the agent records it; None when it records none, or the pane is back at a shell.
+    pub status: Option<Agent>,
 }
 
 /// A document an agent keeps outside the repo, e.g. a plan.
@@ -129,9 +136,9 @@ impl Registry {
         Ok(docs)
     }
 
-    /// Some adapter sees its agent running in `pane`.
-    pub fn claims(&self, pane: &PaneInfo, procs: &Processes) -> bool {
-        self.adapters.iter().any(|a| a.claims(pane, procs))
+    /// The first adapter that sees its agent running in `pane`.
+    pub fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
+        self.adapters.iter().find_map(|a| a.find(pane, procs))
     }
 
     pub fn open(&self, pane: &PaneInfo) -> Result<Option<Opened>, Error> {

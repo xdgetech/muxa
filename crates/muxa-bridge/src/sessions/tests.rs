@@ -4,7 +4,7 @@ use std::process::Command;
 use muxa_tmux::{PaneId, SessionId};
 
 use super::*;
-use crate::agents::{AgentAdapter, ChatSource, Error};
+use crate::agents::{AgentAdapter, ChatSource, Error, Found};
 
 /// Sees its agent in the panes it is given, and nowhere else.
 struct Stub(Vec<&'static str>);
@@ -18,8 +18,13 @@ impl AgentAdapter for Stub {
         Ok(None)
     }
 
-    fn claims(&self, pane: &PaneInfo, _: &Processes) -> bool {
-        self.0.contains(&pane.pane.as_str())
+    fn find(&self, pane: &PaneInfo, _: &Processes) -> Option<Found> {
+        self.0.contains(&pane.pane.as_str()).then_some(Found {
+            status: Some(muxa_protocol::Agent {
+                state: muxa_protocol::AgentState::Waiting,
+                since: Some(7),
+            }),
+        })
     }
 }
 
@@ -71,6 +76,21 @@ fn a_claimed_pane_is_the_agent_and_its_neighbours_are_shells() {
     assert_eq!(
         roles(&s),
         [Role::Shell, Role::Agent, Role::Hidden, Role::Unknown]
+    );
+    assert_eq!(
+        s.panes[1].agent.map(|a| (a.state, a.since)),
+        Some((muxa_tmux::AgentState::Waiting, Some(7)))
+    );
+}
+
+#[test]
+fn a_tagged_agent_without_a_state_gets_the_adapters() {
+    let agents = Registry::new(vec![Box::new(Stub(vec!["%1"]))]);
+    let mut s = session(vec![pane(1, 1, Role::Agent, "")]);
+    fill_states(&mut s, &agents, &Processes::default());
+    assert_eq!(
+        s.panes[0].agent.map(|a| a.state),
+        Some(muxa_tmux::AgentState::Waiting)
     );
 }
 

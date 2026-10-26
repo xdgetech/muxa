@@ -11,7 +11,7 @@ use muxa_protocol::{Agent, AgentState, ChatEntry, ChatKind, ChatTool};
 use serde_json::Value;
 
 use super::tail::{INITIAL_TAIL, JsonlTail, Poll};
-use super::{AgentAdapter, AgentDoc, ChatEvent, ChatSource, Error, PaneInfo, Processes};
+use super::{AgentAdapter, AgentDoc, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
 pub const ID: &str = "claude-code";
 /// Entries sent on a reset.
@@ -46,8 +46,11 @@ impl AgentAdapter for ClaudeAdapter {
             .map(|s| Box::new(ClaudeSource::new(self.dir.clone(), s)) as Box<dyn ChatSource>))
     }
 
-    fn claims(&self, pane: &PaneInfo, procs: &Processes) -> bool {
-        find_session(&self.dir, pane, procs).is_ok_and(|s| s.is_some())
+    fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
+        let session = find_session(&self.dir, pane, procs).ok()??;
+        Some(Found {
+            status: session.agent().filter(|_| !pane.shell_foreground),
+        })
     }
 
     /// The plan of the instance in `pane`: every transcript line names it as `slug`,

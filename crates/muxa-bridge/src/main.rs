@@ -9,6 +9,7 @@ mod docs;
 mod lines;
 mod server;
 mod sessions;
+mod states;
 mod tasks;
 mod watch;
 

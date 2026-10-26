@@ -121,6 +121,11 @@ where
     );
     let (change_tx, change_rx) = mpsc::channel(8);
     let changes = tokio::spawn(ChangeTask::new(Arc::clone(&client), out.clone(), change_rx).run());
+    let states = tokio::spawn(crate::states::run(
+        Arc::clone(&client),
+        out.clone(),
+        Arc::clone(&config.agents),
+    ));
     let (req_tx, req_rx) = mpsc::channel(64);
     let reader = tokio::spawn(read_requests(input, req_tx, out.clone()));
     let worker = Worker {
@@ -143,6 +148,7 @@ where
     chats.abort();
     docs.abort();
     changes.abort();
+    states.abort();
     if end == End::Idle {
         let _ = out
             .send(Message::Bye {
