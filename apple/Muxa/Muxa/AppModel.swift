@@ -13,9 +13,13 @@ final class AppModel {
     /// The host the session belongs to: connected, connecting, or last tried.
     private(set) var currentHostID: UUID?
     private(set) var connecting = false
+    /// Logging in with the password to add this device's key, before connecting.
+    private(set) var addingKey = false
     /// A host key waiting for the user's decision on first use (or after it changed).
     var untrustedKey: HostKey?
     var connectError: String?
+    /// What the user can do about `connectError`, when the app knows.
+    private(set) var connectFix: ConnectFix?
     var showSwitcher = false
     /// Bumped when a sheet closes, so the pane takes the keyboard back.
     private(set) var focusRequest = 0
@@ -79,6 +83,7 @@ final class AppModel {
         hosts.markUsed(id)
         stayDisconnected = false
         connectError = nil
+        connectFix = nil
         connecting = true
         defer { connecting = false }
         do {
@@ -88,8 +93,13 @@ final class AppModel {
             afterTrust = .connect
             untrustedKey = presented
         } catch {
-            connectError = PaneSession.describe(error)
+            fail(error)
         }
+    }
+
+    private func fail(_ error: any Error) {
+        connectError = PaneSession.describe(error)
+        connectFix = ConnectFix(error)
     }
 
     private func open(_ host: Host) async throws -> any BridgeChannel {
@@ -113,6 +123,10 @@ final class AppModel {
     }
 
     func cancelTrust() {
+        if case .setUp = afterTrust {
+            connectError = "The host key was not trusted, so this iPad's key was not added."
+            connectFix = .addKey
+        }
         untrustedKey = nil
         afterTrust = nil
     }
@@ -122,19 +136,27 @@ final class AppModel {
         guard let host = hosts.host(id) else { return }
         currentHostID = id
         connectError = nil
+        connectFix = nil
         do {
+            addingKey = true
+            // Runs before any catch, so a failure shows its error, not the progress.
+            defer { addingKey = false }
             let key = try ClientKeyStore.loadOrCreate()
             let line = try KeySetup.authorizedLine(for: key, command: host.target.command, comment: Self.keyComment)
             _ = try await KeySetup.install(line, on: host.target, password: password)
-            await connect(to: id)
         } catch TransportError.hostKeyMismatch(let presented) {
             afterTrust = .setUp(password: password)
             untrustedKey = presented
+            return
         } catch TransportError.notAuthorized {
             connectError = "The host refused the password. Check the user and password."
+            connectFix = .addKey
+            return
         } catch {
-            connectError = PaneSession.describe(error)
+            fail(error)
+            return
         }
+        await connect(to: id)
     }
 
     func disconnect() async {
@@ -149,7 +171,7 @@ final class AppModel {
 
     /// Launch or return to the foreground: reconnect to the last host and pane.
     func resume() async {
-        guard !stayDisconnected, !isConnected, !connecting else { return }
+        guard !stayDisconnected, !isConnected, !connecting, !addingKey else { return }
         guard let id = currentHostID ?? hosts.lastUsed, hosts.host(id) != nil else { return }
         await connect(to: id)
     }
@@ -461,6 +483,22 @@ final class AppModel {
     func retryChat() async {
         guard let pane = currentPane else { return }
         await session.follow(pane: pane.id)
+    }
+}
+
+/// The next step a connect error points to.
+enum ConnectFix {
+    /// Log in once with the password to add this device's key.
+    case addKey
+    /// Install muxa-bridge on the host, or fix the bridge command.
+    case installBridge
+
+    init?(_ error: any Error) {
+        switch error {
+        case TransportError.notAuthorized: self = .addKey
+        case PaneSession.Failure.noHello: self = .installBridge
+        default: return nil
+        }
     }
 }
 

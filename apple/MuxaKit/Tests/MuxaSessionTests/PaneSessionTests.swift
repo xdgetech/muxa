@@ -111,6 +111,18 @@ struct PaneSessionTests {
         #expect(session.sessions.map(\.name) == ["demo"])
     }
 
+    @Test func aBridgeThatExitsBeforeHelloSaysItDidNotStart() async throws {
+        let bridge = FakeBridge()
+        let session = PaneSession()
+        await #expect(throws: PaneSession.Failure.noHello) {
+            try await session.connect {
+                Task { await bridge.close() }
+                return bridge
+            }
+        }
+        #expect(session.phase == .disconnected(reason: PaneSession.describe(PaneSession.Failure.noHello)))
+    }
+
     @Test func aProtocolMismatchFailsTheConnect() async throws {
         let bridge = FakeBridge()
         bridge.protocolVersion = 2

@@ -319,7 +319,7 @@ public final class PaneSession {
                     for try await line in channel.lines {
                         self?.receive(line)
                     }
-                    await self?.teardown(reason: "connection closed")
+                    await self?.channelClosed()
                 } catch {
                     await self?.teardown(reason: Self.describe(error))
                 }
@@ -332,6 +332,17 @@ public final class PaneSession {
                 }
             },
         ]
+    }
+
+    /// Closed before hello means the bridge command exited, most often because it is not installed.
+    private func channelClosed() async {
+        guard let hello else {
+            await teardown(reason: "Connection closed.")
+            return
+        }
+        self.hello = nil
+        hello.resume(throwing: Failure.noHello)
+        await teardown(reason: Self.describe(Failure.noHello))
     }
 
     private func waitForHello() async throws {
@@ -450,11 +461,11 @@ public final class PaneSession {
     public nonisolated static func describe(_ error: any Error) -> String {
         switch error {
         case Failure.bridge(let body): body.message
-        case Failure.protocolMismatch(let v): "the bridge speaks protocol \(v); this app speaks \(protocolVersion). Update one of them."
-        case Failure.noHello: "the bridge did not start. Check that muxa-bridge is installed on the host."
-        case Failure.notConnected: "not connected"
-        case TransportError.hostKeyMismatch: "the host key changed or is not trusted yet"
-        case TransportError.notAuthorized: "the host does not accept this iPad's key yet. Set it up with your password."
+        case Failure.protocolMismatch(let v): "The bridge speaks protocol \(v); this app speaks \(protocolVersion). Update one of them."
+        case Failure.noHello: "The bridge did not start. Check that muxa-bridge is installed on the host and that the bridge command points to it."
+        case Failure.notConnected: "Not connected."
+        case TransportError.hostKeyMismatch: "The host key changed or is not trusted yet."
+        case TransportError.notAuthorized: "The host does not accept this iPad's key yet. Set it up with your password."
         case TransportError.failed(let message): message
         default: String(describing: error)
         }

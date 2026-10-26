@@ -44,10 +44,14 @@ struct HostDraft: Identifiable {
     func host(replacing old: Host?) -> Host {
         let target = SSHTarget(host: trimmedAddress, port: Int(port) ?? 22, user: trimmedUser, command: command)
         var host = Host(id: id, name: name.trimmingCharacters(in: .whitespaces), target: target)
-        if let old, old.target.host == target.host, old.target.port == target.port, old.target.user == target.user {
+        if let old, keepsHostKey(of: old) {
             host.target.hostKey = hostKey
         }
         return host
+    }
+
+    func keepsHostKey(of old: Host) -> Bool {
+        old.target.host == trimmedAddress && old.target.port == Int(port) && old.target.user == trimmedUser
     }
 }
 
@@ -61,40 +65,41 @@ struct HostEditor: View {
     var body: some View {
         NavigationStack {
             Form {
+                // Labeled rows: a filled-in TextField hides its prompt, so "dev" or "22" alone says nothing.
                 Section {
-                    TextField("Name", text: $draft.name, prompt: Text("Mac mini"))
-                        .accessibilityIdentifier("host-name")
-                    TextField("Address", text: $draft.address, prompt: Text("Host or Tailscale name"))
-                        .textContentType(.URL)
-                        .keyboardType(.URL)
-                        .accessibilityIdentifier("host-address")
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("User", text: $draft.user)
-                        .textContentType(.username)
-                        .accessibilityIdentifier("host-user")
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Port", text: $draft.port)
-                        .keyboardType(.numberPad)
+                    LabeledContent("Name") {
+                        TextField("Name", text: $draft.name, prompt: Text("Mac mini"))
+                            .accessibilityIdentifier("host-name")
+                    }
+                    LabeledContent("Address") {
+                        TextField("Address", text: $draft.address, prompt: Text("Hostname or IP address"))
+                            .keyboardType(.URL)
+                            .accessibilityIdentifier("host-address")
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    LabeledContent("User") {
+                        TextField("User", text: $draft.user, prompt: Text("Your login on the host"))
+                            .textContentType(.username)
+                            .accessibilityIdentifier("host-user")
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    LabeledContent("Port") {
+                        TextField("Port", text: $draft.port)
+                            .keyboardType(.numberPad)
+                    }
                 } header: {
                     Text("Host")
                 }
-                Section {
-                    TextField("Bridge command", text: $draft.command)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.body.monospaced())
-                } header: {
-                    Text("Bridge")
-                } footer: {
-                    Text("Where muxa-bridge is installed on the host.")
-                }
+                .multilineTextAlignment(.trailing)
                 Section {
                     SecureField("Password for \(draft.trimmedUser.isEmpty ? "the user" : draft.trimmedUser)", text: $password)
                         .textContentType(.password)
+                        .submitLabel(.go)
+                        .onSubmit { if canSetUp { setUp() } }
                     Button("Add This iPad's Key and Connect") { setUp() }
-                        .disabled(!draft.isValid || password.isEmpty)
+                        .disabled(!canSetUp)
                 } header: {
                     Text("First Connection")
                 } footer: {
@@ -115,7 +120,17 @@ struct HostEditor: View {
                         Text("Or add this line to ~/.ssh/authorized_keys on the host yourself.")
                     }
                 }
-                if let key = draft.hostKey {
+                Section {
+                    TextField("Bridge command", text: $draft.command)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.body.monospaced())
+                } header: {
+                    Text("Bridge")
+                } footer: {
+                    Text("Where muxa-bridge is installed on the host. Change it only if you installed it elsewhere.")
+                }
+                if let key = draft.hostKey, keepsHostKey {
                     Section("Trusted Host Key") {
                         LabeledContent("Fingerprint") {
                             Text(key.fingerprint).font(.caption.monospaced()).textSelection(.enabled)
@@ -139,14 +154,39 @@ struct HostEditor: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        save()
-                        dismiss()
+                    if draft.isNew {
+                        Button("Connect") { connect() }
+                            .disabled(!draft.isValid)
+                    } else {
+                        Button("Save") {
+                            save()
+                            dismiss()
+                        }
+                        .disabled(!draft.isValid)
                     }
-                    .disabled(!draft.isValid)
                 }
             }
         }
+    }
+
+    private var canSetUp: Bool { draft.isValid && !password.isEmpty }
+
+    /// A changed address, port or user means the saved host key no longer applies.
+    private var keepsHostKey: Bool {
+        model.hosts.host(draft.id).map(draft.keepsHostKey(of:)) ?? false
+    }
+
+    /// A new host connects right away. With a password, it adds this iPad's key first;
+    /// without one, a host that refuses the key says how to set it up.
+    private func connect() {
+        if !password.isEmpty {
+            setUp()
+            return
+        }
+        save()
+        let id = draft.id
+        dismiss()
+        Task { await model.connect(to: id) }
     }
 
     private func save() {

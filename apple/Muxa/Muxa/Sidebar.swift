@@ -9,19 +9,22 @@ struct Sidebar: View {
 
     var body: some View {
         List {
-            Section("Hosts") {
-                ForEach(model.hosts.hosts) { host in
-                    HostRow(host: host, state: state(of: host)) { connect(host) }
-                        .contextMenu {
-                            Button("Edit", systemImage: Icon.edit) { editing = HostDraft(host) }
-                            Button("Delete", systemImage: Icon.delete, role: .destructive) { model.hosts.delete(host.id) }
-                        }
-                        .swipeActions {
-                            Button("Delete", systemImage: Icon.delete, role: .destructive) { model.hosts.delete(host.id) }
-                            Button("Edit", systemImage: Icon.edit) { editing = HostDraft(host) }
-                        }
+            // No empty header on first launch; the detail view says what to do.
+            if !model.hosts.hosts.isEmpty {
+                Section("Hosts") {
+                    ForEach(model.hosts.hosts) { host in
+                        HostRow(host: host, state: state(of: host)) { connect(host) }
+                            .contextMenu {
+                                Button("Edit", systemImage: Icon.edit) { editing = HostDraft(host) }
+                                Button("Delete", systemImage: Icon.delete, role: .destructive) { model.hosts.delete(host.id) }
+                            }
+                            .swipeActions {
+                                Button("Delete", systemImage: Icon.delete, role: .destructive) { model.hosts.delete(host.id) }
+                                Button("Edit", systemImage: Icon.edit) { editing = HostDraft(host) }
+                            }
+                    }
+                    .onMove { model.hosts.move(fromOffsets: $0, toOffset: $1) }
                 }
-                .onMove { model.hosts.move(fromOffsets: $0, toOffset: $1) }
             }
             if model.isConnected {
                 let numbers = Dictionary(
@@ -51,19 +54,21 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("muxa")
+        .navigationTitle("Muxa")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add Host", systemImage: Icon.add) { editing = HostDraft() }
             }
-            ToolbarItem(placement: .secondaryAction) { EditButton() }
+            if !model.hosts.hosts.isEmpty {
+                ToolbarItem(placement: .secondaryAction) { EditButton() }
+            }
         }
         .refreshable { try? await model.session.refresh() }
     }
 
     private func state(of host: Host) -> HostRow.State {
         guard host.id == model.currentHostID else { return .idle }
-        if model.connecting { return .connecting }
+        if model.connecting || model.addingKey { return .connecting }
         return model.isConnected ? .connected : .idle
     }
 

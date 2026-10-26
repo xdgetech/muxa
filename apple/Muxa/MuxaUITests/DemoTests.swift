@@ -365,7 +365,7 @@ final class DemoTests: XCTestCase {
         app.textFields["host-user"].tap()
         app.typeText("dev")
         save("host-editor")
-        app.buttons["Save"].tap()
+        app.buttons["Connect"].tap()
         XCTAssertTrue(app.buttons["host-Build box"].waitForExistence(timeout: 5))
     }
 

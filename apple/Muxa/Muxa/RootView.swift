@@ -85,6 +85,8 @@ struct DetailView: View {
     var body: some View {
         if model.isConnected, model.session.watchedPane != nil {
             PaneScreen()
+        } else if model.addingKey, let host = model.currentHost {
+            ProgressView("Adding this iPad's key to \(host.title)…")
         } else if model.connecting, let host = model.currentHost {
             ProgressView("Connecting to \(host.title)…")
         } else if let error = model.connectError ?? reason, let host = model.currentHost {
@@ -93,9 +95,21 @@ struct DetailView: View {
             } description: {
                 Text(error)
             } actions: {
-                Button("Try Again") { Task { await model.connect(to: host.id) } }
-                    .buttonStyle(.borderedProminent)
-                Button("Edit Host") { editing = HostDraft(host) }
+                switch model.connectFix {
+                case .addKey:
+                    Button("Set Up with Password") { editing = HostDraft(host) }
+                        .buttonStyle(.borderedProminent)
+                    Button("Try Again") { Task { await model.connect(to: host.id) } }
+                case .installBridge:
+                    Button("Try Again") { Task { await model.connect(to: host.id) } }
+                        .buttonStyle(.borderedProminent)
+                    Link("How to Install the Bridge", destination: Guide.hostSetup)
+                    Button("Edit Host") { editing = HostDraft(host) }
+                case nil:
+                    Button("Try Again") { Task { await model.connect(to: host.id) } }
+                        .buttonStyle(.borderedProminent)
+                    Button("Edit Host") { editing = HostDraft(host) }
+                }
             }
         } else if model.isConnected {
             ContentUnavailableView("No Sessions", systemImage: "rectangle.on.rectangle.slash",
@@ -104,9 +118,10 @@ struct DetailView: View {
             ContentUnavailableView {
                 Label("Add a Host", systemImage: Icon.host)
             } description: {
-                Text("muxa connects over SSH to the Mac or Linux machine where your tmux sessions run.")
+                Text("Muxa connects over SSH to the Mac or Linux machine where your tmux sessions run. Install muxa-bridge there first.")
             } actions: {
                 Button("Add Host") { editing = HostDraft() }.buttonStyle(.borderedProminent)
+                Link("How to Set Up the Host", destination: Guide.hostSetup)
             }
         } else {
             ContentUnavailableView("Not Connected", systemImage: "bolt.horizontal",
@@ -119,6 +134,12 @@ struct DetailView: View {
         if case .disconnected(let reason) = model.session.phase, reason != "disconnected" { return reason }
         return nil
     }
+}
+
+/// Setup steps for the host live in the README, next to the bridge they install.
+private enum Guide {
+    // A literal that always parses.
+    static let hostSetup = URL(string: "https://github.com/xdgetech/muxa#setup")!
 }
 
 /// "feature-auth: needs your input". Tapping it opens that session.
