@@ -4,6 +4,13 @@ Work on the AI coding agents you already run in tmux, from an iPad with a keyboa
 
 > **Status: pre-alpha.** The bridge, a terminal client and the iPad app are built and tested. The first run on a real iPad is next. See [`docs/plan.md`](docs/plan.md).
 
+<p>
+  <img src="docs/images/chat.jpg" width="49%" alt="An agent's conversation as a native chat, waiting for an answer">
+  <img src="docs/images/agent.jpg" width="49%" alt="The same agent pane in the terminal, at its real size">
+  <img src="docs/images/switcher.jpg" width="49%" alt="The session switcher with each agent's state">
+  <img src="docs/images/plan.jpg" width="49%" alt="The agent's plan in the Reader, with a diagram">
+</p>
+
 ## The idea
 
 You run agents (Claude Code, Codex, ...) in tmux on an always-on machine. Each session has an agent pane and a shell pane. When you leave the desk, you want those **same** processes on a tablet:

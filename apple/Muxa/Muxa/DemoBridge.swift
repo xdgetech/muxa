@@ -17,7 +17,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// The last paste into %1, sent as a prompt when Enter follows.
     private var prompt: String?
     /// Grows when a task starts.
-    private var sessions = DemoBridge.initialSessions
+    private var sessions: [Session]
+    private let content = DemoContent.current
     static let chatPane = "%1"
     /// A branch whose task fails, to show the error.
     static let failingBranch = "taken"
@@ -63,10 +64,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     static let freshShells: Set<String> = ["%8"]
 
     init() {
+        sessions = content.sessions
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
         // Launch argument `-demo-alerts`: an agent elsewhere starts waiting a few seconds in.
         if ProcessInfo.processInfo.arguments.contains("-demo-alerts") {
-            DispatchQueue.global().asyncAfter(deadline: .now() + 4) { [weak self] in self?.agentWaits("$4") }
+            DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
         }
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task"]))
     }
@@ -80,7 +82,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             lock.withLock { watch = id }
             emit(.result(id: id, error: nil, sessions: nil))
             guard let p = lock.withLock({ sessions }).flatMap(\.panes).first(where: { $0.id == pane }) else { return }
-            emit(.screen(watch: id, pane: pane, cols: p.cols, rows: p.rows, data: Self.screen(for: p)))
+            emit(.screen(watch: id, pane: pane, cols: p.cols, rows: p.rows, data: content.screen(p)))
         case .text(let id, let pane, let text):
             ok(id)
             echo(pane, Data(text.utf8))
@@ -95,15 +97,15 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
             ok(id)
             lock.withLock { chat = (id, 0, 0) }
-            emitChat(reset: true, entries: Self.conversation, status: .running)
+            emitChat(reset: true, entries: content.conversation, status: content.chatStatus)
         case .unchat(let id):
             lock.withLock { chat = nil }
             ok(id)
         case .docs(let id, _):
-            emit(.docList(DocListing(docs: id, root: "app", entries: Self.docs.map(\.info))))
+            emit(.docList(DocListing(docs: id, root: content.root, entries: content.docs.map(\.info))))
             ok(id)
         case .doc(let id, _, let path):
-            guard let doc = Self.docs.first(where: { $0.info.path == path }) else {
+            guard let doc = content.docs.first(where: { $0.info.path == path }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not listed"), sessions: nil))
                 return
             }
@@ -111,10 +113,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             ok(id)
             emit(.docContent(doc: id, path: path, text: doc.text, mtime: 1))
             // The agent keeps writing its plan: an update arrives while it is open.
-            if doc.info.kind == .plan {
+            if doc.info.kind == .plan, let update = content.planUpdate {
                 DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
                     guard let self, self.lock.withLock({ self.openDoc }) == id else { return }
-                    self.emit(.docContent(doc: id, path: path, text: doc.text + Self.planUpdate, mtime: 2))
+                    self.emit(.docContent(doc: id, path: path, text: doc.text + update, mtime: 2))
                 }
             }
         case .newTask(let id, let repo, let branch, _):
@@ -123,10 +125,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 self?.startTask(id: id, repo: repo, branch: branch)
             }
         case .changes(let id, _):
-            emit(.changeList(ChangeListing(changes: id, root: "app", entries: Self.changes.map(\.info))))
+            emit(.changeList(ChangeListing(changes: id, root: content.root, entries: content.changes.map(\.info))))
             ok(id)
         case .diff(let id, _, let path):
-            guard let change = Self.changes.first(where: { $0.info.path == path }) else {
+            guard let change = content.changes.first(where: { $0.info.path == path }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not changed"), sessions: nil))
                 return
             }
@@ -134,10 +136,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             ok(id)
             emit(.diffContent(diff: id, path: path, text: change.diff, binary: change.diff == nil))
             // The agent keeps editing: the diff grows while it is open.
-            if let diff = change.diff {
+            if let diff = change.diff, let update = content.diffUpdate {
                 DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
                     guard let self, self.lock.withLock({ self.openDiff }) == id else { return }
-                    self.emit(.diffContent(diff: id, path: path, text: diff + Self.diffUpdate, binary: false))
+                    self.emit(.diffContent(diff: id, path: path, text: diff + update, binary: false))
                 }
             }
         case .undiff(let id):

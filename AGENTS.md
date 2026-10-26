@@ -35,6 +35,8 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
 | `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the iPad app, or run its UI test against the in-app demo bridge (`MUXA_SIM` picks the simulator). |
 | `MUXA_DEVICE=<name or id> make install-ipad` | **humans only**: build, sign and run on a paired iPad. It creates signing assets on the developer's Apple account. |
+| `make screenshots` | App Store screenshots (captioned in English and Japanese, 2752x2064) into `build/screenshots/appstore/{en,ja}`, README images into `docs/images/`. Runs `ShowcaseTests` against the demo's `-showcase` data on its own simulator. |
+| `make app-icon` | renders the icon's light, dark and tinted images from `apple/Muxa/Art/app-icon.swift`. |
 | `TEST_RUNNER_MUXA_SCREENSHOT_DIR=<dir> make test-app` | also keeps the UI test's portrait and landscape screenshots. |
 | `MUXA_STREAM_RUNS=200 make test-tmux` | more random cut points for the snapshot/stream stress test (default 50). |
 | `MUXA_TEST_PLUGIN=<plugin.tmux> make test-tmux` | also checks that a real layout plugin keeps its layout. |

@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app install-ipad lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -61,6 +61,14 @@ build-app: app-project
 # UI test against the in-app demo bridge; no host needed.
 test-app: app-project
 	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM)' test
+
+# Renders the icon's light, dark and tinted images from apple/Muxa/Art/app-icon.swift.
+app-icon:
+	swift apple/Muxa/Art/app-icon.swift apple/Muxa/Muxa/Assets.xcassets/AppIcon.appiconset
+
+# App Store screenshots into build/screenshots, README images into docs/images.
+screenshots:
+	scripts/screenshots.sh
 
 # Builds, signs, installs and launches the app on a paired iPad (USB or "Connect via network").
 # MUXA_DEVICE is the device name or identifier from `xcrun devicectl list devices`.
