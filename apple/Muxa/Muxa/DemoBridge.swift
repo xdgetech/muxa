@@ -64,6 +64,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     init() {
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
+        // Launch argument `-demo-alerts`: an agent elsewhere starts waiting a few seconds in.
+        if ProcessInfo.processInfo.arguments.contains("-demo-alerts") {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 4) { [weak self] in self?.agentWaits("$4") }
+        }
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task"]))
     }
 
@@ -183,6 +187,14 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         }
         emit(.taskCreated(task: id, session: name))
         emit(.result(id: id, error: nil, sessions: nil))
+        emit(.sessionsChanged)
+    }
+
+    private func agentWaits(_ session: String) {
+        lock.withLock {
+            guard let i = sessions.firstIndex(where: { $0.id == session }), !sessions[i].panes.isEmpty else { return }
+            sessions[i].panes[0].agent = Agent(state: .waiting, since: UInt64(Date().timeIntervalSince1970))
+        }
         emit(.sessionsChanged)
     }
 

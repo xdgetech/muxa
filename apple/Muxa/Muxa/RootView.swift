@@ -1,3 +1,4 @@
+import MuxaSession
 import SwiftUI
 
 /// Hosts and sessions in the sidebar, the pane in the detail. The sidebar hides
@@ -12,9 +13,21 @@ struct RootView: View {
         NavigationSplitView(columnVisibility: $columns) {
             Sidebar(editing: $editing)
         } detail: {
+            // Under the navigation bar, so it never covers the toolbar.
             DetailView(editing: $editing)
+                .overlay(alignment: .top) {
+                    if let alert = model.alert {
+                        AlertBanner(alert: alert) { Task { await model.openAlert() } }
+                            .padding(.top, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .animation(.snappy, value: model.alert)
         }
         .navigationSplitViewStyle(.balanced)
+        .onChange(of: model.session.sessions) { old, new in
+            model.sessionsChanged(from: old, to: new)
+        }
         .onChange(of: model.session.watchedPane) { _, pane in
             if pane != nil, model.isConnected { columns = .detailOnly }
         }
@@ -105,5 +118,45 @@ struct DetailView: View {
     private var reason: String? {
         if case .disconnected(let reason) = model.session.phase, reason != "disconnected" { return reason }
         return nil
+    }
+}
+
+/// "feature-auth: needs your input". Tapping it opens that session.
+struct AlertBanner: View {
+    let alert: AgentAlert
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            Label {
+                Text("\(alert.sessionName): \(alert.message)")
+                    .lineLimit(1)
+            } icon: {
+                Image(systemName: icon).foregroundStyle(color)
+            }
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("agent-alert")
+    }
+
+    private var icon: String {
+        switch alert.kind {
+        case .waiting: Icon.waiting
+        case .done: "checkmark.circle.fill"
+        case .failed: Icon.warning
+        }
+    }
+
+    private var color: Color {
+        switch alert.kind {
+        case .waiting: Theme.state(.waiting)
+        case .done: Theme.state(.done)
+        case .failed: Theme.state(.error)
+        }
     }
 }

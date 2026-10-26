@@ -36,6 +36,8 @@ final class AppModel {
     var showReader = false
     /// The New Task sheet, with the repo it starts in.
     var newTask: TaskDraft?
+    /// An agent elsewhere that wants attention, shown for a few seconds.
+    private(set) var alert: AgentAlert?
     /// The task waiting for the user to pick how to close it.
     var closingTask: Session?
     /// Why the last close failed; nothing was closed then.
@@ -433,6 +435,27 @@ final class AppModel {
         }
         if wasShown, let next = visibleSessions.first { await open(next) }
         refocusPane()
+    }
+
+    // MARK: Alerts
+
+    private static let alertSeconds: Duration = .seconds(4)
+
+    /// Called with each new session list: tells about agents elsewhere that
+    /// now wait, finished, or failed.
+    func sessionsChanged(from old: [Session], to new: [Session]) {
+        guard let latest = new.alerts(since: old, shown: currentSession?.id).last else { return }
+        alert = latest
+        Task {
+            try? await Task.sleep(for: Self.alertSeconds)
+            if alert == latest { alert = nil }
+        }
+    }
+
+    func openAlert() async {
+        guard let shown = alert else { return }
+        alert = nil
+        if let s = session.sessions.first(where: { $0.id == shown.session }) { await open(s) }
     }
 
     func retryChat() async {

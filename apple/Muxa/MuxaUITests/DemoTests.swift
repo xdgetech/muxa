@@ -133,6 +133,23 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
     }
 
+    /// An agent elsewhere that starts waiting shows a banner; tapping it opens
+    /// that session.
+    @MainActor
+    func testAWaitingAgentElsewhereIsAnnounced() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-demo-alerts"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["feature-auth"].waitForExistence(timeout: 10))
+        let banner = app.buttons["agent-alert"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 10))
+        XCTAssertTrue(banner.label.contains("fix-login: needs your input"), banner.label)
+        save("agent-alert")
+        banner.tap()
+        XCTAssertTrue(app.navigationBars["fix-login"].waitForExistence(timeout: 5))
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 5))
+    }
+
     /// Closing the shown task opens the next one; a refused close says why and
     /// leaves the task open.
     @MainActor
