@@ -12,6 +12,8 @@
 {"type":"result","id":10,"error":{"code":"unsupported","message":"no agent adapter knows the program in pane %12"}}
 {"type":"chat-entries","chat":10,"seq":1,"reset":true,"entries":[{"id":"u:1","kind":"user","text":"Fix the failing test"},{"id":"a:m1","kind":"assistant","text":"Running the tests **first**."},{"id":"t:call1","kind":"tool","tool":{"name":"Bash","summary":"cargo test","result":"1 failed"}}],"status":{"state":"running","since":1767225600},"agent":"claude-code","truncated":true}
 {"type":"chat-entries","chat":10,"seq":2,"entries":[{"id":"t:call1","kind":"tool","tool":{"name":"Bash","summary":"cargo test","result":"error: could not compile","error":true}},{"id":"n:2","kind":"notice","text":"Interrupted"}]}
+{"type":"chat-entries","chat":10,"seq":3,"entries":[],"status":{"state":"waiting","since":1767225660},"prompt":{"entry":"t:call2","kind":"question","question":"Which format?","options":[{"label":"TOML","keys":["1"]},{"label":"JSON","keys":["2"]}]}}
+{"type":"chat-entries","chat":10,"seq":4,"entries":[],"status":{"state":"waiting","since":1767225670},"prompt":{"entry":"t:call3","kind":"permission","options":[{"label":"Allow","keys":["1"]},{"label":"Deny","keys":["Escape"],"cancel":true}]}}
 {"type":"chat-ended","chat":10,"reason":"the transcript was removed"}
 {"type":"doc-list","docs":12,"root":"app","entries":[{"path":"plans/sleepy-bonbon.md","kind":"plan","title":"Reader plan","mtime":1767225600},{"path":"README.md","kind":"repo","mtime":1767225000},{"path":"docs/plan.md","kind":"repo"}],"truncated":true}
 {"type":"doc-content","doc":13,"path":"docs/plan.md","text":"# Plan\n\n```mermaid\nflowchart LR\n  A --> B\n```\n","mtime":1767225660}

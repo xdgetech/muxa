@@ -71,7 +71,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `output` | `watch`, `pane`, `data` |
 | `sessions-changed` | none. Send `list` again. Sent when tmux reports a structural change, and when an agent pane's role or state changed (checked every 2 seconds). Best effort: tmux reports pane changes only for the bridge's current session, so also re-list whenever the session list is shown. |
 | `pane-gone` | `watch`, `pane`, optional `reason` |
-| `chat-entries` | `chat`, `seq`, optional `reset`, `entries[]`, optional `status {state, since}`, optional `agent`, optional `truncated` |
+| `chat-entries` | `chat`, `seq`, optional `reset`, `entries[]`, optional `status {state, since}`, optional `agent`, optional `truncated`, optional `prompt {entry, kind, question?, options[] {label, keys[], cancel?}}` |
 | `chat-ended` | `chat`, `reason` |
 | `doc-list` | `docs`, optional `root`, `entries[] {path, kind, title?, mtime?}`, optional `truncated` |
 | `doc-content` | `doc`, `path`, `text`, optional `mtime` |
@@ -110,6 +110,11 @@ A bridge with the `chat` capability can follow the conversation of a coding agen
 5. Each entry has `id`, `kind` (`user`, `assistant`, `tool`, `notice`), `text`, and for a tool call `tool {name, summary, result?, error?}`. An entry replaces any earlier entry with the same `id`. A tool call is sent first without `result` and again when its result arrives.
 6. `status` is the agent's state when the message was sent, with `since` in epoch seconds. Absent means unknown, for example when the pane is back at a shell. A message with no entries carries a status change alone.
 7. `chat-ended` says the chat stopped, for example because the agent exited. Send `chat` again to follow a new one.
+8. With the `chat-prompt` capability, `prompt` says what the agent waits on now, when its adapter knows that menu. Like `status`, every message carries the current one, and absent means none is known. A message with no entries carries a prompt change alone.
+   - `entry` is the id of the tool entry the agent waits on.
+   - `kind` is `permission` (may the agent run this call), `question` (pick an answer; `question` holds it) or `plan` (leave plan mode). Treat an unknown kind as a prompt without a known meaning, and still show its options.
+   - Each option's `keys` are tmux key names that pick it: send them with `keys`. `cancel: true` marks a deny or cancel.
+   - The options can be fewer than the agent's menu. The rest are only in the pane.
 
 Entries are made by the bridge from the agent's own records, which are private formats. Expect missing kinds rather than wrong ones. `assistant` text is markdown.
 

@@ -13,6 +13,7 @@ What works today:
   - sessions grouped by repo, with each agent's state and its age;
   - the Agent / Terminal switch, and every keyboard shortcut in the README;
   - Chat: a Claude Code or Codex conversation as messages, with a composer and quick keys (ADR 0005, `docs/agents.md`);
+  - approval cards in Chat when Claude Code waits on a permission, a question or a plan (ADR 0009);
   - the Reader: the pane's plan, the repo's Markdown files and its uncommitted changes, rendered offline (ADR 0006, 0007);
   - starting and closing tasks, with or without tmux-agents (ADR 0007);
   - a banner when an agent in another session waits, finishes or fails (ADR 0008);
@@ -21,7 +22,7 @@ What works today:
 
 ## Next
 
-- Native approval cards for agent permission prompts.
+- Images in the Reader, such as QA screenshots, also from folders git ignores.
 
 ## Later
 

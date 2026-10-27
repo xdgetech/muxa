@@ -16,12 +16,14 @@ trait ChatSource: Send {
     fn poll(&mut self, pane: &PaneInfo) -> Result<Vec<ChatEvent>, Error>; // first call: a Reset
     fn entries(&self) -> Vec<ChatEntry>;  // everything current, for a resend
     fn status(&self) -> Option<Agent>;    // None when unknown
+    fn prompt(&self) -> Option<ChatPrompt>; // optional: what the agent waits on, with its keys
 }
 ```
 
 - **`open`** gets the pane (`id`, session name, `pane_pid`, path, whether a shell is in front) and a snapshot of the process tree. It returns `None` when its agent is not running in that pane. The registry (`Registry::standard`) asks the adapters in order, and the first source wins.
 - **`poll`** runs every 500 ms on the blocking pool. It returns `Reset` (replace everything) or `Upsert` (add an entry, or replace the one with the same id). A source keeps whatever state it needs, for example to pair a tool call with its later result. `Error::Gone` ends the chat, for example when the agent exited.
 - **`find`** (optional, None by default) says whether the adapter's agent runs in a pane, and its state, without opening it. The bridge uses it to find the agent pane of a window that no tag describes, and the state of an agent pane that has no state tag (ADR 0008). Claude Code uses the same session-file lookup as `open`, and its `status`.
+- **`prompt`** (optional, None by default) names what the agent waits on and the keys that pick each choice, for the approval card (ADR 0009). Return one only when the agent's records show exactly what it waits on, and only with keys checked against that agent's menu.
 - **`documents`** (optional, empty by default) returns files the agent keeps outside the repo, such as its plan, for the Reader. Each comes with the directory it must stay in.
 - **The chat task** (`src/chat.rs`) is agent-neutral. It owns the protocol side: sequence numbers, batching, resending after the client fell behind, and checking the pane every 2 s.
 
@@ -69,7 +71,12 @@ trait TaskLauncher: Send + Sync {
 - `/clear` and `/resume` keep the process but change `sessionId`. The source then resets to the new transcript.
 - After `/compact` or a rewind, the file is not linear. The chat may show messages that Claude Code no longer shows.
 - Every transcript line names the session's plan as `slug`. Plan mode writes it to `~/.claude/plans/<slug>.md`, which `documents` returns.
-- A permission prompt is not in the transcript while it waits. `status: waiting` is how a client learns about it.
+- While it waits (`status: waiting`), the last transcript line is the `tool_use` it waits on, with its full input. This was checked with 2.1.310 for a permission, AskUserQuestion and ExitPlanMode. The menu itself is not in the transcript. `claude/prompt.rs` offers the keys that held in every menu seen (ADR 0009):
+  - a permission: `1` allows, `Escape` denies and interrupts the turn;
+  - one AskUserQuestion question with a single answer: the option's number picks it;
+  - ExitPlanMode: `Escape` keeps planning. Which mode `1` approves with depends on settings, so approving stays in the terminal.
+  
+  With several open calls, several questions or several answers, no prompt is sent. Neither is one while a subagent (`Task`, `Agent`) runs: it asks about its own calls, which are sidechain lines.
 
 ## Codex
 

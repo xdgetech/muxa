@@ -31,7 +31,7 @@ fn requests_round_trip() {
 
 #[test]
 fn messages_round_trip() {
-    assert_eq!(round_trip::<Message>("messages.jsonl"), 24);
+    assert_eq!(round_trip::<Message>("messages.jsonl"), 26);
 }
 
 #[test]

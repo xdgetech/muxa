@@ -31,6 +31,21 @@ struct ChatLogTests {
         #expect(log.entries.map(\.id) == ["z"])
         #expect(!log.truncated)
     }
+
+    @Test func thePromptIsTheLatestUpdates() throws {
+        var log = ChatLog(pane: "%1")
+        let prompt = ChatPrompt(entry: "t:1", kind: .permission, options: [.init(label: "Allow", keys: ["1"])])
+        log.apply(ChatUpdate(chat: 1, seq: 1, reset: true, entries: [], status: Agent(state: .waiting), prompt: prompt))
+        #expect(log.prompt == prompt)
+        log.apply(ChatUpdate(chat: 1, seq: 2, entries: [], status: Agent(state: .running)))
+        #expect(log.prompt == nil)
+
+        // A kind this client does not know still decodes, so the update is kept.
+        let line = #"{"entry":"t:2","kind":"sandbox","options":[{"label":"Go","keys":["1"],"cancel":true}]}"#
+        let decoded = try JSONDecoder().decode(ChatPrompt.self, from: Data(line.utf8))
+        #expect(decoded.kind == .other("sandbox"))
+        #expect(decoded.options.first?.cancel == true)
+    }
 }
 
 @MainActor

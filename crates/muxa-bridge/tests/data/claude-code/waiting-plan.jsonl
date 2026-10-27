@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","parentUuid":null,"isSidechain":false,"message":{"role":"user","content":"Plan the cache"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","isSidechain":false,"message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"toolu_x1","name":"ExitPlanMode","input":{"plan":"# Cache\n\n1. Add a map.","planFilePath":"/home/dev/.claude/plans/quiet-cache.md"},"caller":{"type":"direct"}}]}}

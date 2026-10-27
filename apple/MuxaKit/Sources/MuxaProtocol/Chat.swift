@@ -88,10 +88,12 @@ public struct ChatUpdate: Codable, Equatable, Sendable {
     public var agent: String?
     /// On a reset: earlier history exists but was not sent.
     public var truncated: Bool
+    /// What the agent waits on now, with its choices; nil when none is known.
+    public var prompt: ChatPrompt?
 
     public init(
         chat: UInt64, seq: UInt64, reset: Bool = false, entries: [ChatEntry], status: Agent? = nil,
-        agent: String? = nil, truncated: Bool = false
+        agent: String? = nil, truncated: Bool = false, prompt: ChatPrompt? = nil
     ) {
         self.chat = chat
         self.seq = seq
@@ -100,9 +102,10 @@ public struct ChatUpdate: Codable, Equatable, Sendable {
         self.status = status
         self.agent = agent
         self.truncated = truncated
+        self.prompt = prompt
     }
 
-    private enum Key: String, CodingKey { case chat, seq, reset, entries, status, agent, truncated }
+    private enum Key: String, CodingKey { case chat, seq, reset, entries, status, agent, truncated, prompt }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -113,6 +116,7 @@ public struct ChatUpdate: Codable, Equatable, Sendable {
         status = try c.decodeIfPresent(Agent.self, forKey: .status)
         agent = try c.decodeIfPresent(String.self, forKey: .agent)
         truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
+        prompt = try c.decodeIfPresent(ChatPrompt.self, forKey: .prompt)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -124,5 +128,96 @@ public struct ChatUpdate: Codable, Equatable, Sendable {
         try c.encodeIfPresent(status, forKey: .status)
         try c.encodeIfPresent(agent, forKey: .agent)
         if truncated { try c.encode(true, forKey: .truncated) }
+        try c.encodeIfPresent(prompt, forKey: .prompt)
+    }
+}
+
+/// A choice the agent waits on. Each option carries the keys that pick it in the
+/// agent's menu, so the client needs no agent knowledge.
+public struct ChatPrompt: Codable, Equatable, Sendable {
+    /// Unknown kinds decode as `other`, so a newer bridge does not break the message.
+    public enum Kind: Equatable, Sendable {
+        case permission, question, plan
+        case other(String)
+
+        init(raw: String) {
+            switch raw {
+            case "permission": self = .permission
+            case "question": self = .question
+            case "plan": self = .plan
+            default: self = .other(raw)
+            }
+        }
+
+        var raw: String {
+            switch self {
+            case .permission: "permission"
+            case .question: "question"
+            case .plan: "plan"
+            case .other(let raw): raw
+            }
+        }
+    }
+
+    public struct Option: Codable, Equatable, Sendable {
+        public var label: String
+        /// tmux key names, as in a `keys` request.
+        public var keys: [String]
+        /// Declines or cancels, e.g. a deny.
+        public var cancel: Bool
+
+        public init(label: String, keys: [String], cancel: Bool = false) {
+            self.label = label
+            self.keys = keys
+            self.cancel = cancel
+        }
+
+        private enum Key: String, CodingKey { case label, keys, cancel }
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: Key.self)
+            label = try c.decode(String.self, forKey: .label)
+            keys = try c.decode([String].self, forKey: .keys)
+            cancel = try c.decodeIfPresent(Bool.self, forKey: .cancel) ?? false
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var c = encoder.container(keyedBy: Key.self)
+            try c.encode(label, forKey: .label)
+            try c.encode(keys, forKey: .keys)
+            if cancel { try c.encode(true, forKey: .cancel) }
+        }
+    }
+
+    /// The id of the tool entry the agent waits on.
+    public var entry: String
+    public var kind: Kind
+    /// For a question: the question as the agent asks it.
+    public var question: String?
+    public var options: [Option]
+
+    public init(entry: String, kind: Kind, question: String? = nil, options: [Option]) {
+        self.entry = entry
+        self.kind = kind
+        self.question = question
+        self.options = options
+    }
+
+    private enum Key: String, CodingKey { case entry, kind, question, options }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        entry = try c.decode(String.self, forKey: .entry)
+        kind = Kind(raw: try c.decode(String.self, forKey: .kind))
+        question = try c.decodeIfPresent(String.self, forKey: .question)
+        options = try c.decode([Option].self, forKey: .options)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(entry, forKey: .entry)
+        try c.encode(kind.raw, forKey: .kind)
+        try c.encodeIfPresent(question, forKey: .question)
+        try c.encode(options, forKey: .options)
     }
 }

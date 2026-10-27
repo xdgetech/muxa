@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","parentUuid":null,"isSidechain":false,"message":{"role":"user","content":"Add a config file"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","isSidechain":false,"message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"toolu_q1","name":"AskUserQuestion","input":{"questions":[{"question":"Which format should the config use?","header":"Format","multiSelect":false,"options":[{"label":"TOML","description":"Like Cargo.toml"},{"label":"JSON","description":"No comments"}]}]},"caller":{"type":"direct"}}]}}

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use common::codex::CodexDir;
 use common::{Bridge, Server};
-use muxa_protocol::{AgentState, ErrorCode, Message};
+use muxa_protocol::{AgentState, ChatPrompt, ErrorCode, Message, PromptKind};
 use serde_json::{Value, json};
 
 const SAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/claude-code");
@@ -53,6 +53,11 @@ impl ClaudeDir {
         v["tmux"] = format!("work:@9.{pane}").into();
         v["status"] = status.into();
         std::fs::write(&self.session, v.to_string()).unwrap();
+    }
+
+    /// Replaces the transcript with another sample.
+    fn sample(&self, name: &str) {
+        std::fs::copy(format!("{SAMPLE}/{name}"), &self.transcript).unwrap();
     }
 
     fn append(&self, line: &str) {
@@ -163,6 +168,46 @@ async fn follows_the_agent_in_a_pane() {
         !matches!(after, Some(Message::ChatEntries { .. })),
         "got {after:?}"
     );
+}
+
+/// The next chat-entries: its entry ids and its prompt.
+async fn prompted(bridge: &mut Bridge) -> (Vec<String>, Option<ChatPrompt>) {
+    loop {
+        if let Message::ChatEntries {
+            entries, prompt, ..
+        } = bridge.event(WAIT).await.expect("no chat-entries")
+        {
+            return (entries.into_iter().map(|e| e.id).collect(), prompt);
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_waiting_permission_is_sent_as_a_prompt_until_answered() {
+    let server = Server::start();
+    let (pane, pid) = agent_pane(&server);
+    let claude = ClaudeDir::new("prompt", &pid, &pane);
+    claude.sample("waiting-permission.jsonl");
+    claude.write_session(&pid, &pane, "waiting");
+    let (mut bridge, hello) = Bridge::start(&server, &["--agent-dir", &claude.arg()]).await;
+    let Message::Hello { capabilities, .. } = hello else {
+        panic!("{hello:?}")
+    };
+    assert!(capabilities.contains(&"chat-prompt".to_owned()));
+
+    assert!(is_ok(
+        &bridge.request(json!({"type": "chat", "pane": pane})).await
+    ));
+    let (_, prompt) = prompted(&mut bridge).await;
+    let prompt = prompt.expect("a prompt");
+    assert_eq!(prompt.entry, "t:toolu_p1");
+    assert_eq!(prompt.kind, PromptKind::Permission);
+    assert_eq!(prompt.options[0].keys, ["1"]);
+
+    claude.append(r#"{"type":"user","uuid":"u2","message":{"role":"user","content":[{"tool_use_id":"toolu_p1","type":"tool_result","content":"ok"}]}}"#);
+    let (ids, prompt) = prompted(&mut bridge).await;
+    assert_eq!(ids, ["t:toolu_p1"]);
+    assert_eq!(prompt, None);
 }
 
 #[tokio::test]

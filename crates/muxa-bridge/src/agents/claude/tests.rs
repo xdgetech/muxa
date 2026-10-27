@@ -2,6 +2,7 @@ use std::io::Write;
 
 use super::*;
 use crate::agents::log::MAX_ENTRIES;
+use muxa_protocol::PromptKind;
 
 const SAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/claude-code");
 const SESSION_ID: &str = "0b8c3c0e-1111-4a2b-9c3d-000000000001";
@@ -295,4 +296,107 @@ fn an_exited_instance_ends_the_chat() {
     source.poll(&pane()).unwrap();
     std::fs::remove_file(f.dir.join("sessions/200.json")).unwrap();
     assert!(matches!(source.poll(&pane()), Err(Error::Gone(_))));
+}
+
+/// A source over `transcript` whose session file says `waiting`.
+fn waiting(f: &Fixture, transcript: &str) -> (Box<dyn ChatSource>, PathBuf) {
+    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |v| {
+        v["status"] = "waiting".into()
+    });
+    let path = f.transcript(SESSION_ID, &sample(transcript));
+    let mut source = f.open(&procs()).unwrap();
+    source.poll(&pane()).unwrap();
+    (source, path)
+}
+
+fn keys(prompt: &ChatPrompt) -> Vec<(&str, Vec<&str>, bool)> {
+    prompt
+        .options
+        .iter()
+        .map(|o| {
+            let keys = o.keys.iter().map(String::as_str).collect();
+            (o.label.as_str(), keys, o.cancel)
+        })
+        .collect()
+}
+
+#[test]
+fn a_waiting_permission_offers_allow_and_deny() {
+    let f = Fixture::new("permission");
+    let (mut source, path) = waiting(&f, "waiting-permission.jsonl");
+    let prompt = source.prompt().unwrap();
+    assert_eq!(prompt.entry, "t:toolu_p1");
+    assert_eq!(prompt.kind, PromptKind::Permission);
+    assert_eq!(
+        keys(&prompt),
+        [("Allow", vec!["1"], false), ("Deny", vec!["Escape"], true)]
+    );
+
+    // Denied: the call gets an error result, and nothing waits any more.
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    writeln!(file, r#"{{"type":"user","uuid":"u2","message":{{"role":"user","content":[{{"tool_use_id":"toolu_p1","type":"tool_result","content":"The user doesn't want to proceed","is_error":true}}]}}}}"#).unwrap();
+    source.poll(&pane()).unwrap();
+    assert_eq!(source.prompt(), None);
+}
+
+#[test]
+fn a_single_question_offers_its_options_by_number() {
+    let f = Fixture::new("question");
+    let (source, _) = waiting(&f, "waiting-question.jsonl");
+    let prompt = source.prompt().unwrap();
+    assert_eq!(prompt.kind, PromptKind::Question);
+    assert_eq!(
+        prompt.question.as_deref(),
+        Some("Which format should the config use?")
+    );
+    assert_eq!(
+        keys(&prompt),
+        [("TOML", vec!["1"], false), ("JSON", vec!["2"], false)]
+    );
+}
+
+#[test]
+fn a_plan_offers_to_keep_planning() {
+    let f = Fixture::new("plan");
+    let (source, _) = waiting(&f, "waiting-plan.jsonl");
+    let prompt = source.prompt().unwrap();
+    assert_eq!(prompt.kind, PromptKind::Plan);
+    assert_eq!(keys(&prompt), [("Keep planning", vec!["Escape"], true)]);
+}
+
+#[test]
+fn no_prompt_unless_waiting_on_one_known_call() {
+    let f = Fixture::new("noprompt");
+    // Running, not waiting.
+    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |_| {});
+    f.transcript(SESSION_ID, &sample("waiting-permission.jsonl"));
+    let mut source = f.open(&procs()).unwrap();
+    source.poll(&pane()).unwrap();
+    assert_eq!(source.prompt(), None);
+
+    // Several questions, or several answers, use keys not checked.
+    let multi =
+        sample("waiting-question.jsonl").replace(r#""multiSelect":false"#, r#""multiSelect":true"#);
+    let f = Fixture::new("multiselect");
+    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |v| {
+        v["status"] = "waiting".into()
+    });
+    f.transcript(SESSION_ID, &multi);
+    let mut source = f.open(&procs()).unwrap();
+    source.poll(&pane()).unwrap();
+    assert_eq!(source.prompt(), None);
+
+    // A subagent asks about its own calls, which the chat does not show.
+    assert_eq!(prompt::prompt("t:1", "Task", &Value::Null), None);
+
+    // Two calls open: which one asks is not known.
+    let mut conv = Conversation::default();
+    for line in sample("waiting-permission.jsonl").lines() {
+        conv.apply(line.as_bytes());
+    }
+    conv.apply(br#"{"type":"assistant","uuid":"a3","message":{"id":"msg_1","content":[{"type":"tool_use","id":"toolu_p2","name":"Bash","input":{"command":"ls"}}]}}"#);
+    assert_eq!(conv.open.len(), 2);
 }

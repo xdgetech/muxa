@@ -207,6 +207,9 @@ pub enum Message {
         /// On a reset: earlier history exists but was not sent.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         truncated: bool,
+        /// What the agent waits for now, with its choices; absent when none is known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prompt: Option<ChatPrompt>,
     },
     /// The chat stopped, e.g. the agent's transcript became unreadable.
     ChatEnded { chat: u64, reason: String },
@@ -342,6 +345,42 @@ pub enum ChatKind {
     Assistant,
     Tool,
     Notice,
+}
+
+/// A choice the agent waits on, e.g. a permission. The adapter knows the agent's
+/// menu, so each option carries the keys that pick it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatPrompt {
+    /// The tool entry the agent waits on.
+    pub entry: String,
+    pub kind: PromptKind,
+    /// For a question: the question as the agent asks it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
+    pub options: Vec<PromptOption>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptKind {
+    /// May the agent run this tool call?
+    Permission,
+    /// The agent asks the user to pick an answer.
+    Question,
+    /// The agent asks to leave plan mode.
+    Plan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptOption {
+    pub label: String,
+    /// tmux key names to send to the pane, as in `keys`.
+    pub keys: Vec<String>,
+    /// Declines or cancels, e.g. a deny.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cancel: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -85,6 +85,7 @@ where
         tmux: tmux_version,
         capabilities: vec![
             "chat".into(),
+            "chat-prompt".into(),
             "docs".into(),
             "tasks".into(),
             "changes".into(),

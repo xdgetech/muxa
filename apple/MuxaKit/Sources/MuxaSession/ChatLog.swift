@@ -6,6 +6,8 @@ public struct ChatLog: Equatable, Sendable {
     public private(set) var entries: [ChatEntry] = []
     /// The agent's state as of the last update; nil when unknown.
     public private(set) var status: Agent?
+    /// What the agent waits on as of the last update; nil when none is known.
+    public private(set) var prompt: ChatPrompt?
     /// The adapter, e.g. `claude-code`.
     public private(set) var agent: String?
     /// Older history exists but was not sent.
@@ -41,6 +43,7 @@ public struct ChatLog: Equatable, Sendable {
             }
         }
         status = update.status
+        prompt = update.prompt
         ended = nil
         loaded = true
     }

@@ -274,6 +274,44 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(branch.waitForNonExistence(timeout: 5), "the sheet closes")
     }
 
+    /// A permission and a question the adapter knows show as a card, and its
+    /// buttons send the option's keys to the pane.
+    @MainActor
+    func testApprovalCardAnswersWithTheOptionsKeys() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        let card = app.descendants(matching: .any)["approval"].firstMatch
+
+        composer.tap()
+        composer.typeText("/allow")
+        app.buttons["send"].tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.staticTexts["Allow Bash?"].exists)
+        XCTAssertTrue(card.staticTexts["rm -rf build"].exists)
+        XCTAssertTrue(card.buttons["approval-terminal"].exists)
+        save("approval-permission")
+        card.buttons["approval-Allow"].tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5))
+
+        composer.tap()
+        composer.typeText("/ask")
+        app.buttons["send"].tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.staticTexts["Which format should the config use?"].exists)
+        card.buttons["approval-JSON"].tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5))
+
+        // The keys went to the pane itself.
+        composer.typeKey("r", modifierFlags: .command)
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(waitFor(pane, containing: "<1>"))
+        XCTAssertTrue(waitFor(pane, containing: "<2>"))
+    }
+
     /// The agent pane opens as a chat; prompts reach the same pane; Raw is one key away.
     @MainActor
     func testPrettyViewSendsPromptsAndSwitchesToRaw() throws {

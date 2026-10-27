@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use muxa_protocol::{Agent, ChatEntry, ErrorBody, ErrorCode, Message};
+use muxa_protocol::{Agent, ChatEntry, ChatPrompt, ErrorBody, ErrorCode, Message};
 use muxa_tmux::{Client, PaneId};
 use tokio::sync::{mpsc, oneshot};
 
@@ -46,6 +46,7 @@ struct Active {
     source: Option<Box<dyn ChatSource>>,
     seq: u64,
     status: Option<Agent>,
+    prompt: Option<ChatPrompt>,
     /// A message was dropped: send everything again as a reset.
     resync: bool,
     ticks: u32,
@@ -136,6 +137,7 @@ impl ChatTask {
                     source: Some(source),
                     seq: 0,
                     status: None,
+                    prompt: None,
                     resync: false,
                     ticks: 0,
                 });
@@ -186,10 +188,11 @@ impl ChatTask {
             let events = source.poll(&info);
             let all = resync.then(|| source.entries());
             let status = source.status();
-            (source, events, all, status)
+            let prompt = source.prompt();
+            (source, events, all, status, prompt)
         })
         .await;
-        let (source, events, all, status) = match joined {
+        let (source, events, all, status, prompt) = match joined {
             Ok(parts) => parts,
             Err(e) => return self.end(format!("the agent reader failed: {e}")).await,
         };
@@ -204,9 +207,10 @@ impl ChatTask {
             return;
         };
         active.source = Some(source);
-        let status_changed = status != active.status;
+        let changed = status != active.status || prompt != active.prompt;
         active.status = status;
-        let messages = batch(active, all, events, status_changed);
+        active.prompt = prompt;
+        let messages = batch(active, all, events, changed);
         for msg in messages {
             match self.out.try_send(msg) {
                 Ok(()) => {}
@@ -257,12 +261,13 @@ fn info_pane(active: &Option<Active>) -> String {
 }
 
 /// Turns one poll into messages, in order: a reset starts a new message, and
-/// upserts after it share one. Every message carries the current status.
+/// upserts after it share one. Every message carries the current status and
+/// prompt; when only those changed, a message without entries carries them.
 fn batch(
     active: &mut Active,
     all: Option<Vec<ChatEntry>>,
     events: Vec<ChatEvent>,
-    status_changed: bool,
+    changed: bool,
 ) -> Vec<Message> {
     let mut parts: Vec<(bool, Vec<ChatEntry>, bool)> = Vec::new();
     if let Some(all) = all {
@@ -277,7 +282,7 @@ fn batch(
             },
         }
     }
-    if parts.is_empty() && status_changed {
+    if parts.is_empty() && changed {
         parts.push((false, Vec::new(), false));
     }
     parts
@@ -292,6 +297,7 @@ fn batch(
                 status: active.status.clone(),
                 agent: reset.then(|| active.agent.to_owned()),
                 truncated,
+                prompt: active.prompt.clone(),
             }
         })
         .collect()
@@ -330,6 +336,7 @@ mod tests {
                 state: AgentState::Running,
                 since: Some(5),
             }),
+            prompt: None,
             resync: false,
             ticks: 0,
         }

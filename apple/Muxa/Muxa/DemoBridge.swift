@@ -16,6 +16,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var openDiff: UInt64?
     /// The last paste into %1, sent as a prompt when Enter follows.
     private var prompt: String?
+    /// What the demo agent waits on, and the tool call it waits on.
+    private var waitingOn: (prompt: ChatPrompt, tool: ChatEntry)?
     /// Grows when a task starts.
     private var sessions: [Session]
     private let content = DemoContent.current
@@ -155,6 +157,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             if pane == Self.chatPane, keys == ["Enter"], let text = lock.withLock({ prompt.take() }) {
                 answer(text)
             }
+            if pane == Self.chatPane { pick(keys) }
             for key in keys {
                 switch key {
                 case "Enter": echo(pane, Data("\r\n$ ".utf8))
@@ -221,7 +224,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }
 
-    /// The demo agent: echoes a prompt, and `/wait` makes it wait for an answer.
+    /// The demo agent: echoes a prompt. `/wait` makes it wait on a menu it cannot
+    /// name, and `/allow`, `/ask` and `/plan` on a permission, a question and a plan.
     private func answer(_ text: String) {
         let n = lock.withLock { () -> Int in
             chat?.count += 1
@@ -230,13 +234,48 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         let user = ChatEntry(id: "u:demo\(n)", kind: .user, text: text)
         if text == "/wait" {
             emitChat(entries: [user], status: .waiting)
+        } else if let (prompt, tool) = Self.demoPrompt(text, n: n) {
+            lock.withLock { waitingOn = (prompt, tool) }
+            emitChat(entries: [user, tool], status: .waiting, prompt: prompt)
         } else {
             let reply = ChatEntry(id: "a:demo\(n)", kind: .assistant, text: "You said: **\(text)**")
             emitChat(entries: [user, reply], status: .idle)
         }
     }
 
-    private func emitChat(reset: Bool = false, entries: [ChatEntry], status: AgentState) {
+    static func demoPrompt(_ text: String, n: Int) -> (ChatPrompt, ChatEntry)? {
+        let entry = "t:demo\(n)"
+        switch text {
+        case "/allow":
+            return (ChatPrompt(entry: entry, kind: .permission, options: [
+                .init(label: "Allow", keys: ["1"]), .init(label: "Deny", keys: ["Escape"], cancel: true),
+            ]), ChatEntry(id: entry, kind: .tool, tool: ChatTool(name: "Bash", summary: "rm -rf build")))
+        case "/ask":
+            return (ChatPrompt(entry: entry, kind: .question, question: "Which format should the config use?", options: [
+                .init(label: "TOML", keys: ["1"]), .init(label: "JSON", keys: ["2"]),
+            ]), ChatEntry(id: entry, kind: .tool, tool: ChatTool(name: "AskUserQuestion", summary: "Which format should the config use?")))
+        case "/plan":
+            return (ChatPrompt(entry: entry, kind: .plan, options: [
+                .init(label: "Keep planning", keys: ["Escape"], cancel: true),
+            ]), ChatEntry(id: entry, kind: .tool, tool: ChatTool(name: "ExitPlanMode", summary: "Reader plan")))
+        default:
+            return nil
+        }
+    }
+
+    /// Keys that pick an option of the waiting prompt answer it.
+    private func pick(_ keys: [String]) {
+        guard let (prompt, tool) = lock.withLock({ waitingOn }),
+            let option = prompt.options.first(where: { $0.keys == keys })
+        else { return }
+        lock.withLock { waitingOn = nil }
+        var done = tool
+        done.tool?.result = option.cancel ? "Declined" : "Chose \(option.label)"
+        done.tool?.error = option.cancel
+        emitChat(entries: [done], status: .idle)
+    }
+
+    private func emitChat(reset: Bool = false, entries: [ChatEntry], status: AgentState, prompt: ChatPrompt? = nil) {
         guard let (id, seq) = lock.withLock({ () -> (UInt64, UInt64)? in
             guard chat != nil else { return nil }
             chat?.seq += 1
@@ -245,7 +284,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         let since = UInt64(Date().timeIntervalSince1970)
         emit(.chatEntries(ChatUpdate(
             chat: id, seq: seq, reset: reset, entries: entries, status: Agent(state: status, since: since),
-            agent: reset ? "claude-code" : nil)))
+            agent: reset ? "claude-code" : nil, prompt: prompt)))
     }
 
     static let diffUpdate = "+    // checked by the agent\n"

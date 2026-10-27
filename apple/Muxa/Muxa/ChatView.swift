@@ -12,8 +12,13 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             messages
-            if log?.status?.state == .waiting {
-                WaitingBanner()
+            if let log, log.status?.state == .waiting {
+                if let prompt = log.prompt {
+                    ApprovalCard(prompt: prompt, tool: log.entries.last { $0.id == prompt.entry }?.tool)
+                        .id(prompt.entry)
+                } else {
+                    WaitingBanner()
+                }
             }
             if let ended = log?.ended {
                 EndedBanner(reason: ended)
@@ -180,7 +185,7 @@ struct ToolRow: View {
     }
 }
 
-/// The agent asks something only its terminal shows, e.g. a permission prompt.
+/// The agent waits on something its adapter cannot name: only its terminal shows it.
 struct WaitingBanner: View {
     @Environment(AppModel.self) private var model
 

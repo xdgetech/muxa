@@ -7,12 +7,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use muxa_protocol::{Agent, AgentState, ChatEntry, ChatKind, ChatTool};
+use muxa_protocol::{Agent, AgentState, ChatEntry, ChatKind, ChatPrompt, ChatTool};
 use serde_json::Value;
 
 use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, cap};
 use super::tail::{INITIAL_TAIL, JsonlTail, Poll};
 use super::{AgentAdapter, AgentDoc, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
+
+mod prompt;
 
 pub const ID: &str = "claude-code";
 
@@ -326,6 +328,18 @@ impl ChatSource for ClaudeSource {
     fn status(&self) -> Option<Agent> {
         self.status.clone()
     }
+
+    /// While Claude Code waits, the call it waits on is the last line of its
+    /// transcript. With several calls open, which one asks is not known.
+    fn prompt(&self) -> Option<ChatPrompt> {
+        if self.status.as_ref()?.state != AgentState::Waiting {
+            return None;
+        }
+        match self.conv.open.as_slice() {
+            [call] => call.prompt.clone(),
+            _ => None,
+        }
+    }
 }
 
 /// The normalized conversation so far. One assistant turn spans several lines
@@ -335,6 +349,14 @@ struct Conversation {
     log: EntryLog,
     /// tool_use id -> entry id
     tools: HashMap<String, String>,
+    /// Calls of the current turn that have no result yet, in order.
+    open: Vec<OpenCall>,
+}
+
+struct OpenCall {
+    use_id: String,
+    /// None when the agent's menu for this call is not known.
+    prompt: Option<ChatPrompt>,
 }
 
 impl Conversation {
@@ -361,6 +383,7 @@ impl Conversation {
 
     fn user(&mut self, uuid: &str, content: &Value) -> Vec<ChatEntry> {
         if let Some(text) = content.as_str() {
+            self.open.clear();
             return self.user_text(uuid, text).into_iter().collect();
         }
         let mut changed = Vec::new();
@@ -373,6 +396,8 @@ impl Conversation {
             }
         }
         if !texts.is_empty() {
+            // A new prompt starts a new turn; calls left open were interrupted.
+            self.open.clear();
             changed.extend(self.user_text(uuid, &texts.join("\n\n")));
         }
         changed
@@ -404,6 +429,7 @@ impl Conversation {
 
     fn tool_result(&mut self, block: &Value) -> Option<ChatEntry> {
         let use_id = block.get("tool_use_id")?.as_str()?;
+        self.open.retain(|c| c.use_id != use_id);
         // A result whose call was before the initial cut has nothing to attach to.
         let entry_id = self.tools.get(use_id)?.clone();
         let mut entry = self.log.get(&entry_id)?.clone();
@@ -442,14 +468,21 @@ impl Conversation {
                     };
                     let name = block.get("name").and_then(Value::as_str).unwrap_or("tool");
                     let id = format!("t:{use_id}");
+                    let input = block.get("input").unwrap_or(&Value::Null);
                     self.tools.insert(use_id.to_owned(), id.clone());
+                    if !self.open.iter().any(|c| c.use_id == use_id) {
+                        self.open.push(OpenCall {
+                            use_id: use_id.to_owned(),
+                            prompt: prompt::prompt(&id, name, input),
+                        });
+                    }
                     changed.push(self.upsert(ChatEntry {
                         id,
                         kind: ChatKind::Tool,
                         text: String::new(),
                         tool: Some(ChatTool {
                             name: name.to_owned(),
-                            summary: summary(name, block.get("input").unwrap_or(&Value::Null)),
+                            summary: summary(name, input),
                             result: None,
                             error: false,
                         }),

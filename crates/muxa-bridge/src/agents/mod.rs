@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, SystemTime};
 
-use muxa_protocol::{Agent, ChatEntry};
+use muxa_protocol::{Agent, ChatEntry, ChatPrompt};
 
 /// What an adapter knows about the pane it is asked about.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +90,10 @@ pub trait ChatSource: Send {
     fn entries(&self) -> Vec<ChatEntry>;
     /// The agent's state now; None when unknown.
     fn status(&self) -> Option<Agent>;
+    /// What the agent waits on now, when the adapter knows that menu.
+    fn prompt(&self) -> Option<ChatPrompt> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

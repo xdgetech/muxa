@@ -349,6 +349,13 @@ final class AppModel {
         showReader = true
     }
 
+    /// The Reader at the agent's plan, e.g. while it asks to leave plan mode.
+    func openPlan() {
+        guard canReadDocs else { return }
+        if let id = currentSession?.id { lastDocs[id] = nil }
+        showReader = true
+    }
+
     func closeReader() {
         showReader = false
         Task {
