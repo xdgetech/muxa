@@ -54,6 +54,8 @@ final class AppModel {
     private(set) var changeListing: ChangeListing?
     /// The shown pane's images, while the Reader is open.
     private(set) var imageListing: ImageListing?
+    /// The Reader's open tab, kept while the app runs.
+    var readerTab: ReaderTab = .docs
     /// The document last read in each session, opened again next time.
     private var lastDocs: [String: String] = [:]
 
@@ -348,13 +350,26 @@ final class AppModel {
 
     func openReader() {
         guard canReadDocs else { return }
+        if !readerTabs.contains(readerTab) { readerTab = .docs }
         showReader = true
+    }
+
+    /// The tabs the bridge can fill.
+    var readerTabs: [ReaderTab] {
+        ReaderTab.allCases.filter { tab in
+            switch tab {
+            case .docs: true
+            case .changes: session.canShowChanges
+            case .images: session.canShowImages
+            }
+        }
     }
 
     /// The Reader at the agent's plan, e.g. while it asks to leave plan mode.
     func openPlan() {
         guard canReadDocs else { return }
         if let id = currentSession?.id { lastDocs[id] = nil }
+        readerTab = .docs
         showReader = true
     }
 
@@ -411,11 +426,11 @@ final class AppModel {
 
     var changeCount: Int { changeListing?.entries.count ?? 0 }
 
-    func openDiff(_ path: String) async {
+    func openDiff(_ path: String, scope: DiffScope) async {
         guard let pane = currentPane else { return }
         await session.closeDocument()
         await session.closeImage()
-        await session.openDiff(pane: pane.id, path: path)
+        await session.openDiff(pane: pane.id, path: path, scope: scope)
     }
 
     /// The last one read in this session, else the plan, else the README, else the first.

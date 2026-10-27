@@ -53,7 +53,7 @@ sequenceDiagram
 | `doc` | `id`, `pane`, `path` | open a listed document and follow it; replaces the open document |
 | `undoc` | `id` | stop `doc-content` |
 | `changes` | `id`, `pane` | list the files that differ from HEAD in the pane's repo (capability `changes`); a `change-list` comes before the `result` |
-| `diff` | `id`, `pane`, `path` | show a listed file's diff and follow it; replaces the open diff |
+| `diff` | `id`, `pane`, `path`, optional `scope` (`uncommitted`, `branch`) | show a listed file's diff and follow it; replaces the open diff |
 | `undiff` | `id` | stop `diff-content` |
 | `images` | `id`, `pane` | list the image files in the pane's repo (capability `images`); an `image-list` comes before the `result` |
 | `image` | `id`, `pane`, `path` | show a listed image and follow it; replaces the open image |
@@ -79,7 +79,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `doc-list` | `docs`, optional `root`, `entries[] {path, kind, title?, mtime?}`, optional `truncated` |
 | `doc-content` | `doc`, `path`, `text`, optional `mtime` |
 | `doc-ended` | `doc`, `reason` |
-| `change-list` | `changes`, optional `root`, `entries[] {path, status, oldPath?, added?, removed?}`, optional `truncated` |
+| `change-list` | `changes`, optional `root`, `entries[] {path, status, oldPath?, added?, removed?}`, optional `truncated`, optional `branch {base, commits, entries[], truncated?}` |
 | `diff-content` | `diff`, `path`, optional `text`, optional `binary` |
 | `diff-ended` | `diff`, `reason` |
 | `image-list` | `images`, optional `root`, `entries[] {path, mtime?, size?}`, optional `truncated` |
@@ -141,6 +141,11 @@ A bridge with the `changes` capability shows what differs from HEAD in a pane's 
 2. Each entry has `path` (relative to the repo) and `status`: `modified`, `added`, `deleted`, `renamed` (with `oldPath`), `untracked` or `conflicted`. `added` and `removed` count lines; they are absent for a binary file. Untracked files that git ignores are not listed. At most 2000, in path order; `truncated` says there were more.
 3. `diff {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `diff-content` with the file's whole unified diff (`git diff` against HEAD; for an untracked file, against nothing), and again whenever it changes (checked every 2 seconds). A binary file has `binary: true` and no `text`.
 4. `diff-ended` says the diff stopped, for example the file has no changes any more, or the diff is larger than 2 MiB.
+5. With the `branch-changes` capability, `change-list` also has `branch`: what the branch's own commits changed since it left its base.
+   - The base is origin's default branch (`origin/HEAD`). Without one, it is the main worktree's branch when the pane is in another worktree, else a local `main` or `master`. `base` names the ref, for example `origin/main`. The bridge never fetches.
+   - The files are `git diff <fork point> HEAD`, where the fork point is `git merge-base HEAD <base>`. `commits` counts the commits since the fork point. Entries have the same shape as above; `untracked` does not occur.
+   - `branch` is absent on the base itself, without a base, or when HEAD and the base share no history.
+   - `diff {pane, path, scope: "branch"}` opens one of these files. Uncommitted changes are not part of it; they are in `entries`, so a file can be in both lists.
 
 ## Images
 

@@ -75,7 +75,22 @@ struct DocSessionTests {
 @MainActor
 struct DiffSessionTests {
     private func diffIds(_ bridge: FakeBridge) -> [UInt64] {
-        bridge.received.compactMap { if case .diff(let id, _, _) = $0 { id } else { nil } }
+        bridge.received.compactMap { if case .diff(let id, _, _, _) = $0 { id } else { nil } }
+    }
+
+    @Test func aBranchDiffSaysItsScopeAndAnUncommittedOneSaysNothing() async throws {
+        let bridge = FakeBridge()
+        bridge.capabilities = ["changes", "branch-changes"]
+        let session = PaneSession()
+        try await session.connect {
+            bridge.start()
+            return bridge
+        }
+        await session.openDiff(pane: "%1", path: "a.rs", scope: .branch)
+        await session.openDiff(pane: "%1", path: "a.rs")
+        let scopes = bridge.received.compactMap { if case .diff(_, _, _, let scope) = $0 { Optional(scope) } else { nil } }
+        #expect(scopes == [.branch, nil])
+        #expect(session.diff?.scope == .uncommitted)
     }
 
     @Test func listsChangesThenFollowsADiff() async throws {

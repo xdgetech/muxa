@@ -1,4 +1,4 @@
-//! `changes` and `diff` end to end, for a pane whose working directory is a git repo.
+//! `changes` and `diff` end to end, uncommitted and on a branch, for a pane whose working directory is a git repo.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -23,7 +23,7 @@ impl Repo {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let repo = Repo(dir.canonicalize().unwrap());
-        repo.git(&["init", "-q"]);
+        repo.git(&["init", "-q", "-b", "main"]);
         std::fs::write(repo.0.join("a.txt"), "one\n").unwrap();
         repo.git(&["add", "."]);
         repo.git(&[
@@ -177,4 +177,78 @@ async fn only_listed_files_can_be_diffed() {
         };
         assert_eq!(error.code, ErrorCode::BadRequest, "{path}");
     }
+}
+
+#[tokio::test]
+async fn a_branchs_commits_are_listed_and_diffed_against_main() {
+    let server = Server::start();
+    let repo = Repo::new("branch");
+    repo.git(&["checkout", "-q", "-b", "feat"]);
+    std::fs::write(repo.0.join("a.txt"), "two\n").unwrap();
+    repo.git(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "-am",
+        "edit",
+    ]);
+    let dir = repo.0.display().to_string();
+    let pane = server.tmux(&[
+        "new-window",
+        "-d",
+        "-P",
+        "-F",
+        "#{pane_id}",
+        "-c",
+        &dir,
+        "sleep 600",
+    ]);
+    let (mut bridge, hello) = Bridge::start(&server, &[]).await;
+    let Message::Hello { capabilities, .. } = hello else {
+        panic!("{hello:?}")
+    };
+    assert!(capabilities.contains(&"branch-changes".to_owned()));
+
+    bridge
+        .request(json!({"type": "changes", "pane": pane}))
+        .await;
+    let Some(Message::ChangeList {
+        entries, branch, ..
+    }) = bridge.event(WAIT).await
+    else {
+        panic!("no change-list")
+    };
+    assert!(entries.is_empty(), "nothing is uncommitted");
+    let branch = branch.expect("a branch section");
+    assert_eq!((branch.base.as_str(), branch.commits), ("main", 1));
+    assert_eq!(branch.entries[0].path, "a.txt");
+
+    // Committed, so only the branch list has it.
+    let Message::Result {
+        error: Some(error), ..
+    } = bridge
+        .request(json!({"type": "diff", "pane": pane, "path": "a.txt"}))
+        .await
+    else {
+        panic!("an uncommitted diff of a committed file")
+    };
+    assert_eq!(error.code, ErrorCode::BadRequest);
+
+    let result = bridge
+        .request(json!({"type": "diff", "pane": pane, "path": "a.txt", "scope": "branch"}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+    let Message::DiffContent {
+        text: Some(text), ..
+    } = next_diff(&mut bridge).await
+    else {
+        panic!("no branch diff")
+    };
+    assert!(text.contains("-one\n+two"), "{text}");
 }

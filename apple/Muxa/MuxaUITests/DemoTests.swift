@@ -172,6 +172,7 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
 
         composer.typeKey("d", modifierFlags: [.command, .shift])
+        tapWhenReady(app.segmentedControls["reader-tab"].buttons["Changes"])
         let parser = app.descendants(matching: .any)["change-src/parser.rs"].firstMatch
         XCTAssertTrue(parser.waitForExistence(timeout: 5))
         parser.tap()
@@ -189,6 +190,13 @@ final class DemoTests: XCTestCase {
 
         tapWhenReady(app.descendants(matching: .any)["change-assets/logo.png"].firstMatch)
         XCTAssertTrue(app.staticTexts["Binary File"].waitForExistence(timeout: 5))
+
+        // What the branch's commits changed, below the uncommitted files.
+        XCTAssertTrue(app.staticTexts["branch-header"].exists)
+        XCTAssertEqual(app.staticTexts["branch-header"].label, "Since origin/main · 3 commits")
+        tapWhenReady(app.descendants(matching: .any)["branch-change-src/item.rs"].firstMatch)
+        let derive = web.staticTexts.containing(NSPredicate(format: "label CONTAINS 'derive(Debug'")).firstMatch
+        XCTAssertTrue(derive.waitForExistence(timeout: 10))
         app.buttons["Done"].tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
     }
@@ -206,10 +214,8 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
 
         composer.typeKey("d", modifierFlags: [.command, .shift])
-        // Images come after the Markdown: scroll the sidebar to them.
+        tapWhenReady(app.segmentedControls["reader-tab"].buttons["Images"])
         let login = app.descendants(matching: .any)["image-build/screenshots/en/login.png"].firstMatch
-        XCTAssertTrue(app.descendants(matching: .any)["change-src/parser.rs"].firstMatch.waitForExistence(timeout: 5))
-        scrollToReveal(login, in: app.collectionViews.firstMatch)
         tapWhenReady(login)
         XCTAssertTrue(app.descendants(matching: .any)["image-view"].firstMatch.waitForExistence(timeout: 5))
         let position = app.staticTexts["image-position"]
@@ -223,9 +229,7 @@ final class DemoTests: XCTestCase {
         // Older runs stay closed until opened.
         let ja = app.descendants(matching: .any)["image-build/screenshots/ja/login.png"].firstMatch
         XCTAssertFalse(ja.exists)
-        let folder = app.descendants(matching: .any)["image-folder-build/screenshots/ja"].firstMatch
-        scrollToReveal(folder, in: app.collectionViews.firstMatch)
-        tapWhenReady(folder)
+        tapWhenReady(app.descendants(matching: .any)["image-folder-build/screenshots/ja"].firstMatch)
         XCTAssertTrue(ja.waitForExistence(timeout: 5))
         app.buttons["Done"].tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
@@ -533,12 +537,6 @@ final class DemoTests: XCTestCase {
     /// Steps wait a bounded time for animations (`AnimationIdle`): wait until a menu
     /// or a rotation has put the element where a tap reaches it.
     @MainActor
-    private func scrollToReveal(_ element: XCUIElement, in list: XCUIElement) {
-        for _ in 0..<8 where !(element.exists && element.isHittable) {
-            list.swipeUp()
-        }
-    }
-
     private func tapWhenReady(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         let exp = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: element)
         XCTAssertEqual(XCTWaiter.wait(for: [exp], timeout: 5), .completed, file: file, line: line)

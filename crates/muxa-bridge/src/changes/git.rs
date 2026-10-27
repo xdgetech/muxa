@@ -1,6 +1,6 @@
-//! What differs from HEAD in a repo, and one file's diff. A client names a file
-//! only by a path from the list built here. Everything here blocks; run it on
-//! the blocking pool.
+//! What differs from HEAD in a repo, what its branch changed since it left its
+//! base, and one file's diff. A client names a file only by a path from the
+//! lists built here. Everything here blocks; run it on the blocking pool.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -17,13 +17,47 @@ pub const MAX_DIFF: usize = 2 << 20;
 #[derive(Debug, Default)]
 pub struct Changes {
     pub root: Option<PathBuf>,
+    /// Against HEAD: staged, unstaged and untracked.
+    pub entries: Vec<ChangeInfo>,
+    pub truncated: bool,
+    /// What the branch's commits changed; None on the base itself or without one.
+    pub branch: Option<Branch>,
+}
+
+/// The files the commits since the fork point changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Branch {
+    /// The ref compared with, e.g. `origin/main`.
+    pub base: String,
+    /// `git merge-base HEAD <base>`.
+    pub fork: String,
+    pub commits: u32,
     pub entries: Vec<ChangeInfo>,
     pub truncated: bool,
 }
 
+/// Which diff of a file: against HEAD, or the branch's commits since `fork`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Scope {
+    Uncommitted,
+    Branch { fork: String },
+}
+
 impl Changes {
-    pub fn find(&self, path: &str) -> Option<&ChangeInfo> {
-        self.entries.iter().find(|c| c.path == path)
+    /// A listed file of `scope`, and the scope with what its diff needs.
+    pub fn find(&self, path: &str, branch: bool) -> Option<(&ChangeInfo, Scope)> {
+        if !branch {
+            let change = self.entries.iter().find(|c| c.path == path)?;
+            return Some((change, Scope::Uncommitted));
+        }
+        let b = self.branch.as_ref()?;
+        let change = b.entries.iter().find(|c| c.path == path)?;
+        Some((
+            change,
+            Scope::Branch {
+                fork: b.fork.clone(),
+            },
+        ))
     }
 
     pub fn root_name(&self) -> Option<String> {
@@ -79,10 +113,144 @@ pub fn list(dir: &Path) -> Changes {
     let truncated = entries.len() > MAX_CHANGES;
     entries.truncate(MAX_CHANGES);
     Changes {
+        branch: branch(&root),
         root: Some(root),
         entries,
         truncated,
     }
+}
+
+/// The branch's own commits against its base. None on the base itself, when
+/// the repo has no base, or when HEAD and the base share no history.
+fn branch(root: &Path) -> Option<Branch> {
+    let base = default_branch(root)?;
+    let fork = output_line(git(root).args(["merge-base", "HEAD", &base]))?;
+    let head = output_line(git(root).args(["rev-parse", "HEAD"]))?;
+    if fork == head {
+        return None;
+    }
+    let range = format!("{fork}..HEAD");
+    let commits = output_line(git(root).args(["rev-list", "--count", &range]))?
+        .parse()
+        .ok()?;
+    let out = git(root)
+        .args(["diff", "--name-status", "-z", "-M", "--no-ext-diff"])
+        .args([&fork, "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let mut entries = parse_name_status(&out.stdout);
+    let counts = git(root)
+        .args([
+            "diff",
+            "--numstat",
+            "-z",
+            "-M",
+            "--no-ext-diff",
+            "--no-textconv",
+        ])
+        .args([&fork, "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| parse_numstat(&o.stdout))
+        .unwrap_or_default();
+    for e in &mut entries {
+        if let Some(&(added, removed)) = counts.get(&e.path) {
+            e.added = added;
+            e.removed = removed;
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    let truncated = entries.len() > MAX_CHANGES;
+    entries.truncate(MAX_CHANGES);
+    Some(Branch {
+        base,
+        fork,
+        commits,
+        entries,
+        truncated,
+    })
+}
+
+/// origin's default branch; else the main worktree's branch, when this is
+/// another worktree (a task); else a local `main` or `master`. Tasks start from
+/// the first two too (`default_base` in `tasks/builtin.rs`).
+fn default_branch(root: &Path) -> Option<String> {
+    if let Some(origin) =
+        output_line(git(root).args(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]))
+    {
+        return Some(origin);
+    }
+    let current = output_line(git(root).args(["symbolic-ref", "-q", "--short", "HEAD"]));
+    if let Some(main) = main_worktree_branch(root).filter(|b| Some(b) != current.as_ref()) {
+        return Some(main);
+    }
+    ["main", "master"]
+        .into_iter()
+        .find(|b| {
+            Some(*b) != current.as_deref()
+                && git(root)
+                    .args(["show-ref", "--verify", "-q", &format!("refs/heads/{b}")])
+                    .output()
+                    .is_ok_and(|o| o.status.success())
+        })
+        .map(str::to_owned)
+}
+
+fn main_worktree_branch(root: &Path) -> Option<String> {
+    let out = git(root)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    // The main worktree is listed first; its block ends at the first blank line.
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.lines()
+        .take_while(|l| !l.is_empty())
+        .find_map(|l| l.strip_prefix("branch refs/heads/"))
+        .map(str::to_owned)
+}
+
+/// The first line of a successful command's output.
+fn output_line(cmd: &mut Command) -> Option<String> {
+    let out = cmd.output().ok().filter(|o| o.status.success())?;
+    let text = String::from_utf8(out.stdout).ok()?;
+    let line = text.lines().next()?.trim();
+    (!line.is_empty()).then(|| line.to_owned())
+}
+
+/// `git diff --name-status -z`: a status letter, then the path; a rename or copy
+/// has a score after its letter and two paths, the old one first.
+pub(crate) fn parse_name_status(bytes: &[u8]) -> Vec<ChangeInfo> {
+    let mut fields = bytes
+        .split(|&b| b == 0)
+        .map(|f| String::from_utf8_lossy(f).into_owned());
+    let mut out = Vec::new();
+    while let Some(code) = fields.next() {
+        let (status, old_path) = match code.as_bytes().first() {
+            Some(b'R') => (ChangeStatus::Renamed, fields.next()),
+            // A copy is a new file; its source stays as it was.
+            Some(b'C') => {
+                fields.next();
+                (ChangeStatus::Added, None)
+            }
+            Some(b'A') => (ChangeStatus::Added, None),
+            Some(b'D') => (ChangeStatus::Deleted, None),
+            Some(b'U') => (ChangeStatus::Conflicted, None),
+            Some(_) => (ChangeStatus::Modified, None),
+            None => continue,
+        };
+        let Some(path) = fields.next() else { break };
+        out.push(ChangeInfo {
+            path,
+            status,
+            old_path,
+            added: None,
+            removed: None,
+        });
+    }
+    out
 }
 
 fn toplevel(dir: &Path) -> Option<PathBuf> {
@@ -254,8 +422,8 @@ fn base(root: &Path) -> Option<String> {
     Some(id.trim().to_owned()).filter(|s| !s.is_empty())
 }
 
-/// The unified diff of one listed file.
-pub fn diff(root: &Path, change: &ChangeInfo) -> Result<Diff, DiffError> {
+/// The unified diff of one listed file, in `scope`.
+pub fn diff(root: &Path, change: &ChangeInfo, scope: &Scope) -> Result<Diff, DiffError> {
     let path = change.path.clone();
     let fail = |reason: String| DiffError::Git {
         path: path.clone(),
@@ -263,7 +431,13 @@ pub fn diff(root: &Path, change: &ChangeInfo) -> Result<Diff, DiffError> {
     };
     let mut cmd = git(root);
     cmd.args(["diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M"]);
-    if change.status == ChangeStatus::Untracked {
+    if let Scope::Branch { fork } = scope {
+        cmd.args([fork.as_str(), "HEAD", "--"]);
+        if let Some(old) = &change.old_path {
+            cmd.arg(old);
+        }
+        cmd.arg(&change.path);
+    } else if change.status == ChangeStatus::Untracked {
         cmd.args(["--no-index", "--", "/dev/null", &change.path]);
     } else {
         let base = base(root).ok_or_else(|| fail("no commit to compare with".into()))?;

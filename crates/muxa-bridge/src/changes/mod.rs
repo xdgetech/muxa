@@ -8,13 +8,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use muxa_protocol::{ChangeInfo, ErrorBody, ErrorCode, Message};
+use muxa_protocol::{BranchChanges, ChangeInfo, DiffScope, ErrorBody, ErrorCode, Message};
 use muxa_tmux::{Client, PaneId};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::chat::pane_info;
 use crate::convert::error_body;
-use git::{Changes, Diff, DiffError};
+use git::{Changes, Diff, DiffError, Scope};
 
 /// A diff is rebuilt this often while it is open; git status and diff cost
 /// more than reading one file.
@@ -30,6 +30,7 @@ pub enum Command {
         id: u64,
         pane: PaneId,
         path: String,
+        scope: Option<DiffScope>,
         ack: oneshot::Sender<()>,
     },
     Close {
@@ -49,6 +50,7 @@ struct Open {
     id: u64,
     root: PathBuf,
     change: ChangeInfo,
+    scope: Scope,
     /// A hash of what was last sent, so an unchanged diff is not sent again.
     sent: Option<u64>,
 }
@@ -89,6 +91,12 @@ impl ChangeTask {
                         let msg = Message::ChangeList {
                             changes: id,
                             root: changes.root_name(),
+                            branch: changes.branch.map(|b| BranchChanges {
+                                base: b.base,
+                                commits: b.commits,
+                                entries: b.entries,
+                                truncated: b.truncated,
+                            }),
                             entries: changes.entries,
                             truncated: changes.truncated,
                         };
@@ -103,16 +111,19 @@ impl ChangeTask {
                 id,
                 pane,
                 path,
+                scope,
                 ack,
             } => {
                 self.open = None;
+                let branch = scope == Some(DiffScope::Branch);
                 let error = match self.changes(pane).await {
-                    Ok(changes) => match (changes.find(&path).cloned(), changes.root) {
-                        (Some(change), Some(root)) => {
+                    Ok(changes) => match (changes.find(&path, branch), changes.root.clone()) {
+                        (Some((change, scope)), Some(root)) => {
                             self.open = Some(Open {
                                 id,
                                 root,
-                                change,
+                                change: change.clone(),
+                                scope,
                                 sent: None,
                             });
                             None
@@ -159,8 +170,8 @@ impl ChangeTask {
         let Some(open) = self.open.as_ref() else {
             return;
         };
-        let (root, change) = (open.root.clone(), open.change.clone());
-        let built = tokio::task::spawn_blocking(move || git::diff(&root, &change)).await;
+        let (root, change, scope) = (open.root.clone(), open.change.clone(), open.scope.clone());
+        let built = tokio::task::spawn_blocking(move || git::diff(&root, &change, &scope)).await;
         let Some(open) = self.open.as_mut() else {
             return;
         };

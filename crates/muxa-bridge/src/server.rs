@@ -91,6 +91,7 @@ where
             "changes".into(),
             "close-task".into(),
             "images".into(),
+            "branch-changes".into(),
         ],
     };
     if out.send(hello).await.is_err() {
@@ -373,7 +374,12 @@ impl Worker {
                     Err(e) => Some(Err(convert::error(&e))),
                 };
             }
-            Request::Diff { id, pane, path } => {
+            Request::Diff {
+                id,
+                pane,
+                path,
+                scope,
+            } => {
                 return match pane.parse::<PaneId>() {
                     Ok(pane) => {
                         handoff(
@@ -382,6 +388,7 @@ impl Worker {
                                 id,
                                 pane,
                                 path,
+                                scope,
                                 ack,
                             },
                             "changes",

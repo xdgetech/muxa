@@ -108,7 +108,7 @@ public final class PaneSession {
             }
             if let open = diff {
                 diff = nil
-                await openDiff(pane: open.pane, path: open.path)
+                await openDiff(pane: open.pane, path: open.path, scope: open.scope)
             }
             if let open = image {
                 image = nil
@@ -220,14 +220,16 @@ public final class PaneSession {
     }
 
     /// Opens a listed file's diff and follows it. A failure ends up in `diff.ended`.
-    public func openDiff(pane: String, path: String) async {
+    /// A branch diff needs the `branch-changes` capability.
+    public func openDiff(pane: String, path: String, scope: DiffScope = .uncommitted) async {
         guard canShowChanges else { return }
-        if diff?.pane == pane, diff?.path == path, diff?.ended == nil { return }
-        diff = DiffLog(pane: pane, path: path)
+        if diff?.pane == pane, diff?.path == path, diff?.scope == scope, diff?.ended == nil { return }
+        diff = DiffLog(pane: pane, path: path, scope: scope)
         do {
             try await request { id in
                 self.diffId = id
-                return .diff(id: id, pane: pane, path: path)
+                // Absent for uncommitted, so older bridges understand it.
+                return .diff(id: id, pane: pane, path: path, scope: scope == .branch ? .branch : nil)
             }
         } catch {
             if diff?.path == path { diff?.ended = Self.describe(error) }

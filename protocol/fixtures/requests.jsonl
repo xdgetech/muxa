@@ -20,3 +20,4 @@
 {"type":"images","id":20,"pane":"%12"}
 {"type":"image","id":21,"pane":"%12","path":"build/screenshots/login.png"}
 {"type":"unimage","id":22}
+{"type":"diff","id":23,"pane":"%12","path":"src/main.rs","scope":"branch"}

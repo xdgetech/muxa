@@ -73,7 +73,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         if ProcessInfo.processInfo.arguments.contains("-demo-alerts") {
             DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
         }
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes"]))
     }
 
     func send(_ line: Data) async throws {
@@ -128,9 +128,19 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 self?.startTask(id: id, repo: repo, branch: branch)
             }
         case .changes(let id, _):
-            emit(.changeList(ChangeListing(changes: id, root: content.root, entries: content.changes.map(\.info))))
+            emit(.changeList(ChangeListing(
+                changes: id, root: content.root, entries: content.changes.map(\.info),
+                branch: BranchChanges(base: "origin/main", commits: 3, entries: Self.branch.map(\.info)))))
             ok(id)
-        case .diff(let id, _, let path):
+        case .diff(let id, _, let path, .branch):
+            guard let change = Self.branch.first(where: { $0.info.path == path }) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not in the branch"), sessions: nil))
+                return
+            }
+            lock.withLock { openDiff = id }
+            ok(id)
+            emit(.diffContent(diff: id, path: path, text: change.diff, binary: false))
+        case .diff(let id, _, let path, _):
             guard let change = content.changes.first(where: { $0.info.path == path }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not changed"), sessions: nil))
                 return
@@ -299,6 +309,22 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             chat: id, seq: seq, reset: reset, entries: entries, status: Agent(state: status, since: since),
             agent: reset ? "claude-code" : nil, prompt: prompt)))
     }
+
+    /// What the task branch's commits changed since it left main.
+    static let branch: [(info: ChangeInfo, diff: String)] = [
+        (ChangeInfo(path: "src/item.rs", status: .modified, added: 1, removed: 0), """
+            diff --git a/src/item.rs b/src/item.rs
+            index 1c2d3e4..5f6a7b8 100644
+            --- a/src/item.rs
+            +++ b/src/item.rs
+            @@ -1,3 +1,4 @@
+             /// One parsed item.
+            +#[derive(Debug, Clone, PartialEq)]
+             pub struct Item {
+                 pub name: String,
+
+            """),
+    ]
 
     /// Screenshots of a QA run, newest first, and the repo's logo.
     static let images: [(info: ImageInfo, color: UIColor)] = {

@@ -5,13 +5,28 @@ import SwiftUI
 /// What the Reader shows: a document, the diff of a changed file, or an image.
 enum ReaderItem: Hashable {
     case doc(String)
-    case diff(String)
+    case diff(String, DiffScope)
     case image(String)
 }
 
-/// The documents of the shown pane: its repo's uncommitted changes, its agent's
-/// plan, its repo's Markdown by directory, then its images as a folder tree. The
-/// open one updates when its file changes.
+/// The Reader sidebar's lists. Each is one tap away, however long the others are.
+enum ReaderTab: String, CaseIterable, Identifiable {
+    case docs, changes, images
+
+    var id: Self { self }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .docs: "Docs"
+        case .changes: "Changes"
+        case .images: "Images"
+        }
+    }
+}
+
+/// The documents of the shown pane, in three tabs: its agent's plan and its
+/// repo's Markdown by directory; its uncommitted changes and its branch's
+/// commits; its images as a folder tree. The open one updates when its file changes.
 struct ReaderScreen: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
@@ -37,7 +52,7 @@ struct ReaderScreen: View {
         .onChange(of: selection) { _, item in
             switch item {
             case .doc(let path): Task { await model.openDoc(path) }
-            case .diff(let path): Task { await model.openDiff(path) }
+            case .diff(let path, let scope): Task { await model.openDiff(path, scope: scope) }
             case .image(let path): Task { await model.openImage(path) }
             case nil: break
             }
@@ -53,55 +68,32 @@ struct ReaderScreen: View {
     // MARK: List
 
     private var list: some View {
-        List(selection: $selection) {
+        @Bindable var model = model
+        return List(selection: $selection) {
             if let error = model.docError {
                 Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure)
             }
-            if !changes.isEmpty {
-                Section("Changes") {
-                    ForEach(changes) { change in
-                        ChangeRow(change: change).tag(ReaderItem.diff(change.path))
-                    }
-                    if model.changeListing?.truncated == true {
-                        Text("Only the first 2000 changed files are listed.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            let plans = matches.filter { $0.kind == .plan }
-            if !plans.isEmpty {
-                Section("Plan") {
-                    ForEach(plans) { doc in
-                        DocRow(title: doc.title ?? Self.name(doc.path), detail: Self.name(doc.path), icon: Icon.plan)
-                            .tag(ReaderItem.doc(doc.path))
-                    }
-                }
-            }
-            ForEach(folders, id: \.folder) { group in
-                Section(group.folder.isEmpty ? (model.docListing?.root ?? "Repository") : group.folder) {
-                    ForEach(group.docs) { doc in
-                        DocRow(title: Self.name(doc.path), detail: nil, icon: Icon.document).tag(ReaderItem.doc(doc.path))
-                    }
-                }
-            }
-            if model.docListing?.truncated == true {
-                Text("Only the first 2000 documents are listed.").font(.caption).foregroundStyle(.secondary)
-            }
-            if !images.isEmpty {
-                Section("Images") {
-                    ImageFolderRows(folder: ImageFolder.tree(images), expanded: query.isEmpty ? $expanded : .constant(allFolders))
-                    if model.imageListing?.truncated == true {
-                        Text("Only the newest 2000 images are listed.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+            switch model.readerTab {
+            case .docs: docRows
+            case .changes: changeRows
+            case .images: imageRows
             }
         }
-        .overlay {
-            if model.docListing?.entries.isEmpty == true, changes.isEmpty, images.isEmpty {
-                ContentUnavailableView("No Documents", systemImage: Icon.document,
-                                       description: Text("This pane is not in a git repository with Markdown files."))
+        .overlay { emptyState }
+        .safeAreaInset(edge: .top) {
+            if model.readerTabs.count > 1 {
+                Picker("Show", selection: $model.readerTab) {
+                    ForEach(model.readerTabs) { tab in
+                        Text(tab.title).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+                .accessibilityIdentifier("reader-tab")
             }
         }
-        .searchable(text: $query, placement: .sidebar, prompt: "Find a document")
+        .searchable(text: $query, placement: .sidebar, prompt: prompt)
         .refreshable { await model.loadDocs() }
         .navigationTitle(model.docListing?.root ?? "Documents")
         .toolbar {
@@ -110,6 +102,98 @@ struct ReaderScreen: View {
                     .keyboardShortcut(.cancelAction)
             }
         }
+    }
+
+    @ViewBuilder
+    private var docRows: some View {
+        let plans = matches.filter { $0.kind == .plan }
+        if !plans.isEmpty {
+            Section("Plan") {
+                ForEach(plans) { doc in
+                    DocRow(title: doc.title ?? Self.name(doc.path), detail: Self.name(doc.path), icon: Icon.plan)
+                        .tag(ReaderItem.doc(doc.path))
+                }
+            }
+        }
+        ForEach(folders, id: \.folder) { group in
+            Section(group.folder.isEmpty ? (model.docListing?.root ?? "Repository") : group.folder) {
+                ForEach(group.docs) { doc in
+                    DocRow(title: Self.name(doc.path), detail: nil, icon: Icon.document).tag(ReaderItem.doc(doc.path))
+                }
+            }
+        }
+        if model.docListing?.truncated == true {
+            Text("Only the first 2000 documents are listed.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var changeRows: some View {
+        if !changes.isEmpty {
+            Section("Uncommitted") {
+                ForEach(changes) { change in
+                    ChangeRow(change: change, scope: .uncommitted).tag(ReaderItem.diff(change.path, .uncommitted))
+                }
+                if model.changeListing?.truncated == true {
+                    Text("Only the first 2000 changed files are listed.").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        if let branch = model.changeListing?.branch, !branchChanges.isEmpty {
+            Section {
+                ForEach(branchChanges) { change in
+                    ChangeRow(change: change, scope: .branch).tag(ReaderItem.diff(change.path, .branch))
+                }
+                if branch.truncated {
+                    Text("Only the first 2000 changed files are listed.").font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(branch.commits == 1 ? "Since \(branch.base) · 1 commit" : "Since \(branch.base) · \(branch.commits) commits")
+                    .accessibilityIdentifier("branch-header")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var imageRows: some View {
+        if !images.isEmpty {
+            ImageFolderRows(folder: ImageFolder.tree(images), expanded: query.isEmpty ? $expanded : .constant(allFolders))
+            if model.imageListing?.truncated == true {
+                Text("Only the newest 2000 images are listed.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Why the open tab is empty, once its list arrived.
+    @ViewBuilder
+    private var emptyState: some View {
+        switch model.readerTab {
+        case .docs where model.docListing?.entries.isEmpty == true:
+            ContentUnavailableView("No Documents", systemImage: Icon.document,
+                                   description: Text("This pane is not in a git repository with Markdown files."))
+        case .changes where model.changeListing != nil && changes.isEmpty && branchChanges.isEmpty:
+            ContentUnavailableView("No Changes", systemImage: Icon.document,
+                                   description: Text("Nothing is uncommitted, and the branch has no commits of its own."))
+        case .images where model.imageListing?.entries.isEmpty == true:
+            ContentUnavailableView("No Images", systemImage: Icon.image,
+                                   description: Text("This pane's git repository has no image files."))
+        default:
+            EmptyView()
+        }
+    }
+
+    private var prompt: LocalizedStringKey {
+        switch model.readerTab {
+        case .docs: "Find a document"
+        case .changes: "Find a changed file"
+        case .images: "Find an image"
+        }
+    }
+
+    private var branchChanges: [ChangeInfo] {
+        let all = model.changeListing?.branch?.entries ?? []
+        guard !query.isEmpty else { return all }
+        return all.filter { $0.path.localizedCaseInsensitiveContains(query) }
     }
 
     private var changes: [ChangeInfo] {
@@ -155,15 +239,15 @@ struct ReaderScreen: View {
     private var detail: some View {
         switch selection {
         case .doc(let path): docDetail(path)
-        case .diff(let path): diffDetail(path)
+        case .diff(let path, let scope): diffDetail(path, scope: scope)
         case .image(let path): ImageDetail(path: path, selection: $selection)
         case nil: ContentUnavailableView("Pick a Document", systemImage: Icon.document)
         }
     }
 
     @ViewBuilder
-    private func diffDetail(_ path: String) -> some View {
-        if let diff = model.session.diff, diff.path == path {
+    private func diffDetail(_ path: String, scope: DiffScope) -> some View {
+        if let diff = model.session.diff, diff.path == path, diff.scope == scope {
             Group {
                 if let text = diff.text {
                     ReaderWebView(text: text, path: path, kind: .diff) { _, _ in }
@@ -260,6 +344,7 @@ struct EndedNotice: View {
 /// A changed file: its status letter, name and folder, and the lines it adds and removes.
 private struct ChangeRow: View {
     let change: ChangeInfo
+    let scope: DiffScope
 
     var body: some View {
         HStack(spacing: 10) {
@@ -288,7 +373,7 @@ private struct ChangeRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("change-\(change.path)")
+        .accessibilityIdentifier(scope == .branch ? "branch-change-\(change.path)" : "change-\(change.path)")
     }
 
     private var letter: String {

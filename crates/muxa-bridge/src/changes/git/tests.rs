@@ -30,6 +30,20 @@ impl Repo {
         repo
     }
 
+    fn commit(&self, message: &str) {
+        self.git(&["add", "-A"]);
+        self.git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            message,
+        ]);
+    }
+
     fn git(&self, args: &[&str]) {
         let ok = Command::new("git")
             .arg("-C")
@@ -54,6 +68,11 @@ impl Drop for Repo {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+fn uncommitted(repo: &Repo, changes: &Changes, path: &str) -> Result<Diff, DiffError> {
+    let (change, scope) = changes.find(path, false).unwrap();
+    diff(repo.path(), change, &scope)
 }
 
 fn summary(changes: &Changes) -> Vec<(String, ChangeStatus, Option<u32>, Option<u32>)> {
@@ -100,8 +119,8 @@ fn every_kind_of_change_is_listed_against_head() {
     );
     assert_eq!(
         changes
-            .find("renamed.txt")
-            .and_then(|c| c.old_path.as_deref()),
+            .find("renamed.txt", false)
+            .and_then(|(c, _)| c.old_path.as_deref()),
         Some("moved.txt")
     );
 }
@@ -120,7 +139,7 @@ fn diffs_are_unified_text_or_binary() {
     repo.write("notes.md", "hello\n");
     repo.write("logo.bin", [0u8, 1, 2, 0]);
     let changes = list(repo.path());
-    let diff_of = |p: &str| diff(repo.path(), changes.find(p).unwrap());
+    let diff_of = |p: &str| uncommitted(&repo, &changes, p);
 
     let text = diff_of("src/main.rs").unwrap().text.unwrap();
     assert!(text.contains("-    old();\n+    new();"), "{text}");
@@ -142,7 +161,7 @@ fn a_huge_diff_is_refused() {
     repo.write("big.txt", "x".repeat(MAX_DIFF + 10));
     let changes = list(repo.path());
     assert_eq!(
-        diff(repo.path(), changes.find("big.txt").unwrap()),
+        uncommitted(&repo, &changes, "big.txt"),
         Err(DiffError::TooLarge("big.txt".into()))
     );
 }
@@ -162,7 +181,7 @@ fn a_repo_without_commits_diffs_against_nothing() {
         [("a.txt".into(), ChangeStatus::Added, Some(1), Some(0))]
     );
     assert!(
-        diff(repo.path(), changes.find("a.txt").unwrap())
+        uncommitted(&repo, &changes, "a.txt")
             .unwrap()
             .text
             .unwrap()
@@ -195,4 +214,100 @@ fn status_and_numstat_parse_their_z_formats() {
     assert_eq!(counts["src/a b.rs"], (Some(1), Some(2)));
     assert_eq!(counts["new.rs"], (Some(0), Some(0)));
     assert_eq!(counts["logo.png"], (None, None));
+}
+
+fn entries(list: &[ChangeInfo]) -> Vec<(&str, ChangeStatus, Option<&str>, Option<u32>)> {
+    list.iter()
+        .map(|c| (c.path.as_str(), c.status, c.old_path.as_deref(), c.added))
+        .collect()
+}
+
+#[test]
+fn a_branch_lists_what_its_commits_changed_since_main() {
+    let repo = Repo::new("branch");
+    // Nothing of its own on main.
+    assert_eq!(list(repo.path()).branch, None);
+
+    repo.git(&["checkout", "-q", "-b", "feat"]);
+    repo.write("src/main.rs", "fn main() {\n    new();\n}\n");
+    repo.git(&["mv", "moved.txt", "renamed.txt"]);
+    repo.commit("one");
+    repo.write("added.txt", "a\nb\n");
+    repo.commit("two");
+    // Uncommitted work is not the branch's.
+    repo.write("gone.txt", "edited\n");
+
+    let changes = list(repo.path());
+    let branch = changes.branch.as_ref().expect("a branch section");
+    assert_eq!(branch.base, "main");
+    assert_eq!(branch.commits, 2);
+    assert_eq!(
+        entries(&branch.entries),
+        [
+            ("added.txt", ChangeStatus::Added, None, Some(2)),
+            (
+                "renamed.txt",
+                ChangeStatus::Renamed,
+                Some("moved.txt"),
+                Some(0)
+            ),
+            ("src/main.rs", ChangeStatus::Modified, None, Some(1)),
+        ]
+    );
+    assert_eq!(entries(&changes.entries)[0].0, "gone.txt");
+
+    let (change, scope) = changes.find("src/main.rs", true).unwrap();
+    let text = diff(repo.path(), change, &scope).unwrap().text.unwrap();
+    assert!(text.contains("-    old();\n+    new();"), "{text}");
+    // A file only changed in the work tree is not in the branch's list.
+    assert!(changes.find("gone.txt", true).is_none());
+}
+
+#[test]
+fn origin_head_is_the_base_when_there_is_one() {
+    let repo = Repo::new("origin");
+    repo.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    repo.git(&[
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+    ]);
+    // Local commits on main that origin does not have yet are the branch's.
+    repo.write("new.txt", "n\n");
+    repo.commit("local");
+    let branch = list(repo.path()).branch.expect("a branch section");
+    assert_eq!(branch.base, "origin/main");
+    assert_eq!(branch.commits, 1);
+}
+
+#[test]
+fn name_status_parses_its_z_format() {
+    let bytes = b"M\0a.rs\0R087\0old.rs\0new.rs\0C100\0src.rs\0copy.rs\0D\0gone\0A\0b.rs\0";
+    assert_eq!(
+        entries(&parse_name_status(bytes)),
+        [
+            ("a.rs", ChangeStatus::Modified, None, None),
+            ("new.rs", ChangeStatus::Renamed, Some("old.rs"), None),
+            ("copy.rs", ChangeStatus::Added, None, None),
+            ("gone", ChangeStatus::Deleted, None, None),
+            ("b.rs", ChangeStatus::Added, None, None),
+        ]
+    );
+}
+
+#[test]
+fn a_task_worktree_compares_with_the_main_checkouts_branch() {
+    let repo = Repo::new("worktree");
+    let wt = repo.path().with_file_name(format!(
+        "{}-wt",
+        repo.path().file_name().unwrap().to_string_lossy()
+    ));
+    let _ = std::fs::remove_dir_all(&wt);
+    repo.git(&["worktree", "add", "-q", "-b", "feat", wt.to_str().unwrap()]);
+    let task = Repo(wt);
+    task.write("task.txt", "t\n");
+    task.commit("task");
+    let branch = list(task.path()).branch.expect("a branch section");
+    assert_eq!(branch.base, "main");
+    assert_eq!(entries(&branch.entries)[0].0, "task.txt");
 }

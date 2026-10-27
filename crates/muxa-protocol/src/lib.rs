@@ -83,11 +83,14 @@ pub enum Request {
         pane: String,
     },
     /// Show the diff of one listed file, and follow it. Replaces the open diff;
-    /// `diff-content` for it carries this request's id as `diff`.
+    /// `diff-content` for it carries this request's id as `diff`. `scope` says
+    /// which list the path is from; absent means the uncommitted one.
     Diff {
         id: u64,
         pane: String,
         path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<DiffScope>,
     },
     Undiff {
         id: u64,
@@ -263,6 +266,10 @@ pub enum Message {
         /// More files changed than were listed.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         truncated: bool,
+        /// What the branch's commits changed since it left its base (capability
+        /// `branch-changes`); absent on the base itself or without one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<BranchChanges>,
     },
     /// The unified diff of the open file, first and after every change. A
     /// binary file has no text.
@@ -348,6 +355,29 @@ pub struct ImageInfo {
     /// Bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+}
+
+/// The files a branch's commits changed since it left its base.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchChanges {
+    /// The ref compared with, e.g. `origin/main`.
+    pub base: String,
+    /// Commits since the fork point.
+    pub commits: u32,
+    pub entries: Vec<ChangeInfo>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+/// Which list a `diff` path is from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiffScope {
+    /// Against HEAD: staged, unstaged and untracked.
+    Uncommitted,
+    /// The branch's commits since it left its base.
+    Branch,
 }
 
 /// A file that differs from HEAD.

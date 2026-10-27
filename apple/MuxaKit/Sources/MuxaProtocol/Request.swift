@@ -28,7 +28,8 @@ public enum Request: Equatable, Sendable {
     /// a `change-list` comes first.
     case changes(id: UInt64, pane: String)
     /// Show and follow one listed file's diff; `diff-content` carries this id as `diff`.
-    case diff(id: UInt64, pane: String, path: String)
+    /// `scope` is the list the path is from; nil means the uncommitted one.
+    case diff(id: UInt64, pane: String, path: String, scope: DiffScope?)
     case undiff(id: UInt64)
     /// The image files in the pane's repo, ignored ones included (capability
     /// `images`); an `image-list` comes first.
@@ -50,7 +51,7 @@ public enum Request: Equatable, Sendable {
         case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
             .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
-            .changes(let id, _), .diff(let id, _, _), .undiff(let id), .closeTask(let id, _, _),
+            .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id):
             id
         }
@@ -59,7 +60,7 @@ public enum Request: Equatable, Sendable {
 
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
-        case type, id, pane, keys, text, data, path, repo, branch, base, session, mode
+        case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -87,10 +88,11 @@ extension Request: Codable {
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
-        case .diff(let id, let pane, let path):
+        case .diff(let id, let pane, let path, let scope):
             try c.head("diff", id)
             try c.encode(pane, forKey: .pane)
             try c.encode(path, forKey: .path)
+            try c.encodeIfPresent(scope, forKey: .scope)
         case .docs(let id, let pane):
             try c.head("docs", id)
             try c.encode(pane, forKey: .pane)
@@ -151,7 +153,10 @@ extension Request: Codable {
                 id: id, session: try c.decode(String.self, forKey: .session),
                 mode: try c.decode(CloseMode.self, forKey: .mode))
         case "changes": self = .changes(id: id, pane: try pane())
-        case "diff": self = .diff(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
+        case "diff":
+            self = .diff(
+                id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path),
+                scope: try c.decodeIfPresent(DiffScope.self, forKey: .scope))
         case "docs": self = .docs(id: id, pane: try pane())
         case "doc": self = .doc(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
         case "new-task":
