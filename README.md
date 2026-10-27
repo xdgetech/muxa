@@ -90,6 +90,9 @@ in the task's worktree, `o` IDE, `r` rename, `R` reload.
 merged. `X` closes the session and keeps the worktree. `ctrl-x` removes the
 worktree even when the branch is not merged, but still not when it has
 uncommitted changes. The branch is always kept.
+Every close also stops what is left running in the worktree: processes whose
+directory is in it, also orphans, and Docker Compose projects started from it
+(`docker compose down`, volumes are kept).
 
 Over SSH, `o` cannot start the IDE on your laptop. It copies
 `cursor --remote ssh-remote+<host> <worktree>` to the laptop's clipboard

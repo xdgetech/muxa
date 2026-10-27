@@ -73,7 +73,7 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   sleep 0.5
   key y
   wait_for '! tx has-session -t =feature-one 2>/dev/null'
-  [ ! -d "$wt" ]
+  wait_for '[ ! -d "$wt" ]'  # removed after the session is gone
 }
 
 @test "ctrl-x then y removes the worktree of an unmerged task" {
@@ -88,7 +88,7 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   sleep 0.5
   key y
   wait_for '! tx has-session -t =feature-one 2>/dev/null'
-  [ ! -d "$wt" ]
+  wait_for '[ ! -d "$wt" ]'  # removed after the session is gone
 }
 
 @test "a finished turn stays done until you look at its window" {

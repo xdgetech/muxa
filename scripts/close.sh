@@ -2,6 +2,7 @@
 # Closes a task session. Without --keep it also removes the worktree, but only
 # when nothing can be lost: no uncommitted changes, and the branch is merged.
 # --force skips the merged check. The branch itself is always kept.
+# In every mode it stops the processes and compose projects left in the worktree.
 # Usage: close.sh [--keep|--force] <session>
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -50,6 +51,7 @@ if [ -n "$other" ]; then
 fi
 
 t kill-session -t "=$s" || die "could not close $s"
+[ -n "$wt" ] && [ -d "$wt" ] && "$AGENTS_SCRIPTS/stop-worktree.sh" "$wt"
 if [ "$remove_wt" = 1 ]; then
   git -C "${main:-$wt}" worktree remove "$wt" 2>>"$(agents_log_file)" \
     || die "closed $s, but could not remove $wt. Details: $(agents_log_file)"

@@ -2,7 +2,8 @@
 load helper
 
 setup() { setup_server; make_repo; }
-teardown() { teardown_server; }
+# The sleeps in the process test; a failed run must not leave them behind.
+teardown() { pkill -f "^sleep 730[12]$" || true; teardown_server; }
 
 new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
 
@@ -130,4 +131,36 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ "$status" -eq 1 ]
   tx has-session -t =feature-force-dirty
   [ -d "$wt" ]
+}
+
+@test "close stops processes left in the worktree, also orphans, and no others" {
+  new feature/procs
+  wt="$(tx show-options -t =feature-procs: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
+  mkdir -p "$wt/sub"
+  # The subshell exits, so each sleep is an orphan like a dev server left by mise.
+  (cd "$wt/sub" && sleep 7301 >/dev/null 2>&1 3>&- &)
+  (cd "$TMPDIR" && sleep 7302 >/dev/null 2>&1 3>&- &)
+  wait_for 'pgrep -f "^sleep 7301$" >/dev/null'
+  run "$ROOT/scripts/close.sh" --keep feature-procs
+  [ "$status" -eq 0 ]
+  wait_for '! pgrep -f "^sleep 7301$" >/dev/null'
+  pgrep -f "^sleep 7302$" >/dev/null
+}
+
+@test "close runs docker compose down for projects started in the worktree" {
+  new feature/compose
+  wt="$(tx show-options -t =feature-compose: -qv @agent_worktree)"
+  mkdir -p "$TMPDIR/bin"
+  cat >"$TMPDIR/bin/docker" <<FAKE
+#!/bin/sh
+case "\$1" in
+  ps) printf 'app-wt\t%s/services/web\nother\t/elsewhere\n' "$wt" ;;
+  compose) echo "\$*" >>"$TMPDIR/docker.log" ;;
+esac
+FAKE
+  chmod +x "$TMPDIR/bin/docker"
+  PATH="$TMPDIR/bin:$PATH" run "$ROOT/scripts/close.sh" --keep feature-compose
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TMPDIR/docker.log")" = "compose -p app-wt down" ]
 }

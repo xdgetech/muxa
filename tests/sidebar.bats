@@ -145,3 +145,16 @@ near() { [ $(( $1 - $2 )) -le 1 ] && [ $(( $2 - $1 )) -le 1 ]; }
   [ "$(pane_opt "$right" pane_width)" -eq "$before" ]
   [ "$(width_of "$w" sidebar)" -eq 28 ]
 }
+
+@test "closing a task leaves no sidebar processes" {
+  make_repo
+  "$ROOT/scripts/new.sh" "$REPO" feature/sb --no-agent --no-switch >/dev/null
+  wait_for '[ "$(sidebars_in feature-sb:)" -eq 1 ]'
+  sb_pid="$(tx list-panes -t feature-sb: -F '#{@agents_sidebar_pane} #{pane_pid}' | awk '$1 == 1 { print $2 }')"
+  wait_for "pgrep -P '$sb_pid' -x fzf >/dev/null"
+  kids="$(pgrep -P "$sb_pid" | tr '\n' ' ')"
+  "$ROOT/scripts/close.sh" --keep feature-sb
+  for p in $sb_pid $kids; do
+    wait_for "! kill -0 $p 2>/dev/null"
+  done
+}
