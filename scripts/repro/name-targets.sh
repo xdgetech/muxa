@@ -4,7 +4,7 @@
 set -euo pipefail
 MUXA_SOCKET="muxa-repro-$$"
 . "$(dirname "$0")/../lib/tmux.bash"
-trap 'mt kill-server 2>/dev/null || true' EXIT
+trap mt_down EXIT
 
 mt new-session -d -s b -x 80 -y 20 sh
 mt new-session -d -s a -n bash -x 80 -y 20 sh

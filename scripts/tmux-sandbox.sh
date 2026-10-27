@@ -41,7 +41,7 @@ up() {
 }
 
 down() {
-  mt kill-server 2>/dev/null || true
+  mt_down
 }
 
 status() {

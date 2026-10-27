@@ -31,7 +31,12 @@ struct BridgeTests {
 
     @Test func watchTypeAndLeaveTheLayoutAlone() async throws {
         _ = try tmux("new-session", "-d", "-s", "t", "-x", "40", "-y", "6", "printf 'ready\\n'; exec cat")
-        defer { _ = try? tmux("kill-server") }
+        let path = try tmux("display-message", "-p", "#{socket_path}")
+        defer {
+            _ = try? tmux("kill-server")
+            // tmux leaves its socket file behind.
+            try? FileManager.default.removeItem(atPath: path)
+        }
         let before = try tmux("display-message", "-p", "-t", "t", "#{window_width}x#{window_height}")
 
         let session = PaneSession()

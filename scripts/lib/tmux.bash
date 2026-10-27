@@ -10,6 +10,14 @@ mt() { tmux -L "$MUXA_SOCKET" -f /dev/null "$@"; }
 
 mt_running() { mt has-session 2>/dev/null; }
 
+# Stops the isolated server and removes the socket file tmux leaves behind.
+mt_down() {
+  local pid path
+  read -r pid path < <(mt display-message -p '#{pid} #{socket_path}' 2>/dev/null) || return 0
+  mt kill-server 2>/dev/null || true
+  "$MUXA_LIB/tmux-reaper.sh" "$pid" "$path"
+}
+
 # A control-mode client on session id $1 that reads command lines from stdin
 # and prints everything tmux sends. -f ignore-size: it never sizes a window.
 # Returns 0: tmux exits 1 after a command error, and callers check the output.

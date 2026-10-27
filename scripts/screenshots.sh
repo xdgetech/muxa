@@ -20,6 +20,8 @@ if [ -z "$udid" ]; then
   udid="$(xcrun simctl create "$device_name" "$device_type")"
 fi
 xcrun simctl boot "$udid" 2>/dev/null || true
+# The device is kept for the next run, but not left running.
+trap 'xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true' EXIT
 xcrun simctl bootstatus "$udid" -b >/dev/null
 xcrun simctl status_bar "$udid" override --time "9:41" --batteryState charged --batteryLevel 100 \
   --wifiBars 3 --dataNetwork wifi

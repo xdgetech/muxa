@@ -4,7 +4,7 @@
 set -euo pipefail
 MUXA_SOCKET="muxa-repro-$$"
 . "$(dirname "$0")/../lib/tmux.bash"
-trap 'mt kill-server 2>/dev/null || true' EXIT
+trap mt_down EXIT
 
 pane="$(mt new-session -d -P -F '#{pane_id}' -x 60 -y 10 sh)"
 mt send-keys -t "$pane" 'echo PRIMARY-TEXT; printf "\033[?1049h\033[2;3HALT-TEXT"; sleep 30' Enter

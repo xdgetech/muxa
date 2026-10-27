@@ -5,7 +5,7 @@
 set -euo pipefail
 MUXA_SOCKET="muxa-repro-$$"
 . "$(dirname "$0")/../lib/tmux.bash"
-trap 'mt kill-server 2>/dev/null || true' EXIT
+trap mt_down EXIT
 
 session="$(mt new-session -d -P -F '#{session_id}' -x 80 -y 20 sh)"
 blocks() { grep -cE '^%(end|error) [0-9]+ [0-9]+ 1$' <<<"$1" || true; }

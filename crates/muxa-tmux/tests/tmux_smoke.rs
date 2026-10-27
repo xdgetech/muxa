@@ -2,17 +2,27 @@
 //! Run with `make test-tmux`.
 #![cfg(feature = "tmux-integration")]
 
-use std::process::Command;
+use std::os::unix::process::CommandExt;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use muxa_tmux::{Client, Error, Options, PaneId, Role, list_sessions, locate, send_text, snapshot};
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
+/// Stops a server that kill-server cannot reach, or whose test run was killed.
+const REAPER: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../scripts/lib/tmux-reaper.sh"
+);
 
 /// An isolated tmux server, killed on drop.
 struct Server {
     socket: String,
+    /// The server's pid and socket path, for `REAPER`.
+    pid: String,
+    path: String,
+    watcher: Option<Child>,
 }
 
 impl Server {
@@ -22,7 +32,12 @@ impl Server {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::SeqCst)
         );
-        let server = Server { socket };
+        let mut server = Server {
+            socket,
+            pid: String::new(),
+            path: String::new(),
+            watcher: None,
+        };
         server.tmux(&[
             "-f",
             "/dev/null",
@@ -37,6 +52,20 @@ impl Server {
             "sh",
         ]);
         server.tmux(&["set-option", "-g", "default-shell", "/bin/sh"]);
+        let found = server.tmux(&["display-message", "-p", "#{pid} #{socket_path}"]);
+        let (pid, path) = found.split_once(' ').expect("pid and socket path");
+        (server.pid, server.path) = (pid.to_owned(), path.to_owned());
+        // In its own process group, so it outlives a test run that is killed
+        // with its group (Ctrl-C, a timeout) before Drop runs.
+        let watcher = Command::new(REAPER)
+            .args([&server.pid, &server.path, &std::process::id().to_string()])
+            .process_group(0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("start the reaper");
+        server.watcher = Some(watcher);
         server
     }
 
@@ -75,6 +104,11 @@ impl Drop for Server {
         let _ = Command::new("tmux")
             .args(["-L", &self.socket, "kill-server"])
             .output();
+        let _ = Command::new(REAPER).args([&self.pid, &self.path]).status();
+        if let Some(mut watcher) = self.watcher.take() {
+            let _ = watcher.kill();
+            let _ = watcher.wait();
+        }
     }
 }
 
