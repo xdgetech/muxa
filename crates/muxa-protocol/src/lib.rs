@@ -92,6 +92,22 @@ pub enum Request {
     Undiff {
         id: u64,
     },
+    /// The image files in this pane's git repo, ignored ones included. Needs the
+    /// `images` capability. An `image-list` comes before the `result`.
+    Images {
+        id: u64,
+        pane: String,
+    },
+    /// Open one of the images `images` listed, and follow its changes. Replaces
+    /// the open image; `image-content` for it carries this request's id as `image`.
+    Image {
+        id: u64,
+        pane: String,
+        path: String,
+    },
+    Unimage {
+        id: u64,
+    },
     /// Start a task: a worktree of `repo` on `branch`, and a session with an agent
     /// in it. Needs the `tasks` capability. A `task-created` comes before the `result`.
     NewTask {
@@ -138,6 +154,9 @@ impl Request {
             | Request::Changes { id, .. }
             | Request::Diff { id, .. }
             | Request::Undiff { id }
+            | Request::Images { id, .. }
+            | Request::Image { id, .. }
+            | Request::Unimage { id }
             | Request::CloseTask { id, .. }
             | Request::Bye { id } => *id,
         }
@@ -257,6 +276,28 @@ pub enum Message {
     },
     /// The open diff stopped, e.g. the file has no changes any more.
     DiffEnded { diff: u64, reason: String },
+    /// The images for an `images` request, newest first, sent just before its `result`.
+    ImageList {
+        images: u64,
+        /// The repo's top directory name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        root: Option<String>,
+        entries: Vec<ImageInfo>,
+        /// More images exist than were listed.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        truncated: bool,
+    },
+    /// The whole file of the open image, first and after every change.
+    ImageContent {
+        image: u64,
+        path: String,
+        #[serde(with = "base64_bytes")]
+        data: Vec<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mtime: Option<u64>,
+    },
+    /// The open image is no longer readable, e.g. it was removed.
+    ImageEnded { image: u64, reason: String },
     /// The session a `new-task` made or found, sent just before its `result`.
     TaskCreated { task: u64, session: String },
     /// The bridge is exiting.
@@ -293,6 +334,20 @@ pub enum CloseMode {
     Keep,
     /// Remove the worktree even when the branch is not merged.
     Force,
+}
+
+/// An image file in a pane's repo.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageInfo {
+    /// Relative to the repo; what to send in `image`.
+    pub path: String,
+    /// Epoch seconds of the last change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtime: Option<u64>,
+    /// Bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
 }
 
 /// A file that differs from HEAD.

@@ -193,6 +193,44 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
     }
 
+    /// Images, ignored ones included, are a folder tree with the newest run open;
+    /// Previous and Next step through one folder.
+    @MainActor
+    func testImagesAreATreeAndStepThroughTheirFolder() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+
+        composer.typeKey("d", modifierFlags: [.command, .shift])
+        // Images come after the Markdown: scroll the sidebar to them.
+        let login = app.descendants(matching: .any)["image-build/screenshots/en/login.png"].firstMatch
+        XCTAssertTrue(app.descendants(matching: .any)["change-src/parser.rs"].firstMatch.waitForExistence(timeout: 5))
+        scrollToReveal(login, in: app.collectionViews.firstMatch)
+        tapWhenReady(login)
+        XCTAssertTrue(app.descendants(matching: .any)["image-view"].firstMatch.waitForExistence(timeout: 5))
+        let position = app.staticTexts["image-position"]
+        XCTAssertTrue(position.waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "2 of 2")
+        save("reader-image")
+        app.buttons["image-previous"].tap()
+        XCTAssertTrue(app.navigationBars["home.png"].waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "1 of 2")
+
+        // Older runs stay closed until opened.
+        let ja = app.descendants(matching: .any)["image-build/screenshots/ja/login.png"].firstMatch
+        XCTAssertFalse(ja.exists)
+        let folder = app.descendants(matching: .any)["image-folder-build/screenshots/ja"].firstMatch
+        scrollToReveal(folder, in: app.collectionViews.firstMatch)
+        tapWhenReady(folder)
+        XCTAssertTrue(ja.waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+    }
+
     /// An agent elsewhere that starts waiting shows a banner; tapping it opens
     /// that session.
     @MainActor
@@ -495,6 +533,12 @@ final class DemoTests: XCTestCase {
     /// Steps wait a bounded time for animations (`AnimationIdle`): wait until a menu
     /// or a rotation has put the element where a tap reaches it.
     @MainActor
+    private func scrollToReveal(_ element: XCUIElement, in list: XCUIElement) {
+        for _ in 0..<8 where !(element.exists && element.isHittable) {
+            list.swipeUp()
+        }
+    }
+
     private func tapWhenReady(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         let exp = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND hittable == true"), object: element)
         XCTAssertEqual(XCTWaiter.wait(for: [exp], timeout: 5), .completed, file: file, line: line)

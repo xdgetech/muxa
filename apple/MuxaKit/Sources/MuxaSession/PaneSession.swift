@@ -43,6 +43,8 @@ public final class PaneSession {
     public private(set) var doc: DocLog?
     /// The open diff, kept across reconnects.
     public private(set) var diff: DiffLog?
+    /// The open image, kept across reconnects.
+    public private(set) var image: ImageLog?
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -56,6 +58,8 @@ public final class PaneSession {
     @ObservationIgnored private var docId: UInt64?
     @ObservationIgnored private var diffId: UInt64?
     @ObservationIgnored private var changeListings: [UInt64: ChangeListing] = [:]
+    @ObservationIgnored private var imageId: UInt64?
+    @ObservationIgnored private var imageListings: [UInt64: ImageListing] = [:]
     /// `doc-list` messages waiting for their `result`.
     @ObservationIgnored private var listings: [UInt64: DocListing] = [:]
     /// Session names from `task-created`, by request id, until the result arrives.
@@ -84,6 +88,7 @@ public final class PaneSession {
             unsupportedChats = []
             doc = nil
             diff = nil
+            image = nil
         }
         phase = .connecting
         do {
@@ -104,6 +109,10 @@ public final class PaneSession {
             if let open = diff {
                 diff = nil
                 await openDiff(pane: open.pane, path: open.path)
+            }
+            if let open = image {
+                image = nil
+                await openImage(pane: open.pane, path: open.path)
             }
         } catch {
             await teardown(reason: Self.describe(error))
@@ -230,6 +239,41 @@ public final class PaneSession {
         diff = nil
         diffId = nil
         try? await request { .undiff(id: $0) }
+    }
+
+    public var canShowImages: Bool { capabilities.contains("images") }
+
+    /// The image files of the pane's repo, newest first.
+    public func images(pane: String) async throws -> ImageListing {
+        var requestId: UInt64 = 0
+        try await request { id in
+            requestId = id
+            return .images(id: id, pane: pane)
+        }
+        // The list arrives just before the result.
+        return imageListings.removeValue(forKey: requestId) ?? ImageListing(images: requestId, entries: [])
+    }
+
+    /// Opens a listed image and follows it. A failure ends up in `image.ended`.
+    public func openImage(pane: String, path: String) async {
+        guard canShowImages else { return }
+        if image?.pane == pane, image?.path == path, image?.ended == nil { return }
+        image = ImageLog(pane: pane, path: path)
+        do {
+            try await request { id in
+                self.imageId = id
+                return .image(id: id, pane: pane, path: path)
+            }
+        } catch {
+            if image?.path == path { image?.ended = Self.describe(error) }
+        }
+    }
+
+    public func closeImage() async {
+        guard image != nil else { return }
+        image = nil
+        imageId = nil
+        try? await request { .unimage(id: $0) }
     }
 
     public var canCloseTasks: Bool { capabilities.contains("close-task") }
@@ -395,6 +439,14 @@ public final class PaneSession {
             diff?.ended = nil
         case .diffEnded(let id, let reason) where id == diffId:
             diff?.ended = reason
+        case .imageList(let listing):
+            imageListings[listing.images] = listing
+        case .imageContent(let id, _, let data, let mtime) where id == imageId:
+            image?.data = data
+            image?.mtime = mtime
+            image?.ended = nil
+        case .imageEnded(let id, let reason) where id == imageId:
+            image?.ended = reason
         case .taskCreated(let task, let session):
             createdTasks[task] = session
         case .docContent(let id, _, let text, let mtime) where id == docId:
@@ -410,7 +462,7 @@ public final class PaneSession {
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded:
+            .diffContent, .diffEnded, .imageContent, .imageEnded:
             break
         }
     }
@@ -436,8 +488,10 @@ public final class PaneSession {
         chatId = nil
         docId = nil
         diffId = nil
+        imageId = nil
         listings = [:]
         changeListings = [:]
+        imageListings = [:]
         createdTasks = [:]
         inputs = []
         let failed = pending

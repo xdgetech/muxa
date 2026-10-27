@@ -1,4 +1,4 @@
-//! `docs` and `doc` end to end, for a pane whose working directory is a git repo.
+//! `docs`, `doc`, `images` and `image` end to end, for a pane whose working directory is a git repo.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -34,7 +34,9 @@ impl Repo {
             assert!(out.status.success(), "git {args:?}");
         };
         git(&["init", "-q"]);
-        std::fs::write(dir.join(".gitignore"), "secret.md\n").unwrap();
+        std::fs::write(dir.join(".gitignore"), "secret.md\nshots/\n").unwrap();
+        std::fs::create_dir_all(dir.join("shots/qa")).unwrap();
+        std::fs::write(dir.join("shots/qa/login.png"), b"\x89PNG one").unwrap();
         std::fs::write(dir.join("README.md"), "# Readme\n").unwrap();
         std::fs::write(
             dir.join("docs/plan.md"),
@@ -155,6 +157,76 @@ async fn only_listed_documents_can_be_opened() {
             error: Some(error), ..
         } = bridge
             .request(json!({"type": "doc", "pane": pane, "path": path}))
+            .await
+        else {
+            panic!("{path} was opened")
+        };
+        assert_eq!(error.code, ErrorCode::BadRequest, "{path}");
+    }
+}
+
+async fn image(bridge: &mut Bridge) -> Message {
+    loop {
+        match bridge.event(WAIT).await.expect("no image message") {
+            msg @ (Message::ImageContent { .. } | Message::ImageEnded { .. }) => return msg,
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn lists_opens_and_follows_an_image_in_an_ignored_folder() {
+    let server = Server::start();
+    let repo = Repo::new("image");
+    let pane = pane_in(&server, &repo.dir);
+    let (mut bridge, hello) = Bridge::start(&server, &["--agent-dir", &no_agents("image")]).await;
+    let Message::Hello { capabilities, .. } = hello else {
+        panic!("{hello:?}")
+    };
+    assert!(capabilities.contains(&"images".to_owned()));
+
+    let result = bridge
+        .request(json!({"type": "images", "pane": pane}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+    let Some(Message::ImageList { entries, .. }) = bridge.event(WAIT).await else {
+        panic!("no image-list")
+    };
+    let paths: Vec<&str> = entries.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(paths, ["shots/qa/login.png"]);
+
+    let result = bridge
+        .request(json!({"type": "image", "pane": pane, "path": "shots/qa/login.png"}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+    let open = bridge.last_id();
+    let Message::ImageContent {
+        image: id, data, ..
+    } = image(&mut bridge).await
+    else {
+        panic!()
+    };
+    assert_eq!(id, open);
+    assert_eq!(data, b"\x89PNG one");
+
+    // A test run that rewrites the screenshot sends it again.
+    std::fs::write(repo.path("shots/qa/login.png"), b"\x89PNG second").unwrap();
+    let Message::ImageContent { data, .. } = image(&mut bridge).await else {
+        panic!()
+    };
+    assert_eq!(data, b"\x89PNG second");
+
+    for path in ["secret.md", "../outside.png"] {
+        let Message::Result {
+            error: Some(error), ..
+        } = bridge
+            .request(json!({"type": "image", "pane": pane, "path": path}))
             .await
         else {
             panic!("{path} was opened")

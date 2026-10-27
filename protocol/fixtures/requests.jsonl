@@ -17,3 +17,6 @@
 {"type":"diff","id":17,"pane":"%12","path":"src/main.rs"}
 {"type":"undiff","id":18}
 {"type":"close-task","id":19,"session":"$3","mode":"keep"}
+{"type":"images","id":20,"pane":"%12"}
+{"type":"image","id":21,"pane":"%12","path":"build/screenshots/login.png"}
+{"type":"unimage","id":22}

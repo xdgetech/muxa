@@ -2,6 +2,7 @@
 import Foundation
 import MuxaProtocol
 import MuxaTransport
+import UIKit
 
 /// An in-app bridge for the simulator (launch argument `-demo`): a few sessions,
 /// fixed-size panes, typed text echoed back, and a chat for the agent pane %1.
@@ -72,7 +73,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         if ProcessInfo.processInfo.arguments.contains("-demo-alerts") {
             DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
         }
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images"]))
     }
 
     func send(_ line: Data) async throws {
@@ -146,6 +147,18 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
         case .undiff(let id):
             lock.withLock { openDiff = nil }
+            ok(id)
+        case .images(let id, _):
+            emit(.imageList(ImageListing(images: id, root: content.root, entries: Self.images.map(\.info))))
+            ok(id)
+        case .image(let id, _, let path):
+            guard let image = Self.images.first(where: { $0.info.path == path }) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not listed"), sessions: nil))
+                return
+            }
+            ok(id)
+            emit(.imageContent(image: id, path: path, data: Self.png(image.color), mtime: image.info.mtime))
+        case .unimage(let id):
             ok(id)
         case .closeTask(let id, let session, let mode):
             closeTask(id: id, session: session, mode: mode)
@@ -285,6 +298,26 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         emit(.chatEntries(ChatUpdate(
             chat: id, seq: seq, reset: reset, entries: entries, status: Agent(state: status, since: since),
             agent: reset ? "claude-code" : nil, prompt: prompt)))
+    }
+
+    /// Screenshots of a QA run, newest first, and the repo's logo.
+    static let images: [(info: ImageInfo, color: UIColor)] = {
+        let now = UInt64(Date().timeIntervalSince1970)
+        return [
+            (ImageInfo(path: "build/screenshots/en/login.png", mtime: now - 60, size: 48_213), .systemBlue),
+            (ImageInfo(path: "build/screenshots/en/home.png", mtime: now - 61, size: 51_002), .systemTeal),
+            (ImageInfo(path: "build/screenshots/ja/login.png", mtime: now - 62, size: 49_870), .systemIndigo),
+            (ImageInfo(path: "docs/images/logo.png", mtime: now - 86_400, size: 9_120), .systemOrange),
+        ]
+    }()
+
+    static func png(_ color: UIColor) -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 1024, height: 768)).pngData { context in
+            color.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1024, height: 768))
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 312, y: 284, width: 400, height: 200))
+        }
     }
 
     static let diffUpdate = "+    // checked by the agent\n"

@@ -24,3 +24,6 @@
 {"type":"diff-content","diff":17,"path":"src/main.rs","text":"diff --git a/src/main.rs b/src/main.rs\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,2 +1,2 @@\n fn main() {\n-    old();\n+    new();\n"}
 {"type":"diff-content","diff":17,"path":"logo.png","binary":true}
 {"type":"diff-ended","diff":17,"reason":"src/main.rs has no changes now"}
+{"type":"image-list","images":20,"root":"app","entries":[{"path":"build/screenshots/login.png","mtime":1767225600,"size":48213},{"path":"docs/logo.jpg"}],"truncated":true}
+{"type":"image-content","image":21,"path":"build/screenshots/login.png","data":"iVBORw0KGgo=","mtime":1767225600}
+{"type":"image-ended","image":21,"reason":"build/screenshots/login.png: No such file or directory"}

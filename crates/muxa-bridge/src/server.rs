@@ -13,7 +13,7 @@ use crate::agents::Registry;
 use crate::changes::{self, ChangeTask};
 use crate::chat::{self, ChatTask};
 use crate::convert::{self, error_body};
-use crate::docs::{self, DocTask};
+use crate::docs::{self, DocTask, ImageTask};
 use crate::lines::{self, Line};
 use crate::tasks::{self, TaskError};
 use crate::watch::{Command, Watcher};
@@ -90,6 +90,7 @@ where
             "tasks".into(),
             "changes".into(),
             "close-task".into(),
+            "images".into(),
         ],
     };
     if out.send(hello).await.is_err() {
@@ -120,6 +121,8 @@ where
         )
         .run(),
     );
+    let (image_tx, image_rx) = mpsc::channel(8);
+    let images = tokio::spawn(ImageTask::new(Arc::clone(&client), out.clone(), image_rx).run());
     let (change_tx, change_rx) = mpsc::channel(8);
     let changes = tokio::spawn(ChangeTask::new(Arc::clone(&client), out.clone(), change_rx).run());
     let states = tokio::spawn(crate::states::run(
@@ -135,6 +138,7 @@ where
         watch: cmd_tx,
         chat: chat_tx,
         docs: doc_tx,
+        images: image_tx,
         changes: change_tx,
         tasks: Arc::clone(&config.tasks),
         agents: Arc::clone(&config.agents),
@@ -148,6 +152,7 @@ where
     watcher.abort();
     chats.abort();
     docs.abort();
+    images.abort();
     changes.abort();
     states.abort();
     if end == End::Idle {
@@ -226,6 +231,7 @@ struct Worker {
     watch: mpsc::Sender<Command>,
     chat: mpsc::Sender<chat::Command>,
     docs: mpsc::Sender<docs::Command>,
+    images: mpsc::Sender<docs::Command>,
     changes: mpsc::Sender<changes::Command>,
     tasks: Arc<tasks::Config>,
     agents: Arc<Registry>,
@@ -390,6 +396,45 @@ impl Worker {
                     &self.changes,
                     |ack| changes::Command::Close { id, ack },
                     "changes",
+                )
+                .await;
+            }
+            Request::Images { id, pane } => {
+                return match pane.parse::<PaneId>() {
+                    Ok(pane) => {
+                        handoff(
+                            &self.images,
+                            |ack| docs::Command::List { id, pane, ack },
+                            "images",
+                        )
+                        .await
+                    }
+                    Err(e) => Some(Err(convert::error(&e))),
+                };
+            }
+            Request::Image { id, pane, path } => {
+                return match pane.parse::<PaneId>() {
+                    Ok(pane) => {
+                        handoff(
+                            &self.images,
+                            |ack| docs::Command::Open {
+                                id,
+                                pane,
+                                path,
+                                ack,
+                            },
+                            "images",
+                        )
+                        .await
+                    }
+                    Err(e) => Some(Err(convert::error(&e))),
+                };
+            }
+            Request::Unimage { id } => {
+                return handoff(
+                    &self.images,
+                    |ack| docs::Command::Close { id, ack },
+                    "images",
                 )
                 .await;
             }

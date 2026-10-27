@@ -113,7 +113,7 @@ fn reads_only_listed_documents_inside_their_directory() {
     );
     assert_eq!(
         read(listing.find("docs/plan.md").unwrap()),
-        Err(ReadError::TooLarge("docs/plan.md".into()))
+        Err(ReadError::TooLarge("docs/plan.md".into(), MAX_DOC))
     );
 }
 

@@ -37,6 +37,7 @@ enum Icon {
     static let repo = "folder"
     static let document = "doc.text"
     static let plan = "list.bullet.clipboard"
+    static let image = "photo"
     static let chat = "text.bubble"
     static let agent = "terminal"
     static let shell = "apple.terminal"

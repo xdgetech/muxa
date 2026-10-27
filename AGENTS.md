@@ -16,7 +16,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 |---|---|
 | `crates/muxa-tmux` | control-mode client, quoting, discovery, snapshot, input. The only code that talks to tmux. |
 | `crates/muxa-protocol` | wire types and version. Must match `protocol/PROTOCOL.md` and `protocol/fixtures`. |
-| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents, `src/changes/` its diffs, `src/tasks/` starts and closes tasks (ADR 0007), and `src/states.rs` follows agent states (ADR 0008). |
+| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents and images, `src/changes/` its diffs, `src/tasks/` starts and closes tasks (ADR 0007), and `src/states.rs` follows agent states (ADR 0008). |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
 | `apple/Muxa` | the iPad app (SwiftUI). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo (DEBUG). |

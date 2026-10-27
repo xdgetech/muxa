@@ -30,6 +30,12 @@ public enum Request: Equatable, Sendable {
     /// Show and follow one listed file's diff; `diff-content` carries this id as `diff`.
     case diff(id: UInt64, pane: String, path: String)
     case undiff(id: UInt64)
+    /// The image files in the pane's repo, ignored ones included (capability
+    /// `images`); an `image-list` comes first.
+    case images(id: UInt64, pane: String)
+    /// Open a listed image and follow its changes; `image-content` carries this id as `image`.
+    case image(id: UInt64, pane: String, path: String)
+    case unimage(id: UInt64)
     /// Start a task on `branch` of the repo at `repo` (capability `tasks`); a
     /// `task-created` comes first. `base` is where a new branch starts.
     case newTask(id: UInt64, repo: String, branch: String, base: String?)
@@ -44,7 +50,8 @@ public enum Request: Equatable, Sendable {
         case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
             .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
-            .changes(let id, _), .diff(let id, _, _), .undiff(let id), .closeTask(let id, _, _):
+            .changes(let id, _), .diff(let id, _, _), .undiff(let id), .closeTask(let id, _, _),
+            .images(let id, _), .image(let id, _, _), .unimage(let id):
             id
         }
     }
@@ -65,6 +72,14 @@ extension Request: Codable {
         case .unchat(let id): try c.head("unchat", id)
         case .undoc(let id): try c.head("undoc", id)
         case .undiff(let id): try c.head("undiff", id)
+        case .unimage(let id): try c.head("unimage", id)
+        case .images(let id, let pane):
+            try c.head("images", id)
+            try c.encode(pane, forKey: .pane)
+        case .image(let id, let pane, let path):
+            try c.head("image", id)
+            try c.encode(pane, forKey: .pane)
+            try c.encode(path, forKey: .path)
         case .closeTask(let id, let session, let mode):
             try c.head("close-task", id)
             try c.encode(session, forKey: .session)
@@ -128,6 +143,9 @@ extension Request: Codable {
         case "unchat": self = .unchat(id: id)
         case "undoc": self = .undoc(id: id)
         case "undiff": self = .undiff(id: id)
+        case "unimage": self = .unimage(id: id)
+        case "images": self = .images(id: id, pane: try pane())
+        case "image": self = .image(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
         case "close-task":
             self = .closeTask(
                 id: id, session: try c.decode(String.self, forKey: .session),

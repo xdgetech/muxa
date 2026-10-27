@@ -76,7 +76,7 @@ fn agent_doc(d: AgentDoc) -> Doc {
     }
 }
 
-fn repo_root(path: &Path) -> Option<PathBuf> {
+pub(super) fn repo_root(path: &Path) -> Option<PathBuf> {
     let out = Command::new("git")
         .arg("-C")
         .arg(path)
@@ -136,7 +136,7 @@ fn title(path: &Path) -> Option<String> {
         .filter(|t| !t.is_empty())
 }
 
-fn mtime(path: &Path) -> Option<u64> {
+pub(super) fn mtime(path: &Path) -> Option<u64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     Some(modified.duration_since(UNIX_EPOCH).ok()?.as_secs())
 }
@@ -147,8 +147,8 @@ pub enum ReadError {
     NotListed(String),
     #[error("{0} is outside its directory")]
     Outside(String),
-    #[error("{0} is larger than {MAX_DOC} bytes")]
-    TooLarge(String),
+    #[error("{0} is larger than {1} bytes")]
+    TooLarge(String, u64),
     #[error("{path}: {reason}")]
     Io { path: String, reason: String },
 }
@@ -162,28 +162,38 @@ impl Listing {
     }
 }
 
-/// The text of `doc` and its mtime. Checked again on every read: a symlink can
-/// be changed after the document was listed.
+/// The text of `doc` and its mtime.
 pub fn read(doc: &Doc) -> Result<(String, Option<u64>), ReadError> {
-    let path = &doc.info.path;
+    let (bytes, mtime) = read_bytes(&doc.file, &doc.root, &doc.info.path, MAX_DOC)?;
+    Ok((String::from_utf8_lossy(&bytes).into_owned(), mtime))
+}
+
+/// The bytes of the listed file `file`, named `path` in errors, and its mtime.
+/// Checked again on every read: a symlink can be changed after the file was listed.
+pub(super) fn read_bytes(
+    file: &Path,
+    root: &Path,
+    path: &str,
+    max: u64,
+) -> Result<(Vec<u8>, Option<u64>), ReadError> {
     let io = |e: std::io::Error| ReadError::Io {
-        path: path.clone(),
+        path: path.to_owned(),
         reason: e.to_string(),
     };
-    let real = doc.file.canonicalize().map_err(io)?;
-    let root = doc.root.canonicalize().map_err(io)?;
+    let real = file.canonicalize().map_err(io)?;
+    let root = root.canonicalize().map_err(io)?;
     if !real.starts_with(&root) {
-        return Err(ReadError::Outside(path.clone()));
+        return Err(ReadError::Outside(path.to_owned()));
     }
     let meta = std::fs::metadata(&real).map_err(io)?;
     if !meta.is_file() {
-        return Err(ReadError::NotListed(path.clone()));
+        return Err(ReadError::NotListed(path.to_owned()));
     }
-    if meta.len() > MAX_DOC {
-        return Err(ReadError::TooLarge(path.clone()));
+    if meta.len() > max {
+        return Err(ReadError::TooLarge(path.to_owned(), max));
     }
     let bytes = std::fs::read(&real).map_err(io)?;
-    Ok((String::from_utf8_lossy(&bytes).into_owned(), mtime(&real)))
+    Ok((bytes, mtime(&real)))
 }
 
 #[cfg(test)]

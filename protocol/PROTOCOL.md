@@ -55,6 +55,9 @@ sequenceDiagram
 | `changes` | `id`, `pane` | list the files that differ from HEAD in the pane's repo (capability `changes`); a `change-list` comes before the `result` |
 | `diff` | `id`, `pane`, `path` | show a listed file's diff and follow it; replaces the open diff |
 | `undiff` | `id` | stop `diff-content` |
+| `images` | `id`, `pane` | list the image files in the pane's repo (capability `images`); an `image-list` comes before the `result` |
+| `image` | `id`, `pane`, `path` | show a listed image and follow it; replaces the open image |
+| `unimage` | `id` | stop `image-content` |
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
 | `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
 | `bye` | `id` | the bridge exits |
@@ -79,6 +82,9 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `change-list` | `changes`, optional `root`, `entries[] {path, status, oldPath?, added?, removed?}`, optional `truncated` |
 | `diff-content` | `diff`, `path`, optional `text`, optional `binary` |
 | `diff-ended` | `diff`, `reason` |
+| `image-list` | `images`, optional `root`, `entries[] {path, mtime?, size?}`, optional `truncated` |
+| `image-content` | `image`, `path`, `data` (base64), optional `mtime` |
+| `image-ended` | `image`, `reason` |
 | `task-created` | `task`, `session` |
 | `bye` | `reason` |
 
@@ -135,6 +141,15 @@ A bridge with the `changes` capability shows what differs from HEAD in a pane's 
 2. Each entry has `path` (relative to the repo) and `status`: `modified`, `added`, `deleted`, `renamed` (with `oldPath`), `untracked` or `conflicted`. `added` and `removed` count lines; they are absent for a binary file. Untracked files that git ignores are not listed. At most 2000, in path order; `truncated` says there were more.
 3. `diff {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `diff-content` with the file's whole unified diff (`git diff` against HEAD; for an untracked file, against nothing), and again whenever it changes (checked every 2 seconds). A binary file has `binary: true` and no `text`.
 4. `diff-ended` says the diff stopped, for example the file has no changes any more, or the diff is larger than 2 MiB.
+
+## Images
+
+A bridge with the `images` capability serves the image files of a pane's git repo, for viewing, for example screenshots of a test run.
+
+1. `images {pane}` sends `image-list`, then `result`. `images` in the list is the request id.
+2. The list holds PNG, JPEG, GIF, WebP and HEIC files by extension, in any case: tracked files and untracked ones, **including files git ignores**. Only those extensions are listed. Each entry has `path` (relative to the repo), `mtime` and `size` in bytes. Newest first; at most 2000, the newest kept, and `truncated` says there were more.
+3. `image {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `image-content` with the whole file, and again whenever its time or size changes (checked every 2 seconds). The client drops any whose `image` is not its latest image request.
+4. `image-ended` says the image is no longer readable, for example removed, larger than 16 MiB, or a symlink to outside the repo.
 
 ## Tasks
 

@@ -52,6 +52,8 @@ final class AppModel {
     private(set) var docError: String?
     /// The shown pane's uncommitted changes, as last listed.
     private(set) var changeListing: ChangeListing?
+    /// The shown pane's images, while the Reader is open.
+    private(set) var imageListing: ImageListing?
     /// The document last read in each session, opened again next time.
     private var lastDocs: [String: String] = [:]
 
@@ -361,6 +363,7 @@ final class AppModel {
         Task {
             await session.closeDocument()
             await session.closeDiff()
+            await session.closeImage()
             await loadChanges()
         }
         refocusPane()
@@ -375,6 +378,24 @@ final class AppModel {
             docError = PaneSession.describe(error)
         }
         await loadChanges()
+        await loadImages()
+    }
+
+    /// Lists the shown pane's images; a failure only hides them.
+    func loadImages() async {
+        guard session.canShowImages, let pane = currentPane else {
+            imageListing = nil
+            return
+        }
+        let listing = try? await session.images(pane: pane.id)
+        if currentPane?.id == pane.id { imageListing = listing }
+    }
+
+    func openImage(_ path: String) async {
+        guard let pane = currentPane else { return }
+        await session.closeDocument()
+        await session.closeDiff()
+        await session.openImage(pane: pane.id, path: path)
     }
 
     /// Lists the shown pane's changes; a failure only hides them.
@@ -393,6 +414,7 @@ final class AppModel {
     func openDiff(_ path: String) async {
         guard let pane = currentPane else { return }
         await session.closeDocument()
+        await session.closeImage()
         await session.openDiff(pane: pane.id, path: path)
     }
 
@@ -411,6 +433,7 @@ final class AppModel {
         guard let pane = currentPane else { return }
         if let id = currentSession?.id { lastDocs[id] = path }
         await session.closeDiff()
+        await session.closeImage()
         await session.openDocument(pane: pane.id, path: path)
     }
 

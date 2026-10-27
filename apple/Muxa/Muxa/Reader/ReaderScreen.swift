@@ -2,19 +2,23 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// What the Reader shows: a document, or the diff of a changed file.
+/// What the Reader shows: a document, the diff of a changed file, or an image.
 enum ReaderItem: Hashable {
     case doc(String)
     case diff(String)
+    case image(String)
 }
 
 /// The documents of the shown pane: its repo's uncommitted changes, its agent's
-/// plan, then its repo's Markdown by directory. The open one updates when its file changes.
+/// plan, its repo's Markdown by directory, then its images as a folder tree. The
+/// open one updates when its file changes.
 struct ReaderScreen: View {
     @Environment(AppModel.self) private var model
     @State private var query = ""
     @State private var selection: ReaderItem?
     @State private var external: URL?
+    /// Open folders of the Images tree, by path.
+    @State private var expanded: Set<String> = []
 
     var body: some View {
         NavigationSplitView {
@@ -25,11 +29,16 @@ struct ReaderScreen: View {
         .task {
             await model.loadDocs()
             selection = model.preferredDoc.map(ReaderItem.doc)
+            // The latest run's screenshots are one tap away.
+            if let newest = model.imageListing?.entries.first {
+                expanded.formUnion(ImageFolder.ancestors(of: newest.path))
+            }
         }
         .onChange(of: selection) { _, item in
             switch item {
             case .doc(let path): Task { await model.openDoc(path) }
             case .diff(let path): Task { await model.openDiff(path) }
+            case .image(let path): Task { await model.openImage(path) }
             case nil: break
             }
         }
@@ -77,9 +86,17 @@ struct ReaderScreen: View {
             if model.docListing?.truncated == true {
                 Text("Only the first 2000 documents are listed.").font(.caption).foregroundStyle(.secondary)
             }
+            if !images.isEmpty {
+                Section("Images") {
+                    ImageFolderRows(folder: ImageFolder.tree(images), expanded: query.isEmpty ? $expanded : .constant(allFolders))
+                    if model.imageListing?.truncated == true {
+                        Text("Only the newest 2000 images are listed.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .overlay {
-            if model.docListing?.entries.isEmpty == true, changes.isEmpty {
+            if model.docListing?.entries.isEmpty == true, changes.isEmpty, images.isEmpty {
                 ContentUnavailableView("No Documents", systemImage: Icon.document,
                                        description: Text("This pane is not in a git repository with Markdown files."))
             }
@@ -99,6 +116,17 @@ struct ReaderScreen: View {
         let all = model.changeListing?.entries ?? []
         guard !query.isEmpty else { return all }
         return all.filter { $0.path.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var images: [ImageInfo] {
+        let all = model.imageListing?.entries ?? []
+        guard !query.isEmpty else { return all }
+        return all.filter { $0.path.localizedCaseInsensitiveContains(query) }
+    }
+
+    /// While searching, every folder with a match is open.
+    private var allFolders: Set<String> {
+        Set(images.flatMap { ImageFolder.ancestors(of: $0.path) })
     }
 
     private var matches: [DocInfo] {
@@ -128,6 +156,7 @@ struct ReaderScreen: View {
         switch selection {
         case .doc(let path): docDetail(path)
         case .diff(let path): diffDetail(path)
+        case .image(let path): ImageDetail(path: path, selection: $selection)
         case nil: ContentUnavailableView("Pick a Document", systemImage: Icon.document)
         }
     }
@@ -214,8 +243,8 @@ struct ReaderScreen: View {
     }
 }
 
-/// Shown over a document or diff that stopped updating.
-private struct EndedNotice: View {
+/// Shown over a document, diff or image that stopped updating.
+struct EndedNotice: View {
     let text: String
 
     var body: some View {

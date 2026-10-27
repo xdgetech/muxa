@@ -33,6 +33,12 @@ public enum Message: Equatable, Sendable {
     case diffContent(diff: UInt64, path: String, text: String?, binary: Bool)
     /// The open diff stopped, e.g. the file has no changes any more.
     case diffEnded(diff: UInt64, reason: String)
+    /// The images for an `images` request, just before its `result`.
+    case imageList(ImageListing)
+    /// The whole file of the open image, first and after every change.
+    case imageContent(image: UInt64, path: String, data: Data, mtime: UInt64?)
+    /// The open image is no longer readable.
+    case imageEnded(image: UInt64, reason: String)
     /// The session a `new-task` made or found, just before its `result`.
     case taskCreated(task: UInt64, session: String)
     /// The bridge is exiting.
@@ -87,7 +93,7 @@ extension ErrorCode: Codable {
 extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
-        case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary
+        case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image
     }
 
     public init(from decoder: any Decoder) throws {
@@ -153,6 +159,18 @@ extension Message: Codable {
         case "diff-ended":
             self = .diffEnded(
                 diff: try c.decode(UInt64.self, forKey: .diff),
+                reason: try c.decode(String.self, forKey: .reason))
+        case "image-list":
+            self = .imageList(try ImageListing(from: decoder))
+        case "image-content":
+            self = .imageContent(
+                image: try c.decode(UInt64.self, forKey: .image),
+                path: try c.decode(String.self, forKey: .path),
+                data: try c.decodeBase64(forKey: .data),
+                mtime: try c.decodeIfPresent(UInt64.self, forKey: .mtime))
+        case "image-ended":
+            self = .imageEnded(
+                image: try c.decode(UInt64.self, forKey: .image),
                 reason: try c.decode(String.self, forKey: .reason))
         case "task-created":
             self = .taskCreated(
@@ -230,6 +248,19 @@ extension Message: Codable {
         case .diffEnded(let diff, let reason):
             try c.encode("diff-ended", forKey: .type)
             try c.encode(diff, forKey: .diff)
+            try c.encode(reason, forKey: .reason)
+        case .imageList(let listing):
+            try c.encode("image-list", forKey: .type)
+            try listing.encode(to: encoder)
+        case .imageContent(let image, let path, let data, let mtime):
+            try c.encode("image-content", forKey: .type)
+            try c.encode(image, forKey: .image)
+            try c.encode(path, forKey: .path)
+            try c.encode(data.base64EncodedString(), forKey: .data)
+            try c.encodeIfPresent(mtime, forKey: .mtime)
+        case .imageEnded(let image, let reason):
+            try c.encode("image-ended", forKey: .type)
+            try c.encode(image, forKey: .image)
             try c.encode(reason, forKey: .reason)
         case .taskCreated(let task, let session):
             try c.encode("task-created", forKey: .type)

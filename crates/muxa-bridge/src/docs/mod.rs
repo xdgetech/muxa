@@ -1,7 +1,12 @@
 //! `docs` and `doc`: lists a pane's Markdown documents, and follows the open one,
-//! sending its whole text again whenever it changes.
+//! sending its whole text again whenever it changes. `image_task` does the same
+//! for images.
 
 mod files;
+mod image_task;
+mod images;
+
+pub use image_task::ImageTask;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -200,9 +205,9 @@ impl DocTask {
     }
 }
 
-fn read_error(e: &ReadError) -> ErrorBody {
+pub(crate) fn read_error(e: &ReadError) -> ErrorBody {
     let code = match e {
-        ReadError::TooLarge(_) => ErrorCode::TooLarge,
+        ReadError::TooLarge(..) => ErrorCode::TooLarge,
         _ => ErrorCode::BadRequest,
     };
     error_body(code, e.to_string())

@@ -26,12 +26,12 @@ fn round_trip<T: DeserializeOwned + Serialize>(file: &str) -> usize {
 
 #[test]
 fn requests_round_trip() {
-    assert_eq!(round_trip::<Request>("requests.jsonl"), 19);
+    assert_eq!(round_trip::<Request>("requests.jsonl"), 22);
 }
 
 #[test]
 fn messages_round_trip() {
-    assert_eq!(round_trip::<Message>("messages.jsonl"), 26);
+    assert_eq!(round_trip::<Message>("messages.jsonl"), 29);
 }
 
 #[test]
