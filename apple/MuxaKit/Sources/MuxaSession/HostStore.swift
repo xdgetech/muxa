@@ -18,13 +18,15 @@ public struct Host: Codable, Identifiable, Hashable, Sendable {
     public var title: String { name.isEmpty ? target.host : name }
 }
 
-/// The saved hosts and the last one used, as JSON in one file. Passwords are never
+/// The saved hosts, the last one used and each one's last pane, as JSON in one file. Passwords are never
 /// stored; the pinned host key is public.
 @MainActor
 @Observable
 public final class HostStore {
     public private(set) var hosts: [Host] = []
     public private(set) var lastUsed: UUID?
+    /// The pane last shown on each host, opened first on the next connect.
+    public private(set) var lastPanes: [UUID: LastPane] = [:]
     /// Why the last load or save failed, for the UI. Nil when it worked.
     public private(set) var storageError: String?
 
@@ -33,6 +35,7 @@ public final class HostStore {
     private struct Contents: Codable {
         var hosts: [Host]
         var lastUsed: UUID?
+        var lastPanes: [UUID: LastPane]?
     }
 
     /// Loads `file`. The first time, it moves over the single target that older
@@ -45,6 +48,7 @@ public final class HostStore {
                 let contents = try JSONDecoder().decode(Contents.self, from: data)
                 hosts = contents.hosts
                 lastUsed = contents.lastUsed
+                lastPanes = contents.lastPanes ?? [:]
             } catch {
                 storageError = "Saved hosts could not be read: \(error.localizedDescription)"
             }
@@ -82,6 +86,7 @@ public final class HostStore {
     public func delete(_ id: UUID) {
         hosts.removeAll { $0.id == id }
         if lastUsed == id { lastUsed = nil }
+        lastPanes[id] = nil
         save()
     }
 
@@ -96,13 +101,19 @@ public final class HostStore {
         save()
     }
 
+    public func remember(_ pane: LastPane, on id: UUID) {
+        guard lastPanes[id] != pane else { return }
+        lastPanes[id] = pane
+        save()
+    }
+
     @discardableResult
     private func save() -> Bool {
         guard let file else { return true }
         do {
             try FileManager.default.createDirectory(
                 at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(Contents(hosts: hosts, lastUsed: lastUsed))
+            let data = try JSONEncoder().encode(Contents(hosts: hosts, lastUsed: lastUsed, lastPanes: lastPanes))
             try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             storageError = nil
             return true

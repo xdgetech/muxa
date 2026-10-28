@@ -243,9 +243,14 @@ final class AppModel {
         await open(list[number - 1])
     }
 
+    /// The pane last shown on this host, else the first session.
     private func openDefaultPane() async {
-        guard session.watchedPane == nil, let first = visibleSessions.first else { return }
-        await open(first)
+        guard session.watchedPane == nil else { return }
+        if let id = currentHostID, let last = hosts.lastPanes[id], let pane = session.sessions.resuming(last) {
+            await watch(pane.id)
+        } else if let first = visibleSessions.first {
+            await open(first)
+        }
     }
 
     private func watch(_ pane: String) async {
@@ -254,6 +259,9 @@ final class AppModel {
         } catch {
             connectError = PaneSession.describe(error)
             return
+        }
+        if let id = currentHostID, let name = currentSession?.name {
+            hosts.remember(LastPane(session: name, pane: pane), on: id)
         }
         changeListing = nil
         Task { await loadChanges() }

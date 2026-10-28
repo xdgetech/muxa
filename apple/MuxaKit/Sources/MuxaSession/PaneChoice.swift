@@ -26,6 +26,27 @@ extension Session {
     }
 }
 
+/// The pane last shown on a host. The session is kept by name: tmux renumbers
+/// its ids when the server restarts, and a pane id alone may then be another's.
+public struct LastPane: Codable, Equatable, Sendable {
+    public var session: String
+    public var pane: String
+
+    public init(session: String, pane: String) {
+        self.session = session
+        self.pane = pane
+    }
+}
+
+extension Array where Element == Session {
+    /// The pane to reopen for `last`: that pane while it is still in that
+    /// session, else the session's default pane. Nil once the session is gone.
+    public func resuming(_ last: LastPane) -> Pane? {
+        guard let session = first(where: { $0.name == last.session }) else { return nil }
+        return session.visiblePanes.first { $0.id == last.pane } ?? session.defaultPane
+    }
+}
+
 extension Agent {
     /// The state to show. A shell in the foreground means the runner's state is likely stale.
     public func shown(shellForeground: Bool) -> AgentState? {

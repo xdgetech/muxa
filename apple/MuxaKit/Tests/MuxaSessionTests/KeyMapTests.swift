@@ -67,6 +67,20 @@ struct PaneChoiceTests {
         let s = Session(id: "$1", name: "s", panes: [pane("%1", .agent)])
         #expect(s.counterpart(of: "%1") == nil)
     }
+
+    @Test func theLastPaneIsReopenedWhileItsSessionIsThere() {
+        let sessions = [
+            Session(id: "$1", name: "a", panes: [pane("%1", .agent), pane("%2", .shell, shell: true)]),
+            Session(id: "$2", name: "b", panes: [pane("%3", .agent), pane("%4", .hidden)]),
+        ]
+        #expect(sessions.resuming(LastPane(session: "a", pane: "%2"))?.id == "%2")
+        // Gone or hidden: the session's default pane.
+        #expect(sessions.resuming(LastPane(session: "a", pane: "%9"))?.id == "%1")
+        #expect(sessions.resuming(LastPane(session: "b", pane: "%4"))?.id == "%3")
+        // After a server restart the id can be another session's pane.
+        #expect(sessions.resuming(LastPane(session: "b", pane: "%2"))?.id == "%3")
+        #expect(sessions.resuming(LastPane(session: "gone", pane: "%1")) == nil)
+    }
 }
 
 struct RepoGroupTests {

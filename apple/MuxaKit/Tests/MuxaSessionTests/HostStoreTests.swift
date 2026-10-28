@@ -24,6 +24,7 @@ struct HostStoreTests {
         store.upsert(a)
         store.upsert(b)
         store.markUsed(b.id)
+        store.remember(LastPane(session: "work", pane: "%3"), on: b.id)
         store.move(fromOffsets: [1], toOffset: 0)
         var edited = a
         edited.target.hostKey = try HostKey(openSSH: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICmVLvUbABi5WZoMHwkY/jy0DxNDGNMw2TRDgtxMPf9x")
@@ -32,12 +33,14 @@ struct HostStoreTests {
         let again = HostStore(file: file, defaults: freshDefaults())
         #expect(again.hosts == [b, edited])
         #expect(again.lastUsed == b.id)
+        #expect(again.lastPanes == [b.id: LastPane(session: "work", pane: "%3")])
         #expect(again.hosts[0].title == "box.example")
         #expect(again.storageError == nil)
 
         again.delete(b.id)
         #expect(HostStore(file: file, defaults: freshDefaults()).hosts == [edited])
         #expect(again.lastUsed == nil)
+        #expect(again.lastPanes.isEmpty)
     }
 
     @Test func movesTheOldSingleTargetOverOnce() throws {
