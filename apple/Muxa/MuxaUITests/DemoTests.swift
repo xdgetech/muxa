@@ -143,6 +143,9 @@ final class DemoTests: XCTestCase {
         app.buttons["Agent"].firstMatch.tap()
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        // Without a hardware keyboard, the on-screen one waits for a tap on the pane.
+        XCTAssertFalse(app.buttons["keybar-escape"].waitForExistence(timeout: 2))
+        pane.tap()
 
         tapWhenReady(app.buttons["keybar-escape"])
         XCTAssertTrue(waitFor(pane, containing: "<Escape>"))

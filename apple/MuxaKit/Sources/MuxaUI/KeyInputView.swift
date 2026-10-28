@@ -46,6 +46,14 @@ public final class KeyInputView: UIView, UITextInput {
     public override var accessibilityValue: String? { get { screenText() } set {} }
 
     public override var canBecomeFirstResponder: Bool { true }
+
+    /// Focus given without a tap, such as when the pane opens, waits for a
+    /// hardware keyboard: without one it raises the on-screen keyboard over the pane.
+    public static var focusesByItself: Bool { GCKeyboard.coalesced != nil }
+
+    public func focusIfKeyboard() {
+        if Self.focusesByItself { becomeFirstResponder() }
+    }
     public var hasText: Bool { true }
 
     public func insertText(_ text: String) {

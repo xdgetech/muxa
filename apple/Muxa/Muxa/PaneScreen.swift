@@ -142,7 +142,8 @@ struct PaneHost: UIViewRepresentable {
     let session: PaneSession
     /// Nil picks the mode from the view's shape.
     var fit: PaneTerminalView.FitMode?
-    /// A new value takes the keyboard back, for example after a sheet closed.
+    /// A new value takes the keyboard back, for example after a sheet closed,
+    /// when a hardware keyboard is connected.
     /// Nil while another view (Pretty) has the keyboard.
     var focus: Int?
 
@@ -166,7 +167,7 @@ struct PaneHost: UIViewRepresentable {
         if let focus, view.focusRequest != focus {
             view.focusRequest = focus
             // After SwiftUI has removed whatever held the keyboard (a sheet, the composer).
-            DispatchQueue.main.async { view.input.becomeFirstResponder() }
+            DispatchQueue.main.async { view.input.focusIfKeyboard() }
         }
     }
 }
@@ -238,7 +239,7 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { input.becomeFirstResponder() }
+        if window != nil { input.focusIfKeyboard() }
     }
 
     private func contentChanged(reset: Bool) {

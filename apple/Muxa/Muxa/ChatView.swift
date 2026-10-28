@@ -1,6 +1,7 @@
 import MarkdownUI
 import MuxaProtocol
 import MuxaSession
+import MuxaUI
 import SwiftUI
 
 /// The Pretty view of an agent pane: the conversation as messages and a composer.
@@ -294,8 +295,8 @@ struct Composer: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
-        .onAppear { focused = true }
-        .onChange(of: model.focusRequest) { focused = true }
+        .onAppear { focused = KeyInputView.focusesByItself }
+        .onChange(of: model.focusRequest) { if KeyInputView.focusesByItself { focused = true } }
     }
 
     /// While the agent waits on a prompt, Enter would answer it: send nothing then.
