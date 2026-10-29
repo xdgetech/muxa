@@ -29,6 +29,8 @@ enum ReaderTab: String, CaseIterable, Identifiable {
 /// commits; its images as a folder tree. The open one updates when its file changes.
 struct ReaderScreen: View {
     @Environment(AppModel.self) private var model
+    /// Compact, the split view is a stack and the list's Done is a screen away.
+    @Environment(\.horizontalSizeClass) private var width
     @State private var query = ""
     @State private var selection: ReaderItem?
     @State private var external: URL?
@@ -39,7 +41,15 @@ struct ReaderScreen: View {
         NavigationSplitView {
             list
         } detail: {
-            NavigationStack { detail }
+            NavigationStack {
+                detail.toolbar {
+                    if width == .compact {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Done") { model.closeReader() }
+                        }
+                    }
+                }
+            }
         }
         .task {
             await model.loadDocs()

@@ -26,8 +26,7 @@ final class PhoneTests: XCTestCase {
         XCTAssertEqual(pane.frame.minX, window.minX, accuracy: 1, "a fresh screen starts at its left edge")
         save("phone-readable")
 
-        // The pane is wider than the screen, so XCUITest finds no hit point on it.
-        pane.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+        tapPane(pane)
         // A fresh simulator's keyboard first shows a tip about sliding to type.
         let tip = app.buttons["Continue"]
         if tip.waitForExistence(timeout: 2) { tip.tap() }
@@ -64,7 +63,7 @@ final class PhoneTests: XCTestCase {
         app.launchArguments = ["-demo"]
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons["Agent"].firstMatch.tap()
+        showAgentTerminal(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
         return app

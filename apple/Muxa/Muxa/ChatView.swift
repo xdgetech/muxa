@@ -257,6 +257,9 @@ struct Composer: View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Message the agent", text: $text, axis: .vertical)
                 .lineLimit(1...8)
+                // Prompts carry slash commands, paths and code that a phone keyboard would "fix".
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .focused($focused)
                 .onKeyPress(.return, phases: .down) { press in
                     if press.modifiers.contains(.shift) { return .ignored }

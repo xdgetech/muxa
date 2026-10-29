@@ -64,13 +64,14 @@ struct PaneScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        // A phone's bar has no room for the picker on the right; it goes after Back.
+        // A phone's bar has no room for everything on the right: the picker goes after
+        // Back, and Documents into More. Not in the title's place: the title menu takes its taps.
         if phoneLayout {
             ToolbarItem(placement: .topBarLeading) { viewPicker }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if !phoneLayout { viewPicker }
-            if model.canReadDocs {
+            if model.canReadDocs, !phoneLayout {
                 Button { model.openReader() } label: {
                     // A dot when the repo has uncommitted changes to look at.
                     Image(systemName: Icon.document)
@@ -83,6 +84,9 @@ struct PaneScreen: View {
                 .accessibilityLabel(model.changeCount > 0 ? "Documents, \(model.changeCount) changed files" : "Documents")
             }
             Menu {
+                if model.canReadDocs, phoneLayout {
+                    Button(documentsTitle, systemImage: Icon.document) { model.openReader() }
+                }
                 Picker(selection: fitBinding) {
                     Label("Automatic", systemImage: "rectangle.dashed").tag(PaneFit?.none)
                     Label("Readable", systemImage: "textformat.size").tag(PaneFit?.some(.readable))
@@ -127,6 +131,10 @@ struct PaneScreen: View {
         case .agent: "Agent"
         case .shell: "Shell"
         }
+    }
+
+    private var documentsTitle: String {
+        model.changeCount > 0 ? "Documents (\(model.changeCount) changed)" : "Documents"
     }
 
     private var fitBinding: Binding<PaneFit?> {

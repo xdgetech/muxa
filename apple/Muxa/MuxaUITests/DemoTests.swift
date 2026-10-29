@@ -7,6 +7,12 @@ final class DemoTests: XCTestCase {
         AnimationIdle.bound
     }
 
+    override func setUp() {
+        super.setUp()
+        // A test that failed while rotated must not leave the next one rotated.
+        XCUIDevice.shared.orientation = .portrait
+    }
+
     @MainActor
     func testTypingReachesThePaneAndShortcutsSwitch() throws {
         let app = XCUIApplication()
@@ -61,7 +67,13 @@ final class DemoTests: XCTestCase {
         // Fit width: the grid spans the window and is taller than it.
         let window = app.windows.firstMatch.frame
         sleep(1)
-        XCTAssertEqual(pane.frame.width, window.width, accuracy: 1)
+        if isPhone {
+            // A phone's landscape safe area is narrower than its window.
+            XCTAssertLessThanOrEqual(pane.frame.width, window.width)
+            XCTAssertGreaterThan(pane.frame.width, window.width * 0.8)
+        } else {
+            XCTAssertEqual(pane.frame.width, window.width, accuracy: 1)
+        }
         XCTAssertGreaterThan(pane.frame.height, window.height)
         // The cursor sits near the bottom, so the view scrolled down to it.
         XCTAssertLessThan(pane.frame.minY, window.minY)
@@ -114,7 +126,7 @@ final class DemoTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         // A tap, not Cmd+R: after a hardware key, iPadOS shows no software keyboard.
-        app.buttons["Agent"].firstMatch.tap()
+        showAgentTerminal(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
 
@@ -138,14 +150,18 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
-        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        // A hardware keyboard hides the bar. The iPhone simulator reports the Mac's
+        // keyboard a moment after launch, so the bar is checked on a real phone.
+        try XCTSkipIf(isPhone, "the iPhone simulator reports a hardware keyboard")
         // A tap, not Cmd+R: after a hardware key, iPadOS shows no software keyboard.
-        app.buttons["Agent"].firstMatch.tap()
+        showAgentTerminal(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
         // Without a hardware keyboard, the on-screen one waits for a tap on the pane.
         XCTAssertFalse(app.buttons["keybar-escape"].waitForExistence(timeout: 2))
-        pane.tap()
+        tapPane(pane)
 
         tapWhenReady(app.buttons["keybar-escape"])
         XCTAssertTrue(waitFor(pane, containing: "<Escape>"))
@@ -172,9 +188,15 @@ final class DemoTests: XCTestCase {
         app.launch()
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
-
-        composer.typeKey("d", modifierFlags: [.command, .shift])
+        if isPhone {
+            // A phone's bar has no room: Documents, with its count, is in More.
+            app.buttons["More"].tap()
+            tapWhenReady(app.buttons["Documents (3 changed)"])
+        } else {
+            XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
+            composer.typeKey("d", modifierFlags: [.command, .shift])
+        }
+        showReaderList(app)
         tapWhenReady(app.segmentedControls["reader-tab"].buttons["Changes"])
         let parser = app.descendants(matching: .any)["change-src/parser.rs"].firstMatch
         XCTAssertTrue(parser.waitForExistence(timeout: 5))
@@ -191,10 +213,12 @@ final class DemoTests: XCTestCase {
         save("reader-diff-landscape")
         XCUIDevice.shared.orientation = .portrait
 
+        showReaderList(app)
         tapWhenReady(app.descendants(matching: .any)["change-assets/logo.png"].firstMatch)
         XCTAssertTrue(app.staticTexts["Binary File"].waitForExistence(timeout: 5))
 
         // What the branch's commits changed, below the uncommitted files.
+        showReaderList(app)
         XCTAssertTrue(app.staticTexts["branch-header"].exists)
         XCTAssertEqual(app.staticTexts["branch-header"].label, "Since origin/main · 3 commits")
         tapWhenReady(app.descendants(matching: .any)["branch-change-src/item.rs"].firstMatch)
@@ -211,12 +235,14 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
-        XCUIDevice.shared.orientation = .landscapeLeft
+        // XCUITest finds no row of a Max phone's landscape sidebar hittable.
+        if !isPhone { XCUIDevice.shared.orientation = .landscapeLeft }
         defer { XCUIDevice.shared.orientation = .portrait }
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
 
         composer.typeKey("d", modifierFlags: [.command, .shift])
+        showReaderList(app)
         tapWhenReady(app.segmentedControls["reader-tab"].buttons["Images"])
         let login = app.descendants(matching: .any)["image-build/screenshots/en/login.png"].firstMatch
         tapWhenReady(login)
@@ -230,6 +256,7 @@ final class DemoTests: XCTestCase {
         XCTAssertEqual(position.label, "1 of 2")
 
         // Older runs stay closed until opened.
+        showReaderList(app)
         let ja = app.descendants(matching: .any)["image-build/screenshots/ja/login.png"].firstMatch
         XCTAssertFalse(ja.exists)
         tapWhenReady(app.descendants(matching: .any)["image-folder-build/screenshots/ja"].firstMatch)
@@ -339,7 +366,7 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(card.staticTexts["rm -rf build"].exists)
         XCTAssertTrue(card.buttons["approval-terminal"].exists)
         save("approval-permission")
-        card.buttons["approval-Allow"].tap()
+        tapButton(card.buttons["approval-Allow"])
         XCTAssertTrue(card.waitForNonExistence(timeout: 5))
 
         composer.tap()
@@ -347,7 +374,7 @@ final class DemoTests: XCTestCase {
         app.buttons["send"].tap()
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertTrue(card.staticTexts["Which format should the config use?"].exists)
-        card.buttons["approval-JSON"].tap()
+        tapButton(card.buttons["approval-JSON"])
         XCTAssertTrue(card.waitForNonExistence(timeout: 5))
 
         // The keys went to the pane itself.
@@ -435,14 +462,15 @@ final class DemoTests: XCTestCase {
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         composer.typeKey("d", modifierFlags: [.command, .shift])
-        XCTAssertTrue(app.staticTexts["Reader plan"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["README.md"].exists)
 
         // The plan opens first; the agent's edit shows up without a reload.
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.staticTexts["Phases"].waitForExistence(timeout: 10))
         XCTAssertTrue(web.staticTexts["Updated by the agent while you read."].waitForExistence(timeout: 10))
         save("reader-plan")
+        showReaderList(app)
+        XCTAssertTrue(app.staticTexts["Reader plan"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["README.md"].exists)
 
         app.staticTexts["README.md"].tap()
         XCTAssertTrue(web.staticTexts["make sandbox"].waitForExistence(timeout: 10))
@@ -450,8 +478,8 @@ final class DemoTests: XCTestCase {
         web.links["website"].tap()
         let open = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'Open example.com'")).firstMatch
         XCTAssertTrue(open.waitForExistence(timeout: 5))
-        // On iPad the question is a popover: tapping outside it says no.
-        app.otherElements["PopoverDismissRegion"].firstMatch.tap()
+        // The question is a popover: tapping outside it says no.
+        dismissPopover(app)
         XCTAssertTrue(open.waitForNonExistence(timeout: 5))
         web.links["design"].tap()
         XCTAssertTrue(web.staticTexts["Design"].waitForExistence(timeout: 10))
@@ -476,22 +504,26 @@ final class DemoTests: XCTestCase {
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        composer.typeKey("r", modifierFlags: .command)
-        let pane = app.descendants(matching: .any)["pane"].firstMatch
-        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
-        XCTAssertTrue(waitForFocus(pane))
-        save("portrait-pane")
+        // Focus comes back by itself only with a hardware keyboard, which the iPhone
+        // simulator reports only some of the time.
+        if !isPhone {
+            composer.typeKey("r", modifierFlags: .command)
+            let pane = app.descendants(matching: .any)["pane"].firstMatch
+            XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+            XCTAssertTrue(waitForFocus(pane))
+            save("portrait-pane")
 
-        pane.typeKey("k", modifierFlags: .command)
-        let close = app.buttons["Close"]
-        XCTAssertTrue(close.waitForExistence(timeout: 5))
-        close.tap()
-        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
-        app.typeText("back")
-        XCTAssertTrue(waitFor(pane, containing: "$ back"))
+            pane.typeKey("k", modifierFlags: .command)
+            let close = app.buttons["Close"]
+            XCTAssertTrue(close.waitForExistence(timeout: 5))
+            close.tap()
+            XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+            app.typeText("back")
+            XCTAssertTrue(waitFor(pane, containing: "$ back"))
+        }
 
         // The sidebar: hosts, and the connected host's sessions.
-        app.buttons["Show Sidebar"].firstMatch.tap()
+        showSidebar(app)
         XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
         // Sessions are grouped by repo, untagged ones last.
         XCTAssertTrue(app.staticTexts["app"].exists)
