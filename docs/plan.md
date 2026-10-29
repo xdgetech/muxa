@@ -24,7 +24,7 @@ What works today:
 ## Next
 
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
-- The Android client: phones and foldables, designed in ADR 0013.
+- The Android client: phones, tablets and foldables, designed in ADR 0013.
 
 ## Later
 
