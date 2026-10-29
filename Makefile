@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -47,9 +47,10 @@ test-apple-tmux:
 lint-sh:
 	$(SHELLCHECK) -x $(SHELL_SCRIPTS)
 
-# The iPad app. The Xcode project is generated from apple/Muxa/project.yml (XcodeGen).
+# The iPad and iPhone app. The Xcode project is generated from apple/Muxa/project.yml (XcodeGen).
 # SwiftTerm has a build plugin; command-line builds skip Xcode's trust prompt for it.
 MUXA_SIM ?= iPad mini (A17 Pro)
+MUXA_SIM_IPHONE ?= iPhone 18 Pro Max
 XCODEBUILD = xcodebuild -project apple/Muxa/Muxa.xcodeproj -scheme Muxa -skipPackagePluginValidation
 
 app-project:
@@ -61,6 +62,10 @@ build-app: app-project
 # UI test against the in-app demo bridge; no host needed.
 test-app: app-project
 	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM)' test
+
+# The same UI test on an iPhone.
+test-app-iphone: app-project
+	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM_IPHONE)' test
 
 # Renders the icon's light, dark and tinted images from apple/Muxa/Art/app-icon.swift.
 app-icon:

@@ -98,12 +98,12 @@ struct HostEditor: View {
                         .textContentType(.password)
                         .submitLabel(.go)
                         .onSubmit { if canSetUp { setUp() } }
-                    Button("Add This iPad's Key and Connect") { setUp() }
+                    Button("Add This Device's Key and Connect") { setUp() }
                         .disabled(!canSetUp)
                 } header: {
                     Text("First Connection")
                 } footer: {
-                    Text("Logs in once with your password and adds this iPad's key to ~/.ssh/authorized_keys, restricted to the bridge. The password is not stored.")
+                    Text("Logs in once with your password and adds this device's key to ~/.ssh/authorized_keys, restricted to the bridge. The password is not stored.")
                 }
                 if let line = model.authorizedKeyLine(command: draft.command) {
                     Section {
@@ -115,7 +115,7 @@ struct HostEditor: View {
                             copied = true
                         }
                     } header: {
-                        Text("This iPad's Key")
+                        Text("This Device's Key")
                     } footer: {
                         Text("Or add this line to ~/.ssh/authorized_keys on the host yourself.")
                     }
@@ -176,7 +176,7 @@ struct HostEditor: View {
         model.hosts.host(draft.id).map(draft.keepsHostKey(of:)) ?? false
     }
 
-    /// A new host connects right away. With a password, it adds this iPad's key first;
+    /// A new host connects right away. With a password, it adds this device's key first;
     /// without one, a host that refuses the key says how to set it up.
     private func connect() {
         if !password.isEmpty {

@@ -23,6 +23,9 @@ final class AppModel {
     var showSwitcher = false
     /// Bumped when a sheet closes, so the pane takes the keyboard back.
     private(set) var focusRequest = 0
+    /// Bumped when the user asks for the detail: a connection or a session. On a
+    /// phone the detail is pushed over the sidebar then.
+    private(set) var detailRequest = 0
     /// Set by a DEBUG launch argument: an in-app bridge instead of SSH.
     let demo: Bool
 
@@ -89,6 +92,7 @@ final class AppModel {
         connectError = nil
         connectFix = nil
         connecting = true
+        detailRequest += 1
         defer { connecting = false }
         do {
             try await session.connect({ try await self.open(host) }, samePanes: sameHost)
@@ -128,7 +132,7 @@ final class AppModel {
 
     func cancelTrust() {
         if case .setUp = afterTrust {
-            connectError = "The host key was not trusted, so this iPad's key was not added."
+            connectError = "The host key was not trusted, so this device's key was not added."
             connectFix = .addKey
         }
         untrustedKey = nil
@@ -220,6 +224,7 @@ final class AppModel {
 
     func open(_ s: Session) async {
         guard let pane = s.defaultPane else { return }
+        detailRequest += 1
         await watch(pane.id)
     }
 

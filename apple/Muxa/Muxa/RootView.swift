@@ -2,15 +2,18 @@ import MuxaSession
 import SwiftUI
 
 /// Hosts and sessions in the sidebar, the pane in the detail. The sidebar hides
-/// once a pane is open, so the pane gets the full width.
+/// once a pane is open, so the pane gets the full width. On a phone the two are
+/// a stack, and an open pane is pushed.
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var columns: NavigationSplitViewVisibility = .all
+    /// Collapsed, `columns` is ignored; this picks the column instead.
+    @State private var compactColumn: NavigationSplitViewColumn = .sidebar
     @State private var editing: HostDraft?
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView(columnVisibility: $columns) {
+        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
             Sidebar(editing: $editing)
         } detail: {
             // Under the navigation bar, so it never covers the toolbar.
@@ -29,10 +32,17 @@ struct RootView: View {
             model.sessionsChanged(from: old, to: new)
         }
         .onChange(of: model.session.watchedPane) { _, pane in
-            if pane != nil, model.isConnected { columns = .detailOnly }
+            if pane != nil, model.isConnected {
+                columns = .detailOnly
+                compactColumn = .detail
+            }
         }
+        .onChange(of: model.detailRequest) { compactColumn = .detail }
         .onChange(of: model.isConnected) { _, connected in
-            if !connected { columns = .all }
+            if !connected {
+                columns = .all
+                compactColumn = .sidebar
+            }
         }
         .sheet(item: $editing, onDismiss: model.refocusPane) { draft in
             HostEditor(draft: draft)
@@ -86,7 +96,7 @@ struct DetailView: View {
         if model.isConnected, model.session.watchedPane != nil {
             PaneScreen()
         } else if model.addingKey, let host = model.currentHost {
-            ProgressView("Adding this iPad's key to \(host.title)…")
+            ProgressView("Adding this device's key to \(host.title)…")
         } else if model.connecting, let host = model.currentHost {
             ProgressView("Connecting to \(host.title)…")
         } else if let error = model.connectError ?? reason, let host = model.currentHost {
