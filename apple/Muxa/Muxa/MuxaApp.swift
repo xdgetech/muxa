@@ -5,9 +5,22 @@ struct MuxaApp: App {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
 
+    @ViewBuilder
+    private var root: some View {
+        #if DEBUG
+        if FoldHarness<RootView>.enabled {
+            FoldHarness { RootView() }
+        } else {
+            RootView()
+        }
+        #else
+        RootView()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
-            RootView()
+            root
                 .environment(model)
                 .tint(Theme.accent)
                 .task { await model.resume() }

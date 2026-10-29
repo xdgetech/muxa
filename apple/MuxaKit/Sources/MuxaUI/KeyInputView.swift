@@ -56,6 +56,29 @@ public final class KeyInputView: UIView, UITextInput {
     }
     public var hasText: Bool { true }
 
+    /// A new layout, such as a fold, can move this view to another superview in the
+    /// same window. UIKit resigns it on the way, and it takes the keyboard back. A
+    /// resign that leaves it in place, such as hiding the keyboard, stays.
+    public override func resignFirstResponder() -> Bool {
+        let before = ancestors
+        guard super.resignFirstResponder() else { return false }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil, !self.isFirstResponder, self.ancestors != before else { return }
+            self.becomeFirstResponder()
+        }
+        return true
+    }
+
+    private var ancestors: [ObjectIdentifier] {
+        var ids: [ObjectIdentifier] = []
+        var view = superview
+        while let v = view {
+            ids.append(ObjectIdentifier(v))
+            view = v.superview
+        }
+        return ids
+    }
+
     public func insertText(_ text: String) {
         send(keyBar.type(composition.insert(text)))
     }
