@@ -5,14 +5,15 @@ import SwiftUI
 
 struct PaneScreen: View {
     @Environment(AppModel.self) private var model
-    /// Nil: fit the width in a wide view, the whole pane otherwise.
-    @State private var fit: PaneTerminalView.FitMode?
+    @Environment(\.phoneLayout) private var phoneLayout
 
     var body: some View {
         ZStack(alignment: .bottom) {
             // Fits above an on-screen keyboard, so every row stays visible. It stays
             // under the Pretty view so switching back is instant.
-            PaneHost(session: model.session, fit: fit, focus: model.showsPretty ? nil : model.focusRequest)
+            PaneHost(
+                session: model.session, fit: model.paneFit, focus: model.showsPretty ? nil : model.focusRequest,
+                onPinch: { model.paneFit = $0 })
             if model.showsPretty {
                 ChatView(log: model.chat)
             }
@@ -63,15 +64,12 @@ struct PaneScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        // A phone's bar has no room for the picker on the right; it goes after Back.
+        if phoneLayout {
+            ToolbarItem(placement: .topBarLeading) { viewPicker }
+        }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Picker("View", selection: viewBinding) {
-                ForEach(model.paneViews, id: \.self) { view in
-                    Text(Self.title(view)).tag(view)
-                }
-            }
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .accessibilityIdentifier("view-mode")
+            if !phoneLayout { viewPicker }
             if model.canReadDocs {
                 Button { model.openReader() } label: {
                     // A dot when the repo has uncommitted changes to look at.
@@ -85,11 +83,12 @@ struct PaneScreen: View {
                 .accessibilityLabel(model.changeCount > 0 ? "Documents, \(model.changeCount) changed files" : "Documents")
             }
             Menu {
-                Picker(selection: $fit) {
-                    Label("Automatic", systemImage: "rectangle.dashed").tag(PaneTerminalView.FitMode?.none)
-                    Label("Fit Width", systemImage: "arrow.left.and.right").tag(PaneTerminalView.FitMode?.some(.width))
+                Picker(selection: fitBinding) {
+                    Label("Automatic", systemImage: "rectangle.dashed").tag(PaneFit?.none)
+                    Label("Readable", systemImage: "textformat.size").tag(PaneFit?.some(.readable))
+                    Label("Fit Width", systemImage: "arrow.left.and.right").tag(PaneFit?.some(.width))
                     Label("Fit Whole Pane", systemImage: "arrow.up.left.and.arrow.down.right")
-                        .tag(PaneTerminalView.FitMode?.some(.whole))
+                        .tag(PaneFit?.some(.whole))
                 } label: {
                     Label("Terminal Size", systemImage: Icon.fit)
                 }
@@ -111,12 +110,27 @@ struct PaneScreen: View {
         }
     }
 
+    private var viewPicker: some View {
+        Picker("View", selection: viewBinding) {
+            ForEach(model.paneViews, id: \.self) { view in
+                Text(Self.title(view)).tag(view)
+            }
+        }
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .accessibilityIdentifier("view-mode")
+    }
+
     static func title(_ view: AppModel.PaneView) -> String {
         switch view {
         case .chat: "Chat"
         case .agent: "Agent"
         case .shell: "Shell"
         }
+    }
+
+    private var fitBinding: Binding<PaneFit?> {
+        Binding(get: { model.paneFit }, set: { model.paneFit = $0 })
     }
 
     private var viewBinding: Binding<AppModel.PaneView> {
@@ -140,12 +154,14 @@ extension View {
 /// The terminal view with a key input view over it, wired to the session.
 struct PaneHost: UIViewRepresentable {
     let session: PaneSession
-    /// Nil picks the mode from the view's shape.
-    var fit: PaneTerminalView.FitMode?
+    /// Nil lets the view pick (`PaneFit.automatic`).
+    var fit: PaneFit?
     /// A new value takes the keyboard back, for example after a sheet closed,
     /// when a hardware keyboard is connected.
     /// Nil while another view (Pretty) has the keyboard.
     var focus: Int?
+    /// The user pinched to another fit.
+    var onPinch: (PaneFit) -> Void = { _ in }
 
     func makeUIView(context: Context) -> PaneContainer {
         let view = PaneContainer()
@@ -164,6 +180,7 @@ struct PaneHost: UIViewRepresentable {
 
     func updateUIView(_ view: PaneContainer, context: Context) {
         view.fitOverride = fit
+        view.onPinch = onPinch
         if let focus, view.focusRequest != focus {
             view.focusRequest = focus
             // After SwiftUI has removed whatever held the keyboard (a sheet, the composer).
@@ -172,16 +189,18 @@ struct PaneHost: UIViewRepresentable {
     }
 }
 
-/// Holds the pane in a vertical scroll view. In `.width` mode the grid is taller
-/// than the view; the scroll view follows the cursor unless the user is reading.
+/// Holds the pane in a scroll view. In `.width` mode the grid can be taller than
+/// the view, in `.readable` also wider; the scroll view follows the cursor unless
+/// the user is reading.
 final class PaneContainer: UIView, UIScrollViewDelegate {
     let terminal = PaneTerminalView()
     let input = KeyInputView()
     private let scroll = UIScrollView()
     private var cursorWasVisible = true
     var focusRequest = 0
+    var onPinch: (PaneFit) -> Void = { _ in }
 
-    var fitOverride: PaneTerminalView.FitMode? {
+    var fitOverride: PaneFit? {
         didSet { if fitOverride != oldValue { setNeedsLayout() } }
     }
 
@@ -190,7 +209,8 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         backgroundColor = .black
         scroll.backgroundColor = .black
         scroll.alwaysBounceVertical = false
-        scroll.showsHorizontalScrollIndicator = false
+        scroll.alwaysBounceHorizontal = false
+        scroll.isDirectionalLockEnabled = true
         scroll.indicatorStyle = .white
         scroll.contentInsetAdjustmentBehavior = .never
         scroll.keyboardDismissMode = .none
@@ -205,15 +225,20 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         // The input view has the grid's frame, so the terminal's coordinates are its own.
         input.caretFrame = { [terminal] in terminal.cursorFrame }
         input.addGestureRecognizer(UITapGestureRecognizer(target: input, action: #selector(UIResponder.becomeFirstResponder)))
+        input.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched)))
         terminal.onUpdate = { [weak self] reset in self?.contentChanged(reset: reset) }
         terminal.onGridChange = { [weak self] in self?.layoutContent() }
     }
 
     required init?(coder: NSCoder) { nil }
 
-    /// Wide views fit the width; the rest fit the whole pane.
-    private var mode: PaneTerminalView.FitMode {
-        fitOverride ?? (bounds.width > bounds.height ? .width : .whole)
+    private var mode: PaneFit {
+        fitOverride ?? terminal.automaticFit(in: bounds.size)
+    }
+
+    @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
+        guard pinch.state == .ended, let fit = PaneFit.pinched(scale: pinch.scale) else { return }
+        onPinch(fit)
     }
 
     override func layoutSubviews() {
@@ -224,10 +249,12 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     /// Sizes the scroll content to the grid in the current mode.
     private func layoutContent() {
         scroll.frame = bounds
-        let mode = mode
+        guard bounds.width > 0, bounds.height > 0 else { return }
         terminal.fitMode = mode
-        let height = mode == .width ? max(terminal.gridHeight(forWidth: bounds.width), bounds.height) : bounds.height
-        let content = CGRect(x: 0, y: 0, width: bounds.width, height: height)
+        terminal.viewport = bounds.size
+        let grid = terminal.gridSize(in: bounds.size)
+        let content = CGRect(
+            x: 0, y: 0, width: max(grid.width, bounds.width), height: max(grid.height, bounds.height))
         if terminal.frame != content {
             terminal.frame = content
             input.frame = content
@@ -258,12 +285,15 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         scroll.bounds.contains(terminal.cursorFrame)
     }
 
-    /// Brings the cursor row into view, but never while the user is scrolling.
+    /// Brings the cursor cell into view, with a few cells around it, but never
+    /// while the user is scrolling.
     private func followCursor() {
-        guard !scroll.isDragging, !scroll.isDecelerating, scroll.contentSize.height > scroll.bounds.height else { return }
+        guard !scroll.isDragging, !scroll.isDecelerating else { return }
+        let scrolls = scroll.contentSize.height > scroll.bounds.height || scroll.contentSize.width > scroll.bounds.width
         let caret = terminal.cursorFrame
-        guard caret.height > 0 else { return }
-        scroll.scrollRectToVisible(CGRect(x: 0, y: caret.minY, width: 1, height: caret.height), animated: false)
+        guard scrolls, caret.height > 0 else { return }
+        let around = scroll.contentSize.width > scroll.bounds.width ? caret.width * 4 : 0
+        scroll.scrollRectToVisible(caret.insetBy(dx: -around, dy: 0), animated: false)
         cursorWasVisible = true
     }
 

@@ -106,9 +106,4 @@ final class ShowcaseTests: XCTestCase {
         }
         try png.write(to: dir.appendingPathComponent("\(name).png"))
     }
-
-    private func waitFor(_ element: XCUIElement, containing text: String) -> Bool {
-        let exp = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", text), object: element)
-        return XCTWaiter.wait(for: [exp], timeout: 5) == .completed
-    }
 }

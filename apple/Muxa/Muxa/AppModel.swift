@@ -41,6 +41,9 @@ final class AppModel {
     /// Agent panes the user switched to Raw. Every other agent pane shows Pretty when it can.
     private(set) var rawPanes: Set<String> = []
     var showReader = false
+    /// The Terminal Size the user picked, by menu or pinch. Nil: the view picks.
+    /// Kept here, so it survives a fold or a rotation.
+    var paneFit: PaneFit?
     /// The New Task sheet, with the repo it starts in.
     var newTask: TaskDraft?
     /// An agent elsewhere that wants attention, shown for a few seconds.

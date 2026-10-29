@@ -7,17 +7,18 @@ import UIKit
 /// It never asks for another size: the pane belongs to the desktop layout.
 @MainActor
 public final class PaneTerminalView: UIView, PaneRenderer {
-    /// `.whole` fits the whole grid in the view. `.width` fits the columns only:
-    /// the grid is then taller than the view, and a scroll view around it shows a part.
-    public enum FitMode: Sendable {
-        case whole, width
-    }
+    public typealias FitMode = PaneFit
 
     public let terminalView: TerminalView
     public private(set) var cols = 80
     public private(set) var rows = 24
     public var fitMode: FitMode = .whole {
         didSet { if fitMode != oldValue { setNeedsLayout() } }
+    }
+    /// The visible part of a scroll view around this view; the font is picked for it.
+    /// Zero means this view's own size.
+    public var viewport: CGSize = .zero {
+        didSet { if viewport != oldValue { setNeedsLayout() } }
     }
     /// Called after new bytes or a new screen, so a scroll view can follow the cursor.
     public var onUpdate: (_ reset: Bool) -> Void = { _ in }
@@ -29,7 +30,7 @@ public final class PaneTerminalView: UIView, PaneRenderer {
     public var onScreenLost: () -> Void = {}
     private var fed = false
     private let replies = DropReplies()
-    private var fitted: (size: CGSize, cols: Int, rows: Int, mode: FitMode)?
+    private var fitted: (size: CGSize, viewport: CGSize, cols: Int, rows: Int, mode: FitMode)?
     private var cell: CGSize?
 
     public override init(frame: CGRect) {
@@ -77,13 +78,29 @@ public final class PaneTerminalView: UIView, PaneRenderer {
             width: cell.width, height: cell.height)
     }
 
-    /// The height the grid needs at `width` in `.width` mode.
-    public func gridHeight(forWidth width: CGFloat) -> CGFloat {
+    /// The mode a view of `viewport` size picks for itself.
+    public func automaticFit(in viewport: CGSize) -> FitMode {
         let metrics = CellMetrics(scale: displayScale)
-        let size = CGSize(width: width, height: .greatestFiniteMagnitude)
-        let font = UIFont.monospacedSystemFont(
-            ofSize: metrics.largestFontSize(cols: cols, rows: nil, in: size), weight: .regular)
-        return (metrics.cell(for: font).height * CGFloat(rows)).rounded(.up) + 1
+        return .automatic(
+            wide: viewport.width > viewport.height,
+            wholeFont: metrics.largestFontSize(cols: cols, rows: rows, in: viewport),
+            widthFont: metrics.largestFontSize(cols: cols, rows: nil, in: viewport))
+    }
+
+    /// The size the grid needs in `fitMode` for a view of `viewport` size.
+    public func gridSize(in viewport: CGSize) -> CGSize {
+        let metrics = CellMetrics(scale: displayScale)
+        let cell = metrics.cell(for: font(in: viewport, metrics: metrics))
+        return CGSize(
+            width: (cell.width * CGFloat(cols)).rounded(.up) + 1,
+            height: (cell.height * CGFloat(rows)).rounded(.up) + 1)
+    }
+
+    private func font(in viewport: CGSize, metrics: CellMetrics) -> UIFont {
+        let size = fitMode.fontSize(
+            wholeFont: fitMode == .whole ? metrics.largestFontSize(cols: cols, rows: rows, in: viewport) : 0,
+            widthFont: fitMode == .whole ? 0 : metrics.largestFontSize(cols: cols, rows: nil, in: viewport))
+        return UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
     private var displayScale: CGFloat {
@@ -104,12 +121,17 @@ public final class PaneTerminalView: UIView, PaneRenderer {
     private func fit(force: Bool) {
         let size = bounds.size
         guard size.width > 0, size.height > 0 else { return }
-        if !force, let f = fitted, f.size == size, f.cols == cols, f.rows == rows, f.mode == fitMode { return }
-        fitted = (size, cols, rows, fitMode)
+        let viewport = viewport == .zero ? size : viewport
+        if !force, let f = fitted, f.size == size, f.viewport == viewport, f.cols == cols, f.rows == rows,
+            f.mode == fitMode
+        {
+            return
+        }
+        fitted = (size, viewport, cols, rows, fitMode)
 
         let metrics = CellMetrics(scale: displayScale)
-        let fontSize = metrics.largestFontSize(cols: cols, rows: fitMode == .whole ? rows : nil, in: size)
-        let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let font = font(in: viewport, metrics: metrics)
+        let fontSize = font.pointSize
         let cell = metrics.cell(for: font)
         self.cell = cell
 
@@ -117,7 +139,7 @@ public final class PaneTerminalView: UIView, PaneRenderer {
         let width = cell.width * CGFloat(cols) + min(0.5, cell.width / 2)
         let height = cell.height * CGFloat(rows) + min(0.5, cell.height / 2)
         terminalView.frame = CGRect(
-            x: ((size.width - width) / 2).rounded(.down), y: 0, width: width, height: height)
+            x: max(0, ((size.width - width) / 2).rounded(.down)), y: 0, width: width, height: height)
         // The font last: setting it recomputes cols and rows from the frame just set.
         if terminalView.font.pointSize != fontSize { terminalView.font = font }
 
