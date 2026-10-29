@@ -1,8 +1,8 @@
 # muxa
 
-Work on the AI coding agents you already run in tmux, from an iPad with a keyboard. muxa does not change your desktop layout.
+Work on the AI coding agents you already run in tmux, from an iPad with a keyboard, or from an iPhone. muxa does not change your desktop layout.
 
-> **Status: pre-alpha.** The bridge, a terminal client and the iPad app are built, tested, and run on a real iPad. The app is not on the App Store yet. See [`docs/plan.md`](docs/plan.md).
+> **Status: pre-alpha.** The bridge, a terminal client and the iPad and iPhone app are built and tested. The app runs on a real iPad. The app is not on the App Store yet. See [`docs/plan.md`](docs/plan.md).
 
 <p>
   <img src="docs/images/chat.jpg" width="49%" alt="An agent's conversation as a native chat, waiting for an answer">
@@ -34,7 +34,7 @@ flowchart LR
 ## Requirements
 
 - Host: macOS or Linux, tmux ≥ 3.2, an SSH server.
-- Client: iPadOS 17+. iPhone and Android come later.
+- Client: iPadOS 17+ or iOS 17+ (iPhone, including the folding iPhone Duo). Android comes later (ADR 0013).
 
 ## Setup
 
@@ -80,7 +80,8 @@ make check      # fmt, clippy, tests, shellcheck, harness tests
 make sandbox    # an isolated tmux server to play with: tmux -L muxa-sandbox attach
 make repro      # re-check the tmux facts the design relies on
 make test-apple # Swift package tests (Xcode toolchain)
-make test-app   # iPad app UI test in the simulator, against a built-in demo bridge
+make test-app   # app UI tests on an iPad simulator, against a built-in demo bridge
+make test-app-iphone # the same on an iPhone simulator
 ```
 
 Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Coding agents: [`AGENTS.md`](AGENTS.md). Security: [`SECURITY.md`](SECURITY.md).

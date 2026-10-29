@@ -2,7 +2,7 @@
 
 Instructions for coding agents working in this repo. Humans: see `README.md` and `CONTRIBUTING.md`.
 
-muxa lets you work on your **existing** tmux panes from an iPad, without changing the desktop layout. A Rust bridge runs on the host over SSH and speaks tmux control mode. Native clients render one pane at its real size. Status: pre-alpha. The status and roadmap are in `docs/plan.md`.
+muxa lets you work on your **existing** tmux panes from an iPad or an iPhone, without changing the desktop layout. A Rust bridge runs on the host over SSH and speaks tmux control mode. Native clients render one pane at its real size. Status: pre-alpha. The status and roadmap are in `docs/plan.md`.
 
 ## Read first
 
@@ -19,7 +19,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents and images, `src/changes/` its diffs, `src/tasks/` starts and closes tasks (ADR 0007), and `src/states.rs` follows agent states (ADR 0008). |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
-| `apple/Muxa` | the iPad app (SwiftUI). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo (DEBUG). |
+| `apple/Muxa` | the iPad and iPhone app (SwiftUI). The layout follows size classes, not the device (ADR 0012). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo, and add `-foldable` to fold and unfold it like an iPhone Duo (DEBUG). |
 | `scripts/` | harness: sandbox, layout snapshot, repro scripts, the agent guard hook. |
 | `tests/harness/` | bats tests for the harness itself. |
 
@@ -32,7 +32,8 @@ muxa lets you work on your **existing** tmux panes from an iPad, without changin
 | `make repro` | re-checks every tmux fact in `docs/findings/`. |
 | `make test-apple` | MuxaKit tests (macOS, Xcode toolchain): protocol fixtures, SwiftTerm scenario replay, the pane session. The Makefile uses `/Applications/Xcode.app` when xcode-select points to the Command Line Tools; set `DEVELOPER_DIR` to use another Xcode. |
 | `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
-| `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the iPad app, or run its UI test against the in-app demo bridge (`MUXA_SIM` picks the simulator). |
+| `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the app, or run its UI tests on an iPad against the in-app demo bridge (`MUXA_SIM` picks the simulator). |
+| `make test-app-iphone` | the same UI tests on an iPhone (`MUXA_SIM_IPHONE`). |
 | `MUXA_DEVICE=<name or id> make install-ipad` | **humans only**: build, sign and run on a paired iPad. It creates signing assets on the developer's Apple account. |
 | `make screenshots` | App Store screenshots (captioned in English and Japanese, 2752x2064) into `build/screenshots/appstore/{en,ja}`, README images into `docs/images/`. Runs `ShowcaseTests` against the demo's `-showcase` data on its own simulator. |
 | `make app-icon` | renders the icon's light, dark and tinted images from `apple/Muxa/Art/app-icon.swift`. |
