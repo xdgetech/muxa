@@ -26,7 +26,7 @@ Nothing is planned yet. Candidates are under Later.
 
 ## Later
 
-muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008; until then, the README shows tmux-agents with ntfy), `pause-after` for slow links, scrollback, watching several panes, mouse, iPhone and Android, input leases for two typing devices, and a shared Rust client core (UniFFI).
+muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008), `pause-after` for slow links, scrollback, watching several panes, mouse, iPhone and Android, input leases for two typing devices, and a shared Rust client core (UniFFI).
 
 ## Design
 

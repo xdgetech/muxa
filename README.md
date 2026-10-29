@@ -45,7 +45,7 @@ flowchart LR
 
 Documents: Cmd+Shift+D opens the Reader for the shown pane. Its tabs list that session's Claude plan and the repo's Markdown files (Docs), the repo's uncommitted changes and what the branch's commits changed since it left `main` (Changes), and the repo's images as a folder tree (Images). Images include files in folders git ignores, such as QA screenshots in `build/`. It renders documents with mermaid diagrams and changes as diffs, without any network access, and updates as the files change. An image zooms with a pinch, and ← and → step through its folder.
 
-New tasks: Cmd+N, or **+** on a repo in the sidebar, starts a task: a git worktree on a branch and a session with an agent in it. With [tmux-agents](https://github.com/xdgetech/tmux-agents) installed, its `new.sh` does the work, so the task looks the same as one started on the desktop. Without it, the bridge makes the worktree in the same place and starts `claude` in one pane (`--task-command` picks another agent).
+New tasks: Cmd+N, or **+** on a repo in the sidebar, starts a task: a git worktree on a branch and a session with an agent in it. The bridge makes the worktree under `.worktrees/` next to the repo and starts `claude` in one pane (`--task-command` picks another agent). With the tmux-agents desktop plugin installed, its `new.sh` does the work instead, so the task looks the same as one started on the desktop.
 
 Closing a task: **Close Task…** in a session's menu (sidebar) or in the pane's **…** menu. Close removes the worktree when its branch is merged; you can also keep it, or remove it anyway. A worktree with uncommitted changes is never removed, and the branch is always kept.
 
@@ -54,21 +54,6 @@ Approvals: when Claude Code waits on a permission, a question or its plan, Chat 
 Alerts: while the app is open, a banner tells you when an agent in another session needs your input, finishes, or fails. Tap it to go there.
 
 Keys: Cmd+K switch session, Cmd+N new task, Cmd+J agent/terminal, Cmd+Shift+[ and ] previous/next session, Cmd+1…9 session by number. Every other key goes to the pane. Without a hardware keyboard, a bar above the on-screen keyboard adds Esc, Tab, Shift+Tab, Ctrl (for the next key), the arrows and ^C.
-
-## Notifications while the app is closed
-
-iOS suspends the app in the background, and muxa has no server to push from. To get notified anyway, let tmux-agents send its notifications to a push service. For example, with [ntfy](https://ntfy.sh) and its iOS app:
-
-1. Pick a topic name nobody can guess (anyone who knows it can read it on ntfy.sh), or run your own ntfy server.
-2. Save this as `~/.local/bin/agents-ntfy` on the host and make it executable. tmux-agents calls it with the session name and the message, and nothing else is sent.
-   ```sh
-   #!/bin/sh
-   curl -fsS -H "Title: $1" -d "$2" "https://ntfy.sh/<your topic>" >/dev/null
-   ```
-3. Add `set -g @agents_notify_cmd "$HOME/.local/bin/agents-ntfy"` to your tmux configuration and reload it.
-4. Subscribe to the topic in the ntfy app.
-
-tmux-agents does not notify for a window shown on an attached client, for example on the Mac's screen.
 
 ## Pane roles
 

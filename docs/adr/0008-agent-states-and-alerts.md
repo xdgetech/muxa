@@ -13,7 +13,7 @@ An agent elsewhere that waits for input, finishes or fails should not go unnotic
 - **The bridge looks every 2 seconds** at each pane's role and agent state, and sends `sessions-changed` when one changed. The time of a state is left out, so a refreshed time alone sends nothing. Clients list again, as they already do for structural changes. The protocol gains no message.
 - **Panes without a state tag get the state their agent records**, through `AgentAdapter::find` (Claude Code: `status` in its session file). Processes are listed only when some pane needs it.
 - **The app compares each new list with the last** (`alerts(since:shown:)` in `MuxaSession`) and shows a short banner for an agent that now waits, finished, or failed. A running agent that becomes idle counts as finished. The shown session and new panes are left out. Tapping the banner opens the session.
-- **While the app is closed, muxa sends nothing.** The README shows how to point tmux-agents' `@agents_notify_cmd` at a push service such as ntfy.
+- **While the app is closed, muxa sends nothing.** A desktop tool can still notify through a push service such as ntfy, for example tmux-agents with `@agents_notify_cmd`.
 
 ## Consequences
 
