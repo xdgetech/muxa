@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -46,6 +46,24 @@ test-apple-tmux:
 
 lint-sh:
 	$(SHELLCHECK) -x $(SHELL_SCRIPTS)
+
+# The Android client (android/, Gradle). The JDK defaults to Android Studio's bundled one.
+ANDROID_STUDIO_JDK := /Applications/Android Studio.app/Contents/jbr/Contents/Home
+ifeq ($(origin JAVA_HOME),undefined)
+ifeq ($(shell test -x "$(ANDROID_STUDIO_JDK)/bin/java" && echo yes),yes)
+export JAVA_HOME := $(ANDROID_STUDIO_JDK)
+endif
+endif
+GRADLEW = ./gradlew --console=plain
+
+# The protocol, terminal, transport and session modules: plain JVM tests, no emulator.
+test-android:
+	cd android && $(GRADLEW) test
+
+# Also runs PaneSession against the real bridge on a throwaway tmux server.
+test-android-tmux:
+	cargo build -p muxa-bridge
+	cd android && MUXA_BRIDGE=$(CURDIR)/target/debug/muxa-bridge $(GRADLEW) :session:test --rerun-tasks
 
 # The iPad and iPhone app. The Xcode project is generated from apple/Muxa/project.yml (XcodeGen).
 # SwiftTerm has a build plugin; command-line builds skip Xcode's trust prompt for it.

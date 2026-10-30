@@ -92,6 +92,7 @@ Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Coding agents: [`AGENTS.md`]
 |---|---|
 | The bridge, the protocol and the terminal client (`crates/`, `protocol/`, `scripts/`) | [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option |
 | The iPad app and its Swift package (`apple/`) | [GPL-3.0-only](apple/LICENSE) |
+| The Android client (`android/`) | [GPL-3.0-only](android/LICENSE) |
 
 The protocol and the bridge are permissive so that anyone can build another client or an agent adapter. The app is GPL. The author also offers it under a separate commercial license, which is how it is distributed on the App Store. For a commercial license, open an issue or contact the author.
 

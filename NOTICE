@@ -17,5 +17,13 @@ apple/MuxaKit/Package.resolved):
 - swift-markdown-ui (MarkdownUI), NetworkImage, MIT
 - swift-cmark, BSD-2-Clause
 
+Libraries the Android client depends on (fetched by Gradle, pinned in
+android/gradle/libs.versions.toml):
+- JediTerm core, Apache-2.0 or LGPL-3.0 (used under Apache-2.0)
+- sshj, Apache-2.0
+- Bouncy Castle, MIT
+- kotlinx.serialization, kotlinx.coroutines, Apache-2.0
+- SLF4J, MIT
+
 Rust crates the bridge and the CLI depend on are listed in Cargo.lock; their
 licenses are MIT, Apache-2.0 or compatible permissive licenses.
