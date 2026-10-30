@@ -1,0 +1,1 @@
+Answer your coding agents from the couch. Muxa shows the Claude Code and Codex sessions already in your tmux, at their real size, and never changes your desktop layout.

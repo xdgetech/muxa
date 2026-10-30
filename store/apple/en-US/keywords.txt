@@ -1,0 +1,1 @@
+tmux,ssh,terminal,ai agent,coding agent,developer,shell,remote,console,cli,devtools,pane

@@ -2,7 +2,7 @@
 
 ## Status
 
-Pre-alpha. The bridge, the terminal client, the iPad and iPhone app and the Android app work. The iOS app runs on a real iPad; the Android app runs on emulators. The app is not on the App Store yet.
+Pre-alpha. The bridge, the terminal client, the iPad and iPhone app and the Android app work. The iOS app runs on a real iPad and iPhone; the Android app on phones and tablets. The store listings, screenshots, privacy policy and release settings are ready (`store/RELEASE.md`); neither app is published yet.
 
 What works today:
 - **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode without taking part in window sizing, and speaks protocol v1 (`protocol/PROTOCOL.md`).
@@ -22,12 +22,15 @@ What works today:
 - **iPhone app** (the same app, ADR 0012): the layout follows the size classes, so a folded iPhone Duo gets the phone layout and an unfolded one the iPad layout, without losing the pane, its screen or the keyboard. On a phone, a pane whose font would go below 9 pt keeps 9 pt and scrolls on both axes.
 
 - **Android app** (ADR 0013): the same features as the iOS app, for phones, tablets and foldables. The layout follows the window and the hinge: a stack when compact, the list beside the pane when wide, the list and the pane on either side of a half-open book fold, and the keys below the hinge on a table. A fold, a rotation or a window resize keeps the connection, the pane, its screen and the keyboard. The pane is drawn from JediTerm at its real size; shortcuts are Ctrl+Shift chords.
+- **Try the Demo** (both apps, every build): sample sessions from the in-app demo bridge, with no host and nothing saved. App Review and Play review use it.
 
 ## Next
 
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
-- Android: two windows on two panes (multi-window), and Play Store screenshots.
+- Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
+- Android: two windows on two panes (multi-window).
+- Android: full R8 (renaming and optimization) for release builds, with a release-build test that connects over SSH. 1.0 only removes unused code (ADR 0014): BouncyCastle, sshj and JediTerm load classes by name.
 
 ## Later
 
@@ -83,6 +86,8 @@ The server:
 | MuxaKit | `make test-apple`; `make test-apple-tmux` against the real bridge |
 | The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, in the simulator against the in-app demo bridge |
 | The Android client | `make test-android`, `make test-android-tmux`, `make lint-android`; `make test-android-app` on a phone, Pixel Tablet and Pixel Fold emulator, against the in-app demo bridge |
+| The store listings | `make lint-store` (in `make check`); `make screenshots` and `make screenshots-android` check every image's size |
+| Try the Demo, in a release build | `TryDemoTests` (iOS) and `TryDemoTest` (Android) on the debug build; the release APK and a Release iOS build by hand |
 | No layout change on a real server | `scripts/layout-snapshot.sh` before and after an attach; the diff is empty |
 
 ## Risks

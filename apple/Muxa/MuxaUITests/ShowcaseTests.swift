@@ -23,6 +23,7 @@ final class ShowcaseTests: XCTestCase {
 
     @MainActor
     func testScreenshots() throws {
+        if isPhone { return try phoneScreenshots() }
         let app = launch()
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -45,7 +46,9 @@ final class ShowcaseTests: XCTestCase {
         XCTAssertTrue(web.staticTexts["verify signature"].waitForExistence(timeout: 10))
         try save("4-plan", in: app)
 
-        app.descendants(matching: .any)["change-src/webhooks/router.rs"].firstMatch.tap()
+        // Changes have their own tab (ADR 0011).
+        tapWhenReady(app.segmentedControls["reader-tab"].buttons["Changes"])
+        tapWhenReady(app.descendants(matching: .any)["change-src/webhooks/router.rs"].firstMatch)
         let added = web.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Job::Receipt'")).firstMatch
         XCTAssertTrue(added.waitForExistence(timeout: 10))
         try save("5-diff", in: app)
@@ -56,13 +59,60 @@ final class ShowcaseTests: XCTestCase {
         try save("6-shell", in: app)
     }
 
+    /// The same story on a phone, in portrait and by touch: the simulator's hardware
+    /// keyboard comes and goes, so no shot depends on a shortcut.
+    @MainActor
+    private func phoneScreenshots() throws {
+        let app = launch()
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["quick-1"].waitForExistence(timeout: 5))
+        try save("1-chat", in: app)
+
+        showAgentTerminal(app)
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        // A cold simulator can take longer than one wait to draw the first screen.
+        XCTAssertTrue(waitFor(pane, containing: "? for shortcuts") || waitFor(pane, containing: "? for shortcuts"),
+                      "the pane shows: \(pane.value ?? "nothing")")
+        try save("2-agent", in: app)
+
+        // A phone's session switcher is its list: every agent with its state.
+        showSidebar(app)
+        XCTAssertTrue(app.buttons["host-Mac mini"].waitForExistence(timeout: 5))
+        try save("3-switcher", in: app)
+        app.buttons.matching(NSPredicate(format: "label CONTAINS 'stripe-webhooks'")).firstMatch.tap()
+        XCTAssertTrue(pane.waitForExistence(timeout: 5))
+
+        tapWhenReady(app.buttons["More"])
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Documents'")).firstMatch)
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.staticTexts["verify signature"].waitForExistence(timeout: 10))
+        try save("4-plan", in: app)
+
+        showReaderList(app)
+        tapWhenReady(app.segmentedControls["reader-tab"].buttons["Changes"])
+        tapWhenReady(app.descendants(matching: .any)["change-src/webhooks/router.rs"].firstMatch)
+        let added = web.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Job::Receipt'")).firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 10))
+        try save("5-diff", in: app)
+        app.buttons["Done"].tap()
+
+        tapWhenReady(app.segmentedControls["view-mode"].buttons["Shell"])
+        XCTAssertTrue(waitFor(pane, containing: "test result: ok. 14 passed"))
+        try save("6-shell", in: app)
+    }
+
     /// Another agent starts waiting a few seconds after launch (`-demo-alerts`).
     @MainActor
     func testAlertScreenshot() throws {
         let app = launch(alerts: true)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        composer.typeKey("j", modifierFlags: .command)
+        if isPhone {
+            showAgentTerminal(app)
+        } else {
+            composer.typeKey("j", modifierFlags: .command)
+        }
         hideKeyboard(app)
         // The showcase alert comes 10 seconds in and stays for 4: no time to settle after it.
         XCTAssertTrue(app.buttons["agent-alert"].waitForExistence(timeout: 15))
@@ -76,8 +126,9 @@ final class ShowcaseTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo", "-showcase"] + (alerts ? ["-demo-alerts"] : [])
         app.launch()
-        // After launch, so every shot has the same orientation.
-        XCUIDevice.shared.orientation = .landscapeLeft
+        // After launch, so every shot has the same orientation: the store's iPad slot is
+        // landscape, its iPhone slot portrait.
+        XCUIDevice.shared.orientation = isPhone ? .portrait : .landscapeLeft
         return app
     }
 

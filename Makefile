@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux build-android lint-android test-android-app app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -14,7 +14,7 @@ endif
 endif
 endif
 
-check: fmt-check clippy test lint-sh test-harness
+check: fmt-check clippy test lint-sh lint-store test-harness
 
 fmt:
 	cargo fmt --all
@@ -47,6 +47,10 @@ test-apple-tmux:
 lint-sh:
 	$(SHELLCHECK) -x $(SHELL_SCRIPTS)
 
+# The store listings in store/ fit each store's limits (store/RELEASE.md).
+lint-store:
+	scripts/check-store-text.sh
+
 # The Android client (android/, Gradle). The JDK defaults to Android Studio's bundled one.
 ANDROID_STUDIO_JDK := /Applications/Android Studio.app/Contents/jbr/Contents/Home
 ifeq ($(origin JAVA_HOME),undefined)
@@ -66,6 +70,14 @@ build-android:
 
 lint-android:
 	cd android && $(GRADLEW) :app:lintDebug
+
+# A signed bundle for Google Play, with the upload key from ~/.gradle/gradle.properties
+# (store/RELEASE.md). Play re-signs it with the app key.
+bundle-android:
+	cd android && $(GRADLEW) :app:bundleRelease
+	@mkdir -p build/release
+	cp android/app/build/outputs/bundle/release/app-release.aab build/release/muxa.aab
+	@echo "Upload: build/release/muxa.aab"
 
 # The app's UI tests against the in-app demo bridge, on the running emulator or device
 # (start one first, e.g. `emulator -avd Pixel_Tablet`). Includes the fold and resize tests.
@@ -97,9 +109,11 @@ test-app: app-project
 test-app-iphone: app-project
 	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM_IPHONE)' test
 
-# Renders the icon's light, dark and tinted images from apple/Muxa/Art/app-icon.swift.
+# Renders the icon from apple/Muxa/Art/app-icon.swift: iOS's light, dark and tinted images,
+# Android's adaptive icon layers, and Play's store icon and feature graphic.
 app-icon:
-	swift apple/Muxa/Art/app-icon.swift apple/Muxa/Muxa/Assets.xcassets/AppIcon.appiconset
+	swift apple/Muxa/Art/app-icon.swift apple/Muxa/Muxa/Assets.xcassets/AppIcon.appiconset \
+		android/app/src/main/res store/play
 
 # App Store screenshots into build/screenshots, README images into docs/images.
 screenshots:
@@ -122,6 +136,21 @@ install-ipad: app-project
 	xcrun devicectl device install app --device '$(MUXA_DEVICE)' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app
 	xcrun devicectl device process launch --terminate-existing --device '$(MUXA_DEVICE)' \
 		"$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app/Info.plist)"
+
+# Google Play screenshots into build/screenshots, from the showcase on a phone and a tablet emulator.
+screenshots-android:
+	scripts/screenshots-android.sh
+
+# Humans only: archives a signed release build and exports the .ipa for App Store Connect.
+# Upload it with Xcode's Organizer or Transporter (store/RELEASE.md).
+RELEASE_DIR = build/release
+archive-ios: app-project
+	@mkdir -p $(RELEASE_DIR)
+	$(XCODEBUILD) -configuration Release -destination 'generic/platform=iOS' \
+		-archivePath $(RELEASE_DIR)/Muxa.xcarchive -allowProvisioningUpdates archive
+	xcodebuild -exportArchive -archivePath $(RELEASE_DIR)/Muxa.xcarchive \
+		-exportOptionsPlist apple/Muxa/Config/ExportOptions.plist -exportPath $(RELEASE_DIR)/ios -allowProvisioningUpdates
+	@echo "Upload: $(RELEASE_DIR)/ios/Muxa.ipa"
 
 # Re-checks every tmux fact the design relies on (docs/findings/tmux-control-mode.md).
 repro:

@@ -3,6 +3,12 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Play App Signing holds the app key; uploads are signed with the developer's upload key.
+// These live in ~/.gradle/gradle.properties, never in the repo (store/RELEASE.md).
+val uploadKey = listOf("MUXA_UPLOAD_STORE_FILE", "MUXA_UPLOAD_STORE_PASSWORD", "MUXA_UPLOAD_KEY_ALIAS", "MUXA_UPLOAD_KEY_PASSWORD")
+    .associateWith { providers.gradleProperty(it).orNull }
+val missingUploadKey = uploadKey.filterValues { it.isNullOrEmpty() }.keys
+
 android {
     namespace = "tech.xdge.muxa.app"
     compileSdk = 37
@@ -12,9 +18,31 @@ android {
         // Keystore keys bound to an unlocked device, and ImageDecoder (HEIC), start at 28.
         minSdk = 28
         targetSdk = 36
+        // Raise versionCode for every upload to Play.
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (missingUploadKey.isEmpty()) {
+            create("upload") {
+                storeFile = file(uploadKey.getValue("MUXA_UPLOAD_STORE_FILE")!!)
+                storePassword = uploadKey.getValue("MUXA_UPLOAD_STORE_PASSWORD")
+                keyAlias = uploadKey.getValue("MUXA_UPLOAD_KEY_ALIAS")
+                keyPassword = uploadKey.getValue("MUXA_UPLOAD_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // R8 only removes code here, above all a trust-everything TrustManager in
+            // BouncyCastle that Play's security scan rejects (proguard-rules.pro).
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("upload")?.let { signingConfig = it }
+        }
     }
 
     buildFeatures {
@@ -79,4 +107,13 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
     // The in-app demo bridge: Try the Demo, and the UI tests.
     implementation(project(":demo"))
+}
+
+// An unsigned bundle cannot be uploaded; say what is missing before building one.
+tasks.matching { it.name == "bundleRelease" }.configureEach {
+    doFirst {
+        if (missingUploadKey.isNotEmpty()) {
+            throw GradleException("Set ${missingUploadKey.joinToString()} in ~/.gradle/gradle.properties (store/RELEASE.md: the upload key).")
+        }
+    }
 }

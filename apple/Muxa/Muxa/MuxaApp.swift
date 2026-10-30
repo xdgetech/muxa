@@ -1,9 +1,19 @@
+import MuxaUI
 import SwiftUI
 
 @main
 struct MuxaApp: App {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        #if DEBUG
+        // The phone screenshots: no on-screen keyboard over the pane.
+        if ProcessInfo.processInfo.arguments.contains("-showcase"), UIDevice.current.userInterfaceIdiom == .phone {
+            KeyInputView.waitsForTap = true
+        }
+        #endif
+    }
 
     @ViewBuilder
     private var root: some View {

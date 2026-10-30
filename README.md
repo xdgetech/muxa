@@ -2,7 +2,7 @@
 
 Work on the AI coding agents you already run in tmux, from an iPad with a keyboard, an iPhone, or an Android phone, tablet or foldable. muxa does not change your desktop layout.
 
-> **Status: pre-alpha.** The bridge, a terminal client, the iPad and iPhone app and the Android app are built and tested. The iOS app runs on a real iPad; the Android app is tested on emulators. Neither is in a store yet. See [`docs/plan.md`](docs/plan.md).
+> **Status: pre-alpha.** The bridge, a terminal client, the iPad and iPhone app and the Android app are built and tested. The iOS app runs on a real iPad and iPhone; the Android app on phones and tablets. The store listings, screenshots and release settings are ready (`store/RELEASE.md`); neither app is published yet. See [`docs/plan.md`](docs/plan.md).
 
 <p>
   <img src="docs/images/chat.jpg" width="49%" alt="An agent's conversation as a native chat, waiting for an answer">
@@ -41,6 +41,7 @@ flowchart LR
 1. On the host: `cargo install --path crates/muxa-bridge --root ~/.local`.
 2. Build the app: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`.
    For Android: install Android Studio, then `make build-android` and `adb install android/app/build/outputs/apk/debug/app-debug.apk`.
+   To look around first, tap **Try the Demo** in the app: sample sessions on the device, with no host needed.
 3. In the app, tap **+** to add a host with its address and user. Under "First Connection", enter your password once. The app logs in with it, adds its own key to `~/.ssh/authorized_keys` (restricted to the bridge), and forgets the password. To add the key by hand instead, copy the line the app shows.
 4. When asked, compare the host key fingerprint with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` before you trust it. Later connections use the key only.
 
@@ -97,7 +98,7 @@ Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Coding agents: [`AGENTS.md`]
 | The iPad app and its Swift package (`apple/`) | [GPL-3.0-only](apple/LICENSE) |
 | The Android client (`android/`) | [GPL-3.0-only](android/LICENSE) |
 
-The protocol and the bridge are permissive so that anyone can build another client or an agent adapter. The app is GPL. The author also offers it under a separate commercial license, which is how it is distributed on the App Store. For a commercial license, open an issue or contact the author.
+The protocol and the bridge are permissive so that anyone can build another client or an agent adapter. The app is GPL. The author also offers it under a separate commercial license, which is how it is distributed on the App Store and Google Play. For a commercial license, open an issue or contact the author.
 
 Bundled third-party code and its licenses: [`NOTICE`](NOTICE).
 

@@ -49,7 +49,11 @@ public final class KeyInputView: UIView, UITextInput {
 
     /// Focus given without a tap, such as when the pane opens, waits for a
     /// hardware keyboard: without one it raises the on-screen keyboard over the pane.
-    public static var focusesByItself: Bool { GCKeyboard.coalesced != nil }
+    public static var focusesByItself: Bool { !waitsForTap && GCKeyboard.coalesced != nil }
+
+    /// For the store screenshots on a phone: a simulator reports the Mac's keyboard
+    /// and still raises the on-screen one over the pane.
+    public static var waitsForTap = false
 
     public func focusIfKeyboard() {
         if Self.focusesByItself { becomeFirstResponder() }

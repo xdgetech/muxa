@@ -29,12 +29,12 @@ If your `shellcheck` lives elsewhere: `make check SHELLCHECK="<command>"`.
 
 ## License
 
-Each part keeps its license (see the README): `crates/`, `protocol/` and `scripts/` are MIT OR Apache-2.0, and `apple/` is GPL-3.0-only.
+Each part keeps its license (see the README): `crates/`, `protocol/` and `scripts/` are MIT OR Apache-2.0, and `apple/` and `android/` are GPL-3.0-only.
 
-**Contributor license agreement.** The app is also offered under a commercial license, so a contribution to `apple/` needs your permission for that. By opening a pull request that changes `apple/`, you agree that:
+**Contributor license agreement.** The apps are also offered under a commercial license, which is how they are sold on the App Store and Google Play. So a contribution to `apple/` or `android/` needs your permission for that. By opening a pull request that changes `apple/` or `android/`, you agree that:
 
 1. you wrote the contribution, or have the right to submit it;
-2. it is licensed under GPL-3.0-only, like the rest of `apple/`;
+2. it is licensed under GPL-3.0-only, like the rest of that folder;
 3. you also grant the author a perpetual, worldwide, non-exclusive, royalty-free license to use, change and distribute it under other licenses, including commercial ones.
 
-Contributions outside `apple/` are licensed MIT OR Apache-2.0 and need nothing more.
+Contributions outside `apple/` and `android/` are licensed MIT OR Apache-2.0 and need nothing more.

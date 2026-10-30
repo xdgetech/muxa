@@ -1,0 +1,38 @@
+Muxa lets you work on the AI coding agents you already run in tmux, from your Android phone, tablet or foldable. It attaches to the sessions that exist on your Mac or Linux machine. Nothing is started again, and your desktop layout never changes.
+
+THE REAL PANE, AT ITS REAL SIZE
+Muxa shows one pane full screen at the size it has on your desk. Wide panes fit the width and follow the cursor. On a phone, text never gets smaller than 9 sp; the pane scrolls instead.
+
+YOUR AGENTS AS A CHAT
+A Claude Code or Codex session can show as a native conversation, with a composer and quick keys. When the agent asks for permission, asks a question or presents its plan, Muxa shows a card with the answers. One tap answers it.
+
+EVERY SESSION, ONE KEYSTROKE AWAY
+Sessions are grouped by repo, with each agent's state: running, waiting for you, or done. With a keyboard: Ctrl+Shift+K switches session, Ctrl+Shift+[ and ] step through them, Ctrl+Shift+1 to 9 jump, and Ctrl+Shift+J switches between the agent and its shell. Plain Ctrl keys stay with your shell.
+
+PHONES, TABLETS AND FOLDABLES
+The layout follows the window: a stack on a phone, the list beside the pane on a tablet, and both sides of the hinge on a half-open foldable. Folding, rotating or resizing keeps the connection, the pane and the keyboard.
+
+KNOW WHEN AN AGENT NEEDS YOU
+While Muxa is open, a banner tells you when an agent in another session waits for your answer, finishes, or fails.
+
+READ WHAT YOUR AGENTS WRITE
+The Reader shows the session's plan and the repo's Markdown, with diagrams, the uncommitted changes and the branch's commits as diffs, and the repo's images. It works offline and updates as the files change.
+
+START AND CLOSE TASKS
+Start a task in a new git worktree with an agent in it, and close it when the branch is merged.
+
+BUILT FOR THE KEYBOARD, AND FOR TOUCH
+Without a hardware keyboard, a bar adds Esc, Tab, Ctrl and the arrows. Japanese input works in the pane.
+
+PRIVATE BY DESIGN
+Muxa connects over SSH directly to your machine. There is no Muxa server and no account, and Muxa collects no data. Its key is made on the device, kept in the Android Keystore, and restricted on the host to the bridge.
+
+TRY IT FIRST
+A built-in sample workspace shows every feature without a host. Tap it on the first screen.
+
+WHAT YOU NEED
+- A Mac or Linux machine with tmux 3.2 or later and an SSH server.
+- muxa-bridge, free and open source, installed on that machine: https://github.com/xdgetech/muxa#setup
+- A way to reach it, for example over your local network or a VPN such as Tailscale.
+
+Muxa works with agents such as Claude Code and Codex by showing their official command-line tools in your own terminal. It is not made, endorsed or supported by Anthropic or OpenAI, and it never handles their sign-in.

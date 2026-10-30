@@ -19,8 +19,9 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents and images, `src/changes/` its diffs, `src/tasks/` starts and closes tasks (ADR 0007), and `src/states.rs` follows agent states (ADR 0008). |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
-| `apple/Muxa` | the iPad and iPhone app (SwiftUI). The layout follows size classes, not the device (ADR 0012). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo, and add `-foldable` to fold and unfold it like an iPhone Duo (DEBUG). |
-| `android/` | the Android client (Kotlin, Gradle; ADR 0013). `:protocol`, `:terminal` (the pane screen on JediTerm), `:transport` (sshj) and `:session` (`PaneSession`) are plain JVM modules with JVM tests; `:demo` is the in-app demo bridge; `:app` is the Compose UI. The Reader uses `apple/Muxa/Muxa/Reader` as its assets. Debug builds start the demo with `adb shell am start -n tech.xdge.muxa/tech.xdge.muxa.app.MainActivity --ez demo true`. |
+| `apple/Muxa` | the iPad and iPhone app (SwiftUI). The layout follows size classes, not the device (ADR 0012). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project. **Try the Demo** (every build) runs the in-app demo bridge on its showcase data; the UI tests launch with `-demo` for its test fixtures, `-showcase` for the showcase, and `-foldable` to fold and unfold it like an iPhone Duo (DEBUG). |
+| `android/` | the Android client (Kotlin, Gradle; ADR 0013). `:protocol`, `:terminal` (the pane screen on JediTerm), `:transport` (sshj) and `:session` (`PaneSession`) are plain JVM modules with JVM tests; `:demo` is the in-app demo bridge; `:app` is the Compose UI. The Reader uses `apple/Muxa/Muxa/Reader` as its assets. **Try the Demo** works in every build; debug builds start it on the test fixtures with `adb shell am start -n tech.xdge.muxa/tech.xdge.muxa.app.MainActivity --ez demo true` (add `--ez showcase true` for the showcase). |
+| `store/` | the store listings (fastlane `deliver` and `supply` layout, English and Japanese), Play's icon and feature graphic, and `RELEASE.md`: every console answer, the price and the release steps. `docs/privacy.md` is the privacy policy. |
 | `scripts/` | harness: sandbox, layout snapshot, repro scripts, the agent guard hook. |
 | `tests/harness/` | bats tests for the harness itself. |
 
@@ -40,8 +41,12 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `make build-android` / `make lint-android` | build the debug app, or run Android lint on it. |
 | `make test-android-app` | the app's UI tests (demo bridge, fold and resize) on the running emulator or device. |
 | `MUXA_DEVICE=<name or id> make install-ipad` | **humans only**: build, sign and run on a paired iPad. It creates signing assets on the developer's Apple account. |
-| `make screenshots` | App Store screenshots (captioned in English and Japanese, 2752x2064) into `build/screenshots/appstore/{en,ja}`, README images into `docs/images/`. Runs `ShowcaseTests` against the demo's `-showcase` data on its own simulator. |
-| `make app-icon` | renders the icon's light, dark and tinted images from `apple/Muxa/Art/app-icon.swift`. |
+| `make screenshots` | App Store screenshots, captioned in English and Japanese: iPad 2752x2064 into `build/screenshots/appstore-ipad/{en,ja}`, iPhone 1320x2868 into `appstore-iphone/`. README images into `docs/images/`. Runs `ShowcaseTests` against the demo's `-showcase` data on simulators of its own. |
+| `make screenshots-android` | Google Play screenshots: phone 1080x1920 into `build/screenshots/play-phone/{en,ja}`, tablet 2560x1440 into `play-tablet/`. Runs `ShowcaseTest` on the `Pixel_10a` and `Pixel_Tablet` emulators (`MUXA_AVD_PHONE`, `MUXA_AVD_TABLET`). |
+| `make app-icon` | renders the icon from `apple/Muxa/Art/app-icon.swift`: iOS's light, dark and tinted images, Android's adaptive icon layers, and Play's store icon and feature graphic. |
+| `make lint-store` | the store listings fit each store's limits and never say "demo" or "trial" (part of `make check`). |
+| `make bundle-android` | the signed Play bundle into `build/release/muxa.aab`, with the upload key from `~/.gradle/gradle.properties` (`store/RELEASE.md`). |
+| `make archive-ios` | **humans only**: a signed release archive and the `.ipa` for App Store Connect, in `build/release/`. It signs with the developer's Apple account. |
 | `TEST_RUNNER_MUXA_SCREENSHOT_DIR=<dir> make test-app` | also keeps the UI test's portrait and landscape screenshots. |
 | `MUXA_STREAM_RUNS=200 make test-tmux` | more random cut points for the snapshot/stream stress test (default 50). |
 | `MUXA_TEST_PLUGIN=<plugin.tmux> make test-tmux` | also checks that a real layout plugin keeps its layout. |

@@ -1,16 +1,69 @@
-// Puts each landscape screenshot under a caption, at the App Store's 13-inch iPad size.
-// Run: swift apple/Muxa/Art/frame-screenshots.swift <screenshot dir> <output dir>
+// Puts each screenshot under a caption, at the exact size of one store slot.
+// Run: swift apple/Muxa/Art/frame-screenshots.swift <ipad|iphone|play-phone|play-tablet> <screenshot dir> <output dir>
 // Writes one folder per locale: <output dir>/en, <output dir>/ja.
 import AppKit
 import CoreGraphics
 
-/// App Store 13-inch iPad, landscape.
-let canvas = CGSize(width: 2752, height: 2064)
+/// A store slot: the size the store accepts, and what its captions may assume.
+struct Target {
+    let canvas: CGSize
+    /// Captions that differ from the iPad's, which names ⌘ keys and the iPad.
+    let overrides: [String: [String: (String, String)]]
+}
+
+/// Phones without a keyboard: taps, not shortcuts.
+let touch: [String: [String: (String, String)]] = [
+    "en": [
+        "3-switcher": ("Every agent, one tap away", "See who is running, waiting or done."),
+        "4-plan": ("Read the plans your agents write", "Markdown and diagrams, rendered offline."),
+        "6-shell": ("The shell is one tap away", "Switch between the agent and its shell."),
+    ],
+    "ja": [
+        "1-chat": ("いつものエージェントと、手元で話す", "tmuxで動くエージェントを、ネイティブのチャットで。"),
+        "3-switcher": ("どのエージェントにも、タップ1つで", "実行中・回答待ち・完了がひと目でわかる。"),
+        "4-plan": ("エージェントが書いたプランを読む", "Markdownも図も、オフラインで表示。"),
+        "6-shell": ("シェルもタップ1つで", "エージェントとシェルを行き来。"),
+    ],
+]
+
+let targets: [String: Target] = [
+    // App Store 13-inch iPad, landscape.
+    "ipad": Target(canvas: CGSize(width: 2752, height: 2064), overrides: [:]),
+    // App Store 6.9-inch iPhone, portrait.
+    "iphone": Target(canvas: CGSize(width: 1320, height: 2868), overrides: touch),
+    // Google Play phone: 9:16, at least 1080 px.
+    "play-phone": Target(canvas: CGSize(width: 1080, height: 1920), overrides: touch),
+    // Google Play 7- and 10-inch tablets: 16:9, with Android's Ctrl+Shift chords.
+    "play-tablet": Target(canvas: CGSize(width: 2560, height: 1440), overrides: [
+        "en": [
+            "3-switcher": ("Every agent, one keystroke away", "Ctrl+Shift+K shows who is running, waiting or done."),
+            "4-plan": ("Read the plans your agents write", "Markdown and diagrams, rendered on the tablet."),
+            "6-shell": ("The shell is one key away", "Ctrl+Shift+J switches between the agent and its shell."),
+        ],
+        "ja": [
+            "1-chat": ("いつものエージェントと、タブレットで話す", "tmuxで動くエージェントを、ネイティブのチャットで。"),
+            "3-switcher": ("どのエージェントにも、キー1つで", "Ctrl+Shift+Kで、実行中・回答待ち・完了がひと目でわかる。"),
+            "4-plan": ("エージェントが書いたプランを読む", "Markdownも図も、タブレットの上で表示。"),
+            "6-shell": ("シェルもキー1つで", "Ctrl+Shift+Jで、エージェントとシェルを行き来。"),
+        ],
+    ]),
+]
+
+guard CommandLine.arguments.count == 4, let target = targets[CommandLine.arguments[1]] else {
+    let names = targets.keys.sorted().joined(separator: "|")
+    FileHandle.standardError.write(Data("usage: frame-screenshots.swift <\(names)> <screenshot dir> <output dir>\n".utf8))
+    exit(2)
+}
+let canvas = target.canvas
+/// Sizes below are the iPad's; smaller slots scale them by their short side.
+let scale = min(canvas.width, canvas.height) / 2064
+/// A tall slot has room for bigger captions than its width alone would give.
+let captionScale = canvas.height > canvas.width ? canvas.width / 1500 : scale
 
 /// File names without extension, in store order. Files not listed are skipped.
 let order = ["1-chat", "2-agent", "3-switcher", "7-alert", "4-plan", "5-diff", "6-shell"]
 
-/// Caption and subtitle per screenshot, per App Store locale.
+/// Caption and subtitle per screenshot, per locale, as the iPad shows them.
 let captions: [String: [String: (String, String)]] = [
     "en": [
         "1-chat": ("Talk to the agents you already run", "The agents in your tmux, as a native chat."),
@@ -50,13 +103,21 @@ func frame(_ shot: CGImage, title: String, subtitle: String) -> CGImage {
                         locations: [0, 0.45, 1])!
     ctx.drawLinearGradient(bg, start: CGPoint(x: 0, y: canvas.height), end: CGPoint(x: canvas.width, y: 0), options: [])
 
+    // The caption flows down from the top: a narrow slot wraps it onto more lines.
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+    let titleBottom = draw(title, size: 112 * captionScale, weight: .bold, alpha: 1, top: 150 * scale)
+    let subtitleBottom = draw(subtitle, size: 60 * captionScale, weight: .medium, alpha: 0.82,
+                              top: max(300 * scale, titleBottom + 16 * scale))
+    NSGraphicsContext.current = nil
+
     // The screenshot fills the lower part and runs off the bottom edge.
+    let top = max(470 * scale, subtitleBottom + 60 * scale)
     let width = canvas.width * 0.84
     let height = width * Double(shot.height) / Double(shot.width)
-    let rect = CGRect(x: (canvas.width - width) / 2, y: canvas.height - 470 - height, width: width, height: height)
-    let path = CGPath(roundedRect: rect, cornerWidth: 44, cornerHeight: 44, transform: nil)
+    let rect = CGRect(x: (canvas.width - width) / 2, y: canvas.height - top - height, width: width, height: height)
+    let path = CGPath(roundedRect: rect, cornerWidth: 44 * scale, cornerHeight: 44 * scale, transform: nil)
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -24), blur: 80, color: rgb(0x14, 0x10, 0x5C, 0.5))
+    ctx.setShadow(offset: CGSize(width: 0, height: -24 * scale), blur: 80 * scale, color: rgb(0x14, 0x10, 0x5C, 0.5))
     ctx.addPath(path)
     ctx.setFillColor(rgb(0, 0, 0))
     ctx.fillPath()
@@ -66,25 +127,33 @@ func frame(_ shot: CGImage, title: String, subtitle: String) -> CGImage {
     ctx.clip()
     ctx.draw(shot, in: rect)
     ctx.restoreGState()
-
-    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-    draw(title, size: 112, weight: .bold, alpha: 1, top: 150)
-    draw(subtitle, size: 60, weight: .medium, alpha: 0.82, top: 300)
-    NSGraphicsContext.current = nil
     return ctx.makeImage()!
 }
 
-/// Centred text whose top edge is `top` points below the canvas's top.
-func draw(_ text: String, size: Double, weight: NSFont.Weight, alpha: Double, top: Double) {
+/// Centred text whose top edge is `top` points below the canvas's top. Returns its bottom edge.
+/// It shrinks to stay on one line, to 70% of `size`, before it wraps: Japanese wraps mid-word.
+@discardableResult
+func draw(_ text: String, size: Double, weight: NSFont.Weight, alpha: Double, top: Double) -> Double {
+    let width = canvas.width * 0.9
     let style = NSMutableParagraphStyle()
     style.alignment = .center
-    let string = NSAttributedString(string: text, attributes: [
-        .font: NSFont.systemFont(ofSize: size, weight: weight),
-        .foregroundColor: NSColor(white: 1, alpha: alpha),
-        .paragraphStyle: style,
-    ])
-    let height = string.size().height
-    string.draw(in: CGRect(x: 0, y: canvas.height - top - height, width: canvas.width, height: height))
+    func styled(_ points: Double) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: points, weight: weight),
+            .foregroundColor: NSColor(white: 1, alpha: alpha),
+            .paragraphStyle: style,
+        ])
+    }
+    var points = size
+    while points > size * 0.7, styled(points).size().width > width {
+        points -= size * 0.05
+    }
+    let string = styled(points)
+    let height = ceil(string.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                                          options: .usesLineFragmentOrigin).height)
+    string.draw(with: CGRect(x: (canvas.width - width) / 2, y: canvas.height - top - height, width: width, height: height),
+                options: .usesLineFragmentOrigin)
+    return top + height
 }
 
 func load(_ url: URL) throws -> CGImage {
@@ -101,18 +170,14 @@ func save(_ image: CGImage, to url: URL) throws {
     try png.write(to: url)
 }
 
-guard CommandLine.arguments.count == 3 else {
-    FileHandle.standardError.write(Data("usage: frame-screenshots.swift <screenshot dir> <output dir>\n".utf8))
-    exit(2)
-}
-let input = URL(fileURLWithPath: CommandLine.arguments[1])
-let output = URL(fileURLWithPath: CommandLine.arguments[2])
+let input = URL(fileURLWithPath: CommandLine.arguments[2])
+let output = URL(fileURLWithPath: CommandLine.arguments[3])
 do {
     for (locale, texts) in captions {
         let dir = output.appendingPathComponent(locale)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for (index, name) in order.enumerated() {
-            guard let (title, subtitle) = texts[name] else {
+            guard let (title, subtitle) = target.overrides[locale]?[name] ?? texts[name] else {
                 FileHandle.standardError.write(Data("frame-screenshots: no \(locale) caption for \(name)\n".utf8))
                 exit(1)
             }
