@@ -52,11 +52,17 @@ class PaneScreen(private val onIdle: () -> Unit = {}) : PaneRenderer, AutoClosea
     /** Visible rows with trailing spaces and trailing empty rows removed. */
     fun rows(): List<String> {
         val rows = snapshot().lines.map { runs ->
+            // Counted in columns: a wide character's tail takes a column but adds no char.
+            var column = 0
             buildString {
                 for (run in runs) {
-                    while (length < run.column) append(' ')
+                    while (column < run.column) {
+                        append(' ')
+                        column++
+                    }
                     for (c in run.text) {
                         if (c != ScreenSnapshot.WIDE_TAIL) append(if (c == '\u0000') ' ' else c)
+                        column++
                     }
                 }
             }.trimEnd(' ')

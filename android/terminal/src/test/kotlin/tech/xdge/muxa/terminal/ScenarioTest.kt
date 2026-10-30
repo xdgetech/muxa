@@ -61,4 +61,13 @@ class ScenarioTest {
         assertEquals(listOf("日本"), screen.rows())
         screen.close()
     }
+
+    @Test
+    fun textAfterAWideCharacterInAnotherStyleKeepsItsColumn() {
+        val screen = PaneScreen()
+        screen.reset(10, 1, "\u001bc日本\u001b[31mx".toByteArray())
+        assertTrue(screen.awaitIdle())
+        assertEquals(listOf("日本x"), screen.rows())
+        screen.close()
+    }
 }
