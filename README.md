@@ -1,8 +1,8 @@
 # muxa
 
-Work on the AI coding agents you already run in tmux, from an iPad with a keyboard, or from an iPhone. muxa does not change your desktop layout.
+Work on the AI coding agents you already run in tmux, from an iPad with a keyboard, an iPhone, or an Android phone, tablet or foldable. muxa does not change your desktop layout.
 
-> **Status: pre-alpha.** The bridge, a terminal client and the iPad and iPhone app are built and tested. The app runs on a real iPad. The app is not on the App Store yet. See [`docs/plan.md`](docs/plan.md).
+> **Status: pre-alpha.** The bridge, a terminal client, the iPad and iPhone app and the Android app are built and tested. The iOS app runs on a real iPad; the Android app is tested on emulators. Neither is in a store yet. See [`docs/plan.md`](docs/plan.md).
 
 <p>
   <img src="docs/images/chat.jpg" width="49%" alt="An agent's conversation as a native chat, waiting for an answer">
@@ -34,12 +34,13 @@ flowchart LR
 ## Requirements
 
 - Host: macOS or Linux, tmux ≥ 3.2, an SSH server.
-- Client: iPadOS 17+ or iOS 17+ (iPhone, including the folding iPhone Duo). Android comes later (ADR 0013).
+- Client: iPadOS 17+ or iOS 17+ (iPhone, including the folding iPhone Duo), or Android 9+ (phones, tablets and foldables, ADR 0013).
 
 ## Setup
 
 1. On the host: `cargo install --path crates/muxa-bridge --root ~/.local`.
 2. Build the app: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`.
+   For Android: install Android Studio, then `make build-android` and `adb install android/app/build/outputs/apk/debug/app-debug.apk`.
 3. In the app, tap **+** to add a host with its address and user. Under "First Connection", enter your password once. The app logs in with it, adds its own key to `~/.ssh/authorized_keys` (restricted to the bridge), and forgets the password. To add the key by hand instead, copy the line the app shows.
 4. When asked, compare the host key fingerprint with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` before you trust it. Later connections use the key only.
 
@@ -53,7 +54,7 @@ Approvals: when Claude Code waits on a permission, a question or its plan, Chat 
 
 Alerts: while the app is open, a banner tells you when an agent in another session needs your input, finishes, or fails. Tap it to go there.
 
-Keys: Cmd+K switch session, Cmd+N new task, Cmd+J agent/terminal, Cmd+Shift+[ and ] previous/next session, Cmd+1…9 session by number. Every other key goes to the pane. Without a hardware keyboard, a bar above the on-screen keyboard adds Esc, Tab, Shift+Tab, Ctrl (for the next key), the arrows and ^C.
+Keys: Cmd+K switch session, Cmd+N new task, Cmd+J agent/terminal, Cmd+Shift+[ and ] previous/next session, Cmd+1…9 session by number. On Android they are Ctrl+Shift chords (Ctrl+Shift+K, N, J, R, D, [ ], 1…9), because plain Ctrl chords belong to the shell. Every other key goes to the pane. Without a hardware keyboard, a bar above the on-screen keyboard adds Esc, Tab, Shift+Tab, Ctrl (for the next key), the arrows and ^C.
 
 ## Pane roles
 
@@ -82,6 +83,8 @@ make repro      # re-check the tmux facts the design relies on
 make test-apple # Swift package tests (Xcode toolchain)
 make test-app   # app UI tests on an iPad simulator, against a built-in demo bridge
 make test-app-iphone # the same on an iPhone simulator
+make test-android    # Android JVM tests (protocol, terminal, session)
+make test-android-app # Android UI tests on a running emulator
 ```
 
 Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Coding agents: [`AGENTS.md`](AGENTS.md). Security: [`SECURITY.md`](SECURITY.md).

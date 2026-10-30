@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A placeholder until the icon is rendered from apple/Muxa/Art/app-icon.swift. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,36 L48,54 L30,72 L36,78 L60,54 L36,30 Z" />
+    <path
+        android:fillColor="#FF5AC8FA"
+        android:pathData="M58,70 L80,70 L80,78 L58,78 Z" />
+</vector>

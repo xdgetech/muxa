@@ -24,6 +24,11 @@ android/gradle/libs.versions.toml):
 - Bouncy Castle, MIT
 - kotlinx.serialization, kotlinx.coroutines, Apache-2.0
 - SLF4J, MIT
+- AndroidX and Jetpack Compose, Apache-2.0
+- multiplatform-markdown-renderer, Apache-2.0
+
+The Android app's Reader uses the same bundled marked, mermaid and DOMPurify as
+the iPad app, from apple/Muxa/Muxa/Reader/vendor/.
 
 Rust crates the bridge and the CLI depend on are listed in Cargo.lock; their
 licenses are MIT, Apache-2.0 or compatible permissive licenses.

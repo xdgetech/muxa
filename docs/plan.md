@@ -2,7 +2,7 @@
 
 ## Status
 
-Pre-alpha. The bridge, the terminal client and the iPad and iPhone app work, and the app runs on a real iPad. The app is not on the App Store yet.
+Pre-alpha. The bridge, the terminal client, the iPad and iPhone app and the Android app work. The iOS app runs on a real iPad; the Android app runs on emulators. The app is not on the App Store yet.
 
 What works today:
 - **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode without taking part in window sizing, and speaks protocol v1 (`protocol/PROTOCOL.md`).
@@ -21,14 +21,17 @@ What works today:
   - a bar with Esc, Tab, Ctrl and the arrows above the on-screen keyboard.
 - **iPhone app** (the same app, ADR 0012): the layout follows the size classes, so a folded iPhone Duo gets the phone layout and an unfolded one the iPad layout, without losing the pane, its screen or the keyboard. On a phone, a pane whose font would go below 9 pt keeps 9 pt and scrolls on both axes.
 
+- **Android app** (ADR 0013): the same features as the iOS app, for phones, tablets and foldables. The layout follows the window and the hinge: a stack when compact, the list beside the pane when wide, the list and the pane on either side of a half-open book fold, and the keys below the hinge on a table. A fold, a rotation or a window resize keeps the connection, the pane, its screen and the keyboard. The pane is drawn from JediTerm at its real size; shortcuts are Ctrl+Shift chords.
+
 ## Next
 
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
-- The Android client: phones, tablets and foldables, designed in ADR 0013.
+- Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
+- Android: two windows on two panes (multi-window), and Play Store screenshots.
 
 ## Later
 
-muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008), `pause-after` for slow links, scrollback, watching several panes, mouse, input leases for two typing devices, and a shared Rust client core (UniFFI).
+muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008), `pause-after` for slow links, scrollback, watching several panes, mouse, input leases for two typing devices.
 
 ## Design
 
@@ -69,7 +72,7 @@ The server:
 ### Rejected
 
 - Attaching a normal tmux client, as Multiplex and Remux do: it resizes the window (ADR 0001).
-- A shared Rust client core through UniFFI, for now. It would replace the Citadel and SwiftTerm glue and add a build pipeline. ADR 0013 proposes sharing only the session core when the Android client starts; the fixtures make that switch safe.
+- A shared Rust client core through UniFFI (ADR 0013). Swift and Kotlin each keep their own session core; `protocol/fixtures` keeps them to one contract.
 
 ## Verification
 
@@ -79,6 +82,7 @@ The server:
 | tmux behavior, the bridge | `make test-tmux`, `make repro`. CI runs them on tmux 3.2a, 3.4 and the latest release, on Linux and macOS. |
 | MuxaKit | `make test-apple`; `make test-apple-tmux` against the real bridge |
 | The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, in the simulator against the in-app demo bridge |
+| The Android client | `make test-android`, `make test-android-tmux`, `make lint-android`; `make test-android-app` on a phone, Pixel Tablet and Pixel Fold emulator, against the in-app demo bridge |
 | No layout change on a real server | `scripts/layout-snapshot.sh` before and after an attach; the diff is empty |
 
 ## Risks

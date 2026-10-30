@@ -36,7 +36,7 @@ Jetpack WindowManager's `FoldingFeature` gives the hinge:
 
 ### Tablets
 
-- The tablet layout is the iPad one: Material 3 adaptive `ListDetailPaneScaffold` for the session list and the pane, and for the Reader's list and document. Its default directive shows one pane at Medium width, so muxa uses `calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth` to keep two panes there.
+- The tablet layout is the iPad one: the session list beside the pane, hidden once a pane is open, and shown again from the bar. It is a plain Compose row, not `ListDetailPaneScaffold`: the scaffold keeps both panes visible at Medium and Expanded width, and the iPad hides the list. The Reader shows its list and its document side by side.
 - **Hardware keyboard and pointer.** Tablets are often used with a keyboard case and a trackpad.
   - The key bar shows only when no hardware keyboard is attached, as on iOS with `GCKeyboard`. The signal is `hardKeyboardHidden == HARDKEYBOARDHIDDEN_NO`, not `Configuration.keyboard`, which reports `KEYBOARD_NOKEYS` for some keyboards. An `InputManager.InputDeviceListener` covers hot-plug.
   - The iPad shortcuts use Ctrl+Shift, not Ctrl: plain Ctrl chords (Ctrl+R, Ctrl+K, Ctrl+N, Ctrl+J) belong to the pane's shell, and Ctrl+Shift is the Linux terminal convention. They are listed in the system shortcut helper (`onProvideKeyboardShortcuts`).
@@ -47,6 +47,9 @@ Jetpack WindowManager's `FoldingFeature` gives the hinge:
 - ChromeOS runs the same build. It is not a target, but the same rules cover it.
 
 ### Continuity through a fold or a resize
+
+- The layout is a pure function of the window size and the hinge (`windowLayout`, unit-tested). The detail is `movableContentOf`: a new layout moves it, as SwiftUI does on iOS, so the pane view keeps its screen.
+- Android clears a moved view's focus. The pane view takes it back when it is attached again, and restarts its input connection; keys typed in the moment before the input method reconnects are lost.
 
 - The Activity declares `android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|keyboard|keyboardHidden"`. A fold, a rotation, a window resize or a keyboard attach then reaches Compose as a new configuration, without recreating the Activity. A desktop drag-resize sends many of them.
 - The connection and the session state live in an app-scoped holder or a service, never in the Activity. If the Activity is still recreated (a locale change, or the process restarting), it reattaches to the same session and asks the bridge for the screen again (`watch`).

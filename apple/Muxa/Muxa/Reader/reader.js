@@ -145,6 +145,9 @@
   function post(message) {
     if (window.webkit && window.webkit.messageHandlers.reader) {
       window.webkit.messageHandlers.reader.postMessage(message);
+    } else if (window.muxaReader) {
+      // Android: a JavascriptInterface takes strings only.
+      window.muxaReader.postMessage(JSON.stringify(message));
     }
   }
 

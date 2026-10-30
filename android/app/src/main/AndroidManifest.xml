@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The device key and the hosts never leave the device (SECURITY.md). -->
+    <application
+        android:name=".MuxaApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Muxa">
+
+        <!--
+            A fold, a rotation, a window resize or a keyboard attach reaches Compose as
+            a new configuration, without recreating the Activity (ADR 0013).
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|keyboard|keyboardHidden|navigation"
+            android:exported="true"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- A desktop window keeps a few rows of a pane at the 9 sp floor. -->
+            <layout
+                android:minWidth="360dp"
+                android:minHeight="320dp" />
+        </activity>
+    </application>
+</manifest>

@@ -2,7 +2,7 @@
 
 Instructions for coding agents working in this repo. Humans: see `README.md` and `CONTRIBUTING.md`.
 
-muxa lets you work on your **existing** tmux panes from an iPad or an iPhone, without changing the desktop layout. A Rust bridge runs on the host over SSH and speaks tmux control mode. Native clients render one pane at its real size. Status: pre-alpha. The status and roadmap are in `docs/plan.md`.
+muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an Android phone, tablet or foldable, without changing the desktop layout. A Rust bridge runs on the host over SSH and speaks tmux control mode. Native clients render one pane at its real size. Status: pre-alpha. The status and roadmap are in `docs/plan.md`.
 
 ## Read first
 
@@ -20,6 +20,7 @@ muxa lets you work on your **existing** tmux panes from an iPad or an iPhone, wi
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
 | `apple/Muxa` | the iPad and iPhone app (SwiftUI). The layout follows size classes, not the device (ADR 0012). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project; launch with `-demo` for a bridge-free demo, and add `-foldable` to fold and unfold it like an iPhone Duo (DEBUG). |
+| `android/` | the Android client (Kotlin, Gradle; ADR 0013). `:protocol`, `:terminal` (the pane screen on JediTerm), `:transport` (sshj) and `:session` (`PaneSession`) are plain JVM modules with JVM tests; `:demo` is the in-app demo bridge; `:app` is the Compose UI. The Reader uses `apple/Muxa/Muxa/Reader` as its assets. Debug builds start the demo with `adb shell am start -n tech.xdge.muxa/tech.xdge.muxa.app.MainActivity --ez demo true`. |
 | `scripts/` | harness: sandbox, layout snapshot, repro scripts, the agent guard hook. |
 | `tests/harness/` | bats tests for the harness itself. |
 
@@ -34,6 +35,10 @@ muxa lets you work on your **existing** tmux panes from an iPad or an iPhone, wi
 | `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
 | `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the app, or run its UI tests on an iPad against the in-app demo bridge (`MUXA_SIM` picks the simulator). |
 | `make test-app-iphone` | the same UI tests on an iPhone (`MUXA_SIM_IPHONE`). |
+| `make test-android` | the Android client's JVM tests: protocol fixtures, scenario replay on JediTerm, the session, the layout. Uses Android Studio's JDK when `JAVA_HOME` is unset. |
+| `make test-android-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
+| `make build-android` / `make lint-android` | build the debug app, or run Android lint on it. |
+| `make test-android-app` | the app's UI tests (demo bridge, fold and resize) on the running emulator or device. |
 | `MUXA_DEVICE=<name or id> make install-ipad` | **humans only**: build, sign and run on a paired iPad. It creates signing assets on the developer's Apple account. |
 | `make screenshots` | App Store screenshots (captioned in English and Japanese, 2752x2064) into `build/screenshots/appstore/{en,ja}`, README images into `docs/images/`. Runs `ShowcaseTests` against the demo's `-showcase` data on its own simulator. |
 | `make app-icon` | renders the icon's light, dark and tinted images from `apple/Muxa/Art/app-icon.swift`. |

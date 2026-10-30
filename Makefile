@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
+.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux build-android lint-android test-android-app app-icon screenshots install-ipad lint-sh repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -59,6 +59,18 @@ GRADLEW = ./gradlew --console=plain
 # The protocol, terminal, transport and session modules: plain JVM tests, no emulator.
 test-android:
 	cd android && $(GRADLEW) test
+
+# The Android app: build it, and run Android lint on it.
+build-android:
+	cd android && $(GRADLEW) :app:assembleDebug
+
+lint-android:
+	cd android && $(GRADLEW) :app:lintDebug
+
+# The app's UI tests against the in-app demo bridge, on the running emulator or device
+# (start one first, e.g. `emulator -avd Pixel_Tablet`). Includes the fold and resize tests.
+test-android-app:
+	cd android && $(GRADLEW) :app:connectedDebugAndroidTest
 
 # Also runs PaneSession against the real bridge on a throwaway tmux server.
 test-android-tmux:
