@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons as Material
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddBox
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
@@ -41,6 +43,8 @@ object Icons {
     val closeTask = Material.Filled.DisabledByDefault
     val edit = Material.Filled.Edit
     val delete = Material.Filled.Delete
+    val demo = Material.Filled.PlayCircle
+    val leaveDemo = Material.AutoMirrored.Filled.Logout
     val warning = Material.Filled.Warning
     val waiting = Material.Filled.PanTool
     val done = Material.Filled.CheckCircle

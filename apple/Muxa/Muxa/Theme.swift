@@ -49,6 +49,8 @@ enum Icon {
     static let closeTask = "xmark.square"
     static let edit = "pencil"
     static let delete = "trash"
+    static let demo = "play.circle"
+    static let leaveDemo = "rectangle.portrait.and.arrow.right"
     static let warning = "exclamationmark.triangle"
     static let waiting = "hand.raised.fill"
     static let send = "arrow.up.circle.fill"

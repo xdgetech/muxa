@@ -77,6 +77,6 @@ dependencies {
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.window.testing)
     debugImplementation(libs.compose.ui.test.manifest)
-    // The in-app demo bridge, for UI tests and trying the app without a host.
-    debugImplementation(project(":demo"))
+    // The in-app demo bridge: Try the Demo, and the UI tests.
+    implementation(project(":demo"))
 }

@@ -1,10 +1,8 @@
-#if DEBUG
 import Foundation
 import MuxaProtocol
 
 /// What the demo bridge serves. `tests` holds the fixtures the UI tests assert on;
-/// `showcase` (launch argument `-showcase`) looks like real work, for the App Store
-/// and README screenshots.
+/// `showcase` looks like real work, for Try the Demo and the store screenshots.
 struct DemoContent: Sendable {
     var sessions: [Session]
     var conversation: [ChatEntry]
@@ -16,13 +14,16 @@ struct DemoContent: Sendable {
     /// Appended while a plan or a diff is open, to show that the Reader follows the file.
     var planUpdate: String?
     var diffUpdate: String?
-    /// With `-demo-alerts`: when another agent starts waiting, in seconds after connecting.
+    /// With alerts on: when another agent starts waiting, in seconds after connecting.
     var alertDelay: Double
     var screen: @Sendable (Pane) -> Data
 
+    #if DEBUG
+    /// The UI tests' launch argument `-showcase` picks the showcase.
     static var current: DemoContent {
         ProcessInfo.processInfo.arguments.contains("-showcase") ? .showcase : .tests
     }
+    #endif
 
     static let tests = DemoContent(
         sessions: DemoBridge.initialSessions, conversation: DemoBridge.conversation, chatStatus: .running,
@@ -322,4 +323,3 @@ enum Showcase {
         ]
     }
 }
-#endif

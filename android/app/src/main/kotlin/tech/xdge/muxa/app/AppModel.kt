@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import tech.xdge.muxa.demo.DemoBridge
 import tech.xdge.muxa.protocol.CloseMode
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.DocInfo
@@ -44,8 +45,10 @@ import kotlin.time.Duration.Companion.seconds
 class AppModel(context: Context, private val scope: CoroutineScope) {
     val session = PaneSession(Dispatchers.Main.immediate)
     private val keys = ClientKeyStore(context)
-    private val hostsFile = File(context.filesDir, "hosts.json")
-    var hosts = HostStore(hostsFile)
+    private var savedHosts = HostStore(File(context.filesDir, "hosts.json"))
+
+    /** The saved hosts, or during the demo its one host, kept in memory only. */
+    var hosts = savedHosts
         private set
 
     /** A Compose copy of the session's state, so every view that reads [state] recomposes with it. */
@@ -136,7 +139,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** The Reader's open tab, kept while the app runs. */
     var readerTab by mutableStateOf(ReaderTab.DOCS)
 
-    /** Set by a debug launch: an in-app bridge instead of SSH. */
+    /** The in-app demo bridge instead of SSH: Try the Demo, or a debug launch for the UI tests. */
     var demo = false
         private set
 
@@ -157,6 +160,14 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** The document last read in each session, opened again next time. */
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
+    private var demoSet = DemoBridge.Content.SHOWCASE
+
+    /** The demo bridge serves this host only; a host added during the demo uses SSH. */
+    private var demoHostId: String? = null
+
+    /** The user started the demo, so the list offers to leave it. A debug launch starts it for good. */
+    var canLeaveDemo by mutableStateOf(false)
+        private set
 
     init {
         scope.launch {
@@ -175,10 +186,61 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         scope.launch { store.storageError.collect { if (hosts === store) storageError = it } }
     }
 
-    /** A debug launch with the in-app bridge: one demo host, nothing saved. */
-    fun startDemo(alerts: Boolean) {
-        // Each debug launch starts over: UI tests share one process and so one model.
+    /** Try the Demo: sample sessions from the in-app bridge. Nothing is saved, and no SSH or key is touched. */
+    fun tryDemo() {
+        beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
+        canLeaveDemo = true
+    }
+
+    /** A debug launch for the UI tests: their [set], and no way out of it. */
+    fun startDemo(set: DemoBridge.Content, alerts: Boolean) {
+        // The store screenshots show the list: a machine's name there, not the demo's.
+        val host = if (set == DemoBridge.Content.SHOWCASE) {
+            Host(name = "Mac mini", target = SshTarget(host = "mac-mini.local", user = "you"))
+        } else {
+            Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo"))
+        }
+        beginDemo(set, alerts, host)
+    }
+
+    /** One demo host, nothing saved. */
+    private fun beginDemo(set: DemoBridge.Content, alerts: Boolean, host: Host) {
+        // Each start begins over: UI tests share one process and so one model.
+        resetHostState()
         demo = true
+        canLeaveDemo = false
+        demoSet = set
+        demoAlerts = alerts
+        hosts = HostStore(null)
+        watchHosts()
+        demoHostId = host.id
+        hosts.upsert(host)
+        hosts.markUsed(host.id)
+        scope.launch {
+            session.disconnect()
+            connectNow(host.id)
+        }
+    }
+
+    /** Back to the saved hosts, disconnected. */
+    fun leaveDemo() {
+        resetHostState()
+        demo = false
+        canLeaveDemo = false
+        demoHostId = null
+        hosts = savedHosts
+        watchHosts()
+        scope.launch { session.disconnect() }
+    }
+
+    /** Debug launches only: no saved hosts, as on a fresh install, whatever the device saved. */
+    fun forgetSavedHosts() {
+        savedHosts = HostStore(null)
+        leaveDemo()
+    }
+
+    /** What belonged to the last host's connection. */
+    private fun resetHostState() {
         rawPanes = emptySet()
         paneFit = null
         showReader = false
@@ -188,18 +250,10 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         closeError = null
         alert = null
         connectError = null
+        connectFix = null
         stayDisconnected = false
         currentHostId = null
-        demoAlerts = alerts
-        hosts = HostStore(null)
-        watchHosts()
-        val host = Host(name = "Demo", target = SshTarget(host = DEMO_HOST, user = "demo"))
-        hosts.upsert(host)
-        hosts.markUsed(host.id)
-        scope.launch {
-            session.disconnect()
-            connectNow(host.id)
-        }
+        lastDocs.clear()
     }
 
     // Connection
@@ -238,9 +292,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     }
 
     private suspend fun open(host: Host): BridgeChannel {
-        if (demo && host.target.host == DEMO_HOST) {
-            DebugHooks.demoBridge(demoAlerts)?.let { return it }
-        }
+        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts)
         return SshBridge.connect(host.target, keys.loadOrCreate())
     }
 
@@ -648,7 +700,6 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     companion object {
         const val KEY_COMMENT = "muxa-android"
-        const val DEMO_HOST = "demo.invalid"
         private val ALERT_TIME = 4.seconds
     }
 }

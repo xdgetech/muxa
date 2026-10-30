@@ -34,7 +34,14 @@ import tech.xdge.muxa.transport.BridgeChannel
  * text echoed back, and a chat for the agent pane %1. No SSH, no tmux. With [alerts],
  * an agent elsewhere starts waiting a few seconds in.
  */
-class DemoBridge(alerts: Boolean = false) : BridgeChannel {
+class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : BridgeChannel {
+    /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
+    enum class Content { TESTS, SHOWCASE }
+
+    private val content: DemoContent = when (set) {
+        Content.TESTS -> TestContent
+        Content.SHOWCASE -> ShowcaseContent
+    }
     private val out = Channel<String>(Channel.UNLIMITED)
     override val lines: ReceiveChannel<String> = out
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -51,15 +58,15 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
     private var waitingOn: Pair<ChatPrompt, ChatEntry>? = null
 
     /** Grows when a task starts. */
-    private var sessions: List<Session> = DemoContent.sessions(now())
-    private val images = DemoContent.images(now())
+    private var sessions: List<Session> = content.sessions(now())
+    private val images = content.images(now())
 
     private class ChatFollow(val id: Long, var seq: Long = 0, var count: Int = 0)
 
     init {
         if (alerts) {
             scope.launch {
-                delay(DemoContent.ALERT_DELAY_MILLIS)
+                delay(content.alertDelayMillis)
                 agentWaits("$4")
             }
         }
@@ -85,7 +92,7 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
                 ok(req.id)
             }
             is Request.Docs -> {
-                emit(Message.DocList(req.id, DemoContent.ROOT, DemoContent.docs.map { it.info }))
+                emit(Message.DocList(req.id, content.root, content.docs.map { it.info }))
                 ok(req.id)
             }
             is Request.Doc -> doc(req)
@@ -99,8 +106,8 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
                 startTask(req.id, req.repo, req.branch)
             }
             is Request.Changes -> {
-                val branch = BranchChanges("origin/main", 3, DemoContent.branch.map { it.info })
-                emit(Message.ChangeList(req.id, DemoContent.ROOT, DemoContent.changes.map { it.info }, branch = branch))
+                val branch = BranchChanges("origin/main", 3, content.branch.map { it.info })
+                emit(Message.ChangeList(req.id, content.root, content.changes.map { it.info }, branch = branch))
                 ok(req.id)
             }
             is Request.Diff -> if (req.scope == DiffScope.BRANCH) branchDiff(req) else diff(req)
@@ -109,7 +116,7 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
                 ok(req.id)
             }
             is Request.Images -> {
-                emit(Message.ImageList(req.id, DemoContent.ROOT, images.map { it.info }))
+                emit(Message.ImageList(req.id, content.root, images.map { it.info }))
                 ok(req.id)
             }
             is Request.Image -> image(req)
@@ -130,7 +137,7 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
         synchronized(lock) { watch = req.id }
         ok(req.id)
         val p = synchronized(lock) { sessions }.flatMap { it.panes }.firstOrNull { it.id == req.pane } ?: return
-        emit(Message.Screen(req.id, req.pane, p.cols, p.rows, Bytes(screen(p))))
+        emit(Message.Screen(req.id, req.pane, p.cols, p.rows, Bytes(content.screen(p))))
     }
 
     private fun chat(req: Request.Chat) {
@@ -140,11 +147,11 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
         }
         ok(req.id)
         synchronized(lock) { chat = ChatFollow(req.id) }
-        emitChat(DemoContent.conversation, DemoContent.chatStatus, reset = true)
+        emitChat(content.conversation, content.chatStatus, reset = true)
     }
 
     private fun doc(req: Request.Doc) {
-        val doc = DemoContent.docs.firstOrNull { it.info.path == req.path }
+        val doc = content.docs.firstOrNull { it.info.path == req.path }
         if (doc == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.path} is not listed")
             return
@@ -153,17 +160,18 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
         ok(req.id)
         emit(Message.DocContent(req.id, req.path, doc.text, 1))
         // The agent keeps writing its plan: an update arrives while it is open.
-        if (doc.info.kind == DocInfo.Kind.PLAN) {
+        val update = content.planUpdate
+        if (doc.info.kind == DocInfo.Kind.PLAN && update != null) {
             scope.launch {
                 delay(UPDATE_DELAY_MILLIS)
                 if (synchronized(lock) { openDoc } != req.id) return@launch
-                emit(Message.DocContent(req.id, req.path, doc.text + DemoContent.PLAN_UPDATE, 2))
+                emit(Message.DocContent(req.id, req.path, doc.text + update, 2))
             }
         }
     }
 
     private fun branchDiff(req: Request.Diff) {
-        val change = DemoContent.branch.firstOrNull { it.info.path == req.path }
+        val change = content.branch.firstOrNull { it.info.path == req.path }
         if (change == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.path} is not in the branch")
             return
@@ -174,7 +182,7 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
     }
 
     private fun diff(req: Request.Diff) {
-        val change = DemoContent.changes.firstOrNull { it.info.path == req.path }
+        val change = content.changes.firstOrNull { it.info.path == req.path }
         if (change == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.path} is not changed")
             return
@@ -184,11 +192,12 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
         val diff = change.diff
         emit(Message.DiffContent(req.id, req.path, diff, binary = diff == null))
         // The agent keeps editing: the diff grows while it is open.
-        if (diff != null) {
+        val update = content.diffUpdate
+        if (diff != null && update != null) {
             scope.launch {
                 delay(UPDATE_DELAY_MILLIS)
                 if (synchronized(lock) { openDiff } != req.id) return@launch
-                emit(Message.DiffContent(req.id, req.path, diff + DemoContent.DIFF_UPDATE, binary = false))
+                emit(Message.DiffContent(req.id, req.path, diff + update, binary = false))
             }
         }
     }
@@ -369,26 +378,5 @@ class DemoBridge(alerts: Boolean = false) : BridgeChannel {
             }
         }
 
-        /** A frame that shows whether the grid is exact: corners, a ruler and the last row. */
-        internal fun screen(p: Pane): ByteArray {
-            val cols = p.cols
-            val rows = p.rows
-            val title = "${p.command} — pane ${p.id} ${cols}x$rows"
-            val s = StringBuilder("\u001bc")
-            if (p.id in DemoContent.freshShells) {
-                s.append("\u001b[1;1H\u001b[7m").append(title.padEnd(cols).take(cols))
-                s.append("\u001b[0m\u001b[2;1H$ ")
-                return s.toString().toByteArray()
-            }
-            val ruler = (0 until cols).joinToString("") { (it % 10).toString() }
-            s.append("\u001b[1;1H\u001b[36m").append(ruler).append("\u001b[0m")
-            s.append("\u001b[2;1H\u001b[1m").append(title).append("\u001b[0m")
-            s.append("\u001b[4;1H日本語 ✓ é  \u001b[31mred\u001b[32m green\u001b[34m blue\u001b[0m")
-            s.append("\u001b[$rows;1H\u001b[7m").append(" ".repeat(cols - 1)).append("\u001b[0m")
-            s.append("\u001b[$rows;${cols}HX")
-            // A tall pane keeps its prompt near the bottom, like an agent's composer.
-            s.append("\u001b[${if (rows > 50) rows - 1 else 6};1H$ ")
-            return s.toString().toByteArray()
-        }
     }
 }

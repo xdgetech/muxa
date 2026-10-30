@@ -20,17 +20,38 @@ internal class DemoChange(val info: ChangeInfo, val diff: String?)
 internal class DemoImage(val info: ImageInfo, val color: Int)
 
 /** What the demo shows: the sessions, the chat on %1, and the Reader's repo. */
-internal object DemoContent {
-    const val ROOT = "app"
-    val chatStatus = AgentState.RUNNING
+internal interface DemoContent {
+    /** The repo the Reader shows. */
+    val root: String
+    val chatStatus: AgentState
 
     /** With `alerts`: when another agent starts waiting, after connecting. */
-    const val ALERT_DELAY_MILLIS = 4_000L
+    val alertDelayMillis: Long
+    fun sessions(now: Long): List<Session>
+    val conversation: List<ChatEntry>
+    val docs: List<DemoDoc>
+
+    /** Appended while a plan or a diff is open, to show that the Reader follows the file. */
+    val planUpdate: String?
+    val diffUpdate: String?
+    val changes: List<DemoChange>
+
+    /** What the task branch's commits changed since it left main. */
+    val branch: List<DemoChange>
+    fun images(now: Long): List<DemoImage>
+    fun screen(p: Pane): ByteArray
+}
+
+/** The fixtures the UI tests assert on. */
+internal object TestContent : DemoContent {
+    override val root = "app"
+    override val chatStatus = AgentState.RUNNING
+    override val alertDelayMillis = 4_000L
 
     /** Shells with nothing run yet: a title bar on the first row and the prompt under it. */
     val freshShells = setOf("%8")
 
-    fun sessions(now: Long) = listOf(
+    override fun sessions(now: Long) = listOf(
         Session(
             id = "$1", name = "feature-auth", repo = "app", repoDir = "/src/app", branch = "feat/auth",
             worktree = "/src/.worktrees/app-feat-auth",
@@ -80,7 +101,7 @@ internal object DemoContent {
         ),
     )
 
-    val conversation = listOf(
+    override val conversation = listOf(
         ChatEntry("u:1", ChatEntry.Kind.USER, "Fix the failing test in the parser"),
         ChatEntry("a:1", ChatEntry.Kind.ASSISTANT, "I'll run the tests first to see what fails."),
         ChatEntry(
@@ -104,9 +125,9 @@ internal object DemoContent {
         ChatEntry("n:1", ChatEntry.Kind.NOTICE, "/model opus"),
     )
 
-    const val PLAN_UPDATE = "\n## Update\n\nUpdated by the agent while you read.\n"
+    override val planUpdate: String? = "\n## Update\n\nUpdated by the agent while you read.\n"
 
-    val docs = listOf(
+    override val docs = listOf(
         DemoDoc(
             DocInfo("plans/demo-plan.md", DocInfo.Kind.PLAN, "Reader plan", 1),
             """
@@ -157,9 +178,9 @@ internal object DemoContent {
         ),
     )
 
-    const val DIFF_UPDATE = "+    // checked by the agent\n"
+    override val diffUpdate: String? = "+    // checked by the agent\n"
 
-    val changes = listOf(
+    override val changes = listOf(
         DemoChange(
             ChangeInfo("src/parser.rs", ChangeInfo.Status.MODIFIED, added = 2, removed = 1),
             """
@@ -195,8 +216,7 @@ internal object DemoContent {
         DemoChange(ChangeInfo("assets/logo.png", ChangeInfo.Status.ADDED), null),
     )
 
-    /** What the task branch's commits changed since it left main. */
-    val branch = listOf(
+    override val branch = listOf(
         DemoChange(
             ChangeInfo("src/item.rs", ChangeInfo.Status.MODIFIED, added = 1, removed = 0),
             """
@@ -214,10 +234,32 @@ internal object DemoContent {
     )
 
     /** Screenshots of a QA run, newest first, and the repo's logo. Colors are UIKit's system colors. */
-    fun images(now: Long) = listOf(
+    override fun images(now: Long) = listOf(
         DemoImage(ImageInfo("build/screenshots/en/login.png", now - 60, 48_213), 0x007AFF),
         DemoImage(ImageInfo("build/screenshots/en/home.png", now - 61, 51_002), 0x30B0C7),
         DemoImage(ImageInfo("build/screenshots/ja/login.png", now - 62, 49_870), 0x5856D6),
         DemoImage(ImageInfo("docs/images/logo.png", now - 86_400, 9_120), 0xFF9500),
     )
+
+    /** A frame that shows whether the grid is exact: corners, a ruler and the last row. */
+    override fun screen(p: Pane): ByteArray {
+        val cols = p.cols
+        val rows = p.rows
+        val title = "${p.command} — pane ${p.id} ${cols}x$rows"
+        val s = StringBuilder("\u001bc")
+        if (p.id in freshShells) {
+            s.append("\u001b[1;1H\u001b[7m").append(title.padEnd(cols).take(cols))
+            s.append("\u001b[0m\u001b[2;1H$ ")
+            return s.toString().toByteArray()
+        }
+        val ruler = (0 until cols).joinToString("") { (it % 10).toString() }
+        s.append("\u001b[1;1H\u001b[36m").append(ruler).append("\u001b[0m")
+        s.append("\u001b[2;1H\u001b[1m").append(title).append("\u001b[0m")
+        s.append("\u001b[4;1H日本語 ✓ é  \u001b[31mred\u001b[32m green\u001b[34m blue\u001b[0m")
+        s.append("\u001b[$rows;1H\u001b[7m").append(" ".repeat(cols - 1)).append("\u001b[0m")
+        s.append("\u001b[$rows;${cols}HX")
+        // A tall pane keeps its prompt near the bottom, like an agent's composer.
+        s.append("\u001b[${if (rows > 50) rows - 1 else 6};1H$ ")
+        return s.toString().toByteArray()
+    }
 }

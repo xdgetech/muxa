@@ -1,12 +1,11 @@
-#if DEBUG
 import Foundation
 import MuxaProtocol
 import MuxaTransport
 import UIKit
 
-/// An in-app bridge for the simulator (launch argument `-demo`): a few sessions,
-/// fixed-size panes, typed text echoed back, and a chat for the agent pane %1.
-/// No SSH, no tmux.
+/// An in-app bridge: a few sessions, fixed-size panes, typed text echoed back, and a
+/// chat for the agent pane %1. No SSH, no tmux. Try the Demo uses it, and so do the
+/// UI tests (launch argument `-demo`, DEBUG only).
 final class DemoBridge: BridgeChannel, @unchecked Sendable {
     let lines: AsyncThrowingStream<Data, any Error>
     private let out: AsyncThrowingStream<Data, any Error>.Continuation
@@ -21,7 +20,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var waitingOn: (prompt: ChatPrompt, tool: ChatEntry)?
     /// Grows when a task starts.
     private var sessions: [Session]
-    private let content = DemoContent.current
+    private let content: DemoContent
     static let chatPane = "%1"
     /// A branch whose task fails, to show the error.
     static let failingBranch = "taken"
@@ -66,11 +65,12 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// Shells with nothing run yet: a title bar on the first row and the prompt under it.
     static let freshShells: Set<String> = ["%8"]
 
-    init() {
+    /// With `alerts`, an agent elsewhere starts waiting a few seconds in.
+    init(content: DemoContent, alerts: Bool) {
+        self.content = content
         sessions = content.sessions
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        // Launch argument `-demo-alerts`: an agent elsewhere starts waiting a few seconds in.
-        if ProcessInfo.processInfo.arguments.contains("-demo-alerts") {
+        if alerts {
             DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
         }
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes"]))
@@ -480,4 +480,3 @@ private extension Optional {
         return self
     }
 }
-#endif

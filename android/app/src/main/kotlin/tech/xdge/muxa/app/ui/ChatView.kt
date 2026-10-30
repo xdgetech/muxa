@@ -194,16 +194,21 @@ private fun ToolRow(tool: ChatTool) {
 /** The agent waits on something its adapter cannot name: only its terminal shows it. */
 @Composable
 private fun WaitingBanner(model: AppModel) {
-    Row(
+    // The keys get a line of their own: beside them on a phone, the label had no width left
+    // and grew one character per line, over the messages and the composer.
+    Column(
         Modifier.fillMaxWidth().background(Theme.attention.copy(alpha = 0.12f)).padding(horizontal = 16.dp, vertical = 8.dp).testTag("waiting"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(Icons.waiting, null, tint = Theme.attention)
-        Text("Waiting for your answer", Modifier.weight(1f), color = Theme.attention, fontWeight = FontWeight.Medium)
-        for (key in listOf("1", "2", "3")) QuickKey(model, key, listOf(key))
-        QuickKey(model, "Esc", listOf("Escape"))
-        OutlinedButton({ model.setPretty(false) }) { Text("Show Raw") }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.waiting, null, tint = Theme.attention)
+            Text("Waiting for your answer", color = Theme.attention, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (key in listOf("1", "2", "3")) QuickKey(model, key, listOf(key))
+            QuickKey(model, "Esc", listOf("Escape"))
+            OutlinedButton({ model.setPretty(false) }) { Text("Show Raw") }
+        }
     }
 }
 

@@ -191,23 +191,40 @@ struct WaitingBanner: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 10) {
-            Label("Waiting for your answer", systemImage: Icon.waiting)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Theme.attention)
-            Spacer()
-            ForEach(["1", "2", "3"], id: \.self) { key in
-                QuickKey(title: key, keys: [key])
+        // One line when it fits; on a phone the label goes above the keys instead of wrapping.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                label
+                Spacer()
+                keys
             }
-            QuickKey(title: "Esc", keys: ["Escape"])
-            Button("Show Raw") { model.setPretty(false) }
-                .buttonStyle(.bordered)
+            VStack(alignment: .leading, spacing: 6) {
+                label
+                HStack(spacing: 10) { keys }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Theme.attention.opacity(0.12))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("waiting")
+    }
+
+    private var label: some View {
+        Label("Waiting for your answer", systemImage: Icon.waiting)
+            .font(.callout.weight(.medium))
+            .foregroundStyle(Theme.attention)
+            .lineLimit(1)
+    }
+
+    @ViewBuilder private var keys: some View {
+        ForEach(["1", "2", "3"], id: \.self) { key in
+            QuickKey(title: key, keys: [key])
+        }
+        QuickKey(title: "Esc", keys: ["Escape"])
+        Button("Show Raw") { model.setPretty(false) }
+            .buttonStyle(.bordered)
     }
 }
 

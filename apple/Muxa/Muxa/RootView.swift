@@ -131,6 +131,8 @@ struct DetailView: View {
                 Text("Muxa connects over SSH to the Mac or Linux machine where your tmux sessions run. Install muxa-bridge there first.")
             } actions: {
                 Button("Add Host") { editing = HostDraft() }.buttonStyle(.borderedProminent)
+                Button("Try the Demo") { Task { await model.startDemo() } }
+                    .accessibilityIdentifier("try-demo")
                 Link("How to Set Up the Host", destination: Guide.hostSetup)
             }
         } else {

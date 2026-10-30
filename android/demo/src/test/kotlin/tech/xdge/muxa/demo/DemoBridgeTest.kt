@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.ChatPrompt
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorCode
@@ -18,11 +19,11 @@ import java.util.concurrent.Executors
 import javax.imageio.ImageIO
 
 class DemoBridgeTest {
-    private suspend fun connected(): Pair<PaneSession, PaneScreen> {
+    private suspend fun connected(set: DemoBridge.Content = DemoBridge.Content.TESTS): Pair<PaneSession, PaneScreen> {
         val session = PaneSession(oneThread())
         val screen = PaneScreen()
         session.renderer = screen
-        session.connect { DemoBridge() }
+        session.connect { DemoBridge(set) }
         return session to screen
     }
 
@@ -162,6 +163,46 @@ class DemoBridgeTest {
         val task = session.state.value.sessions.single { it.name == "feat-x" }
         assertEquals("app", task.repo)
         assertEquals("feat/x", task.branch)
+    }
+
+    @Test
+    fun theShowcaseListsItsSessions() = runBlocking {
+        val (session, _) = connected(DemoBridge.Content.SHOWCASE)
+        assertEquals(
+            listOf("stripe-webhooks", "retry-backoff", "dark-mode", "search-index", "notes"),
+            session.state.value.sessions.map { it.name },
+        )
+        // The bridge's alerts make $4 wait.
+        assertEquals("search-index", session.state.value.sessions.single { it.id == "$4" }.name)
+    }
+
+    @Test
+    fun theShowcaseChatsOnTheAgentPaneAndWaits() = runBlocking {
+        val (session, _) = connected(DemoBridge.Content.SHOWCASE)
+        session.follow("%1")
+        waitUntil { session.state.value.chat?.loaded == true }
+        val chat = session.state.value.chat!!
+        assertEquals(listOf("u:1", "a:1", "t:1", "t:2", "a:2", "t:3", "a:3"), chat.entries.map { it.id })
+        assertEquals(AgentState.WAITING, chat.status?.state)
+    }
+
+    @Test
+    fun theShowcaseReadsTheBillingRepo() = runBlocking {
+        val (session, _) = connected(DemoBridge.Content.SHOWCASE)
+        val docs = session.documents("%1")
+        assertEquals("billing", docs.root)
+        assertEquals(listOf("plans/stripe-webhooks.md", "README.md", "docs/webhooks.md"), docs.entries.map { it.path })
+        val changes = session.changes("%1")
+        assertEquals("billing", changes.root)
+        assertEquals(listOf("src/webhooks/router.rs", "src/invoice.rs", "tests/webhooks.rs"), changes.entries.map { it.path })
+    }
+
+    @Test
+    fun theShowcaseAgentScreenStartsWithThePrompt() = runBlocking {
+        val (session, screen) = connected(DemoBridge.Content.SHOWCASE)
+        session.watch("%1")
+        val first = "> Handle Stripe's invoice.paid webhook. Mark the invoice paid and email a receipt."
+        waitUntil { screen.settledRows().firstOrNull() == first }
     }
 
     private fun oneThread(): CoroutineDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()

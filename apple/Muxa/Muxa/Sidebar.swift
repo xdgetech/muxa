@@ -9,7 +9,23 @@ struct Sidebar: View {
 
     var body: some View {
         List {
-            // No empty header on first launch; the detail view says what to do.
+            // No empty header on first launch. A phone starts here, so the demo is offered here too.
+            if model.hosts.hosts.isEmpty {
+                Section {
+                    Button("Try the Demo", systemImage: Icon.demo) { Task { await model.startDemo() } }
+                        .accessibilityIdentifier("try-demo")
+                } footer: {
+                    Text("Sample sessions on this device, with no host needed.")
+                }
+            }
+            if model.canLeaveDemo {
+                Section {
+                    Button("Leave Demo", systemImage: Icon.leaveDemo) { Task { await model.leaveDemo() } }
+                        .accessibilityIdentifier("leave-demo")
+                } footer: {
+                    Text("Hosts added during the demo are not saved.")
+                }
+            }
             if !model.hosts.hosts.isEmpty {
                 Section("Hosts") {
                     ForEach(model.hosts.hosts) { host in
@@ -59,7 +75,7 @@ struct Sidebar: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add Host", systemImage: Icon.add) { editing = HostDraft() }
             }
-            if !model.hosts.hosts.isEmpty {
+            if !model.hosts.hosts.isEmpty, !model.demo {
                 ToolbarItem(placement: .secondaryAction) { EditButton() }
             }
         }

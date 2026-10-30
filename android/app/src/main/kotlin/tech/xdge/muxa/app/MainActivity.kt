@@ -8,6 +8,7 @@ import android.view.Menu
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import tech.xdge.muxa.demo.DemoBridge
 import tech.xdge.muxa.app.ui.MuxaTheme
 import tech.xdge.muxa.app.ui.Root
 
@@ -17,9 +18,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Debug builds only: `adb shell am start ... --ez demo true` uses the in-app bridge.
+        // Debug builds only, for the UI tests: `adb shell am start ... --ez demo true` starts
+        // the demo on the test fixtures, and `--ez no-saved-hosts true` starts as a fresh install.
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_DEMO, false)) {
-            model.startDemo(alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false))
+            val set = if (intent.getBooleanExtra(EXTRA_SHOWCASE, false)) DemoBridge.Content.SHOWCASE else DemoBridge.Content.TESTS
+            model.startDemo(set, alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false))
+        } else if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_NO_SAVED_HOSTS, false)) {
+            model.forgetSavedHosts()
         }
         setContent { MuxaTheme { Root(model) } }
     }
@@ -49,5 +54,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_DEMO = "demo"
         const val EXTRA_DEMO_ALERTS = "demo-alerts"
+        const val EXTRA_SHOWCASE = "showcase"
+        const val EXTRA_NO_SAVED_HOSTS = "no-saved-hosts"
     }
 }

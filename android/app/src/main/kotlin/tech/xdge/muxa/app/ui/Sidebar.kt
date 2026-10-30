@@ -2,6 +2,7 @@ package tech.xdge.muxa.app.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -60,7 +62,17 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
         )
         val numbers = model.visibleSessions.withIndex().associate { it.value.id to it.index + 1 }
         LazyColumn(Modifier.fillMaxWidth()) {
-            // No empty header on first launch; the detail says what to do.
+            // No empty header on first launch. A phone may start here, so the demo is offered here too.
+            if (model.hostList.hosts.isEmpty()) {
+                item {
+                    DemoRow("Try the Demo", Icons.demo, "Sample sessions on this device, with no host needed.", "try-demo") { model.tryDemo() }
+                }
+            }
+            if (model.canLeaveDemo) {
+                item {
+                    DemoRow("Leave Demo", Icons.leaveDemo, "Hosts added during the demo are not saved.", "leave-demo") { model.leaveDemo() }
+                }
+            }
             if (model.hostList.hosts.isNotEmpty()) {
                 item { SectionHeader("Hosts") }
                 items(model.hostList.hosts, key = { it.id }) { host ->
@@ -87,6 +99,25 @@ private fun newTaskAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
     val dir = group.sessions.firstOrNull()?.repoDir
     if (!model.canStartTasks || group.repo == null || dir == null) return null
     return { model.startNewTask(dir) }
+}
+
+@Composable
+private fun DemoRow(title: String, icon: ImageVector, note: String, tag: String, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag(tag),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+            Text(title, Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.primary)
+        }
+        Text(
+            note,
+            Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable

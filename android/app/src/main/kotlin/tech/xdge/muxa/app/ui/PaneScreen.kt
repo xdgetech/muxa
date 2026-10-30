@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -235,7 +236,9 @@ private fun PaneHost(model: AppModel, focusRequest: Int?) {
                 it.fitOverride = model.paneFit
                 it.onPinch = { fit -> model.paneFit = fit }
             },
-            modifier = Modifier.weight(1f).fillMaxWidth().testTag("pane").semantics {
+            // The view scrolls to follow the cursor, and Compose does not clip an AndroidView:
+            // the rows above its scroll position drew over the bar.
+            modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("pane").semantics {
                 contentDescription = "Pane"
                 stateDescription = if (content >= 0) view?.screenText.orEmpty() else ""
             },

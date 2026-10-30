@@ -195,7 +195,8 @@ private fun Detail(model: AppModel, onEdit: (HostDraft) -> Unit, onShowList: () 
         ) {
             val uri = LocalUriHandler.current
             Button({ onEdit(HostDraft.new()) }) { Text("Add Host") }
-            OutlinedButton({ uri.openUri(HOST_SETUP) }) { Text("How to Set Up the Host") }
+            OutlinedButton({ model.tryDemo() }, Modifier.testTag("try-demo")) { Text("Try the Demo") }
+            TextButton({ uri.openUri(HOST_SETUP) }) { Text("How to Set Up the Host") }
         }
         else -> Unavailable("Not Connected", "Pick a host in the list.", onShowList)
     }

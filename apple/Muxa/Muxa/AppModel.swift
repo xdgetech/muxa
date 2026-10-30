@@ -9,7 +9,9 @@ import Observation
 @Observable
 final class AppModel {
     let session = PaneSession()
-    let hosts: HostStore
+    /// The saved hosts, or during the demo its one host, kept in memory only.
+    private(set) var hosts: HostStore
+    private let savedHosts: HostStore
     /// The host the session belongs to: connected, connecting, or last tried.
     private(set) var currentHostID: UUID?
     private(set) var connecting = false
@@ -26,8 +28,16 @@ final class AppModel {
     /// Bumped when the user asks for the detail: a connection or a session. On a
     /// phone the detail is pushed over the sidebar then.
     private(set) var detailRequest = 0
-    /// Set by a DEBUG launch argument: an in-app bridge instead of SSH.
-    let demo: Bool
+    /// The in-app demo bridge instead of SSH: Try the Demo, or the UI tests' launch
+    /// argument `-demo` (DEBUG only).
+    private(set) var demo = false
+    /// The user started the demo, so the sidebar offers to leave it. The UI tests' launch
+    /// argument starts it for good.
+    private(set) var canLeaveDemo = false
+    /// The demo bridge serves this host only; a host added during the demo uses SSH.
+    private var demoHostID: UUID?
+    private var demoContent = DemoContent.showcase
+    private var demoAlerts = true
 
     /// What to do once the user trusts the presented host key. A setup password is
     /// held only while the trust sheet is up.
@@ -67,18 +77,73 @@ final class AppModel {
 
     init() {
         #if DEBUG
-        demo = ProcessInfo.processInfo.arguments.contains("-demo")
-        #else
-        demo = false
-        #endif
-        if demo {
-            hosts = HostStore(file: nil)
-            let host = Host(name: "Demo", target: SSHTarget(host: Self.demoHost, user: "demo"))
-            hosts.upsert(host)
-            hosts.markUsed(host.id)
-        } else {
-            hosts = HostStore(file: HostStore.defaultFile)
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-demo") {
+            demo = true
+            demoContent = .current
+            demoAlerts = arguments.contains("-demo-alerts")
+            // The store screenshots show the list: a machine's name there, not the demo's.
+            let showcase = arguments.contains("-showcase")
+            (hosts, demoHostID) = Self.demoHosts(showcase ? Host(name: "Mac mini", target: SSHTarget(host: "mac-mini.local", user: "you")) : nil)
+            savedHosts = HostStore(file: nil)
+            return
         }
+        // The Try the Demo test starts from no hosts, whatever the simulator saved.
+        if arguments.contains("-no-saved-hosts") {
+            savedHosts = HostStore(file: nil)
+            hosts = savedHosts
+            return
+        }
+        #endif
+        savedHosts = HostStore(file: HostStore.defaultFile)
+        hosts = savedHosts
+    }
+
+    /// One demo host, never written to disk.
+    private static func demoHosts(_ shown: Host? = nil) -> (HostStore, UUID) {
+        let hosts = HostStore(file: nil)
+        let host = shown ?? Host(name: "Demo", target: SSHTarget(host: "demo.invalid", user: "demo"))
+        hosts.upsert(host)
+        hosts.markUsed(host.id)
+        return (hosts, host.id)
+    }
+
+    // MARK: Demo
+
+    /// Try the Demo: sample sessions from the in-app bridge. Nothing is saved, and no
+    /// SSH connection or key is touched.
+    func startDemo() async {
+        await session.disconnect()
+        resetHostState()
+        demo = true
+        canLeaveDemo = true
+        demoContent = .showcase
+        demoAlerts = true
+        (hosts, demoHostID) = Self.demoHosts()
+        guard let id = hosts.lastUsed else { return }
+        await connect(to: id)
+    }
+
+    /// Back to the saved hosts, disconnected.
+    func leaveDemo() async {
+        await session.disconnect()
+        resetHostState()
+        demo = false
+        canLeaveDemo = false
+        demoHostID = nil
+        hosts = savedHosts
+    }
+
+    /// What belonged to the last host's connection.
+    private func resetHostState() {
+        currentHostID = nil
+        connectError = nil
+        connectFix = nil
+        stayDisconnected = false
+        rawPanes = []
+        lastDocs = [:]
+        paneFit = nil
+        alert = nil
     }
 
     // MARK: Connection
@@ -114,9 +179,7 @@ final class AppModel {
     }
 
     private func open(_ host: Host) async throws -> any BridgeChannel {
-        #if DEBUG
-        if demo, host.target.host == Self.demoHost { return DemoBridge() }
-        #endif
+        if demo, host.id == demoHostID { return DemoBridge(content: demoContent, alerts: demoAlerts) }
         return try await SSHBridge.connect(to: host.target, key: ClientKeyStore.loadOrCreate())
     }
 
@@ -196,7 +259,6 @@ final class AppModel {
     }
 
     private static let keyComment = "muxa-ipad"
-    private static let demoHost = "demo.invalid"
 
     // MARK: Panes
 
