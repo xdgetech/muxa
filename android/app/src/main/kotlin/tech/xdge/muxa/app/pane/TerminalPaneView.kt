@@ -100,6 +100,12 @@ class TerminalPaneView(context: Context) : View(context) {
     /** The screen as text, for accessibility and UI tests. */
     val screenText: String get() = screen.rows().joinToString("\n")
 
+    /** TalkBack and UI Automator read the pane's screen, as VoiceOver reads it on iOS. */
+    override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.text = screenText
+    }
+
     // Layout and fit
 
     private val mode: PaneFit

@@ -15,6 +15,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -110,7 +111,9 @@ class DemoTest {
     fun prettyViewSendsPromptsAndSwitchesToRaw() {
         launch()
         waitForTag("composer")
-        compose.waitUntilAtLeastOneExists(hasText("Fix the failing test in the parser"), TIMEOUT)
+        // The chat opens at its newest message; the first one is a scroll up.
+        compose.waitUntilAtLeastOneExists(hasTestTag("messages"), TIMEOUT)
+        compose.onNodeWithTag("messages").performScrollToNode(hasText("Fix the failing test in the parser"))
         compose.onNodeWithTag("composer").performTextInput("hello")
         compose.onNodeWithTag("send").performClick()
         compose.waitUntilAtLeastOneExists(hasText("You said", substring = true), TIMEOUT)
@@ -217,7 +220,9 @@ class DemoTest {
         waitForTag("agent-alert")
         compose.onNodeWithText("fix-login: needs your input", substring = true).assertExists()
         compose.onNodeWithTag("agent-alert").performClick()
-        compose.waitUntilAtLeastOneExists(hasText("fix-login"), TIMEOUT)
+        // The bar's title, not the banner's own text, which also names the session.
+        compose.waitUntilDoesNotExist(hasTestTag("agent-alert"), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasText("fix-login", substring = false), TIMEOUT)
     }
 
     @Test

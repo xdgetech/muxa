@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose draws everything; the window theme only sets the edges before it does. -->
-    <style name="Theme.Muxa" parent="android:Theme.Material.NoActionBar" />
+    <!--
+        Compose draws everything. The window theme still matters: the Reader's WebView takes
+        prefers-color-scheme from it, and the system bars their icon color.
+    -->
+    <style name="Theme.Muxa" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

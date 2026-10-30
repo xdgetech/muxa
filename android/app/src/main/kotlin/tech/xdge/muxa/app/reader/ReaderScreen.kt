@@ -46,6 +46,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.AppModel
@@ -115,7 +117,16 @@ fun ReaderScreen(model: AppModel) {
     }
 
     Dialog(onDismissRequest = model::closeReader, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        // A dialog is its own window: its status bar icons follow the theme here, not the activity.
+        val dark = androidx.compose.foundation.isSystemInDarkTheme()
+        val view = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.runtime.SideEffect {
+            (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.let { window ->
+                androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
+            }
+        }
+        // It also needs the tag setting the main window has (Root).
+        Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
             val phone = LocalPhoneLayout.current
             val list = @Composable { modifier: Modifier ->
                 ReaderList(model, query, { query = it }, selection, ::select, expanded, { expanded = it }, modifier)

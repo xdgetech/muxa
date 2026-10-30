@@ -3,6 +3,7 @@ package tech.xdge.muxa.app.ui
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -57,8 +58,12 @@ import tech.xdge.muxa.session.PaneFit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PaneScreen(model: AppModel, onShowList: () -> Unit) {
-    val phone = LocalPhoneLayout.current
+fun PaneScreen(model: AppModel, onShowList: () -> Unit) = BoxWithConstraints {
+    // The pane's own width decides the bar: in the book posture a tablet window has a
+    // phone-wide pane, which needs the compact bar too.
+    val stack = LocalPhoneLayout.current
+    val phone = stack || maxWidth < 600.dp
+    val book = LocalWindowLayout.current is WindowLayout.Book
     val pretty = model.showsPretty
     // Leaving Pretty, by the toggle or by opening another pane, returns the keyboard.
     LaunchedEffect(pretty) { if (!pretty) model.refocusPane() }
@@ -72,8 +77,11 @@ fun PaneScreen(model: AppModel, onShowList: () -> Unit) {
                 }
             },
             navigationIcon = {
-                IconButton(onShowList, Modifier.testTag(if (phone) "back" else "show-list")) {
-                    Icon(if (phone) Icons.back else Icons.list, if (phone) "Back" else "Show List")
+                // Back on the stack, Show List beside a hidden list, nothing when the list always shows.
+                if (!book) {
+                    IconButton(onShowList, Modifier.testTag(if (stack) "back" else "show-list")) {
+                        Icon(if (stack) Icons.back else Icons.list, if (stack) "Back" else "Show List")
+                    }
                 }
             },
             actions = {
@@ -210,7 +218,7 @@ private fun PaneHost(model: AppModel, focusRequest: Int?) {
     // Bumped on every screen change, so the semantics below carry the current text.
     var content by remember { mutableIntStateOf(0) }
     val hardware = LocalConfiguration.current.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding()) {
         AndroidView(
             factory = { context ->
                 TerminalPaneView(context).apply {

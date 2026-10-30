@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.shortcut
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import tech.xdge.muxa.app.ConnectFix
 import tech.xdge.muxa.app.reader.ReaderScreen
 import tech.xdge.muxa.protocol.AgentState
@@ -73,15 +75,19 @@ fun Root(model: AppModel) {
 
     CompositionLocalProvider(
         LocalPhoneLayout provides phone,
+        LocalWindowLayout provides layout,
         LocalPaneKeys provides paneKeys.also { it.belowHinge = layout is WindowLayout.Tabletop },
     ) {
         Surface(
             // Before any focused field: the composer and the dialogs never see the app's chords.
-            Modifier.fillMaxSize().onPreviewKeyEvent { model.shortcut(it.nativeKeyEvent) },
+            // Test tags as view ids, so UI Automator and QA tools on a device can find controls.
+            Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.onPreviewKeyEvent { model.shortcut(it.nativeKeyEvent) },
             color = MaterialTheme.colorScheme.background,
         ) {
             val list = @Composable { modifier: Modifier ->
-                Sidebar(model, onEdit = { editing = it }, onHide = { showList = false }.takeIf { paneOpen }, modifier = modifier)
+                // In the book posture the list always shows: nothing to hide.
+                val canHide = paneOpen && layout !is WindowLayout.Book
+                Sidebar(model, onEdit = { editing = it }, onHide = { showList = false }.takeIf { canHide }, modifier = modifier)
             }
             // Moved, not rebuilt, when a fold or a resize changes the layout: the pane view
             // keeps its screen and the keyboard, as SwiftUI moves it on iOS.

@@ -24,6 +24,9 @@ class MainActivity : ComponentActivity() {
         setContent { MuxaTheme { Root(model) } }
     }
 
+    /** The app's shortcuts when nothing in the window has focus (Root takes them otherwise). */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = model.shortcut(event) || super.onKeyDown(keyCode, event)
+
     /** Listed in the system's shortcut helper (Meta+/). */
     override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
         val chord = KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON

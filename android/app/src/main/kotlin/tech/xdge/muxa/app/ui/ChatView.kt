@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -76,7 +77,8 @@ import tech.xdge.muxa.session.ChatLog
 fun ChatView(model: AppModel, log: ChatLog?) {
     // The composer and the cards keep the messages' readable width, centered.
     Column(
-        Modifier.fillMaxSize().background(Theme.chatBackground).imePadding().testTag("chat"),
+        // Above the keyboard when it shows, else above the navigation bar (the app draws edge to edge).
+        Modifier.fillMaxSize().background(Theme.chatBackground).navigationBarsPadding().imePadding().testTag("chat"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.weight(1f).fillMaxWidth()) { Messages(log) }
@@ -104,27 +106,28 @@ private fun Messages(log: ChatLog?) {
         return
     }
     val list = rememberLazyListState()
-    LaunchedEffect(log.entries.lastOrNull()) {
-        if (log.entries.isNotEmpty()) list.animateScrollToItem(log.entries.size)
-    }
+    // Reversed, so the newest message is item 0 and the list stays at the bottom when the
+    // keyboard shrinks it, as iOS anchors the chat at the bottom. A new last message
+    // scrolls into view, as on iOS.
+    LaunchedEffect(log.entries.lastOrNull()) { list.animateScrollToItem(0) }
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().testTag("messages"),
         state = list,
+        reverseLayout = true,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(18.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        if (log.truncated) {
-            item { Text("Earlier messages are not shown.", style = MaterialTheme.typography.labelSmall) }
+        items(log.entries.asReversed(), key = { it.id }) { entry ->
+            // A readable line length, like the agents' own apps.
+            Box(Modifier.widthIn(max = 720.dp).fillMaxWidth()) { EntryRow(entry) }
         }
         if (log.entries.isEmpty()) {
             item { Text("No Messages Yet. Send a prompt to start.", textAlign = TextAlign.Center) }
         }
-        items(log.entries, key = { it.id }) { entry ->
-            // A readable line length, like the agents' own apps.
-            Box(Modifier.widthIn(max = 720.dp).fillMaxWidth()) { EntryRow(entry) }
+        if (log.truncated) {
+            item { Text("Earlier messages are not shown.", style = MaterialTheme.typography.labelSmall) }
         }
-        item { Spacer(Modifier.size(1.dp)) }
     }
 }
 

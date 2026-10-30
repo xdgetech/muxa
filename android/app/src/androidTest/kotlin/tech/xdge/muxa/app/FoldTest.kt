@@ -51,9 +51,14 @@ class FoldTest {
         scenario = ActivityScenario.launch(Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true))
     }
 
+    /** Runs [command] to its end: the output is read until the command closes it. */
     private fun shell(command: String) {
-        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command).close()
+        val out = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() }
     }
+
+    /** Types through the input method, as a user does; injected key events can bypass it. */
+    private fun type(text: String) = shell("input text $text")
 
     private fun paneShows(text: String) = SemanticsMatcher("pane shows \"$text\"") {
         it.config.getOrNull(SemanticsProperties.StateDescription)?.contains(text) == true
@@ -95,24 +100,27 @@ class FoldTest {
     fun resizingKeepsThePaneItsScreenAndTheKeyboard() {
         launch()
         openAgentTerminal()
-        InstrumentationRegistry.getInstrumentation().sendStringSync("one")
+        type("one")
         waitForPane("$ one")
         val activity = recreations()
 
-        // Folded: a phone-sized window, the phone layout with Back.
-        shell("wm size 1080x2400")
-        compose.waitUntilAtLeastOneExists(hasTestTag("back"), TIMEOUT)
+        // The other layout from the one the device starts in: a phone-sized window on a
+        // tablet or an unfolded foldable (Back), a tablet-sized one on a phone (Show List).
+        val startsWide = compose.onAllNodes(hasTestTag("show-list")).fetchSemanticsNodes().isNotEmpty()
+        val (other, start) = if (startsWide) "back" to "show-list" else "show-list" to "back"
+        shell(if (startsWide) "wm size 1080x2400" else "wm size 2560x1600")
+        compose.waitUntilAtLeastOneExists(hasTestTag(other), TIMEOUT)
         waitForPane("$ one")
         waitForKeyboard()
-        InstrumentationRegistry.getInstrumentation().sendStringSync("two")
+        type("two")
         waitForPane("$ onetwo")
 
-        // Unfolded: the tablet layout again, the same pane and screen.
+        // Back to the device's own size and layout, with the same pane and screen.
         shell("wm size reset")
-        compose.waitUntilAtLeastOneExists(hasTestTag("show-list"), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasTestTag(start), TIMEOUT)
         waitForPane("$ onetwo")
         waitForKeyboard()
-        InstrumentationRegistry.getInstrumentation().sendStringSync("three")
+        type("three")
         waitForPane("$ onetwothree")
         assertTrue("the Activity was recreated", activity == recreations())
     }

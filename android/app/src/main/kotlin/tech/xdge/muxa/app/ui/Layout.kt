@@ -47,3 +47,6 @@ fun windowLayout(widthDp: Int, heightDp: Int, hinge: Hinge?): WindowLayout {
 
 /** Set at the root from the window's layout, so every screen reads the same answer. */
 val LocalPhoneLayout = compositionLocalOf { false }
+
+/** The window's layout, for screens that differ by it beyond phone or not. */
+val LocalWindowLayout = compositionLocalOf<WindowLayout> { WindowLayout.Phone }
