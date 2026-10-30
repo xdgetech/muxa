@@ -70,4 +70,17 @@ class ScenarioTest {
         assertEquals(listOf("日本x"), screen.rows())
         screen.close()
     }
+
+    @Test
+    fun colorsSetBySgrReachTheSnapshot() {
+        val screen = PaneScreen()
+        screen.reset(20, 1, "\u001bc\u001b[31mred\u001b[32m green\u001b[0m x".toByteArray())
+        assertTrue(screen.awaitIdle())
+        val runs = screen.snapshot().lines[0]
+        val color = { col: Int -> runs.first { col >= it.column && col < it.column + it.text.length }.style.foreground }
+        assertEquals(TermColor.Indexed(1), color(0))
+        assertEquals(TermColor.Indexed(2), color(4))
+        assertEquals(TermColor.Default, color(10))
+        screen.close()
+    }
 }

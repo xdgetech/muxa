@@ -77,8 +77,11 @@ class PaneScreen(private val onIdle: () -> Unit = {}) : PaneRenderer, AutoClosea
 
     private class Engine(val cols: Int, val rows: Int, onIdle: () -> Unit) : AutoCloseable {
         private val display = Display()
-        private val buffer = TerminalTextBuffer(cols, rows, StyleState(), HISTORY)
-        private val terminal = JediTerminal(display, buffer, StyleState())
+
+        // One style state for both: SGR sets it on the terminal, and the buffer writes cells with it.
+        private val style = StyleState()
+        private val buffer = TerminalTextBuffer(cols, rows, style, HISTORY)
+        private val terminal = JediTerminal(display, buffer, style)
         private val input = Input(onIdle)
         private val thread = Thread({ run() }, "muxa-pane").apply { isDaemon = true }
 
