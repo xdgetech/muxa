@@ -5,6 +5,9 @@ AGENTS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENTS_SCRIPTS="$AGENTS_ROOT/scripts"
 # shellcheck disable=SC2034  # used by scripts that source this file
 TAB=$'\t'
+# A tmux format, expanded for the AI pane. @agent_name is set by layout.sh.
+# shellcheck disable=SC2034
+AGENTS_LAUNCH_CMD="claude --name '#{@agent_name}'"
 
 # Agent states for awk. Higher rank wins when a session rolls up the state of its
 # panes. "done" is a finished turn nobody has looked at yet, so it beats idle.

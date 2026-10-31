@@ -13,7 +13,7 @@ default @agents_sidebar on
 default @agents_sidebar_width 28
 default @agents_min_width 100
 default @agents_split 50
-default @agents_launch_cmd "claude --remote-control"
+default @agents_launch_cmd "$AGENTS_LAUNCH_CMD"
 default @agents_ide_cmd cursor
 default @agents_ide_mode auto
 default @agents_key_focus Tab

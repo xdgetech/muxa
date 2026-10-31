@@ -43,6 +43,21 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   wait_for "tx capture-pane -p -t '$ai' | grep -q '^agent-started'"
 }
 
+@test "the launch command is a tmux format with the agent's name" {
+  tx set-option -g @agents_launch_cmd "echo name=#{@agent_name}"
+  "$ROOT/scripts/new.sh" "$REPO" feature/named --no-switch
+  ai="$(tx list-panes -t =feature-named: -F '#{pane_id} #{@agents_role}' | awk '$2=="ai"{print $1}')"
+  wait_for "tx capture-pane -p -t '$ai' | grep -q '^name=app-feature-named$'"
+}
+
+@test "a second agent in the same task gets its own name" {
+  new feature/twice
+  w="$(tx new-window -d -t =feature-twice: -P -F '#{window_id}')"
+  "$ROOT/scripts/layout.sh" "$w" --no-agent
+  names="$(tx list-panes -s -t =feature-twice -F '#{@agent_name}' | grep . | sort | tr '\n' ' ')"
+  [ "$names" = "app-feature-twice app-feature-twice-2 " ]
+}
+
 @test "close refuses a worktree with uncommitted changes" {
   new feature/dirty
   wt="$(tx show-options -t =feature-dirty: -qv @agent_worktree)"

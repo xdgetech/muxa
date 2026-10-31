@@ -102,7 +102,7 @@ instead (OSC 52; your terminal must allow it).
 
 | Option | Default | |
 |---|---|---|
-| `@agents_launch_cmd` | `claude --remote-control` | typed into a new AI pane |
+| `@agents_launch_cmd` | `claude --name '#{@agent_name}'` | typed into a new AI pane. A tmux format, expanded for that pane. `@agent_name` is `<repo>-<session>`, with `-2`, `-3` for a second agent in the task |
 | `@agents_ide_cmd` | `cursor` | |
 | `@agents_ide_host` | `hostname -s` | host name in the remote IDE command |
 | `@agents_ide_mode` | `auto` | `local`, `remote`, or `auto` (remote when the client came in over ssh/mosh) |

@@ -26,9 +26,9 @@ The scripts act on the tmux server of this machine, so run them from a shell ins
 - `<repo dir>` is any path inside the repo, for example `~/Projects/lisk/lisk-app`.
   If the user names only the repo, find it under `~/Projects`. Ask when more than one matches.
 - `--base` sets the ref a new branch starts from. Omit it to use the repo's default branch.
-- On success it prints the session name. Report it. The new AI pane runs the
-  launch command (`claude --remote-control` by default), so the user can open
-  it from claude.ai or the Claude app.
+- On success it prints the session name. Report it, and the agent's name:
+  `tmux list-panes -s -t "=<session>" -F '#{@agent_name}' | grep .`. The agent runs with that
+  name (`claude --name`), so other sessions can send it messages by that name.
 - On failure, the reason is in `${TMPDIR:-/tmp}/tmux-agents-$(id -u)/agents.log`.
   Read the last lines and report them.
 
