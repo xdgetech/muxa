@@ -129,6 +129,20 @@ sealed interface Message {
     @Serializable
     data class TaskCreated(val task: Long, val session: String) : Message
 
+    /** The task records for a `list-tasks` request, just before its `result`. */
+    @Serializable
+    data class TaskList(
+        val tasks: Long,
+        /** The host's workspaces, from its config. */
+        val workspaces: List<WorkspaceInfo>,
+        val entries: List<TaskRecord>,
+        val truncated: Boolean = false,
+    ) : Message
+
+    /** The record a `create-task` or `update-task` wrote, just before its `result`. */
+    @Serializable
+    data class TaskSaved(val task: Long, val record: TaskRecord) : Message
+
     /** The bridge is exiting. */
     @Serializable
     data class Bye(val reason: String) : Message
@@ -156,5 +170,7 @@ value class ErrorCode(val name: String) {
         val UNSUPPORTED = ErrorCode("unsupported")
         /** The task launcher failed; the message says why. */
         val TASK_FAILED = ErrorCode("task-failed")
+        /** The task record changed since the client read it; list it again. */
+        val CONFLICT = ErrorCode("conflict")
     }
 }

@@ -515,6 +515,13 @@ impl Worker {
                 Ok(p) => timed(muxa_tmux::paste(client, p, &text)).await,
                 Err(e) => Err(e),
             },
+            // Not served yet; the bridge does not announce `task-records`.
+            Request::ListTasks { .. } | Request::CreateTask { .. } | Request::UpdateTask { .. } => {
+                return Some(Err(error_body(
+                    ErrorCode::Unsupported,
+                    "this bridge does not keep task records",
+                )));
+            }
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))

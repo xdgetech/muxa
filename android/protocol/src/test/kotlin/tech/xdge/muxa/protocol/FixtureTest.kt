@@ -29,7 +29,7 @@ class FixtureTest {
     @Test
     fun requestsRoundTrip() {
         val lines = lines("requests.jsonl")
-        assertEquals(23, lines.size)
+        assertEquals(27, lines.size)
         for (line in lines) {
             assertEquals(line, tree(line), tree(Wire.encode(Wire.decodeRequest(line))))
         }
@@ -38,7 +38,7 @@ class FixtureTest {
     @Test
     fun messagesRoundTrip() {
         val lines = lines("messages.jsonl")
-        assertEquals(30, lines.size)
+        assertEquals(34, lines.size)
         for (line in lines) {
             val message = Wire.decodeMessage(line)
             assertFalse("fixture type is unknown: $line", message is Message.Unknown)
@@ -63,6 +63,9 @@ class FixtureTest {
             """"index":0,"role":"observer","cols":80,"rows":24,"command":"sh","path":"/","dead":false,"shellForeground":true}]}]}"""
         val pane = (Wire.decodeMessage(session) as Message.Result).sessions!!.single().panes.single()
         assertEquals(Role.UNKNOWN, pane.role)
+        val saved = """{"type":"task-saved","task":1,"record":{"id":"t-1","rev":1,"workspace":"w","title":"t",""" +
+            """"goal":"g","status":"blocked","createdAt":1,"updatedAt":1}}"""
+        assertEquals(TaskStatus("blocked"), (Wire.decodeMessage(saved) as Message.TaskSaved).record.status)
     }
 
     @Test

@@ -18,7 +18,10 @@ data class Session(
     val repoDir: String? = null,
     val branch: String? = null,
     val worktree: String? = null,
+    /** tmux-agents' task name (`@agent_task`). */
     val task: String? = null,
+    /** The task record this session runs (`@muxa_task`). */
+    val taskId: String? = null,
     val panes: List<Pane>,
 )
 

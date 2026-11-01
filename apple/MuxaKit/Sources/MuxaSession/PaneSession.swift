@@ -464,7 +464,7 @@ public final class PaneSession {
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded:
+            .diffContent, .diffEnded, .imageContent, .imageEnded, .taskList, .taskSaved:
             break
         }
     }

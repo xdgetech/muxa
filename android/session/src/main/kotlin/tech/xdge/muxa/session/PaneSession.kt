@@ -492,7 +492,7 @@ class PaneSession(
             }
             Message.SessionsChanged -> scope.launch { runCatching { refresh() } }
             is Message.Bye -> scope.launch { teardown(message.reason) }
-            is Message.Unknown -> {}
+            is Message.TaskList, is Message.TaskSaved, is Message.Unknown -> {}
         }
     }
 

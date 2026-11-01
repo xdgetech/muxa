@@ -7,12 +7,15 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
     public var repoDir: String?
     public var branch: String?
     public var worktree: String?
+    /// tmux-agents' task name (`@agent_task`).
     public var task: String?
+    /// The task record this session runs (`@muxa_task`).
+    public var taskId: String?
     public var panes: [Pane]
 
     public init(
         id: String, name: String, repo: String? = nil, repoDir: String? = nil, branch: String? = nil,
-        worktree: String? = nil, task: String? = nil, panes: [Pane]
+        worktree: String? = nil, task: String? = nil, taskId: String? = nil, panes: [Pane]
     ) {
         self.id = id
         self.name = name
@@ -21,6 +24,7 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
         self.branch = branch
         self.worktree = worktree
         self.task = task
+        self.taskId = taskId
         self.panes = panes
     }
 }

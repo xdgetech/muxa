@@ -43,6 +43,8 @@ object Wire {
         kind<Message.ImageContent>("image-content"),
         kind<Message.ImageEnded>("image-ended"),
         kind<Message.TaskCreated>("task-created"),
+        kind<Message.TaskList>("task-list"),
+        kind<Message.TaskSaved>("task-saved"),
         kind<Message.Bye>("bye"),
     )
 
@@ -68,6 +70,9 @@ object Wire {
         kind<Request.Unimage>("unimage"),
         kind<Request.NewTask>("new-task"),
         kind<Request.CloseTask>("close-task"),
+        kind<Request.ListTasks>("list-tasks"),
+        kind<Request.CreateTask>("create-task"),
+        kind<Request.UpdateTask>("update-task"),
         kind<Request.Bye>("bye"),
     )
 
