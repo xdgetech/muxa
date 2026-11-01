@@ -1,0 +1,24 @@
+# muxa workspaces: copy to ~/.config/muxa/workspaces.toml on the host.
+# The bridge reads it; the apps cannot change it (ADR 0015).
+#
+# name   shown in the app's New Task sheet; unique, at most 64 characters.
+# root   where Tasks without a repo get their directory: <root>/tasks/<slug>-<id>/.
+#        It must exist. A leading ~/ is your home directory.
+# repos  optional; repos you start Tasks in from this workspace. They must
+#        exist, and may lie outside root.
+#
+# Unknown keys are refused, so a typo fails loudly instead of being ignored.
+
+[[workspace]]
+name = "Company"
+root = "~/work/company"
+repos = ["~/work/company/api", "~/work/company/web"]
+
+[[workspace]]
+name = "Side project"
+root = "~/projects/side"
+repos = ["~/projects/side/app"]
+
+[[workspace]]
+name = "Personal"
+root = "~/personal"

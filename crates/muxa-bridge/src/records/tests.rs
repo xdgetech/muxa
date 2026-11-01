@@ -294,6 +294,27 @@ fn config(dir: &Path, text: &str) -> Result<Workspaces, ConfigError> {
 }
 
 #[test]
+fn the_example_config_loads() {
+    let home = temp("example");
+    for dir in [
+        "work/company/api",
+        "work/company/web",
+        "projects/side/app",
+        "personal",
+    ] {
+        std::fs::create_dir_all(home.join(dir)).unwrap();
+    }
+    let text = include_str!("../../../../docs/examples/workspaces.toml");
+    let names: Vec<String> = config(&home, text)
+        .unwrap()
+        .all()
+        .iter()
+        .map(|w| w.name.clone())
+        .collect();
+    assert_eq!(names, ["Company", "Side project", "Personal"]);
+}
+
+#[test]
 fn workspaces_load_and_validate() {
     let dir = temp("config");
     std::fs::create_dir_all(dir.join("work/app")).unwrap();

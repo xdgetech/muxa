@@ -49,6 +49,8 @@ Documents: Cmd+Shift+D opens the Reader for the shown pane. Its tabs list that s
 
 New tasks: Cmd+N, or **+** on a repo in the sidebar, starts a task: a git worktree on a branch and a session with an agent in it. The bridge makes the worktree under `.worktrees/` next to the repo and starts `claude` in one pane (`--task-command` picks another agent). With the tmux-agents desktop plugin installed, its `new.sh` does the work instead, so the task looks the same as one started on the desktop.
 
+Tasks and workspaces: **Tasks** in the sidebar lists your Tasks by what they need from you: Needs attention, Ready for review, Running, No agent, Closed. A Task is a goal that outlives its session; it is kept on the host in `~/.local/state/muxa/tasks/`. **New Task** takes a workspace, a title and a goal, and optionally a repo and branch. Without a repo, the Task gets its own directory in the workspace. The agent starts there and reads the goal from `.muxa/TASK.md`. Workspaces come from `~/.config/muxa/workspaces.toml` on the host; copy [`docs/examples/workspaces.toml`](docs/examples/workspaces.toml) and edit it. Without that file, Tasks has no workspace to offer. From a terminal: `muxa-cli --bridge muxa-bridge tasks`, `task new` and `task done`.
+
 Closing a task: **Close Task…** in a session's menu (sidebar) or in the pane's **…** menu. Close removes the worktree when its branch is merged; you can also keep it, or remove it anyway. A worktree with uncommitted changes is never removed, and the branch is always kept.
 
 Approvals: when Claude Code waits on a permission, a question or its plan, Chat shows a card with what it asks. The card has Allow and Deny, the question's answers, or Read Plan. The menu's other choices are one tap away in the terminal.
