@@ -52,6 +52,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.ReaderTab
+import tech.xdge.muxa.app.ui.DialogStatusBar
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.Theme
@@ -119,14 +120,7 @@ fun ReaderScreen(model: AppModel) {
     }
 
     Dialog(onDismissRequest = model::closeReader, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        // A dialog is its own window: its status bar icons follow the theme here, not the activity.
-        val dark = androidx.compose.foundation.isSystemInDarkTheme()
-        val view = androidx.compose.ui.platform.LocalView.current
-        androidx.compose.runtime.SideEffect {
-            (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window?.let { window ->
-                androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
-            }
-        }
+        DialogStatusBar()
         // It also needs the tag setting the main window has (Root).
         Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
             val list = @Composable { modifier: Modifier ->

@@ -25,6 +25,8 @@ import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.PROTOCOL_VERSION
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskRecord
+import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.terminal.PaneRenderer
 import tech.xdge.muxa.transport.BridgeChannel
@@ -56,6 +58,9 @@ class PaneSession(
         class Bridge(val body: ErrorBody) : Failure(body.message)
         class ProtocolMismatch(val bridge: Int) : Failure("protocol $bridge")
         class NoHello : Failure("no hello")
+
+        /** The Task was recorded, but its agent did not start; [record]'s note says why. */
+        class LaunchFailed(val record: TaskRecord, val body: ErrorBody) : Failure(body.message)
     }
 
     data class State(
@@ -78,6 +83,8 @@ class PaneSession(
         val doc: DocLog? = null,
         val diff: DiffLog? = null,
         val image: ImageLog? = null,
+        /** The task records, once listed; null when the bridge keeps none or has not answered yet. */
+        val tasks: TaskBoard? = null,
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -85,6 +92,7 @@ class PaneSession(
         val canShowImages get() = "images" in capabilities
         val canStartTasks get() = "tasks" in capabilities
         val canCloseTasks get() = "close-task" in capabilities
+        val canKeepTasks get() = "task-records" in capabilities
     }
 
     private val _state = MutableStateFlow(State())
@@ -110,6 +118,8 @@ class PaneSession(
     private val changeListings = mutableMapOf<Long, Message.ChangeList>()
     private val imageListings = mutableMapOf<Long, Message.ImageList>()
     private val createdTasks = mutableMapOf<Long, String>()
+    private val taskListings = mutableMapOf<Long, Message.TaskList>()
+    private val savedTasks = mutableMapOf<Long, TaskRecord>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
 
     /** Ids of input requests in flight; their results only matter when they fail. */
@@ -128,7 +138,7 @@ class PaneSession(
             _state.update {
                 it.copy(
                     watchedPane = null, paneGoneReason = null, sessions = emptyList(), chat = null,
-                    unsupportedChats = emptySet(), doc = null, diff = null, image = null,
+                    unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
                 )
             }
         }
@@ -141,6 +151,8 @@ class PaneSession(
             withTimeoutOrNull(helloTimeout) { waitHello.await() } ?: throw Failure.NoHello()
             _state.update { it.copy(phase = Phase.Connected) }
             refresh()
+            // The task list is extra: a bridge that fails it still shows its sessions.
+            runCatching { loadTasks() }
             val before = _state.value
             before.watchedPane?.let { watch(it) }
             before.chat?.pane?.let {
@@ -177,6 +189,69 @@ class PaneSession(
         val reply = request { Request.List(it) }
         (reply as? Message.Result)?.sessions?.let { sessions -> _state.update { it.copy(sessions = sessions) } }
     }
+
+    /** Lists the task records again, when the bridge keeps them; otherwise clears them. */
+    suspend fun loadTasks() = withContext(dispatcher) {
+        if (!_state.value.canKeepTasks) {
+            _state.update { it.copy(tasks = null) }
+            return@withContext
+        }
+        var requestId = 0L
+        request { id ->
+            requestId = id
+            Request.ListTasks(id)
+        }
+        val listing = taskListings.remove(requestId) ?: return@withContext
+        _state.update { it.copy(tasks = TaskBoard.of(listing)) }
+    }
+
+    /**
+     * Records a Task and starts its agent. A failed launch keeps the record and throws
+     * [Failure.LaunchFailed] with it; a refused request throws [Failure.Bridge] and keeps nothing.
+     */
+    suspend fun createTask(draft: TaskRecordDraft.Create): TaskRecord = withContext(dispatcher) {
+        var requestId = 0L
+        try {
+            request { id ->
+                requestId = id
+                Request.CreateTask(id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base)
+            }
+        } catch (e: Failure.Bridge) {
+            // `task-saved` before a failed result: the record exists, without a session.
+            val kept = savedTasks.remove(requestId) ?: throw e
+            keep(kept)
+            throw Failure.LaunchFailed(kept, e.body)
+        }
+        val saved = savedTasks.remove(requestId)
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the new task"))
+        keep(saved)
+        runCatching { refresh() }
+        saved
+    }
+
+    /**
+     * Sets [record]'s status. On `conflict` the list is loaded again before the failure is
+     * thrown, so the user sees the record as it is now and can try again.
+     */
+    suspend fun updateTask(record: TaskRecord, status: TaskStatus): TaskRecord = withContext(dispatcher) {
+        var requestId = 0L
+        try {
+            request { id ->
+                requestId = id
+                Request.UpdateTask(id, record.id, record.rev, status)
+            }
+        } catch (e: Failure.Bridge) {
+            savedTasks.remove(requestId)
+            if (e.body.code == ErrorCode.CONFLICT) runCatching { loadTasks() }
+            throw e
+        }
+        val saved = savedTasks.remove(requestId)
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the saved task"))
+        keep(saved)
+        saved
+    }
+
+    private fun keep(saved: TaskRecord) = _state.update { s -> s.copy(tasks = (s.tasks ?: TaskBoard()).saving(saved)) }
 
     /** Shows this pane. Messages for any earlier watch are dropped from now on. */
     suspend fun watch(pane: String) = withContext(dispatcher) {
@@ -475,6 +550,7 @@ class PaneSession(
             is Message.ChangeList -> changeListings[message.changes] = message
             is Message.ImageList -> imageListings[message.images] = message
             is Message.TaskCreated -> createdTasks[message.task] = message.session
+            is Message.TaskList -> taskListings[message.tasks] = message
             is Message.DocContent -> if (message.doc == docId) {
                 _state.update { it.copy(doc = it.doc?.copy(text = message.text, mtime = message.mtime, ended = null)) }
             }
@@ -490,9 +566,14 @@ class PaneSession(
             is Message.PaneGone -> if (message.watch == watchId) {
                 _state.update { it.copy(paneGoneReason = message.reason ?: "the pane closed") }
             }
-            Message.SessionsChanged -> scope.launch { runCatching { refresh() } }
+            Message.SessionsChanged -> scope.launch {
+                runCatching { refresh() }
+                // A session that starts or ends may run a Task, and another device may have changed one.
+                runCatching { loadTasks() }
+            }
             is Message.Bye -> scope.launch { teardown(message.reason) }
-            is Message.TaskList, is Message.TaskSaved, is Message.Unknown -> {}
+            is Message.TaskSaved -> savedTasks[message.task] = message.record
+            is Message.Unknown -> {}
         }
     }
 
@@ -538,6 +619,8 @@ class PaneSession(
         changeListings.clear()
         imageListings.clear()
         createdTasks.clear()
+        taskListings.clear()
+        savedTasks.clear()
         inputs.clear()
         val failed = pending.values.toList()
         pending.clear()
@@ -554,7 +637,13 @@ class PaneSession(
     companion object {
         /** A message for the user, saying what to do next where there is something to do. */
         fun describe(error: Throwable): String = when (error) {
-            is Failure.Bridge -> error.body.message
+            is Failure.Bridge ->
+                if (error.body.code == ErrorCode.CONFLICT) {
+                    "This task changed on another device. The list shows it as it is now; try again."
+                } else {
+                    error.body.message
+                }
+            is Failure.LaunchFailed -> "The task was saved, but its agent did not start: ${error.body.message}"
             is Failure.ProtocolMismatch ->
                 "The bridge speaks protocol ${error.bridge}; this app speaks $PROTOCOL_VERSION. Update one of them."
             is Failure.NoHello ->

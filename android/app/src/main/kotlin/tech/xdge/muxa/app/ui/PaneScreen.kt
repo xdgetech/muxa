@@ -185,6 +185,12 @@ private fun MoreMenu(model: AppModel, stack: Boolean) {
         if (!stack) {
             DropdownMenuItem({ Text("Sessions…") }, { pick { model.showSwitcher = true } }, leadingIcon = { Icon(Icons.session, null) })
         }
+        if (model.canShowTasks) {
+            DropdownMenuItem(
+                { Text("Tasks…") }, { pick { model.openTasks() } },
+                leadingIcon = { Icon(Icons.tasks, null) }, modifier = Modifier.testTag("menu-tasks"),
+            )
+        }
         if (model.canStartTasks) {
             DropdownMenuItem({ Text("New Task…") }, { pick { model.startNewTask() } }, leadingIcon = { Icon(Icons.newTask, null) })
         }

@@ -26,6 +26,8 @@ import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskRecord
+import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
 
@@ -61,6 +63,10 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
     private var sessions: List<Session> = content.sessions(now())
     private val images = content.images(now())
 
+    /** The host's task records; grows when a task is created. */
+    private var tasks: List<TaskRecord> = content.tasks(now())
+    private var createdCount = 0
+
     private class ChatFollow(val id: Long, var seq: Long = 0, var count: Int = 0)
 
     init {
@@ -92,7 +98,18 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
                 ok(req.id)
             }
             is Request.Docs -> {
-                emit(Message.DocList(req.id, content.root, content.docs.map { it.info }))
+                val brief = taskOf(req.pane)?.let { listOf(DocInfo(TASK_DOC, DocInfo.Kind.REPO, "TASK.md", it.createdAt)) }
+                emit(Message.DocList(req.id, content.root, content.docs.map { it.info } + brief.orEmpty()))
+                ok(req.id)
+            }
+            is Request.CreateTask -> scope.launch {
+                // A launch takes a moment on a real host too.
+                delay(1_000)
+                createTask(req)
+            }
+            is Request.UpdateTask -> updateTask(req)
+            is Request.ListTasks -> {
+                emit(Message.TaskList(req.id, content.workspaces, synchronized(lock) { tasks }))
                 ok(req.id)
             }
             is Request.Doc -> doc(req)
@@ -150,7 +167,20 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         emitChat(content.conversation, content.chatStatus, reset = true)
     }
 
+    /** The record the session of [pane] runs. */
+    private fun taskOf(pane: String): TaskRecord? = synchronized(lock) {
+        val session = sessions.firstOrNull { s -> s.panes.any { it.id == pane } }
+        tasks.firstOrNull { it.id == session?.taskId }
+    }
+
     private fun doc(req: Request.Doc) {
+        val task = taskOf(req.pane)
+        if (req.path == TASK_DOC && task != null) {
+            synchronized(lock) { openDoc = req.id }
+            ok(req.id)
+            emit(Message.DocContent(req.id, req.path, brief(task), task.createdAt))
+            return
+        }
         val doc = content.docs.firstOrNull { it.info.path == req.path }
         if (doc == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.path} is not listed")
@@ -245,6 +275,58 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         emit(Message.TaskCreated(id, name))
         ok(id)
         emit(Message.SessionsChanged)
+    }
+
+    /**
+     * Records a Task and starts a session for it, with a running agent. [FAILING_BRANCH]
+     * keeps the record with a note and no session, as a failed launch does on a host.
+     */
+    private fun createTask(req: Request.CreateTask) {
+        if (content.workspaces.none { it.name == req.workspace }) {
+            fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
+            return
+        }
+        val now = now()
+        val failed = req.branch == FAILING_BRANCH
+        val record = synchronized(lock) {
+            val id = "t-new%03d".format(++createdCount)
+            val name = slug(req.title)
+            val dir = req.repo?.let { "/src/.worktrees/$name" } ?: "/${req.workspace}/tasks/$name-$id"
+            val record = TaskRecord(
+                id, rev = 1, workspace = req.workspace, title = req.title, goal = req.goal, status = TaskStatus.OPEN,
+                createdAt = now, updatedAt = now, project = req.project, repo = req.repo, branch = req.branch,
+                dir = dir, session = name.takeUnless { failed },
+                note = if (failed) "could not create a worktree for $FAILING_BRANCH: a branch named '$FAILING_BRANCH' already exists" else null,
+            )
+            tasks = tasks + record
+            if (!failed) {
+                val n = 20 + sessions.size
+                val pane = Pane("%$n", "@$n", 0, Role.AGENT, 100, 30, "claude", dir, false, false, Agent(AgentState.RUNNING, now))
+                val repoName = req.repo?.split("/")?.lastOrNull { it.isNotEmpty() }
+                sessions = sessions + Session("$$n", name, repoName, req.repo, req.branch, taskId = id, panes = listOf(pane))
+            }
+            record
+        }
+        emit(Message.TaskSaved(req.id, record))
+        if (failed) {
+            fail(req.id, ErrorCode.TASK_FAILED, record.note ?: "")
+            return
+        }
+        ok(req.id)
+        emit(Message.SessionsChanged)
+    }
+
+    /** Sets a status, refusing a stale [Request.UpdateTask.rev] as the bridge does. */
+    private fun updateTask(req: Request.UpdateTask) {
+        val saved = synchronized(lock) {
+            val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
+            if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
+            val saved = current.copy(rev = current.rev + 1, status = req.status, updatedAt = now())
+            tasks = tasks.map { if (it.id == saved.id) saved else it }
+            saved
+        }
+        emit(Message.TaskSaved(req.id, saved))
+        ok(req.id)
     }
 
     private fun agentWaits(session: String) {
@@ -346,14 +428,31 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
     companion object {
         const val CHAT_PANE = "%1"
 
+        /** Where the bridge writes a Task's brief for its agent (ADR 0015). */
+        const val TASK_DOC = ".muxa/TASK.md"
+
         /** A branch whose task fails, to show the error. */
         const val FAILING_BRANCH = "taken"
 
         private val CAPABILITIES =
-            listOf("chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes")
+            listOf("chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records")
         private const val UPDATE_DELAY_MILLIS = 2_000L
 
         private fun now() = System.currentTimeMillis() / 1_000
+
+        /** A session name from a title: lowercase letters, digits and dashes, at most 20 characters. */
+        internal fun slug(title: String): String =
+            title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(20).trim('-').ifEmpty { "task" }
+
+        /** What the bridge would write into `TASK.md`. */
+        internal fun brief(task: TaskRecord) = buildString {
+            append("# ").append(task.title).append("\n\n")
+            append("## Goal\n\n").append(task.goal).append("\n\n")
+            append("## Workspace\n\n").append(task.workspace)
+            task.project?.let { append(" · ").append(it) }
+            task.repo?.let { append("\n\n## Resources\n\n- Repo: `").append(it).append("`, branch `").append(task.branch ?: "").append("`") }
+            append("\n")
+        }
 
         internal fun demoPrompt(text: String, n: Int): Pair<ChatPrompt, ChatEntry>? {
             val entry = "t:demo$n"

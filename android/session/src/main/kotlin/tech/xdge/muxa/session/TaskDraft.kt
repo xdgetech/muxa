@@ -34,7 +34,7 @@ data class TaskDraft(
             return NewTask(repoDir.trim(), branch.trim(), base.ifEmpty { null })
         }
 
-    private companion object {
+    internal companion object {
         /** The common mistakes git would refuse; `git check-ref-format` on the host decides the rest. */
         fun refProblem(name: String, what: String): String? {
             if (name.startsWith("-")) return "A $what name cannot start with -."

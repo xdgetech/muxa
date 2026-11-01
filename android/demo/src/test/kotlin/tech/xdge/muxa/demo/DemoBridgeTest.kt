@@ -12,6 +12,11 @@ import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.ChatPrompt
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.session.InboxGroup
+import tech.xdge.muxa.session.TaskRecordDraft
+import tech.xdge.muxa.session.inboxItem
+import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.terminal.PaneScreen
 import java.io.ByteArrayInputStream
@@ -39,6 +44,66 @@ class DemoBridgeTest {
         assertEquals("demo", s.tmuxVersion)
         assertTrue(s.canChat && s.canReadDocs && s.canShowChanges && s.canShowImages && s.canStartTasks && s.canCloseTasks)
         assertEquals(listOf("feature-auth", "fix-login", "docs-site", "scratch", "tall", "pair"), s.sessions.map { it.name })
+    }
+
+    @Test
+    fun theTasksFillEveryInboxGroup() = runBlocking {
+        for (set in DemoBridge.Content.entries) {
+            val (session, _) = connected(set)
+            val s = session.state.value
+            val groups = inbox(s.tasks?.records.orEmpty(), s.sessions).map { it.group }
+            assertEquals(set.name, InboxGroup.entries, groups)
+        }
+    }
+
+    @Test
+    fun aCreatedTaskStartsARunningSession() = runBlocking {
+        val (session, _) = connected()
+        val draft = TaskRecordDraft(workspace = "personal", title = "Plan the trip!", goal = "Book it").request!!
+        val saved = session.createTask(draft)
+        assertEquals("t-new001", saved.id)
+        assertEquals(InboxGroup.RUNNING, inboxItem(saved, session.state.value.sessions).group)
+        assertEquals("plan-the-trip", session.state.value.sessions.first { it.taskId == saved.id }.name)
+    }
+
+    @Test
+    fun aFailedLaunchKeepsTheTaskWithANote() = runBlocking {
+        val (session, _) = connected()
+        val draft = TaskRecordDraft(workspace = "work", title = "T", goal = "G", repoDir = "/src/app", branch = DemoBridge.FAILING_BRANCH)
+        try {
+            session.createTask(draft.request!!)
+            fail("the launch should fail")
+        } catch (e: PaneSession.Failure.LaunchFailed) {
+            assertTrue(e.record.note!!.contains("already exists"))
+        }
+        val kept = session.state.value.tasks!!.records.last()
+        assertEquals(InboxGroup.NO_AGENT, inboxItem(kept, session.state.value.sessions).group)
+    }
+
+    @Test
+    fun aStatusChangeChecksTheRev() = runBlocking {
+        val (session, _) = connected()
+        val seen = session.state.value.tasks!!.record("t-login1")!!
+        val done = session.updateTask(seen, TaskStatus.DONE)
+        assertEquals(InboxGroup.CLOSED, inboxItem(done, session.state.value.sessions).group)
+        try {
+            session.updateTask(seen, TaskStatus.REVIEW)
+            fail("a stale rev should fail")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorCode.CONFLICT, e.body.code)
+        }
+        assertEquals(TaskStatus.DONE, session.state.value.tasks!!.record("t-login1")!!.status)
+    }
+
+    @Test
+    fun aTaskSessionListsItsBrief() = runBlocking {
+        val (session, _) = connected()
+        val listing = session.documents("%1")
+        assertEquals(DemoBridge.TASK_DOC, listing.entries.last().path)
+        session.openDocument("%1", DemoBridge.TASK_DOC)
+        waitUntil { session.state.value.doc?.text?.contains("passkey") == true }
+        // A session without a Task has no brief.
+        assertTrue(session.documents("%3").entries.none { it.path == DemoBridge.TASK_DOC })
     }
 
     @Test
@@ -108,7 +173,7 @@ class DemoBridgeTest {
     fun documentsListOpenAndUpdate() = runBlocking {
         val (session, _) = connected()
         val list = session.documents("%1")
-        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md"), list.entries.map { it.path })
+        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md", DemoBridge.TASK_DOC), list.entries.map { it.path })
         session.openDocument("%1", "README.md")
         waitUntil { session.state.value.doc?.text != null }
         assertTrue(session.state.value.doc!!.text!!.startsWith("# App\n"))
@@ -191,7 +256,7 @@ class DemoBridgeTest {
         val (session, _) = connected(DemoBridge.Content.SHOWCASE)
         val docs = session.documents("%1")
         assertEquals("billing", docs.root)
-        assertEquals(listOf("plans/stripe-webhooks.md", "README.md", "docs/webhooks.md"), docs.entries.map { it.path })
+        assertEquals(listOf("plans/stripe-webhooks.md", "README.md", "docs/webhooks.md", DemoBridge.TASK_DOC), docs.entries.map { it.path })
         val changes = session.changes("%1")
         assertEquals("billing", changes.root)
         assertEquals(listOf("src/webhooks/router.rs", "src/invoice.rs", "tests/webhooks.rs"), changes.entries.map { it.path })

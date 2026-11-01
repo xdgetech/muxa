@@ -16,6 +16,9 @@ import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskRecord
+import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkspaceInfo
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
 import java.util.concurrent.Executors
@@ -40,6 +43,8 @@ open class FakeBridge : BridgeChannel {
     var docs = listOf<DocInfo>()
     var changes = listOf<ChangeInfo>()
     var images = listOf<ImageInfo>()
+    var workspaces = listOf(WorkspaceInfo("work"))
+    var tasks = listOf<TaskRecord>()
 
     /** Panes whose `chat` is answered with `unsupported`. */
     var unsupportedChats = setOf<String>()
@@ -88,6 +93,36 @@ open class FakeBridge : BridgeChannel {
                 val name = req.branch.replace("/", "-")
                 sessions = sessions + Session(id = "$9", name = name, panes = emptyList())
                 emit(Message.TaskCreated(req.id, name))
+                emit(Message.Result(req.id))
+            }
+            is Request.ListTasks -> {
+                emit(Message.TaskList(req.id, workspaces, tasks))
+                emit(Message.Result(req.id))
+            }
+            is Request.CreateTask -> {
+                val record = TaskRecord(
+                    "t-new${tasks.size}", 1, req.workspace, req.title, req.goal, TaskStatus.OPEN, 1, 1,
+                    repo = req.repo, branch = req.branch,
+                    note = if (req.branch == "taken") "the branch is taken" else null,
+                )
+                tasks = tasks + record
+                emit(Message.TaskSaved(req.id, record))
+                if (record.note != null) {
+                    emit(Message.Result(req.id, ErrorBody(ErrorCode.TASK_FAILED, "the branch is taken")))
+                } else {
+                    sessions = sessions + Session(id = "$8", name = "new", taskId = record.id, panes = emptyList())
+                    emit(Message.Result(req.id))
+                }
+            }
+            is Request.UpdateTask -> {
+                val current = tasks.first { it.id == req.task }
+                if (current.rev != req.rev) {
+                    emit(Message.Result(req.id, ErrorBody(ErrorCode.CONFLICT, "stale rev")))
+                    return
+                }
+                val saved = current.copy(rev = current.rev + 1, status = req.status)
+                tasks = tasks.map { if (it.id == saved.id) saved else it }
+                emit(Message.TaskSaved(req.id, saved))
                 emit(Message.Result(req.id))
             }
             is Request.Chat -> if (req.pane in unsupportedChats) {

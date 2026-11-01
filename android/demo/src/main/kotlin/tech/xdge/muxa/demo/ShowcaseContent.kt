@@ -9,6 +9,8 @@ import tech.xdge.muxa.protocol.DocInfo
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkspaceInfo
 
 /**
  * A developer's evening: two repos, four agents, one of them asking a question.
@@ -31,7 +33,7 @@ internal object ShowcaseContent : DemoContent {
     override fun sessions(now: Long) = listOf(
         Session(
             id = "$1", name = "stripe-webhooks", repo = "billing", repoDir = "~/src/billing",
-            branch = "feat/stripe-webhooks", worktree = "~/src/.worktrees/billing-stripe-webhooks",
+            branch = "feat/stripe-webhooks", worktree = "~/src/.worktrees/billing-stripe-webhooks", taskId = "t-a1b2c3",
             panes = listOf(
                 agent("%1", "@1", "~/src/.worktrees/billing-stripe-webhooks", AgentState.WAITING, now - 75),
                 shell("%2", "@1", "~/src/.worktrees/billing-stripe-webhooks"),
@@ -39,7 +41,7 @@ internal object ShowcaseContent : DemoContent {
         ),
         Session(
             id = "$2", name = "retry-backoff", repo = "billing", repoDir = "~/src/billing",
-            branch = "fix/retry-backoff", worktree = "~/src/.worktrees/billing-retry-backoff",
+            branch = "fix/retry-backoff", worktree = "~/src/.worktrees/billing-retry-backoff", taskId = "t-d4e5f6",
             panes = listOf(
                 agent("%3", "@2", "~/src/.worktrees/billing-retry-backoff", AgentState.RUNNING, now - 40),
                 shell("%4", "@2", "~/src/.worktrees/billing-retry-backoff"),
@@ -47,12 +49,12 @@ internal object ShowcaseContent : DemoContent {
         ),
         Session(
             id = "$3", name = "dark-mode", repo = "dashboard", repoDir = "~/src/dashboard",
-            branch = "feat/dark-mode", worktree = "~/src/.worktrees/dashboard-dark-mode",
+            branch = "feat/dark-mode", worktree = "~/src/.worktrees/dashboard-dark-mode", taskId = "t-0a1b2c",
             panes = listOf(agent("%5", "@3", "~/src/.worktrees/dashboard-dark-mode", AgentState.DONE, now - 720)),
         ),
         Session(
             id = "$4", name = "search-index", repo = "dashboard", repoDir = "~/src/dashboard",
-            branch = "perf/search-index", worktree = "~/src/.worktrees/dashboard-search-index",
+            branch = "perf/search-index", worktree = "~/src/.worktrees/dashboard-search-index", taskId = "t-3c4d5e",
             panes = listOf(agent("%6", "@4", "~/src/.worktrees/dashboard-search-index", AgentState.IDLE, now - 1800)),
         ),
         Session(
@@ -242,6 +244,40 @@ internal object ShowcaseContent : DemoContent {
     private const val CYAN = "\u001b[36m"
     private const val REMOVED_LINE = "\u001b[48;5;52m"
     private const val ADDED_LINE = "\u001b[48;5;22m"
+
+    override val workspaces = listOf(WorkspaceInfo("work"), WorkspaceInfo("personal"))
+
+    override fun tasks(now: Long) = listOf(
+        demoTask(
+            "t-a1b2c3", "work", "Handle Stripe invoice.paid webhook",
+            "Mark the invoice paid when Stripe sends invoice.paid, and email a receipt.",
+            TaskStatus.OPEN, now - 75, project = "Billing", repo = "~/src/billing", branch = "feat/stripe-webhooks",
+            dir = "~/src/.worktrees/billing-stripe-webhooks", session = "stripe-webhooks",
+        ),
+        demoTask(
+            "t-d4e5f6", "work", "Retry failed charges with backoff", "Retry a failed charge three times, with exponential backoff and jitter.",
+            TaskStatus.OPEN, now - 40, project = "Billing", repo = "~/src/billing", branch = "fix/retry-backoff",
+            dir = "~/src/.worktrees/billing-retry-backoff", session = "retry-backoff",
+        ),
+        demoTask(
+            "t-0a1b2c", "work", "Dark mode for the dashboard", "Add a dark theme that follows the system setting.",
+            TaskStatus.OPEN, now - 720, project = "Dashboard", repo = "~/src/dashboard", branch = "feat/dark-mode",
+            dir = "~/src/.worktrees/dashboard-dark-mode", session = "dark-mode",
+        ),
+        demoTask(
+            "t-3c4d5e", "work", "Faster search index", "Cut the search index build time in half.",
+            TaskStatus.REVIEW, now - 1_800, project = "Dashboard", repo = "~/src/dashboard", branch = "perf/search-index",
+            dir = "~/src/.worktrees/dashboard-search-index", session = "search-index",
+        ),
+        demoTask(
+            "t-6f7a8b", "work", "Plan the Q3 pricing change", "Compare our plans with three competitors and propose new prices.",
+            TaskStatus.OPEN, now - 5_400, project = "Pricing", dir = "~/work/tasks/plan-the-q3-pricing-change-t-6f7a8b",
+        ),
+        demoTask(
+            "t-9b8c7d", "personal", "File the VAT return", "Collect the quarter's invoices and file the VAT return.",
+            TaskStatus.DONE, now - 172_800, dir = "~/personal/tasks/file-the-vat-return-t-9b8c7d",
+        ),
+    )
 
     override fun screen(p: Pane): ByteArray {
         val lines = when (p.role) {
