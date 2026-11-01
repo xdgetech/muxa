@@ -190,13 +190,16 @@ A bridge with the `task-records` capability keeps Tasks: durable records of work
    - optional `project` (free text), `repo` (absolute), `branch`, `dir` (where the agent works, absolute), `session` (the last known session name, for display only) and `note` (from the bridge, for example why the launch failed).
 3. `create-task {workspace, title, goal, project?, repo?, branch?, base?}` records a Task and starts an agent for it. `workspace` is a name from `task-list`.
    - With `repo`, `branch` is required. The session starts as with `new-task`, and `base` means the same.
-   - Without `repo`, the task gets a directory in its workspace.
+   - Without `repo`, the task gets a directory in its workspace, `<root>/tasks/<slug>-<id>`, and a new session of the same name.
+   - When the branch's session already runs another task that is `open` or `review`, the request is `bad-request`.
    - The bridge hands the goal to the agent. The session carries the record's id as `taskId`.
    - On success the bridge sends `task-saved {task, record}`, then `result`. `task` is the request id.
-   - A failed launch still keeps the record, with a `note` and no session. The bridge sends `task-saved` with it, then a `result` with `task-failed`.
-   - A wrong workspace, `repo`, `branch` or `base` is `bad-request`, and no record is kept.
+   - A failed launch still keeps the record, with a `note`. The bridge sends `task-saved` with it, then a `result` with `task-failed`. The record names a `session` only when one started before the failure.
+   - A wrong workspace, `repo`, `branch` or `base`, or an empty `title`, is `bad-request`, and no record is kept.
+   - The bridge writes `.muxa/TASK.md` in `dir`. It types `Read .muxa/TASK.md and start.` into the agent pane once the agent's state is `idle`. When that does not happen within 30 seconds, it does not type it, and the record's `note` says so. The record has a new `rev` then.
 4. `update-task {task, rev, status}` sets the status of the record whose id is `task`. `rev` is the one the client last saw. When the record changed since, the request fails with `conflict` and nothing changes: list again and retry. On success, `task-saved` with the new record comes before the `result`. Changing the status never starts or closes a session.
 5. A session runs a Task when its `taskId` is the record's `id`. The agent's state stays on the session's panes; the Task's `status` does not follow it.
+6. `taskId` comes from the session option `@muxa_task`. Options end with the tmux server, so a session without one gets the `id` of the record whose `dir` is the session's `worktree`, or the path of its first visible pane. A record whose tag a session carries is not matched again. The bridge does not write the tag back.
 
 ## Rendering a pane
 

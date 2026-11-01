@@ -14,6 +14,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 
 pub mod codex;
+pub mod repo;
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 /// Stops a server that kill-server cannot reach, or whose test run was killed.

@@ -7,12 +7,11 @@ mod chat;
 mod convert;
 mod docs;
 mod lines;
-// Not wired to requests yet: create-task and list-tasks use it next (ADR 0015).
-#[allow(dead_code, unused_imports)]
 mod records;
 mod server;
 mod sessions;
 mod states;
+mod task_records;
 mod tasks;
 mod watch;
 
@@ -56,16 +55,33 @@ fn main() -> ExitCode {
         tmux: tmux.clone(),
         socket: args.socket.clone(),
     };
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let records = task_records::Config {
+        state_dir: args.state_dir.or_else(|| {
+            records::Store::default_dir(
+                std::env::var_os("XDG_STATE_HOME").as_deref(),
+                home.as_deref(),
+            )
+        }),
+        workspaces: args.workspaces.or_else(|| {
+            records::Workspaces::default_path(
+                std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+                home.as_deref(),
+            )
+        }),
+        home: home.clone(),
+    };
     let config = server::Config {
         tmux: muxa_tmux::Options {
             tmux,
             socket: args.socket,
         },
         tasks: std::sync::Arc::new(tasks),
+        records: std::sync::Arc::new(records),
         idle: args.idle,
         agents: std::sync::Arc::new(agents::Registry::standard(
             &args.agent_dirs.into_iter().collect(),
-            std::env::var_os("HOME").map(std::path::PathBuf::from),
+            home,
         )),
     };
 

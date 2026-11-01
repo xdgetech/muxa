@@ -9,8 +9,8 @@ use tokio::process::Command;
 use muxa_protocol::CloseMode;
 
 use super::{
-    Closing, LAUNCH_TIMEOUT, Launch, TaskError, TaskLauncher, TaskRequest, TaskSession, last_line,
-    run,
+    Closing, LAUNCH_TIMEOUT, Launch, Launched, TaskError, TaskLauncher, TaskRequest, TaskSession,
+    builtin, last_line, run, session_for_worktree,
 };
 
 pub struct TmuxAgents {
@@ -95,11 +95,34 @@ impl TaskLauncher for TmuxAgents {
         "tmux-agents"
     }
 
-    fn launch<'a>(&'a self, _client: &'a Client, req: &'a TaskRequest) -> Launch<'a> {
+    fn launch<'a>(&'a self, client: &'a Client, req: &'a TaskRequest) -> Launch<'a> {
         Box::pin(async move {
             let out = self.run_script(self.command(req), "start the task").await?;
-            last_line(&out)
-                .ok_or_else(|| TaskError::Failed("tmux-agents printed no session name".into()))
+            let printed = last_line(&out)
+                .ok_or_else(|| TaskError::Failed("tmux-agents printed no session name".into()))?;
+            // new.sh prints a name; the session is found by its worktree tag instead.
+            let main = builtin::main_checkout(&req.repo).await?;
+            let worktree = builtin::existing_worktree(&main, &req.branch)
+                .await?
+                .ok_or_else(|| {
+                    TaskError::Failed(format!(
+                        "tmux-agents started {printed}, but {} has no worktree",
+                        req.branch
+                    ))
+                })?;
+            let session = session_for_worktree(client, &worktree)
+                .await?
+                .ok_or_else(|| {
+                    TaskError::Failed(format!(
+                        "tmux-agents started {printed}, but no session has @agent_worktree {}",
+                        worktree.display()
+                    ))
+                })?;
+            Ok(Launched {
+                id: session.id,
+                name: session.name,
+                dir: worktree,
+            })
         })
     }
 

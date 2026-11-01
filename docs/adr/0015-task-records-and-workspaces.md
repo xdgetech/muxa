@@ -54,7 +54,7 @@ Proposed.
 - The bridge writes `.muxa/TASK.md` in the Task's `dir`: the goal, the workspace and the resources.
 - In a worktree, `.muxa/` is added to git's exclude file, so it never shows as a change.
 - The bridge then types one fixed prompt into the agent pane: `Read .muxa/TASK.md and start.` It uses the existing `send-keys -l` path. No user text goes on a command line, so this works the same for both launchers, including tmux-agents' own agent command.
-- The prompt is typed only after the adapter reports the agent `idle` or `waiting` for input, with a timeout. Otherwise the bridge does not type it, and says so in the record's note.
+- The prompt is typed only after the adapter reports the agent `idle`, within 30 seconds. Otherwise the bridge does not type it, and says so in the record's note. `waiting` is not enough: it includes a permission menu, where the typed text would answer the menu.
 - `TASK.md` is the first, minimal context handoff. A new agent session on the same Task reads the same file.
 - The contract that hosts and agents rely on: the record format, the `@muxa_task` tag, and the path `.muxa/TASK.md`.
 

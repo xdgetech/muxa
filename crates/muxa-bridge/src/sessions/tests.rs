@@ -54,6 +54,7 @@ fn session(panes: Vec<Pane>) -> Session {
         branch: None,
         worktree: None,
         task: None,
+        task_id: None,
         panes,
     }
 }

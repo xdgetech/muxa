@@ -15,6 +15,7 @@ use crate::chat::{self, ChatTask};
 use crate::convert::{self, error_body};
 use crate::docs::{self, DocTask, ImageTask};
 use crate::lines::{self, Line};
+use crate::task_records;
 use crate::tasks::{self, TaskError};
 use crate::watch::{Command, Watcher};
 
@@ -31,6 +32,7 @@ pub struct Config {
     pub idle: Duration,
     pub agents: Arc<Registry>,
     pub tasks: Arc<tasks::Config>,
+    pub records: Arc<task_records::Config>,
 }
 
 /// Why the session ended.
@@ -79,20 +81,26 @@ where
         Ok(Err(e)) => return bye(&out, e.to_string()).await,
         Err(_) => return bye(&out, "tmux did not answer".into()).await,
     };
+    let mut capabilities: Vec<String> = [
+        "chat",
+        "chat-prompt",
+        "docs",
+        "tasks",
+        "changes",
+        "close-task",
+        "images",
+        "branch-changes",
+    ]
+    .map(String::from)
+    .into();
+    if config.records.enabled() {
+        capabilities.push("task-records".into());
+    }
     let hello = Message::Hello {
         protocol: muxa_protocol::VERSION,
         bridge: env!("CARGO_PKG_VERSION").into(),
         tmux: tmux_version,
-        capabilities: vec![
-            "chat".into(),
-            "chat-prompt".into(),
-            "docs".into(),
-            "tasks".into(),
-            "changes".into(),
-            "close-task".into(),
-            "images".into(),
-            "branch-changes".into(),
-        ],
+        capabilities,
     };
     if out.send(hello).await.is_err() {
         return End::WriterFailed;
@@ -143,6 +151,7 @@ where
         changes: change_tx,
         tasks: Arc::clone(&config.tasks),
         agents: Arc::clone(&config.agents),
+        records: Arc::clone(&config.records),
     };
 
     let end = tokio::select! {
@@ -236,6 +245,7 @@ struct Worker {
     changes: mpsc::Sender<changes::Command>,
     tasks: Arc<tasks::Config>,
     agents: Arc<Registry>,
+    records: Arc<task_records::Config>,
 }
 
 impl Worker {
@@ -281,8 +291,10 @@ impl Worker {
                 return match timed(muxa_tmux::list_sessions(client)).await {
                     Ok(mut sessions) => {
                         let agents = Arc::clone(&self.agents);
+                        let records = Arc::clone(&self.records);
                         let sessions = tokio::task::spawn_blocking(move || {
                             crate::sessions::enrich(&mut sessions, &agents);
+                            task_records::link(&mut sessions, &records);
                             sessions
                         })
                         .await;
@@ -461,11 +473,12 @@ impl Worker {
                 tokio::spawn(async move {
                     let error =
                         match start_task(&client, &config, &repo, &branch, base.as_deref()).await {
-                            Ok(session) => {
+                            Ok(launched) => {
+                                let session = launched.name;
                                 let _ = out.send(Message::TaskCreated { task: id, session }).await;
                                 None
                             }
-                            Err(e) => Some(task_error(&e)),
+                            Err(e) => Some(convert::task_error(&e)),
                         };
                     let _ = out
                         .send(Message::Result {
@@ -485,7 +498,7 @@ impl Worker {
                     let error = close_task(&client, &config, &session, mode)
                         .await
                         .err()
-                        .map(|e| task_error(&e));
+                        .map(|e| convert::task_error(&e));
                     let _ = out
                         .send(Message::Result {
                             id: Some(id),
@@ -515,16 +528,74 @@ impl Worker {
                 Ok(p) => timed(muxa_tmux::paste(client, p, &text)).await,
                 Err(e) => Err(e),
             },
-            // Not served yet; the bridge does not announce `task-records`.
-            Request::ListTasks { .. } | Request::CreateTask { .. } | Request::UpdateTask { .. } => {
-                return Some(Err(error_body(
-                    ErrorCode::Unsupported,
-                    "this bridge does not keep task records",
-                )));
+            Request::ListTasks { id } => {
+                let listed = task_records::list(&self.records, id).await;
+                return Some(self.send_then_ok(listed).await);
+            }
+            Request::UpdateTask {
+                id,
+                task,
+                rev,
+                status,
+            } => {
+                let saved = task_records::update(&self.records, id, task, rev, status).await;
+                return Some(self.send_then_ok(saved).await);
+            }
+            // A launch takes seconds; keystrokes must not wait for it.
+            Request::CreateTask {
+                id,
+                workspace,
+                title,
+                goal,
+                project,
+                repo,
+                branch,
+                base,
+            } => {
+                let env = task_records::Env {
+                    client: Arc::clone(&self.client),
+                    tasks: Arc::clone(&self.tasks),
+                    records: Arc::clone(&self.records),
+                    agents: Arc::clone(&self.agents),
+                };
+                let new = task_records::NewTask {
+                    workspace,
+                    title,
+                    goal,
+                    project,
+                    repo,
+                    branch,
+                    base,
+                };
+                let out = self.out.clone();
+                tokio::spawn(async move {
+                    let (record, error) = task_records::create(&env, new).await;
+                    if let Some(record) = record {
+                        let record = convert::task_record(record);
+                        let _ = out.send(Message::TaskSaved { task: id, record }).await;
+                    }
+                    let _ = out
+                        .send(Message::Result {
+                            id: Some(id),
+                            error,
+                            sessions: None,
+                        })
+                        .await;
+                });
+                return None;
             }
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))
+    }
+
+    /// Sends a request's message; its `result` follows from the caller.
+    async fn send_then_ok(&self, msg: Result<Message, ErrorBody>) -> Result<(), ErrorBody> {
+        let msg = msg?;
+        self.out
+            .send(msg)
+            .await
+            .map_err(|_| error_body(ErrorCode::Internal, "the writer stopped"))
     }
 
     async fn to_watcher(
@@ -541,7 +612,7 @@ async fn start_task(
     repo: &str,
     branch: &str,
     base: Option<&str>,
-) -> Result<String, TaskError> {
+) -> Result<tasks::Launched, TaskError> {
     let req = tasks::validate(repo, branch, base).await?;
     let launcher = tasks::pick(config, client).await;
     let result = launcher.launch(client, &req).await;
@@ -570,14 +641,6 @@ async fn close_task(
         }
     }
     result
-}
-
-fn task_error(e: &TaskError) -> ErrorBody {
-    match e {
-        TaskError::Invalid(m) => error_body(ErrorCode::BadRequest, m.clone()),
-        TaskError::Failed(m) => error_body(ErrorCode::TaskFailed, m.clone()),
-        TaskError::Tmux(e) => convert::error(e),
-    }
 }
 
 /// Hands a request to a task that sends its own result, and waits until it has,

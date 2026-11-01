@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 pub use store::{Store, StoreError};
-pub use workspaces::{ConfigError, PathError, Workspace, Workspaces};
+pub use workspaces::{Workspace, Workspaces};
 
 /// The record file format this code writes, and the newest it reads.
 pub const FORMAT_VERSION: u32 = 1;
@@ -49,7 +49,8 @@ pub struct Record {
     /// The task directory or worktree.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<PathBuf>,
-    /// The linked tmux session id (`$n`).
+    /// The last known session name, for display. Sessions link by their
+    /// `@muxa_task` tag, or by `dir` (ADR 0015).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

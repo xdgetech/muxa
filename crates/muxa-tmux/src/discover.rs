@@ -74,13 +74,15 @@ pub struct Session {
     pub branch: Option<String>,
     pub worktree: Option<String>,
     pub task: Option<String>,
+    /// The task record this session runs (`@muxa_task`, ADR 0015).
+    pub task_id: Option<String>,
     pub panes: Vec<Pane>,
 }
 
 const SEP: char = '\u{1f}';
 
 /// The list-panes format, one entry per field, joined by \x1f.
-const FIELDS: [&str; 23] = [
+const FIELDS: [&str; 24] = [
     "session_id",
     "session_name",
     "window_id",
@@ -92,6 +94,7 @@ const FIELDS: [&str; 23] = [
     "pane_current_path",
     "pane_dead",
     "@muxa_role",
+    "@muxa_task",
     // tmux-agents tags
     "@agents_sidebar_pane",
     "@agents_role",
@@ -207,6 +210,7 @@ pub(crate) fn parse_sessions(lines: &[Vec<u8>]) -> Vec<Session> {
                     branch: row.opt("@agent_branch"),
                     worktree: row.opt("@agent_worktree"),
                     task: row.opt("@agent_task"),
+                    task_id: row.opt("@muxa_task"),
                     panes: Vec::new(),
                 });
                 tags.push(Vec::new());
@@ -271,6 +275,7 @@ mod tests {
                 ("@agent_repo", "app"),
                 ("@agent_repo_dir", "/src/app"),
                 ("@agent_branch", "feat/x"),
+                ("@muxa_task", "t-7f3a2c"),
             ]),
             row(&[
                 ("session_id", "$1"),
@@ -300,7 +305,9 @@ mod tests {
         assert_eq!(sessions[0].panes[0].pid, 4242);
         assert_eq!(sessions[0].panes[1].pid, 0);
         assert!(!sessions[0].panes[1].shell_foreground);
+        assert_eq!(sessions[0].task_id.as_deref(), Some("t-7f3a2c"));
         assert_eq!(sessions[1].repo, None);
+        assert_eq!(sessions[1].task_id, None);
     }
 
     #[test]

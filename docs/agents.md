@@ -52,13 +52,16 @@ trait ChatSource: Send {
 ```rust
 trait TaskLauncher: Send + Sync {
     fn id(&self) -> &'static str;   // for logs, e.g. "tmux-agents"
-    fn launch<'a>(&'a self, client: &'a Client, req: &'a TaskRequest) -> Launch<'a>; // the session name
+    fn launch<'a>(&'a self, client: &'a Client, req: &'a TaskRequest) -> Launch<'a>; // Launched {id, name, dir}
 }
 ```
 
-- `tmux_agents.rs` runs tmux-agents' `new.sh` with `--no-switch`. It is picked when tmux-agents sets `@agents_scripts`, or with `--task-launcher tmux-agents=PATH`.
+- `launch` returns the session's id, its name and the worktree. A launcher finds an existing session by its `@agent_worktree`, never by name (invariant 3).
+- `tmux_agents.rs` runs tmux-agents' `new.sh` with `--no-switch`. It is picked when tmux-agents sets `@agents_scripts`, or with `--task-launcher tmux-agents=PATH`. It then finds the branch's worktree with `git worktree list`, and the session whose `@agent_worktree` is that path. `new.sh`'s printed name is used only in error messages.
 - `builtin.rs` makes the worktree with git and a detached session with the agent command (`--task-command`, default `claude`). It is picked otherwise, or with `--task-launcher builtin`.
 - `close` closes a task's session and removes its worktree as the mode allows, never one with uncommitted changes. `tmux_agents.rs` runs `close.sh`; `builtin.rs` checks the same things itself.
+- `Builtin::launch_in_dir` is the directory mode for a task record without a repo (ADR 0015). It makes `<workspace root>/tasks/<slug>-<id>/` and a detached session of that name running `--task-command`, with the pane tagged `@muxa_role agent`. It is used even when tmux-agents is installed: `new.sh` needs a repo.
+- `create-task` (`crates/muxa-bridge/src/task_records/`) runs a launcher, then tags the session `@muxa_task <id>` and writes `.muxa/TASK.md`. In a repo, `.muxa/` goes into the exclude file of the repo's common git directory first. It then waits up to 30 s for the agent pane's state to be `idle`, and types `Read .muxa/TASK.md and start.` and Enter. It does not type on `waiting`: that state includes a permission menu, where the text would answer it. An agent whose adapter reports no state before its first turn does not get the prompt; the record's note then says to type it.
 - A launcher must never switch an attached client or change an existing pane when it starts a task. Closing moves the clients on the closed session to another one, as tmux-agents does. The request is checked before any launcher runs (`tasks::validate`).
 
 ## Claude Code

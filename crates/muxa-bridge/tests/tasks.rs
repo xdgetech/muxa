@@ -4,90 +4,12 @@
 
 mod common;
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
+use common::repo::{Repo, fake_new_sh, git};
 use common::{Bridge, Server};
 use muxa_protocol::{ErrorCode, Message};
 use serde_json::json;
-
-/// `<tmp>/repos/app` with one commit, removed on drop with its worktrees.
-struct Repo {
-    root: PathBuf,
-    app: PathBuf,
-}
-
-impl Repo {
-    fn new(name: &str) -> Self {
-        let root =
-            std::env::temp_dir().join(format!("muxa-tasks-it-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let app = root.join("repos/app");
-        std::fs::create_dir_all(&app).unwrap();
-        let app = app.canonicalize().unwrap();
-        git(&app, &["init", "-q", "-b", "main"]);
-        std::fs::write(app.join("README.md"), "# app\n").unwrap();
-        git(&app, &["add", "."]);
-        git(
-            &app,
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-q",
-                "-m",
-                "init",
-            ],
-        );
-        Self {
-            root: root.canonicalize().unwrap(),
-            app,
-        }
-    }
-}
-
-impl Drop for Repo {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
-    }
-}
-
-fn git(dir: &Path, args: &[&str]) {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "git {args:?}");
-}
-
-/// `new.sh` stand-in: records its arguments and socket, then makes a session on
-/// that socket, or fails like tmux-agents' `die`.
-fn fake_new_sh(dir: &Path, fail: bool) -> PathBuf {
-    std::fs::create_dir_all(dir).unwrap();
-    let script = dir.join("new.sh");
-    let log = dir.join("args");
-    let body = if fail {
-        "echo 'agents: could not create a worktree for feat/x: boom' >&2\nexit 1\n".to_owned()
-    } else {
-        "tmux -L \"$TMUX_AGENTS_SOCKET\" new-session -d -s fake-task 'sleep 600'\necho fake-task\n"
-            .to_owned()
-    };
-    std::fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" \"socket=$TMUX_AGENTS_SOCKET\" > '{}'\n{body}",
-            log.display()
-        ),
-    )
-    .unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    script
-}
 
 async fn new_task(bridge: &mut Bridge, repo: &Path, branch: &str) -> (Option<String>, Message) {
     let result = bridge

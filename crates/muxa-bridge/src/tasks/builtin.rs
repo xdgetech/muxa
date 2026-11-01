@@ -10,8 +10,8 @@ use muxa_protocol::CloseMode;
 use muxa_tmux::Client;
 
 use super::{
-    Closing, LAUNCH_TIMEOUT, Launch, TaskError, TaskLauncher, TaskRequest, TaskSession, git,
-    last_line, run, session_name,
+    Closing, LAUNCH_TIMEOUT, Launch, Launched, TaskError, TaskLauncher, TaskRequest, TaskSession,
+    git, last_line, run, session_for_worktree, session_name,
 };
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -23,6 +23,31 @@ pub struct Builtin {
 impl Builtin {
     pub fn new(command: String) -> Self {
         Self { command }
+    }
+
+    /// Directory mode, for a task record without a repo (ADR 0015): makes
+    /// `dir` and a detached session there running the agent. The session is
+    /// named after the directory. No other session, window or pane changes.
+    pub async fn launch_in_dir(&self, client: &Client, dir: &Path) -> Result<Launched, TaskError> {
+        let name = dir
+            .file_name()
+            .map(|n| session_name(&n.to_string_lossy()))
+            .ok_or_else(|| TaskError::Failed(format!("{} has no name", dir.display())))?;
+        if muxa_tmux::session_names(client).await?.contains(&name) {
+            return Err(TaskError::Failed(format!(
+                "a session named {name} already exists"
+            )));
+        }
+        std::fs::create_dir_all(dir)
+            .map_err(|e| TaskError::Failed(format!("cannot create {}: {e}", dir.display())))?;
+        let (session, pane) =
+            muxa_tmux::new_session(client, &name, &dir.to_string_lossy(), &self.command).await?;
+        muxa_tmux::set_pane_option(client, pane, "@muxa_role", "agent").await?;
+        Ok(Launched {
+            id: session,
+            name,
+            dir: dir.to_path_buf(),
+        })
     }
 }
 
@@ -36,9 +61,19 @@ impl TaskLauncher for Builtin {
             let work = tokio::time::timeout(LAUNCH_TIMEOUT, worktree(req))
                 .await
                 .map_err(|_| TaskError::Failed("creating the worktree took too long".into()))??;
+            if let Some(s) = session_for_worktree(client, &work.path).await? {
+                return Ok(Launched {
+                    id: s.id,
+                    name: s.name,
+                    dir: work.path,
+                });
+            }
             let name = session_name(&req.branch);
             if muxa_tmux::session_names(client).await?.contains(&name) {
-                return Ok(name);
+                return Err(TaskError::Failed(format!(
+                    "a session named {name} exists but does not run {}; rename it, then start the task again",
+                    req.branch
+                )));
             }
             let dir = work.path.to_string_lossy();
             let (session, pane) =
@@ -58,7 +93,11 @@ impl TaskLauncher for Builtin {
             ] {
                 muxa_tmux::set_session_option(client, session, option, value).await?;
             }
-            Ok(name)
+            Ok(Launched {
+                id: session,
+                name,
+                dir: work.path.clone(),
+            })
         })
     }
 
@@ -252,7 +291,10 @@ pub(crate) async fn main_checkout(dir: &Path) -> Result<PathBuf, TaskError> {
 }
 
 /// A worktree other than the main checkout that has `branch` checked out.
-async fn existing_worktree(main: &Path, branch: &str) -> Result<Option<PathBuf>, TaskError> {
+pub(crate) async fn existing_worktree(
+    main: &Path,
+    branch: &str,
+) -> Result<Option<PathBuf>, TaskError> {
     let out = run(
         git(main).args(["worktree", "list", "--porcelain"]),
         GIT_TIMEOUT,

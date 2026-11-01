@@ -7,7 +7,8 @@ use crate::tasks::Choice;
 
 pub const USAGE: &str = "usage: muxa-bridge [--tmux PATH] [--socket NAME] [--idle-timeout SECONDS]
                    [--agent-dir AGENT=PATH]... [--task-launcher builtin|tmux-agents=PATH]
-                   [--task-command COMMAND] [--version]
+                   [--task-command COMMAND] [--state-dir DIR] [--workspaces FILE]
+                   [--version]
 
 Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
   --tmux PATH             tmux binary (default: Homebrew, /usr/local/bin, then PATH)
@@ -18,6 +19,10 @@ Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
   --task-launcher L       how new tasks start: builtin, or tmux-agents=PATH to its new.sh
                           (default: tmux-agents when it sets @agents_scripts, else builtin)
   --task-command COMMAND  the agent the built-in launcher starts (default: claude)
+  --state-dir DIR         where task records are kept
+                          (default: $XDG_STATE_HOME/muxa/tasks, else ~/.local/state/muxa/tasks)
+  --workspaces FILE       the workspaces config
+                          (default: $XDG_CONFIG_HOME/muxa/workspaces.toml, else ~/.config/...)
 Logs go to stderr; MUXA_LOG sets the level (default: warn).";
 
 /// Non-interactive SSH sessions often lack Homebrew's directories in PATH.
@@ -41,6 +46,8 @@ pub struct Args {
     pub agent_dirs: Vec<(String, PathBuf)>,
     pub task_launcher: Option<Choice>,
     pub task_command: String,
+    pub state_dir: Option<PathBuf>,
+    pub workspaces: Option<PathBuf>,
 }
 
 pub const DEFAULT_TASK_COMMAND: &str = "claude";
@@ -55,6 +62,8 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
         agent_dirs: Vec::new(),
         task_launcher: None,
         task_command: DEFAULT_TASK_COMMAND.into(),
+        state_dir: None,
+        workspaces: None,
     };
     while let Some(arg) = parser.next()? {
         match arg {
@@ -94,12 +103,30 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
                 }
                 out.task_command = value;
             }
+            Long("state-dir") => {
+                out.state_dir = Some(absolute(parser.value()?.into(), "--state-dir")?)
+            }
+            Long("workspaces") => {
+                out.workspaces = Some(absolute(parser.value()?.into(), "--workspaces")?)
+            }
             Long("version") => return Ok(Action::Version),
             Long("help") | Short('h') => return Ok(Action::Help),
             _ => return Err(arg.unexpected()),
         }
     }
     Ok(Action::Serve(out))
+}
+
+/// Relative paths would depend on where SSH starts the bridge.
+fn absolute(path: PathBuf, flag: &str) -> Result<PathBuf, lexopt::Error> {
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Err(lexopt::Error::from(format!(
+            "{flag} wants an absolute path, got {}",
+            path.display()
+        )))
+    }
 }
 
 /// The tmux to run: the flag, then the usual install locations, then PATH.
@@ -153,6 +180,8 @@ mod tests {
                 agent_dirs: vec![("claude-code".into(), "/tmp/c=d".into())],
                 task_launcher: None,
                 task_command: DEFAULT_TASK_COMMAND.into(),
+                state_dir: None,
+                workspaces: None,
             })
         );
         assert!(parse_strs(&["--agent-dir", "/no/agent"]).is_err());
@@ -172,6 +201,15 @@ mod tests {
         );
         assert_eq!(a.task_command, "codex");
         assert!(parse_strs(&["--task-launcher", "other"]).is_err());
+        let Action::Serve(a) =
+            parse_strs(&["--state-dir", "/s/tasks", "--workspaces", "/c/w.toml"]).unwrap()
+        else {
+            panic!("not serve")
+        };
+        assert_eq!(a.state_dir, Some("/s/tasks".into()));
+        assert_eq!(a.workspaces, Some("/c/w.toml".into()));
+        assert!(parse_strs(&["--state-dir", "rel/tasks"]).is_err());
+        assert!(parse_strs(&["--workspaces", "w.toml"]).is_err());
         assert!(parse_strs(&["--task-command", " "]).is_err());
         assert_eq!(parse_strs(&["--version"]).unwrap(), Action::Version);
         assert!(parse_strs(&["--bogus"]).is_err());

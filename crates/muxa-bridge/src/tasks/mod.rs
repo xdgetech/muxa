@@ -40,8 +40,17 @@ pub enum TaskError {
     Tmux(#[from] muxa_tmux::Error),
 }
 
-pub type Launch<'a> = Pin<Box<dyn Future<Output = Result<String, TaskError>> + Send + 'a>>;
+pub type Launch<'a> = Pin<Box<dyn Future<Output = Result<Launched, TaskError>> + Send + 'a>>;
 pub type Closing<'a> = Pin<Box<dyn Future<Output = Result<(), TaskError>> + Send + 'a>>;
+
+/// The session a launch made or found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Launched {
+    pub id: SessionId,
+    pub name: String,
+    /// Where the agent works: the worktree, or a task directory.
+    pub dir: PathBuf,
+}
 
 /// A task's session, as its tags describe it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,7 +67,7 @@ pub trait TaskLauncher: Send + Sync {
     /// Stable, for logs: `tmux-agents`.
     fn id(&self) -> &'static str;
     /// Starts the task, or finds the one already running for the branch, and
-    /// returns its session name. It must never move an attached client.
+    /// returns its session. It must never move an attached client.
     fn launch<'a>(&'a self, client: &'a Client, req: &'a TaskRequest) -> Launch<'a>;
     /// Closes the task's session, and removes its worktree as `mode` allows.
     /// A worktree with uncommitted changes is never removed; the branch is kept.
@@ -89,6 +98,30 @@ pub async fn find_task(client: &Client, id: &str) -> Result<TaskSession, TaskErr
         worktree: worktree.into(),
         repo_dir: s.repo_dir.map(PathBuf::from),
     })
+}
+
+/// The session whose `@agent_worktree` is `worktree`. Never by name (invariant 3).
+pub async fn session_for_worktree(
+    client: &Client,
+    worktree: &Path,
+) -> Result<Option<muxa_tmux::Session>, TaskError> {
+    let sessions = muxa_tmux::list_sessions(client).await?;
+    Ok(sessions.into_iter().find(|s| {
+        s.worktree
+            .as_deref()
+            .is_some_and(|w| same_dir(Path::new(w), worktree))
+    }))
+}
+
+/// Two spellings of one directory, e.g. through a symlinked /tmp.
+pub fn same_dir(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 /// How the bridge starts tasks, from its flags.

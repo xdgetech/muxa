@@ -1,7 +1,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use super::workspaces::slug;
+use super::workspaces::{ConfigError, PathError, slug};
 use super::*;
 
 fn temp(name: &str) -> PathBuf {
