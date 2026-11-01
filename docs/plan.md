@@ -27,9 +27,9 @@ What works today:
 ## Next
 
 - **Workspace and Task foundation, first slice** (ADR 0015, `docs/vision.md`): create a Task, launch an agent on it, watch its state, review the result, and step into the terminal. Manual Mode stays as it is.
-  1. Protocol: `list-tasks`, `create-task`, `update-task`, the session field `taskId`, the error `conflict`, the capability `task-records`.
-  2. Bridge: task records in `$XDG_STATE_HOME/muxa/tasks/`, workspaces from `~/.config/muxa/workspaces.toml`, the `@muxa_task` link, `TASK.md` and the first prompt.
-  3. CLI: `muxa-cli tasks`, `task new`, `task done`.
+  1. Done: protocol: `list-tasks`, `create-task`, `update-task`, the session field `taskId`, the error `conflict`, the capability `task-records`.
+  2. Done: bridge: task records in `$XDG_STATE_HOME/muxa/tasks/` (`--state-dir`), workspaces from `~/.config/muxa/workspaces.toml` (`--workspaces`), the `@muxa_task` link and its fallback by directory, `TASK.md` and the first prompt once the agent is idle.
+  3. Done: CLI: `muxa-cli tasks`, `task new`, `task done`.
   4. Apps: a Tasks list with the Inbox groups and a Task detail; then a New Task sheet and status changes.
   5. Real work by the developer: one coding Task, and a product and an admin Task without a repo.
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).

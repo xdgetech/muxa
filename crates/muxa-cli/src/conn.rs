@@ -4,7 +4,7 @@
 use std::process::Stdio;
 use std::time::Duration;
 
-use muxa_protocol::{Message, Request, Session};
+use muxa_protocol::{ErrorBody, Message, Request, Session};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 
@@ -67,7 +67,11 @@ impl Conn {
     }
 
     pub async fn recv(&mut self) -> Result<Message, String> {
-        let line = tokio::time::timeout(WAIT, self.lines.next_line())
+        self.recv_within(WAIT).await
+    }
+
+    pub async fn recv_within(&mut self, wait: Duration) -> Result<Message, String> {
+        let line = tokio::time::timeout(wait, self.lines.next_line())
             .await
             .map_err(|_| "the bridge did not answer".to_string())?
             .map_err(|e| e.to_string())?
@@ -84,6 +88,34 @@ impl Conn {
             .map_err(|e| e.to_string())?
             .ok_or("the bridge closed the connection")?;
         serde_json::from_str(&line).map_err(|e| format!("bad message from the bridge: {e}"))
+    }
+
+    /// Sends the request made with a fresh id, and returns the messages sent
+    /// before its `result`. `wait` bounds each message.
+    pub async fn call(
+        &mut self,
+        make: impl FnOnce(u64) -> Request,
+        wait: Duration,
+    ) -> Result<Vec<Message>, String> {
+        let id = self.id();
+        self.send(&make(id)).await?;
+        let mut before = Vec::new();
+        loop {
+            match self.recv_within(wait).await? {
+                Message::Result {
+                    id: Some(got),
+                    error,
+                    ..
+                } if got == id => {
+                    return match error {
+                        Some(e) => Err(failure(&e, &before)),
+                        None => Ok(before),
+                    };
+                }
+                Message::Bye { reason } => return Err(format!("bridge exited: {reason}")),
+                msg => before.push(msg),
+            }
+        }
     }
 
     pub async fn list(&mut self) -> Result<Vec<Session>, String> {
@@ -105,5 +137,22 @@ impl Conn {
                 _ => {}
             }
         }
+    }
+}
+
+/// An error, and what the bridge kept anyway, e.g. a task record after a failed launch.
+fn failure(e: &ErrorBody, before: &[Message]) -> String {
+    let kept = before.iter().find_map(|m| match m {
+        Message::TaskSaved { record, .. } => Some(record.id.as_str()),
+        _ => None,
+    });
+    // The wire name, e.g. `task-failed`.
+    let code = serde_json::to_value(e.code)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    match kept {
+        Some(id) => format!("{code}: {} (task {id} was kept)", e.message),
+        None => format!("{code}: {}", e.message),
     }
 }

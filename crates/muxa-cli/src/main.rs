@@ -1,6 +1,7 @@
 //! `muxa-cli`: a terminal client for the muxa protocol, the reference client.
 
 mod conn;
+mod tasks;
 mod view;
 
 use std::process::ExitCode;
@@ -9,12 +10,20 @@ use muxa_protocol::{Role, Session};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
+       muxa-cli [--bridge CMD] tasks
+       muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
+                [--project P] [--repo PATH --branch B [--base REF]]
+       muxa-cli [--bridge CMD] task done ID
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
   TARGET         a pane id (%12), or SESSION, SESSION:agent or SESSION:shell
   --read-only    show the pane, send no keys
-  --seconds N    leave after N seconds (default: on Ctrl-])";
+  --seconds N    leave after N seconds (default: on Ctrl-])
+  tasks          the host's workspaces and task records
+  task new       records a task and starts an agent for it; without --repo
+                 it gets a directory in its workspace
+  task done ID   marks a task record done";
 
 enum Cmd {
     List,
@@ -23,6 +32,9 @@ enum Cmd {
         read_only: bool,
         seconds: Option<u64>,
     },
+    Tasks,
+    NewTask(tasks::NewTask),
+    Done(String),
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
@@ -30,11 +42,19 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut p = lexopt::Parser::from_env();
     let (mut bridge, mut words) = ("muxa-bridge".to_string(), Vec::new());
     let (mut read_only, mut seconds) = (false, None);
+    let mut new = tasks::NewTask::default();
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
             Long("read-only") => read_only = true,
             Long("seconds") => seconds = Some(p.value()?.parse()?),
+            Long("workspace") => new.workspace = p.value()?.string()?,
+            Long("title") => new.title = p.value()?.string()?,
+            Long("goal") => new.goal = p.value()?.string()?,
+            Long("project") => new.project = Some(p.value()?.string()?),
+            Long("repo") => new.repo = Some(p.value()?.string()?),
+            Long("branch") => new.branch = Some(p.value()?.string()?),
+            Long("base") => new.base = Some(p.value()?.string()?),
             Long("version") => {
                 println!("muxa-cli {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
@@ -54,6 +74,9 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
             read_only,
             seconds,
         },
+        [w] if w == "tasks" => Cmd::Tasks,
+        [w, n] if w == "task" && n == "new" => Cmd::NewTask(new.checked()?),
+        [w, d, id] if w == "task" && d == "done" => Cmd::Done(id.clone()),
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
     Ok(Some((bridge, cmd)))
@@ -97,10 +120,9 @@ fn main() -> ExitCode {
 
 async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
     let (mut conn, tmux) = conn::Conn::start(bridge).await?;
-    let sessions = conn.list().await?;
     match cmd {
         Cmd::List => {
-            print_sessions(&tmux, &sessions);
+            print_sessions(&tmux, &conn.list().await?);
             Ok(String::new())
         }
         Cmd::Watch {
@@ -108,16 +130,19 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             read_only,
             seconds,
         } => {
-            let pane = resolve(&sessions, &target)?;
+            let pane = resolve(&conn.list().await?, &target)?;
             view::run(&mut conn, &pane, view::Options { read_only, seconds }).await
         }
+        Cmd::Tasks => tasks::list(&mut conn).await,
+        Cmd::NewTask(new) => tasks::create(&mut conn, new).await,
+        Cmd::Done(id) => tasks::done(&mut conn, &id).await,
     }
 }
 
 fn print_sessions(tmux: &str, sessions: &[Session]) {
     println!("tmux {tmux}");
     for s in sessions {
-        let meta: Vec<&str> = [s.repo.as_deref(), s.branch.as_deref()]
+        let meta: Vec<&str> = [s.repo.as_deref(), s.branch.as_deref(), s.task_id.as_deref()]
             .into_iter()
             .flatten()
             .collect();
