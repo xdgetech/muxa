@@ -8,6 +8,7 @@ struct TasksScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var path: [String] = []
+    @State private var newTask: TaskRecordDraft?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -42,6 +43,19 @@ struct TasksScreen: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                // The host's config names the workspaces; without one, nothing can be created.
+                if let first = model.session.workspaces.first {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("New Task", systemImage: Icon.add) { newTask = TaskRecordDraft(workspace: first.name) }
+                            .keyboardShortcut("n")
+                            .accessibilityIdentifier("record-new")
+                    }
+                }
+            }
+            .sheet(isPresented: Binding(get: { newTask != nil }, set: { if !$0 { newTask = nil } })) {
+                if let draft = newTask {
+                    CreateTaskSheet(draft: draft) { record in path = [record.id] }
                 }
             }
             .refreshable { await reload() }

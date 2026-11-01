@@ -6,6 +6,8 @@ import SwiftUI
 struct TaskDetail: View {
     @Environment(AppModel.self) private var model
     let id: String
+    @State private var saving = false
+    @State private var error: String?
 
     var body: some View {
         if let item = model.inboxItem(id) {
@@ -32,7 +34,7 @@ struct TaskDetail: View {
             // Before the details: a long goal must not push the way into the session off screen.
             open(item)
             Section {
-                LabeledContent("Status", value: Self.title(r.status))
+                statusPicker(r)
                 LabeledContent("Agent") {
                     if let pane = item.agentPane { AgentBadge(pane: pane) } else { Text("none") }
                 }
@@ -49,6 +51,38 @@ struct TaskDetail: View {
         }
         .navigationTitle(r.title)
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Can't Change the Status", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(error ?? "")
+        }
+    }
+
+    /// The four statuses a user sets; one from a newer bridge is shown as it is.
+    private func statusPicker(_ r: TaskRecord) -> some View {
+        Picker("Status", selection: Binding(get: { r.status }, set: { set($0, on: r) })) {
+            ForEach(Self.statuses + (Self.statuses.contains(r.status) ? [] : [r.status]), id: \.self) { status in
+                Text(Self.title(status)).tag(status)
+            }
+        }
+        .pickerStyle(.menu)
+        .disabled(saving)
+        .accessibilityIdentifier("task-status")
+    }
+
+    private static let statuses: [TaskStatus] = [.open, .review, .done, .dropped]
+
+    private func set(_ status: TaskStatus, on r: TaskRecord) {
+        guard status != r.status, !saving else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                _ = try await model.session.updateTask(r, status: status)
+            } catch {
+                self.error = PaneSession.describe(error)
+            }
+        }
     }
 
     @ViewBuilder

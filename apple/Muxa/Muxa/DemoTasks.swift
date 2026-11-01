@@ -84,3 +84,47 @@ struct DemoTasks: Sendable {
         return text + "\n"
     }
 }
+
+// MARK: Writes, with the bridge's checks
+
+extension DemoTasks {
+    enum Refusal: Error {
+        case badRequest(String)
+        case conflict
+    }
+
+    /// A new record, or why the bridge refuses it. `launched` is false when the launch fails.
+    mutating func create(
+        workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?, launched: Bool
+    ) throws(Refusal) -> TaskRecord {
+        guard workspaces.contains(where: { $0.name == workspace }) else { throw .badRequest("\(workspace) is not a workspace") }
+        if repo != nil, branch == nil { throw .badRequest("a task with a repo needs a branch") }
+        created += 1
+        let id = String(format: "t-new%03d", created)
+        let slug = Self.slug(title)
+        let dir = repo.map { _ in "/src/.worktrees/\(slug)" } ?? "/\(workspace)/tasks/\(slug)-\(id)"
+        let record = TaskRecord(
+            id: id, rev: 1, workspace: workspace, title: title, goal: goal, status: .open,
+            createdAt: Self.now, updatedAt: Self.now, project: project, repo: repo, branch: branch, dir: dir,
+            session: launched ? slug : nil,
+            note: launched ? nil : "could not create a worktree for \(branch ?? ""): a branch named '\(branch ?? "")' already exists")
+        records.append(record)
+        return record
+    }
+
+    mutating func update(_ id: String, rev: UInt64, status: TaskStatus) throws(Refusal) -> TaskRecord {
+        guard let i = records.firstIndex(where: { $0.id == id }) else { throw .badRequest("\(id) is not a task") }
+        guard records[i].rev == rev else { throw .conflict }
+        records[i].rev += 1
+        records[i].status = status
+        records[i].updatedAt = Self.now
+        return records[i]
+    }
+
+    /// `[a-z0-9-]`, at most 20 characters, like the bridge's slugs but shorter for a session name.
+    static func slug(_ title: String) -> String {
+        let words = title.lowercased().split { !($0.isASCII && ($0.isLetter || $0.isNumber)) }
+        let slug = String(words.joined(separator: "-").prefix(20))
+        return slug.hasSuffix("-") ? String(slug.dropLast()) : (slug.isEmpty ? "task" : slug)
+    }
+}

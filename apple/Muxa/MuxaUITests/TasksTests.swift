@@ -63,6 +63,8 @@ final class TasksTests: XCTestCase {
         save("task-detail")
         tapWhenReady(app.buttons["task-open-terminal"])
         let pane = app.descendants(matching: .any)["pane"].firstMatch
+        // The sheet closes before the pane is pushed.
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFor(pane, containing: "pane %5 100x30"))
         XCTAssertTrue(app.navigationBars["Tasks"].waitForNonExistence(timeout: 5))
     }
@@ -76,5 +78,73 @@ final class TasksTests: XCTestCase {
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.staticTexts["Document the new settings page."].waitForExistence(timeout: 10))
         save("task-file")
+    }
+
+    /// Fills the New Task sheet; with a branch, in the first known repo.
+    @MainActor
+    private func createTask(_ app: XCUIApplication, title: String, goal: String, branch: String? = nil) {
+        tapWhenReady(app.buttons["record-new"])
+        let titleField = app.textFields["record-title"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 5))
+        tapWhenReady(titleField)
+        titleField.typeText(title)
+        let goalField = app.textViews["record-goal"].exists ? app.textViews["record-goal"] : app.textFields["record-goal"]
+        tapWhenReady(goalField)
+        goalField.typeText(goal)
+        if let branch {
+            let toggle = app.switches["record-with-repo"]
+            tapWhenReady(toggle)
+            // A tap can land on the label; the switch itself sits at the trailing edge.
+            if (toggle.value as? String) != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
+            let branchField = app.textFields["record-branch"]
+            // On a phone the keyboard can cover the new fields.
+            if branchField.exists, !branchField.isHittable { app.collectionViews.firstMatch.swipeUp() }
+            tapWhenReady(branchField)
+            branchField.typeText(branch)
+        }
+        save("record-new")
+        tapWhenReady(app.buttons["record-start"])
+    }
+
+    /// A new task opens its detail, runs, and its Terminal shows its new session.
+    @MainActor
+    func testANewTaskStartsAnAgentInItsOwnSession() throws {
+        let app = launchOnTasks()
+        createTask(app, title: "Write the changelog", goal: "List the user-visible changes.")
+        XCTAssertTrue(app.navigationBars["Write the changelog"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["List the user-visible changes."].exists)
+        XCTAssertTrue(app.staticTexts["running"].waitForExistence(timeout: 5))
+        save("record-created")
+        tapWhenReady(app.buttons["task-open-terminal"])
+        XCTAssertTrue(app.navigationBars.descendants(matching: .any)["write-the-changelog"].firstMatch
+            .waitForExistence(timeout: 10))
+    }
+
+    /// A launch that fails keeps the task, and its detail says why.
+    @MainActor
+    func testAFailedLaunchKeepsTheTaskWithItsNote() throws {
+        let app = launchOnTasks()
+        createTask(app, title: "Reuse a branch", goal: "Continue the old work.", branch: "taken")
+        let note = app.descendants(matching: .any)["task-note"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 10))
+        XCTAssertTrue(note.label.contains("already exists"), note.label)
+        save("record-launch-failed")
+    }
+
+    /// Marking a task done moves it to Closed.
+    @MainActor
+    func testMarkingATaskDoneClosesIt() throws {
+        let app = launchOnTasks()
+        tapWhenReady(app.buttons["task-t-login1"])
+        tapWhenReady(app.buttons["task-status"])
+        tapWhenReady(app.buttons["Done"])
+        // The picker shows the saved status once the host has it.
+        let saved = NSPredicate(format: "value CONTAINS 'Done' OR label CONTAINS 'Done'")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: saved, object: app.buttons["task-status"])],
+                                      timeout: 5), .completed)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(header(app, "Closed").waitForExistence(timeout: 5))
+        XCTAssertFalse(header(app, "Ready for review").exists, "its only task left the group")
+        save("record-done")
     }
 }

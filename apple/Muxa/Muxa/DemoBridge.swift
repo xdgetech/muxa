@@ -134,6 +134,15 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let tasks = lock.withLock { tasks }
             emit(.taskList(TaskListing(tasks: id, workspaces: tasks.workspaces, entries: tasks.records)))
             ok(id)
+        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _):
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.createTask(id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch)
+            }
+        case .updateTask(let id, let task, let rev, let status):
+            let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
+                do throws(DemoTasks.Refusal) { return .success(try tasks.update(task, rev: rev, status: status)) } catch { return .failure(error) }
+            }
+            answer(id, outcome)
         case .changes(let id, _):
             emit(.changeList(ChangeListing(
                 changes: id, root: content.root, entries: content.changes.map(\.info),
@@ -223,6 +232,53 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         emit(.taskCreated(task: id, session: name))
         emit(.result(id: id, error: nil, sessions: nil))
         emit(.sessionsChanged)
+    }
+
+    /// Records the task, then starts a session for it, unless its branch is taken:
+    /// then the record is kept with a note, as a real bridge does.
+    private func createTask(
+        id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?
+    ) {
+        let launched = branch != Self.failingBranch
+        let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
+            let record: TaskRecord
+            do throws(DemoTasks.Refusal) {
+                record = try tasks.create(workspace: workspace, title: title, goal: goal, project: project, repo: repo,
+                                          branch: branch, launched: launched)
+            } catch {
+                return .failure(error)
+            }
+            if let name = record.session {
+                let n = 20 + sessions.count
+                let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 100, rows: 30,
+                                command: "claude", path: record.dir ?? "/", dead: false, shellForeground: false,
+                                agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
+                sessions.append(Session(
+                    id: "$\(n)", name: name, repo: repo?.split(separator: "/").last.map(String.init), repoDir: repo,
+                    branch: branch, worktree: repo == nil ? nil : record.dir, taskId: record.id, panes: [pane]))
+            }
+            return .success(record)
+        }
+        guard case .success(let record) = outcome, !launched else {
+            answer(id, outcome)
+            if case .success = outcome { emit(.sessionsChanged) }
+            return
+        }
+        emit(.taskSaved(task: id, record: record))
+        emit(.result(id: id, error: ErrorBody(code: .taskFailed, message: record.note ?? "the task did not start"), sessions: nil))
+    }
+
+    /// `task-saved` and the result, or the refusal.
+    private func answer(_ id: UInt64, _ outcome: Result<TaskRecord, DemoTasks.Refusal>) {
+        switch outcome {
+        case .success(let record):
+            emit(.taskSaved(task: id, record: record))
+            ok(id)
+        case .failure(.badRequest(let message)):
+            emit(.result(id: id, error: ErrorBody(code: .badRequest, message: message), sessions: nil))
+        case .failure(.conflict):
+            emit(.result(id: id, error: ErrorBody(code: .conflict, message: "the task changed since you read it"), sessions: nil))
+        }
     }
 
     private func agentWaits(_ session: String) {
