@@ -7,6 +7,9 @@ mod chat;
 mod convert;
 mod docs;
 mod lines;
+// Not wired to requests yet: create-task and list-tasks use it next (ADR 0015).
+#[allow(dead_code, unused_imports)]
+mod records;
 mod server;
 mod sessions;
 mod states;
