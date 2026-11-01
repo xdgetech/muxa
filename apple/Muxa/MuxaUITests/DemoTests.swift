@@ -495,6 +495,58 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
     }
 
+    /// With a hardware keyboard, Space pages through the plan that Read Plan opened.
+    @MainActor
+    func testALongPlanScrollsWithTheKeyboard() throws {
+        // The iPhone simulator reports the Mac's keyboard only some of the time.
+        try XCTSkipIf(isPhone, "needs a hardware keyboard")
+        let (app, web, end) = openLongPlan()
+        for _ in 0..<12 where !onScreen(end, in: web) {
+            app.typeKey(" ", modifierFlags: [])
+        }
+        XCTAssertTrue(onScreen(end, in: web))
+        save("reader-plan-end-keyboard")
+    }
+
+    /// A finger scrolls the plan to its end.
+    @MainActor
+    func testALongPlanScrollsByTouch() throws {
+        let (_, web, end) = openLongPlan()
+        for _ in 0..<8 where !onScreen(end, in: web) {
+            web.swipeUp(velocity: .fast)
+        }
+        XCTAssertTrue(onScreen(end, in: web))
+    }
+
+    /// The demo's plan, opened from Read Plan on the approval card, and its last line.
+    @MainActor
+    private func openLongPlan() -> (XCUIApplication, XCUIElement, XCUIElement) {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.tap()
+        composer.typeText("/plan")
+        app.buttons["send"].tap()
+        let card = app.descendants(matching: .any)["approval"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        tapButton(card.buttons["approval-read-plan"])
+
+        let web = app.webViews.firstMatch
+        // The agent's edit arrives once; scroll after it, as a reader would.
+        XCTAssertTrue(web.staticTexts["Updated by the agent while you read."].waitForExistence(timeout: 15))
+        let end = web.staticTexts["The end of the plan."]
+        XCTAssertTrue(end.exists)
+        XCTAssertFalse(onScreen(end, in: web), "the plan must be longer than the screen")
+        return (app, web, end)
+    }
+
+    private func onScreen(_ element: XCUIElement, in container: XCUIElement) -> Bool {
+        element.exists && container.frame.contains(element.frame)
+    }
+
     /// The pane gets the keyboard back after a sheet, and a new host can be saved.
     @MainActor
     func testFocusReturnsAfterTheSwitcherAndAHostCanBeAdded() throws {

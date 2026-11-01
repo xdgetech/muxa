@@ -1,6 +1,7 @@
 package tech.xdge.muxa.app.reader
 
 import android.annotation.SuppressLint
+import android.content.res.Configuration
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -94,6 +95,15 @@ private class ReaderPage {
         val function = if (wanted.diff) "renderDiff" else "render"
         // A JSON string literal is a valid JavaScript string literal.
         view.evaluateJavascript("$function(${JsonPrimitive(wanted.text)}, ${JsonPrimitive(wanted.path)}, $first)", null)
+        if (first) focusIfKeyboard(view)
+    }
+
+    /**
+     * Space and the arrows scroll the page only while it has focus, and nothing gives
+     * it focus by itself. Without a hardware keyboard nothing needs it.
+     */
+    private fun focusIfKeyboard(view: WebView) {
+        if (view.resources.configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO) view.requestFocus()
     }
 
     private inner class Bridge {

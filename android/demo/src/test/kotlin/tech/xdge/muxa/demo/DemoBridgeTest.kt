@@ -116,6 +116,8 @@ class DemoBridgeTest {
         session.openDocument("%1", "plans/demo-plan.md")
         waitUntil { session.state.value.doc?.text?.endsWith("Updated by the agent while you read.\n") == true }
         assertEquals(2L, session.state.value.doc!!.mtime)
+        // Long enough to scroll, and not indented into a code block.
+        assertTrue(session.state.value.doc!!.text!!.contains("\n40. A step of the plan.\n\nThe end of the plan.\n"))
     }
 
     @Test

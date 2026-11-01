@@ -1,3 +1,4 @@
+import MuxaUI
 import SwiftUI
 import WebKit
 
@@ -20,7 +21,7 @@ struct ReaderWebView: UIViewRepresentable {
         config.websiteDataStore = .nonPersistent()
         // A weak hop: the content controller keeps its handlers alive.
         config.userContentController.add(WeakHandler(context.coordinator), name: "reader")
-        let view = WKWebView(frame: .zero, configuration: config)
+        let view = ReaderPageView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
         view.isOpaque = false
         view.backgroundColor = .systemBackground
@@ -68,6 +69,9 @@ struct ReaderWebView: UIViewRepresentable {
             guard let text = Self.jsonString(wanted.text), let path = Self.jsonString(wanted.path) else { return }
             let function = wanted.kind == .diff ? "renderDiff" : "render"
             view.evaluateJavaScript("\(function)(\(text), \(path), \(first))") { _, _ in }
+            // Keys reach only the first responder, and nothing else makes the page one.
+            // Without a hardware keyboard nothing needs it.
+            if first, KeyInputView.focusesByItself, view.window != nil { view.becomeFirstResponder() }
         }
 
         /// A JSON string literal is a valid JavaScript string literal.

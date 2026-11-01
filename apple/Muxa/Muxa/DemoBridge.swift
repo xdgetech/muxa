@@ -399,6 +399,12 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             ## Risks
 
             \(String(repeating: "A long section about risks. ", count: 40))
+
+            ## Steps
+
+            \((1...40).map { "\($0). A step of the plan." }.joined(separator: "\n"))
+
+            The end of the plan.
             """),
         (DocInfo(path: "README.md", kind: .repo, mtime: 1), """
             # App

@@ -146,6 +146,12 @@ internal object TestContent : DemoContent {
             ## Risks
 
             ${"A long section about risks. ".repeat(40)}
+
+            ## Steps
+
+            ${(1..40).joinToString("\n            ") { "$it. A step of the plan." }}
+
+            The end of the plan.
             """.trimIndent(),
         ),
         DemoDoc(

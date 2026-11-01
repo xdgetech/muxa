@@ -1,7 +1,10 @@
 package tech.xdge.muxa.app
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.view.KeyEvent
+import android.view.View
+import android.webkit.WebView
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -19,8 +22,14 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.UiController
+import androidx.test.espresso.ViewAction
+import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.hamcrest.Matcher
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -279,6 +288,45 @@ class DemoTest {
         val stack = compose.onAllNodes(hasTestTag("back")).fetchSemanticsNodes().isNotEmpty()
         val sessions = compose.onAllNodes(hasText("Sessions…")).fetchSemanticsNodes().isNotEmpty()
         assertEquals(!stack, sessions)
+    }
+
+    /** With a hardware keyboard, Space pages through the plan that Read Plan opened. */
+    @Test
+    fun aLongPlanScrollsWithTheKeyboard() {
+        launch()
+        waitForTag("composer")
+        val config = ApplicationProvider.getApplicationContext<MuxaApplication>().resources.configuration
+        assumeTrue("needs a hardware keyboard", config.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO)
+        compose.onNodeWithTag("composer").performTextInput("/plan")
+        compose.onNodeWithTag("send").performClick()
+        waitForTag("approval-read-plan")
+        compose.onNodeWithTag("approval-read-plan").performClick()
+        waitForTag("reader")
+
+        val web = readerWebView()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        fun onWeb(check: (WebView) -> Boolean): Boolean {
+            var result = false
+            instrumentation.runOnMainSync { result = check(web) }
+            return result
+        }
+        // The plan is drawn, and longer than the screen.
+        compose.waitUntil(TIMEOUT) { onWeb { it.canScrollVertically(1) } }
+        repeat(30) { if (onWeb { it.canScrollVertically(1) }) key(KeyEvent.KEYCODE_SPACE) }
+        compose.waitUntil(TIMEOUT) { onWeb { !it.canScrollVertically(1) } }
+    }
+
+    /** The Reader's web view: it is in the Reader's dialog window, out of Compose's reach. */
+    private fun readerWebView(): WebView {
+        var found: WebView? = null
+        onView(isAssignableFrom(WebView::class.java)).inRoot(isDialog()).perform(object : ViewAction {
+            override fun getConstraints(): Matcher<View> = isAssignableFrom(WebView::class.java)
+            override fun getDescription() = "find the Reader's web view"
+            override fun perform(uiController: UiController, view: View) {
+                found = view as WebView
+            }
+        })
+        return checkNotNull(found)
     }
 
     private companion object {
