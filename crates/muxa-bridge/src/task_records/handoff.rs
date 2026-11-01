@@ -23,6 +23,8 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const NOTE_ATTEMPTS: usize = 3;
 const DIR: &str = ".muxa";
 const FILE: &str = "TASK.md";
+/// `TASK.md` relative to the task's directory, as the Reader lists it.
+pub const BRIEF: &str = ".muxa/TASK.md";
 /// The pattern added to git's exclude file.
 const EXCLUDE: &str = ".muxa/";
 const NOT_SENT: &str = "The agent did not become idle within 30 seconds, so the start prompt \

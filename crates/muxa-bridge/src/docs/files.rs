@@ -9,6 +9,7 @@ use std::time::UNIX_EPOCH;
 use muxa_protocol::{DocInfo, DocKind};
 
 use crate::agents::{AgentDoc, PaneInfo, Registry};
+use crate::task_records::BRIEF;
 
 /// Documents listed for one pane at most.
 pub const MAX_DOCS: usize = 2000;
@@ -42,9 +43,10 @@ pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
             tracing::warn!(pane = %pane.pane, error = %e, "cannot list the agent's documents")
         }
     }
-    if let Some(root) = repo_root(Path::new(&pane.path)) {
+    let root = repo_root(Path::new(&pane.path));
+    if let Some(root) = &root {
         listing.root = root.file_name().map(|n| n.to_string_lossy().into_owned());
-        let (files, truncated) = repo_files(&root);
+        let (files, truncated) = repo_files(root);
         listing.truncated = truncated;
         listing.docs.extend(files.into_iter().map(|rel| {
             let file = root.join(&rel);
@@ -60,7 +62,32 @@ pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
             }
         }));
     }
+    let base = root.unwrap_or_else(|| PathBuf::from(&pane.path));
+    if let Some(brief) = task_brief(base)
+        && listing.find(BRIEF).is_err()
+    {
+        listing.docs.push(brief);
+    }
     listing
+}
+
+/// A task's `TASK.md` (ADR 0015), at the repo root or in the pane's directory.
+/// git ignores `.muxa/`, and a task without a repo has no repo to list from.
+fn task_brief(base: PathBuf) -> Option<Doc> {
+    let file = base.join(BRIEF);
+    if !file.is_file() {
+        return None;
+    }
+    Some(Doc {
+        info: DocInfo {
+            path: BRIEF.to_owned(),
+            kind: DocKind::Repo,
+            title: title(&file),
+            mtime: mtime(&file),
+        },
+        file,
+        root: base,
+    })
 }
 
 fn agent_doc(d: AgentDoc) -> Doc {

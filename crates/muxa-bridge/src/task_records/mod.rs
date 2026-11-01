@@ -5,6 +5,8 @@
 mod create;
 mod handoff;
 
+pub use handoff::BRIEF;
+
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::path::PathBuf;

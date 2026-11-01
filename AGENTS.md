@@ -17,7 +17,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 |---|---|
 | `crates/muxa-tmux` | control-mode client, quoting, discovery, snapshot, input. The only code that talks to tmux. |
 | `crates/muxa-protocol` | wire types and version. Must match `protocol/PROTOCOL.md` and `protocol/fixtures`. |
-| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents and images, `src/changes/` its diffs, `src/tasks/` starts and closes tasks (ADR 0007), and `src/states.rs` follows agent states (ADR 0008). |
+| `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents and images, `src/changes/` its diffs, `src/tasks/` starts and closes task sessions (ADR 0007), `src/records/` stores task records and `src/task_records/` serves them (ADR 0015), and `src/states.rs` follows agent states (ADR 0008). |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
 | `apple/Muxa` | the iPad and iPhone app (SwiftUI). The layout follows size classes, not the device (ADR 0012). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project. **Try the Demo** (every build) runs the in-app demo bridge on its showcase data; the UI tests launch with `-demo` for its test fixtures, `-showcase` for the showcase, and `-foldable` to fold and unfold it like an iPhone Duo (DEBUG). |

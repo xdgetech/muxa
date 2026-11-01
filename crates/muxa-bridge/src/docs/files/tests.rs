@@ -118,6 +118,26 @@ fn reads_only_listed_documents_inside_their_directory() {
 }
 
 #[test]
+fn a_task_brief_is_listed_in_a_repo_and_without_one() {
+    let root = repo("brief");
+    write(&root.join(".git/info/exclude"), ".muxa/\n");
+    write(&root.join(".muxa/TASK.md"), "# Ship it\n");
+    let listing = list(&pane(&root), &Registry::new(vec![]));
+    assert_eq!(paths(&listing).last(), Some(&".muxa/TASK.md"));
+    let brief = listing.find(".muxa/TASK.md").unwrap();
+    assert_eq!(brief.info.title.as_deref(), Some("Ship it"));
+    assert_eq!(read(brief).unwrap().0, "# Ship it\n");
+
+    let dir = temp("brief-norepo");
+    write(&dir.join(".muxa/TASK.md"), "# Taxes\n");
+    let mut p = pane(&dir);
+    p.path = dir.display().to_string();
+    let listing = list(&p, &Registry::new(vec![]));
+    assert_eq!(paths(&listing), [".muxa/TASK.md"]);
+    assert_eq!(listing.root, None);
+}
+
+#[test]
 fn a_pane_outside_any_repo_lists_nothing() {
     let dir = temp("norepo");
     let listing = list(&pane(&dir), &Registry::new(vec![]));
