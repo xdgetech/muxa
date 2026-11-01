@@ -188,12 +188,10 @@ final class DemoTests: XCTestCase {
         app.launch()
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
         if isPhone {
-            // A phone's bar has no room: Documents, with its count, is in More.
-            app.buttons["More"].tap()
-            tapWhenReady(app.buttons["Documents (3 changed)"])
+            app.buttons["Documents, 3 changed files"].tap()
         } else {
-            XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
             composer.typeKey("d", modifierFlags: [.command, .shift])
         }
         showReaderList(app)
@@ -462,6 +460,8 @@ final class DemoTests: XCTestCase {
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         composer.typeKey("d", modifierFlags: [.command, .shift])
+        // A phone opens on the list.
+        if isPhone { tapWhenReady(app.staticTexts["Reader plan"]) }
 
         // The plan opens first; the agent's edit shows up without a reload.
         let web = app.webViews.firstMatch

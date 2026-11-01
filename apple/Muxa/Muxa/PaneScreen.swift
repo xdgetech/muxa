@@ -6,6 +6,7 @@ import SwiftUI
 struct PaneScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.phoneLayout) private var phoneLayout
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -26,9 +27,26 @@ struct PaneScreen: View {
                     .padding(.bottom, 12)
             }
         }
+        // A phone's bar has room for the title and More only: iOS folds whatever does not fit
+        // into a menu of its own. The picker and Documents get a row of their own, as on Android.
+        // Not in the title's place: the title menu takes its taps.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if phoneLayout, model.paneViews.count > 1 || model.canReadDocs {
+                ZStack(alignment: .trailing) {
+                    if model.paneViews.count > 1 { viewPicker.frame(maxWidth: .infinity) }
+                    if model.canReadDocs {
+                        documentsButton.frame(width: 44, height: 32).contentShape(Rectangle()).padding(.trailing, 8)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: 32)
+                .padding(.vertical, 6)
+                .background(model.showsPretty ? Theme.chatBackground : Theme.terminal)
+                .environment(\.colorScheme, model.showsPretty ? colorScheme : .dark)
+            }
+        }
         .background(Theme.terminal)
-        .navigationTitle(model.currentSession?.name ?? "Sessions")
-        .paneSubtitle(subtitle)
+        .navigationTitle(title)
+        .paneSubtitle(phoneLayout ? "" : subtitle)
         .navigationBarTitleDisplayMode(.inline)
         // Over the black terminal the bar is dark; over the chat it matches the chat.
         .toolbarColorScheme(model.showsPretty ? nil : .dark, for: .navigationBar)
@@ -62,31 +80,31 @@ struct PaneScreen: View {
         return model.connectError
     }
 
+    private var title: String { model.currentSession?.name ?? "Sessions" }
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        // A phone's bar has no room for everything on the right: the picker goes after
-        // Back, and Documents into More. Not in the title's place: the title menu takes its taps.
+        // iOS keeps a long title whole and folds More into a menu of its own, so a phone's
+        // title is narrower than its bar: it fits More beside it on the narrowest iPhone.
         if phoneLayout {
-            ToolbarItem(placement: .topBarLeading) { viewPicker }
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    Text(title).font(.headline).truncationMode(.middle)
+                    if !subtitle.isEmpty {
+                        Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .lineLimit(1)
+                .frame(maxWidth: Self.phoneTitleWidth)
+                .accessibilityElement(children: .combine)
+            }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if !phoneLayout { viewPicker }
-            if model.canReadDocs, !phoneLayout {
-                Button { model.openReader() } label: {
-                    // A dot when the repo has uncommitted changes to look at.
-                    Image(systemName: Icon.document)
-                        .overlay(alignment: .topTrailing) {
-                            if model.changeCount > 0 {
-                                Circle().fill(Theme.accent).frame(width: 7, height: 7).offset(x: 3, y: -2)
-                            }
-                        }
-                }
-                .accessibilityLabel(model.changeCount > 0 ? "Documents, \(model.changeCount) changed files" : "Documents")
+            if !phoneLayout {
+                viewPicker
+                if model.canReadDocs { documentsButton }
             }
             Menu {
-                if model.canReadDocs, phoneLayout {
-                    Button(documentsTitle, systemImage: Icon.document) { model.openReader() }
-                }
                 Picker(selection: fitBinding) {
                     Label("Automatic", systemImage: "rectangle.dashed").tag(PaneFit?.none)
                     Label("Readable", systemImage: "textformat.size").tag(PaneFit?.some(.readable))
@@ -97,7 +115,10 @@ struct PaneScreen: View {
                     Label("Terminal Size", systemImage: Icon.fit)
                 }
                 .pickerStyle(.menu)
-                Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
+                // A phone's session list is one Back away.
+                if !phoneLayout {
+                    Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
+                }
                 if model.canStartTasks {
                     Button("New Task…", systemImage: Icon.newTask) { model.startNewTask() }
                 }
@@ -112,6 +133,22 @@ struct PaneScreen: View {
                 Label("More", systemImage: Icon.more)
             }
         }
+    }
+
+    /// 375 pt (iPhone SE) less the margins, Back and More.
+    private static let phoneTitleWidth: CGFloat = 200
+
+    private var documentsButton: some View {
+        Button { model.openReader() } label: {
+            // A dot when the repo has uncommitted changes to look at.
+            Image(systemName: Icon.document)
+                .overlay(alignment: .topTrailing) {
+                    if model.changeCount > 0 {
+                        Circle().fill(Theme.accent).frame(width: 7, height: 7).offset(x: 3, y: -2)
+                    }
+                }
+        }
+        .accessibilityLabel(model.changeCount > 0 ? "Documents, \(model.changeCount) changed files" : "Documents")
     }
 
     private var viewPicker: some View {
@@ -131,10 +168,6 @@ struct PaneScreen: View {
         case .agent: "Agent"
         case .shell: "Shell"
         }
-    }
-
-    private var documentsTitle: String {
-        model.changeCount > 0 ? "Documents (\(model.changeCount) changed)" : "Documents"
     }
 
     private var fitBinding: Binding<PaneFit?> {

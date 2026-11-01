@@ -83,8 +83,9 @@ final class ShowcaseTests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label CONTAINS 'stripe-webhooks'")).firstMatch.tap()
         XCTAssertTrue(pane.waitForExistence(timeout: 5))
 
-        tapWhenReady(app.buttons["More"])
         tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Documents'")).firstMatch)
+        // A phone opens on the list.
+        if isPhone { tapWhenReady(app.staticTexts["Stripe webhooks"]) }
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.staticTexts["verify signature"].waitForExistence(timeout: 10))
         try save("4-plan", in: app)

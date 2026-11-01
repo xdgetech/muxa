@@ -87,12 +87,13 @@ fun PaneScreen(model: AppModel, onShowList: () -> Unit) = BoxWithConstraints {
             },
             actions = {
                 if (!phone) ViewPicker(model, dark)
-                if (model.canReadDocs && !phone) {
+                // Used often enough to stay out of More, on a phone too.
+                if (model.canReadDocs) {
                     IconButton(model::openReader, Modifier.testTag("documents")) {
                         Icon(Icons.document, if (model.changeCount > 0) "Documents, ${model.changeCount} changed files" else "Documents")
                     }
                 }
-                MoreMenu(model, phone)
+                MoreMenu(model, stack)
             },
             colors = if (dark) {
                 TopAppBarDefaults.topAppBarColors(
@@ -162,21 +163,13 @@ private fun ViewPicker(model: AppModel, dark: Boolean = false) {
 }
 
 @Composable
-private fun MoreMenu(model: AppModel, phone: Boolean) {
+private fun MoreMenu(model: AppModel, stack: Boolean) {
     var open by remember { mutableStateOf(false) }
     IconButton({ open = true }, Modifier.testTag("more")) { Icon(Icons.more, "More") }
     DropdownMenu(open, { open = false }) {
         fun pick(action: () -> Unit) {
             open = false
             action()
-        }
-        if (model.canReadDocs && phone) {
-            DropdownMenuItem(
-                { Text(if (model.changeCount > 0) "Documents (${model.changeCount} changed)" else "Documents") },
-                { pick(model::openReader) },
-                leadingIcon = { Icon(Icons.document, null) },
-                modifier = Modifier.testTag("menu-documents"),
-            )
         }
         Text("Terminal Size", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
         for ((label, fit) in listOf("Automatic" to null, "Readable" to PaneFit.READABLE, "Fit Width" to PaneFit.WIDTH, "Fit Whole Pane" to PaneFit.WHOLE)) {
@@ -188,7 +181,10 @@ private fun MoreMenu(model: AppModel, phone: Boolean) {
             )
         }
         HorizontalDivider()
-        DropdownMenuItem({ Text("Sessions…") }, { pick { model.showSwitcher = true } }, leadingIcon = { Icon(Icons.session, null) })
+        // On the stack, the session list is one Back away.
+        if (!stack) {
+            DropdownMenuItem({ Text("Sessions…") }, { pick { model.showSwitcher = true } }, leadingIcon = { Icon(Icons.session, null) })
+        }
         if (model.canStartTasks) {
             DropdownMenuItem({ Text("New Task…") }, { pick { model.startNewTask() } }, leadingIcon = { Icon(Icons.newTask, null) })
         }

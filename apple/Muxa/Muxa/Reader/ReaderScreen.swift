@@ -36,9 +36,11 @@ struct ReaderScreen: View {
     @State private var external: URL?
     /// Open folders of the Images tree, by path.
     @State private var expanded: Set<String> = []
+    /// Compact, the column shown: the list, unless the plan was asked for.
+    @State private var column = NavigationSplitViewColumn.sidebar
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(preferredCompactColumn: $column) {
             list
         } detail: {
             NavigationStack {
@@ -53,7 +55,12 @@ struct ReaderScreen: View {
         }
         .task {
             await model.loadDocs()
-            selection = model.preferredDoc.map(ReaderItem.doc)
+            // Beside the list, the preferred document fills the empty detail. On a phone
+            // it would hide the list, so only the plan, when asked for, opens by itself.
+            if width != .compact || model.readerOpensPlan {
+                selection = model.preferredDoc.map(ReaderItem.doc)
+                if selection != nil { column = .detail }
+            }
             // The latest run's screenshots are one tap away.
             if let newest = model.imageListing?.entries.first {
                 expanded.formUnion(ImageFolder.ancestors(of: newest.path))

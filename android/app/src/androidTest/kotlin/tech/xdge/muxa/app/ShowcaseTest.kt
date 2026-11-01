@@ -69,13 +69,15 @@ class ShowcaseTest {
         }
 
         // By touch: a chord right after the switcher closes can reach the window before focus does.
-        if (exists("documents")) click("documents") else { click("more"); click("menu-documents") }
+        click("documents")
+        // A phone opens on the list.
+        if (exists("doc-plans/stripe-webhooks.md")) click("doc-plans/stripe-webhooks.md")
         waitForTag("reader")
         // The page draws its diagram after it loads.
         Thread.sleep(RENDER_MS)
         snap("4-plan")
 
-        // On a phone the Reader opens on the plan; the list is one Back away.
+        // On a phone the list is one Back away.
         if (exists("reader-list")) click("reader-list")
         click("reader-tab-Changes")
         click("change-src/webhooks/router.rs")

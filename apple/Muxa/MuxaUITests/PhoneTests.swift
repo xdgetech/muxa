@@ -56,6 +56,50 @@ final class PhoneTests: XCTestCase {
         XCTAssertGreaterThan(pane.frame.width, window.width)
     }
 
+    /// Documents is on the screen, not in More. More is in the bar itself, not folded into a
+    /// menu of iOS's, and has no Sessions: the list is one Back away.
+    @MainActor
+    func testDocumentsIsOnTheScreenAndMoreLeavesOutSessions() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        let documents = app.buttons["Documents, 3 changed files"]
+        XCTAssertTrue(documents.waitForExistence(timeout: 5))
+        XCTAssertTrue(documents.isHittable)
+        XCTAssertTrue(app.navigationBars.buttons["More"].isHittable)
+        tapWhenReady(app.buttons["More"])
+        XCTAssertTrue(app.buttons["Close Task…"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Sessions…"].exists)
+        // The one on the screen, none in the menu.
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Documents'")).count, 1)
+    }
+
+    /// Documents opens the Reader on its list. Read Plan, on the agent's plan, opens the plan itself.
+    @MainActor
+    func testTheReaderOpensOnItsListAndReadPlanOnThePlan() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+
+        tapWhenReady(app.buttons["Documents, 3 changed files"])
+        XCTAssertTrue(app.staticTexts["Reader plan"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls["reader-tab"].isHittable)
+        XCTAssertFalse(app.webViews.firstMatch.exists)
+        save("phone-reader-list")
+        app.buttons["Done"].firstMatch.tap()
+
+        composer.tap()
+        composer.typeText("/plan")
+        app.buttons["send"].tap()
+        let card = app.descendants(matching: .any)["approval"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        tapButton(card.buttons["approval-read-plan"])
+        XCTAssertTrue(app.webViews.firstMatch.staticTexts["Phases"].waitForExistence(timeout: 10))
+    }
+
     /// The demo opens the agent pane in Chat; this shows its terminal.
     @MainActor
     private func launchOnAgentTerminal() -> XCUIApplication {

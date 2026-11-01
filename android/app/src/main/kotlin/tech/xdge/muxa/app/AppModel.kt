@@ -520,9 +520,14 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     val canReadDocs: Boolean get() = state.canReadDocs && currentPane != null
 
+    /** Whether the Reader was asked for the plan. A phone opens it on its list otherwise. */
+    var readerOpensPlan = false
+        private set
+
     fun openReader() {
         if (!canReadDocs) return
         if (readerTab !in readerTabs) readerTab = ReaderTab.DOCS
+        readerOpensPlan = false
         showReader = true
     }
 
@@ -541,6 +546,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         if (!canReadDocs) return
         currentSession?.id?.let { lastDocs.remove(it) }
         readerTab = ReaderTab.DOCS
+        readerOpensPlan = true
         showReader = true
     }
 

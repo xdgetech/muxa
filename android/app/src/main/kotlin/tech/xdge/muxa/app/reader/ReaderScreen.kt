@@ -81,12 +81,14 @@ fun ReaderScreen(model: AppModel) {
     var external by remember { mutableStateOf<String?>(null) }
     // Open folders of the Images tree, by path.
     var expanded by remember { mutableStateOf(emptySet<String>()) }
-    // On a phone the Reader is a stack: it opens on a document, the list one Back away.
-    var showList by remember { mutableStateOf(false) }
+    val phone = LocalPhoneLayout.current
+    // On a phone the Reader is a stack. It opens on the list, unless the plan was asked for.
+    var showList by remember { mutableStateOf(!model.readerOpensPlan) }
 
     LaunchedEffect(Unit) {
         model.loadDocs().join()
-        selection = model.preferredDoc?.let { ReaderItem.Doc(it) }
+        // Beside the list, the preferred document fills the empty detail.
+        if (!phone || model.readerOpensPlan) selection = model.preferredDoc?.let { ReaderItem.Doc(it) }
         if (selection == null) showList = true
         // The latest run's screenshots are one tap away.
         model.imageListing?.entries?.firstOrNull()?.let { expanded = expanded + ImageFolder.ancestors(it.path) }
@@ -127,7 +129,6 @@ fun ReaderScreen(model: AppModel) {
         }
         // It also needs the tag setting the main window has (Root).
         Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
-            val phone = LocalPhoneLayout.current
             val list = @Composable { modifier: Modifier ->
                 ReaderList(model, query, { query = it }, selection, ::select, expanded, { expanded = it }, modifier)
             }

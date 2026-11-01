@@ -426,9 +426,13 @@ final class AppModel {
 
     var canReadDocs: Bool { session.canReadDocs && currentPane != nil }
 
+    /// Whether the Reader was asked for the plan. A phone opens it on its list otherwise.
+    private(set) var readerOpensPlan = false
+
     func openReader() {
         guard canReadDocs else { return }
         if !readerTabs.contains(readerTab) { readerTab = .docs }
+        readerOpensPlan = false
         showReader = true
     }
 
@@ -448,6 +452,7 @@ final class AppModel {
         guard canReadDocs else { return }
         if let id = currentSession?.id { lastDocs[id] = nil }
         readerTab = .docs
+        readerOpensPlan = true
         showReader = true
     }
 

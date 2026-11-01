@@ -22,6 +22,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -189,11 +191,7 @@ class DemoTest {
         launch()
         waitForTag("composer")
         shortcut(KeyEvent.KEYCODE_D)
-        waitForTag("reader")
-        // On a phone the Reader opens on the plan; the list is one Back away.
-        if (compose.onAllNodes(hasTestTag("reader-list")).fetchSemanticsNodes().isNotEmpty()) {
-            compose.onNodeWithTag("reader-list").performClick()
-        }
+        // Both layouts open with the list showing: beside the document, or alone on a phone.
         waitForTag("reader-tab-Changes")
         compose.onNodeWithTag("reader-tab-Changes").performClick()
         waitForTag("change-src/parser.rs")
@@ -246,6 +244,41 @@ class DemoTest {
         compose.onNodeWithText("Close Task…").performClick()
         compose.onNodeWithText("Close").performClick()
         compose.waitUntilAtLeastOneExists(hasText("fix-login"), TIMEOUT)
+    }
+
+    /** Documents opens the Reader on its list on a phone. Read Plan, on the agent's plan, opens the plan itself. */
+    @Test
+    fun thePhoneReaderOpensOnItsListAndReadPlanOnThePlan() {
+        launch()
+        waitForTag("composer")
+        assumeTrue("phone layout only", compose.onAllNodes(hasTestTag("back")).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithTag("documents").performClick()
+        // The Reader keeps the tab an earlier test left it on.
+        waitForTag("reader-tab-Docs")
+        compose.onNodeWithTag("reader-tab-Docs").performClick()
+        waitForTag("doc-plans/demo-plan.md")
+        assertTrue(compose.onAllNodes(hasTestTag("reader")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("reader-done").performClick()
+
+        compose.onNodeWithTag("composer").performTextInput("/plan")
+        compose.onNodeWithTag("send").performClick()
+        waitForTag("approval-read-plan")
+        compose.onNodeWithTag("approval-read-plan").performClick()
+        waitForTag("reader")
+        compose.onNodeWithTag("reader-list").assertExists()
+    }
+
+    /** Documents is in the bar on every layout. On the stack, More has no Sessions: the list is one Back away. */
+    @Test
+    fun documentsIsInTheBarAndTheStackLeavesSessionsOutOfMore() {
+        launch()
+        waitForTag("composer")
+        waitForTag("documents")
+        compose.onNodeWithTag("more").performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Close Task…"), TIMEOUT)
+        val stack = compose.onAllNodes(hasTestTag("back")).fetchSemanticsNodes().isNotEmpty()
+        val sessions = compose.onAllNodes(hasText("Sessions…")).fetchSemanticsNodes().isNotEmpty()
+        assertEquals(!stack, sessions)
     }
 
     private companion object {

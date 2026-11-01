@@ -67,8 +67,8 @@ extension XCTestCase {
 
     var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
-    /// The Reader's list. On a phone the Reader is a stack: it opens on a document,
-    /// and the list is one Back away. A Max phone in landscape keeps both columns.
+    /// The Reader's list. On a phone the Reader is a stack: it opens on the list, and
+    /// a document's list is one Back away. A Max phone in landscape keeps both columns.
     @MainActor
     func showReaderList(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let tabs = app.segmentedControls["reader-tab"]
