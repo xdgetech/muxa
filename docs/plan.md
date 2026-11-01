@@ -26,6 +26,12 @@ What works today:
 
 ## Next
 
+- **Workspace and Task foundation, first slice** (ADR 0015, `docs/vision.md`): create a Task, launch an agent on it, watch its state, review the result, and step into the terminal. Manual Mode stays as it is.
+  1. Protocol: `list-tasks`, `create-task`, `update-task`, the session field `taskId`, the error `conflict`, the capability `task-records`.
+  2. Bridge: task records in `$XDG_STATE_HOME/muxa/tasks/`, workspaces from `~/.config/muxa/workspaces.toml`, the `@muxa_task` link, `TASK.md` and the first prompt.
+  3. CLI: `muxa-cli tasks`, `task new`, `task done`.
+  4. Apps: a Tasks list with the Inbox groups and a Task detail; then a New Task sheet and status changes.
+  5. Real work by the developer: one coding Task, and a product and an admin Task without a repo.
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
@@ -34,7 +40,13 @@ What works today:
 
 ## Later
 
-muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008), `pause-after` for slow links, scrollback, watching several panes, mouse, input leases for two typing devices.
+Direction from `docs/vision.md`, not commitments:
+- **Workspace and Task foundation** (vision phase 2): after the first slice, Resources beyond one repo (documents, issue trackers), a Project entity if needed, and repos limited to workspace roots.
+- **Managed agent execution** (phase 3): muxa starts and follows agent runs for a Task and keeps their history; context handoff between runs.
+- **Workflow orchestration** (phase 4): Tasks in a graph, where one step's result starts the next. This likely needs a daemon (ADR 0015).
+- **Autonomous work** (phase 5): agents take and finish Tasks within approval gates and workspace isolation.
+
+Also: muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008), `pause-after` for slow links, scrollback, watching several panes, mouse, input leases for two typing devices.
 
 ## Design
 

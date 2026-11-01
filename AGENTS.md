@@ -9,6 +9,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 1. `docs/plan.md`: status, what comes next, the design in short, and how each part is verified.
 2. `docs/findings/tmux-control-mode.md`: verified tmux behavior. Do not re-derive it; extend it.
 3. `docs/adr/`: decisions and why. Do not reverse one silently. Propose a new ADR instead.
+4. `docs/vision.md`: where muxa is heading. Only `docs/plan.md` Next is a commitment.
 
 ## Map
 
