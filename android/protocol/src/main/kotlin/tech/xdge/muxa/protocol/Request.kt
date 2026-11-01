@@ -59,6 +59,26 @@ sealed interface Request {
     /** Close a task's session (capability `close-task`). The branch always stays. */
     @Serializable data class CloseTask(override val id: Long, val session: String, val mode: CloseMode) : Request
 
+    /** The task records and the workspaces (capability `task-records`); a `task-list` comes first. */
+    @Serializable data class ListTasks(override val id: Long) : Request
+
+    /** Record a new task and start an agent for it; a `task-saved` comes first. Without [repo] it gets a directory. */
+    @Serializable
+    data class CreateTask(
+        override val id: Long,
+        val workspace: String,
+        val title: String,
+        val goal: String,
+        val project: String? = null,
+        val repo: String? = null,
+        val branch: String? = null,
+        val base: String? = null,
+    ) : Request
+
+    /** Set a task record's status. [rev] is the one the client saw; a stale one fails with `conflict`. */
+    @Serializable
+    data class UpdateTask(override val id: Long, val task: String, val rev: Long, val status: TaskStatus) : Request
+
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request
 }

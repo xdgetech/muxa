@@ -41,6 +41,10 @@ public enum Message: Equatable, Sendable {
     case imageEnded(image: UInt64, reason: String)
     /// The session a `new-task` made or found, just before its `result`.
     case taskCreated(task: UInt64, session: String)
+    /// The task records for a `list-tasks` request, just before its `result`.
+    case taskList(TaskListing)
+    /// The record a `create-task` or `update-task` wrote, just before its `result`.
+    case taskSaved(task: UInt64, record: TaskRecord)
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -63,6 +67,8 @@ public enum ErrorCode: Equatable, Sendable {
     case unsupported
     /// The task launcher failed; the message says why.
     case taskFailed
+    /// The task record changed since the client read it; list it again.
+    case conflict
     /// A code added by a newer bridge.
     case other(String)
 }
@@ -72,6 +78,7 @@ extension ErrorCode: Codable {
         (.badRequest, "bad-request"), (.invalidPane, "invalid-pane"), (.noPane, "no-pane"),
         (.unsupportedKey, "unsupported-key"), (.tooLarge, "too-large"), (.tmux, "tmux"),
         (.internal, "internal"), (.unsupported, "unsupported"), (.taskFailed, "task-failed"),
+        (.conflict, "conflict"),
     ]
 
     public var name: String {
@@ -93,7 +100,7 @@ extension ErrorCode: Codable {
 extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
-        case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image
+        case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
     }
 
     public init(from decoder: any Decoder) throws {
@@ -176,6 +183,12 @@ extension Message: Codable {
             self = .taskCreated(
                 task: try c.decode(UInt64.self, forKey: .task),
                 session: try c.decode(String.self, forKey: .session))
+        case "task-list":
+            self = .taskList(try TaskListing(from: decoder))
+        case "task-saved":
+            self = .taskSaved(
+                task: try c.decode(UInt64.self, forKey: .task),
+                record: try c.decode(TaskRecord.self, forKey: .record))
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -266,6 +279,13 @@ extension Message: Codable {
             try c.encode("task-created", forKey: .type)
             try c.encode(task, forKey: .task)
             try c.encode(session, forKey: .session)
+        case .taskList(let listing):
+            try c.encode("task-list", forKey: .type)
+            try listing.encode(to: encoder)
+        case .taskSaved(let task, let record):
+            try c.encode("task-saved", forKey: .type)
+            try c.encode(task, forKey: .task)
+            try c.encode(record, forKey: .record)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)

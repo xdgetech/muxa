@@ -131,6 +131,42 @@ pub enum Request {
         session: String,
         mode: CloseMode,
     },
+    /// The task records the bridge keeps, and the workspaces a new one may use.
+    /// Needs the `task-records` capability. A `task-list` comes before the `result`.
+    ListTasks {
+        id: u64,
+    },
+    /// Record a new task and start an agent for it. A `task-saved` comes before
+    /// the `result`.
+    CreateTask {
+        id: u64,
+        /// A workspace name from `task-list`.
+        workspace: String,
+        title: String,
+        /// What the agent should do; the bridge hands it to the agent.
+        goal: String,
+        /// Free text that groups tasks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        project: Option<String>,
+        /// An absolute path inside a repo; without one the task gets a directory.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repo: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        /// Where a new branch starts; the repo's default branch when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+    },
+    /// Set a task record's status. Fails with `conflict` when `rev` is not the
+    /// record's current one. A `task-saved` comes before the `result`.
+    UpdateTask {
+        id: u64,
+        /// The record's id, e.g. `t-7f3a2c`.
+        task: String,
+        /// The `rev` the client last saw.
+        rev: u64,
+        status: TaskStatus,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -161,6 +197,9 @@ impl Request {
             | Request::Image { id, .. }
             | Request::Unimage { id }
             | Request::CloseTask { id, .. }
+            | Request::ListTasks { id }
+            | Request::CreateTask { id, .. }
+            | Request::UpdateTask { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -307,8 +346,72 @@ pub enum Message {
     ImageEnded { image: u64, reason: String },
     /// The session a `new-task` made or found, sent just before its `result`.
     TaskCreated { task: u64, session: String },
+    /// The task records for a `list-tasks` request, sent just before its `result`.
+    TaskList {
+        tasks: u64,
+        /// The host's workspaces, from its config.
+        workspaces: Vec<WorkspaceInfo>,
+        entries: Vec<TaskRecord>,
+        /// More records exist than were listed.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        truncated: bool,
+    },
+    /// The record a `create-task` or `update-task` wrote, sent just before its `result`.
+    TaskSaved { task: u64, record: TaskRecord },
     /// The bridge is exiting.
     Bye { reason: String },
+}
+
+/// A Task: a durable record of work, kept by the bridge on the host. It
+/// outlives the tmux session that runs it (ADR 0015).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRecord {
+    /// e.g. `t-7f3a2c`.
+    pub id: String,
+    /// Grows by one on every write; `update-task` sends the one it saw.
+    pub rev: u64,
+    pub workspace: String,
+    pub title: String,
+    pub goal: String,
+    pub status: TaskStatus,
+    /// Epoch seconds.
+    pub created_at: u64,
+    /// Epoch seconds.
+    pub updated_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The repo's main checkout, absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Where the agent works: the worktree or the task directory, absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+    /// The last known session name, for display. Sessions link by `taskId`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    /// From the bridge, e.g. why the launch failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Set by the user; separate from the agent's state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskStatus {
+    Open,
+    /// The work waits for the user to review it.
+    Review,
+    Done,
+    Dropped,
+}
+
+/// A workspace from the host's config; `create-task` names one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceInfo {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -499,6 +602,8 @@ pub enum ErrorCode {
     Unsupported,
     /// The task launcher failed; the message says why.
     TaskFailed,
+    /// The task record changed since the client read it; list it again.
+    Conflict,
     Tmux,
     Internal,
 }
@@ -517,8 +622,12 @@ pub struct Session {
     pub branch: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<String>,
+    /// tmux-agents' task name (`@agent_task`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
+    /// The task record this session runs (`@muxa_task`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
     pub panes: Vec<Pane>,
 }
 

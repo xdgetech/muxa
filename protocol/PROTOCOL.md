@@ -60,6 +60,9 @@ sequenceDiagram
 | `unimage` | `id` | stop `image-content` |
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
 | `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
+| `list-tasks` | `id` | list the task records and workspaces (capability `task-records`); a `task-list` comes before the `result` |
+| `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base` | record a task and start its agent; a `task-saved` comes before the `result` |
+| `update-task` | `id`, `task`, `rev`, `status` | set a task record's status; a `task-saved` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -86,13 +89,15 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `image-content` | `image`, `path`, `data` (base64), optional `mtime` |
 | `image-ended` | `image`, `reason` |
 | `task-created` | `task`, `session` |
+| `task-list` | `tasks`, `workspaces[] {name}`, `entries[]` (task records), optional `truncated` |
+| `task-saved` | `task`, `record` (a task record) |
 | `bye` | `reason` |
 
-Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `tmux`, `internal`.
+Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `conflict`, `tmux`, `internal`.
 
 ### Sessions
 
-A session has `id`, `name`, optional `repo`, `repoDir` (the repo's main checkout, absolute), `branch`, `worktree`, `task`, and `panes`. A pane has:
+A session has `id`, `name`, optional `repo`, `repoDir` (the repo's main checkout, absolute), `branch`, `worktree`, `task` (tmux-agents' task name, `@agent_task`), `taskId` (the task record the session runs, from the session option `@muxa_task`; see Task records), and `panes`. A pane has:
 - `id`, `window`, `index`, `cols`, `rows`;
 - `command`: the foreground process;
 - `path`, `dead`;
@@ -170,6 +175,28 @@ A bridge with the `tasks` capability starts tasks: a git worktree on a branch, a
    - `force`: removed even when the branch is not merged.
 
    A worktree with uncommitted changes is never removed: the request fails and nothing changes. The branch is always kept. Clients attached to the session, the bridge's own included, move to the most recently used other session before it closes. The `result` comes when it is closed; a failure is `task-failed` with the reason.
+
+## Task records
+
+A bridge with the `task-records` capability keeps Tasks: durable records of work, stored on the host (ADR 0015). `new-task` and `close-task` above start and close a session for work. A task record is the Task itself: it has a goal and a status, and it outlives its session.
+
+1. `list-tasks` sends `task-list`, then `result`. `tasks` in the list is the request id. `workspaces` are the host's workspaces, from its config; clients cannot change them. `entries` are the records; `truncated` says the bridge left some out.
+2. A task record has:
+   - `id`, for example `t-7f3a2c`;
+   - `rev`, an integer from 1, one higher after every write;
+   - `workspace`, `title`, `goal`;
+   - `status`: `open`, `review`, `done` or `dropped`, set by the user. Treat an unknown status as one without a known meaning, and still show the record;
+   - `createdAt`, `updatedAt` in epoch seconds;
+   - optional `project` (free text), `repo` (absolute), `branch`, `dir` (where the agent works, absolute), `session` (the last known session name, for display only) and `note` (from the bridge, for example why the launch failed).
+3. `create-task {workspace, title, goal, project?, repo?, branch?, base?}` records a Task and starts an agent for it. `workspace` is a name from `task-list`.
+   - With `repo`, `branch` is required. The session starts as with `new-task`, and `base` means the same.
+   - Without `repo`, the task gets a directory in its workspace.
+   - The bridge hands the goal to the agent. The session carries the record's id as `taskId`.
+   - On success the bridge sends `task-saved {task, record}`, then `result`. `task` is the request id.
+   - A failed launch still keeps the record, with a `note` and no session. The bridge sends `task-saved` with it, then a `result` with `task-failed`.
+   - A wrong workspace, `repo`, `branch` or `base` is `bad-request`, and no record is kept.
+4. `update-task {task, rev, status}` sets the status of the record whose id is `task`. `rev` is the one the client last saw. When the record changed since, the request fails with `conflict` and nothing changes: list again and retry. On success, `task-saved` with the new record comes before the `result`. Changing the status never starts or closes a session.
+5. A session runs a Task when its `taskId` is the record's `id`. The agent's state stays on the session's panes; the Task's `status` does not follow it.
 
 ## Rendering a pane
 
