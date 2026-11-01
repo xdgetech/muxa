@@ -64,7 +64,7 @@ public struct TaskDraft: Equatable, Sendable {
     }
 
     /// The common mistakes git would refuse; `git check-ref-format` on the host decides the rest.
-    private static func refProblem(_ name: String, what: String) -> String? {
+    static func refProblem(_ name: String, what: String) -> String? {
         if name.hasPrefix("-") { return "A \(what) name cannot start with -." }
         if name.contains(where: { $0 == " " || $0 == "~" || $0 == "^" || $0 == ":" || $0 == "\\" }) || name.contains("..") {
             return "A \(what) name cannot contain spaces, .., ~, ^, : or \\."

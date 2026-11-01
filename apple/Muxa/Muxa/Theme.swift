@@ -47,6 +47,8 @@ enum Icon {
     static let add = "plus"
     static let newTask = "plus.square.on.square"
     static let closeTask = "xmark.square"
+    static let tasks = "checklist"
+    static let changes = "plusminus"
     static let edit = "pencil"
     static let delete = "trash"
     static let demo = "play.circle"

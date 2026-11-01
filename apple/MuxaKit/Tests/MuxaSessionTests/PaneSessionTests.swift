@@ -23,6 +23,8 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     var docs: [DocInfo] = []
     var changes: [ChangeInfo] = []
     var images: [ImageInfo] = []
+    var taskRecords: [TaskRecord] = []
+    var workspaces: [WorkspaceInfo] = [WorkspaceInfo(name: "work")]
     /// Panes whose `chat` is answered with `unsupported`.
     var unsupportedChats: Set<String> = []
     /// Screen data sent after each successful watch.
@@ -64,6 +66,30 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             let name = branch.replacingOccurrences(of: "/", with: "-")
             sessions.append(Session(id: "$9", name: name, panes: []))
             emit(.taskCreated(task: id, session: name))
+            emit(.result(id: id, error: nil, sessions: nil))
+        case .listTasks(let id):
+            emit(.taskList(TaskListing(tasks: id, workspaces: workspaces, entries: taskRecords)))
+            emit(.result(id: id, error: nil, sessions: nil))
+        case .createTask(let id, let workspace, let title, let goal, _, _, let branch, _):
+            guard workspaces.contains(where: { $0.name == workspace }) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "no such workspace"), sessions: nil))
+                return
+            }
+            let launched = branch != "taken"
+            let record = TaskRecord(
+                id: "t-\(id)", rev: 1, workspace: workspace, title: title, goal: goal, status: .open,
+                createdAt: 1, updatedAt: 1, note: launched ? nil : "the branch exists")
+            taskRecords.append(record)
+            emit(.taskSaved(task: id, record: record))
+            emit(.result(id: id, error: launched ? nil : ErrorBody(code: .taskFailed, message: "launch failed"), sessions: nil))
+        case .updateTask(let id, let task, let rev, let status):
+            guard let i = taskRecords.firstIndex(where: { $0.id == task }), taskRecords[i].rev == rev else {
+                emit(.result(id: id, error: ErrorBody(code: .conflict, message: "stale"), sessions: nil))
+                return
+            }
+            taskRecords[i].rev += 1
+            taskRecords[i].status = status
+            emit(.taskSaved(task: id, record: taskRecords[i]))
             emit(.result(id: id, error: nil, sessions: nil))
         case .chat(let id, let pane) where unsupportedChats.contains(pane):
             emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "no adapter"), sessions: nil))

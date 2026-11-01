@@ -72,6 +72,10 @@ final class AppModel {
     private(set) var imageListing: ImageListing?
     /// The Reader's open tab, kept while the app runs.
     var readerTab: ReaderTab = .docs
+    /// The Tasks sheet.
+    var showTasks = false
+    /// Asked for in the Tasks sheet: shown once the sheet has closed.
+    private var afterTasks: (session: Session, opening: TaskOpening)?
     /// The document last read in each session, opened again next time.
     private var lastDocs: [String: String] = [:]
 
@@ -585,6 +589,57 @@ final class AppModel {
         }
         if wasShown, let next = visibleSessions.first { await open(next) }
         refocusPane()
+    }
+
+    // MARK: Task records
+
+    var canKeepTasks: Bool { isConnected && session.canKeepTasks }
+
+    /// The task records by Inbox group, with the sessions that run them.
+    var inbox: [InboxSection] { session.taskRecords.inbox(sessions: session.sessions) }
+
+    func inboxItem(_ id: String) -> InboxItem? {
+        inbox.lazy.flatMap(\.items).first { $0.id == id }
+    }
+
+    /// What a task opens: its agent as a chat or a terminal, or the Reader at its TASK.md or its changes.
+    enum TaskOpening {
+        case chat, terminal, taskFile, changes
+    }
+
+    /// Where TASK.md is in a task's directory, as the Reader lists it (ADR 0015).
+    static let taskFile = ".muxa/TASK.md"
+
+    /// Closes the Tasks sheet, then opens the task's session as asked.
+    func open(_ item: InboxItem, as opening: TaskOpening) {
+        guard let s = item.session else { return }
+        afterTasks = (s, opening)
+        showTasks = false
+    }
+
+    func tasksClosed() async {
+        guard let (s, opening) = afterTasks else {
+            refocusPane()
+            return
+        }
+        afterTasks = nil
+        await open(s)
+        switch opening {
+        case .chat: await show(.chat)
+        case .terminal: if agentPane != nil { await show(.agent) }
+        case .taskFile:
+            guard canReadDocs else { return }
+            lastDocs[s.id] = Self.taskFile
+            readerTab = .docs
+            // Like the plan, it opens by itself, also on a phone.
+            readerOpensPlan = true
+            showReader = true
+        case .changes:
+            guard canReadDocs, session.canShowChanges else { return }
+            readerTab = .changes
+            readerOpensPlan = false
+            showReader = true
+        }
     }
 
     // MARK: Alerts

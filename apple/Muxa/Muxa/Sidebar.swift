@@ -42,6 +42,13 @@ struct Sidebar: View {
                     .onMove { model.hosts.move(fromOffsets: $0, toOffset: $1) }
                 }
             }
+            if model.canKeepTasks {
+                Section {
+                    Button { model.showTasks = true } label: { TasksEntry(inbox: model.inbox) }
+                        .foregroundStyle(.primary)
+                        .accessibilityIdentifier("open-tasks")
+                }
+            }
             if model.isConnected {
                 let numbers = Dictionary(
                     uniqueKeysWithValues: model.visibleSessions.enumerated().map { ($1.id, $0 + 1) })
@@ -96,6 +103,26 @@ struct Sidebar: View {
 
     private func connect(_ host: Host) {
         Task { await model.connect(to: host.id) }
+    }
+}
+
+/// Tasks, with how many need the user.
+struct TasksEntry: View {
+    let inbox: [InboxSection]
+
+    var body: some View {
+        HStack {
+            Label("Tasks", systemImage: Icon.tasks)
+            Spacer()
+            if let waiting = inbox.first(where: { $0.group == .needsAttention })?.items.count {
+                Text("\(waiting)")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Theme.attention.opacity(0.2), in: Capsule())
+                    .accessibilityLabel("\(waiting) need attention")
+            }
+        }
     }
 }
 

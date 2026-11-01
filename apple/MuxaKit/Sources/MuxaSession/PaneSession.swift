@@ -45,6 +45,14 @@ public final class PaneSession {
     public private(set) var diff: DiffLog?
     /// The open image, kept across reconnects.
     public private(set) var image: ImageLog?
+    /// The host's task records, as last listed (`task-records`).
+    public private(set) var taskRecords: [TaskRecord] = []
+    /// The host's workspaces, from its config.
+    public private(set) var workspaces: [WorkspaceInfo] = []
+    /// The last listing left some records out.
+    public private(set) var tasksTruncated = false
+    /// Why the task records could not be listed; the last list stays.
+    public private(set) var taskError: String?
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -62,6 +70,10 @@ public final class PaneSession {
     @ObservationIgnored private var imageListings: [UInt64: ImageListing] = [:]
     /// `doc-list` messages waiting for their `result`.
     @ObservationIgnored private var listings: [UInt64: DocListing] = [:]
+    /// `task-list` messages waiting for their `result`.
+    @ObservationIgnored private var taskListings: [UInt64: TaskListing] = [:]
+    /// Records from `task-saved`, by request id, until the result arrives.
+    @ObservationIgnored private var savedTasks: [UInt64: TaskRecord] = [:]
     /// Session names from `task-created`, by request id, until the result arrives.
     @ObservationIgnored private var createdTasks: [UInt64: String] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
@@ -89,6 +101,10 @@ public final class PaneSession {
             doc = nil
             diff = nil
             image = nil
+            taskRecords = []
+            workspaces = []
+            tasksTruncated = false
+            taskError = nil
         }
         phase = .connecting
         do {
@@ -97,6 +113,7 @@ public final class PaneSession {
             try await waitForHello()
             phase = .connected
             try await refresh()
+            await loadTasks()
             if let pane = watchedPane { try await watch(pane: pane) }
             if let pane = chat?.pane {
                 chat = nil
@@ -305,6 +322,82 @@ public final class PaneSession {
         return name
     }
 
+    public var canKeepTasks: Bool { capabilities.contains("task-records") }
+
+    /// Lists the task records and workspaces again. A failure lands in `taskError`.
+    public func loadTasks() async {
+        guard canKeepTasks else { return }
+        var requestId: UInt64 = 0
+        do {
+            try await request { id in
+                requestId = id
+                return .listTasks(id: id)
+            }
+        } catch {
+            taskError = Self.describe(error)
+            return
+        }
+        // The list arrives just before the result.
+        guard let listing = taskListings.removeValue(forKey: requestId) else { return }
+        taskRecords = listing.entries
+        workspaces = listing.workspaces
+        tasksTruncated = listing.truncated
+        taskError = nil
+    }
+
+    /// Records a task and starts its agent. A failed launch still keeps the record,
+    /// with a `note` saying why; it is returned then too. Throws when nothing was kept.
+    public func createTask(_ new: NewTaskRecord) async throws -> TaskRecord {
+        var requestId: UInt64 = 0
+        var failure: (any Error)?
+        do {
+            try await request { id in
+                requestId = id
+                return .createTask(
+                    id: id, workspace: new.workspace, title: new.title, goal: new.goal, project: new.project,
+                    repo: new.repo, branch: new.branch, base: new.base)
+            }
+        } catch {
+            failure = error
+        }
+        // The record arrives just before the result.
+        let record = savedTasks.removeValue(forKey: requestId)
+        try? await refresh()
+        await loadTasks()
+        if let record { return record }
+        throw failure ?? Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the task."))
+    }
+
+    /// Shown when another device changed the task first.
+    public static let taskConflict = "This task changed on another device. The list now shows its latest state. Try again."
+
+    /// Sets a task's status. When the record changed since `record.rev`, the list is
+    /// loaded again and the error says so; nothing changed then.
+    public func updateTask(_ record: TaskRecord, status: TaskStatus) async throws -> TaskRecord {
+        var requestId: UInt64 = 0
+        do {
+            try await request { id in
+                requestId = id
+                return .updateTask(id: id, task: record.id, rev: record.rev, status: status)
+            }
+        } catch Failure.bridge(let body) where body.code == .conflict {
+            await loadTasks()
+            throw Failure.bridge(ErrorBody(code: .conflict, message: Self.taskConflict))
+        }
+        let saved = savedTasks.removeValue(forKey: requestId)
+        await loadTasks()
+        return saved ?? record
+    }
+
+    /// A newer record replaces the one listed; an older one is ignored.
+    private func keep(_ record: TaskRecord) {
+        if let i = taskRecords.firstIndex(where: { $0.id == record.id }) {
+            if taskRecords[i].rev <= record.rev { taskRecords[i] = record }
+        } else {
+            taskRecords.append(record)
+        }
+    }
+
     /// Asks for the watched pane's whole screen again, e.g. after the view lost it.
     public func resync() async {
         guard let pane = watchedPane else { return }
@@ -459,12 +552,21 @@ public final class PaneSession {
             doc?.ended = reason
         case .paneGone(let watch, _, let reason) where watch == watchId:
             paneGoneReason = reason ?? "the pane closed"
+        case .taskList(let listing):
+            taskListings[listing.tasks] = listing
+        case .taskSaved(let task, let record):
+            savedTasks[task] = record
+            keep(record)
         case .sessionsChanged:
-            Task { try? await refresh() }
+            // A session that starts or ends can change which task records have an agent.
+            Task {
+                try? await refresh()
+                await loadTasks()
+            }
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded, .taskList, .taskSaved:
+            .diffContent, .diffEnded, .imageContent, .imageEnded:
             break
         }
     }
@@ -494,6 +596,8 @@ public final class PaneSession {
         listings = [:]
         changeListings = [:]
         imageListings = [:]
+        taskListings = [:]
+        savedTasks = [:]
         createdTasks = [:]
         inputs = []
         let failed = pending

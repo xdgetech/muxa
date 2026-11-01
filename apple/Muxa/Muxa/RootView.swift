@@ -54,6 +54,9 @@ struct RootView: View {
         .sheet(isPresented: $model.showSwitcher, onDismiss: model.switcherClosed) {
             SessionSwitcher()
         }
+        .sheet(isPresented: $model.showTasks, onDismiss: { Task { await model.tasksClosed() } }) {
+            TasksScreen()
+        }
         .sheet(
             isPresented: Binding(get: { model.newTask != nil }, set: { if !$0 { model.newTask = nil } }),
             onDismiss: model.refocusPane
