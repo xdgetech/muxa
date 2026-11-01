@@ -26,6 +26,7 @@ import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
 
@@ -61,6 +62,9 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
     private var sessions: List<Session> = content.sessions(now())
     private val images = content.images(now())
 
+    /** The host's task records; grows when a task is created. */
+    private var tasks: List<TaskRecord> = content.tasks(now())
+
     private class ChatFollow(val id: Long, var seq: Long = 0, var count: Int = 0)
 
     init {
@@ -92,7 +96,12 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
                 ok(req.id)
             }
             is Request.Docs -> {
-                emit(Message.DocList(req.id, content.root, content.docs.map { it.info }))
+                val brief = taskOf(req.pane)?.let { listOf(DocInfo(TASK_DOC, DocInfo.Kind.REPO, "TASK.md", it.createdAt)) }
+                emit(Message.DocList(req.id, content.root, content.docs.map { it.info } + brief.orEmpty()))
+                ok(req.id)
+            }
+            is Request.ListTasks -> {
+                emit(Message.TaskList(req.id, content.workspaces, synchronized(lock) { tasks }))
                 ok(req.id)
             }
             is Request.Doc -> doc(req)
@@ -150,7 +159,20 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         emitChat(content.conversation, content.chatStatus, reset = true)
     }
 
+    /** The record the session of [pane] runs. */
+    private fun taskOf(pane: String): TaskRecord? = synchronized(lock) {
+        val session = sessions.firstOrNull { s -> s.panes.any { it.id == pane } }
+        tasks.firstOrNull { it.id == session?.taskId }
+    }
+
     private fun doc(req: Request.Doc) {
+        val task = taskOf(req.pane)
+        if (req.path == TASK_DOC && task != null) {
+            synchronized(lock) { openDoc = req.id }
+            ok(req.id)
+            emit(Message.DocContent(req.id, req.path, brief(task), task.createdAt))
+            return
+        }
         val doc = content.docs.firstOrNull { it.info.path == req.path }
         if (doc == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.path} is not listed")
@@ -346,14 +368,27 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
     companion object {
         const val CHAT_PANE = "%1"
 
+        /** Where the bridge writes a Task's brief for its agent (ADR 0015). */
+        const val TASK_DOC = ".muxa/TASK.md"
+
         /** A branch whose task fails, to show the error. */
         const val FAILING_BRANCH = "taken"
 
         private val CAPABILITIES =
-            listOf("chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes")
+            listOf("chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records")
         private const val UPDATE_DELAY_MILLIS = 2_000L
 
         private fun now() = System.currentTimeMillis() / 1_000
+
+        /** What the bridge would write into `TASK.md`. */
+        internal fun brief(task: TaskRecord) = buildString {
+            append("# ").append(task.title).append("\n\n")
+            append("## Goal\n\n").append(task.goal).append("\n\n")
+            append("## Workspace\n\n").append(task.workspace).append("\n")
+            task.repo?.let { append("\n## Resources\n\n- Repo: `").append(it).append("`") }
+            task.branch?.let { append(", branch `").append(it).append("`") }
+            if (task.repo != null) append("\n")
+        }
 
         internal fun demoPrompt(text: String, n: Int): Pair<ChatPrompt, ChatEntry>? {
             val entry = "t:demo$n"

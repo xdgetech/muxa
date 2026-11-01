@@ -10,6 +10,9 @@ import tech.xdge.muxa.protocol.ImageInfo
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskRecord
+import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkspaceInfo
 
 internal class DemoDoc(val info: DocInfo, val text: String)
 
@@ -40,7 +43,22 @@ internal interface DemoContent {
     val branch: List<DemoChange>
     fun images(now: Long): List<DemoImage>
     fun screen(p: Pane): ByteArray
+
+    /** The host's workspaces, and its task records: one in each Inbox group. */
+    val workspaces: List<WorkspaceInfo>
+    fun tasks(now: Long): List<TaskRecord>
 }
+
+/** A record as the bridge writes one; [rev] 1 unless it was changed since. */
+internal fun demoTask(
+    id: String, workspace: String, title: String, goal: String, status: TaskStatus, updatedAt: Long,
+    project: String? = null, repo: String? = null, branch: String? = null, dir: String? = null,
+    session: String? = null, note: String? = null,
+) = TaskRecord(
+    id, rev = 1, workspace = workspace, title = title, goal = goal, status = status,
+    createdAt = updatedAt - 3_600, updatedAt = updatedAt, project = project, repo = repo, branch = branch,
+    dir = dir, session = session, note = note,
+)
 
 /** The fixtures the UI tests assert on. */
 internal object TestContent : DemoContent {
@@ -54,7 +72,7 @@ internal object TestContent : DemoContent {
     override fun sessions(now: Long) = listOf(
         Session(
             id = "$1", name = "feature-auth", repo = "app", repoDir = "/src/app", branch = "feat/auth",
-            worktree = "/src/.worktrees/app-feat-auth",
+            worktree = "/src/.worktrees/app-feat-auth", taskId = "t-auth01",
             panes = listOf(
                 Pane(
                     "%1", "@1", 0, Role.AGENT, 100, 30, "claude", "/work", dead = false, shellForeground = false,
@@ -65,7 +83,7 @@ internal object TestContent : DemoContent {
         ),
         Session(
             id = "$4", name = "fix-login", repo = "app", repoDir = "/src/app", branch = "fix/login",
-            worktree = "/src/.worktrees/app-fix-login",
+            worktree = "/src/.worktrees/app-fix-login", taskId = "t-login1",
             panes = listOf(
                 Pane(
                     "%5", "@4", 0, Role.AGENT, 100, 30, "claude", "/work", dead = false, shellForeground = false,
@@ -74,7 +92,7 @@ internal object TestContent : DemoContent {
             ),
         ),
         Session(
-            id = "$5", name = "docs-site", repo = "docs", repoDir = "/src/docs", branch = "main",
+            id = "$5", name = "docs-site", repo = "docs", repoDir = "/src/docs", branch = "main", taskId = "t-docs01",
             panes = listOf(
                 Pane(
                     "%6", "@5", 0, Role.AGENT, 100, 30, "claude", "/docs", dead = false, shellForeground = false,
@@ -239,6 +257,34 @@ internal object TestContent : DemoContent {
         DemoImage(ImageInfo("build/screenshots/en/home.png", now - 61, 51_002), 0x30B0C7),
         DemoImage(ImageInfo("build/screenshots/ja/login.png", now - 62, 49_870), 0x5856D6),
         DemoImage(ImageInfo("docs/images/logo.png", now - 86_400, 9_120), 0xFF9500),
+    )
+
+    override val workspaces = listOf(WorkspaceInfo("work"), WorkspaceInfo("personal"))
+
+    override fun tasks(now: Long) = listOf(
+        demoTask(
+            "t-auth01", "work", "Add sign-in with passkeys", "Let users sign in with a passkey instead of a password.",
+            TaskStatus.OPEN, now - 90, project = "Accounts", repo = "/src/app", branch = "feat/auth",
+            dir = "/src/.worktrees/app-feat-auth", session = "feature-auth",
+        ),
+        demoTask(
+            "t-login1", "work", "Fix the login redirect", "After login, return to the page the user came from.",
+            TaskStatus.OPEN, now - 600, repo = "/src/app", branch = "fix/login",
+            dir = "/src/.worktrees/app-fix-login", session = "fix-login",
+        ),
+        demoTask(
+            "t-docs01", "work", "Update the docs site", "Document the new settings page.",
+            TaskStatus.OPEN, now - 20, repo = "/src/docs", branch = "main", dir = "/src/docs", session = "docs-site",
+        ),
+        demoTask(
+            "t-price1", "work", "Draft the pricing page", "Write a first draft of the pricing page copy.",
+            TaskStatus.OPEN, now - 7_200, project = "Launch", dir = "/work/tasks/draft-the-pricing-page-t-price1",
+            note = "The agent did not start: no agent command is set for this workspace.",
+        ),
+        demoTask(
+            "t-relnot", "personal", "Write the release notes", "Summarize this month's changes for users.",
+            TaskStatus.DONE, now - 86_400, dir = "/personal/tasks/write-the-release-notes-t-relnot",
+        ),
     )
 
     /** A frame that shows whether the grid is exact: corners, a ruler and the last row. */

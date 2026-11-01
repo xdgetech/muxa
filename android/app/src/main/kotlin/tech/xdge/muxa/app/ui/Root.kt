@@ -152,6 +152,7 @@ fun Root(model: AppModel) {
                 confirmButton = { TextButton({ model.closeError = null; model.refocusPane() }) { Text("OK") } },
             )
         }
+        if (model.showTasks) TasksScreen(model)
         if (model.showReader) ReaderScreen(model)
     }
 }

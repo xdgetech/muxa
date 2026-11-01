@@ -17,10 +17,12 @@ import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
 import tech.xdge.muxa.session.Host
 import tech.xdge.muxa.session.HostStore
+import tech.xdge.muxa.session.InboxSection
 import tech.xdge.muxa.session.LastPane
 import tech.xdge.muxa.session.PaneFit
 import tech.xdge.muxa.session.PaneSession
@@ -30,6 +32,8 @@ import tech.xdge.muxa.session.alerts
 import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
+import tech.xdge.muxa.session.inbox
+import tech.xdge.muxa.session.runningTask
 import tech.xdge.muxa.session.knownRepos
 import tech.xdge.muxa.session.resuming
 import tech.xdge.muxa.transport.BridgeChannel
@@ -135,6 +139,12 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** The shown pane's images, while the Reader is open. */
     var imageListing by mutableStateOf<Message.ImageList?>(null)
         private set
+
+    /** The Tasks screen, over the list and the pane like the Reader. */
+    var showTasks by mutableStateOf(false)
+
+    /** The Task shown in the Tasks screen's detail, by id. */
+    var selectedTask by mutableStateOf<String?>(null)
 
     /** The Reader's open tab, kept while the app runs. */
     var readerTab by mutableStateOf(ReaderTab.DOCS)
@@ -244,6 +254,8 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         rawPanes = emptySet()
         paneFit = null
         showReader = false
+        showTasks = false
+        selectedTask = null
         showSwitcher = false
         newTask = null
         closingTask = null
@@ -520,7 +532,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     val canReadDocs: Boolean get() = state.canReadDocs && currentPane != null
 
-    /** Whether the Reader was asked for the plan. A phone opens it on its list otherwise. */
+    /** Whether the Reader was asked for the plan or a Task's brief. A phone opens it on its list otherwise. */
     var readerOpensPlan = false
         private set
 
@@ -686,6 +698,49 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         refocusPane()
     }
 
+    // Task records
+
+    /** The bridge keeps Tasks, so the Tasks screen has something to show. */
+    val canShowTasks: Boolean get() = isConnected && state.canKeepTasks
+
+    /** The Tasks by Inbox group, from the records and their sessions' agent states. */
+    val inbox: List<InboxSection> get() = inbox(state.tasks?.records.orEmpty(), state.sessions)
+
+    fun openTasks() {
+        if (!canShowTasks) return
+        showTasks = true
+        scope.launch { runCatching { session.loadTasks() } }
+    }
+
+    fun closeTasks() {
+        showTasks = false
+        refocusPane()
+    }
+
+    /** The session that runs [record], when it has one. */
+    fun sessionOf(record: TaskRecord): Session? = state.sessions.runningTask(record)
+
+    /** Leaves the Tasks screen for the Task's session, in [view]: the terminal, or its Chat. */
+    fun openTask(record: TaskRecord, view: PaneView) = scope.launch {
+        val s = sessionOf(record) ?: return@launch
+        showTasks = false
+        openNow(s)
+        show(view).join()
+    }
+
+    /** Leaves the Tasks screen for the Reader of the Task's session, at its brief or its changes. */
+    fun readTask(record: TaskRecord, tab: ReaderTab) = scope.launch {
+        val s = sessionOf(record) ?: return@launch
+        showTasks = false
+        openNow(s)
+        if (!canReadDocs) return@launch
+        readerTab = if (tab in readerTabs) tab else ReaderTab.DOCS
+        // The brief is the document to open; the Reader opens the one last read here.
+        if (tab == ReaderTab.DOCS) lastDocs[s.id] = TASK_DOC
+        readerOpensPlan = tab == ReaderTab.DOCS
+        showReader = true
+    }
+
     // Alerts
 
     /** Tells about agents elsewhere that now wait, finished, or failed. */
@@ -706,6 +761,9 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     companion object {
         const val KEY_COMMENT = "muxa-android"
+
+        /** Where the bridge writes a Task's brief, relative to its directory (ADR 0015). */
+        const val TASK_DOC = ".muxa/TASK.md"
         private val ALERT_TIME = 4.seconds
     }
 }

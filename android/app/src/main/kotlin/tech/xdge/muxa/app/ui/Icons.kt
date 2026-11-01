@@ -3,6 +3,7 @@ package tech.xdge.muxa.app.ui
 import androidx.compose.material.icons.Icons as Material
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
@@ -52,4 +54,6 @@ object Icons {
     val back = Material.AutoMirrored.Filled.ArrowBack
     val close = Material.Filled.Close
     val list = Material.Filled.Menu
+    val tasks = Material.AutoMirrored.Filled.Assignment
+    val changes = Material.Filled.Difference
 }

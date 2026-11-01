@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.session.Host
+import tech.xdge.muxa.session.InboxGroup
 import tech.xdge.muxa.session.RepoGroup
 import tech.xdge.muxa.session.defaultPane
 
@@ -79,6 +80,9 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                     HostRow(model, host, onEdit)
                 }
             }
+            if (model.canShowTasks) {
+                item(key = "tasks") { TasksRow(model) }
+            }
             if (model.isConnected) {
                 for (group in model.sessionGroups) {
                     item(key = "repo-${group.repo}") { RepoHeader(group, newTaskAction(model, group)) }
@@ -99,6 +103,22 @@ private fun newTaskAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
     val dir = group.sessions.firstOrNull()?.repoDir
     if (!model.canStartTasks || group.repo == null || dir == null) return null
     return { model.startNewTask(dir) }
+}
+
+/** Opens the Tasks screen; says how many Tasks need the user. */
+@Composable
+private fun TasksRow(model: AppModel) {
+    val waiting = model.inbox.firstOrNull { it.group == InboxGroup.NEEDS_ATTENTION }?.items?.size ?: 0
+    Row(
+        Modifier.fillMaxWidth().clickable { model.openTasks() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("open-tasks"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.tasks, null, tint = MaterialTheme.colorScheme.primary)
+        Text("Tasks", Modifier.padding(start = 12.dp).weight(1f))
+        if (waiting > 0) {
+            Text("$waiting ${InboxGroup.NEEDS_ATTENTION.title.lowercase()}", style = MaterialTheme.typography.labelSmall, color = Theme.attention)
+        }
+    }
 }
 
 @Composable

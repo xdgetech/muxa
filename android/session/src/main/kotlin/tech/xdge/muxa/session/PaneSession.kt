@@ -78,6 +78,8 @@ class PaneSession(
         val doc: DocLog? = null,
         val diff: DiffLog? = null,
         val image: ImageLog? = null,
+        /** The task records, once listed; null when the bridge keeps none or has not answered yet. */
+        val tasks: TaskBoard? = null,
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -85,6 +87,7 @@ class PaneSession(
         val canShowImages get() = "images" in capabilities
         val canStartTasks get() = "tasks" in capabilities
         val canCloseTasks get() = "close-task" in capabilities
+        val canKeepTasks get() = "task-records" in capabilities
     }
 
     private val _state = MutableStateFlow(State())
@@ -110,6 +113,7 @@ class PaneSession(
     private val changeListings = mutableMapOf<Long, Message.ChangeList>()
     private val imageListings = mutableMapOf<Long, Message.ImageList>()
     private val createdTasks = mutableMapOf<Long, String>()
+    private val taskListings = mutableMapOf<Long, Message.TaskList>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
 
     /** Ids of input requests in flight; their results only matter when they fail. */
@@ -128,7 +132,7 @@ class PaneSession(
             _state.update {
                 it.copy(
                     watchedPane = null, paneGoneReason = null, sessions = emptyList(), chat = null,
-                    unsupportedChats = emptySet(), doc = null, diff = null, image = null,
+                    unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
                 )
             }
         }
@@ -141,6 +145,8 @@ class PaneSession(
             withTimeoutOrNull(helloTimeout) { waitHello.await() } ?: throw Failure.NoHello()
             _state.update { it.copy(phase = Phase.Connected) }
             refresh()
+            // The task list is extra: a bridge that fails it still shows its sessions.
+            runCatching { loadTasks() }
             val before = _state.value
             before.watchedPane?.let { watch(it) }
             before.chat?.pane?.let {
@@ -176,6 +182,21 @@ class PaneSession(
     suspend fun refresh() = withContext(dispatcher) {
         val reply = request { Request.List(it) }
         (reply as? Message.Result)?.sessions?.let { sessions -> _state.update { it.copy(sessions = sessions) } }
+    }
+
+    /** Lists the task records again, when the bridge keeps them; otherwise clears them. */
+    suspend fun loadTasks() = withContext(dispatcher) {
+        if (!_state.value.canKeepTasks) {
+            _state.update { it.copy(tasks = null) }
+            return@withContext
+        }
+        var requestId = 0L
+        request { id ->
+            requestId = id
+            Request.ListTasks(id)
+        }
+        val listing = taskListings.remove(requestId) ?: return@withContext
+        _state.update { it.copy(tasks = TaskBoard.of(listing)) }
     }
 
     /** Shows this pane. Messages for any earlier watch are dropped from now on. */
@@ -475,6 +496,7 @@ class PaneSession(
             is Message.ChangeList -> changeListings[message.changes] = message
             is Message.ImageList -> imageListings[message.images] = message
             is Message.TaskCreated -> createdTasks[message.task] = message.session
+            is Message.TaskList -> taskListings[message.tasks] = message
             is Message.DocContent -> if (message.doc == docId) {
                 _state.update { it.copy(doc = it.doc?.copy(text = message.text, mtime = message.mtime, ended = null)) }
             }
@@ -490,9 +512,13 @@ class PaneSession(
             is Message.PaneGone -> if (message.watch == watchId) {
                 _state.update { it.copy(paneGoneReason = message.reason ?: "the pane closed") }
             }
-            Message.SessionsChanged -> scope.launch { runCatching { refresh() } }
+            Message.SessionsChanged -> scope.launch {
+                runCatching { refresh() }
+                // A session that starts or ends may run a Task, and another device may have changed one.
+                runCatching { loadTasks() }
+            }
             is Message.Bye -> scope.launch { teardown(message.reason) }
-            is Message.TaskList, is Message.TaskSaved, is Message.Unknown -> {}
+            is Message.TaskSaved, is Message.Unknown -> {}
         }
     }
 
@@ -538,6 +564,7 @@ class PaneSession(
         changeListings.clear()
         imageListings.clear()
         createdTasks.clear()
+        taskListings.clear()
         inputs.clear()
         val failed = pending.values.toList()
         pending.clear()
