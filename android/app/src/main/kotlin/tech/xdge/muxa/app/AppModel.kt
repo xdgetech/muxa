@@ -18,6 +18,7 @@ import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
+import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
 import tech.xdge.muxa.session.Host
@@ -28,6 +29,7 @@ import tech.xdge.muxa.session.PaneFit
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.RepoGroup
 import tech.xdge.muxa.session.TaskDraft
+import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.alerts
 import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
@@ -146,6 +148,12 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** The Task shown in the Tasks screen's detail, by id. */
     var selectedTask by mutableStateOf<String?>(null)
 
+    /** The New Task sheet for a task record, over the Tasks screen. */
+    var newTaskRecord by mutableStateOf<TaskRecordDraft?>(null)
+
+    /** Why the last status change failed, e.g. another device changed the Task first. */
+    var taskError by mutableStateOf<String?>(null)
+
     /** The Reader's open tab, kept while the app runs. */
     var readerTab by mutableStateOf(ReaderTab.DOCS)
 
@@ -256,6 +264,8 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         showReader = false
         showTasks = false
         selectedTask = null
+        newTaskRecord = null
+        taskError = null
         showSwitcher = false
         newTask = null
         closingTask = null
@@ -715,6 +725,36 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     fun closeTasks() {
         showTasks = false
         refocusPane()
+    }
+
+    /** Opens the New Task sheet in the first workspace. */
+    fun startNewTaskRecord() {
+        val workspace = state.tasks?.workspaces?.firstOrNull()?.name ?: ""
+        newTaskRecord = TaskRecordDraft(workspace = workspace)
+    }
+
+    /**
+     * Records the Task and shows it. A failed launch also shows it, with the note that says
+     * why. Throws only when nothing was recorded.
+     */
+    suspend fun create(draft: TaskRecordDraft) {
+        val req = draft.request ?: return
+        val record = try {
+            session.createTask(req)
+        } catch (e: PaneSession.Failure.LaunchFailed) {
+            e.record
+        }
+        newTaskRecord = null
+        selectedTask = record.id
+    }
+
+    fun setStatus(record: TaskRecord, status: TaskStatus) = scope.launch {
+        if (record.status == status) return@launch
+        try {
+            session.updateTask(record, status)
+        } catch (e: PaneSession.Failure) {
+            taskError = PaneSession.describe(e)
+        }
     }
 
     /** The session that runs [record], when it has one. */

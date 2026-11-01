@@ -12,7 +12,10 @@ import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.ChatPrompt
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.session.InboxGroup
+import tech.xdge.muxa.session.TaskRecordDraft
+import tech.xdge.muxa.session.inboxItem
 import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.terminal.PaneScreen
@@ -51,6 +54,45 @@ class DemoBridgeTest {
             val groups = inbox(s.tasks?.records.orEmpty(), s.sessions).map { it.group }
             assertEquals(set.name, InboxGroup.entries, groups)
         }
+    }
+
+    @Test
+    fun aCreatedTaskStartsARunningSession() = runBlocking {
+        val (session, _) = connected()
+        val draft = TaskRecordDraft(workspace = "personal", title = "Plan the trip!", goal = "Book it").request!!
+        val saved = session.createTask(draft)
+        assertEquals("t-new001", saved.id)
+        assertEquals(InboxGroup.RUNNING, inboxItem(saved, session.state.value.sessions).group)
+        assertEquals("plan-the-trip", session.state.value.sessions.first { it.taskId == saved.id }.name)
+    }
+
+    @Test
+    fun aFailedLaunchKeepsTheTaskWithANote() = runBlocking {
+        val (session, _) = connected()
+        val draft = TaskRecordDraft(workspace = "work", title = "T", goal = "G", repoDir = "/src/app", branch = DemoBridge.FAILING_BRANCH)
+        try {
+            session.createTask(draft.request!!)
+            fail("the launch should fail")
+        } catch (e: PaneSession.Failure.LaunchFailed) {
+            assertTrue(e.record.note!!.contains("already exists"))
+        }
+        val kept = session.state.value.tasks!!.records.last()
+        assertEquals(InboxGroup.NO_AGENT, inboxItem(kept, session.state.value.sessions).group)
+    }
+
+    @Test
+    fun aStatusChangeChecksTheRev() = runBlocking {
+        val (session, _) = connected()
+        val seen = session.state.value.tasks!!.record("t-login1")!!
+        val done = session.updateTask(seen, TaskStatus.DONE)
+        assertEquals(InboxGroup.CLOSED, inboxItem(done, session.state.value.sessions).group)
+        try {
+            session.updateTask(seen, TaskStatus.REVIEW)
+            fail("a stale rev should fail")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorCode.CONFLICT, e.body.code)
+        }
+        assertEquals(TaskStatus.DONE, session.state.value.tasks!!.record("t-login1")!!.status)
     }
 
     @Test

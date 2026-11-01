@@ -4,7 +4,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import tech.xdge.muxa.protocol.ErrorCode
 import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.TaskRecord
@@ -50,5 +52,62 @@ class TaskRecordsTest {
         bridge.tasks = listOf(record("t-2"))
         bridge.emit(Message.SessionsChanged)
         waitUntil { session.state.value.tasks?.records?.map { it.id } == listOf("t-2") }
+    }
+
+    @Test
+    fun aCreatedTaskJoinsTheListAndItsSessionIsListed() = runBlocking {
+        val bridge = FakeBridge().apply { capabilities = listOf("task-records") }
+        val session = connected(bridge)
+        val draft = TaskRecordDraft(workspace = "work", title = " Plan ", goal = "Write it").request!!
+        val saved = session.createTask(draft)
+        assertEquals("Plan", (bridge.received.last { it is Request.CreateTask } as Request.CreateTask).title)
+        assertEquals(listOf(saved.id), session.state.value.tasks?.records?.map { it.id })
+        assertEquals(saved.id, session.state.value.sessions.last().taskId)
+    }
+
+    @Test
+    fun aFailedLaunchKeepsTheRecordWithItsNote() = runBlocking {
+        val bridge = FakeBridge().apply { capabilities = listOf("task-records") }
+        val session = connected(bridge)
+        val draft = TaskRecordDraft(workspace = "work", title = "T", goal = "G", repoDir = "/src/app", branch = "taken")
+        try {
+            session.createTask(draft.request!!)
+            fail("the launch should fail")
+        } catch (e: PaneSession.Failure.LaunchFailed) {
+            assertEquals("the branch is taken", e.record.note)
+        }
+        assertEquals("the branch is taken", session.state.value.tasks?.records?.single()?.note)
+    }
+
+    @Test
+    fun anUpdateTakesTheSavedRecord() = runBlocking {
+        val bridge = FakeBridge().apply {
+            capabilities = listOf("task-records")
+            tasks = listOf(record("t-1"))
+        }
+        val session = connected(bridge)
+        val saved = session.updateTask(session.state.value.tasks!!.records.single(), TaskStatus.DONE)
+        assertEquals(2L, saved.rev)
+        assertEquals(TaskStatus.DONE, session.state.value.tasks?.record("t-1")?.status)
+    }
+
+    @Test
+    fun aConflictReloadsAndSaysWhatHappened() = runBlocking {
+        val bridge = FakeBridge().apply {
+            capabilities = listOf("task-records")
+            tasks = listOf(record("t-1"))
+        }
+        val session = connected(bridge)
+        val seen = session.state.value.tasks!!.records.single()
+        // Another device changed it meanwhile.
+        bridge.tasks = listOf(record("t-1", rev = 2, status = TaskStatus.REVIEW))
+        try {
+            session.updateTask(seen, TaskStatus.DONE)
+            fail("a stale rev should fail")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorCode.CONFLICT, e.body.code)
+            assertTrue(PaneSession.describe(e).contains("changed on another device"))
+        }
+        assertEquals(TaskStatus.REVIEW, session.state.value.tasks?.record("t-1")?.status)
     }
 }

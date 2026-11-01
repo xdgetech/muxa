@@ -19,7 +19,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -82,6 +91,16 @@ fun TasksScreen(model: AppModel) {
             }
         }
     }
+    // After the screen, so these windows open over it.
+    model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }
+    model.taskError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { model.taskError = null },
+            title = { Text("Can't Change the Task") },
+            text = { Text(error, Modifier.testTag("task-error-message")) },
+            confirmButton = { TextButton({ model.taskError = null }) { Text("OK") } },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,29 +110,36 @@ private fun TaskList(model: AppModel, selected: String?, modifier: Modifier) {
         TopAppBar(
             title = { Text("Tasks") },
             navigationIcon = { IconButton(model::closeTasks, Modifier.testTag("tasks-done")) { Icon(Icons.close, "Done") } },
+            actions = {
+                if (model.state.tasks?.workspaces?.isNotEmpty() == true) {
+                    IconButton(model::startNewTaskRecord, Modifier.testTag("new-task-record")) { Icon(Icons.add, "New Task") }
+                }
+            },
         )
         val sections = model.inbox
-        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-            for (section in sections) {
-                item(key = "g-${section.group}") {
-                    Text(
-                        section.group.title,
-                        Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp).testTag("inbox-${section.group.name}"),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                for (section in sections) {
+                    item(key = "g-${section.group}") {
+                        Text(
+                            section.group.title,
+                            Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp).testTag("inbox-${section.group.name}"),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    items(section.items, key = { it.record.id }) { item ->
+                        TaskRow(item, item.record.id == selected) { model.selectedTask = item.record.id }
+                    }
                 }
-                items(section.items, key = { it.record.id }) { item ->
-                    TaskRow(item, item.record.id == selected) { model.selectedTask = item.record.id }
+                if (model.state.tasks?.truncated == true) {
+                    item { Text("Only the newest Tasks are listed.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall) }
                 }
             }
-            if (model.state.tasks?.truncated == true) {
-                item { Text("Only the newest Tasks are listed.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall) }
-            }
-        }
-        if (sections.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(if (model.state.tasks == null) "Loading Tasks…" else "No Tasks on this host yet.")
+            if (sections.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text(if (model.state.tasks == null) "Loading Tasks…" else "No Tasks on this host yet.")
+                }
             }
         }
     }
@@ -194,9 +220,10 @@ private fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(item.group.title, style = MaterialTheme.typography.titleSmall)
-                StatusLabel(record.status)
+                StatusMenu(model, record)
                 Spacer(Modifier.weight(1f))
-                AgentLine(item)
+                // The group already says "No agent" otherwise.
+                if (item.agent != null) AgentLine(item)
             }
             record.note?.let { Text(it, color = Theme.failure, modifier = Modifier.testTag("task-note")) }
             TaskActions(model, record, item)
@@ -240,6 +267,28 @@ private fun TaskActions(model: AppModel, record: TaskRecord, item: InboxItem) {
             OutlinedButton({ model.readTask(record, ReaderTab.CHANGES) }, Modifier.testTag("task-open-changes")) {
                 Icon(Icons.changes, null)
                 Text("Changes", Modifier.padding(start = 6.dp))
+            }
+        }
+    }
+}
+
+/** The status the user sets; never follows the agent (ADR 0015). */
+@Composable
+private fun StatusMenu(model: AppModel, record: TaskRecord) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton({ open = true }, Modifier.testTag("task-status")) { Text("Status: ${statusTitle(record.status)}") }
+        DropdownMenu(open, { open = false }) {
+            for (status in listOf(TaskStatus.OPEN, TaskStatus.REVIEW, TaskStatus.DONE, TaskStatus.DROPPED)) {
+                DropdownMenuItem(
+                    { Text(statusTitle(status)) },
+                    {
+                        open = false
+                        model.setStatus(record, status)
+                    },
+                    leadingIcon = { RadioButton(record.status == status, null) },
+                    modifier = Modifier.testTag("status-${status.raw}"),
+                )
             }
         }
     }

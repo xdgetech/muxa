@@ -27,6 +27,7 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
+import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
 
@@ -64,6 +65,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
 
     /** The host's task records; grows when a task is created. */
     private var tasks: List<TaskRecord> = content.tasks(now())
+    private var createdCount = 0
 
     private class ChatFollow(val id: Long, var seq: Long = 0, var count: Int = 0)
 
@@ -100,6 +102,12 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
                 emit(Message.DocList(req.id, content.root, content.docs.map { it.info } + brief.orEmpty()))
                 ok(req.id)
             }
+            is Request.CreateTask -> scope.launch {
+                // A launch takes a moment on a real host too.
+                delay(1_000)
+                createTask(req)
+            }
+            is Request.UpdateTask -> updateTask(req)
             is Request.ListTasks -> {
                 emit(Message.TaskList(req.id, content.workspaces, synchronized(lock) { tasks }))
                 ok(req.id)
@@ -269,6 +277,58 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         emit(Message.SessionsChanged)
     }
 
+    /**
+     * Records a Task and starts a session for it, with a running agent. [FAILING_BRANCH]
+     * keeps the record with a note and no session, as a failed launch does on a host.
+     */
+    private fun createTask(req: Request.CreateTask) {
+        if (content.workspaces.none { it.name == req.workspace }) {
+            fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
+            return
+        }
+        val now = now()
+        val failed = req.branch == FAILING_BRANCH
+        val record = synchronized(lock) {
+            val id = "t-new%03d".format(++createdCount)
+            val name = slug(req.title)
+            val dir = req.repo?.let { "/src/.worktrees/$name" } ?: "/${req.workspace}/tasks/$name-$id"
+            val record = TaskRecord(
+                id, rev = 1, workspace = req.workspace, title = req.title, goal = req.goal, status = TaskStatus.OPEN,
+                createdAt = now, updatedAt = now, project = req.project, repo = req.repo, branch = req.branch,
+                dir = dir, session = name.takeUnless { failed },
+                note = if (failed) "could not create a worktree for $FAILING_BRANCH: a branch named '$FAILING_BRANCH' already exists" else null,
+            )
+            tasks = tasks + record
+            if (!failed) {
+                val n = 20 + sessions.size
+                val pane = Pane("%$n", "@$n", 0, Role.AGENT, 100, 30, "claude", dir, false, false, Agent(AgentState.RUNNING, now))
+                val repoName = req.repo?.split("/")?.lastOrNull { it.isNotEmpty() }
+                sessions = sessions + Session("$$n", name, repoName, req.repo, req.branch, taskId = id, panes = listOf(pane))
+            }
+            record
+        }
+        emit(Message.TaskSaved(req.id, record))
+        if (failed) {
+            fail(req.id, ErrorCode.TASK_FAILED, record.note ?: "")
+            return
+        }
+        ok(req.id)
+        emit(Message.SessionsChanged)
+    }
+
+    /** Sets a status, refusing a stale [Request.UpdateTask.rev] as the bridge does. */
+    private fun updateTask(req: Request.UpdateTask) {
+        val saved = synchronized(lock) {
+            val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
+            if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
+            val saved = current.copy(rev = current.rev + 1, status = req.status, updatedAt = now())
+            tasks = tasks.map { if (it.id == saved.id) saved else it }
+            saved
+        }
+        emit(Message.TaskSaved(req.id, saved))
+        ok(req.id)
+    }
+
     private fun agentWaits(session: String) {
         synchronized(lock) {
             sessions = sessions.map { s ->
@@ -380,14 +440,18 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
 
         private fun now() = System.currentTimeMillis() / 1_000
 
+        /** A session name from a title: lowercase letters, digits and dashes, at most 20 characters. */
+        internal fun slug(title: String): String =
+            title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(20).trim('-').ifEmpty { "task" }
+
         /** What the bridge would write into `TASK.md`. */
         internal fun brief(task: TaskRecord) = buildString {
             append("# ").append(task.title).append("\n\n")
             append("## Goal\n\n").append(task.goal).append("\n\n")
-            append("## Workspace\n\n").append(task.workspace).append("\n")
-            task.repo?.let { append("\n## Resources\n\n- Repo: `").append(it).append("`") }
-            task.branch?.let { append(", branch `").append(it).append("`") }
-            if (task.repo != null) append("\n")
+            append("## Workspace\n\n").append(task.workspace)
+            task.project?.let { append(" · ").append(it) }
+            task.repo?.let { append("\n\n## Resources\n\n- Repo: `").append(it).append("`, branch `").append(task.branch ?: "").append("`") }
+            append("\n")
         }
 
         internal fun demoPrompt(text: String, n: Int): Pair<ChatPrompt, ChatEntry>? {

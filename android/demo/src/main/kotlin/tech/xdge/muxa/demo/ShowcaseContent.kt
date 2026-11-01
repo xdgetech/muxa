@@ -250,31 +250,31 @@ internal object ShowcaseContent : DemoContent {
     override fun tasks(now: Long) = listOf(
         demoTask(
             "t-a1b2c3", "work", "Handle Stripe invoice.paid webhook",
-            "Mark the invoice paid and email a receipt when Stripe sends invoice.paid.",
+            "Mark the invoice paid when Stripe sends invoice.paid, and email a receipt.",
             TaskStatus.OPEN, now - 75, project = "Billing", repo = "~/src/billing", branch = "feat/stripe-webhooks",
             dir = "~/src/.worktrees/billing-stripe-webhooks", session = "stripe-webhooks",
         ),
         demoTask(
-            "t-d4e5f6", "work", "Retry failed charges with backoff", "Retry a failed charge three times, waiting longer each time.",
+            "t-d4e5f6", "work", "Retry failed charges with backoff", "Retry a failed charge three times, with exponential backoff and jitter.",
             TaskStatus.OPEN, now - 40, project = "Billing", repo = "~/src/billing", branch = "fix/retry-backoff",
             dir = "~/src/.worktrees/billing-retry-backoff", session = "retry-backoff",
         ),
         demoTask(
-            "t-0a1b2c", "work", "Dark mode for the dashboard", "Follow the system appearance on every dashboard page.",
+            "t-0a1b2c", "work", "Dark mode for the dashboard", "Add a dark theme that follows the system setting.",
             TaskStatus.OPEN, now - 720, project = "Dashboard", repo = "~/src/dashboard", branch = "feat/dark-mode",
             dir = "~/src/.worktrees/dashboard-dark-mode", session = "dark-mode",
         ),
         demoTask(
-            "t-3c4d5e", "work", "Faster search index", "Make dashboard search answer in under 100 ms.",
+            "t-3c4d5e", "work", "Faster search index", "Cut the search index build time in half.",
             TaskStatus.REVIEW, now - 1_800, project = "Dashboard", repo = "~/src/dashboard", branch = "perf/search-index",
             dir = "~/src/.worktrees/dashboard-search-index", session = "search-index",
         ),
         demoTask(
-            "t-6f7a8b", "work", "Plan the Q3 pricing change", "Write a plan for the Q3 price change and who it affects.",
-            TaskStatus.OPEN, now - 10_800, project = "Pricing", dir = "~/work/tasks/plan-the-q3-pricing-change-t-6f7a8b",
+            "t-6f7a8b", "work", "Plan the Q3 pricing change", "Compare our plans with three competitors and propose new prices.",
+            TaskStatus.OPEN, now - 5_400, project = "Pricing", dir = "~/work/tasks/plan-the-q3-pricing-change-t-6f7a8b",
         ),
         demoTask(
-            "t-9b8c7d", "personal", "File the VAT return", "Collect this quarter's invoices and file the VAT return.",
+            "t-9b8c7d", "personal", "File the VAT return", "Collect the quarter's invoices and file the VAT return.",
             TaskStatus.DONE, now - 172_800, dir = "~/personal/tasks/file-the-vat-return-t-9b8c7d",
         ),
     )

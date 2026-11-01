@@ -5,11 +5,15 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -85,6 +89,47 @@ class TasksTest {
         // The Reader opens on the brief itself, on every layout.
         waitForTag("reader")
         compose.waitUntilAtLeastOneExists(hasText("TASK.md"), TIMEOUT)
+    }
+
+    private fun newTask(title: String) {
+        compose.onNodeWithTag("new-task-record").performClick()
+        waitForTag("task-title")
+        compose.onNodeWithTag("task-title").performTextInput(title)
+        compose.onNodeWithTag("task-goal").performTextInput("Book the flights and the hotel.")
+    }
+
+    /** Create a Task without a repo, see it run, mark it done, and find it under Closed. */
+    @Test
+    fun aNewTaskRunsAndIsMarkedDone() {
+        launch()
+        openTasks()
+        newTask("Plan the trip")
+        compose.onNodeWithTag("task-create").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("task-create"), TIMEOUT)
+        waitForTag("task-detail")
+        compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText(InboxGroup.RUNNING.title)), TIMEOUT)
+        compose.onNodeWithTag("task-status").performClick()
+        waitForTag("status-done")
+        compose.onNodeWithTag("status-done").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText(InboxGroup.CLOSED.title)), TIMEOUT)
+        // It opens its new session's pane.
+        compose.onNodeWithTag("task-open-pane").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasText("plan-the-trip"), TIMEOUT)
+    }
+
+    @Test
+    fun aFailedLaunchKeepsTheTaskAndShowsWhy() {
+        launch()
+        openTasks()
+        newTask("Taken branch")
+        compose.onNodeWithTag("task-with-repo").performClick()
+        compose.onNodeWithTag("task-repo").performTextClearance()
+        compose.onNodeWithTag("task-repo").performTextInput("/src/app")
+        compose.onNodeWithTag("task-branch").performTextInput("taken")
+        compose.onNodeWithTag("task-create").performClick()
+        waitForTag("task-note")
+        compose.onNodeWithText("already exists", substring = true).assertExists()
     }
 
     private companion object {

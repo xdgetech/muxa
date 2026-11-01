@@ -44,7 +44,7 @@ internal interface DemoContent {
     fun images(now: Long): List<DemoImage>
     fun screen(p: Pane): ByteArray
 
-    /** The host's workspaces, and its task records: one in each Inbox group. */
+    /** The host's workspaces, and its task records: one in each Inbox group. The iOS demo serves the same records. */
     val workspaces: List<WorkspaceInfo>
     fun tasks(now: Long): List<TaskRecord>
 }
@@ -264,26 +264,26 @@ internal object TestContent : DemoContent {
     override fun tasks(now: Long) = listOf(
         demoTask(
             "t-auth01", "work", "Add sign-in with passkeys", "Let users sign in with a passkey instead of a password.",
-            TaskStatus.OPEN, now - 90, project = "Accounts", repo = "/src/app", branch = "feat/auth",
+            TaskStatus.OPEN, now - 90, project = "App", repo = "/src/app", branch = "feat/auth",
             dir = "/src/.worktrees/app-feat-auth", session = "feature-auth",
         ),
         demoTask(
-            "t-login1", "work", "Fix the login redirect", "After login, return to the page the user came from.",
-            TaskStatus.OPEN, now - 600, repo = "/src/app", branch = "fix/login",
+            "t-login1", "work", "Fix the login redirect", "After sign-in, return users to the page they came from.",
+            TaskStatus.OPEN, now - 600, project = "App", repo = "/src/app", branch = "fix/login",
             dir = "/src/.worktrees/app-fix-login", session = "fix-login",
         ),
         demoTask(
             "t-docs01", "work", "Update the docs site", "Document the new settings page.",
-            TaskStatus.OPEN, now - 20, repo = "/src/docs", branch = "main", dir = "/src/docs", session = "docs-site",
+            TaskStatus.OPEN, now - 20, project = "Docs", repo = "/src/docs", branch = "main", dir = "/src/docs", session = "docs-site",
         ),
         demoTask(
-            "t-price1", "work", "Draft the pricing page", "Write a first draft of the pricing page copy.",
-            TaskStatus.OPEN, now - 7_200, project = "Launch", dir = "/work/tasks/draft-the-pricing-page-t-price1",
+            "t-price1", "work", "Draft the pricing page", "Write the copy for the new pricing page, with three plans.",
+            TaskStatus.OPEN, now - 1_200, project = "Launch", dir = "/work/tasks/draft-the-pricing-page-t-price1",
             note = "The agent did not start: no agent command is set for this workspace.",
         ),
         demoTask(
-            "t-relnot", "personal", "Write the release notes", "Summarize this month's changes for users.",
-            TaskStatus.DONE, now - 86_400, dir = "/personal/tasks/write-the-release-notes-t-relnot",
+            "t-relnot", "work", "Write the release notes", "Summarize the changes since 1.2 for the blog.",
+            TaskStatus.DONE, now - 86_400, project = "Launch", dir = "/work/tasks/write-the-release-notes-t-relnot",
         ),
     )
 
