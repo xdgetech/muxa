@@ -60,6 +60,9 @@ struct PaneCommands: Commands {
             Button("New Task…") { model.startNewTask() }
                 .keyboardShortcut("n")
                 .disabled(!model.canStartTasks)
+            Button("Tasks…") { model.showTasks = true }
+                .keyboardShortcut("t")
+                .disabled(!model.canKeepTasks)
             Button("Agent / Terminal") { Task { await model.toggleAgentTerminal() } }
                 .keyboardShortcut("j")
                 .disabled(model.counterpart == nil)

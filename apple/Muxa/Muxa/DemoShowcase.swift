@@ -16,6 +16,7 @@ struct DemoContent: Sendable {
     var diffUpdate: String?
     /// With alerts on: when another agent starts waiting, in seconds after connecting.
     var alertDelay: Double
+    var tasks: DemoTasks
     var screen: @Sendable (Pane) -> Data
 
     #if DEBUG
@@ -28,12 +29,12 @@ struct DemoContent: Sendable {
     static let tests = DemoContent(
         sessions: DemoBridge.initialSessions, conversation: DemoBridge.conversation, chatStatus: .running,
         root: "app", docs: DemoBridge.docs, changes: DemoBridge.changes,
-        planUpdate: DemoBridge.planUpdate, diffUpdate: DemoBridge.diffUpdate, alertDelay: 4, screen: DemoBridge.screen(for:))
+        planUpdate: DemoBridge.planUpdate, diffUpdate: DemoBridge.diffUpdate, alertDelay: 4, tasks: .tests, screen: DemoBridge.screen(for:))
 
     static let showcase = DemoContent(
         sessions: Showcase.sessions, conversation: Showcase.conversation, chatStatus: .waiting,
         root: "billing", docs: Showcase.docs, changes: Showcase.changes,
-        planUpdate: nil, diffUpdate: nil, alertDelay: 10, screen: Showcase.screen(for:))
+        planUpdate: nil, diffUpdate: nil, alertDelay: 10, tasks: .showcase, screen: Showcase.screen(for:))
 }
 
 /// A developer's evening: two repos, four agents, one of them asking a question.
@@ -54,21 +55,21 @@ enum Showcase {
 
     static let sessions = [
         Session(id: "$1", name: "stripe-webhooks", repo: "billing", repoDir: "~/src/billing",
-                branch: "feat/stripe-webhooks", worktree: "~/src/.worktrees/billing-stripe-webhooks", panes: [
+                branch: "feat/stripe-webhooks", worktree: "~/src/.worktrees/billing-stripe-webhooks", taskId: "t-a1b2c3", panes: [
             agent("%1", "@1", "~/src/.worktrees/billing-stripe-webhooks", .waiting, ago: 75),
             shell("%2", "@1", "~/src/.worktrees/billing-stripe-webhooks"),
         ]),
         Session(id: "$2", name: "retry-backoff", repo: "billing", repoDir: "~/src/billing",
-                branch: "fix/retry-backoff", worktree: "~/src/.worktrees/billing-retry-backoff", panes: [
+                branch: "fix/retry-backoff", worktree: "~/src/.worktrees/billing-retry-backoff", taskId: "t-d4e5f6", panes: [
             agent("%3", "@2", "~/src/.worktrees/billing-retry-backoff", .running, ago: 40),
             shell("%4", "@2", "~/src/.worktrees/billing-retry-backoff"),
         ]),
         Session(id: "$3", name: "dark-mode", repo: "dashboard", repoDir: "~/src/dashboard",
-                branch: "feat/dark-mode", worktree: "~/src/.worktrees/dashboard-dark-mode", panes: [
+                branch: "feat/dark-mode", worktree: "~/src/.worktrees/dashboard-dark-mode", taskId: "t-0a1b2c", panes: [
             agent("%5", "@3", "~/src/.worktrees/dashboard-dark-mode", .done, ago: 720),
         ]),
         Session(id: "$4", name: "search-index", repo: "dashboard", repoDir: "~/src/dashboard",
-                branch: "perf/search-index", worktree: "~/src/.worktrees/dashboard-search-index", panes: [
+                branch: "perf/search-index", worktree: "~/src/.worktrees/dashboard-search-index", taskId: "t-3c4d5e", panes: [
             agent("%6", "@4", "~/src/.worktrees/dashboard-search-index", .idle, ago: 1800),
         ]),
         Session(id: "$5", name: "notes", panes: [

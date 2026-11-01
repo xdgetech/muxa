@@ -20,6 +20,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var waitingOn: (prompt: ChatPrompt, tool: ChatEntry)?
     /// Grows when a task starts.
     private var sessions: [Session]
+    /// Grows when a task record is created.
+    private var tasks: DemoTasks
     private let content: DemoContent
     static let chatPane = "%1"
     /// A branch whose task fails, to show the error.
@@ -27,7 +29,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     static let initialSessions = [
         Session(id: "$1", name: "feature-auth", repo: "app", repoDir: "/src/app", branch: "feat/auth",
-                worktree: "/src/.worktrees/app-feat-auth", panes: [
+                worktree: "/src/.worktrees/app-feat-auth", taskId: "t-auth01", panes: [
             Pane(id: "%1", window: "@1", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/work", dead: false, shellForeground: false,
                  agent: Agent(state: .waiting, since: UInt64(Date().timeIntervalSince1970) - 90)),
@@ -35,12 +37,12 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                  path: "/work", dead: false, shellForeground: true),
         ]),
         Session(id: "$4", name: "fix-login", repo: "app", repoDir: "/src/app", branch: "fix/login",
-                worktree: "/src/.worktrees/app-fix-login", panes: [
+                worktree: "/src/.worktrees/app-fix-login", taskId: "t-login1", panes: [
             Pane(id: "%5", window: "@4", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/work", dead: false, shellForeground: false,
                  agent: Agent(state: .idle, since: UInt64(Date().timeIntervalSince1970) - 600)),
         ]),
-        Session(id: "$5", name: "docs-site", repo: "docs", repoDir: "/src/docs", branch: "main", panes: [
+        Session(id: "$5", name: "docs-site", repo: "docs", repoDir: "/src/docs", branch: "main", taskId: "t-docs01", panes: [
             Pane(id: "%6", window: "@5", index: 0, role: .agent, cols: 100, rows: 30, command: "claude",
                  path: "/docs", dead: false, shellForeground: false,
                  agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970) - 20)),
@@ -69,11 +71,12 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     init(content: DemoContent, alerts: Bool) {
         self.content = content
         sessions = content.sessions
+        tasks = content.tasks
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
         if alerts {
             DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
         }
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records"]))
     }
 
     func send(_ line: Data) async throws {
@@ -104,11 +107,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .unchat(let id):
             lock.withLock { chat = nil }
             ok(id)
-        case .docs(let id, _):
-            emit(.docList(DocListing(docs: id, root: content.root, entries: content.docs.map(\.info))))
+        case .docs(let id, let pane):
+            emit(.docList(DocListing(docs: id, root: content.root, entries: docs(pane).map(\.info))))
             ok(id)
-        case .doc(let id, _, let path):
-            guard let doc = content.docs.first(where: { $0.info.path == path }) else {
+        case .doc(let id, let pane, let path):
+            guard let doc = docs(pane).first(where: { $0.info.path == path }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not listed"), sessions: nil))
                 return
             }
@@ -127,6 +130,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.startTask(id: id, repo: repo, branch: branch)
             }
+        case .listTasks(let id):
+            let tasks = lock.withLock { tasks }
+            emit(.taskList(TaskListing(tasks: id, workspaces: tasks.workspaces, entries: tasks.records)))
+            ok(id)
         case .changes(let id, _):
             emit(.changeList(ChangeListing(
                 changes: id, root: content.root, entries: content.changes.map(\.info),
@@ -243,6 +250,13 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         lock.withLock { sessions.removeAll { $0.id == session } }
         emit(.result(id: id, error: nil, sessions: nil))
         emit(.sessionsChanged)
+    }
+
+    /// The repo's documents, and TASK.md in a task's session.
+    private func docs(_ pane: String) -> [(info: DocInfo, text: String)] {
+        let (session, tasks) = lock.withLock { (sessions.first { $0.panes.contains { $0.id == pane } }, tasks) }
+        guard let text = tasks.taskFile(for: session?.taskId) else { return content.docs }
+        return content.docs + [(DocInfo(path: DemoTasks.taskFile, kind: .repo, mtime: 1), text)]
     }
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }

@@ -23,6 +23,8 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     var docs: [DocInfo] = []
     var changes: [ChangeInfo] = []
     var images: [ImageInfo] = []
+    var taskRecords: [TaskRecord] = []
+    var workspaces: [WorkspaceInfo] = [WorkspaceInfo(name: "work")]
     /// Panes whose `chat` is answered with `unsupported`.
     var unsupportedChats: Set<String> = []
     /// Screen data sent after each successful watch.
@@ -64,6 +66,9 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             let name = branch.replacingOccurrences(of: "/", with: "-")
             sessions.append(Session(id: "$9", name: name, panes: []))
             emit(.taskCreated(task: id, session: name))
+            emit(.result(id: id, error: nil, sessions: nil))
+        case .listTasks(let id):
+            emit(.taskList(TaskListing(tasks: id, workspaces: workspaces, entries: taskRecords)))
             emit(.result(id: id, error: nil, sessions: nil))
         case .chat(let id, let pane) where unsupportedChats.contains(pane):
             emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "no adapter"), sessions: nil))
