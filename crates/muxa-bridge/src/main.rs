@@ -7,6 +7,7 @@ mod chat;
 mod convert;
 mod docs;
 mod lines;
+mod loops;
 mod records;
 mod server;
 mod sessions;

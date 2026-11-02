@@ -3,7 +3,7 @@
 //! record and its session. The store itself is `records/`, which knows
 //! nothing of tmux or the protocol.
 
-mod brief;
+pub(crate) mod brief;
 mod create;
 mod facts;
 mod handoff;
