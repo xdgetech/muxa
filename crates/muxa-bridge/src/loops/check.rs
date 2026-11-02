@@ -159,12 +159,17 @@ pub async fn run(spec: CheckRun) -> Result<CheckEnd, CheckError> {
     };
     let dir = spec.dir.clone();
     let attempt = spec.attempt;
-    tokio::task::spawn_blocking(move || {
+    // The result stands without its summary: the log has the output.
+    let summed = tokio::task::spawn_blocking(move || {
         report(&dir, attempt, end)?;
         prune(&dir.join(MUXA_DIR).join(LOGS), KEEP_LOGS)
     })
-    .await
-    .unwrap_or(Ok(()))?;
+    .await;
+    match summed {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::warn!(attempt, error = %e, "cannot write the check summary"),
+        Err(e) => tracing::warn!(attempt, error = %e, "the check summary stopped"),
+    }
     Ok(end)
 }
 
