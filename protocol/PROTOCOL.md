@@ -203,7 +203,7 @@ A bridge with the `task-records` capability keeps Tasks: durable records of work
    - On success the bridge sends `task-saved {task, record}`, then `result`. `task` is the request id.
    - A failed launch still keeps the record, with a `note`. The bridge sends `task-saved` with it, then a `result` with `task-failed`. The record names a `session` only when one started before the failure.
    - A wrong workspace, `repo`, `branch` or `base`, or an empty `title`, is `bad-request`, and no record is kept.
-   - The bridge writes `.muxa/TASK.md` in `dir`. It types `Read .muxa/TASK.md and start.` into the agent pane once the agent's state is `idle`. When that does not happen within 30 seconds, it does not type it, and the record's `note` says so. The record has a new `rev` then.
+   - The bridge writes `.muxa/TASK.md` in `dir`. It types `Read .muxa/TASK.md and start.` into the agent pane once the agent's state is `idle`, or a `done` that began after the wait. When that does not happen within 30 seconds, it does not type it, and the record's `note` says so. The record has a new `rev` then.
 4. `update-task {task, rev, status}` sets the status of the record whose id is `task`. `rev` is the one the client last saw. When the record changed since, the request fails with `conflict` and nothing changes: list again and retry. On success, `task-saved` with the new record comes before the `result`. Changing the status never starts or closes a session.
 5. A session runs a Task when its `taskId` is the record's `id`. The agent's state stays on the session's panes; the Task's `status` does not follow it.
 6. `taskId` comes from the session option `@muxa_task`. Options end with the tmux server, so a session without one gets the `id` of the record whose `dir` is the session's `worktree`, or the path of its first visible pane. A record whose tag a session carries is not matched again. The bridge does not write the tag back.
@@ -219,14 +219,14 @@ A bridge with the `task-handoff` capability records the agents that work on a Ta
    - optional `agent`, the adapter that saw the agent, for example `claude-code` or `codex`. Absent until an adapter reported it;
    - optional `endedAt`, epoch seconds when the bridge restarted it. It is never set when the agent ends any other way;
    - optional `agentSession`, the agent's own session id, and `transcript`, the absolute path of its transcript on the host. A path only; the bridge never sends transcript content here.
-2. Runs are recorded only while a bridge acts: there is no daemon. An agent quit or restarted by hand in its pane leaves no run.
+2. Runs are recorded only when a bridge or the host daemon handles `create-task` or `restart-agent`. An agent quit or restarted by hand in its pane leaves no run.
 3. `restart-agent {task, force?}` restarts the agent of the record whose id is `task`:
    - The agent pane is the first live `agent` pane of the session that runs the task (`taskId`). With none, the request is `task-failed`.
    - While the agent's state is `running`, the request is `bad-request`, unless `force` is true.
    - The bridge rewrites the header of `.muxa/TASK.md` and keeps the agent's notes below its marker. It writes `.muxa/HANDOFF.md` from facts: the runs, the record's status and note, git's branch, commits and status for a repo task, and recently changed files otherwise.
    - It restarts the agent in the same pane. The pane keeps its id and size, and no layout changes. It ends the open run and adds one with `reason: restart`.
    - On success the bridge sends `task-saved {task, record}`, then `result`. `task` is the request id.
-   - Once the new agent is `idle`, the bridge types `Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.` When that does not happen within 30 seconds, the record's `note` says so.
+   - Once the new agent has finished a turn (`idle` or `done`, since the restart), the bridge types `Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.` When that does not happen within 30 seconds, the record's `note` says so.
    - An unknown task is `bad-request`.
 
 ## Task Loop

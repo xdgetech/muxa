@@ -17,6 +17,14 @@
 #            Values may be tokens: the bridge never logs them. TMUX and
 #            TMUX_PANE are refused.
 #
+# [workspace.loop]  optional; lets a Task in this workspace have a Task Loop
+#   (ADR 0019). The muxa daemon then runs a check command with /bin/sh -c
+#   in the Task's directory after each of the agent's turns. Only a Task
+#   whose repo is in repos, or a Task without a repo, can have a loop.
+#   Without this table, the workspace has no loops.
+#   checks   a list of commands; a client must pick one of them exactly.
+#            Or "any": any command a client sends, at most 4096 bytes.
+#
 # Unknown keys are refused, so a typo fails loudly instead of being ignored.
 
 [[workspace]]
@@ -26,6 +34,10 @@ repos = ["~/work/company/api", "~/work/company/web"]
 
 [workspace.agent]
 env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company" }
+
+# Remove the # signs to allow these two checks in Company's Tasks.
+# [workspace.loop]
+# checks = ["make check", "cargo test --workspace"]
 
 [[workspace]]
 name = "Side project"

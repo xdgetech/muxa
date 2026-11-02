@@ -29,7 +29,7 @@ flowchart LR
 
 - **No new processes for your agents.** muxa attaches to the panes that already exist.
 - **No layout changes.** The bridge is a tmux control-mode client that never takes part in window sizing. The app renders the pane at its real size, scaled to fit. Every fact this depends on is checked by a script (`make repro`).
-- **No new network service.** The bridge runs over your existing SSH (for example over Tailscale). It starts per connection and exits with it.
+- **No new network service.** The bridge runs over your existing SSH (for example over Tailscale). It starts per connection and exits with it. The optional host daemon for the Task Loop listens only on a Unix socket.
 
 ## Requirements
 
@@ -38,7 +38,12 @@ flowchart LR
 
 ## Setup
 
-1. On the host: `cargo install --path crates/muxa-bridge --root ~/.local`.
+1. On the host, install the bridge and the terminal client:
+   ```sh
+   cargo install --path crates/muxa-bridge --root ~/.local
+   cargo install --path crates/muxa-cli --root ~/.local
+   ```
+   For the Task Loop, also install the host daemon ([The host daemon](#the-host-daemon)).
 2. Build the app: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`.
    For Android: install Android Studio, then `make build-android` and `adb install android/app/build/outputs/apk/debug/app-debug.apk`.
    To look around first, tap **Try the Demo** in the app: sample sessions on the device, with no host needed.
@@ -49,7 +54,19 @@ Documents: Cmd+Shift+D opens the Reader for the shown pane. Its tabs list that s
 
 New tasks: Cmd+N, or **+** on a repo in the sidebar, starts a task: a git worktree on a branch and a session with an agent in it. The bridge makes the worktree under `.worktrees/` next to the repo and starts `claude` in one pane (`--task-command` picks another agent). With the tmux-agents desktop plugin installed, its `new.sh` does the work instead, so the task looks the same as one started on the desktop.
 
-Tasks and workspaces: **Tasks** in the sidebar lists your Tasks by what they need from you: Needs attention, Ready for review, Running, No agent, Closed. A Task is a goal that outlives its session; it is kept on the host in `~/.local/state/muxa/tasks/`. **New Task** takes a workspace, a title and a goal, and optionally a repo and branch. Without a repo, the Task gets its own directory in the workspace. The agent starts there and reads the goal from `.muxa/TASK.md`. Workspaces come from `~/.config/muxa/workspaces.toml` on the host; copy [`docs/examples/workspaces.toml`](docs/examples/workspaces.toml) and edit it. Without that file, Tasks has no workspace to offer. A workspace can start its agents with its own environment, for example its own `CLAUDE_CONFIG_DIR`, so the company and the personal projects use different Claude Code logins, claude.ai connectors and MCP servers (`[workspace.agent]` in the example, ADR 0016). Log in once per directory: `CLAUDE_CONFIG_DIR=~/.claude-company claude`. Chat, states and approvals keep working for those agents. For agents you start yourself with another directory, list it in some workspace's `agent.env`, or pass `--agent-dir claude-code=DIR` for each directory. A Task can outlive one agent session. The agent keeps Progress, Decisions and Next actions in `.muxa/TASK.md`. `muxa-cli task restart ID` starts a fresh agent in the same pane: the bridge first writes `.muxa/HANDOFF.md` with the earlier runs, where their transcripts are, and what git or the task directory shows (ADR 0018). From a terminal: `muxa-cli --bridge muxa-bridge tasks`, `task new`, `task done` and `task restart`.
+Tasks and workspaces: **Tasks** in the sidebar lists your Tasks by what they need from you: Needs attention, Ready for review, Running, No agent, Closed. A Task is a goal that outlives its session; it is kept on the host in `~/.local/state/muxa/tasks/`. **New Task** takes a workspace, a title and a goal, and optionally a repo and branch. Without a repo, the Task gets its own directory in the workspace. The agent starts there and reads the goal from `.muxa/TASK.md`. Workspaces come from `~/.config/muxa/workspaces.toml` on the host; copy [`docs/examples/workspaces.toml`](docs/examples/workspaces.toml) and edit it. Without that file, Tasks has no workspace to offer. A workspace can start its agents with its own environment, for example its own `CLAUDE_CONFIG_DIR`, so the company and the personal projects use different Claude Code logins, claude.ai connectors and MCP servers (`[workspace.agent]` in the example, ADR 0016). Log in once per directory: `CLAUDE_CONFIG_DIR=~/.claude-company claude`. Chat, states and approvals keep working for those agents. For agents you start yourself with another directory, list it in some workspace's `agent.env`, or pass `--agent-dir claude-code=DIR` for each directory. From a terminal: `muxa-cli --bridge muxa-bridge tasks`, `task new`, `task done` and `task restart`.
+
+Restart agent: a Task can outlive one agent session. The agent keeps Progress, Decisions and Next actions in `.muxa/TASK.md`. **Restart agent** in a Task's detail, or `muxa-cli task restart ID`, starts a fresh agent in the same pane. The bridge first writes `.muxa/HANDOFF.md` with the earlier runs, where their transcripts are, and what git or the task directory shows (ADR 0018). The app asks before it restarts, and asks again to stop an agent that is still running (`--force` in `muxa-cli`). The Task's detail lists its runs and opens `HANDOFF.md` in the Reader.
+
+Task Loop: a Task can run a check command after each of its agent's turns, for example `make check` (ADR 0019). The loop runs in the host daemon, so it goes on while no app is connected.
+- A failed check types a fixed prompt into the agent: `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.`
+- A passing check moves the Task from Open to Ready for review. The loop never marks a Task done.
+- While the agent waits on you (a permission, a question or a plan), the loop pauses. It never answers for you. It goes on after you answer.
+- The loop stops, and the Task moves to Needs attention, after the last allowed failed check (3 by default), a check past its timeout (600 s by default), an agent error, a missing agent, or a prompt it could not type within 30 s.
+- It types only when nobody typed in the Task's session in the last 5 seconds.
+- `.muxa/CHECK.md` in the Task's directory holds the last check's result and the end of its output. The full output is in `.muxa/checks/`.
+
+To turn the loop on, install the daemon, and allow checks for a workspace with `[workspace.loop]` in `workspaces.toml` (see the example file). In the app, New Task has "Run a check after each turn". A Task's detail has a Loop section with Start loop, Stop loop and Open check log. Without the daemon, the Loop section says what to run on the host. From a terminal: `muxa-cli task new ... --check CMD [--max-attempts N] [--check-timeout S]`, `task loop start ID --check CMD [--reset]`, `task loop stop ID`, and `task stop-loop --all`.
 
 On the desktop, tmux-agents is muxa's client inside tmux (ADR 0017). With `muxa-cli` and `muxa-bridge` on the host, its `prefix + N` creates a muxa Task, and `prefix + T` shows the same Inbox in a popup. `Enter` there moves your terminal to the Task's session. Your tmux keys and layout stay as they are.
 
@@ -60,6 +77,33 @@ Approvals: when Claude Code waits on a permission, a question or its plan, Chat 
 Alerts: while the app is open, a banner tells you when an agent in another session needs your input, finishes, or fails. Tap it to go there.
 
 Keys: Cmd+K switch session, Cmd+N new task, Cmd+J agent/terminal, Cmd+Shift+[ and ] previous/next session, Cmd+1…9 session by number. On Android they are Ctrl+Shift chords (Ctrl+Shift+K, N, J, R, D, [ ], 1…9), because plain Ctrl chords belong to the shell. In the chat's composer, Return starts a new line and Cmd+Return sends (Ctrl+Enter on Android). Every other key goes to the pane. Without a hardware keyboard, a bar above the on-screen keyboard adds Esc, Tab, Shift+Tab, Ctrl (for the next key), the arrows and ^C.
+
+## The host daemon
+
+The Task Loop needs a small daemon on the host (ADR 0019). It is optional: without it, everything else works, and loops are off. It is the same `muxa-bridge` binary, and it opens no network port.
+
+```sh
+muxa-bridge daemon install --print  # show the service file; changes nothing
+muxa-bridge daemon install          # write the service file, then load and start it
+muxa-bridge daemon status           # running or not, its version, socket and log
+muxa-bridge daemon restart          # after an upgrade; loops go on
+muxa-bridge daemon stop             # stop every loop, then the daemon
+muxa-bridge daemon uninstall        # like stop, then remove the service file
+```
+
+- `install` needs no sudo. On macOS it writes a LaunchAgent, `~/Library/LaunchAgents/tech.xdge.muxa.daemon.plist`. On Linux it writes a systemd user unit, `~/.config/systemd/user/muxa-daemon.service`. A Linux user service stops at logout unless you run `loginctl enable-linger`.
+- `install` writes the absolute paths of `muxa-bridge` and tmux, the flags you give it, and `HOME`, `TMUX_TMPDIR` and `PATH` from your shell. Run it in a shell where `tmux` reaches your server.
+- Give `install` the same `--socket`, `--state-dir`, `--workspaces` and `--agent-dir` flags as the bridge's line in `authorized_keys`. Then both use the same tmux server and Task records.
+- `stop` keeps the service file, so the daemon starts again at the next login. The loops it stopped stay stopped. After a crash, launchd or systemd starts the daemon again, and its loops go on.
+- The daemon reads the agent directories of `[workspace.agent]` when it starts. Run `daemon restart` after you change them. It reads the checks and the other workspace settings on each request.
+- Its files are in `~/.local/state/muxa/` (`$XDG_STATE_HOME/muxa`, or `--daemon-dir`): `daemon.sock`, `daemon.lock`, and `daemon.log`, rotated at 1 MiB. On macOS, `daemon.err` holds start-up failures; on Linux, the journal does.
+- While a daemon of the bridge's own version runs, each bridge sends Task requests to it. Otherwise the bridge serves them itself, as before.
+
+To update the host:
+1. Get the new source, and run both `cargo install` commands of Setup again.
+2. Run `muxa-bridge daemon restart`.
+
+Until the restart, the bridge does not use the daemon, because its version differs. Tasks still work, but loops are off.
 
 ## Pane roles
 

@@ -6,7 +6,8 @@ Pre-alpha. The bridge, the terminal client, the iPad and iPhone app and the Andr
 
 What works today:
 - **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode without taking part in window sizing, and speaks protocol v1 (`protocol/PROTOCOL.md`).
-- **Terminal client** (`muxa-cli`): a reference client and end-to-end harness.
+- **Host daemon** (`muxa-bridge daemon`, optional, ADR 0019): installed by hand as a LaunchAgent or a systemd user unit. It serves Task records on a private Unix socket, and runs the Task Loop while no client is connected. Without it, the bridge serves Task records itself, and loops are off.
+- **Terminal client** (`muxa-cli`): a reference client and end-to-end harness. It also lists, creates, finishes and restarts Tasks and starts and stops their loops, with `--json` for desktop tools (`docs/agents.md`).
 - **iPad app:**
   - one pane at its real size, scaled to fit; wide panes fit the width and scroll with the cursor (ADR 0004);
   - saved hosts, one-time password setup of a restricted key, and host keys pinned on first use;
@@ -16,6 +17,9 @@ What works today:
   - approval cards in Chat when Claude Code waits on a permission, a question or a plan (ADR 0009);
   - the Reader, in tabs: the pane's plan and the repo's Markdown files, rendered offline (ADR 0006); its uncommitted changes and its branch's commits as diffs (ADR 0007, 0011); its images, ignored folders included (ADR 0010);
   - starting and closing tasks, with or without tmux-agents (ADR 0007);
+  - Tasks: the Inbox groups, a Task detail, New Task with or without a repo, status changes, and per-workspace agent environments (ADR 0015, 0016);
+  - Restart agent with a handoff in `.muxa/HANDOFF.md`, and the Task's runs (ADR 0018);
+  - the Task Loop: a check after each turn, a Loop section with its state, Start loop, Stop loop and the check log, when the host runs the daemon (ADR 0019);
   - a banner when an agent in another session waits, finishes or fails (ADR 0008);
   - Japanese input in the pane;
   - a bar with Esc, Tab, Ctrl and the arrows above the on-screen keyboard.
@@ -31,13 +35,17 @@ What works today:
   2. Done: bridge: task records in `$XDG_STATE_HOME/muxa/tasks/` (`--state-dir`), workspaces from `~/.config/muxa/workspaces.toml` (`--workspaces`), the `@muxa_task` link and its fallback by directory, `TASK.md` and the first prompt once the agent is idle.
   3. Done: CLI: `muxa-cli tasks`, `task new`, `task done`.
   4. Done: apps (iOS and Android): a Tasks list with the Inbox groups (Needs attention, Ready for review, Running, No agent, Closed), a Task detail that opens its pane, Chat, `TASK.md` or its changes, a New Task sheet and status changes. The store screenshots predate it.
-  5. Done: per-workspace agent environment (ADR 0016): `[workspace.agent]` with `command` and `env`, passed with `new-session -e`; the Claude Code and Codex adapters search every workspace's `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. tmux-agents' side waits for ADR 0017's `agent-env`; until then such Tasks use the built-in launcher.
+  5. Done in code: per-workspace agent environment (ADR 0016, proposed). `[workspace.agent]` with `command` and `env`, passed with `new-session -e`; the Claude Code and Codex adapters search every workspace's `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. tmux-agents' side waits for ADR 0017's `agent-env`; until then such Tasks use the built-in launcher. Still to check by hand: two real logins (item 9).
   6. Desktop client (ADR 0017, proposed): tmux-agents shows the same Tasks inside tmux.
      - Done in muxa: `muxa-cli tasks --json` and `task new --json`, the bridge waiting for a start prompt after its client leaves, `--muxa-task` for tmux-agents that announce it, and the contract test against a real tmux-agents (`MUXA_TMUX_AGENTS`).
      - Done in tmux-agents, on its branch `muxa-task-records`, not merged yet: `prefix + N` creates a muxa Task, `prefix + T` shows the Inbox, and `new.sh --muxa-task`.
-  7. Done (bridge, protocol, CLI): handoff and agent runs (ADR 0018). The record keeps `runs`; `TASK.md` gets Progress, Decisions and Next actions, which the agent keeps and the bridge never rewrites; `restart-agent` writes `.muxa/HANDOFF.md` from facts and restarts the agent in the same pane with `respawn-pane -k`; `muxa-cli task restart`. The Android, iPad and iPhone apps show a Task's runs, open `HANDOFF.md` in the Reader, and restart the agent after a confirmation that asks to stop a running one.
-  8. Proposed: the Task Loop in a host daemon (ADR 0019). A `check` command runs after each agent turn; a failure types a fixed prompt, a pass moves the Task from `open` to `review`, an agent waiting on the user pauses the loop, and every other gate stops it. The daemon is `muxa-bridge daemon`, started by launchd or `systemd --user`, on a Unix socket only. Phases P0 to P6 are in the ADR.
+  7. Done in code: handoff and agent runs (ADR 0018, proposed). The record keeps `runs`; `TASK.md` gets Progress, Decisions and Next actions, which the agent keeps and the bridge never rewrites; `restart-agent` writes `.muxa/HANDOFF.md` from facts and restarts the agent in the same pane with `respawn-pane -k`; `muxa-cli task restart`. The Android, iPad and iPhone apps show a Task's runs, open `HANDOFF.md` in the Reader, and restart the agent after a confirmation that asks to stop a running one.
+  8. Done in code: the Task Loop in a host daemon (ADR 0019, proposed). A `check` command runs after each agent turn; a failure types a fixed prompt, a pass moves the Task from `open` to `review`, an agent waiting on the user pauses the loop, and every other gate stops it.
+     - P0 to P5 are done: a fresh `done` is a finished turn; `muxa-bridge daemon run`, `install`, `stop`, `restart`, `uninstall` and `status`; every record request through the daemon with a local fallback; durable prompt waits (`pendingPrompt`); `tasks-changed`; the quiet tmux client (`ignore-size,no-output`); the loop engine and `[workspace.loop]`; the wire types, `protocol/fixtures/inbox/` and the CLI loop commands; the iOS and Android Loop section, New Task check and Inbox row.
+     - P6, the docs: README, `SECURITY.md`, `docs/agents.md` and this plan.
+     - Still to do by hand: load the daemon once with `muxa-bridge daemon install` on a Mac (launchd) and, if used, on Linux (`systemd --user`); tests use a fake service manager. Then run one loop on real devices.
   9. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
+  10. The developer accepts or changes ADR 0015 to 0019. All five are still proposed.
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
@@ -48,8 +56,8 @@ What works today:
 
 Direction from `docs/vision.md`, not commitments:
 - **Workspace and Task foundation** (vision phase 2): after the first slice, Resources beyond one repo (documents, issue trackers), a Project entity if needed, and repos limited to workspace roots.
-- **Managed agent execution** (phase 3): muxa starts and follows agent runs for a Task and keeps their history while no client is connected; context handoff between runs. The first part, recorded only while a bridge acts, is in the first slice (ADR 0018).
-- **Workflow orchestration** (phase 4): Tasks in a graph, where one step's result starts the next. This likely needs a daemon (ADR 0015).
+- **Managed agent execution** (phase 3): muxa starts and follows agent runs for a Task and keeps their history while no client is connected; context handoff between runs. The first part, recorded only while a bridge or the daemon handles a request, is in the first slice (ADR 0018, 0019).
+- **Workflow orchestration** (phase 4): Tasks in a graph, where one step's result starts the next. The host daemon (ADR 0019) can run it.
 - **Autonomous work** (phase 5): agents take and finish Tasks within approval gates and workspace isolation.
 
 Also: muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008), `pause-after` for slow links, scrollback, watching several panes, mouse, input leases for two typing devices.
@@ -65,7 +73,8 @@ flowchart LR
 
 The decisions and their reasons are in `docs/adr/`. The tmux facts they rely on are in `docs/findings/tmux-control-mode.md`. In short:
 
-- **Bridge:** a Rust binary started as the SSH exec command. No daemon and no port. SSH handles authentication and host-key pinning (ADR 0003).
+- **Bridge:** a Rust binary started as the SSH exec command. No network port. SSH handles authentication and host-key pinning (ADR 0003).
+- **Host daemon** (optional, ADR 0019): `muxa-bridge daemon run`, one per user, started by launchd or `systemd --user`. It listens only on `daemon.sock` (directory 0700, socket 0600, peer uid checked). A bridge sends each Task request to it, one connection per request, when it runs the bridge's version; otherwise the bridge serves the request itself. It runs the Task Loop, and attaches its own tmux client with `-f ignore-size,no-output` only while it has work.
 - **Protocol contract:** `protocol/PROTOCOL.md` plus `protocol/fixtures/`. The Rust and Swift tests decode the same fixtures, so a third-party client can rely on them.
 - **Never resize.** The bridge attaches with `-f ignore-size` and never sends `refresh-client -C`, `resize-*`, `select-window`, `select-pane` or `refresh-client -A %p:off`. A lone control client with a size set resizes every window (`scripts/repro/ignore-size.sh`). Plugins that read `client_width` must skip control-mode clients (README).
 - **Rendering:** at the pane's real cols × rows, with the largest font that fits (ADR 0004).
@@ -101,6 +110,7 @@ The server:
 |---|---|
 | Everything | `make check` |
 | tmux behavior, the bridge | `make test-tmux`, `make repro`. CI runs them on tmux 3.2a, 3.4 and the latest release, on Linux and macOS. |
+| The host daemon and the Task Loop | `make check` (the loop's `step`, the check runner, the `install --print` golden files); `make test-tmux` (`tests/daemon.rs`, `tests/loops.rs`: a real daemon, a fake agent, the layout snapshot and the log grep); `make repro` (`daemon-client.sh`, `client-activity.sh`); loading the real LaunchAgent or systemd unit by hand |
 | The contract with tmux-agents | `MUXA_TMUX_AGENTS=<tmux-agents checkout> make test-tmux` (ADR 0017); tmux-agents' own `bats tests` |
 | MuxaKit | `make test-apple`; `make test-apple-tmux` against the real bridge |
 | The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, in the simulator against the in-app demo bridge |
@@ -115,3 +125,5 @@ The server:
 - **SwiftTerm vs vt100.** The MuxaKit replay tests compare SwiftTerm with the recorded screens.
 - **Half-open links after iOS suspends the app.** The bridge's idle timeout ends them.
 - **The SSH key can run a shell** unless it is restricted. `SECURITY.md` shows the `authorized_keys` restriction, and the app sets it up.
+- **A check runs a command with no pane to show it.** `[workspace.loop]` in `workspaces.toml` decides per workspace which commands may run (`SECURITY.md`).
+- **After an upgrade, loops are off until `muxa-bridge daemon restart`.** The bridge uses only a daemon of its own version.
