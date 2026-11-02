@@ -9,9 +9,12 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
@@ -57,12 +60,28 @@ class TasksTest {
         waitForTag("tasks-done")
     }
 
+    /** Scrolls the list to the Task first: on a phone the lower groups are off screen. */
+    private fun openTask(id: String) {
+        waitForTag("task-list")
+        compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-$id"))
+        compose.onNodeWithTag("task-$id").performClick()
+    }
+
+    /** Clicks a control of the Task detail, which scrolls. */
+    private fun tap(tag: String) {
+        waitForTag(tag)
+        compose.onNodeWithTag(tag).performScrollTo().performClick()
+    }
+
+    private fun waitForText(tag: String, text: String) =
+        compose.waitUntilAtLeastOneExists(hasTestTag(tag) and hasText(text, substring = true), TIMEOUT)
+
     @Test
     fun everyGroupShowsAndATaskOpensItsPane() {
         launch()
         openTasks()
         for (group in InboxGroup.entries) waitForTag("inbox-${group.name}")
-        compose.onNodeWithTag("task-t-login1").performClick()
+        openTask("t-login1")
         waitForTag("task-open-pane")
         compose.onNodeWithTag("task-open-pane").performClick()
         compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
@@ -73,7 +92,7 @@ class TasksTest {
     fun aTaskWithoutASessionShowsWhyItsLaunchFailed() {
         launch()
         openTasks()
-        compose.onNodeWithTag("task-t-price1").performClick()
+        openTask("t-price1")
         waitForTag("task-note")
         compose.onNodeWithTag("task-open-pane").assertDoesNotExist()
     }
@@ -82,7 +101,7 @@ class TasksTest {
     fun theBriefOpensInTheReader() {
         launch()
         openTasks()
-        compose.onNodeWithTag("task-t-auth01").performClick()
+        openTask("t-auth01")
         waitForTag("task-open-brief")
         compose.onNodeWithTag("task-open-brief").performClick()
         compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
@@ -96,7 +115,7 @@ class TasksTest {
     fun restartingAnIdleAgentAddsARun() {
         launch()
         openTasks()
-        compose.onNodeWithTag("task-t-login1").performClick()
+        openTask("t-login1")
         waitForTag("run-1")
         compose.onNodeWithTag("run-2").assertDoesNotExist()
         compose.onNodeWithTag("task-open-handoff").assertDoesNotExist()
@@ -115,7 +134,7 @@ class TasksTest {
     fun aRunningAgentAsksToStopIt() {
         launch()
         openTasks()
-        compose.onNodeWithTag("task-t-docs01").performClick()
+        openTask("t-docs01")
         waitForTag("task-restart-agent")
         compose.onNodeWithTag("task-restart-agent").performClick()
         waitForTag("restart-force")
@@ -129,7 +148,7 @@ class TasksTest {
     fun theHandoffOpensInTheReader() {
         launch()
         openTasks()
-        compose.onNodeWithTag("task-t-auth01").performClick()
+        openTask("t-auth01")
         waitForTag("task-open-handoff")
         compose.onNodeWithTag("task-open-handoff").performClick()
         compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
@@ -176,6 +195,72 @@ class TasksTest {
         compose.onNodeWithTag("task-create").performClick()
         waitForTag("task-note")
         compose.onNodeWithText("already exists", substring = true).assertExists()
+    }
+
+    /** Start a stopped loop with the workspace's second listed check, then stop it (ADR 0019). */
+    @Test
+    fun aLoopStartsWithAListedCheckAndStops() {
+        launch()
+        openTasks()
+        openTask("t-deps01")
+        waitForText("loop-state", "Stopped")
+        waitForText("loop-reason", "Stopped by the user.")
+        tap("loop-start")
+        // The sheet does not scroll: its fields are tapped where they are.
+        waitForTag("loop-check")
+        compose.onNodeWithTag("loop-check").performClick()
+        waitForTag("check-option-1")
+        compose.onNodeWithTag("check-option-1").performClick()
+        waitForText("loop-check", "cargo test --workspace")
+        compose.onNodeWithTag("loop-start-confirm").performClick()
+        waitForText("loop-state", "Armed")
+        waitForText("loop-check-command", "cargo test --workspace")
+        tap("loop-stop")
+        waitForText("loop-state", "Stopped")
+        waitForTag("loop-start")
+    }
+
+    /** A loop paused for the user, or stopped at its limit, puts the Task in Needs attention. */
+    @Test
+    fun aPausedLoopNeedsAttention() {
+        launch()
+        openTasks()
+        // The row merges its texts: its badge is part of it.
+        waitForText("task-t-auth01", "Loop paused")
+        openTask("t-auth01")
+        compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText(InboxGroup.NEEDS_ATTENTION.title)), TIMEOUT)
+        waitForText("loop-reason", "The loop resumes after the agent finishes its turn.")
+        compose.onNodeWithTag("loop-stop").assertExists()
+        if (compose.onAllNodesWithTag("task-back").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("task-back").performClick()
+        // No agent runs this one: only its loop puts it there.
+        openTask("t-lint01")
+        waitForText("loop-reason", "Stopped: the check failed 3 times.")
+        compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText(InboxGroup.NEEDS_ATTENTION.title)), TIMEOUT)
+    }
+
+    @Test
+    fun theCheckLogOpensInTheReader() {
+        launch()
+        openTasks()
+        openTask("t-auth01")
+        tap("loop-open-log")
+        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
+        waitForTag("reader")
+        compose.waitUntilAtLeastOneExists(hasText("CHECK.md"), TIMEOUT)
+    }
+
+    /** A workspace with listed checks offers its first one; the new Task's loop is armed. */
+    @Test
+    fun aNewTaskRunsACheckAfterEachTurn() {
+        launch()
+        openTasks()
+        newTask("Lint the site")
+        compose.onNodeWithTag("task-with-loop").performScrollTo().performClick()
+        waitForText("loop-check", "make check")
+        compose.onNodeWithTag("task-create").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("task-create"), TIMEOUT)
+        waitForText("loop-state", "Armed")
+        waitForText("loop-check-command", "make check")
     }
 
     private companion object {

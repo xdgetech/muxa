@@ -8,12 +8,17 @@ import tech.xdge.muxa.protocol.ChatEntry
 import tech.xdge.muxa.protocol.ChatTool
 import tech.xdge.muxa.protocol.DocInfo
 import tech.xdge.muxa.protocol.ImageInfo
+import tech.xdge.muxa.protocol.LoopCheck
+import tech.xdge.muxa.protocol.LoopReason
+import tech.xdge.muxa.protocol.LoopState
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.protocol.WorkspaceInfo
 
 internal class DemoDoc(val info: DocInfo, val text: String)
@@ -55,12 +60,18 @@ internal interface DemoContent {
 internal fun demoTask(
     id: String, workspace: String, title: String, goal: String, status: TaskStatus, updatedAt: Long,
     project: String? = null, repo: String? = null, branch: String? = null, dir: String? = null,
-    session: String? = null, note: String? = null, runs: List<AgentRun> = emptyList(),
+    session: String? = null, note: String? = null, runs: List<AgentRun> = emptyList(), loop: TaskLoop? = null,
 ) = TaskRecord(
     id, rev = 1, workspace = workspace, title = title, goal = goal, status = status,
     createdAt = updatedAt - 3_600, updatedAt = updatedAt, project = project, repo = repo, branch = branch,
-    dir = dir, session = session, note = note, runs = runs,
+    dir = dir, session = session, note = note, runs = runs, loop = loop,
 )
+
+/** A Task Loop with the host's defaults, which changed state at [since]; the iOS demo serves the same ones. */
+internal fun demoLoop(
+    check: String, state: LoopState, attempts: Int, since: Long, reason: LoopReason? = null, lastCheck: LoopCheck? = null,
+    maxAttempts: Int = 3, timeout: Long = 600,
+) = TaskLoop(check, maxAttempts, timeout, state, attempts, armedAt = since, since = since, reason = reason, lastCheck = lastCheck)
 
 /** An agent run; the iOS demo serves the same ones. */
 internal fun demoRun(
@@ -273,13 +284,24 @@ internal object TestContent : DemoContent {
         DemoImage(ImageInfo("docs/images/logo.png", now - 86_400, 9_120), 0xFF9500),
     )
 
-    override val workspaces = listOf(WorkspaceInfo("work"), WorkspaceInfo("personal"))
+    /** Checks from a list, any check, and no loops at all (ADR 0019). */
+    override val workspaces = listOf(
+        WorkspaceInfo("work", WorkspaceChecks.Only(listOf("make check", "cargo test --workspace"))),
+        WorkspaceInfo("personal", WorkspaceChecks.Any),
+        WorkspaceInfo("notes"),
+    )
 
+    /** Every Inbox group, and every loop state: paused, armed, checking, passed, and stopped by limit, timeout and the user. */
     override fun tasks(now: Long) = listOf(
         demoTask(
             "t-auth01", "work", "Add sign-in with passkeys", "Let users sign in with a passkey instead of a password.",
             TaskStatus.OPEN, now - 90, project = "App", repo = "/src/app", branch = "feat/auth",
             dir = "/src/.worktrees/app-feat-auth", session = "feature-auth",
+            // The agent waits on a menu, so the loop is paused.
+            loop = demoLoop(
+                "make check", LoopState.PAUSED, attempts = 1, since = now - 90, reason = LoopReason.WAITING,
+                lastCheck = LoopCheck(1, exit = 2, seconds = 48, at = now - 400),
+            ),
             runs = listOf(
                 demoRun(
                     1, now - 7_290, endedAt = now - 3_690, agentSession = "8f14e45f-ceea-4b6a-9f2b-0c3e5d7a1b21",
@@ -293,11 +315,17 @@ internal object TestContent : DemoContent {
             TaskStatus.OPEN, now - 600, project = "App", repo = "/src/app", branch = "fix/login",
             dir = "/src/.worktrees/app-fix-login", session = "fix-login",
             runs = listOf(demoRun(1, now - 4_200, agentSession = "45c48cce-2e2d-4fbd-a1f4-6b3c8e9d0a12")),
+            // The agent finished its turn, so the check runs.
+            loop = demoLoop("cargo test --workspace", LoopState.CHECKING, attempts = 0, since = now - 15),
         ),
         demoTask(
             "t-docs01", "work", "Update the docs site", "Document the new settings page.",
             TaskStatus.OPEN, now - 20, project = "Docs", repo = "/src/docs", branch = "main", dir = "/src/docs", session = "docs-site",
             runs = listOf(demoRun(1, now - 1_220)),
+            loop = demoLoop(
+                "make check", LoopState.ARMED, attempts = 2, since = now - 200,
+                lastCheck = LoopCheck(2, exit = 1, seconds = 37, at = now - 210),
+            ),
         ),
         demoTask(
             "t-price1", "work", "Draft the pricing page", "Write the copy for the new pricing page, with three plans.",
@@ -308,6 +336,39 @@ internal object TestContent : DemoContent {
             "t-relnot", "work", "Write the release notes", "Summarize the changes since 1.2 for the blog.",
             TaskStatus.DONE, now - 86_400, project = "Launch", dir = "/work/tasks/write-the-release-notes-t-relnot",
             runs = listOf(demoRun(1, now - 90_000, agent = "codex", agentSession = "rollout-2026-10-31T09-12-44")),
+            loop = demoLoop(
+                "make check", LoopState.PASSED, attempts = 1, since = now - 86_500,
+                lastCheck = LoopCheck(2, exit = 0, seconds = 52, at = now - 86_500),
+            ),
+        ),
+        demoTask(
+            "t-lint01", "personal", "Fix the lint warnings", "Make npm run lint pass without warnings.",
+            TaskStatus.OPEN, now - 300, dir = "/personal/tasks/fix-the-lint-warnings-t-lint01",
+            loop = demoLoop(
+                "npm run lint", LoopState.STOPPED, attempts = 3, since = now - 300, reason = LoopReason.LIMIT,
+                lastCheck = LoopCheck(3, exit = 1, seconds = 14, at = now - 300),
+            ),
+        ),
+        demoTask(
+            "t-perf01", "work", "Speed up the test suite", "Cut the test suite's run time below five minutes.",
+            TaskStatus.OPEN, now - 900, project = "App", repo = "/src/app", branch = "perf/tests",
+            dir = "/src/.worktrees/app-perf-tests",
+            loop = demoLoop(
+                "cargo test --workspace", LoopState.STOPPED, attempts = 1, since = now - 900, reason = LoopReason.TIMEOUT,
+                lastCheck = LoopCheck(2, exit = null, seconds = 600, at = now - 900),
+            ),
+        ),
+        demoTask(
+            "t-deps01", "work", "Update the dependencies", "Update every dependency to its latest minor version.",
+            TaskStatus.OPEN, now - 3_000, project = "App", dir = "/work/tasks/update-the-dependencies-t-deps01",
+            loop = demoLoop(
+                "make check", LoopState.STOPPED, attempts = 1, since = now - 3_000, reason = LoopReason.USER,
+                lastCheck = LoopCheck(1, exit = 2, seconds = 51, at = now - 3_100),
+            ),
+        ),
+        demoTask(
+            "t-notes1", "notes", "Sort the meeting notes", "File last week's meeting notes by project.",
+            TaskStatus.OPEN, now - 7_200, dir = "/notes/tasks/sort-the-meeting-notes-t-notes1",
         ),
     )
 

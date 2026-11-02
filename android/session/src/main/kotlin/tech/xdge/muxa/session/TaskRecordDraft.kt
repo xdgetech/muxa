@@ -1,5 +1,7 @@
 package tech.xdge.muxa.session
 
+import tech.xdge.muxa.protocol.LoopSpec
+
 /**
  * What the New Task sheet edits for a task record (`create-task`). Checked here for quick
  * feedback; the bridge checks again and has the final say.
@@ -14,6 +16,8 @@ data class TaskRecordDraft(
     val branch: String = "",
     /** Empty: the repo's default branch. */
     val base: String = "",
+    /** Also start a Task Loop; null for none. */
+    val loop: LoopDraft? = null,
 ) {
     data class Create(
         val workspace: String,
@@ -23,6 +27,7 @@ data class TaskRecordDraft(
         val repo: String?,
         val branch: String?,
         val base: String?,
+        val loop: LoopSpec? = null,
     )
 
     /** What to fix before the Task can be created; null when it can. */
@@ -31,6 +36,7 @@ data class TaskRecordDraft(
             if (workspace.isBlank()) return "Pick a workspace."
             if (title.isBlank()) return "Give the task a title."
             if (goal.isBlank()) return "Describe the goal."
+            loop?.problem?.let { return it }
             val repo = repoDir.trim()
             if (repo.isEmpty()) {
                 return if (branch.isNotBlank() || base.isNotBlank()) "A branch needs a repository." else null
@@ -57,6 +63,7 @@ data class TaskRecordDraft(
                 repo = repo,
                 branch = repo?.let { branch.trim() },
                 base = repo?.let { base.trim().ifEmpty { null } },
+                loop = loop?.spec,
             )
         }
 }
