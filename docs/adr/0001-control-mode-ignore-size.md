@@ -1,6 +1,6 @@
 # ADR 0001: Read panes through tmux control mode with `ignore-size`
 
-Status: accepted (2026-10-25)
+Status: accepted (2026-10-25). The sizing decision is superseded by ADR 0020 (proposed); control mode and the snapshot stay.
 
 ## Context
 

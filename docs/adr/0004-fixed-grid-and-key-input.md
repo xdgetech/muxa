@@ -1,6 +1,6 @@
 # ADR 0004: Fixed-grid terminal view and app-owned key input
 
-Status: accepted (2026-10-25)
+Status: accepted (2026-10-25). Amended by ADR 0020 (proposed): the client tells the bridge which grid it would like (`viewport`), and still renders the grid it gets.
 
 ## Context
 

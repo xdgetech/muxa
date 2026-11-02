@@ -63,7 +63,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 Breaking one of these breaks the product promise. Each has a reason in `docs/findings/` or `docs/adr/`.
 
 1. **Never touch the default tmux server.** The developer's live agents run there. Use `tmux -L muxa-test-<name>` or the sandbox. A Claude Code hook (`scripts/hooks/guard-tmux.py`) blocks `tmux` without `-L`/`-S`. Do not work around it. If a live read is needed, ask the user to run it with `!`.
-2. **Never change the size or layout of a window or pane.** The bridge attaches with `-f ignore-size`. It never sends `refresh-client -C`, `resize-pane`, `resize-window`, `select-window`, `select-pane`, or `refresh-client -A '%p:off'`.
+2. **The window size follows the device in use, and nothing else changes the layout** (ADR 0020). Only a bridge whose client sent `viewport` sizes its control client (`refresh-client -C`), only for windows whose `window-size` is `latest`, and it sets `ignore-size` again when it stops watching. The daemon's client never sends a size. Nothing sends `resize-pane`, `resize-window`, `select-window`, `select-pane` or `refresh-client -A '%p:off'`, and nothing changes `window-size` or other tmux options.
 3. **Target tmux objects by id** (`$n`, `@n`, `%n`), never by name. Names resolve ambiguously.
 4. **Untrusted input stays data.** Pane ids are validated. Every value placed in a tmux command line goes through the quoting function in `muxa-tmux`. No other path builds command lines.
 5. **Pane bytes, agent transcripts, documents and diffs never reach logs.** Log ids, paths, sizes and errors, not terminal, conversation, document or diff content.

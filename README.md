@@ -1,6 +1,6 @@
 # muxa
 
-Work on the AI coding agents you already run in tmux, from an iPad with a keyboard, an iPhone, or an Android phone, tablet or foldable. muxa does not change your desktop layout.
+Work on the AI coding agents you already run in tmux, from an iPad with a keyboard, an iPhone, or an Android phone, tablet or foldable. The window takes the size of the device you work on, and your desktop's size again when you are back.
 
 > **Status: pre-alpha.** The bridge, a terminal client, the iPad and iPhone app and the Android app are built and tested. The iOS app runs on a real iPad and iPhone; the Android app on phones and tablets. The store listings, screenshots and release settings are ready (`store/RELEASE.md`); neither app is published yet. See [`docs/plan.md`](docs/plan.md).
 
@@ -16,19 +16,19 @@ Work on the AI coding agents you already run in tmux, from an iPad with a keyboa
 You run agents (Claude Code, Codex, ...) in tmux on an always-on machine. Each session has an agent pane and a shell pane. When you leave the desk, you want those **same** processes on a tablet:
 - one pane full-screen, not a squeezed split;
 - native switching between sessions and between agent and shell;
-- your desktop layout exactly as you left it.
+- the pane at a size that fits the device, and your desktop layout back when you return.
 
 muxa does that:
 
 ```mermaid
 flowchart LR
   app[iPad app] -- "SSH: muxa-bridge<br/>JSON lines" --> bridge[muxa-bridge]
-  bridge -- "tmux control mode<br/>-f ignore-size" --> tmux[your tmux server]
+  bridge -- "tmux control mode" --> tmux[your tmux server]
   desk[desktop terminal] --- tmux
 ```
 
 - **No new processes for your agents.** muxa attaches to the panes that already exist.
-- **No layout changes.** The bridge is a tmux control-mode client that never takes part in window sizing. The app renders the pane at its real size, scaled to fit. Every fact this depends on is checked by a script (`make repro`).
+- **The window follows the device in use** (ADR 0020), as tmux's `window-size latest` does for terminals. While you type on the tablet, the pane's window takes the size that makes the pane fill the screen. Type on the laptop and it takes the laptop's size again. With `window-size` other than `latest` (the default), muxa never sizes a window and scales the pane to fit. Every fact this depends on is checked by a script (`make repro`).
 - **No new network service.** The bridge runs over your existing SSH (for example over Tailscale). It starts per connection and exits with it.
 
 ## Requirements
@@ -73,11 +73,13 @@ Sessions are grouped by repo: tmux-agents' `@agent_repo`, or else the git repo o
 
 ## Plugins that react to every client
 
-When muxa attaches, tmux runs your `client-attached` and `client-resized` hooks. A control-mode client reports a width of 80. A plugin that hides panes on narrow clients will then change your layout. Such plugins should skip control-mode clients:
+When muxa attaches, tmux runs your `client-attached` hooks. A control-mode client reports a width of 80. A plugin that hides panes on narrow clients will then change your layout. Such plugins should skip control-mode clients:
 
 ```sh
 [ "$(tmux display-message -p '#{client_control_mode}')" = 1 ] && exit 0
 ```
+
+While you work on a device, its size reaches the window, so `window-resized` hooks run (`refresh-client -C` runs no `client-resized` hook). A plugin that lays out panes by window width sees the device's width. tmux-agents keeps its sidebar width and the other panes' shares.
 
 ## Development
 

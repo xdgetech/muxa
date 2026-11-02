@@ -5,7 +5,7 @@
 Pre-alpha. The bridge, the terminal client, the iPad and iPhone app and the Android app work. The iOS app runs on a real iPad and iPhone; the Android app on phones and tablets. The store listings, screenshots, privacy policy and release settings are ready (`store/RELEASE.md`); neither app is published yet.
 
 What works today:
-- **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode without taking part in window sizing, and speaks protocol v1 (`protocol/PROTOCOL.md`).
+- **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode, and speaks protocol v1 (`protocol/PROTOCOL.md`). Today it never takes part in window sizing; ADR 0020 (proposed) changes that.
 - **Terminal client** (`muxa-cli`): a reference client and end-to-end harness.
 - **iPad app:**
   - one pane at its real size, scaled to fit; wide panes fit the width and scroll with the cursor (ADR 0004);
@@ -59,7 +59,7 @@ Also: muxa's own push notifications while the app is closed (APNs needs a relay 
 ```mermaid
 flowchart LR
   iPad[iPad app<br/>SwiftUI + SwiftTerm + Citadel] -- "SSH exec: muxa-bridge<br/>JSON lines, protocol v1" --> B[muxa-bridge<br/>Rust, one per connection]
-  B -- "tmux -C attach -f ignore-size" --> T[tmux server]
+  B -- "tmux -C attach<br/>refresh-client -C for the device" --> T[tmux server]
   Mac[Desktop terminal] --- T
 ```
 
@@ -67,8 +67,8 @@ The decisions and their reasons are in `docs/adr/`. The tmux facts they rely on 
 
 - **Bridge:** a Rust binary started as the SSH exec command. No daemon and no port. SSH handles authentication and host-key pinning (ADR 0003).
 - **Protocol contract:** `protocol/PROTOCOL.md` plus `protocol/fixtures/`. The Rust and Swift tests decode the same fixtures, so a third-party client can rely on them.
-- **Never resize.** The bridge attaches with `-f ignore-size` and never sends `refresh-client -C`, `resize-*`, `select-window`, `select-pane` or `refresh-client -A %p:off`. A lone control client with a size set resizes every window (`scripts/repro/ignore-size.sh`). Plugins that read `client_width` must skip control-mode clients (README).
-- **Rendering:** at the pane's real cols × rows, with the largest font that fits (ADR 0004).
+- **The window follows the device in use** (ADR 0020, proposed). The client sends `viewport`, the grid its pane area shows at its default font. The bridge then takes part in window sizing like a desktop terminal under `window-size latest`: it sizes its control client so that the watched pane gets that grid. Typing on the laptop takes the window back; typing on the device takes it again. Only windows whose `window-size` is `latest` follow. Without `viewport`, the bridge attaches with `-f ignore-size` and sends no size, as before. Nothing sends `resize-*`, `select-window`, `select-pane` or `refresh-client -A %p:off`. Plugins that read `client_width` must skip control-mode clients (README).
+- **Rendering:** at the pane's real cols × rows, with the largest font that fits (ADR 0004). With `viewport`, the pane usually is the device's grid.
 - **Input:**
   - text → `send-keys -l`;
   - named keys → `send-keys`, so tmux encodes them for the pane's modes and extended keys;
@@ -92,7 +92,7 @@ The server:
 
 ### Rejected
 
-- Attaching a normal tmux client, as Multiplex and Remux do: it resizes the window (ADR 0001).
+- Attaching a normal tmux client, as Multiplex and Remux do: it needs a PTY, and it sizes the window to the whole device, not to the pane the device shows (ADR 0001, 0020).
 - A shared Rust client core through UniFFI (ADR 0013). Swift and Kotlin each keep their own session core; `protocol/fixtures` keeps them to one contract.
 
 ## Verification

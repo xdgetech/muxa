@@ -54,7 +54,7 @@ Manual Mode always stays. Every Task runs in a tmux session you can open and typ
 
 ## Principles that do not change
 
-- Never change the size or layout of a window or pane (AGENTS.md, invariant 2).
+- The window size follows the device in use, and nothing else changes the layout (AGENTS.md, invariant 2; ADR 0020).
 - No invented agent state. Report what an adapter supplies, or `unknown`.
 - Task content, like pane bytes and transcripts, never reaches logs.
 - The host decides what an agent may access. A client asks; the host's config allows or refuses.
