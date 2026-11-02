@@ -28,7 +28,7 @@ flowchart LR
 ```
 
 - **No new processes for your agents.** muxa attaches to the panes that already exist.
-- **The window follows the device in use** (ADR 0020), as tmux's `window-size latest` does for terminals. While you type on the tablet, the pane's window takes the size that makes the pane fill the screen. Type on the laptop and it takes the laptop's size again. With `window-size` other than `latest` (the default), muxa never sizes a window and scales the pane to fit. Every fact this depends on is checked by a script (`make repro`).
+- **The window follows the device in use** (ADR 0020, 0021), as tmux's `window-size latest` does for terminals. While you type on the tablet, the pane's window takes the size that makes the pane fill the screen, also when it is not the window your laptop shows. Your laptop stays on its own window. Type on the laptop in that window and it takes the laptop's size again. With `window-size` other than `latest` (the default), muxa never sizes a window and scales the pane to fit. Every fact this depends on is checked by a script (`make repro`).
 - **No new network service.** The bridge runs over your existing SSH (for example over Tailscale). It starts per connection and exits with it. The optional host daemon for the Task Loop listens only on a Unix socket.
 
 ## Requirements
@@ -124,6 +124,8 @@ When muxa attaches, tmux runs your `client-attached` hooks. A control-mode clien
 ```
 
 While you work on a device, its size reaches the window, so `window-resized` hooks run (`refresh-client -C` runs no `client-resized` hook). A plugin that lays out panes by window width sees the device's width. tmux-agents keeps its sidebar width and the other panes' shares.
+
+To size a window that is not your current one, the bridge holds that window in a short-lived session of its own, `_muxa-<pid>-<n>`, tagged `@muxa_device` (ADR 0021). Your sessions keep their current window. Creating and closing it runs `session-created`, `window-linked`, `window-unlinked` and `session-closed` hooks. `choose-tree` shows it while a device watches; a plugin that lists sessions should skip `@muxa_device` (`docs/agents.md`, "Device sessions"). tmux-agents does.
 
 ## Development
 

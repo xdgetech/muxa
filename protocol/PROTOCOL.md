@@ -262,7 +262,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 - **Viewport** (capability `viewport`, ADR 0020). A client may say which grid it would like with `viewport {cols, rows}`: the cols x rows its pane area shows at its default font. `cols` is 10 to 1000 and `rows` 5 to 1000; other values get `bad-request`.
   1. Send it before the first `watch`, and again after the pane area changes (rotation, split view, fold, window resize), once it has settled.
   2. It holds for the current watch and later ones.
-  3. While the client watches a pane, the bridge sizes the pane's window so that the pane gets that grid, as tmux's `window-size latest` does for a terminal. Typing in the pane (`keys`, `text`, `bytes`, `paste`) makes this client the latest one again. Typing on another tmux client takes the window back.
+  3. While the client watches a pane, the bridge sizes the pane's window so that the pane gets that grid, as tmux's `window-size latest` does for a terminal. This holds for any window of the session, not only the one a desktop client shows (ADR 0021). Typing in the pane (`keys`, `text`, `bytes`, `paste`) makes this client the latest one again. Typing on another tmux client in that window takes the window back.
   4. Only windows whose `window-size` is `latest` follow. The pane can still be any size: keep rendering the `screen` you get.
   5. A client that never sends `viewport` never changes a window's size.
 - `screen.data` starts with a full reset (`ESC c`) and restores the screen, the cursor, the scroll region and the modes. Feed it to the emulator as-is.
