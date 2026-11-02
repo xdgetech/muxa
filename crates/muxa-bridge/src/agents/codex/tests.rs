@@ -64,8 +64,8 @@ impl Fixture {
 
     fn source(&self, list: impl Fn() -> Result<Processes, Error> + Send + 'static) -> CodexSource {
         let started = started(&pane(), &procs()).unwrap();
-        let path = find_rollout(&self.dir, "/work/app", started).unwrap();
-        CodexSource::new(self.dir.clone(), started, path, Box::new(list))
+        let path = find_rollout(std::slice::from_ref(&self.dir), "/work/app", started).unwrap();
+        CodexSource::new(vec![self.dir.clone()], started, path, Box::new(list))
     }
 }
 
@@ -162,15 +162,18 @@ fn finds_the_newest_rollout_in_the_panes_directory() {
     let own = f.rollout("rollout-b.jsonl", "/work/app");
     let started = started(&pane(), &procs()).unwrap();
     assert_eq!(
-        find_rollout(&f.dir, "/work/app", started).unwrap(),
+        find_rollout(std::slice::from_ref(&f.dir), "/work/app", started).unwrap(),
         Some(own.clone())
     );
 
     // A rollout from before the process started belongs to an earlier run.
     let later = SystemTime::now() + Duration::from_secs(60);
-    assert_eq!(find_rollout(&f.dir, "/work/app", later).unwrap(), None);
+    assert_eq!(
+        find_rollout(std::slice::from_ref(&f.dir), "/work/app", later).unwrap(),
+        None
+    );
 
-    let adapter = CodexAdapter::new(f.dir.clone());
+    let adapter = CodexAdapter::new(vec![f.dir.clone()]);
     let found = adapter.find(&pane(), &procs()).unwrap();
     assert_eq!(found.status.map(|a| a.state), Some(AgentState::Idle));
     let shell = Processes::parse("100 1 05:00 -zsh\n");
@@ -179,6 +182,32 @@ fn finds_the_newest_rollout_in_the_panes_directory() {
         "no codex process, no agent"
     );
     assert!(adapter.open(&pane(), &shell).unwrap().is_none());
+}
+
+#[test]
+fn every_codex_home_is_searched_and_the_newest_wins() {
+    let default = Fixture::new("homes-default");
+    let company = Fixture::new("homes-company");
+    default.rollout("rollout-a.jsonl", "/elsewhere");
+    let own = company.rollout("rollout-b.jsonl", "/work/app");
+    let started = started(&pane(), &procs()).unwrap();
+    let homes = vec![default.dir.clone(), company.dir.clone()];
+    assert_eq!(
+        find_rollout(&homes, "/work/app", started).unwrap(),
+        Some(own.clone())
+    );
+    // The same cwd in both homes: the newer file wins.
+    std::thread::sleep(Duration::from_millis(20));
+    let newer = default.rollout("rollout-c.jsonl", "/work/app");
+    assert_eq!(
+        find_rollout(&homes, "/work/app", started).unwrap(),
+        Some(newer)
+    );
+    assert!(
+        CodexAdapter::new(vec![default.dir.clone()])
+            .find(&pane(), &procs())
+            .is_some_and(|f| f.status.is_some())
+    );
 }
 
 #[test]

@@ -29,6 +29,7 @@ The `refresh-client -C` workaround for narrow-client plugins was considered and 
 | In an `a ; b ; c` line, each command gets its own `%begin`/`%end` block. After a runtime `%error`, the rest of the line is skipped and sends no block. A parse error gives one `%error` block for the whole line. | `scripts/repro/list-error.sh` |
 | Name targets are ambiguous: `-t b` resolved to window `bash` in the current session, not to session `b`. Always target by id (`$n`, `@n`, `%n`). | `scripts/repro/name-targets.sh` |
 | A double-quoted argument with `\"`, `\$`, `\\` and `\ooo` escapes carries any text intact. `send-keys -H` passes raw bytes, including UTF-8. | `scripts/repro/input-encoding.sh` |
+| `new-session -e KEY=VALUE` (tmux 3.2+) reaches the pane's process byte for byte, through the same quoting. It overrides the global environment for that session only, leaves the global environment unchanged, and reaches later windows of the session. | `scripts/repro/session-env.sh` |
 
 ## Answered in Phase 3
 

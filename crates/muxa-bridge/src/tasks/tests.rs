@@ -50,6 +50,7 @@ fn request(repo: &Path, branch: &str) -> TaskRequest {
         branch: branch.into(),
         base: None,
         record: None,
+        agent: None,
     }
 }
 

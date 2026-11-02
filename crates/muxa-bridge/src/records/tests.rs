@@ -362,6 +362,94 @@ fn workspaces_load_and_validate() {
     assert!(config(&dir, "").unwrap().all().is_empty());
 }
 
+fn agent_config(dir: &Path, table: &str) -> Result<Workspaces, ConfigError> {
+    std::fs::create_dir_all(dir.join("work")).unwrap();
+    config(
+        dir,
+        &format!("[[workspace]]\nname = \"a\"\nroot = \"~/work\"\n\n[workspace.agent]\n{table}"),
+    )
+}
+
+#[test]
+fn an_agent_table_sets_command_and_env() {
+    let dir = temp("agent");
+    let ws = agent_config(
+        &dir,
+        "command = \"claude --model x\"\n\
+         env = { CLAUDE_CONFIG_DIR = \"~/.claude-a\", CODEX_HOME = \"/c/h\", GH_TOKEN = \"t ~/x $y\" }\n",
+    )
+    .unwrap();
+    let agent = ws.get("a").unwrap().agent.clone().unwrap();
+    assert_eq!(agent.command.as_deref(), Some("claude --model x"));
+    let claude_dir = dir.join(".claude-a");
+    assert_eq!(
+        agent.env("CLAUDE_CONFIG_DIR"),
+        Some(claude_dir.to_str().unwrap()),
+        "a leading ~/ is the home directory"
+    );
+    assert_eq!(agent.env("CODEX_HOME"), Some("/c/h"));
+    assert_eq!(
+        agent.env("GH_TOKEN"),
+        Some("t ~/x $y"),
+        "only a leading ~/ expands"
+    );
+    assert_eq!(
+        agent.keys(),
+        ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "GH_TOKEN"]
+    );
+    let shown = format!("{agent:?}");
+    assert!(!shown.contains("t ~/x"), "Debug shows no value: {shown}");
+
+    let empty = agent_config(&dir, "").unwrap();
+    assert_eq!(empty.get("a").unwrap().agent, None);
+    let only_command = agent_config(&dir, "command = \"codex\"\n").unwrap();
+    let agent = only_command.get("a").unwrap().agent.clone().unwrap();
+    assert!(agent.env.is_empty());
+}
+
+#[test]
+fn a_bad_agent_table_is_refused_without_its_values() {
+    let dir = temp("agent-bad");
+    for (table, says) in [
+        ("env = { \"1X\" = \"secret\" }\n", "not a variable name"),
+        ("env = { \"A-B\" = \"secret\" }\n", "not a variable name"),
+        ("env = { TMUX_PANE = \"secret\" }\n", "set by tmux"),
+        ("env = { TMUX = \"secret\" }\n", "set by tmux"),
+        ("env = { CLAUDE_CONFIG_DIR = \"rel/secret\" }\n", "absolute"),
+        ("env = { CODEX_HOME = \"~user/secret\" }\n", "absolute"),
+        ("env = { K = \"secret\\nline\" }\n", "control character"),
+        ("command = \" \"\n", "empty"),
+    ] {
+        let err = agent_config(&dir, table).unwrap_err().to_string();
+        assert!(err.contains(says), "{table}: {err}");
+        assert!(!err.contains("secret"), "the value leaked: {err}");
+    }
+    let long = format!("env = {{ K = \"{}\" }}\n", "s".repeat(4097));
+    let err = agent_config(&dir, &long).unwrap_err().to_string();
+    assert!(err.contains("longer"), "{err}");
+    let typo = agent_config(&dir, "commnd = \"x\"\n");
+    assert!(matches!(typo, Err(ConfigError::Parse { .. })));
+}
+
+#[test]
+fn a_repo_belongs_to_the_workspaces_that_list_it() {
+    let dir = temp("listing");
+    for d in ["a/app", "b", "shared"] {
+        std::fs::create_dir_all(dir.join(d)).unwrap();
+    }
+    let ws = config(
+        &dir,
+        "[[workspace]]\nname = \"a\"\nroot = \"~/a\"\nrepos = [\"~/a/app\", \"~/shared\"]\n\
+         [[workspace]]\nname = \"b\"\nroot = \"~/b\"\nrepos = [\"~/shared\"]\n",
+    )
+    .unwrap();
+    let names =
+        |p: &Path| -> Vec<String> { ws.listing(p).iter().map(|w| w.name.clone()).collect() };
+    assert_eq!(names(&dir.join("a/app")), ["a"]);
+    assert_eq!(names(&dir.join("shared")), ["a", "b"]);
+    assert!(names(&dir.join("b")).is_empty());
+}
+
 fn workspace(name: &str) -> (PathBuf, Workspace) {
     let dir = temp(name);
     let root = dir.join("root");
@@ -370,6 +458,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         name: "work".into(),
         root: root.clone(),
         repos: Vec::new(),
+        agent: None,
     };
     (dir, ws)
 }

@@ -71,6 +71,18 @@ fn main() -> ExitCode {
         }),
         home: home.clone(),
     };
+    // Read once: a bridge lives for one SSH connection (ADR 0016).
+    let workspace_agents: Vec<records::AgentSettings> = records
+        .workspaces
+        .as_deref()
+        .map(|path| match records::Workspaces::load(path, home.as_deref()) {
+            Ok(w) => w.all().iter().filter_map(|w| w.agent.clone()).collect(),
+            Err(e) => {
+                tracing::warn!(error = %e, "cannot load workspaces; adapters use the default agent dirs");
+                Vec::new()
+            }
+        })
+        .unwrap_or_default();
     let config = server::Config {
         tmux: muxa_tmux::Options {
             tmux,
@@ -79,10 +91,11 @@ fn main() -> ExitCode {
         tasks: std::sync::Arc::new(tasks),
         records: std::sync::Arc::new(records),
         idle: args.idle,
-        agents: std::sync::Arc::new(agents::Registry::standard(
-            &args.agent_dirs.into_iter().collect(),
-            home,
-        )),
+        agents: std::sync::Arc::new(agents::Registry::standard(&agents::data_dirs(
+            &args.agent_dirs,
+            home.as_deref(),
+            |key| records::agent_env::dirs_of(workspace_agents.iter(), key),
+        ))),
     };
 
     let runtime = match tokio::runtime::Builder::new_current_thread()

@@ -14,8 +14,9 @@ Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
   --tmux PATH             tmux binary (default: Homebrew, /usr/local/bin, then PATH)
   --socket NAME           tmux -L socket name (default: the user's default server)
   --idle-timeout SECONDS  exit after this long without a request (default: 60)
-  --agent-dir AGENT=PATH  where an agent keeps its data, e.g. claude-code=~/.claude
-                          (default: claude-code=$HOME/.claude)
+  --agent-dir AGENT=PATH  where an agent keeps its data, e.g. claude-code=~/.claude;
+                          repeat it for several dirs (default: claude-code=$HOME/.claude,
+                          codex=$HOME/.codex, plus each workspace's agent env dirs)
   --task-launcher L       how new tasks start: builtin, or tmux-agents=PATH to its new.sh
                           (default: tmux-agents when it sets @agents_scripts, else builtin)
   --task-command COMMAND  the agent the built-in launcher starts (default: claude)
@@ -183,6 +184,23 @@ mod tests {
                 state_dir: None,
                 workspaces: None,
             })
+        );
+        let Action::Serve(a) = parse_strs(&[
+            "--agent-dir",
+            "claude-code=/a",
+            "--agent-dir",
+            "claude-code=/b",
+        ])
+        .unwrap() else {
+            panic!("not serve")
+        };
+        assert_eq!(
+            a.agent_dirs,
+            [
+                ("claude-code".into(), "/a".into()),
+                ("claude-code".into(), "/b".into())
+            ],
+            "a repeated --agent-dir keeps both"
         );
         assert!(parse_strs(&["--agent-dir", "/no/agent"]).is_err());
         assert!(parse_strs(&["--agent-dir", "claude-code="]).is_err());
