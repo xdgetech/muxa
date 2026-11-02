@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
@@ -116,6 +117,23 @@ class DemoTest {
         // Ctrl+Shift+4: the fourth session in the list's repo order, a bigger pane.
         shortcut(KeyEvent.KEYCODE_4)
         waitForPane("pane %3 132x43")
+    }
+
+    /** A hardware Enter starts a new line in the composer; Ctrl+Enter sends. */
+    @Test
+    fun hardwareEnterStartsANewLineAndCtrlEnterSends() {
+        launch()
+        waitForTag("composer")
+        val composer = compose.onNodeWithTag("composer")
+        composer.performTextInput("first")
+        key(KeyEvent.KEYCODE_ENTER)
+        composer.performTextInput("second")
+        compose.waitForIdle()
+        assertTrue("Enter sent the prompt", compose.onAllNodes(hasText("You said", substring = true)).fetchSemanticsNodes().isEmpty())
+        composer.assert(hasText("first\nsecond"))
+
+        key(KeyEvent.KEYCODE_ENTER, KeyEvent.META_CTRL_ON)
+        compose.waitUntilAtLeastOneExists(hasText("You said", substring = true), TIMEOUT)
     }
 
     @Test

@@ -382,6 +382,31 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(waitFor(pane, containing: "<2>"))
     }
 
+    /// A hardware Return starts a new line in the composer; Cmd+Return sends.
+    @MainActor
+    func testHardwareReturnStartsANewLineAndCommandReturnSends() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        let reply = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "You said")).firstMatch
+
+        composer.tap()
+        composer.typeText("first")
+        // "\n" is the Return key; XCUIKeyboardKey.return ("\r") reaches no text view here.
+        composer.typeKey("\n", modifierFlags: [])
+        composer.typeText("second")
+        XCTAssertFalse(reply.waitForExistence(timeout: 2), "Return sent the prompt")
+        XCTAssertEqual(composer.value as? String, "first\nsecond")
+        save("composer-two-lines")
+
+        composer.typeKey("\n", modifierFlags: .command)
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertTrue(reply.label.contains("second"))
+    }
+
     /// The agent pane opens as a chat; prompts reach the same pane; Raw is one key away.
     @MainActor
     func testPrettyViewSendsPromptsAndSwitchesToRaw() throws {

@@ -48,7 +48,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -230,7 +230,7 @@ private fun QuickKey(model: AppModel, title: String, keys: List<String>) {
     ) { Text(title, fontFamily = FontFamily.Monospace, fontSize = 13.sp) }
 }
 
-/** Enter sends; Shift+Enter starts a new line. */
+/** Enter starts a new line; Ctrl+Enter or Send sends. */
 @Composable
 private fun Composer(model: AppModel, waiting: Boolean) {
     var text by remember { mutableStateOf("") }
@@ -256,7 +256,7 @@ private fun Composer(model: AppModel, waiting: Boolean) {
                 text,
                 { text = it },
                 Modifier.fillMaxWidth().focusRequester(focus).testTag("composer").onPreviewKeyEvent { e ->
-                    if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && !e.isShiftPressed) {
+                    if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && e.isCtrlPressed) {
                         send()
                         true
                     } else {

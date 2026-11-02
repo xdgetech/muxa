@@ -262,7 +262,7 @@ struct QuickKey: View {
     }
 }
 
-/// Return sends; Shift+Return starts a new line.
+/// Return starts a new line; Cmd+Return or Send sends.
 struct Composer: View {
     @Environment(AppModel.self) private var model
     let waiting: Bool
@@ -272,17 +272,32 @@ struct Composer: View {
     var body: some View {
         // One rounded box: the text, then the keys and Send, as in the agents' own apps.
         VStack(alignment: .leading, spacing: 10) {
-            TextField("Message the agent", text: $text, axis: .vertical)
-                .lineLimit(1...8)
+            // A TextEditor, not a vertical TextField: that one treats a hardware Return as
+            // submit and ends editing, even after it inserts a new line.
+            TextEditor(text: $text)
+                .frame(minHeight: Self.minHeight, maxHeight: Self.maxHeight)
+                .fixedSize(horizontal: false, vertical: true)
+                .scrollContentBackground(.hidden)
+                .overlay(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("Message the agent")
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 8)
+                            .padding(.leading, 5)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
                 // Prompts carry slash commands, paths and code that a phone keyboard would "fix".
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .focused($focused)
                 .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) { return .ignored }
+                    guard press.modifiers.contains(.command) else { return .ignored }
                     send()
                     return .handled
                 }
+                .accessibilityLabel("Message the agent")
                 .accessibilityIdentifier("composer")
             HStack(spacing: 6) {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -318,6 +333,10 @@ struct Composer: View {
         .onAppear { focused = KeyInputView.focusesByItself }
         .onChange(of: model.focusRequest) { if KeyInputView.focusesByItself { focused = true } }
     }
+
+    /// About one and eight lines of body text, in points. The editor grows between them.
+    private static let minHeight: CGFloat = 36
+    private static let maxHeight: CGFloat = 180
 
     /// While the agent waits on a prompt, Enter would answer it: send nothing then.
     private var canSend: Bool {
