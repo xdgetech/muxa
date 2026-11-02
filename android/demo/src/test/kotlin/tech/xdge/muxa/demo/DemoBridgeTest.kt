@@ -12,9 +12,14 @@ import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.ChatPrompt
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.LoopReason
+import tech.xdge.muxa.protocol.LoopSpec
+import tech.xdge.muxa.protocol.LoopState
 import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.InboxGroup
+import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.inboxItem
 import tech.xdge.muxa.session.inbox
@@ -100,13 +105,65 @@ class DemoBridgeTest {
     fun aTaskSessionListsItsBrief() = runBlocking {
         val (session, _) = connected()
         val listing = session.documents("%1")
-        assertEquals(listOf(DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC), listing.entries.takeLast(2).map { it.path })
+        // The Task's loop ran a check, so its CHECK.md is listed too.
+        val brief = listOf(DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC, DemoBridge.CHECK_DOC)
+        assertEquals(brief, listing.entries.takeLast(3).map { it.path })
         session.openDocument("%1", DemoBridge.TASK_DOC)
         waitUntil { session.state.value.doc?.text?.contains("passkey") == true }
         session.openDocument("%1", DemoBridge.HANDOFF_DOC)
         waitUntil { session.state.value.doc?.text?.contains("- Run 2 · claude-code · c9f0f895") == true }
+        session.openDocument("%1", DemoBridge.CHECK_DOC)
+        waitUntil { session.state.value.doc?.text?.contains("- Exit: 2") == true }
         // A session without a Task has no brief.
         assertTrue(session.documents("%3").entries.none { it.path == DemoBridge.TASK_DOC || it.path == DemoBridge.HANDOFF_DOC })
+    }
+
+    @Test
+    fun theTasksShowEveryLoopState() = runBlocking {
+        val (session, _) = connected()
+        val s = session.state.value
+        assertTrue(s.canLoop)
+        val loops = s.tasks!!.records.mapNotNull { it.loop }
+        assertEquals(
+            setOf(LoopState.ARMED, LoopState.CHECKING, LoopState.PAUSED, LoopState.PASSED, LoopState.STOPPED),
+            loops.map { it.state }.toSet(),
+        )
+        assertEquals(
+            setOf(LoopReason.WAITING, LoopReason.LIMIT, LoopReason.TIMEOUT, LoopReason.USER),
+            loops.mapNotNull { it.reason }.toSet(),
+        )
+        assertEquals(listOf(WorkspaceChecks.Any, null), s.tasks!!.workspaces.drop(1).map { it.checks })
+    }
+
+    @Test
+    fun aLoopStartsAndStopsWithinTheWorkspacesChecks() = runBlocking {
+        val (session, _) = connected()
+        val deps = session.state.value.tasks!!.record("t-deps01")!!
+        val started = session.startLoop(deps, LoopSpec("cargo test --workspace", 5))
+        assertEquals(LoopState.ARMED, started.loop?.state)
+        assertEquals(1, started.loop?.attempts)
+        assertEquals(deps.rev + 1, started.rev)
+        assertEquals(0, session.startLoop(started, LoopSpec("make check"), reset = true).loop?.attempts)
+        val stopped = session.stopLoop(started)
+        assertEquals(LoopReason.USER, stopped.loop?.reason)
+        for ((task, check) in listOf("t-deps01" to "rm -rf /", "t-notes1" to "make check")) {
+            try {
+                session.startLoop(session.state.value.tasks!!.record(task)!!, LoopSpec(check))
+                fail("$check is not allowed in $task's workspace")
+            } catch (e: PaneSession.Failure.Bridge) {
+                assertEquals(ErrorCode.BAD_REQUEST, e.body.code)
+            }
+        }
+    }
+
+    @Test
+    fun aNewTaskStartsItsLoopAndAStatusChangeStopsIt() = runBlocking {
+        val (session, _) = connected()
+        val loop = LoopDraft(WorkspaceChecks.Any, "npm run lint")
+        val saved = session.createTask(TaskRecordDraft(workspace = "personal", title = "Lint", goal = "G", loop = loop).request!!)
+        assertEquals(LoopState.ARMED, saved.loop?.state)
+        val review = session.updateTask(saved, TaskStatus.REVIEW)
+        assertEquals(LoopReason.STATUS, review.loop?.reason)
     }
 
     @Test
@@ -207,7 +264,7 @@ class DemoBridgeTest {
     fun documentsListOpenAndUpdate() = runBlocking {
         val (session, _) = connected()
         val list = session.documents("%1")
-        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC), list.entries.map { it.path })
+        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC, DemoBridge.CHECK_DOC), list.entries.map { it.path })
         session.openDocument("%1", "README.md")
         waitUntil { session.state.value.doc?.text != null }
         assertTrue(session.state.value.doc!!.text!!.startsWith("# App\n"))
@@ -292,7 +349,7 @@ class DemoBridgeTest {
         val (session, _) = connected(DemoBridge.Content.SHOWCASE)
         val docs = session.documents("%1")
         assertEquals("billing", docs.root)
-        assertEquals(listOf("plans/stripe-webhooks.md", "README.md", "docs/webhooks.md", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC), docs.entries.map { it.path })
+        assertEquals(listOf("plans/stripe-webhooks.md", "README.md", "docs/webhooks.md", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC, DemoBridge.CHECK_DOC), docs.entries.map { it.path })
         val changes = session.changes("%1")
         assertEquals("billing", changes.root)
         assertEquals(listOf("src/webhooks/router.rs", "src/invoice.rs", "tests/webhooks.rs"), changes.entries.map { it.path })

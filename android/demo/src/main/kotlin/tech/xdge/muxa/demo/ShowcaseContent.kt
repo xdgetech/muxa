@@ -6,11 +6,15 @@ import tech.xdge.muxa.protocol.ChangeInfo
 import tech.xdge.muxa.protocol.ChatEntry
 import tech.xdge.muxa.protocol.ChatTool
 import tech.xdge.muxa.protocol.DocInfo
+import tech.xdge.muxa.protocol.LoopCheck
+import tech.xdge.muxa.protocol.LoopReason
+import tech.xdge.muxa.protocol.LoopState
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.protocol.WorkspaceInfo
 
 /**
@@ -246,7 +250,10 @@ internal object ShowcaseContent : DemoContent {
     private const val REMOVED_LINE = "\u001b[48;5;52m"
     private const val ADDED_LINE = "\u001b[48;5;22m"
 
-    override val workspaces = listOf(WorkspaceInfo("work"), WorkspaceInfo("personal"))
+    override val workspaces = listOf(
+        WorkspaceInfo("work", WorkspaceChecks.Only(listOf("make test", "make lint"))),
+        WorkspaceInfo("personal"),
+    )
 
     override fun tasks(now: Long) = listOf(
         demoTask(
@@ -257,6 +264,10 @@ internal object ShowcaseContent : DemoContent {
             runs = listOf(
                 demoRun(1, now - 10_875, endedAt = now - 5_475, agentSession = "d3d94468-02a4-4e5c-9b7a-1c2e3f4a5b6c"),
                 demoRun(2, now - 5_475, RunReason.RESTART, agentSession = "6512bd43-d9ca-4a6f-8e2b-7d1c0f9e3a45"),
+            ),
+            loop = demoLoop(
+                "make test", LoopState.PAUSED, attempts = 1, since = now - 75, reason = LoopReason.WAITING,
+                lastCheck = LoopCheck(1, exit = 2, seconds = 41, at = now - 600),
             ),
         ),
         demoTask(
@@ -270,12 +281,17 @@ internal object ShowcaseContent : DemoContent {
             TaskStatus.OPEN, now - 720, project = "Dashboard", repo = "~/src/dashboard", branch = "feat/dark-mode",
             dir = "~/src/.worktrees/dashboard-dark-mode", session = "dark-mode",
             runs = listOf(demoRun(1, now - 720 - 3_600)),
+            loop = demoLoop("make test", LoopState.CHECKING, attempts = 0, since = now - 20),
         ),
         demoTask(
             "t-3c4d5e", "work", "Faster search index", "Cut the search index build time in half.",
             TaskStatus.REVIEW, now - 1_800, project = "Dashboard", repo = "~/src/dashboard", branch = "perf/search-index",
             dir = "~/src/.worktrees/dashboard-search-index", session = "search-index",
             runs = listOf(demoRun(1, now - 1_800 - 3_600)),
+            loop = demoLoop(
+                "make test", LoopState.PASSED, attempts = 1, since = now - 1_800,
+                lastCheck = LoopCheck(2, exit = 0, seconds = 63, at = now - 1_800),
+            ),
         ),
         demoTask(
             "t-6f7a8b", "work", "Plan the Q3 pricing change", "Compare our plans with three competitors and propose new prices.",

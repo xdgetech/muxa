@@ -104,6 +104,8 @@ fun TasksScreen(model: AppModel) {
     }
     RestartAgentDialog(model)
     RestartErrorDialog(model)
+    StartLoopDialog(model)
+    LoopErrorDialog(model)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,7 +123,7 @@ private fun TaskList(model: AppModel, selected: String?, modifier: Modifier) {
         )
         val sections = model.inbox
         Box(Modifier.fillMaxWidth().weight(1f)) {
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize().testTag("task-list")) {
                 for (section in sections) {
                     item(key = "g-${section.group}") {
                         Text(
@@ -172,6 +174,7 @@ private fun TaskRow(item: InboxItem, current: Boolean, open: () -> Unit) {
         Column(horizontalAlignment = Alignment.End) {
             AgentLine(item)
             StatusLabel(r.status)
+            LoopBadge(r)
         }
     }
 }
@@ -230,6 +233,7 @@ private fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier)
             }
             record.note?.let { Text(it, color = Theme.failure, modifier = Modifier.testTag("task-note")) }
             TaskActions(model, record, item)
+            LoopSection(model, record, item)
             Field("Goal", record.goal)
             Field("Workspace", record.workspace)
             record.project?.let { Field("Project", it) }

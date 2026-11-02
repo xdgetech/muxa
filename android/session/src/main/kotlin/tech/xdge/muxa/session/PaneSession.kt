@@ -21,6 +21,7 @@ import tech.xdge.muxa.protocol.CloseMode
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.LoopSpec
 import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.PROTOCOL_VERSION
 import tech.xdge.muxa.protocol.Request
@@ -94,6 +95,9 @@ class PaneSession(
         val canCloseTasks get() = "close-task" in capabilities
         val canKeepTasks get() = "task-records" in capabilities
         val canRestartAgents get() = "task-handoff" in capabilities
+
+        /** The host's bridge reached the muxa daemon, so Tasks can have a Task Loop (ADR 0019). */
+        val canLoop get() = "task-loop" in capabilities
     }
 
     private val _state = MutableStateFlow(State())
@@ -211,11 +215,14 @@ class PaneSession(
      * [Failure.LaunchFailed] with it; a refused request throws [Failure.Bridge] and keeps nothing.
      */
     suspend fun createTask(draft: TaskRecordDraft.Create): TaskRecord = withContext(dispatcher) {
+        if (draft.loop != null) requireLoops()
         var requestId = 0L
         try {
             request { id ->
                 requestId = id
-                Request.CreateTask(id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base)
+                Request.CreateTask(
+                    id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base, draft.loop,
+                )
             }
         } catch (e: Failure.Bridge) {
             // `task-saved` before a failed result: the record exists, without a session.
@@ -275,6 +282,44 @@ class PaneSession(
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the restarted task"))
         keep(saved)
         saved
+    }
+
+    /**
+     * Starts [record]'s Task Loop with [spec], also a stopped or passed one. [reset] counts
+     * attempts from zero. Throws [Failure.Bridge] with the host's reason, e.g. a check the
+     * workspace does not allow, or no daemon; a bridge without `task-loop` is never asked.
+     */
+    suspend fun startLoop(record: TaskRecord, spec: LoopSpec, reset: Boolean = false): TaskRecord = withContext(dispatcher) {
+        requireLoops()
+        saving("the started loop") { id -> Request.StartLoop(id, record.id, spec, reset) }
+    }
+
+    /** Stops [record]'s Task Loop, with reason `user`. */
+    suspend fun stopLoop(record: TaskRecord): TaskRecord = withContext(dispatcher) {
+        requireLoops()
+        saving("the stopped loop") { id -> Request.StopLoop(id, record.id) }
+    }
+
+    private fun requireLoops() {
+        if (!_state.value.canLoop) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, LOOP_NEEDS_DAEMON))
+    }
+
+    /** Sends a request that answers with `task-saved`, and keeps the saved record, also one sent before a failure. */
+    private suspend fun saving(what: String, make: (Long) -> Request): TaskRecord {
+        var requestId = 0L
+        try {
+            request { id ->
+                requestId = id
+                make(id)
+            }
+        } catch (e: Failure.Bridge) {
+            savedTasks.remove(requestId)?.let { keep(it) }
+            throw e
+        }
+        val saved = savedTasks.remove(requestId)
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send $what"))
+        keep(saved)
+        return saved
     }
 
     private fun keep(saved: TaskRecord) = _state.update { s -> s.copy(tasks = (s.tasks ?: TaskBoard()).saving(saved)) }

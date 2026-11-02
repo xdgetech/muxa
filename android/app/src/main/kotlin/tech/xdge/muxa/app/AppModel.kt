@@ -19,12 +19,14 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
 import tech.xdge.muxa.session.Host
 import tech.xdge.muxa.session.HostStore
 import tech.xdge.muxa.session.InboxSection
 import tech.xdge.muxa.session.LastPane
+import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneFit
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.RepoGroup
@@ -160,6 +162,12 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** Why the last agent restart failed, from the bridge. */
     var restartError by mutableStateOf<String?>(null)
 
+    /** The Start loop sheet: the Task, by id, and the loop it edits. */
+    var startingLoop by mutableStateOf<Pair<String, LoopDraft>?>(null)
+
+    /** Why the last loop start or stop failed, from the bridge. */
+    var loopError by mutableStateOf<String?>(null)
+
     /** The Reader's open tab, kept while the app runs. */
     var readerTab by mutableStateOf(ReaderTab.DOCS)
 
@@ -274,6 +282,8 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         taskError = null
         restartingTask = null
         restartError = null
+        startingLoop = null
+        loopError = null
         showSwitcher = false
         newTask = null
         closingTask = null
@@ -789,9 +799,46 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         }
     }
 
+    /** The bridge reached the muxa daemon, so Tasks can have a Task Loop (ADR 0019). */
+    val canLoop: Boolean get() = isConnected && state.canLoop
+
+    /** The allowed checks of [workspace]; null means it has no loops. */
+    fun checksOf(workspace: String): WorkspaceChecks? = state.tasks?.workspaces?.firstOrNull { it.name == workspace }?.checks
+
+    /** Opens the Start loop sheet, with the Task's last check when the workspace still allows it. */
+    fun startLoopSheet(record: TaskRecord) {
+        val fresh = LoopDraft(checksOf(record.workspace))
+        val last = record.loop
+        val draft = if (last != null && fresh.copy(check = last.check).problem == null) {
+            fresh.copy(check = last.check, maxAttempts = last.maxAttempts)
+        } else {
+            fresh
+        }
+        startingLoop = record.id to draft
+    }
+
+    /** Starts the Task's loop; a failure shows the host's reason. */
+    fun startLoop(record: TaskRecord, draft: LoopDraft, reset: Boolean) = scope.launch {
+        val spec = draft.spec ?: return@launch
+        startingLoop = null
+        try {
+            session.startLoop(record, spec, reset)
+        } catch (e: PaneSession.Failure) {
+            loopError = PaneSession.describe(e)
+        }
+    }
+
+    fun stopLoop(record: TaskRecord) = scope.launch {
+        try {
+            session.stopLoop(record)
+        } catch (e: PaneSession.Failure) {
+            loopError = PaneSession.describe(e)
+        }
+    }
+
     /**
      * Leaves the Tasks screen for the Reader of the Task's session, at its changes or at [doc]:
-     * its brief, or its handoff.
+     * its brief, its handoff, or its last check.
      */
     fun readTask(record: TaskRecord, tab: ReaderTab, doc: String = TASK_DOC) = scope.launch {
         val s = sessionOf(record) ?: return@launch
@@ -831,6 +878,9 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
         /** Where the bridge writes the facts for a restarted agent, beside the brief (ADR 0018). */
         const val HANDOFF_DOC = ".muxa/HANDOFF.md"
+
+        /** Where the daemon writes the last check's result, beside the brief (ADR 0019). */
+        const val CHECK_DOC = ".muxa/CHECK.md"
         private val ALERT_TIME = 4.seconds
     }
 }

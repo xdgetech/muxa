@@ -12,7 +12,10 @@ import tech.xdge.muxa.protocol.DocInfo
 import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
 import tech.xdge.muxa.protocol.ImageInfo
+import tech.xdge.muxa.protocol.LoopReason
+import tech.xdge.muxa.protocol.LoopState
 import tech.xdge.muxa.protocol.Message
+import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
@@ -47,6 +50,9 @@ open class FakeBridge : BridgeChannel {
     var images = listOf<ImageInfo>()
     var workspaces = listOf(WorkspaceInfo("work"))
     var tasks = listOf<TaskRecord>()
+
+    /** False: the daemon went away after `hello`, so loop requests are `unsupported`. */
+    var daemon = true
 
     /** Panes whose `chat` is answered with `unsupported`. */
     var unsupportedChats = setOf<String>()
@@ -105,6 +111,7 @@ open class FakeBridge : BridgeChannel {
                 val record = TaskRecord(
                     "t-new${tasks.size}", 1, req.workspace, req.title, req.goal, TaskStatus.OPEN, 1, 1,
                     repo = req.repo, branch = req.branch,
+                    loop = req.loop?.let { TaskLoop(it.check, it.maxAttempts ?: 3, it.timeout ?: 600, LoopState.ARMED, 0, 1, 1) },
                     note = if (req.branch == "taken") "the branch is taken" else null,
                 )
                 tasks = tasks + record
@@ -145,6 +152,24 @@ open class FakeBridge : BridgeChannel {
                     }
                 }
             }
+            is Request.StartLoop -> loop(req.id, req.task) { current ->
+                when {
+                    !daemon -> ErrorBody(ErrorCode.UNSUPPORTED, LOOP_NEEDS_DAEMON)
+                    req.loop.check != "make check" -> ErrorBody(ErrorCode.BAD_REQUEST, "the workspace does not allow this check")
+                    else -> null
+                } to TaskLoop(
+                    req.loop.check, req.loop.maxAttempts ?: 3, req.loop.timeout ?: 600, LoopState.ARMED,
+                    attempts = if (req.reset) 0 else current.loop?.attempts ?: 0, armedAt = 60, since = 60,
+                )
+            }
+            is Request.StopLoop -> loop(req.id, req.task) { current ->
+                val loop = current.loop
+                if (loop == null) {
+                    ErrorBody(ErrorCode.BAD_REQUEST, "${req.task} has no loop") to null
+                } else {
+                    null to loop.copy(state = LoopState.STOPPED, reason = LoopReason.USER, since = 70)
+                }
+            }
             is Request.Chat -> if (req.pane in unsupportedChats) {
                 emit(Message.Result(req.id, ErrorBody(ErrorCode.UNSUPPORTED, "no adapter")))
             } else {
@@ -153,6 +178,24 @@ open class FakeBridge : BridgeChannel {
             is Request.Bye -> out.close()
             else -> emit(Message.Result(req.id))
         }
+    }
+
+    /** Answers a loop request: an error, or the record with the new loop, then `result`. */
+    private fun loop(id: Long, task: String, change: (TaskRecord) -> Pair<ErrorBody?, TaskLoop?>) {
+        val current = tasks.firstOrNull { it.id == task }
+        if (current == null) {
+            emit(Message.Result(id, ErrorBody(ErrorCode.BAD_REQUEST, "$task is not a task")))
+            return
+        }
+        val (error, loop) = change(current)
+        if (error != null) {
+            emit(Message.Result(id, error))
+            return
+        }
+        val saved = current.copy(rev = current.rev + 1, loop = loop)
+        tasks = tasks.map { if (it.id == saved.id) saved else it }
+        emit(Message.TaskSaved(id, saved))
+        emit(Message.Result(id))
     }
 
     override suspend fun close() {
