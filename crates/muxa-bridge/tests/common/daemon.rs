@@ -106,6 +106,19 @@ impl Daemon {
     pub async fn crash(&mut self) {
         self.child.kill().await.expect("kill");
     }
+
+    /// Starts a new daemon in the same dir, after a crash.
+    pub async fn start_again(&mut self, server: &Server, extra: &[&str]) {
+        self.child = spawn(server, &self.dir, extra);
+        // The crashed daemon's socket file is still there; wait for a live one.
+        for _ in 0..100 {
+            if UnixStream::connect(self.socket()).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("the daemon did not listen again: {}", self.log());
+    }
 }
 
 impl Drop for Daemon {

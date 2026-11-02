@@ -30,14 +30,9 @@ pub enum Probe {
     Ready,
 }
 
-/// Which requests go to the daemon when one runs.
-fn forwarded(req: &Request) -> bool {
-    matches!(req, Request::ListTasks { .. })
-}
-
 /// Answers a record request through the daemon, or here when none is usable.
 pub async fn serve(cx: &Context, daemon_dir: Option<&Path>, req: Request) -> Vec<Message> {
-    if let Some(dir) = daemon_dir.filter(|_| forwarded(&req)) {
+    if let Some(dir) = daemon_dir.filter(|_| super::is_record_request(&req)) {
         if let Some(answer) = forward(dir, &req).await {
             return answer;
         }

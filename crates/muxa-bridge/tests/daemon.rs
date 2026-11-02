@@ -199,26 +199,13 @@ async fn after_a_crash_the_bridge_falls_back_and_a_new_daemon_starts() {
     assert!(list(&mut bridge).await.is_empty());
 
     // The kernel dropped the lock with the process.
-    let dir = daemon.dir.clone();
     let flags = host.flags("daemon-state");
     let flags: Vec<&str> = flags.iter().map(String::as_str).collect();
-    let child = spawn(&server, &dir, &flags);
-    let mut again = Daemon { child, dir };
-    for _ in 0..100 {
-        if tokio::net::UnixStream::connect(again.socket())
-            .await
-            .is_ok()
-        {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    daemon.start_again(&server, &flags).await;
     let listed = list(&mut bridge).await;
     assert_eq!(
         listed.iter().map(|r| &r.id).collect::<Vec<_>>(),
         [&record.id]
     );
-    assert!(again.shutdown().await.success());
-    // `daemon` and `again` share the dir; only one may remove it.
-    std::mem::forget(daemon);
+    assert!(daemon.shutdown().await.success());
 }

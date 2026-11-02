@@ -176,6 +176,8 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
     let mut int = signal(SignalKind::interrupt())?;
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), socket = %path.display(), "daemon started");
+    let resume = Arc::clone(&daemon);
+    tokio::spawn(async move { task_records::resume_prompts(&resume.records).await });
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {

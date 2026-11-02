@@ -212,6 +212,48 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
     out
 }
 
+/// Resumes the prompt waits that an ended process left in the records
+/// (ADR 0019): a wait younger than [`handoff::PROMPT_WAIT`] goes on, an
+/// older one ends with the note that the prompt was not sent.
+pub async fn resume_prompts(cx: &Context) {
+    let config = Arc::clone(&cx.records);
+    let waits = blocking(move || {
+        Ok(config
+            .records_if_any()
+            .into_iter()
+            .filter_map(|r| Some((r.id.clone(), r.pending_prompt()?)))
+            .collect::<Vec<_>>())
+    })
+    .await
+    .unwrap_or_default();
+    for (task, pending) in waits {
+        let age = crate::records::now().saturating_sub(pending.since);
+        let env = if age < handoff::PROMPT_WAIT {
+            cx.env().await.ok()
+        } else {
+            None
+        };
+        let Some(env) = env else {
+            tracing::info!(task, age, "a prompt wait ran out while no process waited");
+            let note = handoff::Prompt::of(pending).not_sent;
+            handoff::end_wait(&cx.records, task, pending, None, Some(note)).await;
+            continue;
+        };
+        tracing::info!(task, age, "resuming a prompt wait");
+        let wait = handoff::Wait {
+            which: handoff::Linked::Task(task.clone()),
+            task,
+            pending,
+        };
+        env.pending.spawn(handoff::send_prompt(
+            env.client,
+            env.agents,
+            env.records,
+            wait,
+        ));
+    }
+}
+
 fn one(m: Result<Message, ErrorBody>) -> (Vec<Message>, Option<ErrorBody>) {
     match m {
         Ok(m) => (vec![m], None),
