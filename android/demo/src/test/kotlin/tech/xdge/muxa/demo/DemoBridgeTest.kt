@@ -12,6 +12,7 @@ import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.ChatPrompt
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.session.InboxGroup
 import tech.xdge.muxa.session.TaskRecordDraft
@@ -99,11 +100,44 @@ class DemoBridgeTest {
     fun aTaskSessionListsItsBrief() = runBlocking {
         val (session, _) = connected()
         val listing = session.documents("%1")
-        assertEquals(DemoBridge.TASK_DOC, listing.entries.last().path)
+        assertEquals(listOf(DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC), listing.entries.takeLast(2).map { it.path })
         session.openDocument("%1", DemoBridge.TASK_DOC)
         waitUntil { session.state.value.doc?.text?.contains("passkey") == true }
+        session.openDocument("%1", DemoBridge.HANDOFF_DOC)
+        waitUntil { session.state.value.doc?.text?.contains("- Run 2 · claude-code · c9f0f895") == true }
         // A session without a Task has no brief.
-        assertTrue(session.documents("%3").entries.none { it.path == DemoBridge.TASK_DOC })
+        assertTrue(session.documents("%3").entries.none { it.path == DemoBridge.TASK_DOC || it.path == DemoBridge.HANDOFF_DOC })
+    }
+
+    @Test
+    fun aRestartAddsARunAndTheAgentRunsAgain() = runBlocking {
+        val (session, _) = connected()
+        assertTrue(session.state.value.canRestartAgents)
+        val login = session.state.value.tasks!!.record("t-login1")!!
+        val saved = session.restartAgent(login, force = false)
+        assertEquals(listOf(RunReason.START, RunReason.RESTART), saved.runs.map { it.reason })
+        assertEquals(saved.runs[1].startedAt, saved.runs[0].endedAt)
+        assertEquals(null, saved.runs[1].endedAt)
+        waitUntil { inboxItem(saved, session.state.value.sessions).group == InboxGroup.RUNNING }
+        // Running now: a second restart needs force.
+        try {
+            session.restartAgent(saved, force = false)
+            fail("a running agent needs force")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorCode.BAD_REQUEST, e.body.code)
+        }
+        assertEquals(3L, session.restartAgent(saved, force = true).runs.last().id)
+    }
+
+    @Test
+    fun aTaskWithoutASessionCannotRestart() = runBlocking {
+        val (session, _) = connected()
+        try {
+            session.restartAgent(session.state.value.tasks!!.record("t-price1")!!, force = true)
+            fail("no session runs it")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorCode.TASK_FAILED, e.body.code)
+        }
     }
 
     @Test
@@ -173,7 +207,7 @@ class DemoBridgeTest {
     fun documentsListOpenAndUpdate() = runBlocking {
         val (session, _) = connected()
         val list = session.documents("%1")
-        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md", DemoBridge.TASK_DOC), list.entries.map { it.path })
+        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC), list.entries.map { it.path })
         session.openDocument("%1", "README.md")
         waitUntil { session.state.value.doc?.text != null }
         assertTrue(session.state.value.doc!!.text!!.startsWith("# App\n"))
@@ -258,7 +292,7 @@ class DemoBridgeTest {
         val (session, _) = connected(DemoBridge.Content.SHOWCASE)
         val docs = session.documents("%1")
         assertEquals("billing", docs.root)
-        assertEquals(listOf("plans/stripe-webhooks.md", "README.md", "docs/webhooks.md", DemoBridge.TASK_DOC), docs.entries.map { it.path })
+        assertEquals(listOf("plans/stripe-webhooks.md", "README.md", "docs/webhooks.md", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC), docs.entries.map { it.path })
         val changes = session.changes("%1")
         assertEquals("billing", changes.root)
         assertEquals(listOf("src/webhooks/router.rs", "src/invoice.rs", "tests/webhooks.rs"), changes.entries.map { it.path })

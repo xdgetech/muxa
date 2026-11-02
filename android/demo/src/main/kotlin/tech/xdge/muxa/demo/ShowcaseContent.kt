@@ -8,6 +8,7 @@ import tech.xdge.muxa.protocol.ChatTool
 import tech.xdge.muxa.protocol.DocInfo
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
+import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WorkspaceInfo
@@ -253,21 +254,28 @@ internal object ShowcaseContent : DemoContent {
             "Mark the invoice paid when Stripe sends invoice.paid, and email a receipt.",
             TaskStatus.OPEN, now - 75, project = "Billing", repo = "~/src/billing", branch = "feat/stripe-webhooks",
             dir = "~/src/.worktrees/billing-stripe-webhooks", session = "stripe-webhooks",
+            runs = listOf(
+                demoRun(1, now - 10_875, endedAt = now - 5_475, agentSession = "d3d94468-02a4-4e5c-9b7a-1c2e3f4a5b6c"),
+                demoRun(2, now - 5_475, RunReason.RESTART, agentSession = "6512bd43-d9ca-4a6f-8e2b-7d1c0f9e3a45"),
+            ),
         ),
         demoTask(
             "t-d4e5f6", "work", "Retry failed charges with backoff", "Retry a failed charge three times, with exponential backoff and jitter.",
             TaskStatus.OPEN, now - 40, project = "Billing", repo = "~/src/billing", branch = "fix/retry-backoff",
             dir = "~/src/.worktrees/billing-retry-backoff", session = "retry-backoff",
+            runs = listOf(demoRun(1, now - 40 - 3_600)),
         ),
         demoTask(
             "t-0a1b2c", "work", "Dark mode for the dashboard", "Add a dark theme that follows the system setting.",
             TaskStatus.OPEN, now - 720, project = "Dashboard", repo = "~/src/dashboard", branch = "feat/dark-mode",
             dir = "~/src/.worktrees/dashboard-dark-mode", session = "dark-mode",
+            runs = listOf(demoRun(1, now - 720 - 3_600)),
         ),
         demoTask(
             "t-3c4d5e", "work", "Faster search index", "Cut the search index build time in half.",
             TaskStatus.REVIEW, now - 1_800, project = "Dashboard", repo = "~/src/dashboard", branch = "perf/search-index",
             dir = "~/src/.worktrees/dashboard-search-index", session = "search-index",
+            runs = listOf(demoRun(1, now - 1_800 - 3_600)),
         ),
         demoTask(
             "t-6f7a8b", "work", "Plan the Q3 pricing change", "Compare our plans with three competitors and propose new prices.",

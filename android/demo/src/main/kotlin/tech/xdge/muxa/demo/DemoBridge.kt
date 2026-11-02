@@ -9,6 +9,7 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.Agent
+import tech.xdge.muxa.protocol.AgentRun
 import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.BranchChanges
 import tech.xdge.muxa.protocol.Bytes
@@ -25,11 +26,13 @@ import tech.xdge.muxa.protocol.PROTOCOL_VERSION
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
+import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
+import java.util.UUID
 
 /**
  * An in-app bridge for a demo without a host: a few sessions, fixed-size panes, typed
@@ -98,7 +101,13 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
                 ok(req.id)
             }
             is Request.Docs -> {
-                val brief = taskOf(req.pane)?.let { listOf(DocInfo(TASK_DOC, DocInfo.Kind.REPO, "TASK.md", it.createdAt)) }
+                // The bridge lists a Task's TASK.md, then its HANDOFF.md.
+                val brief = taskOf(req.pane)?.let {
+                    listOf(
+                        DocInfo(TASK_DOC, DocInfo.Kind.REPO, "TASK.md", it.createdAt),
+                        DocInfo(HANDOFF_DOC, DocInfo.Kind.REPO, "HANDOFF.md", handoffTime(it)),
+                    )
+                }
                 emit(Message.DocList(req.id, content.root, content.docs.map { it.info } + brief.orEmpty()))
                 ok(req.id)
             }
@@ -108,6 +117,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
                 createTask(req)
             }
             is Request.UpdateTask -> updateTask(req)
+            is Request.RestartAgent -> restartAgent(req)
             is Request.ListTasks -> {
                 emit(Message.TaskList(req.id, content.workspaces, synchronized(lock) { tasks }))
                 ok(req.id)
@@ -179,6 +189,12 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
             synchronized(lock) { openDoc = req.id }
             ok(req.id)
             emit(Message.DocContent(req.id, req.path, brief(task), task.createdAt))
+            return
+        }
+        if (req.path == HANDOFF_DOC && task != null) {
+            synchronized(lock) { openDoc = req.id }
+            ok(req.id)
+            emit(Message.DocContent(req.id, req.path, handoff(task), handoffTime(task)))
             return
         }
         val doc = content.docs.firstOrNull { it.info.path == req.path }
@@ -329,6 +345,38 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         ok(req.id)
     }
 
+    /**
+     * Restarts a Task's agent as the bridge does (ADR 0018): ends the open run, adds a
+     * restart run, and the agent runs again. A running agent needs [Request.RestartAgent.force].
+     */
+    private fun restartAgent(req: Request.RestartAgent) {
+        val now = now()
+        val saved = synchronized(lock) {
+            val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
+            val session = sessions.firstOrNull { it.taskId == current.id }
+            val pane = session?.panes?.firstOrNull { it.role == Role.AGENT }
+                ?: return fail(req.id, ErrorCode.TASK_FAILED, "No session runs this task's agent.")
+            if (pane.agent?.state == AgentState.RUNNING && !req.force) {
+                return fail(req.id, ErrorCode.BAD_REQUEST, "The agent is running. Restart with force to stop it.")
+            }
+            val ended = current.runs.map { if (it.endedAt == null) it.copy(endedAt = now) else it }
+            val run = AgentRun(
+                id = (current.runs.maxOfOrNull { it.id } ?: 0) + 1, agent = "claude-code", startedAt = now,
+                agentSession = UUID.randomUUID().toString(), reason = RunReason.RESTART,
+            )
+            val saved = current.copy(rev = current.rev + 1, updatedAt = now, note = null, runs = ended + run)
+            tasks = tasks.map { if (it.id == saved.id) saved else it }
+            val running = pane.copy(agent = Agent(AgentState.RUNNING, now))
+            sessions = sessions.map { s ->
+                if (s.id != session.id) s else s.copy(panes = s.panes.map { if (it.id == pane.id) running else it })
+            }
+            saved
+        }
+        emit(Message.TaskSaved(req.id, saved))
+        ok(req.id)
+        emit(Message.SessionsChanged)
+    }
+
     private fun agentWaits(session: String) {
         synchronized(lock) {
             sessions = sessions.map { s ->
@@ -431,11 +479,14 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         /** Where the bridge writes a Task's brief for its agent (ADR 0015). */
         const val TASK_DOC = ".muxa/TASK.md"
 
+        /** Where the bridge writes the facts for a restarted agent (ADR 0018). */
+        const val HANDOFF_DOC = ".muxa/HANDOFF.md"
+
         /** A branch whose task fails, to show the error. */
         const val FAILING_BRANCH = "taken"
 
         private val CAPABILITIES =
-            listOf("chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records")
+            listOf("chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff")
         private const val UPDATE_DELAY_MILLIS = 2_000L
 
         private fun now() = System.currentTimeMillis() / 1_000
@@ -452,6 +503,22 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
             task.project?.let { append(" · ").append(it) }
             task.repo?.let { append("\n\n## Resources\n\n- Repo: `").append(it).append("`, branch `").append(task.branch ?: "").append("`") }
             append("\n")
+        }
+
+        /** When the bridge last wrote HANDOFF.md: the newest restart, else when the Task began. */
+        internal fun handoffTime(task: TaskRecord): Long =
+            task.runs.filter { it.reason == RunReason.RESTART }.maxOfOrNull { it.startedAt } ?: task.createdAt
+
+        /** What the bridge would write into `HANDOFF.md`, with sample git facts. The iOS demo writes the same. */
+        internal fun handoff(task: TaskRecord) = buildString {
+            append("# Handoff\n\n## Task\n\n")
+            append("- Status: ").append(task.status.raw).append("\n")
+            append("- Note: ").append(task.note ?: "none").append("\n\n## Runs\n\n")
+            for (run in task.runs) {
+                append("- Run ").append(run.id).append(" · ").append(run.agent ?: "unknown agent")
+                append(" · ").append(run.agentSession ?: "no session id").append("\n")
+            }
+            task.branch?.let { append("\n## Git\n\n- Branch: ").append(it).append("\n- 3 commits since origin/main\n") }
         }
 
         internal fun demoPrompt(text: String, n: Int): Pair<ChatPrompt, ChatEntry>? {

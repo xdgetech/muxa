@@ -93,6 +93,7 @@ class PaneSession(
         val canStartTasks get() = "tasks" in capabilities
         val canCloseTasks get() = "close-task" in capabilities
         val canKeepTasks get() = "task-records" in capabilities
+        val canRestartAgents get() = "task-handoff" in capabilities
     }
 
     private val _state = MutableStateFlow(State())
@@ -247,6 +248,31 @@ class PaneSession(
         }
         val saved = savedTasks.remove(requestId)
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the saved task"))
+        keep(saved)
+        saved
+    }
+
+    /**
+     * Restarts [record]'s agent in its pane, after a handoff (ADR 0018). [force] stops an agent
+     * that is running. Throws [Failure.Bridge] with the bridge's reason, e.g. a running agent
+     * without [force], or no agent pane; a bridge without `task-handoff` is never asked.
+     */
+    suspend fun restartAgent(record: TaskRecord, force: Boolean): TaskRecord = withContext(dispatcher) {
+        if (!_state.value.canRestartAgents) {
+            throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, "This host's bridge cannot restart agents. Update muxa-bridge."))
+        }
+        var requestId = 0L
+        try {
+            request { id ->
+                requestId = id
+                Request.RestartAgent(id, record.id, force)
+            }
+        } catch (e: Failure.Bridge) {
+            savedTasks.remove(requestId)?.let { keep(it) }
+            throw e
+        }
+        val saved = savedTasks.remove(requestId)
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the restarted task"))
         keep(saved)
         saved
     }

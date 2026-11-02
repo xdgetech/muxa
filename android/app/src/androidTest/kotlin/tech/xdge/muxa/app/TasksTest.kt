@@ -91,6 +91,52 @@ class TasksTest {
         compose.waitUntilAtLeastOneExists(hasText("TASK.md"), TIMEOUT)
     }
 
+    /** An idle agent restarts without force: a new run, and the agent runs again. */
+    @Test
+    fun restartingAnIdleAgentAddsARun() {
+        launch()
+        openTasks()
+        compose.onNodeWithTag("task-t-login1").performClick()
+        waitForTag("run-1")
+        compose.onNodeWithTag("run-2").assertDoesNotExist()
+        compose.onNodeWithTag("task-open-handoff").assertDoesNotExist()
+        compose.onNodeWithTag("task-restart-agent").performClick()
+        waitForTag("restart-confirm")
+        compose.onNodeWithTag("restart-force").assertDoesNotExist()
+        compose.onNodeWithTag("restart-confirm").performClick()
+        waitForTag("run-2")
+        compose.waitUntilAtLeastOneExists(hasTestTag("run-2") and hasAnyDescendant(hasText("still running", substring = true)), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText(InboxGroup.RUNNING.title)), TIMEOUT)
+        waitForTag("task-open-handoff")
+    }
+
+    /** A running agent only offers to stop and restart it. */
+    @Test
+    fun aRunningAgentAsksToStopIt() {
+        launch()
+        openTasks()
+        compose.onNodeWithTag("task-t-docs01").performClick()
+        waitForTag("task-restart-agent")
+        compose.onNodeWithTag("task-restart-agent").performClick()
+        waitForTag("restart-force")
+        compose.onNodeWithTag("restart-confirm").assertDoesNotExist()
+        compose.onNodeWithText("Stop and restart").assertExists()
+        compose.onNodeWithTag("restart-force").performClick()
+        waitForTag("run-2")
+    }
+
+    @Test
+    fun theHandoffOpensInTheReader() {
+        launch()
+        openTasks()
+        compose.onNodeWithTag("task-t-auth01").performClick()
+        waitForTag("task-open-handoff")
+        compose.onNodeWithTag("task-open-handoff").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
+        waitForTag("reader")
+        compose.waitUntilAtLeastOneExists(hasText("HANDOFF.md"), TIMEOUT)
+    }
+
     private fun newTask(title: String) {
         compose.onNodeWithTag("new-task-record").performClick()
         waitForTag("task-title")

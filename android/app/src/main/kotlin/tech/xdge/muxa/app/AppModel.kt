@@ -154,6 +154,12 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** Why the last status change failed, e.g. another device changed the Task first. */
     var taskError by mutableStateOf<String?>(null)
 
+    /** The Task whose agent restart waits for the user's confirmation, by id. */
+    var restartingTask by mutableStateOf<String?>(null)
+
+    /** Why the last agent restart failed, from the bridge. */
+    var restartError by mutableStateOf<String?>(null)
+
     /** The Reader's open tab, kept while the app runs. */
     var readerTab by mutableStateOf(ReaderTab.DOCS)
 
@@ -266,6 +272,8 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         selectedTask = null
         newTaskRecord = null
         taskError = null
+        restartingTask = null
+        restartError = null
         showSwitcher = false
         newTask = null
         closingTask = null
@@ -768,15 +776,31 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         show(view).join()
     }
 
-    /** Leaves the Tasks screen for the Reader of the Task's session, at its brief or its changes. */
-    fun readTask(record: TaskRecord, tab: ReaderTab) = scope.launch {
+    /** The bridge can restart a Task's agent with a handoff (ADR 0018). */
+    val canRestartAgents: Boolean get() = isConnected && state.canRestartAgents
+
+    /** Restarts [record]'s agent; [force] stops one that is running. A failure shows the bridge's reason. */
+    fun restartAgent(record: TaskRecord, force: Boolean) = scope.launch {
+        restartingTask = null
+        try {
+            session.restartAgent(record, force)
+        } catch (e: PaneSession.Failure) {
+            restartError = PaneSession.describe(e)
+        }
+    }
+
+    /**
+     * Leaves the Tasks screen for the Reader of the Task's session, at its changes or at [doc]:
+     * its brief, or its handoff.
+     */
+    fun readTask(record: TaskRecord, tab: ReaderTab, doc: String = TASK_DOC) = scope.launch {
         val s = sessionOf(record) ?: return@launch
         showTasks = false
         openNow(s)
         if (!canReadDocs) return@launch
         readerTab = if (tab in readerTabs) tab else ReaderTab.DOCS
         // The brief is the document to open; the Reader opens the one last read here.
-        if (tab == ReaderTab.DOCS) lastDocs[s.id] = TASK_DOC
+        if (tab == ReaderTab.DOCS) lastDocs[s.id] = doc
         readerOpensPlan = tab == ReaderTab.DOCS
         showReader = true
     }
@@ -804,6 +828,9 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
         /** Where the bridge writes a Task's brief, relative to its directory (ADR 0015). */
         const val TASK_DOC = ".muxa/TASK.md"
+
+        /** Where the bridge writes the facts for a restarted agent, beside the brief (ADR 0018). */
+        const val HANDOFF_DOC = ".muxa/HANDOFF.md"
         private val ALERT_TIME = 4.seconds
     }
 }

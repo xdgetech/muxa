@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.Edit
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
@@ -56,4 +58,6 @@ object Icons {
     val list = Material.Filled.Menu
     val tasks = Material.AutoMirrored.Filled.Assignment
     val changes = Material.Filled.Difference
+    val restartAgent = Material.Filled.RestartAlt
+    val copy = Material.Filled.ContentCopy
 }

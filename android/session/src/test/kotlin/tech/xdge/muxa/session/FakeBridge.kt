@@ -5,6 +5,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.delay
+import tech.xdge.muxa.protocol.AgentRun
 import tech.xdge.muxa.protocol.Bytes
 import tech.xdge.muxa.protocol.ChangeInfo
 import tech.xdge.muxa.protocol.DocInfo
@@ -15,6 +16,7 @@ import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
+import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
@@ -124,6 +126,24 @@ open class FakeBridge : BridgeChannel {
                 tasks = tasks.map { if (it.id == saved.id) saved else it }
                 emit(Message.TaskSaved(req.id, saved))
                 emit(Message.Result(req.id))
+            }
+            is Request.RestartAgent -> {
+                val current = tasks.firstOrNull { it.id == req.task }
+                when {
+                    current == null -> emit(Message.Result(req.id, ErrorBody(ErrorCode.BAD_REQUEST, "${req.task} is not a task")))
+                    current.session == null ->
+                        emit(Message.Result(req.id, ErrorBody(ErrorCode.TASK_FAILED, "No session runs this task's agent.")))
+                    current.session == "running" && !req.force ->
+                        emit(Message.Result(req.id, ErrorBody(ErrorCode.BAD_REQUEST, "The agent is running.")))
+                    else -> {
+                        val ended = current.runs.map { if (it.endedAt == null) it.copy(endedAt = 50) else it }
+                        val run = AgentRun(ended.size + 1L, "claude-code", 50, reason = RunReason.RESTART)
+                        val saved = current.copy(rev = current.rev + 1, runs = ended + run)
+                        tasks = tasks.map { if (it.id == saved.id) saved else it }
+                        emit(Message.TaskSaved(req.id, saved))
+                        emit(Message.Result(req.id))
+                    }
+                }
             }
             is Request.Chat -> if (req.pane in unsupportedChats) {
                 emit(Message.Result(req.id, ErrorBody(ErrorCode.UNSUPPORTED, "no adapter")))

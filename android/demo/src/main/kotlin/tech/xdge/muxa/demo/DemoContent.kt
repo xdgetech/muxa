@@ -1,6 +1,7 @@
 package tech.xdge.muxa.demo
 
 import tech.xdge.muxa.protocol.Agent
+import tech.xdge.muxa.protocol.AgentRun
 import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.ChangeInfo
 import tech.xdge.muxa.protocol.ChatEntry
@@ -9,6 +10,7 @@ import tech.xdge.muxa.protocol.DocInfo
 import tech.xdge.muxa.protocol.ImageInfo
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
+import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
@@ -53,12 +55,18 @@ internal interface DemoContent {
 internal fun demoTask(
     id: String, workspace: String, title: String, goal: String, status: TaskStatus, updatedAt: Long,
     project: String? = null, repo: String? = null, branch: String? = null, dir: String? = null,
-    session: String? = null, note: String? = null,
+    session: String? = null, note: String? = null, runs: List<AgentRun> = emptyList(),
 ) = TaskRecord(
     id, rev = 1, workspace = workspace, title = title, goal = goal, status = status,
     createdAt = updatedAt - 3_600, updatedAt = updatedAt, project = project, repo = repo, branch = branch,
-    dir = dir, session = session, note = note,
+    dir = dir, session = session, note = note, runs = runs,
 )
+
+/** An agent run; the iOS demo serves the same ones. */
+internal fun demoRun(
+    id: Long, startedAt: Long, reason: RunReason = RunReason.START, agent: String = "claude-code",
+    endedAt: Long? = null, agentSession: String? = null, transcript: String? = null,
+) = AgentRun(id, agent, startedAt, endedAt, agentSession, transcript, reason)
 
 /** The fixtures the UI tests assert on. */
 internal object TestContent : DemoContent {
@@ -272,15 +280,24 @@ internal object TestContent : DemoContent {
             "t-auth01", "work", "Add sign-in with passkeys", "Let users sign in with a passkey instead of a password.",
             TaskStatus.OPEN, now - 90, project = "App", repo = "/src/app", branch = "feat/auth",
             dir = "/src/.worktrees/app-feat-auth", session = "feature-auth",
+            runs = listOf(
+                demoRun(
+                    1, now - 7_290, endedAt = now - 3_690, agentSession = "8f14e45f-ceea-4b6a-9f2b-0c3e5d7a1b21",
+                    transcript = "/home/dev/.claude/projects/-src--worktrees-app-feat-auth/8f14e45f-ceea-4b6a-9f2b-0c3e5d7a1b21.jsonl",
+                ),
+                demoRun(2, now - 3_690, RunReason.RESTART, agentSession = "c9f0f895-fb98-4b9e-8a3d-2f1e6c4b7d90"),
+            ),
         ),
         demoTask(
             "t-login1", "work", "Fix the login redirect", "After sign-in, return users to the page they came from.",
             TaskStatus.OPEN, now - 600, project = "App", repo = "/src/app", branch = "fix/login",
             dir = "/src/.worktrees/app-fix-login", session = "fix-login",
+            runs = listOf(demoRun(1, now - 4_200, agentSession = "45c48cce-2e2d-4fbd-a1f4-6b3c8e9d0a12")),
         ),
         demoTask(
             "t-docs01", "work", "Update the docs site", "Document the new settings page.",
             TaskStatus.OPEN, now - 20, project = "Docs", repo = "/src/docs", branch = "main", dir = "/src/docs", session = "docs-site",
+            runs = listOf(demoRun(1, now - 1_220)),
         ),
         demoTask(
             "t-price1", "work", "Draft the pricing page", "Write the copy for the new pricing page, with three plans.",
@@ -290,6 +307,7 @@ internal object TestContent : DemoContent {
         demoTask(
             "t-relnot", "work", "Write the release notes", "Summarize the changes since 1.2 for the blog.",
             TaskStatus.DONE, now - 86_400, project = "Launch", dir = "/work/tasks/write-the-release-notes-t-relnot",
+            runs = listOf(demoRun(1, now - 90_000, agent = "codex", agentSession = "rollout-2026-10-31T09-12-44")),
         ),
     )
 

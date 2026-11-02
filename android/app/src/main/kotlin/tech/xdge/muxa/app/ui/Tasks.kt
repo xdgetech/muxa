@@ -55,6 +55,7 @@ import tech.xdge.muxa.app.isAgentSide
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.session.InboxItem
+import tech.xdge.muxa.session.hasHandoff
 import tech.xdge.muxa.session.inboxItem
 
 /**
@@ -101,6 +102,8 @@ fun TasksScreen(model: AppModel) {
             confirmButton = { TextButton({ model.taskError = null }) { Text("OK") } },
         )
     }
+    RestartAgentDialog(model)
+    RestartErrorDialog(model)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -235,11 +238,12 @@ private fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier)
             record.dir?.let { Field("Directory", it, mono = true) }
             (item.session?.name ?: record.session)?.let { Field("Session", it, mono = true) }
             Field("Updated", AgentSummary.age(record.updatedAt) + " ago")
+            RunsSection(record, item)
         }
     }
 }
 
-/** Where to go from a Task: its session's pane, its Chat, or the Reader. None without a session. */
+/** Where to go from a Task: its session's pane, its Chat, the Reader, or a restarted agent. None without a session. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun TaskActions(model: AppModel, record: TaskRecord, item: InboxItem) {
@@ -262,11 +266,23 @@ private fun TaskActions(model: AppModel, record: TaskRecord, item: InboxItem) {
                 Icon(Icons.document, null)
                 Text("TASK.md", Modifier.padding(start = 6.dp))
             }
+            if (record.hasHandoff) {
+                OutlinedButton({ model.readTask(record, ReaderTab.DOCS, AppModel.HANDOFF_DOC) }, Modifier.testTag("task-open-handoff")) {
+                    Icon(Icons.document, null)
+                    Text("HANDOFF.md", Modifier.padding(start = 6.dp))
+                }
+            }
         }
         if (model.state.canShowChanges && session.worktree != null) {
             OutlinedButton({ model.readTask(record, ReaderTab.CHANGES) }, Modifier.testTag("task-open-changes")) {
                 Icon(Icons.changes, null)
                 Text("Changes", Modifier.padding(start = 6.dp))
+            }
+        }
+        if (model.canRestartAgents) {
+            OutlinedButton({ model.restartingTask = record.id }, Modifier.testTag("task-restart-agent")) {
+                Icon(Icons.restartAgent, null)
+                Text("Restart agent", Modifier.padding(start = 6.dp))
             }
         }
     }
