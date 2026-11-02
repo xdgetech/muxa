@@ -135,7 +135,7 @@ Entries are made by the bridge from the agent's own records, which are private f
 A bridge with the `docs` capability serves the Markdown documents that belong to a pane, for reading.
 
 1. `docs {pane}` sends `doc-list`, then `result`. `docs` in the list is the request id.
-2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more. Last comes a task's brief, path `.muxa/TASK.md` (`kind: repo`), when it exists at the repo root or, outside a repo, in the pane's directory (ADR 0015).
+2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more. Last come a task's brief and handoff, paths `.muxa/TASK.md` and `.muxa/HANDOFF.md` (`kind: repo`), when they exist at the repo root or, outside a repo, in the pane's directory (ADR 0015, 0018).
 3. `doc {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `doc-content` with the whole text, and again whenever the file changes (checked every second). The client drops any whose `doc` is not its latest doc request.
 4. `doc-ended` says the document is no longer readable, for example removed, larger than 2 MiB, or a symlink to outside its directory.
 

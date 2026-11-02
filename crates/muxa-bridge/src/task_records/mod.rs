@@ -9,7 +9,7 @@ mod facts;
 mod handoff;
 mod restart;
 
-pub use brief::BRIEF;
+pub use brief::{BRIEF, HANDOFF};
 pub use restart::restart;
 
 use std::cmp::Reverse;

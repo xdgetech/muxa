@@ -11,6 +11,8 @@ pub(super) const DIR: &str = ".muxa";
 const FILE: &str = "TASK.md";
 /// `TASK.md` relative to the task's directory, as the Reader lists it.
 pub const BRIEF: &str = ".muxa/TASK.md";
+/// `HANDOFF.md` relative to the task's directory, as the Reader lists it (ADR 0018).
+pub const HANDOFF: &str = ".muxa/HANDOFF.md";
 /// The pattern added to git's exclude file.
 const EXCLUDE: &str = ".muxa/";
 /// A line that starts with this is the marker, whatever follows on it.

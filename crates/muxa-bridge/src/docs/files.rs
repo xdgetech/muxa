@@ -9,7 +9,7 @@ use std::time::UNIX_EPOCH;
 use muxa_protocol::{DocInfo, DocKind};
 
 use crate::agents::{AgentDoc, PaneInfo, Registry};
-use crate::task_records::BRIEF;
+use crate::task_records::{BRIEF, HANDOFF};
 
 /// Documents listed for one pane at most.
 pub const MAX_DOCS: usize = 2000;
@@ -63,30 +63,33 @@ pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
         }));
     }
     let base = root.unwrap_or_else(|| PathBuf::from(&pane.path));
-    if let Some(brief) = task_brief(base)
-        && listing.find(BRIEF).is_err()
-    {
-        listing.docs.push(brief);
+    for path in [BRIEF, HANDOFF] {
+        if let Some(doc) = task_file(&base, path)
+            && listing.find(path).is_err()
+        {
+            listing.docs.push(doc);
+        }
     }
     listing
 }
 
-/// A task's `TASK.md` (ADR 0015), at the repo root or in the pane's directory.
-/// git ignores `.muxa/`, and a task without a repo has no repo to list from.
-fn task_brief(base: PathBuf) -> Option<Doc> {
-    let file = base.join(BRIEF);
+/// A task's `TASK.md` or `HANDOFF.md` (ADR 0015, 0018), at the repo root or in
+/// the pane's directory. git ignores `.muxa/`, and a task without a repo has no
+/// repo to list from.
+fn task_file(base: &Path, path: &str) -> Option<Doc> {
+    let file = base.join(path);
     if !file.is_file() {
         return None;
     }
     Some(Doc {
         info: DocInfo {
-            path: BRIEF.to_owned(),
+            path: path.to_owned(),
             kind: DocKind::Repo,
             title: title(&file),
             mtime: mtime(&file),
         },
         file,
-        root: base,
+        root: base.to_path_buf(),
     })
 }
 
