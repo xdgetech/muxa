@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. It supersedes ADR 0001's sizing decision (`-f ignore-size` and never `refresh-client -C`). Control mode, the snapshot and the stream cut of ADR 0001 stay. It amends ADR 0004: the client still renders the pane's real grid, but it now tells the bridge which grid it would like.
+Proposed. It supersedes ADR 0001's sizing decision (`-f ignore-size` and never `refresh-client -C`). Control mode, the snapshot and the stream cut of ADR 0001 stay. It amends ADR 0004: the client still renders the pane's real grid, but it now tells the bridge which grid it would like. ADR 0021 (proposed) amends how the bridge becomes the latest client: through a device session, which removes the limit for windows that are not the session's current one.
 
 ## Context
 
