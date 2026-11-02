@@ -1,6 +1,7 @@
 """Holds a real tmux client open on a pty of a fixed size, like a desktop terminal.
 
-Usage: pty-client.py <socket> <session> <cols> <rows> <seconds>
+Usage: pty-client.py <socket> <session> <cols> <rows> <seconds> [<type at>]
+With <type at>, it types "x" that many seconds after it started, as a person would.
 """
 import os
 import pty
@@ -22,8 +23,13 @@ def main() -> None:
         os.execvp("tmux", ["tmux", "-L", sock, "attach-session", "-t", session])
     # Set the size before tmux reads it, so the client attaches at cols x rows.
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
-    end = time.time() + secs
+    start = time.time()
+    end = start + secs
+    type_at = start + float(sys.argv[6]) if len(sys.argv) > 6 else None
     while time.time() < end:
+        if type_at is not None and time.time() >= type_at:
+            os.write(fd, b"x")
+            type_at = None
         ready, _, _ = select.select([fd], [], [], 0.2)
         if ready:
             try:

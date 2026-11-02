@@ -11,7 +11,7 @@ use super::create::Env;
 use super::handoff::{self, AgentPane, Linked};
 use super::{blocking, brief, facts, store_error};
 use crate::convert::error_body;
-use crate::records::{AgentSettings, Record, RunReason, Seen, now};
+use crate::records::{AgentSettings, PendingPrompt, PromptKind, Record, RunReason, Seen, now};
 
 /// The record after the restart, or why there was none.
 pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, ErrorBody> {
@@ -52,7 +52,12 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
     respawn(env, &found, &dir, agent.as_ref()).await?;
     let seen = found.seen.clone();
     let saved = handoff::write(&env.records, record.id.clone(), move |r| {
-        advance(r, seen.as_ref(), now);
+        let run = advance(r, seen.as_ref(), now);
+        r.set_pending_prompt(Some(PendingPrompt {
+            kind: PromptKind::Restart,
+            since: now,
+            run,
+        }));
     })
     .await
     .ok_or_else(|| {
@@ -62,16 +67,18 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
         )
     })?;
     tracing::info!(task = %saved.id, pane = %found.pane, force, "agent restarted");
-    let run = saved.runs.last().map_or(0, |r| r.id);
-    env.pending.spawn(handoff::send_prompt(
-        Arc::clone(&env.client),
-        Arc::clone(&env.agents),
-        Arc::clone(&env.records),
-        saved.id.clone(),
-        found.session,
-        run,
-        handoff::restart(now),
-    ));
+    if let Some(pending) = saved.pending_prompt() {
+        env.pending.spawn(handoff::send_prompt(
+            Arc::clone(&env.client),
+            Arc::clone(&env.agents),
+            Arc::clone(&env.records),
+            handoff::Wait {
+                task: saved.id.clone(),
+                which: Linked::Session(found.session),
+                pending,
+            },
+        ));
+    }
     Ok(saved)
 }
 

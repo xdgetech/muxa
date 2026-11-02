@@ -4,6 +4,7 @@
 
 pub mod agent_env;
 pub mod loops;
+pub mod prompts;
 pub mod runs;
 pub mod store;
 pub mod workspaces;
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub use agent_env::AgentSettings;
 #[allow(unused_imports)]
 pub use loops::{Checks, LastCheck, Loop, LoopSpec, LoopState, Reason};
+pub use prompts::{PendingPrompt, PromptKind};
 pub use runs::{MAX_RUNS, Run, RunReason, Seen};
 pub use store::{Store, StoreError, now};
 pub use workspaces::{Workspace, Workspaces};

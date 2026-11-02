@@ -8,7 +8,8 @@ use crate::tasks::Choice;
 pub const USAGE: &str = "usage: muxa-bridge [--tmux PATH] [--socket NAME] [--idle-timeout SECONDS]
                    [--agent-dir AGENT=PATH]... [--task-launcher builtin|tmux-agents=PATH]
                    [--task-command COMMAND] [--state-dir DIR] [--workspaces FILE]
-                   [--version]
+                   [--daemon-dir DIR] [--version]
+       muxa-bridge daemon run|install|stop|restart|uninstall|status [flags] [--print]
 
 Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
   --tmux PATH             tmux binary (default: Homebrew, /usr/local/bin, then PATH)
@@ -24,7 +25,13 @@ Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
                           (default: $XDG_STATE_HOME/muxa/tasks, else ~/.local/state/muxa/tasks)
   --workspaces FILE       the workspaces config
                           (default: $XDG_CONFIG_HOME/muxa/workspaces.toml, else ~/.config/...)
-Logs go to stderr; MUXA_LOG sets the level (default: warn).";
+  --daemon-dir DIR        the daemon's socket, lock and log
+                          (default: $XDG_STATE_HOME/muxa, else ~/.local/state/muxa)
+
+The daemon runs the Task Loop on the host (ADR 0019). `daemon install` takes
+the flags above, writes a LaunchAgent (macOS) or a systemd user unit (Linux)
+and starts it; `--print` shows the file and changes nothing.
+Logs go to stderr; MUXA_LOG sets the level (default: warn; the daemon: info).";
 
 /// Non-interactive SSH sessions often lack Homebrew's directories in PATH.
 const TMUX_CANDIDATES: [&str; 2] = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
@@ -34,8 +41,42 @@ const DEFAULT_IDLE: Duration = Duration::from_secs(60);
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
     Serve(Args),
+    Daemon(Daemon),
     Version,
     Help,
+}
+
+/// `muxa-bridge daemon <op> [flags]`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Daemon {
+    pub op: DaemonOp,
+    pub args: Args,
+    /// `install --print`: show the file, change nothing.
+    pub print: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonOp {
+    Run,
+    Install,
+    Stop,
+    Restart,
+    Uninstall,
+    Status,
+}
+
+impl DaemonOp {
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "run" => Self::Run,
+            "install" => Self::Install,
+            "stop" => Self::Stop,
+            "restart" => Self::Restart,
+            "uninstall" => Self::Uninstall,
+            "status" => Self::Status,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -49,11 +90,78 @@ pub struct Args {
     pub task_command: String,
     pub state_dir: Option<PathBuf>,
     pub workspaces: Option<PathBuf>,
+    pub daemon_dir: Option<PathBuf>,
+}
+
+impl Args {
+    /// The flags that give these args again, for the daemon's service file.
+    /// `--tmux` and `--idle-timeout` are left to the caller.
+    pub fn service_flags(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut push = |flag: &str, value: String| {
+            out.push(flag.to_owned());
+            out.push(value);
+        };
+        if let Some(s) = &self.socket {
+            push("--socket", s.clone());
+        }
+        if let Some(d) = &self.state_dir {
+            push("--state-dir", d.display().to_string());
+        }
+        if let Some(w) = &self.workspaces {
+            push("--workspaces", w.display().to_string());
+        }
+        for (agent, dir) in &self.agent_dirs {
+            push("--agent-dir", format!("{agent}={}", dir.display()));
+        }
+        match &self.task_launcher {
+            Some(Choice::Builtin) => push("--task-launcher", "builtin".into()),
+            Some(Choice::TmuxAgents(p)) => {
+                push("--task-launcher", format!("tmux-agents={}", p.display()))
+            }
+            None => {}
+        }
+        if self.task_command != DEFAULT_TASK_COMMAND {
+            push("--task-command", self.task_command.clone());
+        }
+        out
+    }
 }
 
 pub const DEFAULT_TASK_COMMAND: &str = "claude";
 
 pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Action, lexopt::Error> {
+    let mut args: Vec<std::ffi::OsString> = args.into_iter().collect();
+    if args.first().is_some_and(|a| a == "daemon") {
+        let op = args
+            .get(1)
+            .and_then(|a| a.to_str())
+            .and_then(DaemonOp::parse)
+            .ok_or_else(|| {
+                lexopt::Error::from(
+                    "daemon wants one of run, install, stop, restart, uninstall, status",
+                )
+            })?;
+        let rest = args.split_off(2);
+        let mut print = false;
+        let parsed = parse_flags(rest, |flag| {
+            let allowed = flag == "print" && op == DaemonOp::Install;
+            print |= allowed;
+            allowed
+        })?;
+        return Ok(match parsed {
+            Action::Serve(args) => Action::Daemon(Daemon { op, args, print }),
+            other => other,
+        });
+    }
+    parse_flags(args, |_| false)
+}
+
+/// The serve flags, plus the switches `extra` accepts.
+fn parse_flags(
+    args: Vec<std::ffi::OsString>,
+    mut extra: impl FnMut(&str) -> bool,
+) -> Result<Action, lexopt::Error> {
     use lexopt::prelude::*;
     let mut parser = lexopt::Parser::from_args(args);
     let mut out = Args {
@@ -65,6 +173,7 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
         task_command: DEFAULT_TASK_COMMAND.into(),
         state_dir: None,
         workspaces: None,
+        daemon_dir: None,
     };
     while let Some(arg) = parser.next()? {
         match arg {
@@ -110,8 +219,12 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
             Long("workspaces") => {
                 out.workspaces = Some(absolute(parser.value()?.into(), "--workspaces")?)
             }
+            Long("daemon-dir") => {
+                out.daemon_dir = Some(absolute(parser.value()?.into(), "--daemon-dir")?)
+            }
             Long("version") => return Ok(Action::Version),
             Long("help") | Short('h') => return Ok(Action::Help),
+            Long(flag) if extra(flag) => {}
             _ => return Err(arg.unexpected()),
         }
     }
@@ -183,6 +296,7 @@ mod tests {
                 task_command: DEFAULT_TASK_COMMAND.into(),
                 state_dir: None,
                 workspaces: None,
+                daemon_dir: None,
             })
         );
         let Action::Serve(a) = parse_strs(&[
@@ -232,6 +346,42 @@ mod tests {
         assert_eq!(parse_strs(&["--version"]).unwrap(), Action::Version);
         assert!(parse_strs(&["--bogus"]).is_err());
         assert!(parse_strs(&["--idle-timeout", "x"]).is_err());
+    }
+
+    #[test]
+    fn parses_daemon_commands() {
+        let Action::Daemon(d) = parse_strs(&[
+            "daemon",
+            "install",
+            "--socket",
+            "s",
+            "--daemon-dir",
+            "/d",
+            "--task-launcher",
+            "tmux-agents=/p/new.sh",
+            "--print",
+        ])
+        .unwrap() else {
+            panic!("not daemon")
+        };
+        assert_eq!((d.op, d.print), (DaemonOp::Install, true));
+        assert_eq!(d.args.daemon_dir, Some("/d".into()));
+        assert_eq!(
+            d.args.service_flags(),
+            ["--socket", "s", "--task-launcher", "tmux-agents=/p/new.sh"]
+        );
+        let Action::Daemon(d) = parse_strs(&["daemon", "run"]).unwrap() else {
+            panic!("not daemon")
+        };
+        assert_eq!((d.op, d.print), (DaemonOp::Run, false));
+        assert!(
+            parse_strs(&["daemon", "run", "--print"]).is_err(),
+            "--print is for install"
+        );
+        assert!(parse_strs(&["--print"]).is_err());
+        assert!(parse_strs(&["daemon"]).is_err());
+        assert!(parse_strs(&["daemon", "bogus"]).is_err());
+        assert!(parse_strs(&["daemon", "status", "--daemon-dir", "rel"]).is_err());
     }
 
     #[test]

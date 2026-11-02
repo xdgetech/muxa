@@ -24,9 +24,9 @@ mt_down() {
 mt_control() { mt -C attach-session -t "$1" -f ignore-size 2>&1 || true; }
 
 # A real (non-control) client on a pty, like a desktop terminal.
-# Usage: mt_desktop <session id> <cols> <rows> <seconds> &
+# Usage: mt_desktop <session id> <cols> <rows> <seconds> [<type "x" after seconds>] &
 mt_desktop() {
-  python3 -I "$MUXA_LIB/pty-client.py" "$MUXA_SOCKET" "$1" "$2" "$3" "$4"
+  python3 -I "$MUXA_LIB/pty-client.py" "$MUXA_SOCKET" "$@"
 }
 
 window_size() { mt display-message -p -t "$1" '#{window_width}x#{window_height}'; }

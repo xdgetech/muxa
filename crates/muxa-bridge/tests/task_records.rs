@@ -1,6 +1,8 @@
 //! Task records end to end (ADR 0015): `create-task` with and without a repo,
 //! the `@muxa_task` link and its fallback, the start prompt, and `rev`
 //! conflicts. Records go to a temp state directory; no existing pane changes.
+//! Every test runs twice (ADR 0019): with the host daemon serving the
+//! records, and with the bridge serving them itself.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -8,6 +10,7 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use common::daemon::Daemon;
 use common::repo::{Repo, fake_new_sh, git};
 use common::{Bridge, Server};
 use muxa_protocol::{AgentState, ErrorCode, Message, RunReason, TaskRecord, TaskStatus};
@@ -17,14 +20,69 @@ const PROMPT: &str = "Read .muxa/TASK.md and start.";
 /// Echoes what is typed, so the screen shows whether the prompt arrived.
 const AGENT: &str = "cat";
 
+/// Who serves the record requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Bridge,
+    Daemon,
+}
+
+impl Mode {
+    /// A per-mode name, as both modes of a test run at once.
+    fn name(self, base: &str) -> String {
+        format!("{base}-{self:?}")
+    }
+}
+
+/// Each test, once per mode.
+macro_rules! both {
+    ($($name:ident),* $(,)?) => {
+        mod bridge {
+            $(#[tokio::test]
+            async fn $name() {
+                super::$name(super::Mode::Bridge).await
+            })*
+        }
+        mod daemon {
+            $(#[tokio::test]
+            async fn $name() {
+                super::$name(super::Mode::Daemon).await
+            })*
+        }
+    };
+}
+
+both!(
+    another_writer_s_change_is_announced,
+    a_task_without_a_repo_gets_its_own_directory_and_session,
+    a_fresh_done_gets_the_start_prompt,
+    a_repo_task_runs_in_its_worktree_with_task_md_excluded,
+    a_branch_that_runs_an_open_task_is_refused,
+    a_stale_rev_is_a_conflict_and_changes_nothing,
+    without_the_tag_a_session_links_by_its_directory,
+    tmux_agents_tasks_are_found_by_their_worktree,
+    a_client_that_leaves_right_away_still_gets_its_start_prompt,
+    tmux_agents_gets_the_record_when_it_takes_it,
+    a_failed_launch_keeps_the_record_with_a_note,
+    a_workspace_agent_env_reaches_the_agent_and_its_adapter,
+    a_repo_task_gets_its_workspace_env_even_with_tmux_agents,
+    a_restart_keeps_the_pane_hands_off_and_records_runs,
+    a_running_agent_is_restarted_only_with_force,
+    an_agent_typed_into_a_shell_is_typed_again,
+);
+
 /// A state directory, a workspace root and the `workspaces.toml` naming it.
+/// In daemon mode, the first bridge starts a daemon with the same flags.
 struct Host {
     dir: PathBuf,
     root: PathBuf,
+    mode: Mode,
+    daemon: Option<Daemon>,
 }
 
 impl Host {
-    fn new(name: &str) -> Self {
+    fn new(name: &str, mode: Mode) -> Self {
+        let name = mode.name(name);
         let dir =
             std::env::temp_dir().join(format!("muxa-records-it-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -39,7 +97,12 @@ impl Host {
             ),
         )
         .unwrap();
-        Self { dir, root }
+        Self {
+            dir,
+            root,
+            mode,
+            daemon: None,
+        }
     }
 
     fn args(&self) -> Vec<String> {
@@ -51,9 +114,23 @@ impl Host {
         ]
     }
 
-    async fn bridge(&self, server: &Server, extra: &[&str]) -> Bridge {
+    async fn bridge(&mut self, server: &Server, extra: &[&str]) -> Bridge {
         let mut args = self.args();
         args.extend(extra.iter().map(|s| s.to_string()));
+        if self.mode == Mode::Daemon {
+            if self.daemon.is_none() {
+                let flags: Vec<&str> = args.iter().map(String::as_str).collect();
+                self.daemon = Some(Daemon::start(server, &flags).await);
+            }
+            let dir = self.daemon.as_ref().map(|d| d.dir.display().to_string());
+            args.extend(["--daemon-dir".to_owned(), dir.unwrap_or_default()]);
+        } else {
+            // No daemon: a dir where none runs.
+            args.extend([
+                "--daemon-dir".to_owned(),
+                self.dir.join("no-daemon").display().to_string(),
+            ]);
+        }
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let (bridge, hello) = Bridge::start(server, &args).await;
         let Message::Hello { capabilities, .. } = hello else {
@@ -165,10 +242,9 @@ fn prompts(server: &Server, pane: &str) -> usize {
         .count()
 }
 
-#[tokio::test]
-async fn a_task_without_a_repo_gets_its_own_directory_and_session() {
+async fn a_task_without_a_repo_gets_its_own_directory_and_session(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("dir");
+    let mut host = Host::new("dir", mode);
     let before = server.layout();
     let mut bridge = host
         .bridge(
@@ -224,11 +300,43 @@ async fn a_task_without_a_repo_gets_its_own_directory_and_session() {
     assert_eq!(same_panes(&server, &before), before);
 }
 
-#[tokio::test]
-async fn a_repo_task_runs_in_its_worktree_with_task_md_excluded() {
+fn epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+/// tmux-agents reports a finished turn as `done` while no person watches
+/// the window (ADR 0019). Only a `done` newer than the wait counts.
+async fn a_fresh_done_gets_the_start_prompt(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("repo");
-    let repo = Repo::new("records-repo");
+    let mut host = Host::new("done", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (r, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let pane = server.pane(&format!("={}:", r.unwrap().session.unwrap()));
+
+    let old = (epoch() - 600).to_string();
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state_at", &old]);
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "done"]);
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(prompts(&server, &pane), 0, "a done from before the wait");
+
+    let fresh = epoch().to_string();
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state_at", &fresh]);
+    common::wait_until(|| prompts(&server, &pane) > 0).await;
+}
+
+async fn a_repo_task_runs_in_its_worktree_with_task_md_excluded(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("repo", mode);
+    let repo = Repo::new(&mode.name("records-repo"));
     let before = server.layout();
     let mut bridge = host
         .bridge(
@@ -262,11 +370,10 @@ async fn a_repo_task_runs_in_its_worktree_with_task_md_excluded() {
     assert_eq!(same_panes(&server, &before), before);
 }
 
-#[tokio::test]
-async fn a_branch_that_runs_an_open_task_is_refused() {
+async fn a_branch_that_runs_an_open_task_is_refused(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("linked");
-    let repo = Repo::new("records-linked");
+    let mut host = Host::new("linked", mode);
+    let repo = Repo::new(&mode.name("records-linked"));
     let mut bridge = host
         .bridge(
             &server,
@@ -309,10 +416,46 @@ async fn a_branch_that_runs_an_open_task_is_refused() {
     assert_eq!(option(&server, "feat-x", "@muxa_task"), second.unwrap().id);
 }
 
-#[tokio::test]
-async fn a_stale_rev_is_a_conflict_and_changes_nothing() {
+/// The next `tasks-changed` within `wait`.
+async fn tasks_changed(bridge: &mut Bridge, wait: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + wait;
+    while let Some(left) = deadline.checked_duration_since(tokio::time::Instant::now()) {
+        match bridge.event(left).await {
+            Some(Message::TasksChanged) => return true,
+            Some(_) => {}
+            None => return false,
+        }
+    }
+    false
+}
+
+/// A record written by another client reaches this one as `tasks-changed`
+/// (ADR 0019), whoever wrote it.
+async fn another_writer_s_change_is_announced(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("conflict");
+    let mut host = Host::new("changed", mode);
+    let flags = ["--task-launcher", "builtin", "--task-command", AGENT];
+    let mut watching = host.bridge(&server, &flags).await;
+    let mut writer = host.bridge(&server, &flags).await;
+    // The first look sees the directory as it is; nothing is announced.
+    assert!(!tasks_changed(&mut watching, Duration::from_millis(2500)).await);
+
+    let (r, result) = create(&mut writer, json!({})).await;
+    ok(&result);
+    assert!(tasks_changed(&mut watching, Duration::from_secs(5)).await);
+    let r = r.unwrap();
+    let (_, result) = send(
+        &mut writer,
+        json!({"type": "update-task", "task": r.id, "rev": r.rev, "status": "review"}),
+    )
+    .await;
+    ok(&result);
+    assert!(tasks_changed(&mut watching, Duration::from_secs(5)).await);
+}
+
+async fn a_stale_rev_is_a_conflict_and_changes_nothing(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("conflict", mode);
     let mut bridge = host
         .bridge(
             &server,
@@ -343,10 +486,9 @@ async fn a_stale_rev_is_a_conflict_and_changes_nothing() {
     assert_eq!(error_code(&result), ErrorCode::BadRequest);
 }
 
-#[tokio::test]
-async fn without_the_tag_a_session_links_by_its_directory() {
+async fn without_the_tag_a_session_links_by_its_directory(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("fallback");
+    let mut host = Host::new("fallback", mode);
     let mut bridge = host
         .bridge(
             &server,
@@ -374,11 +516,10 @@ async fn without_the_tag_a_session_links_by_its_directory() {
     assert_eq!(option(&server, "restored", "@muxa_task"), "");
 }
 
-#[tokio::test]
-async fn tmux_agents_tasks_are_found_by_their_worktree() {
+async fn tmux_agents_tasks_are_found_by_their_worktree(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("agents");
-    let repo = Repo::new("records-agents");
+    let mut host = Host::new("agents", mode);
+    let repo = Repo::new(&mode.name("records-agents"));
     let script = fake_new_sh(&repo.root.join("scripts"), false);
     let flag = format!("tmux-agents={}", script.display());
     let mut bridge = host.bridge(&server, &["--task-launcher", &flag]).await;
@@ -399,10 +540,9 @@ async fn tmux_agents_tasks_are_found_by_their_worktree() {
     common::wait_until(|| prompts(&server, &pane) == 1).await;
 }
 
-#[tokio::test]
-async fn a_client_that_leaves_right_away_still_gets_its_start_prompt() {
+async fn a_client_that_leaves_right_away_still_gets_its_start_prompt(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("leaves");
+    let mut host = Host::new("leaves", mode);
     let mut bridge = host
         .bridge(
             &server,
@@ -417,21 +557,24 @@ async fn a_client_that_leaves_right_away_still_gets_its_start_prompt() {
     // Like `muxa-cli task new`: close the input once the result is in.
     let (mut child, _output) = bridge.close_input();
     tokio::time::sleep(Duration::from_millis(1500)).await;
-    assert!(
-        child.try_wait().unwrap().is_none(),
-        "the bridge did not wait"
-    );
+    match mode {
+        Mode::Bridge => assert!(
+            child.try_wait().unwrap().is_none(),
+            "the bridge did not wait"
+        ),
+        // The daemon waits; the bridge need not.
+        Mode::Daemon => assert!(child.try_wait().unwrap().is_some(), "the bridge waited"),
+    }
     server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "idle"]);
     common::wait_until(|| prompts(&server, &pane) > 0).await;
     let exited = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
     assert!(exited.is_ok(), "the bridge did not exit after the prompt");
 }
 
-#[tokio::test]
-async fn tmux_agents_gets_the_record_when_it_takes_it() {
+async fn tmux_agents_gets_the_record_when_it_takes_it(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("features");
-    let repo = Repo::new("records-features");
+    let mut host = Host::new("features", mode);
+    let repo = Repo::new(&mode.name("records-features"));
     let scripts = repo.root.join("scripts");
     let script = fake_new_sh(&scripts, false);
     server.tmux(&["set-option", "-g", "@agents_features", "muxa-task"]);
@@ -456,11 +599,10 @@ async fn tmux_agents_gets_the_record_when_it_takes_it() {
     assert_eq!(option(&server, "fake-task", "@muxa_task"), r.id);
 }
 
-#[tokio::test]
-async fn a_failed_launch_keeps_the_record_with_a_note() {
+async fn a_failed_launch_keeps_the_record_with_a_note(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("failed");
-    let repo = Repo::new("records-failed");
+    let mut host = Host::new("failed", mode);
+    let repo = Repo::new(&mode.name("records-failed"));
     let script = fake_new_sh(&repo.root.join("scripts"), true);
     let flag = format!("tmux-agents={}", script.display());
     let mut bridge = host.bridge(&server, &["--task-launcher", &flag]).await;
@@ -548,10 +690,9 @@ async fn pane_state(bridge: &mut Bridge, pane: &str) -> Option<AgentState> {
         .and_then(|p| p.agent.as_ref().map(|a| a.state))
 }
 
-#[tokio::test]
-async fn a_workspace_agent_env_reaches_the_agent_and_its_adapter() {
+async fn a_workspace_agent_env_reaches_the_agent_and_its_adapter(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("agent-env");
+    let mut host = Host::new("agent-env", mode);
     let (table, config) = agent_table(&host);
     let path = host.dir.join("workspaces.toml");
     let text = std::fs::read_to_string(&path).unwrap();
@@ -594,11 +735,10 @@ async fn a_workspace_agent_env_reaches_the_agent_and_its_adapter() {
     assert_eq!(same_panes(&server, &before), before);
 }
 
-#[tokio::test]
-async fn a_repo_task_gets_its_workspace_env_even_with_tmux_agents() {
+async fn a_repo_task_gets_its_workspace_env_even_with_tmux_agents(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("agent-env-repo");
-    let repo = Repo::new("records-agent-env");
+    let mut host = Host::new("agent-env-repo", mode);
+    let repo = Repo::new(&mode.name("records-agent-env"));
     let (table, config) = agent_table(&host);
     let other = host.dir.join("other");
     std::fs::create_dir_all(&other).unwrap();
@@ -679,10 +819,9 @@ async fn record_of(bridge: &mut Bridge, id: &str) -> TaskRecord {
         .expect("the record")
 }
 
-#[tokio::test]
-async fn a_restart_keeps_the_pane_hands_off_and_records_runs() {
+async fn a_restart_keeps_the_pane_hands_off_and_records_runs(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("restart");
+    let mut host = Host::new("restart", mode);
     let (table, config) = agent_table(&host);
     let path = host.dir.join("workspaces.toml");
     let text = std::fs::read_to_string(&path).unwrap();
@@ -780,10 +919,9 @@ async fn a_restart_keeps_the_pane_hands_off_and_records_runs() {
     common::wait_until(|| restarted() == 1).await;
 }
 
-#[tokio::test]
-async fn a_running_agent_is_restarted_only_with_force() {
+async fn a_running_agent_is_restarted_only_with_force(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("restart-running");
+    let mut host = Host::new("restart-running", mode);
     let mut bridge = host
         .bridge(
             &server,
@@ -820,10 +958,9 @@ async fn a_running_agent_is_restarted_only_with_force() {
     assert_eq!(error_code(&result), ErrorCode::BadRequest);
 }
 
-#[tokio::test]
-async fn an_agent_typed_into_a_shell_is_typed_again() {
+async fn an_agent_typed_into_a_shell_is_typed_again(mode: Mode) {
     let server = Server::start();
-    let host = Host::new("restart-typed");
+    let mut host = Host::new("restart-typed", mode);
     let mut bridge = host
         .bridge(
             &server,
@@ -866,4 +1003,64 @@ async fn an_agent_typed_into_a_shell_is_typed_again() {
     };
     common::wait_until(|| command() == AGENT).await;
     assert_eq!(shape(&server), before);
+}
+
+/// The record file as the store wrote it, with fields the wire leaves out.
+fn record_file(host: &Host, id: &str) -> Value {
+    let text = std::fs::read_to_string(host.dir.join(format!("state/{id}.json"))).unwrap();
+    serde_json::from_str(&text).unwrap()
+}
+
+/// A crash does not lose a prompt wait (ADR 0019): the next daemon resumes
+/// one younger than 30 s, and types the prompt once.
+#[tokio::test]
+async fn a_daemon_that_crashed_during_a_prompt_wait_resumes_it() {
+    let server = Server::start();
+    let mut host = Host::new("resume", Mode::Daemon);
+    let flags = ["--task-launcher", "builtin", "--task-command", AGENT];
+    let mut bridge = host.bridge(&server, &flags).await;
+    let (r, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = r.unwrap();
+    let pane = server.pane(&format!("={}:", r.session.clone().unwrap()));
+    let wait = record_file(&host, &r.id)["pendingPrompt"].clone();
+    assert_eq!(wait["kind"], "start", "{wait}");
+    assert_eq!(wait["run"], 1, "{wait}");
+
+    let mut daemon = host.daemon.take().expect("the daemon");
+    daemon.crash().await;
+    let mut args = host.args();
+    args.extend(flags.iter().map(|s| s.to_string()));
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    daemon.start_again(&server, &args).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        prompts(&server, &pane),
+        0,
+        "typed before the agent was idle"
+    );
+
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "idle"]);
+    common::wait_until(|| prompts(&server, &pane) > 0).await;
+    common::wait_until(|| record_file(&host, &r.id).get("pendingPrompt").is_none()).await;
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    // `cat` shows the typed line, then prints it back: typed once.
+    assert_eq!(prompts(&server, &pane), 2);
+    assert!(daemon.log().contains("resuming a prompt wait"));
+
+    // A wait older than 30 s ends with the note, and types nothing.
+    let path = host.dir.join(format!("state/{}.json", r.id));
+    let mut file = record_file(&host, &r.id);
+    file["pendingPrompt"] = json!({"kind": "start", "since": epoch() - 100, "run": 1});
+    std::fs::write(&path, file.to_string()).unwrap();
+    daemon.crash().await;
+    daemon.start_again(&server, &args).await;
+    common::wait_until(|| record_file(&host, &r.id).get("pendingPrompt").is_none()).await;
+    let note = record_file(&host, &r.id)["note"].clone();
+    assert!(
+        note.as_str().is_some_and(|n| n.contains("was not sent")),
+        "{note}"
+    );
+    assert_eq!(prompts(&server, &pane), 2);
+    host.daemon = Some(daemon);
 }

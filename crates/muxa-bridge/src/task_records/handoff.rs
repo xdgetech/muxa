@@ -9,10 +9,10 @@ use muxa_tmux::{AgentState, AgentStatus, Client, PaneId, Role, SessionId};
 
 use super::{Config, blocking, link};
 use crate::agents::{Processes, Registry};
-use crate::records::{Record, Seen, StoreError};
+use crate::records::{PendingPrompt, PromptKind, Record, Seen, StoreError};
 
-/// How long a new agent gets to report `idle`.
-const PROMPT_WAIT: Duration = Duration::from_secs(30);
+/// How long a new agent gets to report `idle`, in seconds.
+pub const PROMPT_WAIT: u64 = 30;
 const PROMPT_POLL: Duration = Duration::from_secs(1);
 /// Between the text and Enter, so a TUI does not take both as one paste.
 const KEY_GAP: Duration = Duration::from_millis(200);
@@ -22,14 +22,17 @@ const WRITE_ATTEMPTS: usize = 3;
 /// A fixed prompt, and the note that replaces it when the agent never became idle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Prompt {
+    pub kind: PromptKind,
     pub text: &'static str,
     pub not_sent: &'static str,
-    /// Only an `idle` since this time counts, in epoch seconds. A state tag
-    /// survives `respawn-pane`, and an old `idle` would type into a starting agent.
+    /// Only an `idle` or `done` since this time counts, in epoch seconds. A
+    /// state tag survives `respawn-pane`, and an old one would type into a
+    /// starting agent.
     pub idle_since: Option<u64>,
 }
 
 pub const START: Prompt = Prompt {
+    kind: PromptKind::Start,
     text: "Read .muxa/TASK.md and start.",
     not_sent: "The agent did not become idle within 30 seconds, so the start prompt \
                was not sent. In its pane, type: Read .muxa/TASK.md and start.",
@@ -38,6 +41,7 @@ pub const START: Prompt = Prompt {
 
 pub fn restart(at: u64) -> Prompt {
     Prompt {
+        kind: PromptKind::Restart,
         text: "Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.",
         not_sent: "The restarted agent did not become idle within 30 seconds, so the \
                    prompt was not sent. In its pane, type: Read .muxa/TASK.md and \
@@ -47,13 +51,24 @@ pub fn restart(at: u64) -> Prompt {
 }
 
 impl Prompt {
-    fn ready(&self, status: Option<AgentStatus>) -> bool {
-        let Some(s) = status.filter(|s| s.state == AgentState::Idle) else {
-            return false;
-        };
-        match self.idle_since {
-            None => true,
-            Some(at) => s.since.is_some_and(|since| since >= at),
+    /// The prompt a recorded wait is for. A restart's wait began at the restart.
+    pub fn of(wait: PendingPrompt) -> Self {
+        match wait.kind {
+            PromptKind::Start => START,
+            PromptKind::Restart => restart(wait.since),
+        }
+    }
+
+    /// A finished turn (ADR 0019): `idle`, or a `done` no older than the
+    /// wait that `began` (epoch seconds). tmux-agents keeps a finished turn
+    /// `done` while no person watches the window.
+    fn ready(&self, status: Option<AgentStatus>, began: u64) -> bool {
+        let Some(s) = status else { return false };
+        match (s.state, self.idle_since) {
+            (AgentState::Idle, None) => true,
+            (AgentState::Idle, Some(at)) => s.since.is_some_and(|since| since >= at),
+            (AgentState::Done, at) => s.since.is_some_and(|since| since >= at.unwrap_or(began)),
+            _ => false,
         }
     }
 }
@@ -76,35 +91,51 @@ pub enum Linked {
     Task(String),
 }
 
-/// Types `prompt` into the session's agent pane once it is ready, and fills
-/// in run `run` from what the adapter reports. Not on `waiting`: that
-/// includes a permission menu, where the text would pick an option. After
-/// [`PROMPT_WAIT`], the record's note says the prompt was not sent.
+/// A prompt to type, as the record's `pendingPrompt` holds it.
+#[derive(Debug, Clone)]
+pub struct Wait {
+    pub task: String,
+    pub which: Linked,
+    pub pending: PendingPrompt,
+}
+
+/// Types the waited-for prompt into the agent pane once the agent is ready,
+/// and fills in the run from what the adapter reports. Not on `waiting`:
+/// that includes a permission menu, where the text would pick an option.
+/// [`PROMPT_WAIT`] seconds after the wait began, the record's note says the
+/// prompt was not sent. The record's `pendingPrompt` is cleared either way;
+/// a wait whose `pendingPrompt` is gone was ended by another process.
 pub async fn send_prompt(
     client: Arc<Client>,
     agents: Arc<Registry>,
     config: Arc<Config>,
-    task: String,
-    session: SessionId,
-    run: u32,
-    prompt: Prompt,
+    wait: Wait,
 ) {
-    let deadline = tokio::time::Instant::now() + PROMPT_WAIT;
+    let Wait {
+        task,
+        which,
+        pending,
+    } = wait;
+    let prompt = Prompt::of(pending);
+    let left = (pending.since + PROMPT_WAIT).saturating_sub(crate::records::now());
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(left);
     let mut seen = None;
     loop {
-        let found = agent_pane(&client, &agents, &config, Linked::Session(session)).await;
+        let found = agent_pane(&client, &agents, &config, which.clone()).await;
         if let Some(found) = found {
             seen = found.seen.or(seen);
-            if prompt.ready(found.status) {
+            if prompt.ready(found.status, pending.since) {
+                if !still_pending(&config, &task, pending).await {
+                    tracing::info!(task, "the prompt wait ended elsewhere");
+                    return;
+                }
                 match type_prompt(&client, found.pane, prompt.text).await {
                     Ok(()) => tracing::info!(task, pane = %found.pane, "prompt sent"),
                     Err(e) => {
                         tracing::warn!(task, pane = %found.pane, error = %e, "cannot send the prompt")
                     }
                 }
-                if let Some(seen) = seen {
-                    fill_run(&config, task, run, seen).await;
-                }
+                end_wait(&config, task, pending, seen, None).await;
                 return;
             }
         }
@@ -113,14 +144,40 @@ pub async fn send_prompt(
         }
         tokio::time::sleep(PROMPT_POLL).await;
     }
-    tracing::info!(task, %session, "agent not idle; prompt not sent");
-    let note = prompt.not_sent;
-    write(&config, task, move |r| {
-        r.note = Some(note.to_owned());
-        if let Some(seen) = &seen {
-            if let Some(run) = r.run_mut(run) {
-                run.fill(seen);
-            }
+    tracing::info!(task, "agent not idle; prompt not sent");
+    end_wait(&config, task, pending, seen, Some(prompt.not_sent)).await;
+}
+
+async fn still_pending(config: &Config, task: &str, pending: PendingPrompt) -> bool {
+    let (config, task) = (config.clone(), task.to_owned());
+    blocking(move || {
+        let r = config
+            .store()?
+            .get(&task)
+            .map_err(|e| super::store_error(&e))?;
+        Ok(r.pending_prompt() == Some(pending))
+    })
+    .await
+    .unwrap_or(false)
+}
+
+/// Clears the wait, if it is still this one, with the run's facts and a note.
+pub async fn end_wait(
+    config: &Config,
+    task: String,
+    pending: PendingPrompt,
+    seen: Option<Seen>,
+    note: Option<&'static str>,
+) {
+    write(config, task, move |r| {
+        if r.pending_prompt() == Some(pending) {
+            r.set_pending_prompt(None);
+        }
+        if let Some(note) = note {
+            r.note = Some(note.to_owned());
+        }
+        if let (Some(seen), Some(run)) = (&seen, r.run_mut(pending.run)) {
+            run.fill(seen);
         }
     })
     .await;
@@ -184,15 +241,6 @@ pub async fn agent_pane(
     .flatten()
 }
 
-async fn fill_run(config: &Config, task: String, run: u32, seen: Seen) {
-    write(config, task, move |r| {
-        if let Some(run) = r.run_mut(run) {
-            run.fill(&seen);
-        }
-    })
-    .await;
-}
-
 /// Applies `change` to the current record, retrying when another bridge
 /// wrote in between. Returns the record written.
 pub async fn write(
@@ -227,25 +275,48 @@ pub async fn write(
 mod tests {
     use super::*;
 
+    fn status(state: AgentState, since: Option<u64>) -> Option<AgentStatus> {
+        Some(AgentStatus { state, since })
+    }
+
     fn idle(since: Option<u64>) -> Option<AgentStatus> {
-        Some(AgentStatus {
-            state: AgentState::Idle,
-            since,
-        })
+        status(AgentState::Idle, since)
+    }
+
+    fn done(since: Option<u64>) -> Option<AgentStatus> {
+        status(AgentState::Done, since)
     }
 
     #[test]
     fn a_restart_prompt_waits_for_an_idle_newer_than_the_restart() {
-        assert!(START.ready(idle(None)));
-        assert!(!START.ready(None));
+        assert!(START.ready(idle(None), 50));
+        assert!(!START.ready(None, 50));
         let p = restart(100);
-        assert!(!p.ready(idle(Some(99))), "an idle from before the restart");
-        assert!(!p.ready(idle(None)), "an idle of unknown age");
-        assert!(p.ready(idle(Some(100))));
-        let running = Some(AgentStatus {
-            state: AgentState::Running,
-            since: Some(200),
-        });
-        assert!(!p.ready(running));
+        assert!(
+            !p.ready(idle(Some(99)), 150),
+            "an idle from before the restart"
+        );
+        assert!(!p.ready(idle(None), 150), "an idle of unknown age");
+        assert!(p.ready(idle(Some(100)), 150));
+        assert!(!p.ready(status(AgentState::Running, Some(200)), 150));
+    }
+
+    #[test]
+    fn a_fresh_done_is_a_finished_turn() {
+        assert!(START.ready(done(Some(50)), 50));
+        assert!(
+            !START.ready(done(Some(49)), 50),
+            "a done from before the wait"
+        );
+        assert!(!START.ready(done(None), 50), "a done of unknown age");
+        let p = restart(100);
+        assert!(
+            p.ready(done(Some(100)), 150),
+            "since the restart, not the wait"
+        );
+        assert!(!p.ready(done(Some(99)), 150));
+        for state in [AgentState::Waiting, AgentState::Error, AgentState::Running] {
+            assert!(!START.ready(status(state, Some(60)), 50), "{state:?}");
+        }
     }
 }

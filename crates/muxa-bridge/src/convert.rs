@@ -56,6 +56,7 @@ fn pane(p: tmux::Pane) -> wire::Pane {
 pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
     use crate::records::Status;
     let path = |p: Option<std::path::PathBuf>| p.map(|p| p.to_string_lossy().into_owned());
+    let pending_prompt = r.pending_prompt().map(pending_prompt);
     wire::TaskRecord {
         id: r.id,
         rev: r.rev,
@@ -77,9 +78,21 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         session: r.session,
         note: r.note,
         runs: r.runs.into_iter().map(agent_run).collect(),
-        // The store keeps neither yet; ADR 0019's P1b and P2 add them.
+        // The store keeps no loop yet; ADR 0019's P2 adds it.
         r#loop: None,
-        pending_prompt: None,
+        pending_prompt,
+    }
+}
+
+fn pending_prompt(p: crate::records::PendingPrompt) -> wire::PendingPrompt {
+    use crate::records::PromptKind;
+    wire::PendingPrompt {
+        kind: match p.kind {
+            PromptKind::Start => wire::PendingPromptKind::Start,
+            PromptKind::Restart => wire::PendingPromptKind::Restart,
+        },
+        since: p.since,
+        run: p.run,
     }
 }
 

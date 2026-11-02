@@ -32,6 +32,15 @@ The `refresh-client -C` workaround for narrow-client plugins was considered and 
 | `new-session -e KEY=VALUE` (tmux 3.2+) reaches the pane's process byte for byte, through the same quoting. It overrides the global environment for that session only, leaves the global environment unchanged, and reaches later windows of the session. | `scripts/repro/session-env.sh` |
 | `respawn-pane -k -t %n -c DIR -e KEY=VALUE`, sent on a control client's stdin, replaces the pane's process in place. The pane id, the pane's size and the window layout stay the same. No window or pane is selected, and no attached client moves. Without a command it reruns `#{pane_start_command}`. `-e` and `-c` reach the new process, and the session's `new-session -e` values stay. A pane started as a plain shell has an empty start command, so it gets a fresh shell: an agent that was typed into it must be typed again. | `scripts/repro/respawn-pane.sh` |
 
+## The host daemon's client (ADR 0019)
+
+| Fact | Script |
+|---|---|
+| `attach-session -f ignore-size,no-output` is accepted. With `no-output`, no `%output` arrives while a pane prints; without it, `%output` does. | `scripts/repro/daemon-client.sh` |
+| An `ignore-size,no-output` client that stays attached next to a desktop client, and runs a command every 2 s, changes no layout. Detaching it changes none either. `make repro` keeps it attached 60 s; set `MUXA_REPRO_SECONDS` for longer. | `scripts/repro/daemon-client.sh` |
+| A desktop client's key press updates its `#{client_activity}` (epoch seconds). `send-keys` from a control client does not update another client's `#{client_activity}`. `#{client_flags}` contains `control-mode` for a control client, and not for a desktop client. | `scripts/repro/client-activity.sh` |
+| When its session is destroyed, the daemon's client is detached like any control client; the daemon attaches again for its next work. | `crates/muxa-bridge/tests/daemon.rs` `the_daemon_attaches_one_no_output_client_and_reattaches` |
+
 ## Answered in Phase 3
 
 | Fact | Test |

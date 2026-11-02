@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>tech.xdge.muxa.daemon</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/muxa/bin/muxa-bridge</string>
+		<string>daemon</string>
+		<string>run</string>
+		<string>--tmux</string>
+		<string>/opt/homebrew/bin/tmux</string>
+		<string>--socket</string>
+		<string>work</string>
+		<string>--workspaces</string>
+		<string>/Users/example/muxa &amp; co/workspaces.toml</string>
+		<string>--task-command</string>
+		<string>claude --model &quot;$M&quot; 100%</string>
+		<string>--daemon-dir</string>
+		<string>/Users/example/.local/state/muxa</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/example</string>
+		<key>TMUX_TMPDIR</key>
+		<string>/tmp/example</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>StandardErrorPath</key>
+	<string>/Users/example/.local/state/muxa/daemon.err</string>
+</dict>
+</plist>

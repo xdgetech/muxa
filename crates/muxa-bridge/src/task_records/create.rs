@@ -9,7 +9,7 @@ use muxa_tmux::Client;
 use super::{Config, Pending, blocking, brief, handoff, store_error};
 use crate::agents::Registry;
 use crate::convert::{error_body, task_error};
-use crate::records::{NewRecord, Record, RunReason, Status, Workspace};
+use crate::records::{NewRecord, PendingPrompt, PromptKind, Record, RunReason, Status, Workspace};
 use crate::tasks::{self, Launched, TaskRequest, builtin};
 
 /// The session option that links a session to its record.
@@ -252,7 +252,13 @@ async fn linked(
             .update(&id, rev, |r| {
                 r.dir = Some(dir);
                 r.session = Some(name);
-                r.start_run(RunReason::Start, crate::records::now());
+                let now = crate::records::now();
+                let run = r.start_run(RunReason::Start, now);
+                r.set_pending_prompt(Some(PendingPrompt {
+                    kind: PromptKind::Start,
+                    since: now,
+                    run,
+                }));
             })
             .map_err(|e| store_error(&e))
     })
@@ -261,16 +267,18 @@ async fn linked(
         Ok(r) => r,
         Err(e) => return (Some(record), Some(e)),
     };
-    let run = record.runs.last().map_or(0, |r| r.id);
-    env.pending.spawn(handoff::send_prompt(
-        Arc::clone(&env.client),
-        Arc::clone(&env.agents),
-        Arc::clone(&env.records),
-        record.id.clone(),
-        launched.id,
-        run,
-        handoff::START,
-    ));
+    if let Some(pending) = record.pending_prompt() {
+        env.pending.spawn(handoff::send_prompt(
+            Arc::clone(&env.client),
+            Arc::clone(&env.agents),
+            Arc::clone(&env.records),
+            handoff::Wait {
+                task: record.id.clone(),
+                which: handoff::Linked::Session(launched.id),
+                pending,
+            },
+        ));
+    }
     (Some(record), None)
 }
 
