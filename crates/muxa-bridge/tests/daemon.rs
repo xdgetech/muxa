@@ -209,3 +209,50 @@ async fn after_a_crash_the_bridge_falls_back_and_a_new_daemon_starts() {
     );
     assert!(daemon.shutdown().await.success());
 }
+
+/// The control clients on the server, as `#{client_flags}`.
+fn control_clients(server: &Server) -> Vec<String> {
+    server
+        .tmux(&["list-clients", "-F", "#{client_flags}"])
+        .lines()
+        .filter(|f| f.contains("control-mode"))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The daemon attaches one quiet client while it has work, and attaches
+/// again after tmux detached it.
+#[tokio::test]
+async fn the_daemon_attaches_one_no_output_client_and_reattaches() {
+    let server = Server::start();
+    let host = Host::new("client");
+    assert!(control_clients(&server).is_empty());
+    let mut daemon = host.daemon(&server).await;
+    assert!(control_clients(&server).is_empty(), "attached with no work");
+
+    let mut conn = daemon.connect().await;
+    let first = create_through(&mut conn).await;
+    // The start prompt's wait holds the client.
+    let clients = control_clients(&server);
+    assert_eq!(clients.len(), 1, "{clients:?}");
+    assert!(clients[0].contains("no-output"), "{clients:?}");
+    assert!(clients[0].contains("ignore-size"), "{clients:?}");
+
+    // Destroying its session detaches it; the next request attaches again.
+    server.tmux(&["kill-session", "-t", "=work"]);
+    common::wait_until(|| control_clients(&server).is_empty()).await;
+    let second = create_through(&mut conn).await;
+    assert_ne!(first.id, second.id);
+    assert_eq!(control_clients(&server).len(), 1);
+
+    let first_session = first.session.unwrap();
+    let still = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &format!("={first_session}:"),
+        "#{window_width}x#{window_height}",
+    ]);
+    assert_eq!(still, "80x24", "the daemon's client sized a window");
+    assert!(daemon.shutdown().await.success());
+}

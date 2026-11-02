@@ -148,6 +148,35 @@ async fn lists_sessions_with_roles() {
     assert_eq!(locate(&client, pane).await.unwrap().0, sessions[0].id);
 }
 
+/// The host daemon's client (ADR 0019): commands work, pane bytes never
+/// come, and the end of its session ends it.
+#[tokio::test]
+async fn a_no_output_client_gets_no_pane_bytes() {
+    let server = Server::start();
+    let pane = server.first_pane();
+    let flags = muxa_tmux::Flags { no_output: true };
+    let (client, mut notes) = Client::attach_with(&server.options(), None, flags).unwrap();
+    send_text(&client, pane, "echo no-output-marker\r")
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let ok = client.command("display-message -p ok").await.unwrap();
+    assert_eq!(ok.lines, vec![b"ok".to_vec()]);
+    while let Ok(n) = notes.try_recv() {
+        assert_ne!(n.name, "output", "a no-output client got %output");
+    }
+    assert!(!client.exited());
+
+    server.tmux(&["kill-session", "-t", "work"]);
+    for _ in 0..50 {
+        if client.exited() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the client did not end with its session");
+}
+
 #[tokio::test]
 async fn replies_stay_aligned_after_a_failed_command() {
     let server = Server::start();

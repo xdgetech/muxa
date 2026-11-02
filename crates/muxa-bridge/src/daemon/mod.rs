@@ -7,6 +7,7 @@ pub mod install;
 mod lock;
 mod log;
 pub mod socket;
+mod tmux;
 
 use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
@@ -24,13 +25,14 @@ use crate::Setup;
 use crate::args::{self, DaemonOp};
 use crate::convert::error_body;
 use crate::server::MAX_REQUEST;
-use crate::task_records::{self, ClientFuture, ClientSource, Context, Pending};
+use crate::task_records::{self, Context, Pending};
 use install::{Platform, Runner, Spec};
 use socket::Control;
 
 /// What `daemon stop` waits for the daemon to answer `shutdown`.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 const CONNECT_WAIT: Duration = Duration::from_millis(500);
+const TICK: Duration = Duration::from_secs(2);
 
 /// `$XDG_STATE_HOME/muxa`, else `~/.local/state/muxa`: the parent of `tasks/`.
 pub fn default_dir(xdg_state_home: Option<&OsStr>, home: Option<&Path>) -> Option<PathBuf> {
@@ -59,22 +61,17 @@ pub fn main(cmd: args::Daemon) -> ExitCode {
 /// The daemon itself.
 struct Daemon {
     records: Context,
+    /// The same client `records` gets its tmux from.
+    tmux: Arc<tmux::Lazy>,
 }
 
 impl Daemon {
     /// Called once before the daemon exits for the user's `daemon stop`.
     async fn on_user_stop(&self) {}
-}
 
-/// Attaches a control client for each request that works in tmux.
-struct Attach(muxa_tmux::Options);
-
-impl ClientSource for Attach {
-    fn client(&self) -> ClientFuture<'_> {
-        Box::pin(async move {
-            let (client, _notes) = muxa_tmux::Client::attach(&self.0, None)?;
-            Ok(Arc::new(client))
-        })
+    /// Runs every [`TICK`].
+    async fn tick(&self) {
+        self.tmux.tick(false).await;
     }
 }
 
@@ -142,14 +139,16 @@ fn run(args: args::Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let tmux = Arc::new(tmux::Lazy::new(setup.tmux_options()));
     let daemon = Daemon {
         records: Context {
-            tmux: Arc::new(Attach(setup.tmux_options())),
+            tmux: Arc::clone(&tmux) as Arc<dyn task_records::ClientSource>,
             tasks: setup.tasks,
             records: setup.records,
             agents: setup.agents,
             pending: Pending::default(),
         },
+        tmux,
     };
     match runtime.block_on(serve(Arc::new(daemon), &path)) {
         Ok(()) => ExitCode::SUCCESS,
@@ -178,8 +177,11 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
     tracing::info!(version = env!("CARGO_PKG_VERSION"), socket = %path.display(), "daemon started");
     let resume = Arc::clone(&daemon);
     tokio::spawn(async move { task_records::resume_prompts(&resume.records).await });
+    let mut tick = tokio::time::interval(TICK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
+            _ = tick.tick() => daemon.tick().await,
             accepted = listener.accept() => match accepted {
                 Ok((stream, _)) => {
                     tokio::spawn(connection(Arc::clone(&daemon), stream, stop_tx.clone()));

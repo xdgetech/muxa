@@ -52,6 +52,23 @@ impl Options {
 
 pub type Notifications = mpsc::UnboundedReceiver<Notification>;
 
+/// The client flags beyond `ignore-size`, which every muxa client sets.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Flags {
+    /// No `%output`: tmux sends no pane bytes to this client (ADR 0019).
+    pub no_output: bool,
+}
+
+impl Flags {
+    fn arg(self) -> &'static str {
+        if self.no_output {
+            "ignore-size,no-output"
+        } else {
+            "ignore-size"
+        }
+    }
+}
+
 /// A control-mode client. Dropping it detaches; sessions and panes stay.
 #[derive(Debug)]
 pub struct Client {
@@ -67,8 +84,17 @@ impl Client {
         opts: &Options,
         session: Option<SessionId>,
     ) -> Result<(Client, Notifications), Error> {
+        Self::attach_with(opts, session, Flags::default())
+    }
+
+    /// Like [`Client::attach`], with more client flags.
+    pub fn attach_with(
+        opts: &Options,
+        session: Option<SessionId>,
+        flags: Flags,
+    ) -> Result<(Client, Notifications), Error> {
         let mut cmd = opts.command();
-        cmd.args(["-C", "attach-session", "-f", "ignore-size"]);
+        cmd.args(["-C", "attach-session", "-f", flags.arg()]);
         if let Some(s) = session {
             cmd.arg("-t").arg(s.to_string());
         }
@@ -145,6 +171,12 @@ impl Client {
             .await?
             .pop()
             .unwrap_or_else(|| Err(Error::Unexpected("no reply".into())))
+    }
+
+    /// Whether the tmux client has ended, e.g. because its session was
+    /// destroyed or the server stopped.
+    pub fn exited(&self) -> bool {
+        lock(&self.exit).is_some()
     }
 
     /// Why the client exited, once it has.
