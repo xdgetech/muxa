@@ -25,6 +25,8 @@ const HOW_TO: &str = "## How to use this file\n\n\
 const NOTES: &str = "## Progress\n\nNothing yet.\n\n\
      ## Decisions\n\nNothing yet.\n\n\
      ## Next actions\n\nNothing yet.\n";
+const CHECK_TEXT: &str =
+    "muxa runs this after each of your turns. The Task is ready for review when it exits 0.";
 const EARLIER: &str = "## Earlier notes\n\n";
 
 /// The goal and where the work is: `TASK.md` as ADR 0015 first wrote it.
@@ -49,7 +51,26 @@ fn context(r: &Record) -> String {
 
 /// The part the bridge owns, up to the marker.
 fn header(r: &Record) -> String {
-    format!("{}\n{HOW_TO}\n", context(r))
+    format!("{}\n{}{HOW_TO}\n", context(r), check(r))
+}
+
+/// The loop's check, so the agent can run it itself (ADR 0019). Empty
+/// without a loop.
+fn check(r: &Record) -> String {
+    let Some(lp) = r.task_loop().ok().flatten() else {
+        return String::new();
+    };
+    let longest = lp
+        .check
+        .split(|c| c != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat(longest.max(2) + 1);
+    format!(
+        "## Check\n\n{fence}sh\n{}\n{fence}\n\n{CHECK_TEXT}\n\n",
+        lp.check
+    )
 }
 
 /// A new `TASK.md`.
@@ -170,4 +191,70 @@ pub fn exclude_addition(existing: &str) -> Option<String> {
         "\n"
     };
     Some(format!("{lead}{EXCLUDE}\n"))
+}
+
+#[cfg(test)]
+mod check_tests {
+    use super::*;
+    use crate::records::{Loop, LoopSpec, Status};
+
+    fn record() -> Record {
+        Record {
+            version: 1,
+            id: "t-7f3a2c".into(),
+            rev: 1,
+            workspace: "work".into(),
+            title: "Fix login".into(),
+            goal: "Make login work.".into(),
+            status: Status::Open,
+            created_at: 1,
+            updated_at: 1,
+            project: None,
+            repo: None,
+            branch: None,
+            dir: None,
+            session: None,
+            note: None,
+            runs: Vec::new(),
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    fn with_check(check: &str) -> Record {
+        let mut r = record();
+        let spec = LoopSpec {
+            check: check.into(),
+            max_attempts: None,
+            timeout: None,
+        };
+        r.set_loop(Some(&Loop::start(spec, None, false, 1)))
+            .unwrap();
+        r
+    }
+
+    #[test]
+    fn a_loop_puts_its_check_in_the_header() {
+        let text = render(&with_check("make check"));
+        let check = text
+            .find("## Check\n\n```sh\nmake check\n```\n\n")
+            .expect("a Check section");
+        assert!(text[check..].contains(CHECK_TEXT));
+        assert!(check < text.find("## How to use this file").unwrap());
+        assert!(check < text.find(MARKER).unwrap(), "muxa owns it");
+        assert!(!render(&record()).contains("## Check"));
+    }
+
+    #[test]
+    fn the_fence_outgrows_backticks_in_the_command() {
+        let text = render(&with_check("echo ```x``` `y`"));
+        assert!(text.contains("````sh\necho ```x``` `y`\n````\n"), "{text}");
+    }
+
+    #[test]
+    fn starting_or_ending_a_loop_keeps_the_notes() {
+        let old = format!("{}{MARKER}\n\nmine\n", header(&record()));
+        let new = merge(&with_check("make check"), Some(&old));
+        assert!(new.contains("## Check"));
+        assert!(new.ends_with(&format!("{MARKER}\n\nmine\n")));
+    }
 }

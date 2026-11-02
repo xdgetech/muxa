@@ -123,10 +123,11 @@ fn a_task_brief_is_listed_in_a_repo_and_without_one() {
     write(&root.join(".git/info/exclude"), ".muxa/\n");
     write(&root.join(".muxa/TASK.md"), "# Ship it\n");
     write(&root.join(".muxa/HANDOFF.md"), "# Handoff\n");
+    write(&root.join(".muxa/CHECK.md"), "# Check\n");
     let listing = list(&pane(&root), &Registry::new(vec![]));
     assert_eq!(
-        paths(&listing)[paths(&listing).len() - 2..],
-        [".muxa/TASK.md", ".muxa/HANDOFF.md"]
+        paths(&listing)[paths(&listing).len() - 3..],
+        [".muxa/TASK.md", ".muxa/HANDOFF.md", ".muxa/CHECK.md"]
     );
     let brief = listing.find(".muxa/TASK.md").unwrap();
     assert_eq!(brief.info.title.as_deref(), Some("Ship it"));

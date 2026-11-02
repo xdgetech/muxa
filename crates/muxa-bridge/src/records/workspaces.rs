@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
 use super::is_valid_id;
+use super::loops::{Checks, command_shape};
 
 /// In characters.
 const MAX_NAME: usize = 64;
@@ -49,6 +50,8 @@ pub struct Workspace {
     pub repos: Vec<PathBuf>,
     /// How its agents start; None means as `--task-command` (ADR 0016).
     pub agent: Option<AgentSettings>,
+    /// The checks a loop may run; None means no loops here (ADR 0019).
+    pub loop_checks: Option<Checks>,
 }
 
 /// The configured workspaces, in file order.
@@ -72,6 +75,40 @@ struct RawWorkspace {
     #[serde(default)]
     repos: Vec<String>,
     agent: Option<RawAgent>,
+    #[serde(rename = "loop")]
+    loop_table: Option<RawLoop>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLoop {
+    checks: RawChecks,
+}
+
+/// `"any"`, or a list of exact commands.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawChecks {
+    Word(String),
+    List(Vec<String>),
+}
+
+const ANY: &str = "any";
+
+impl RawLoop {
+    /// The error never quotes a command.
+    fn check(self) -> Result<Checks, String> {
+        match self.checks {
+            RawChecks::Word(w) if w == ANY => Ok(Checks::Any),
+            RawChecks::Word(_) => Err(format!("loop checks must be {ANY:?} or a list of commands")),
+            RawChecks::List(list) => {
+                for (i, c) in list.iter().enumerate() {
+                    command_shape(c).map_err(|r| format!("loop checks[{i}]: {r}"))?;
+                }
+                Ok(Checks::List(list))
+            }
+        }
+    }
 }
 
 impl Workspaces {
@@ -128,11 +165,17 @@ impl Workspaces {
                     .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?,
                 None => None,
             };
+            let loop_checks = w
+                .loop_table
+                .map(RawLoop::check)
+                .transpose()
+                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
             list.push(Workspace {
                 name: w.name,
                 root,
                 repos,
                 agent,
+                loop_checks,
             });
         }
         Ok(Self { list })

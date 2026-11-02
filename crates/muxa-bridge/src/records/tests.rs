@@ -459,6 +459,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         root: root.clone(),
         repos: Vec::new(),
         agent: None,
+        loop_checks: None,
     };
     (dir, ws)
 }

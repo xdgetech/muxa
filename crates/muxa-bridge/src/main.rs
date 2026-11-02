@@ -9,6 +9,7 @@ mod convert;
 mod daemon;
 mod docs;
 mod lines;
+mod loops;
 mod records;
 mod server;
 mod sessions;

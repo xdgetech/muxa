@@ -9,6 +9,7 @@ use std::time::UNIX_EPOCH;
 use muxa_protocol::{DocInfo, DocKind};
 
 use crate::agents::{AgentDoc, PaneInfo, Registry};
+use crate::loops::check::REPORT as CHECK;
 use crate::task_records::{BRIEF, HANDOFF};
 
 /// Documents listed for one pane at most.
@@ -63,7 +64,7 @@ pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
         }));
     }
     let base = root.unwrap_or_else(|| PathBuf::from(&pane.path));
-    for path in [BRIEF, HANDOFF] {
+    for path in [BRIEF, HANDOFF, CHECK] {
         if let Some(doc) = task_file(&base, path)
             && listing.find(path).is_err()
         {
@@ -73,7 +74,7 @@ pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
     listing
 }
 
-/// A task's `TASK.md` or `HANDOFF.md` (ADR 0015, 0018), at the repo root or in
+/// A task's `TASK.md`, `HANDOFF.md` or `CHECK.md` (ADR 0015, 0018, 0019), at the repo root or in
 /// the pane's directory. git ignores `.muxa/`, and a task without a repo has no
 /// repo to list from.
 fn task_file(base: &Path, path: &str) -> Option<Doc> {
