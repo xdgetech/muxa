@@ -5,10 +5,10 @@
 Pre-alpha. The bridge, the terminal client, the iPad and iPhone app and the Android app work. The iOS app runs on a real iPad and iPhone; the Android app on phones and tablets. The store listings, screenshots, privacy policy and release settings are ready (`store/RELEASE.md`); neither app is published yet.
 
 What works today:
-- **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode, and speaks protocol v1 (`protocol/PROTOCOL.md`). Today it never takes part in window sizing; ADR 0020 (proposed) changes that.
+- **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode, and speaks protocol v1 (`protocol/PROTOCOL.md`). For a client that sends `viewport`, the watched pane's window follows the device in use, as tmux's `window-size latest` does for terminals (ADR 0020, proposed); for other clients it never takes part in window sizing.
 - **Terminal client** (`muxa-cli`): a reference client and end-to-end harness.
 - **iPad app:**
-  - one pane at its real size, scaled to fit; wide panes fit the width and scroll with the cursor (ADR 0004);
+  - one pane, sized for the iPad while it is in use (ADR 0020) and rendered at its real size, scaled to fit; wide panes fit the width and scroll with the cursor (ADR 0004);
   - saved hosts, one-time password setup of a restricted key, and host keys pinned on first use;
   - sessions grouped by repo, with each agent's state and its age;
   - the Agent / Terminal switch, and every keyboard shortcut in the README;
@@ -40,6 +40,7 @@ What works today:
   9. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
+- ADR 0020 (window size follows the device): the developer accepts or changes it, then checks it on the real server with a real iPad and laptop, and with tmux-agents. The store listings still say the desktop layout never changes.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
 - Android: two windows on two panes (multi-window).
 - Android: full R8 (renaming and optimization) for release builds, with a release-build test that connects over SSH. 1.0 only removes unused code (ADR 0014): BouncyCastle, sshj and JediTerm load classes by name.

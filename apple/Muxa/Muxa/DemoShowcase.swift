@@ -5,6 +5,8 @@ import MuxaProtocol
 /// `showcase` looks like real work, for Try the Demo and the store screenshots.
 struct DemoContent: Sendable {
     var sessions: [Session]
+    /// Panes whose window follows the device in use (ADR 0020).
+    var followers: Set<String>
     var conversation: [ChatEntry]
     var chatStatus: AgentState
     /// The repo the Reader shows.
@@ -27,12 +29,12 @@ struct DemoContent: Sendable {
     #endif
 
     static let tests = DemoContent(
-        sessions: DemoBridge.initialSessions, conversation: DemoBridge.conversation, chatStatus: .running,
+        sessions: DemoBridge.initialSessions, followers: DemoBridge.initialFollowers, conversation: DemoBridge.conversation, chatStatus: .running,
         root: "app", docs: DemoBridge.docs, changes: DemoBridge.changes,
         planUpdate: DemoBridge.planUpdate, diffUpdate: DemoBridge.diffUpdate, alertDelay: 4, tasks: .tests, screen: DemoBridge.screen(for:))
 
     static let showcase = DemoContent(
-        sessions: Showcase.sessions, conversation: Showcase.conversation, chatStatus: .waiting,
+        sessions: Showcase.sessions, followers: [], conversation: Showcase.conversation, chatStatus: .waiting,
         root: "billing", docs: Showcase.docs, changes: Showcase.changes,
         planUpdate: nil, diffUpdate: nil, alertDelay: 10, tasks: .showcase, screen: Showcase.screen(for:))
 }
