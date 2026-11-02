@@ -30,6 +30,7 @@ The `refresh-client -C` workaround for narrow-client plugins was considered and 
 | Name targets are ambiguous: `-t b` resolved to window `bash` in the current session, not to session `b`. Always target by id (`$n`, `@n`, `%n`). | `scripts/repro/name-targets.sh` |
 | A double-quoted argument with `\"`, `\$`, `\\` and `\ooo` escapes carries any text intact. `send-keys -H` passes raw bytes, including UTF-8. | `scripts/repro/input-encoding.sh` |
 | `new-session -e KEY=VALUE` (tmux 3.2+) reaches the pane's process byte for byte, through the same quoting. It overrides the global environment for that session only, leaves the global environment unchanged, and reaches later windows of the session. | `scripts/repro/session-env.sh` |
+| `respawn-pane -k -t %n -c DIR -e KEY=VALUE`, sent on a control client's stdin, replaces the pane's process in place. The pane id, the pane's size and the window layout stay the same. No window or pane is selected, and no attached client moves. Without a command it reruns `#{pane_start_command}`. `-e` and `-c` reach the new process, and the session's `new-session -e` values stay. A pane started as a plain shell has an empty start command, so it gets a fresh shell: an agent that was typed into it must be typed again. | `scripts/repro/respawn-pane.sh` |
 
 ## Answered in Phase 3
 
