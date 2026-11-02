@@ -73,6 +73,8 @@ sealed interface Request {
         val repo: String? = null,
         val branch: String? = null,
         val base: String? = null,
+        /** Also start a Task Loop (capability `task-loop`, ADR 0019). */
+        val loop: LoopSpec? = null,
     ) : Request
 
     /** Set a task record's status. [rev] is the one the client saw; a stale one fails with `conflict`. */
@@ -85,6 +87,13 @@ sealed interface Request {
      */
     @Serializable
     data class RestartAgent(override val id: Long, val task: String, val force: Boolean = false) : Request
+
+    /** Start a task's Task Loop again (capability `task-loop`, ADR 0019); [reset] counts attempts from zero. A `task-saved` comes first. */
+    @Serializable
+    data class StartLoop(override val id: Long, val task: String, val loop: LoopSpec, val reset: Boolean = false) : Request
+
+    /** Stop a task's Task Loop (capability `task-loop`). A `task-saved` comes first. */
+    @Serializable data class StopLoop(override val id: Long, val task: String) : Request
 
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request

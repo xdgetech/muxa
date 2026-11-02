@@ -45,6 +45,7 @@ object Wire {
         kind<Message.TaskCreated>("task-created"),
         kind<Message.TaskList>("task-list"),
         kind<Message.TaskSaved>("task-saved"),
+        kind<Message.TasksChanged>("tasks-changed"),
         kind<Message.Bye>("bye"),
     )
 
@@ -74,6 +75,8 @@ object Wire {
         kind<Request.CreateTask>("create-task"),
         kind<Request.UpdateTask>("update-task"),
         kind<Request.RestartAgent>("restart-agent"),
+        kind<Request.StartLoop>("start-loop"),
+        kind<Request.StopLoop>("stop-loop"),
         kind<Request.Bye>("bye"),
     )
 

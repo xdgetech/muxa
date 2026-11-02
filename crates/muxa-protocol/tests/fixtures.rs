@@ -26,12 +26,12 @@ fn round_trip<T: DeserializeOwned + Serialize>(file: &str) -> usize {
 
 #[test]
 fn requests_round_trip() {
-    assert_eq!(round_trip::<Request>("requests.jsonl"), 29);
+    assert_eq!(round_trip::<Request>("requests.jsonl"), 33);
 }
 
 #[test]
 fn messages_round_trip() {
-    assert_eq!(round_trip::<Message>("messages.jsonl"), 36);
+    assert_eq!(round_trip::<Message>("messages.jsonl"), 39);
 }
 
 #[test]
@@ -47,4 +47,14 @@ fn bytes_are_base64() {
 fn unknown_fields_are_ignored_and_unknown_types_rejected() {
     assert!(serde_json::from_str::<Request>(r#"{"type":"ping","id":1,"later":true}"#).is_ok());
     assert!(serde_json::from_str::<Request>(r#"{"type":"rm-rf","id":1}"#).is_err());
+}
+
+#[test]
+fn workspace_checks_are_any_or_a_list() {
+    use muxa_protocol::{WorkspaceChecks, WorkspaceInfo};
+    let any: WorkspaceInfo = serde_json::from_str(r#"{"name":"w","checks":"any"}"#).unwrap();
+    assert_eq!(any.checks, Some(WorkspaceChecks::Any));
+    let none: WorkspaceInfo = serde_json::from_str(r#"{"name":"w"}"#).unwrap();
+    assert_eq!(none.checks, None);
+    assert!(serde_json::from_str::<WorkspaceInfo>(r#"{"name":"w","checks":"all"}"#).is_err());
 }

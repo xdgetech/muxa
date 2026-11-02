@@ -16,3 +16,8 @@ dependencies {
     testImplementation(libs.coroutines.test)
 }
 
+tasks.test {
+    // protocol/fixtures/inbox pins the Inbox rule shared with Swift and muxa-cli.
+    systemProperty("muxa.fixtures", rootDir.resolve("../protocol/fixtures").absolutePath)
+}
+

@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use tokio::task::JoinHandle;
 
-use muxa_protocol::{ErrorBody, ErrorCode, Message, TaskStatus, WorkspaceInfo};
+use muxa_protocol::{ErrorBody, ErrorCode, Message, TaskStatus};
 use muxa_tmux::{Role, Session};
 
 use crate::convert::{self, error_body};
@@ -157,13 +157,7 @@ pub async fn list(config: &Config, request: u64) -> Result<Message, ErrorBody> {
         let (records, truncated) = cap(records, MAX_LIST);
         Ok(Message::TaskList {
             tasks: request,
-            workspaces: workspaces
-                .all()
-                .iter()
-                .map(|w| WorkspaceInfo {
-                    name: w.name.clone(),
-                })
-                .collect(),
+            workspaces: workspaces.all().iter().map(convert::workspace).collect(),
             entries: records.into_iter().map(convert::task_record).collect(),
             truncated,
         })

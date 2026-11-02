@@ -25,7 +25,7 @@ struct FixtureTests {
 
     @Test func requestsRoundTrip() throws {
         let lines = try Self.lines("requests.jsonl")
-        #expect(lines.count == 29)
+        #expect(lines.count == 33)
         for line in lines {
             let request = try Wire.decodeRequest(line)
             let again = try Wire.encode(request)
@@ -35,7 +35,7 @@ struct FixtureTests {
 
     @Test func messagesRoundTrip() throws {
         let lines = try Self.lines("messages.jsonl")
-        #expect(lines.count == 36)
+        #expect(lines.count == 39)
         for line in lines {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -62,6 +62,17 @@ struct FixtureTests {
         #expect(try JSONDecoder().decode(TaskStatus.self, from: Data(#""blocked""#.utf8)) == .other("blocked"))
         #expect(try JSONDecoder().decode(RunReason.self, from: Data(#""resume""#.utf8)) == .other("resume"))
         #expect(try JSONDecoder().decode(Role.self, from: Data(#""observer""#.utf8)) == .unknown)
+        #expect(try JSONDecoder().decode(LoopState.self, from: Data(#""resting""#.utf8)) == .other("resting"))
+        #expect(try JSONDecoder().decode(LoopReason.self, from: Data(#""quota""#.utf8)) == .other("quota"))
+        #expect(try JSONDecoder().decode(LoopReason.self, from: Data(#""no-agent""#.utf8)) == .noAgent)
+    }
+
+    @Test func workspaceChecksAreAnyOrAList() throws {
+        let decode = { (json: String) in try JSONDecoder().decode(WorkspaceInfo.self, from: Data(json.utf8)) }
+        #expect(try decode(#"{"name":"w","checks":"any"}"#).checks == .any)
+        #expect(try decode(#"{"name":"w","checks":["make check"]}"#).checks == .list(["make check"]))
+        #expect(try decode(#"{"name":"w"}"#).checks == nil)
+        #expect(throws: DecodingError.self) { try decode(#"{"name":"w","checks":"all"}"#) }
     }
 
     @Test func bytesAreBase64() throws {

@@ -27,3 +27,7 @@
 {"type":"update-task","id":28,"task":"t-7f3a2c","rev":3,"status":"done"}
 {"type":"restart-agent","id":29,"task":"t-7f3a2c"}
 {"type":"restart-agent","id":30,"task":"t-7f3a2c","force":true}
+{"type":"create-task","id":31,"workspace":"app","title":"Fix the flaky upload test","goal":"Make the upload test pass every time.","repo":"/work/app","branch":"fix/flaky-upload","loop":{"check":"make check","maxAttempts":5,"timeout":900}}
+{"type":"start-loop","id":32,"task":"t-7f3a2c","loop":{"check":"make check"},"reset":true}
+{"type":"start-loop","id":33,"task":"t-7f3a2c","loop":{"check":"cargo test --workspace","maxAttempts":3}}
+{"type":"stop-loop","id":34,"task":"t-7f3a2c"}

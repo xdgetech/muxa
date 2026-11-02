@@ -1,3 +1,4 @@
+import Foundation
 import MuxaProtocol
 import Testing
 
@@ -19,6 +20,39 @@ struct InboxTests {
 
     func group(_ record: TaskRecord, _ sessions: [Session]) -> InboxGroup {
         InboxItem(record: record, sessions: sessions).group
+    }
+
+    /// `protocol/fixtures/inbox` pins the rule shared with `muxa-cli` and `Inbox.kt`.
+    @Test func groupsMatchTheSharedFixture() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../protocol/fixtures/inbox/groups.jsonl").standardized
+        let names: [String: InboxGroup] = [
+            "needs-attention": .needsAttention, "ready-for-review": .readyForReview, "running": .running,
+            "no-agent": .noAgent, "closed": .closed,
+        ]
+        struct Case: Decodable {
+            var name: String
+            var record: TaskRecord
+            var sessions: [Session]
+            var group: String
+        }
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        #expect(lines.count == 23)
+        for line in lines {
+            let c = try JSONDecoder().decode(Case.self, from: Data(line.utf8))
+            #expect(group(c.record, c.sessions) == names[c.group], "\(c.name)")
+        }
+    }
+
+    @Test func aLoopOfAnUnknownStateFollowsTheAgent() {
+        var record = Self.record("a")
+        record.loop = TaskLoop(
+            check: "make check", maxAttempts: 3, timeout: 600, state: .other("resting"), attempts: 0,
+            armedAt: 1, since: 1)
+        #expect(group(record, [Self.session("a", .running)]) == .running)
+        record.loop?.state = .stopped
+        record.loop?.reason = .other("quota")
+        #expect(group(record, [Self.session("a", .running)]) == .needsAttention)
     }
 
     @Test func theAgentStateDecidesTheGroupOfAnOpenTask() {

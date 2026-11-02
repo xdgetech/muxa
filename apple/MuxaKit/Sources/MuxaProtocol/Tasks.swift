@@ -28,12 +28,16 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
     /// The agents that worked on the task, oldest first (ADR 0018). Recorded only
     /// while a bridge started or restarted them; empty when none was.
     public var runs: [AgentRun]
+    /// The task's Task Loop; nil when it has none (ADR 0019).
+    public var loop: TaskLoop?
+    /// A start or restart prompt the host still waits to type (ADR 0019).
+    public var pendingPrompt: PendingPrompt?
 
     public init(
         id: String, rev: UInt64, workspace: String, title: String, goal: String, status: TaskStatus,
         createdAt: UInt64, updatedAt: UInt64, project: String? = nil, repo: String? = nil,
         branch: String? = nil, dir: String? = nil, session: String? = nil, note: String? = nil,
-        runs: [AgentRun] = []
+        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil
     ) {
         self.id = id
         self.rev = rev
@@ -50,11 +54,13 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         self.session = session
         self.note = note
         self.runs = runs
+        self.loop = loop
+        self.pendingPrompt = pendingPrompt
     }
 
     private enum Key: String, CodingKey {
         case id, rev, workspace, title, goal, status, createdAt, updatedAt
-        case project, repo, branch, dir, session, note, runs
+        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -74,6 +80,8 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         session = try c.decodeIfPresent(String.self, forKey: .session)
         note = try c.decodeIfPresent(String.self, forKey: .note)
         runs = try c.decodeIfPresent([AgentRun].self, forKey: .runs) ?? []
+        loop = try c.decodeIfPresent(TaskLoop.self, forKey: .loop)
+        pendingPrompt = try c.decodeIfPresent(PendingPrompt.self, forKey: .pendingPrompt)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -93,6 +101,8 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         try c.encodeIfPresent(session, forKey: .session)
         try c.encodeIfPresent(note, forKey: .note)
         if !runs.isEmpty { try c.encode(runs, forKey: .runs) }
+        try c.encodeIfPresent(loop, forKey: .loop)
+        try c.encodeIfPresent(pendingPrompt, forKey: .pendingPrompt)
     }
 }
 
@@ -162,8 +172,9 @@ extension RunReason: Codable {
     }
 }
 
-/// Set by the user; separate from the agent's state. A status added by a newer
-/// bridge decodes as `other`, so the record still reads.
+/// Set by the user; separate from the agent's state. A passing Task Loop moves
+/// `open` to `review` (ADR 0019). A status added by a newer bridge decodes as
+/// `other`, so the record still reads.
 public enum TaskStatus: Equatable, Hashable, Sendable {
     case open, review, done, dropped
     case other(String)
@@ -203,11 +214,14 @@ extension TaskStatus: Codable {
 /// A workspace from the host's config; `create-task` names one.
 public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var name: String
+    /// The check commands a Task Loop may run here; nil means no loops.
+    public var checks: WorkspaceChecks?
 
     public var id: String { name }
 
-    public init(name: String) {
+    public init(name: String, checks: WorkspaceChecks? = nil) {
         self.name = name
+        self.checks = checks
     }
 }
 

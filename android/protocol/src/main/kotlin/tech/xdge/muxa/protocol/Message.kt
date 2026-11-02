@@ -139,9 +139,13 @@ sealed interface Message {
         val truncated: Boolean = false,
     ) : Message
 
-    /** The record a `create-task` or `update-task` wrote, just before its `result`. */
+    /** The record a task request wrote, just before its `result`. */
     @Serializable
     data class TaskSaved(val task: Long, val record: TaskRecord) : Message
+
+    /** A task record changed on the host: send `list-tasks` again (capability `tasks-changed`). */
+    @Serializable
+    data object TasksChanged : Message
 
     /** The bridge is exiting. */
     @Serializable

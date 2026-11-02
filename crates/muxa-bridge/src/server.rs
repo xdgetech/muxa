@@ -28,6 +28,10 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 /// After the client leaves: a launch (60 s) and the wait for an idle agent (30 s).
 const PENDING_LIMIT: Duration = Duration::from_secs(100);
+/// The Task Loop runs only in the host daemon (ADR 0019), which this bridge
+/// does not reach yet.
+const NO_DAEMON: &str =
+    "The Task Loop needs the muxa daemon. On the host, run: muxa-bridge daemon install";
 
 pub struct Config {
     pub tmux: Options,
@@ -551,6 +555,13 @@ impl Worker {
                 let saved = task_records::update(&self.records, id, task, rev, status).await;
                 return Some(self.send_then_ok(saved).await);
             }
+            Request::CreateTask {
+                r#loop: Some(_), ..
+            }
+            | Request::StartLoop { .. }
+            | Request::StopLoop { .. } => {
+                return Some(Err(error_body(ErrorCode::Unsupported, NO_DAEMON)));
+            }
             // A launch takes seconds; keystrokes must not wait for it.
             Request::CreateTask {
                 id,
@@ -561,6 +572,7 @@ impl Worker {
                 repo,
                 branch,
                 base,
+                r#loop: None,
             } => {
                 let env = task_records::Env {
                     client: Arc::clone(&self.client),

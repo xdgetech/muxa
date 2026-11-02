@@ -7,15 +7,20 @@ mod view;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{Role, Session};
+use muxa_protocol::{LoopSpec, Role, Session};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
        muxa-cli [--bridge CMD] tasks [--json]
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
-                [--project P] [--repo PATH --branch B [--base REF]] [--json]
+                [--project P] [--repo PATH --branch B [--base REF]]
+                [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task done ID
        muxa-cli [--bridge CMD] task restart ID [--force] [--json]
+       muxa-cli [--bridge CMD] task loop start ID --check CMD
+                [--max-attempts N] [--check-timeout S] [--reset] [--json]
+       muxa-cli [--bridge CMD] task loop stop ID [--json]
+       muxa-cli [--bridge CMD] task stop-loop (ID | --all) [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -32,7 +37,20 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   task done ID   marks a task record done
   task restart ID
                  restarts the task's agent in the same pane, after a handoff
-                 in .muxa/HANDOFF.md; --force also while the agent runs";
+                 in .muxa/HANDOFF.md; --force also while the agent runs
+  --check CMD    a Task Loop: the host runs CMD after each of the agent's
+                 turns, until it exits 0 (ADR 0019). It must be one of the
+                 workspace's checks, and the host needs the muxa daemon
+  --max-attempts N
+                 failed checks before the loop stops: 1 to 10 (default 3)
+  --check-timeout S
+                 seconds one check may run: 10 to 3600 (default 600)
+  task loop start ID
+                 starts the task's loop again; --reset counts attempts from 0
+  task loop stop ID, task stop-loop ID
+                 stops the task's loop
+  task stop-loop --all
+                 stops every loop that is armed, checking or paused";
 
 enum Cmd {
     List,
@@ -54,6 +72,19 @@ enum Cmd {
         force: bool,
         json: bool,
     },
+    StartLoop {
+        task: String,
+        spec: LoopSpec,
+        reset: bool,
+        json: bool,
+    },
+    StopLoop {
+        task: String,
+        json: bool,
+    },
+    StopAllLoops {
+        json: bool,
+    },
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
@@ -61,7 +92,9 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut p = lexopt::Parser::from_env();
     let (mut bridge, mut words) = ("muxa-bridge".to_string(), Vec::new());
     let (mut read_only, mut seconds, mut json, mut force) = (false, None, false, false);
+    let (mut reset, mut all) = (false, false);
     let mut new = tasks::NewTask::default();
+    let mut check = tasks::LoopFlags::default();
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -76,6 +109,11 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("repo") => new.repo = Some(p.value()?.string()?),
             Long("branch") => new.branch = Some(p.value()?.string()?),
             Long("base") => new.base = Some(p.value()?.string()?),
+            Long("check") => check.check = Some(p.value()?.string()?),
+            Long("max-attempts") => check.max_attempts = Some(p.value()?.parse()?),
+            Long("check-timeout") => check.timeout = Some(p.value()?.parse()?),
+            Long("reset") => reset = true,
+            Long("all") => all = true,
             Long("version") => {
                 println!("muxa-cli {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
@@ -97,9 +135,30 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
         },
         [w] if w == "tasks" => Cmd::Tasks { json },
         [w, n] if w == "task" && n == "new" => Cmd::NewTask {
-            new: new.checked()?,
+            new: tasks::NewTask {
+                r#loop: check.spec()?,
+                ..new
+            }
+            .checked()?,
             json,
         },
+        [w, l, s, id] if w == "task" && l == "loop" && s == "start" => Cmd::StartLoop {
+            task: id.clone(),
+            spec: check
+                .spec()?
+                .ok_or_else(|| lexopt::Error::Custom("task loop start needs --check".into()))?,
+            reset,
+            json,
+        },
+        [w, l, s, id] if w == "task" && l == "loop" && s == "stop" => Cmd::StopLoop {
+            task: id.clone(),
+            json,
+        },
+        [w, s, id] if w == "task" && s == "stop-loop" && !all => Cmd::StopLoop {
+            task: id.clone(),
+            json,
+        },
+        [w, s] if w == "task" && s == "stop-loop" && all => Cmd::StopAllLoops { json },
         [w, d, id] if w == "task" && d == "done" => Cmd::Done(id.clone()),
         [w, r, id] if w == "task" && r == "restart" => Cmd::Restart {
             task: id.clone(),
@@ -166,6 +225,14 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Done(id) => tasks::done(&mut conn, &id).await,
         Cmd::Restart { task, force, json } => tasks::restart(conn, &task, force, json).await,
+        Cmd::StartLoop {
+            task,
+            spec,
+            reset,
+            json,
+        } => tasks::start_loop(&mut conn, &task, spec, reset, json).await,
+        Cmd::StopLoop { task, json } => tasks::stop_loop(&mut conn, &task, json).await,
+        Cmd::StopAllLoops { json } => tasks::stop_all_loops(&mut conn, json).await,
     }
 }
 

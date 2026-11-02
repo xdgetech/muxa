@@ -77,6 +77,17 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         session: r.session,
         note: r.note,
         runs: r.runs.into_iter().map(agent_run).collect(),
+        // The store keeps neither yet; ADR 0019's P1b and P2 add them.
+        r#loop: None,
+        pending_prompt: None,
+    }
+}
+
+/// `checks` stays absent until the host's `[workspace.loop]` is read (ADR 0019, P2).
+pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
+    wire::WorkspaceInfo {
+        name: w.name.clone(),
+        checks: None,
     }
 }
 

@@ -156,6 +156,9 @@ pub enum Request {
         /// Where a new branch starts; the repo's default branch when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         base: Option<String>,
+        /// Start a Task Loop with the agent (capability `task-loop`, ADR 0019).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        r#loop: Option<LoopSpec>,
     },
     /// Set a task record's status. Fails with `conflict` when `rev` is not the
     /// record's current one. A `task-saved` comes before the `result`.
@@ -176,6 +179,24 @@ pub enum Request {
         task: String,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         force: bool,
+    },
+    /// Start or restart the Task Loop of a task (capability `task-loop`,
+    /// ADR 0019). A `task-saved` comes before the `result`.
+    StartLoop {
+        id: u64,
+        /// The record's id, e.g. `t-7f3a2c`.
+        task: String,
+        r#loop: LoopSpec,
+        /// Count the attempts from zero again.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        reset: bool,
+    },
+    /// Stop the Task Loop of a task (capability `task-loop`). A `task-saved`
+    /// comes before the `result`.
+    StopLoop {
+        id: u64,
+        /// The record's id, e.g. `t-7f3a2c`.
+        task: String,
     },
     /// The client is leaving; the bridge exits.
     Bye {
@@ -211,6 +232,8 @@ impl Request {
             | Request::CreateTask { id, .. }
             | Request::UpdateTask { id, .. }
             | Request::RestartAgent { id, .. }
+            | Request::StartLoop { id, .. }
+            | Request::StopLoop { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -367,8 +390,11 @@ pub enum Message {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         truncated: bool,
     },
-    /// The record a `create-task` or `update-task` wrote, sent just before its `result`.
+    /// The record a task request wrote, sent just before its `result`.
     TaskSaved { task: u64, record: TaskRecord },
+    /// A task record changed on the host: send `list-tasks` again (capability
+    /// `tasks-changed`).
+    TasksChanged,
     /// The bridge is exiting.
     Bye { reason: String },
 }
@@ -410,6 +436,121 @@ pub struct TaskRecord {
     /// only while a bridge started or restarted them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub runs: Vec<AgentRun>,
+    /// The task's Task Loop, absent when it has none (ADR 0019).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#loop: Option<Box<TaskLoop>>,
+    /// A start or restart prompt the host still waits to type (ADR 0019).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_prompt: Option<PendingPrompt>,
+}
+
+/// What a client asks for when it starts a Task Loop. The host fills in the
+/// defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoopSpec {
+    /// A shell command, run in the task's `dir`; one of the workspace's `checks`.
+    pub check: String,
+    /// Failed checks before the loop stops: 1 to 10, default 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<u32>,
+    /// Seconds one check may run: 10 to 3600, default 600.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
+}
+
+/// A task's Task Loop: the host runs `check` after each finished turn of the
+/// agent, and types a fail prompt until it passes (ADR 0019).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskLoop {
+    pub check: String,
+    pub max_attempts: u32,
+    /// Seconds.
+    pub timeout: u64,
+    pub state: LoopState,
+    /// Failed checks so far.
+    pub attempts: u32,
+    /// Epoch seconds: when the loop started or last typed a prompt.
+    pub armed_at: u64,
+    /// Epoch seconds of the last state change.
+    pub since: u64,
+    /// Set when the state is `paused` or `stopped`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<LoopReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_check: Option<LoopCheck>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LoopState {
+    /// Waits for the agent's next finished turn.
+    Armed,
+    Checking,
+    /// The agent waits for the user; the loop goes on after the answer.
+    Paused,
+    Passed,
+    Stopped,
+}
+
+/// Why a loop is `paused` or `stopped`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LoopReason {
+    /// The agent waits for the user (paused).
+    Waiting,
+    /// `maxAttempts` checks failed.
+    Limit,
+    /// A check ran longer than `timeout`.
+    Timeout,
+    /// The agent's state is `error`.
+    Error,
+    /// No linked session, no live agent pane, or a shell in the foreground.
+    NoAgent,
+    /// A prompt could not be typed within 30 seconds.
+    NotSent,
+    /// The agent did not take the typed prompt.
+    Stalled,
+    /// The user set the status to anything but `open`.
+    Status,
+    /// The user stopped it.
+    User,
+}
+
+/// The last check a loop ran.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoopCheck {
+    pub attempt: u32,
+    /// Absent when the check timed out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit: Option<i32>,
+    /// How long it ran.
+    pub seconds: u64,
+    /// Epoch seconds when it ended.
+    pub at: u64,
+}
+
+/// A prompt the host waits to type into the task's agent, kept in the record
+/// so that the wait survives a restart of the host process.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingPrompt {
+    pub kind: PendingPromptKind,
+    /// Epoch seconds when the wait began.
+    pub since: u64,
+    /// The `id` of the run the prompt is for.
+    pub run: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PendingPromptKind {
+    /// The start prompt of `create-task`.
+    Start,
+    /// The prompt of `restart-agent`.
+    Restart,
 }
 
 /// One agent that worked on a task, as the bridge started or restarted it.
@@ -445,7 +586,8 @@ pub enum RunReason {
     Restart,
 }
 
-/// Set by the user; separate from the agent's state.
+/// Set by the user; separate from the agent's state. A passing Task Loop moves
+/// `open` to `review` (ADR 0019).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
@@ -460,6 +602,45 @@ pub enum TaskStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceInfo {
     pub name: String,
+    /// The check commands a Task Loop may run here; absent means no loops.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checks: Option<WorkspaceChecks>,
+}
+
+/// `"any"` or a list of exact commands, from the host's `[workspace.loop]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceChecks {
+    /// Any command, at most 4096 bytes, with no control character.
+    Any,
+    /// Only these commands, exactly.
+    List(Vec<String>),
+}
+
+impl Serialize for WorkspaceChecks {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            WorkspaceChecks::Any => s.serialize_str("any"),
+            WorkspaceChecks::List(list) => list.serialize(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for WorkspaceChecks {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Word(String),
+            List(Vec<String>),
+        }
+        match Raw::deserialize(d)? {
+            Raw::Word(w) if w == "any" => Ok(WorkspaceChecks::Any),
+            Raw::Word(w) => Err(serde::de::Error::custom(format!(
+                "checks must be \"any\" or a list, not {w:?}"
+            ))),
+            Raw::List(list) => Ok(WorkspaceChecks::List(list)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
