@@ -53,6 +53,7 @@ macro_rules! both {
 }
 
 both!(
+    another_writer_s_change_is_announced,
     a_task_without_a_repo_gets_its_own_directory_and_session,
     a_fresh_done_gets_the_start_prompt,
     a_repo_task_runs_in_its_worktree_with_task_md_excluded,
@@ -413,6 +414,43 @@ async fn a_branch_that_runs_an_open_task_is_refused(mode: Mode) {
     let (second, result) = create(&mut bridge, branch).await;
     ok(&result);
     assert_eq!(option(&server, "feat-x", "@muxa_task"), second.unwrap().id);
+}
+
+/// The next `tasks-changed` within `wait`.
+async fn tasks_changed(bridge: &mut Bridge, wait: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + wait;
+    while let Some(left) = deadline.checked_duration_since(tokio::time::Instant::now()) {
+        match bridge.event(left).await {
+            Some(Message::TasksChanged) => return true,
+            Some(_) => {}
+            None => return false,
+        }
+    }
+    false
+}
+
+/// A record written by another client reaches this one as `tasks-changed`
+/// (ADR 0019), whoever wrote it.
+async fn another_writer_s_change_is_announced(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("changed", mode);
+    let flags = ["--task-launcher", "builtin", "--task-command", AGENT];
+    let mut watching = host.bridge(&server, &flags).await;
+    let mut writer = host.bridge(&server, &flags).await;
+    // The first look sees the directory as it is; nothing is announced.
+    assert!(!tasks_changed(&mut watching, Duration::from_millis(2500)).await);
+
+    let (r, result) = create(&mut writer, json!({})).await;
+    ok(&result);
+    assert!(tasks_changed(&mut watching, Duration::from_secs(5)).await);
+    let r = r.unwrap();
+    let (_, result) = send(
+        &mut writer,
+        json!({"type": "update-task", "task": r.id, "rev": r.rev, "status": "review"}),
+    )
+    .await;
+    ok(&result);
+    assert!(tasks_changed(&mut watching, Duration::from_secs(5)).await);
 }
 
 async fn a_stale_rev_is_a_conflict_and_changes_nothing(mode: Mode) {

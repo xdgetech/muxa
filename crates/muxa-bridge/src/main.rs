@@ -14,6 +14,7 @@ mod server;
 mod sessions;
 mod states;
 mod task_records;
+mod task_watch;
 mod tasks;
 mod utc;
 mod watch;

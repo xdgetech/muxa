@@ -104,6 +104,7 @@ where
     if config.records.enabled() {
         capabilities.push("task-records".into());
         capabilities.push("task-handoff".into());
+        capabilities.push("tasks-changed".into());
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {
@@ -148,6 +149,11 @@ where
     let images = tokio::spawn(ImageTask::new(Arc::clone(&client), out.clone(), image_rx).run());
     let (change_tx, change_rx) = mpsc::channel(8);
     let changes = tokio::spawn(ChangeTask::new(Arc::clone(&client), out.clone(), change_rx).run());
+    let task_watch = config
+        .records
+        .state_dir
+        .clone()
+        .map(|dir| tokio::spawn(crate::task_watch::run(dir, out.clone())));
     let states = tokio::spawn(crate::states::run(
         Arc::clone(&client),
         out.clone(),
@@ -182,6 +188,9 @@ where
     images.abort();
     changes.abort();
     states.abort();
+    if let Some(w) = task_watch {
+        w.abort();
+    }
     if end == End::Idle {
         let _ = out
             .send(Message::Bye {
