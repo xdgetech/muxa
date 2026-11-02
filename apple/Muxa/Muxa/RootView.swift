@@ -6,6 +6,7 @@ import SwiftUI
 /// a stack, and an open pane is pushed.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.phoneLayout) private var phoneLayout
     @State private var columns: NavigationSplitViewVisibility = .all
     /// Collapsed, `columns` is ignored; this picks the column instead.
     @State private var compactColumn: NavigationSplitViewColumn = .sidebar
@@ -28,6 +29,8 @@ struct RootView: View {
                 .animation(.snappy, value: model.alert)
         }
         .navigationSplitViewStyle(.balanced)
+        .onAppear { model.phoneInbox = phoneLayout }
+        .onChange(of: phoneLayout) { _, value in model.phoneInbox = value }
         .onChange(of: model.session.sessions) { old, new in
             model.sessionsChanged(from: old, to: new)
         }
@@ -40,6 +43,9 @@ struct RootView: View {
         .onChange(of: model.detailRequest) { compactColumn = .detail }
         .onChange(of: model.isConnected) { _, connected in
             if !connected {
+                model.inboxSnoozes = [:]
+                model.showTasks = false
+                model.returnToInbox = false
                 columns = .all
                 compactColumn = .sidebar
             }
@@ -92,7 +98,7 @@ struct RootView: View {
         } message: {
             Text(model.closeError ?? "")
         }
-        .fullScreenCover(isPresented: $model.showReader, onDismiss: model.refocusPane) {
+        .fullScreenCover(isPresented: $model.showReader, onDismiss: model.readerClosed) {
             ReaderScreen()
         }
     }

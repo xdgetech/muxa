@@ -49,10 +49,11 @@ struct SessionSwitcher: View {
     private var matches: [Session] {
         let all = model.visibleSessions
         guard !query.isEmpty else { return all }
-        return all.filter {
-            $0.name.localizedCaseInsensitiveContains(query)
-                || ($0.repo ?? "").localizedCaseInsensitiveContains(query)
-                || ($0.branch ?? "").localizedCaseInsensitiveContains(query)
+        return all.filter { session in
+            session.name.localizedCaseInsensitiveContains(query)
+                || (session.repo ?? "").localizedCaseInsensitiveContains(query)
+                || (session.branch ?? "").localizedCaseInsensitiveContains(query)
+                || (model.session.taskRecords.first { r in r.id == session.taskId }?.title ?? "").localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -63,22 +64,32 @@ struct SessionSwitcher: View {
 }
 
 struct SessionRow: View {
+    @Environment(AppModel.self) private var model
     let session: Session
     let current: Bool
     /// Shown as its Cmd+number shortcut when it has one.
     var number: Int?
 
     var body: some View {
+        let item = session.taskId.flatMap { model.inboxItem($0) }
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.name).font(.headline)
+                Text(item?.record.title ?? session.name).font(.headline)
                 // The repo is the section header; the branch tells sessions apart.
-                if let detail = [session.branch, session.task].compactMap({ $0 }).joined(separator: " · ").nonEmpty {
+                if let detail = [item == nil ? nil : session.name, session.branch, session.task].compactMap({ $0 }).joined(separator: " · ").nonEmpty {
                     Text(detail).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
-            if let pane = session.defaultPane {
+            if let item {
+                VStack(alignment: .trailing) {
+                    Text(item.group.title).font(.caption)
+                    if item.group != .closed, let since = item.need == .loop ? item.record.loop?.since : item.agent?.since {
+                        Text(AgentBadge.age(since)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    LoopBadge(record: item.record)
+                }
+            } else if let pane = session.defaultPane {
                 AgentBadge(pane: pane)
             }
             if current {
@@ -124,7 +135,7 @@ struct AgentBadge: View {
     }
 
 
-    private static func age(_ since: UInt64) -> String {
+    static func age(_ since: UInt64) -> String {
         let seconds = max(0, Int(Date().timeIntervalSince1970) - Int(since))
         switch seconds {
         case ..<60: return "\(seconds)s"

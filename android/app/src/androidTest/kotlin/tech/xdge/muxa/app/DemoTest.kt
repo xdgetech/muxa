@@ -54,6 +54,7 @@ class DemoTest {
             .putExtra(MainActivity.EXTRA_DEMO_ALERTS, alerts)
             .putExtra(MainActivity.EXTRA_NO_TASK_RECORDS, !taskRecords)
         scenario = ActivityScenario.launch(intent)
+        compose.leaveInitialInbox()
     }
 
     @After

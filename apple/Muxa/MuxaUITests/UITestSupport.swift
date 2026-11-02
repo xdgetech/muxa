@@ -2,6 +2,18 @@ import XCTest
 
 /// Helpers shared by the UI tests.
 extension XCTestCase {
+    /// Pane tests explicitly leave the phone's initial Inbox before exercising Chat.
+    @MainActor
+    func leaveInitialInbox(_ app: XCUIApplication, force: Bool = false) {
+        guard force || app.launchArguments.contains("-demo") else { return }
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.navigationBars["Inbox"].exists || app.descendants(matching: .any)["composer"].firstMatch.exists
+                || app.descendants(matching: .any)["pane"].firstMatch.exists
+        }, object: app)
+        _ = XCTWaiter.wait(for: [ready], timeout: 10)
+        if app.navigationBars["Inbox"].exists { tapWhenReady(app.buttons["Close"]) }
+    }
+
     /// Set MUXA_SCREENSHOT_DIR (TEST_RUNNER_MUXA_SCREENSHOT_DIR for xcodebuild) to keep screenshots.
     func save(_ name: String) {
         guard let dir = ProcessInfo.processInfo.environment["MUXA_SCREENSHOT_DIR"] else { return }

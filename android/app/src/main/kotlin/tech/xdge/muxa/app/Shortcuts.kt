@@ -8,6 +8,24 @@ import android.view.KeyEvent
  */
 fun AppModel.shortcut(event: KeyEvent): Boolean {
     if (event.action != KeyEvent.ACTION_DOWN || !event.isCtrlPressed || !event.isShiftPressed) return false
+    if (event.keyCode == KeyEvent.KEYCODE_T) {
+        if (showTasks) closeTasks() else showInbox()
+        return true
+    }
+    if (showTasks) {
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_N -> startNewTaskRecord()
+            KeyEvent.KEYCODE_L -> { inboxList = !inboxList; selectedTask = null }
+            KeyEvent.KEYCODE_DPAD_DOWN -> if (!inboxList && selectedTask == null) stepInbox(1)
+            KeyEvent.KEYCODE_DPAD_UP -> if (!inboxList && selectedTask == null) stepInbox(-1)
+            KeyEvent.KEYCODE_S -> if (!inboxList && selectedTask == null && !inboxEnded) snoozeInbox()
+            KeyEvent.KEYCODE_O -> if (!inboxList && selectedTask == null && !inboxEnded) {
+                val item = inboxQueue.firstOrNull { it.record.id == inboxFocus } ?: inboxQueue.firstOrNull()
+                if (item != null) openTask(item.record, if (state.canChat && item.agentPane != null) AppModel.PaneView.CHAT else AppModel.PaneView.AGENT)
+            }
+        }
+        return true
+    }
     when (event.keyCode) {
         KeyEvent.KEYCODE_K -> showSwitcher = true
         KeyEvent.KEYCODE_N -> startNewTask()

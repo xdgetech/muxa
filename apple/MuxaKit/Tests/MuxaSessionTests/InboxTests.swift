@@ -35,11 +35,13 @@ struct InboxTests {
             var record: TaskRecord
             var sessions: [Session]
             var group: String
+            var need: String
         }
         let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
-        #expect(lines.count == 23)
+        #expect(lines.count == 26)
         for line in lines {
             let c = try JSONDecoder().decode(Case.self, from: Data(line.utf8))
+            #expect(InboxItem(record: c.record, sessions: c.sessions).need.rawValue == c.need, "\(c.name)")
             #expect(group(c.record, c.sessions) == names[c.group], "\(c.name)")
         }
     }
@@ -85,6 +87,23 @@ struct InboxTests {
         let item = InboxItem(record: Self.record("a"), sessions: [Self.session("a", .waiting, role: .unknown)])
         #expect(item.group == .needsAttention)
         #expect(item.agent?.since == 100)
+    }
+
+    @Test func snoozeIdentityChangesWhenSessionAppearsOrAgentChanges() {
+        let r = Self.record("a")
+        let absent = InboxItem(record: r, sessions: [])
+        let linked = InboxItem(record: r, sessions: [Self.session("a", nil)])
+        let waiting = InboxItem(record: r, sessions: [Self.session("a", .waiting)])
+        #expect(absent.attentionKey != linked.attentionKey)
+        #expect(linked.attentionKey != waiting.attentionKey)
+        #expect(waiting.attentionKey == InboxItem(record: r, sessions: [Self.session("a", .waiting)]).attentionKey)
+    }
+
+    @Test func queueExcludesRunningAndClosedAndBreaksTiesById() {
+        let records = [Self.record("a"), Self.record("b"), Self.record("run"), Self.record("closed", .done)]
+        let queue = records.triageQueue(sessions: [Self.session("run", .running)])
+        #expect(queue.map(\.id) == ["b", "a"])
+        #expect(queue.allSatisfy { $0.need == .noSession })
     }
 
     @Test func groupsComeInOrderNewestFirstAndEmptyOnesAreLeftOut() {

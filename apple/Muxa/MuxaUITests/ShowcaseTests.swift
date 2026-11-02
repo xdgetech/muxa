@@ -127,6 +127,7 @@ final class ShowcaseTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo", "-showcase"] + (alerts ? ["-demo-alerts"] : [])
         app.launch()
+        leaveInitialInbox(app)
         // After launch, so every shot has the same orientation: the store's iPad slot is
         // landscape, its iPhone slot portrait.
         XCUIDevice.shared.orientation = isPhone ? .portrait : .landscapeLeft

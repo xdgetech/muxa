@@ -18,6 +18,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
 
         // The agent pane opens in Pretty; Cmd+R shows the terminal.
         let composer = app.descendants(matching: .any)["composer"].firstMatch
@@ -52,6 +53,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
 
@@ -98,6 +100,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
 
@@ -125,6 +128,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
         // Cmd+7: the last session in the sidebar, "device".
@@ -183,6 +187,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         // A tap, not Cmd+R: after a hardware key, iPadOS shows no software keyboard.
         showAgentTerminal(app)
@@ -209,6 +214,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         // A hardware keyboard hides the bar. The iPhone simulator reports the Mac's
@@ -245,6 +251,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
@@ -292,6 +299,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         // XCUITest finds no row of a Max phone's landscape sidebar hittable.
         if !isPhone { XCUIDevice.shared.orientation = .landscapeLeft }
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -329,6 +337,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo", "-demo-alerts"]
         app.launch()
+        leaveInitialInbox(app)
         XCTAssertTrue(app.navigationBars["feature-auth"].waitForExistence(timeout: 10))
         let banner = app.buttons["agent-alert"]
         XCTAssertTrue(banner.waitForExistence(timeout: 10))
@@ -346,6 +355,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         // The bar carries the shown session's name.
         let title = { (name: String) in app.navigationBars[name] }
@@ -381,6 +391,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo", "-no-task-records"]
         app.launch()
+        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
 
@@ -410,6 +421,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -447,6 +459,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -472,6 +485,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -540,6 +554,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -608,6 +623,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -637,6 +653,7 @@ final class DemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))

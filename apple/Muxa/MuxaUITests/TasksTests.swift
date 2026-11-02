@@ -12,16 +12,49 @@ final class TasksTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    @MainActor
+    func testPhoneStartsInTriageWhenAttentionIsWaiting() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        guard app.windows.firstMatch.frame.width < 600 else { throw XCTSkip("Phone layout only") }
+        XCTAssertTrue(app.descendants(matching: .any)["triage-card"].firstMatch.waitForExistence(timeout: 10))
+        tapWhenReady(app.buttons["Close"])
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testTriageNavigationSnoozeAndList() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        let card = app.descendants(matching: .any)["triage-card"].firstMatch
+        if !card.waitForExistence(timeout: 3) {
+            showSidebar(app)
+            tapWhenReady(app.buttons["open-tasks"])
+        }
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["triage-need"].exists)
+        tapWhenReady(app.buttons["triage-next"])
+        XCTAssertTrue(card.exists)
+        tapWhenReady(app.buttons["triage-snooze"])
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Show snoozed'")).firstMatch.exists)
+        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["List"])
+        XCTAssertTrue(header(app, "Needs attention").waitForExistence(timeout: 5))
+    }
+
     /// Opens the demo, then Tasks from the sidebar.
     @MainActor
     private func launchOnTasks() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showSidebar(app)
         tapWhenReady(app.buttons["open-tasks"])
-        XCTAssertTrue(app.navigationBars["Tasks"].waitForExistence(timeout: 5))
+        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["List"])
+        XCTAssertTrue(app.navigationBars["Inbox"].waitForExistence(timeout: 5))
         return app
     }
 
@@ -66,7 +99,7 @@ final class TasksTests: XCTestCase {
         // The sheet closes before the pane is pushed.
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFor(pane, containing: "pane %5 100x30"))
-        XCTAssertTrue(app.navigationBars["Tasks"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Inbox"].waitForNonExistence(timeout: 5))
     }
 
     /// Read TASK.md opens the Reader at the task's goal.
@@ -134,8 +167,11 @@ final class TasksTests: XCTestCase {
         createTask(app, title: "Write the changelog", goal: "List the user-visible changes.")
         XCTAssertTrue(app.navigationBars["Write the changelog"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["List the user-visible changes."].exists)
-        XCTAssertTrue(app.staticTexts["running"].waitForExistence(timeout: 5))
+        let agent = app.descendants(matching: .any)["task-agent-state"].firstMatch
+        reveal(app, agent)
+        XCTAssertTrue(waitFor(agent, labelOrValue: "running"))
         save("record-created")
+        reveal(app, app.buttons["task-open-terminal"], up: true)
         tapWhenReady(app.buttons["task-open-terminal"])
         XCTAssertTrue(app.navigationBars.descendants(matching: .any)["write-the-changelog"].firstMatch
             .waitForExistence(timeout: 10))
@@ -148,6 +184,7 @@ final class TasksTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
 
@@ -164,6 +201,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.textFields["record-title"].waitForNonExistence(timeout: 5), "the sheet closes")
         showSidebar(app)
         tapWhenReady(app.buttons["open-tasks"])
+        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["List"])
         XCTAssertTrue(app.buttons["task-t-new001"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Add search"].exists)
     }
@@ -174,6 +212,7 @@ final class TasksTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
+        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showSidebar(app)
         XCTAssertTrue(app.buttons["open-tasks"].waitForExistence(timeout: 5))
@@ -326,13 +365,13 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testAPausedLoopNeedsAttention() throws {
         let app = launchOnTasks()
-        let badge = app.staticTexts["loop-badge-t-auth01"]
+        let badge = app.buttons["task-t-auth01"].staticTexts["loop-badge-t-auth01"]
         XCTAssertTrue(badge.waitForExistence(timeout: 5))
         XCTAssertEqual(badge.label, "Loop paused")
         // No agent runs this one: only its loop puts it there.
         let lint = app.buttons["task-t-lint01"]
         XCTAssertTrue(lint.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["loop-badge-t-lint01"].label, "Loop stopped: limit")
+        XCTAssertEqual(app.buttons["task-t-lint01"].staticTexts["loop-badge-t-lint01"].label, "Loop stopped: limit")
         XCTAssertLessThan(header(app, "Needs attention").frame.minY, lint.frame.minY)
         XCTAssertLessThan(lint.frame.minY, header(app, "Ready for review").frame.minY)
         save("loop-inbox")

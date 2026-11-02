@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
             listOf(
                 item("Switch session", KeyEvent.KEYCODE_K),
                 item("New task", KeyEvent.KEYCODE_N),
+                item("Inbox", KeyEvent.KEYCODE_T),
                 item("Agent / Terminal", KeyEvent.KEYCODE_J),
                 item("Pretty / Raw", KeyEvent.KEYCODE_R),
                 item("Documents", KeyEvent.KEYCODE_D),

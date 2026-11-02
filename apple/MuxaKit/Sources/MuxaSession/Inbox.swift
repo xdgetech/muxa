@@ -18,6 +18,10 @@ public enum InboxGroup: Int, CaseIterable, Sendable, Identifiable {
     }
 }
 
+public enum InboxNeed: String, Sendable {
+    case none, answer, agentError = "agent-error", loop, review, noAgent = "no-agent", noSession = "no-session"
+}
+
 /// A task record with the session that runs it, if any.
 public struct InboxItem: Equatable, Sendable, Identifiable {
     public var record: TaskRecord
@@ -28,6 +32,27 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     /// The adapter's state, while it can be believed.
     public var agent: Agent?
     public var group: InboxGroup
+
+    public var need: InboxNeed {
+        if group == .closed { return .none }
+        if agent?.state == .waiting { return .answer }
+        if agent?.state == .error { return .agentError }
+        if record.loop?.needsUser == true { return .loop }
+        if group == .running { return .none }
+        if group == .readyForReview { return .review }
+        return session == nil ? .noSession : .noAgent
+    }
+
+    /// A conservative local snooze identity, never an approval token.
+    public var attentionKey: String {
+        var parts: [String] = [record.id, String(record.rev), session?.id ?? "", agentPane?.id ?? "", need.rawValue]
+        parts.append(agent?.state.rawValue ?? "")
+        parts.append(agent?.since.map { String($0) } ?? "")
+        parts.append(record.loop?.state.raw ?? "")
+        parts.append(record.loop?.reason?.raw ?? "")
+        parts.append(record.loop.map { String($0.since) } ?? "")
+        return parts.joined(separator: "\u{1f}")
+    }
 
     public var id: String { record.id }
 
@@ -73,6 +98,10 @@ public struct InboxSection: Equatable, Sendable, Identifiable {
 }
 
 extension Array where Element == TaskRecord {
+    public func triageQueue(sessions: [Session]) -> [InboxItem] {
+        inbox(sessions: sessions).flatMap(\.items).filter { $0.need != .none }
+    }
+
     /// The non-empty groups in their fixed order.
     public func inbox(sessions: [Session]) -> [InboxSection] {
         let items = map { InboxItem(record: $0, sessions: sessions) }

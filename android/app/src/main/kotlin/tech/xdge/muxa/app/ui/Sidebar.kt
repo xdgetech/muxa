@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.session.Host
+import tech.xdge.muxa.session.need
 import tech.xdge.muxa.session.InboxGroup
 import tech.xdge.muxa.session.RepoGroup
 import tech.xdge.muxa.session.defaultPane
@@ -76,7 +77,14 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
             }
             // Above the hosts, so a phone shows it on its first screen.
             if (model.canShowTasks) {
-                item(key = "tasks-header") { SectionHeader("Tasks") }
+                item(key = "tasks-header") { SectionHeader("Inbox") }
+                if (model.inboxQueue.isEmpty()) item(key = "inbox-empty") { Text("Nothing needs you", Modifier.padding(horizontal = 16.dp)) }
+                items(model.inboxQueue.take(3), key = { "inbox-${it.record.id}" }) { item ->
+                    Column(Modifier.fillMaxWidth().clickable { model.showInbox(item.record.id) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(item.record.title)
+                        Text(item.need.title, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 item(key = "tasks") { TasksRow(model) }
                 item(key = "tasks-new") { NewTaskRow(model) }
             }
@@ -111,13 +119,13 @@ private fun newTaskAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
 /** Opens the Tasks screen; says how many Tasks need the user. */
 @Composable
 private fun TasksRow(model: AppModel) {
-    val waiting = model.inbox.firstOrNull { it.group == InboxGroup.NEEDS_ATTENTION }?.items?.size ?: 0
+    val waiting = model.inboxQueue.count { it.group == InboxGroup.NEEDS_ATTENTION }
     Row(
-        Modifier.fillMaxWidth().clickable { model.openTasks() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("open-tasks"),
+        Modifier.fillMaxWidth().clickable { model.showInbox() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("open-tasks"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.tasks, null, tint = MaterialTheme.colorScheme.primary)
-        Text("All Tasks", Modifier.padding(start = 12.dp).weight(1f))
+        Text(if (model.inboxQueue.isEmpty()) "All Tasks" else "Triage all (${model.inboxQueue.size})", Modifier.padding(start = 12.dp).weight(1f))
         if (waiting > 0) {
             Text("$waiting ${InboxGroup.NEEDS_ATTENTION.title.lowercase()}", style = MaterialTheme.typography.labelSmall, color = Theme.attention)
         }
@@ -220,29 +228,31 @@ private fun RepoHeader(group: RepoGroup, newTask: (() -> Unit)?) {
 @Composable
 private fun SessionRow(model: AppModel, s: Session, current: Boolean, number: Int?) {
     var menu by remember { mutableStateOf(false) }
+    val item = model.inbox.flatMap { it.items }.firstOrNull { it.session?.id == s.id }
     Box {
         Row(
             Modifier.fillMaxWidth()
                 .background(if (current) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-                .combinedClickable(onClick = { model.open(s) }, onLongClick = { if (model.canClose(s)) menu = true })
+                .combinedClickable(onClick = { model.open(s) }, onLongClick = { if (model.canClose(s) || item != null) menu = true })
                 .padding(horizontal = 16.dp, vertical = 10.dp)
                 .testTag("session-${s.name}"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Column(Modifier.weight(1f)) {
-                Text(s.name, fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                s.branch?.let {
+                Text(item?.record?.title ?: s.name, fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                listOfNotNull(if (item != null) s.name else null, s.branch).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
             }
-            s.defaultPane?.let { AgentBadge(it) }
+            if (item != null) TaskSessionBadge(item) else s.defaultPane?.let { AgentBadge(it) }
             number?.takeIf { it <= 9 }?.let {
                 Text("^⇧$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text("Close Task…") }, { menu = false; model.closingTask = s }, leadingIcon = { Icon(Icons.closeTask, null) })
+            if (item != null) DropdownMenuItem({ Text("Show in Inbox") }, { menu = false; model.showInbox(item.record.id) })
+            if (model.canClose(s)) DropdownMenuItem({ Text("Close Task…") }, { menu = false; model.closingTask = s }, leadingIcon = { Icon(Icons.closeTask, null) })
         }
     }
     Spacer(Modifier.width(0.dp))

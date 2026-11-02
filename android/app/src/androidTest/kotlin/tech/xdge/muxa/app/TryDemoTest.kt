@@ -44,6 +44,10 @@ class TryDemoTest {
         // The list offers it, and so does the empty detail beside it on a tablet.
         compose.waitUntilAtLeastOneExists(hasTestTag("try-demo"), TIMEOUT)
         compose.onAllNodesWithTag("try-demo").onFirst().performClick()
+        if (context.model.phoneInbox) {
+            compose.waitUntilAtLeastOneExists(hasTestTag("triage-card"), TIMEOUT)
+            compose.onNodeWithTag("inbox-close").performClick()
+        }
         compose.waitUntilAtLeastOneExists(hasTestTag("composer"), TIMEOUT)
         // Its agent waits: the waiting row once grew over the messages and the composer on a phone.
         compose.waitUntilAtLeastOneExists(hasTestTag("waiting"), TIMEOUT)

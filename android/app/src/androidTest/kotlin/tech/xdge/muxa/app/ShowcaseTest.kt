@@ -110,6 +110,7 @@ class ShowcaseTest {
             .putExtra(MainActivity.EXTRA_SHOWCASE, true)
             .putExtra(MainActivity.EXTRA_DEMO_ALERTS, alerts)
         scenario = ActivityScenario.launch(intent)
+        compose.leaveInitialInbox()
     }
 
     private fun exists(tag: String) = compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty()

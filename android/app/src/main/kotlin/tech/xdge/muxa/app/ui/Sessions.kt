@@ -55,7 +55,7 @@ fun SessionSwitcher(model: AppModel, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     val matches = model.visibleSessions.filter {
-        query.isEmpty() || listOfNotNull(it.name, it.repo, it.branch).any { f -> f.contains(query, ignoreCase = true) }
+        query.isEmpty() || listOfNotNull(it.name, it.repo, it.branch, model.state.tasks?.records?.firstOrNull { r -> r.id == it.taskId }?.title).any { f -> f.contains(query, ignoreCase = true) }
     }.groupedByRepo()
     fun open(s: Session) {
         onDismiss()
@@ -83,7 +83,7 @@ fun SessionSwitcher(model: AppModel, onDismiss: () -> Unit) {
                         item(key = "h-${group.repo}") {
                             Text(group.repo ?: "Other Sessions", Modifier.padding(top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.labelLarge)
                         }
-                        items(group.sessions, key = { it.id }) { s -> SwitcherRow(s, s.id == model.currentSession?.id) { open(s) } }
+                        items(group.sessions, key = { it.id }) { s -> SwitcherRow(model, s, s.id == model.currentSession?.id) { open(s) } }
                     }
                 }
             }
@@ -96,20 +96,21 @@ fun SessionSwitcher(model: AppModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun SwitcherRow(s: Session, current: Boolean, open: () -> Unit) {
+private fun SwitcherRow(model: AppModel, s: Session, current: Boolean, open: () -> Unit) {
+    val item = model.inbox.flatMap { it.items }.firstOrNull { it.session?.id == s.id }
     Row(
         Modifier.fillMaxWidth().clickable(onClick = open).padding(vertical = 8.dp).testTag("switch-${s.name}"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(s.name, fontWeight = FontWeight.SemiBold)
+            Text(item?.record?.title ?: s.name, fontWeight = FontWeight.SemiBold)
             // The repo is the section header; the branch tells sessions apart.
-            listOfNotNull(s.branch, s.task).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+            listOfNotNull(if (item != null) s.name else null, s.branch, s.task).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        s.defaultPane?.let { AgentBadge(it) }
+        if (item != null) TaskSessionBadge(item) else s.defaultPane?.let { AgentBadge(it) }
         if (current) Icon(Icons.done, "Current", tint = Theme.accent)
     }
 }

@@ -39,7 +39,11 @@ struct TaskDetail: View {
             Section {
                 statusPicker(r)
                 LabeledContent("Agent") {
-                    if let pane = item.agentPane { AgentBadge(pane: pane) } else { Text("none") }
+                    if let pane = item.agentPane {
+                        AgentBadge(pane: pane)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("task-agent-state")
+                    } else { Text("none") }
                 }
                 LabeledContent("Workspace", value: r.workspace)
                 if let project = r.project { LabeledContent("Project", value: project) }
@@ -101,14 +105,14 @@ struct TaskDetail: View {
                 Button("Terminal", systemImage: Icon.agent) { model.open(item, as: .terminal) }
                     .accessibilityIdentifier("task-open-terminal")
                 if model.session.canReadDocs {
-                    Button("Read TASK.md", systemImage: Icon.document) { model.open(item, as: .taskFile) }
+                    Button("Read TASK.md", systemImage: Icon.document) { model.open(item, as: .taskFile, returnToDetail: true) }
                         .accessibilityIdentifier("task-open-file")
                     if model.session.canRestartAgents, item.hasHandoff {
-                        Button("Read HANDOFF.md", systemImage: Icon.document) { model.open(item, as: .handoffFile) }
+                        Button("Read HANDOFF.md", systemImage: Icon.document) { model.open(item, as: .handoffFile, returnToDetail: true) }
                             .accessibilityIdentifier("task-open-handoff")
                     }
                     if model.session.canShowChanges {
-                        Button("Changes", systemImage: Icon.changes) { model.open(item, as: .changes) }
+                        Button("Changes", systemImage: Icon.changes) { model.open(item, as: .changes, returnToDetail: true) }
                             .accessibilityIdentifier("task-open-changes")
                     }
                 }

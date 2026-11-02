@@ -48,14 +48,34 @@ class InboxTest {
         )
         val lines = File(System.getProperty("muxa.fixtures")).resolve("inbox/groups.jsonl").readLines()
             .filter { it.isNotEmpty() }
-        assertEquals(23, lines.size)
+        assertEquals(26, lines.size)
         for (line in lines) {
             val case = json.parseToJsonElement(line).jsonObject
             val record = json.decodeFromJsonElement(TaskRecord.serializer(), case.getValue("record"))
             val sessions = json.decodeFromJsonElement(ListSerializer(Session.serializer()), case.getValue("sessions"))
             val name = case.getValue("name").jsonPrimitive.content
+            assertEquals(name, case.getValue("need").jsonPrimitive.content, inboxItem(record, sessions).need.wire)
             assertEquals(name, names[case.getValue("group").jsonPrimitive.content], inboxItem(record, sessions).group)
         }
+    }
+
+    @Test
+    fun snoozeIdentityChangesWhenSessionAppearsOrAgentChanges() {
+        val r = record("a")
+        val absent = inboxItem(r, emptyList())
+        val linked = inboxItem(r, listOf(session("a", pane("%1"))))
+        val waiting = inboxItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING))))
+        org.junit.Assert.assertNotEquals(absent.attentionKey, linked.attentionKey)
+        org.junit.Assert.assertNotEquals(linked.attentionKey, waiting.attentionKey)
+        assertEquals(waiting.attentionKey, inboxItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING)))).attentionKey)
+    }
+
+    @Test
+    fun queueExcludesRunningAndClosedAndBreaksTiesById() {
+        val records = listOf(record("a"), record("b"), record("run"), record("closed").copy(status = TaskStatus.DONE))
+        val queue = triageQueue(records, listOf(session("run", pane("%1", state = AgentState.RUNNING))))
+        assertEquals(listOf("b", "a"), queue.map { it.record.id })
+        assertEquals(listOf(InboxNeed.NO_SESSION, InboxNeed.NO_SESSION), queue.map { it.need })
     }
 
     @Test

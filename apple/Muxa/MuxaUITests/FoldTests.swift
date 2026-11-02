@@ -19,6 +19,7 @@ final class FoldTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo", "-foldable"]
         app.launch()
+        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showAgentTerminal(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch

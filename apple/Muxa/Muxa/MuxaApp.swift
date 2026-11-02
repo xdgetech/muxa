@@ -60,26 +60,29 @@ struct PaneCommands: Commands {
             Button("New Task…") { model.startNewTask() }
                 .keyboardShortcut("n")
                 .disabled(!model.canCreateTasks)
-            Button("Tasks…") { model.showTasks = true }
+            Button("Inbox…") { model.showTasks.toggle() }
                 .keyboardShortcut("t")
                 .disabled(!model.canKeepTasks)
             Button("Agent / Terminal") { Task { await model.toggleAgentTerminal() } }
                 .keyboardShortcut("j")
-                .disabled(model.counterpart == nil)
+                .disabled(model.showTasks || model.counterpart == nil)
             Button("Pretty / Raw") { model.setPretty(!model.showsPretty) }
                 .keyboardShortcut("r")
-                .disabled(!model.canShowPretty)
+                .disabled(model.showTasks || !model.canShowPretty)
             Button("Documents…") { model.openReader() }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(!model.canReadDocs)
+                .disabled(model.showTasks || !model.canReadDocs)
             Button("Previous Session") { Task { await model.step(-1) } }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(model.showTasks)
             Button("Next Session") { Task { await model.step(1) } }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(model.showTasks)
             Divider()
             ForEach(1..<10) { n in
                 Button("Session \(n)") { Task { await model.openSession(number: n) } }
                     .keyboardShortcut(KeyEquivalent(Character("\(n)")))
+                    .disabled(model.showTasks)
             }
         }
     }

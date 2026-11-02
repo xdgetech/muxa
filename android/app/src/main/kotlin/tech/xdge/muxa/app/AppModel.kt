@@ -36,6 +36,10 @@ import tech.xdge.muxa.session.alerts
 import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
+import tech.xdge.muxa.session.attentionKey
+import tech.xdge.muxa.session.need
+import tech.xdge.muxa.session.InboxNeed
+import tech.xdge.muxa.session.InboxGroup
 import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.runningTask
 import tech.xdge.muxa.session.knownRepos
@@ -146,6 +150,38 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     /** The Tasks screen, over the list and the pane like the Reader. */
     var showTasks by mutableStateOf(false)
+    var phoneInbox = false
+    var inboxList by mutableStateOf(false)
+    var inboxFocus by mutableStateOf<String?>(null)
+    var inboxEnded by mutableStateOf(false)
+    var inboxSkipped by mutableStateOf<Set<String>>(emptySet())
+    var inboxSnoozes by mutableStateOf<Map<String, String>>(emptyMap())
+    private var returnToInbox = false
+    val inboxSnoozedCount get() = inbox.flatMap { it.items }.count { it.need != InboxNeed.NONE && inboxSnoozes[it.record.id] == it.attentionKey }
+    val inboxQueue get() = inbox.flatMap { it.items }.filter { it.need != InboxNeed.NONE && inboxSnoozes[it.record.id] != it.attentionKey }
+    fun showInbox(id: String? = null) {
+        selectedTask = null
+        inboxList = inboxQueue.isEmpty()
+        inboxFocus = id ?: inboxQueue.firstOrNull()?.record?.id
+        inboxEnded = false
+        inboxSkipped = emptySet()
+        openTasks()
+    }
+    fun stepInbox(offset: Int) {
+        val queue = inboxQueue
+        if (queue.isEmpty()) return
+        if (inboxEnded && offset < 0) { inboxEnded = false; inboxFocus = queue.last().record.id; return }
+        val index = queue.indexOfFirst { it.record.id == inboxFocus }.coerceAtLeast(0)
+        val next = index + offset
+        if (offset > 0) inboxSkipped = inboxSkipped + queue[index].record.id
+        if (next >= queue.size) { inboxEnded = true }
+        else if (next >= 0) { inboxFocus = queue[next].record.id; inboxEnded = false }
+    }
+    fun snoozeInbox() {
+        val item = inboxQueue.firstOrNull { it.record.id == inboxFocus } ?: inboxQueue.firstOrNull() ?: return
+        inboxSnoozes = inboxSnoozes + (item.record.id to item.attentionKey)
+        inboxFocus = inboxQueue.firstOrNull()?.record?.id
+    }
 
     /** The Task shown in the Tasks screen's detail, by id. */
     var selectedTask by mutableStateOf<String?>(null)
@@ -315,10 +351,15 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         connectError = null
         connectFix = null
         connecting = true
+        inboxSnoozes = emptyMap()
+        returnToInbox = false
         detailRequest++
+        val initialRequest = detailRequest
         try {
             session.connect(samePanes = sameHost) { open(host) }
-            openDefaultPane()
+            if (phoneInbox && initialRequest == detailRequest && canShowTasks && inboxQueue.any { it.group == InboxGroup.NEEDS_ATTENTION }) {
+                showInbox()
+            } else openDefaultPane()
         } catch (e: TransportError.HostKeyMismatch) {
             afterTrust = AfterTrust.Connect
             untrustedKey = e.presented
@@ -392,6 +433,9 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     }
 
     fun disconnect() = scope.launch {
+        inboxSnoozes = emptyMap()
+        showTasks = false
+        returnToInbox = false
         stayDisconnected = true
         session.disconnect()
     }
@@ -595,6 +639,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     fun closeReader() {
         showReader = false
+        if (returnToInbox && isConnected) { returnToInbox = false; showTasks = true }
         scope.launch {
             session.closeDocument()
             session.closeDiff()
@@ -762,6 +807,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     fun closeTasks() {
         showTasks = false
+        scope.launch { if (isConnected) openDefaultPane() }
         refocusPane()
     }
 
@@ -869,6 +915,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
      */
     fun readTask(record: TaskRecord, tab: ReaderTab, doc: String = TASK_DOC) = scope.launch {
         val s = sessionOf(record) ?: return@launch
+        returnToInbox = showTasks
         showTasks = false
         openNow(s)
         if (!canReadDocs) return@launch

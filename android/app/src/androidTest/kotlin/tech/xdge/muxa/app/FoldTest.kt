@@ -49,6 +49,7 @@ class FoldTest {
     private fun launch() {
         val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
         scenario = ActivityScenario.launch(Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true))
+        compose.leaveInitialInbox()
     }
 
     /** Runs [command] to its end: the output is read until the command closes it. */

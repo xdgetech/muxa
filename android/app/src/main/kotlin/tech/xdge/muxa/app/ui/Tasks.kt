@@ -1,6 +1,8 @@
 package tech.xdge.muxa.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,7 +56,13 @@ import tech.xdge.muxa.app.ReaderTab
 import tech.xdge.muxa.app.isAgentSide
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.app.shortcut
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.runtime.LaunchedEffect
+import tech.xdge.muxa.session.InboxNeed
+import tech.xdge.muxa.session.need
 import tech.xdge.muxa.session.InboxItem
+import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.hasHandoff
 import tech.xdge.muxa.session.inboxItem
 
@@ -70,7 +78,19 @@ fun TasksScreen(model: AppModel) {
     Dialog(onDismissRequest = model::closeTasks, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         DialogStatusBar()
         // A dialog is its own window: it needs the tag setting the main window has (Root).
-        Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
+        Surface(Modifier.fillMaxSize().onPreviewKeyEvent { model.shortcut(it.nativeKeyEvent) }.semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton({ model.inboxList = false; model.selectedTask = null }, Modifier.testTag("inbox-triage")) { Text("Triage") }
+                    TextButton({ model.inboxList = true; model.selectedTask = null }, Modifier.testTag("inbox-list-mode")) { Text("List") }
+                    if (!model.inboxList && selected == null && model.state.tasks?.workspaces?.isNotEmpty() == true) {
+                        TextButton(model::startNewTaskRecord, Modifier.testTag("new-task-record")) { Text("New Task") }
+                    }
+                    TextButton(model::closeTasks, Modifier.testTag("inbox-close")) { Text("Close Inbox") }
+                }
+                if (!model.inboxList && selected == null) {
+                    Triage(model)
+                } else {
             val list = @Composable { modifier: Modifier -> TaskList(model, selected?.id, modifier) }
             val detail = @Composable { modifier: Modifier -> TaskDetail(model, selected, modifier) }
             when {
@@ -88,6 +108,8 @@ fun TasksScreen(model: AppModel) {
                     list(Modifier.width(360.dp).fillMaxHeight())
                     VerticalDivider()
                     detail(Modifier.weight(1f).fillMaxHeight())
+                }
+            }
                 }
             }
         }
@@ -112,7 +134,7 @@ fun TasksScreen(model: AppModel) {
 private fun TaskList(model: AppModel, selected: String?, modifier: Modifier) {
     Column(modifier) {
         TopAppBar(
-            title = { Text("Tasks") },
+            title = { Text("Inbox") },
             navigationIcon = { IconButton(model::closeTasks, Modifier.testTag("tasks-done")) { Icon(Icons.close, "Done") } },
             actions = {
                 if (model.state.tasks?.workspaces?.isNotEmpty() == true) {
@@ -319,6 +341,90 @@ private fun Field(label: String, value: String, mono: Boolean = false) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SelectionContainer {
             Text(value, fontFamily = if (mono) FontFamily.Monospace else null)
+        }
+    }
+}
+
+val InboxNeed.title: String get() = when (this) {
+    InboxNeed.NONE -> "Nothing needs you"
+    InboxNeed.ANSWER -> "Waits for your answer"
+    InboxNeed.AGENT_ERROR -> "The agent stopped with an error"
+    InboxNeed.LOOP -> "Loop needs attention"
+    InboxNeed.REVIEW -> "Ready for review"
+    InboxNeed.NO_AGENT -> "No agent state is available"
+    InboxNeed.NO_SESSION -> "No session runs this Task"
+}
+
+@Composable
+fun TaskSessionBadge(item: InboxItem) {
+    Column(horizontalAlignment = Alignment.End) {
+        Text(item.group.title, style = MaterialTheme.typography.labelSmall)
+        val since = if (item.need == InboxNeed.LOOP) item.record.loop?.since else item.agent?.since
+        since?.let { Text(AgentSummary.age(it), style = MaterialTheme.typography.labelSmall) }
+        LoopBadge(item.record)
+    }
+}
+
+@Composable
+private fun Triage(model: AppModel) {
+    val queue = model.inboxQueue
+    val item = queue.firstOrNull { it.record.id == model.inboxFocus } ?: queue.firstOrNull()
+    LaunchedEffect(item?.record?.id) { if (item != null) model.inboxFocus = item.record.id }
+    if (model.inboxEnded || item == null) {
+        Column(Modifier.fillMaxSize().padding(24.dp).testTag("triage-end"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Nothing else needs you.", style = MaterialTheme.typography.headlineSmall)
+            Text("${model.inboxSkipped.size} skipped · ${model.inboxSnoozedCount} snoozed")
+            TextButton({ model.inboxEnded = false; model.inboxFocus = queue.firstOrNull()?.record?.id; model.inboxSkipped = emptySet() }) { Text("Start over") }
+            TextButton({ model.inboxList = true }) { Text("Show List") }
+            TextButton({ model.inboxSnoozes = emptyMap(); model.inboxEnded = false }) { Text("Show snoozed") }
+        }
+        return
+    }
+    Column(Modifier.fillMaxSize().padding(16.dp).testTag("triage-card").pointerInput(item.record.id) {
+        var distance = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { distance = 0f },
+            onHorizontalDrag = { _, amount -> distance += amount },
+            onDragEnd = { if (distance < -120f) model.stepInbox(1) },
+        )
+    }) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("${queue.indexOf(item) + 1} of ${queue.size}")
+            Text(item.group.title, style = MaterialTheme.typography.labelLarge)
+            Text(item.record.title, style = MaterialTheme.typography.headlineSmall)
+            Text(listOfNotNull(item.record.workspace, item.record.project, item.session?.name).joinToString(" · "))
+            TaskSessionBadge(item)
+            Text(item.need.title, Modifier.testTag("triage-need"), style = MaterialTheme.typography.titleLarge)
+            Text(item.record.goal)
+            val target = item.session
+            if (model.isConnected && target?.defaultPane != null) {
+                if (model.state.canChat && item.agentPane != null && item.agentPane?.id !in model.state.unsupportedChats) {
+                    TextButton({ model.openTask(item.record, AppModel.PaneView.CHAT) }) { Text("Open Chat") }
+                }
+                TextButton({ model.openTask(item.record, AppModel.PaneView.AGENT) }) { Text("Open Terminal") }
+                if (model.state.canReadDocs) {
+                    TextButton({ model.readTask(item.record, ReaderTab.DOCS) }) { Text("TASK.md") }
+                    if (item.record.loop?.lastCheck != null) {
+                        TextButton({ model.readTask(item.record, ReaderTab.DOCS, ".muxa/CHECK.md") }) { Text("Check log") }
+                    }
+                }
+                if (model.state.canReadDocs && model.state.canShowChanges && target.worktree != null) {
+                    TextButton({ model.readTask(item.record, ReaderTab.CHANGES) }) { Text("Changes") }
+                }
+            }
+            TextButton({ model.selectedTask = item.record.id }, Modifier.testTag("triage-detail")) { Text("Task detail") }
+            if (model.inboxSnoozedCount > 0) {
+                TextButton({ model.inboxSnoozes = emptyMap() }) { Text("Show snoozed (${model.inboxSnoozedCount})") }
+            }
+            queue.drop(queue.indexOf(item) + 1).take(2).forEach { next ->
+                TextButton({ model.inboxFocus = next.record.id }) { Text("Up next: ${next.record.title} · ${next.need.title}") }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton({ model.stepInbox(-1) }) { Text("Previous") }
+            TextButton({ model.openTask(item.record, if (model.state.canChat && item.agentPane != null) AppModel.PaneView.CHAT else AppModel.PaneView.AGENT) }, enabled = model.isConnected && item.session?.defaultPane != null) { Text("Open") }
+            TextButton(model::snoozeInbox, Modifier.testTag("triage-snooze")) { Text("Snooze") }
+            TextButton({ model.stepInbox(1) }, Modifier.testTag("triage-next")) { Text("Next") }
         }
     }
 }

@@ -104,6 +104,7 @@ muxa-cli --bridge 'muxa-bridge [--socket S]' task new --workspace W --title T --
   - The item's `record.loop` is the loop as `protocol/PROTOCOL.md` (Task Loop) describes it. A task whose loop is `paused`, or `stopped` with a reason other than `user` or `status`, is in `needs-attention`.
 - An item has:
   - `group`: `needs-attention`, `ready-for-review`, `running`, `no-agent` or `closed`. The rule is ADR 0015's, the same as in the apps (`crates/muxa-cli/src/inbox.rs`). Treat an unknown group as one without a known meaning.
+  - `need`: `none`, `answer`, `agent-error`, `loop`, `review`, `no-agent` or `no-session` (ADR 0023). Running and Closed have `none`. Waiting and error take precedence over loop attention; loop attention takes precedence over review or missing agents. Unknown values have no known action.
   - `record`: the task record as `protocol/PROTOCOL.md` describes it.
   - `session`: optional, `{id, name}` of the session whose `taskId` is the record's id. Target it by `id`.
   - `agent`: optional, `{state, since?}` of that session's agent pane, only when it can be believed: not with a shell in the foreground, and not for a closed Task.

@@ -12,9 +12,11 @@ final class TryDemoTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-no-saved-hosts"]
         app.launch()
+        leaveInitialInbox(app)
 
         // The sidebar offers it on a phone, the empty detail on an iPad; either one hides.
         firstHittable(app.buttons.matching(identifier: "try-demo")).tap()
+        leaveInitialInbox(app, force: true)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         save("try-demo")

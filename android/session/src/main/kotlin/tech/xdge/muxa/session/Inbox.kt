@@ -17,6 +17,11 @@ enum class InboxGroup(val title: String) {
     CLOSED("Closed"),
 }
 
+enum class InboxNeed(val wire: String) {
+    NONE("none"), ANSWER("answer"), AGENT_ERROR("agent-error"), LOOP("loop"), REVIEW("review"),
+    NO_AGENT("no-agent"), NO_SESSION("no-session"),
+}
+
 /**
  * One Task with what runs it now. [agentPane] and [agent] are null when no adapter
  * reports a state that can be believed (invariant 6).
@@ -28,6 +33,21 @@ data class InboxItem(
     val agentPane: Pane? = null,
     val agent: Agent? = null,
 )
+
+val InboxItem.need: InboxNeed
+    get() = when {
+        group == InboxGroup.CLOSED -> InboxNeed.NONE
+        agent?.state == AgentState.WAITING -> InboxNeed.ANSWER
+        agent?.state == AgentState.ERROR -> InboxNeed.AGENT_ERROR
+        record.loop?.needsUser == true -> InboxNeed.LOOP
+        group == InboxGroup.RUNNING -> InboxNeed.NONE
+        group == InboxGroup.READY_FOR_REVIEW -> InboxNeed.REVIEW
+        session == null -> InboxNeed.NO_SESSION
+        else -> InboxNeed.NO_AGENT
+    }
+
+fun triageQueue(records: List<TaskRecord>, sessions: List<Session>): List<InboxItem> =
+    inbox(records, sessions).flatMap { it.items }.filter { it.need != InboxNeed.NONE }
 
 data class InboxSection(val group: InboxGroup, val items: List<InboxItem>)
 
@@ -68,6 +88,12 @@ fun inbox(records: List<TaskRecord>, sessions: List<Session>): List<InboxSection
     val byGroup = records.map { inboxItem(it, sessions) }.groupBy { it.group }
     return InboxGroup.entries.mapNotNull { group ->
         val items = byGroup[group] ?: return@mapNotNull null
-        InboxSection(group, items.sortedByDescending { it.record.updatedAt })
+        InboxSection(group, items.sortedWith(compareByDescending<InboxItem> { it.record.updatedAt }.thenByDescending { it.record.id }))
     }
 }
+
+/** Conservative local snooze identity; it is not an approval token. */
+val InboxItem.attentionKey: String get() = listOf(
+    record.id, record.rev, session?.id, agentPane?.id, need.wire, agent?.state, agent?.since,
+    record.loop?.state, record.loop?.reason, record.loop?.since,
+).joinToString("\u001f")

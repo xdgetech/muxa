@@ -36,10 +36,11 @@ class TasksTest {
     val compose = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
 
-    private fun launch() {
+    private fun launch(leaveInbox: Boolean = true) {
         val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
         val intent = Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true)
         scenario = ActivityScenario.launch(intent)
+        if (leaveInbox) compose.leaveInitialInbox()
     }
 
     @After
@@ -59,7 +60,39 @@ class TasksTest {
         compose.onNodeWithTag("more").performClick()
         waitForTag("menu-tasks")
         compose.onNodeWithTag("menu-tasks").performClick()
+        waitForTag("inbox-list-mode")
+        compose.onNodeWithTag("inbox-list-mode").performClick()
         waitForTag("tasks-done")
+    }
+
+    @Test
+    fun phoneStartsInTriageWhenAttentionIsWaiting() {
+        launch(leaveInbox = false)
+        val model = ApplicationProvider.getApplicationContext<MuxaApplication>().model
+        compose.waitUntil(TIMEOUT) { model.isConnected && !model.connecting }
+        if (model.phoneInbox) {
+            waitForTag("triage-card")
+            waitForTag("triage-need")
+            compose.onNodeWithTag("inbox-close").performClick()
+            waitForTag("composer")
+        } else {
+            waitForTag("composer")
+        }
+    }
+
+    @Test
+    fun triageNavigatesSnoozesAndKeepsList() {
+        launch()
+        openTasks()
+        compose.onNodeWithTag("inbox-triage").performClick()
+        waitForTag("triage-card")
+        compose.onNodeWithTag("triage-next").performClick()
+        waitForTag("triage-card")
+        compose.onNodeWithTag("triage-snooze").performClick()
+        waitForTag("triage-card")
+        compose.onNodeWithTag("inbox-list-mode").performClick()
+        waitForTag("task-list")
+        for (group in InboxGroup.entries) waitForTag("inbox-${group.name}")
     }
 
     /** Scrolls the list to the Task first: on a phone the lower groups are off screen. */
@@ -193,6 +226,8 @@ class TasksTest {
         compose.onNodeWithTag("more").performClick()
         waitForTag("menu-tasks")
         compose.onNodeWithTag("menu-tasks").performClick()
+        waitForTag("inbox-list-mode")
+        compose.onNodeWithTag("inbox-list-mode").performClick()
         compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-t-new001"))
         waitForTag("task-t-new001")
     }

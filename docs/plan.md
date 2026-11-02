@@ -17,7 +17,7 @@ What works today:
   - approval cards in Chat when Claude Code waits on a permission, a question or a plan (ADR 0009);
   - the Reader, in tabs: the pane's plan and the repo's Markdown files, rendered offline (ADR 0006); its uncommitted changes and its branch's commits as diffs (ADR 0007, 0011); its images, ignored folders included (ADR 0010);
   - starting and closing tasks, with or without tmux-agents (ADR 0007);
-  - Tasks: the Inbox groups, a Task detail, New Task with or without a repo, status changes, and per-workspace agent environments (ADR 0015, 0016);
+  - Inbox: Triage navigation with local Snooze and the grouped List, a Task detail, New Task with or without a repo, status changes, and per-workspace agent environments (ADR 0015, 0016);
   - Restart agent with a handoff in `.muxa/HANDOFF.md`, and the Task's runs (ADR 0018);
   - the Task Loop: a check after each turn, a Loop section with its state, Start loop, Stop loop and the check log, when the host runs the daemon (ADR 0019);
   - a banner when an agent in another session waits, finishes or fails (ADR 0008);
@@ -29,6 +29,12 @@ What works today:
 - **Try the Demo** (both apps, every build): sample sessions from the in-app demo bridge, with no host and nothing saved. App Review and Play review use it.
 
 ## Next
+
+- **Inbox visibility and navigation** (ADR 0023, slice 1 accepted; `docs/inbox.md`): identify Task sessions by title, group, reported age and loop; retain List/detail and add Triage navigation, Next and local Snooze. Phones open Triage once per connection for Needs attention only. Existing Chat keeps approvals and composition.
+  - P0 done: shared needs and deterministic queue order, CLI `need`, 26 cross-client fixture cases. Verified with `make check`, `make test-apple` and `make test-android`.
+  - P1 done: iOS and Android Task titles, group/age and loop badges in session rows; switcher search includes titles.
+  - P2 done: Triage navigation, snooze invalidation, shortcuts and initial phone routing. Verified with iPad Task/Inbox UI tests (including targeted reruns), iPhone routing/Triage/demo tests, Android app tests and the fold/resize rerun; package/JVM tests and Android lint pass.
+  - P3 done on tmux-agents' existing `muxa-task-records` branch: the popup displays CLI need labels, keeps older CLI compatibility and never answers menus. Its 13 Inbox tests and ShellCheck pass; it is not merged. Inline Triage actions and daemon sidebar/status summaries remain proposed slice 2; their approval identity, chat ownership and metadata lifecycle contracts must be resolved first.
 
 - **Workspace and Task foundation, first slice** (ADR 0015, `docs/vision.md`): create a Task, launch an agent on it, watch its state, review the result, and step into the terminal. Manual Mode stays as it is.
   1. Done: protocol: `list-tasks`, `create-task`, `update-task`, the session field `taskId`, the error `conflict`, the capability `task-records`.
@@ -56,6 +62,7 @@ What works today:
 ## Later
 
 Direction from `docs/vision.md`, not commitments:
+- **Workers and workspace memory** (ADR 0022, proposed): native agent roles, per-Task worker handoff and reviewed WORKSPACE.md close-out. The revised design addresses the Astra review; native probes and exact environment reset remain acceptance gates. See `docs/findings/workers-design-review.md`.
 - **Workspace and Task foundation** (vision phase 2): after the first slice, Resources beyond one repo (documents, issue trackers), a Project entity if needed, and repos limited to workspace roots.
 - **Managed agent execution** (phase 3): muxa starts and follows agent runs for a Task and keeps their history while no client is connected; context handoff between runs. The first part, recorded only while a bridge or the daemon handles a request, is in the first slice (ADR 0018, 0019).
 - **Workflow orchestration** (phase 4): Tasks in a graph, where one step's result starts the next. The host daemon (ADR 0019) can run it.

@@ -28,6 +28,31 @@ impl Group {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Need {
+    None,
+    Answer,
+    AgentError,
+    Loop,
+    Review,
+    NoAgent,
+    NoSession,
+}
+
+impl Need {
+    pub fn wire(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Answer => "answer",
+            Self::AgentError => "agent-error",
+            Self::Loop => "loop",
+            Self::Review => "review",
+            Self::NoAgent => "no-agent",
+            Self::NoSession => "no-session",
+        }
+    }
+}
+
 /// A record with the session that runs it and the state that can be believed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item<'a> {
@@ -35,6 +60,7 @@ pub struct Item<'a> {
     pub session: Option<&'a Session>,
     pub agent: Option<&'a Agent>,
     pub group: Group,
+    pub need: Need,
 }
 
 pub fn item<'a>(record: &'a TaskRecord, sessions: &'a [Session]) -> Item<'a> {
@@ -54,11 +80,22 @@ pub fn item<'a>(record: &'a TaskRecord, sessions: &'a [Session]) -> Item<'a> {
         (_, Some(AgentState::Running)) => Group::Running,
         (_, Some(AgentState::Idle | AgentState::Done)) => Group::ReadyForReview,
     };
+    let need = match (group, agent.map(|a| a.state)) {
+        (Group::Closed, _) => Need::None,
+        (_, Some(AgentState::Waiting)) => Need::Answer,
+        (_, Some(AgentState::Error)) => Need::AgentError,
+        _ if loop_needs_user(record) => Need::Loop,
+        (Group::Running, _) => Need::None,
+        (Group::ReadyForReview, _) => Need::Review,
+        _ if session.is_none() => Need::NoSession,
+        _ => Need::NoAgent,
+    };
     Item {
         record,
         session,
         agent: agent.filter(|_| group != Group::Closed),
         group,
+        need,
     }
 }
 
@@ -95,6 +132,7 @@ pub fn items<'a>(records: &'a [TaskRecord], sessions: &'a [Session]) -> Vec<Item
 pub fn to_json(item: &Item) -> Value {
     let mut out = json!({
         "group": item.group.wire(),
+        "need": item.need.wire(),
         "record": item.record,
     });
     if let Some(s) = item.session {
@@ -290,8 +328,14 @@ mod tests {
                 "{}",
                 case["name"]
             );
+            assert_eq!(
+                item(&record, &sessions).need.wire(),
+                case["need"],
+                "{}",
+                case["name"]
+            );
             n += 1;
         }
-        assert_eq!(n, 23);
+        assert_eq!(n, 26);
     }
 }

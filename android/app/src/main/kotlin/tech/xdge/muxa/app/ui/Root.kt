@@ -62,6 +62,7 @@ import tech.xdge.muxa.session.PaneSession
 fun Root(model: AppModel) {
     val layout = currentWindowLayout()
     val phone = layout == WindowLayout.Phone
+    model.phoneInbox = phone
     val paneKeys = remember { PaneKeys() }
     var showList by remember { mutableStateOf(true) }
     var editing by remember { mutableStateOf<HostDraft?>(null) }
@@ -71,7 +72,9 @@ fun Root(model: AppModel) {
         if (paneOpen) showList = false
     }
     LaunchedEffect(model.detailRequest) { if (model.detailRequest > 0) showList = false }
-    LaunchedEffect(model.isConnected) { if (!model.isConnected) showList = true }
+    LaunchedEffect(model.isConnected) {
+        if (!model.isConnected) { showList = true; model.inboxSnoozes = emptyMap(); model.showTasks = false }
+    }
 
     CompositionLocalProvider(
         LocalPhoneLayout provides phone,

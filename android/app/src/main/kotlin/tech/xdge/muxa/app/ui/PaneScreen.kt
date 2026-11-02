@@ -187,7 +187,7 @@ private fun MoreMenu(model: AppModel, stack: Boolean) {
         }
         if (model.canShowTasks) {
             DropdownMenuItem(
-                { Text("Tasks…") }, { pick { model.openTasks() } },
+                { Text("Inbox…") }, { pick { model.showInbox() } },
                 leadingIcon = { Icon(Icons.tasks, null) }, modifier = Modifier.testTag("menu-tasks"),
             )
         }

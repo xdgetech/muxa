@@ -81,6 +81,27 @@ final class AppModel {
     var readerTab: ReaderTab = .docs
     /// The Tasks sheet.
     var showTasks = false
+    var phoneInbox = false
+    var triageOpening: String?
+    var inboxSnoozes: [String: String] = [:]
+    var returnToInbox = false
+    var inboxSnoozedCount: Int {
+        session.taskRecords.triageQueue(sessions: session.sessions).filter { inboxSnoozes[$0.id] == $0.attentionKey }.count
+    }
+    var inboxQueue: [InboxItem] {
+        session.taskRecords.triageQueue(sessions: session.sessions).filter { inboxSnoozes[$0.id] != $0.attentionKey }
+    }
+    func showInbox(_ id: String? = nil) {
+        triageOpening = id
+        showTasks = true
+    }
+    func readerClosed() {
+        if returnToInbox, isConnected {
+            returnToInbox = false
+            showTasks = true
+        }
+        refocusPane()
+    }
     /// Asked for in the Tasks sheet: shown once the sheet has closed.
     private var afterTasks: (session: Session, opening: TaskOpening)?
     /// The document last read in each session, opened again next time.
@@ -171,11 +192,19 @@ final class AppModel {
         connectError = nil
         connectFix = nil
         connecting = true
+        inboxSnoozes = [:]
+        returnToInbox = false
         detailRequest += 1
+        let initialRequest = detailRequest
         defer { connecting = false }
         do {
             try await session.connect({ try await self.open(host) }, samePanes: sameHost)
-            await openDefaultPane()
+            if phoneInbox, initialRequest == detailRequest, canKeepTasks,
+               inboxQueue.contains(where: { $0.group == .needsAttention }) {
+                showInbox()
+            } else {
+                await openDefaultPane()
+            }
         } catch TransportError.hostKeyMismatch(let presented) {
             afterTrust = .connect
             untrustedKey = presented
@@ -245,6 +274,9 @@ final class AppModel {
     }
 
     func disconnect() async {
+        inboxSnoozes = [:]
+        showTasks = false
+        returnToInbox = false
         stayDisconnected = true
         await session.disconnect()
     }
@@ -667,14 +699,21 @@ final class AppModel {
     static let checkFile = ".muxa/CHECK.md"
 
     /// Closes the Tasks sheet, then opens the task's session as asked.
-    func open(_ item: InboxItem, as opening: TaskOpening) {
+    func open(_ item: InboxItem, as opening: TaskOpening, returnToDetail: Bool = false) {
         guard let s = item.session else { return }
+        if opening == .taskFile || opening == .checkFile || opening == .changes || opening == .handoffFile {
+            returnToInbox = true
+            triageOpening = item.id
+            if returnToDetail { tasksOpening = item.id }
+        }
         afterTasks = (s, opening)
         showTasks = false
     }
 
     func tasksClosed() async {
+        guard isConnected else { afterTasks = nil; return }
         guard let (s, opening) = afterTasks else {
+            await openDefaultPane()
             refocusPane()
             return
         }

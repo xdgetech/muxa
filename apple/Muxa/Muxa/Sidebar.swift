@@ -29,13 +29,24 @@ struct Sidebar: View {
             // Above the hosts, so a phone shows it on its first screen.
             if model.canKeepTasks {
                 Section {
-                    Button { model.showTasks = true } label: { TasksEntry(inbox: model.inbox) }
+                    if model.inboxQueue.isEmpty { Text("Nothing needs you").foregroundStyle(.secondary) }
+                    ForEach(Array(model.inboxQueue.prefix(3))) { item in
+                        Button { model.showInbox(item.id) } label: {
+                            VStack(alignment: .leading) {
+                                Text(item.record.title)
+                                Text(item.need.title).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    Button { model.showInbox() } label: {
+                        Label(model.inboxQueue.isEmpty ? "All Tasks" : "Triage all (\(model.inboxQueue.count))", systemImage: Icon.tasks)
+                    }
                         .foregroundStyle(.primary)
                         .accessibilityIdentifier("open-tasks")
                     Button("New Task", systemImage: Icon.newTask) { model.startNewTask() }
                         .accessibilityIdentifier("sidebar-new-task")
                 } header: {
-                    Text("Tasks")
+                    Text("Inbox")
                 } footer: {
                     Text("A task gets its own agent, directory and session on the host.")
                 }
@@ -69,6 +80,9 @@ struct Sidebar: View {
                             }
                             .foregroundStyle(.primary)
                             .contextMenu {
+                                if let id = s.taskId {
+                                    Button("Show in Inbox") { model.showInbox(id) }
+                                }
                                 if model.canClose(s) {
                                     Button("Close Task…", systemImage: Icon.closeTask) { model.closingTask = s }
                                 }
