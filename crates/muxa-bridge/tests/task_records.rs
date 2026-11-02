@@ -224,6 +224,40 @@ async fn a_task_without_a_repo_gets_its_own_directory_and_session() {
     assert_eq!(same_panes(&server, &before), before);
 }
 
+fn epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+/// tmux-agents reports a finished turn as `done` while no person watches
+/// the window (ADR 0019). Only a `done` newer than the wait counts.
+#[tokio::test]
+async fn a_fresh_done_gets_the_start_prompt() {
+    let server = Server::start();
+    let host = Host::new("done");
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (r, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let pane = server.pane(&format!("={}:", r.unwrap().session.unwrap()));
+
+    let old = (epoch() - 600).to_string();
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state_at", &old]);
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "done"]);
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert_eq!(prompts(&server, &pane), 0, "a done from before the wait");
+
+    let fresh = epoch().to_string();
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state_at", &fresh]);
+    common::wait_until(|| prompts(&server, &pane) > 0).await;
+}
+
 #[tokio::test]
 async fn a_repo_task_runs_in_its_worktree_with_task_md_excluded() {
     let server = Server::start();

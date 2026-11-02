@@ -24,8 +24,9 @@ const WRITE_ATTEMPTS: usize = 3;
 pub struct Prompt {
     pub text: &'static str,
     pub not_sent: &'static str,
-    /// Only an `idle` since this time counts, in epoch seconds. A state tag
-    /// survives `respawn-pane`, and an old `idle` would type into a starting agent.
+    /// Only an `idle` or `done` since this time counts, in epoch seconds. A
+    /// state tag survives `respawn-pane`, and an old one would type into a
+    /// starting agent.
     pub idle_since: Option<u64>,
 }
 
@@ -47,13 +48,16 @@ pub fn restart(at: u64) -> Prompt {
 }
 
 impl Prompt {
-    fn ready(&self, status: Option<AgentStatus>) -> bool {
-        let Some(s) = status.filter(|s| s.state == AgentState::Idle) else {
-            return false;
-        };
-        match self.idle_since {
-            None => true,
-            Some(at) => s.since.is_some_and(|since| since >= at),
+    /// A finished turn (ADR 0019): `idle`, or a `done` no older than the
+    /// wait that `began` (epoch seconds). tmux-agents keeps a finished turn
+    /// `done` while no person watches the window.
+    fn ready(&self, status: Option<AgentStatus>, began: u64) -> bool {
+        let Some(s) = status else { return false };
+        match (s.state, self.idle_since) {
+            (AgentState::Idle, None) => true,
+            (AgentState::Idle, Some(at)) => s.since.is_some_and(|since| since >= at),
+            (AgentState::Done, at) => s.since.is_some_and(|since| since >= at.unwrap_or(began)),
+            _ => false,
         }
     }
 }
@@ -90,12 +94,13 @@ pub async fn send_prompt(
     prompt: Prompt,
 ) {
     let deadline = tokio::time::Instant::now() + PROMPT_WAIT;
+    let began = crate::records::now();
     let mut seen = None;
     loop {
         let found = agent_pane(&client, &agents, &config, Linked::Session(session)).await;
         if let Some(found) = found {
             seen = found.seen.or(seen);
-            if prompt.ready(found.status) {
+            if prompt.ready(found.status, began) {
                 match type_prompt(&client, found.pane, prompt.text).await {
                     Ok(()) => tracing::info!(task, pane = %found.pane, "prompt sent"),
                     Err(e) => {
@@ -227,25 +232,48 @@ pub async fn write(
 mod tests {
     use super::*;
 
+    fn status(state: AgentState, since: Option<u64>) -> Option<AgentStatus> {
+        Some(AgentStatus { state, since })
+    }
+
     fn idle(since: Option<u64>) -> Option<AgentStatus> {
-        Some(AgentStatus {
-            state: AgentState::Idle,
-            since,
-        })
+        status(AgentState::Idle, since)
+    }
+
+    fn done(since: Option<u64>) -> Option<AgentStatus> {
+        status(AgentState::Done, since)
     }
 
     #[test]
     fn a_restart_prompt_waits_for_an_idle_newer_than_the_restart() {
-        assert!(START.ready(idle(None)));
-        assert!(!START.ready(None));
+        assert!(START.ready(idle(None), 50));
+        assert!(!START.ready(None, 50));
         let p = restart(100);
-        assert!(!p.ready(idle(Some(99))), "an idle from before the restart");
-        assert!(!p.ready(idle(None)), "an idle of unknown age");
-        assert!(p.ready(idle(Some(100))));
-        let running = Some(AgentStatus {
-            state: AgentState::Running,
-            since: Some(200),
-        });
-        assert!(!p.ready(running));
+        assert!(
+            !p.ready(idle(Some(99)), 150),
+            "an idle from before the restart"
+        );
+        assert!(!p.ready(idle(None), 150), "an idle of unknown age");
+        assert!(p.ready(idle(Some(100)), 150));
+        assert!(!p.ready(status(AgentState::Running, Some(200)), 150));
+    }
+
+    #[test]
+    fn a_fresh_done_is_a_finished_turn() {
+        assert!(START.ready(done(Some(50)), 50));
+        assert!(
+            !START.ready(done(Some(49)), 50),
+            "a done from before the wait"
+        );
+        assert!(!START.ready(done(None), 50), "a done of unknown age");
+        let p = restart(100);
+        assert!(
+            p.ready(done(Some(100)), 150),
+            "since the restart, not the wait"
+        );
+        assert!(!p.ready(done(Some(99)), 150));
+        for state in [AgentState::Waiting, AgentState::Error, AgentState::Running] {
+            assert!(!START.ready(status(state, Some(60)), 50), "{state:?}");
+        }
     }
 }
