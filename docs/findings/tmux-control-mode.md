@@ -29,6 +29,23 @@ If a script fails on a new tmux version, the design must be revisited before rel
 
 Before ADR 0020, `refresh-client -C` was rejected as a workaround for narrow-client plugins because a lone `ignore-size` client with a size still sizes windows (Sizing, above). It resized windows once the desktop client had left.
 
+## Sizing from a device session (ADR 0021)
+
+| Fact | Script |
+|---|---|
+| `new-session -d`, then `link-window -d -s @W -t $G:` and `kill-window` of its first window, gives a session that holds only `@W`. The user's session keeps all its windows and its current window; its clients keep their view; no layout changes. Hooks run: `session-created` (with the first window), `window-linked`, `window-unlinked`, `session-closed`. | `scripts/repro/device-session.sh` |
+| `list-sessions`, `list-windows -a` and `list-panes -a` show the session, and list the linked window and its panes once per session. A session option such as `@muxa_device` is visible from window and pane formats, so `-f '#{==:#{@muxa_device},}'` hides the session from all three. | `scripts/repro/device-session.sh` |
+| A command with no target (`tmux attach`, `display-message`) picks the session switched to last. A `switch-client` into the device session makes it that session; a later `switch-client` to the user's session by another client makes the user's session the most recent again. | `scripts/repro/device-session.sh` |
+| `kill-session` of the device session, with its control client attached, changes no window, layout or client of the user's session. The session's own `detach-on-destroy on` detaches that client; under the user's `detach-on-destroy off` without it, the client moves to another session. `kill-session` of the user's session leaves the linked window alive in the device session. | `scripts/repro/device-session.sh` |
+| A grouped session (`new-session -t`) holds every window of its target; it cannot hold one window. | `scripts/repro/device-session.sh` |
+| tmux-agents' hooks run for a device session and add, remove or resize no pane of the user's session. | `scripts/repro/device-session.sh` (set `MUXA_REPRO_PLUGIN`) |
+| With `window-size latest`, a control client in the device session that drops `ignore-size`, switches to it and sends `refresh-client -C` sizes the linked window, also when it is not the desktop's current window. The desktop's session, current window, its window's size and layout stay. Holds with `aggressive-resize` off and on. | `scripts/repro/device-session-size.sh` |
+| A desktop key press in another window leaves the device's window as it is. In the same window it takes the window back; the device client's `switch-client` takes it again. | `scripts/repro/device-session-size.sh` |
+| `refresh-client -f ignore-size` (then `-C`) gives the window back at once with `aggressive-resize off`. With it on, the window keeps the device's size until a desktop client views it. | `scripts/repro/device-session-size.sh` |
+| A second device session for another window leaves the first window alone. A grouped session's client would not: with `aggressive-resize off` it is a candidate for every window of the group, and sizes each window whose latest client is gone. | `scripts/repro/device-session-size.sh` |
+| The daemon's `ignore-size,no-output` client on the user's session sizes nothing meanwhile. | `scripts/repro/device-session-size.sh` |
+| `destroy-unattached on` would end a device session with its last client, but it crashed tmux 3.7c (SIGSEGV, `server_client_lost` → `notify_client` → `server_client_get_pane`, and the same from `cmdq_next`) when the session ended while its control client was still exiting. Seen in macOS crash reports from `crates/muxa-bridge/tests/viewport.rs` runs; not reproducible on demand. muxa does not use it: it kills the session itself. | crash reports (not scripted) |
+
 ## Output stream
 
 | Fact | Script |
