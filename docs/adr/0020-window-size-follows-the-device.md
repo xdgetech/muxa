@@ -38,18 +38,18 @@ A bridge whose client sent `viewport` takes part in window sizing like a desktop
 
 1. **Attach.** It attaches with `-f ignore-size` and no size, as today. `client-attached` hooks see a control client, and nothing is sized before a watch.
 2. **Watch.** After `switch-client` to the pane's session, it reads `#{window-size}` for the pane's window.
-   - `latest`: it sends `refresh-client -f '!ignore-size' ; refresh-client -C WxH`, with WxH from "Pane fit".
+   - `latest`: it sends `refresh-client -f '!ignore-size' ; switch-client -E -t <session> ; refresh-client -C WxH`, with WxH from "Pane fit". `switch-client` makes it the latest client; `-E` leaves the session's environment alone.
    - Any other value: it stays `ignore-size`. Under `smallest` the device would shrink the window the user types in on the laptop; under `largest` and `manual` it would not follow the device anyway.
 3. **Pane fit.** The bridge chooses WxH so that the watched pane gets the viewport's cols x rows, not the window:
    1. First WxH = window + (viewport − pane), per dimension.
-   2. When the layout has settled (no `%layout-change` for the window for 300 ms, at most 2 s), it reads the pane's size again.
+   2. When the layout has settled (no new snapshot of the pane for 300 ms, at most 2 s), it reads the pane's size again. Each `%layout-change` of the window already brings a new snapshot.
    3. If the pane is still off, it corrects WxH by the measured ratio of pane change to window change. At most three corrections per viewport or watch.
    4. WxH is at least the viewport and at most 4 × the viewport, per dimension.
    5. It stops when the window is not at WxH: another client is latest, or the layout cannot grow the pane.
    With tmux-agents (28-column sidebar, two work panes of equal share), a 180-column viewport gives a 390-column window, and the agent pane is 180 columns.
-4. **Typing.** On `keys`, `text`, `bytes` or `paste` to the watched pane, when the window is not at WxH, the bridge sends `switch-client -t <session> ; refresh-client -C WxH` first. That makes it latest again, as a key press makes a desktop terminal latest. At most once per second.
+4. **Typing.** On `keys`, `text`, `bytes` or `paste` to the watched pane, the bridge asks tmux for the window's size, beside the input and without delaying it. When the window is not at WxH, it sends `switch-client -E -t <session> ; refresh-client -C WxH`. That makes it latest again, as a key press makes a desktop terminal latest.
 5. **A new viewport** recomputes WxH and makes the bridge latest again, as a terminal resize does for a desktop client.
-6. **Unwatch, a watch of a window that is not `latest`, or a pane gone:** `refresh-client -f ignore-size ; refresh-client -C WxH`. The window goes back to a desktop client that views it.
+6. **Unwatch, a watch of a pane in another session, a watch of a window that is not `latest`, or a pane gone:** `refresh-client -f ignore-size ; refresh-client -C WxH`, before any `switch-client`. The window goes back to a desktop client that views it. When no other client is attached anywhere, a client that once had a size still counts (the hazard in the findings), so the windows of its session keep that size.
 7. **The client leaves:** the bridge exits and its control client detaches. Where a desktop client views the session, the desktop's size returns at once. Elsewhere the windows keep the device's size until a desktop client views them (fact 5).
 
 ### What stays protected

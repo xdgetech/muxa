@@ -98,6 +98,7 @@ where
         "close-task",
         "images",
         "branch-changes",
+        "viewport",
     ]
     .map(String::from)
     .into();
@@ -356,6 +357,18 @@ impl Worker {
             Request::Unwatch { id } => {
                 return self.to_watcher(|ack| Command::Unwatch { id, ack }).await;
             }
+            Request::Viewport { cols, rows, .. } => {
+                let Some(grid) = crate::viewport::valid(cols, rows) else {
+                    return Some(Err(error_body(
+                        ErrorCode::BadRequest,
+                        "viewport: cols must be 10 to 1000 and rows 5 to 1000",
+                    )));
+                };
+                if self.watch.send(Command::Viewport(grid)).await.is_err() {
+                    return Some(Err(error_body(ErrorCode::Internal, "pane watcher stopped")));
+                }
+                Ok(())
+            }
             // Chat results come from the chat task, ahead of the first entries.
             Request::Chat { id, pane } => {
                 return match pane.parse::<PaneId>() {
@@ -544,19 +557,19 @@ impl Worker {
             Request::Unchat { id } => {
                 return handoff(&self.chat, |ack| chat::Command::Stop { id, ack }, "chat").await;
             }
-            Request::Keys { pane, keys, .. } => match pane.parse() {
+            Request::Keys { pane, keys, .. } => match self.typed(&pane) {
                 Ok(p) => timed(muxa_tmux::send_keys(client, p, &keys)).await,
                 Err(e) => Err(e),
             },
-            Request::Text { pane, text, .. } => match pane.parse() {
+            Request::Text { pane, text, .. } => match self.typed(&pane) {
                 Ok(p) => timed(muxa_tmux::send_text(client, p, &text)).await,
                 Err(e) => Err(e),
             },
-            Request::Bytes { pane, data, .. } => match pane.parse() {
+            Request::Bytes { pane, data, .. } => match self.typed(&pane) {
                 Ok(p) => timed(muxa_tmux::send_bytes(client, p, &data)).await,
                 Err(e) => Err(e),
             },
-            Request::Paste { pane, text, .. } => match pane.parse() {
+            Request::Paste { pane, text, .. } => match self.typed(&pane) {
                 Ok(p) => timed(muxa_tmux::paste(client, p, &text)).await,
                 Err(e) => Err(e),
             },
@@ -598,6 +611,14 @@ impl Worker {
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))
+    }
+
+    /// Parses an input request's pane, and tells the watcher the client typed,
+    /// without waiting: keystrokes never wait for a resize.
+    fn typed(&self, pane: &str) -> Result<PaneId, muxa_tmux::Error> {
+        let pane = pane.parse()?;
+        let _ = self.watch.try_send(Command::Typed(pane));
+        Ok(pane)
     }
 
     fn records_context(&self) -> task_records::Context {

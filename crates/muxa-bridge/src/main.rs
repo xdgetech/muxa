@@ -13,11 +13,13 @@ mod loops;
 mod records;
 mod server;
 mod sessions;
+mod sizer;
 mod states;
 mod task_records;
 mod task_watch;
 mod tasks;
 mod utc;
+mod viewport;
 mod watch;
 
 use std::path::PathBuf;

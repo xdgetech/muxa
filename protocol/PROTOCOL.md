@@ -43,6 +43,7 @@ sequenceDiagram
 | `list` | `id` | `result` carries `sessions` |
 | `watch` | `id`, `pane` | show this pane; replaces the previous watch |
 | `unwatch` | `id` | stop `screen`/`output` |
+| `viewport` | `id`, `cols`, `rows` | the grid the client's pane area shows at its default font (capability `viewport`); the bridge sizes the watched pane's window for it. See "Rendering a pane" |
 | `keys` | `id`, `pane`, `keys[]` | named keys: up to three `C-`/`M-`/`S-` modifiers, then one printable ASCII character, `F1`–`F12`, or one of `Up Down Left Right Home End PageUp PageDown Enter Escape Tab BTab BSpace DC IC Space KPEnter` |
 | `text` | `id`, `pane`, `text` | typed literally |
 | `bytes` | `id`, `pane`, `data` | raw key bytes, for clients that encode keys themselves |
@@ -257,7 +258,13 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Rendering a pane
 
-- Emulate a terminal of exactly `cols` x `rows`. Scale it to fit; never ask for another size.
+- Emulate a terminal of exactly `cols` x `rows`. Scale it to fit.
+- **Viewport** (capability `viewport`, ADR 0020). A client may say which grid it would like with `viewport {cols, rows}`: the cols x rows its pane area shows at its default font. `cols` is 10 to 1000 and `rows` 5 to 1000; other values get `bad-request`.
+  1. Send it before the first `watch`, and again after the pane area changes (rotation, split view, fold, window resize), once it has settled.
+  2. It holds for the current watch and later ones.
+  3. While the client watches a pane, the bridge sizes the pane's window so that the pane gets that grid, as tmux's `window-size latest` does for a terminal. Typing in the pane (`keys`, `text`, `bytes`, `paste`) makes this client the latest one again. Typing on another tmux client takes the window back.
+  4. Only windows whose `window-size` is `latest` follow. The pane can still be any size: keep rendering the `screen` you get.
+  5. A client that never sends `viewport` never changes a window's size.
 - `screen.data` starts with a full reset (`ESC c`) and restores the screen, the cursor, the scroll region and the modes. Feed it to the emulator as-is.
 - Bytes the emulator would send back to the host must be dropped: replies to device-attribute or cursor-position queries. tmux answers those itself.
 

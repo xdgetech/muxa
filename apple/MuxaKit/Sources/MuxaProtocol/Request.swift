@@ -7,6 +7,9 @@ public enum Request: Equatable, Sendable {
     /// Show this pane. `screen` and `output` for it carry this request's id as `watch`.
     case watch(id: UInt64, pane: String)
     case unwatch(id: UInt64)
+    /// The grid the pane area shows at the default font (capability `viewport`,
+    /// ADR 0020). The bridge sizes the watched pane's window for it.
+    case viewport(id: UInt64, cols: Int, rows: Int)
     /// Named keys, e.g. `C-c`, `Up`, `S-Enter`.
     case keys(id: UInt64, pane: String, keys: [String])
     /// Typed literally.
@@ -75,7 +78,8 @@ public enum Request: Equatable, Sendable {
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
             .createTask(let id, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
-            .restartAgent(let id, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _):
+            .restartAgent(let id, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
+            .viewport(let id, _, _):
             id
         }
     }
@@ -85,6 +89,7 @@ extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset
+        case cols, rows
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -93,6 +98,10 @@ extension Request: Codable {
         case .ping(let id): try c.head("ping", id)
         case .list(let id): try c.head("list", id)
         case .unwatch(let id): try c.head("unwatch", id)
+        case .viewport(let id, let cols, let rows):
+            try c.head("viewport", id)
+            try c.encode(cols, forKey: .cols)
+            try c.encode(rows, forKey: .rows)
         case .bye(let id): try c.head("bye", id)
         case .unchat(let id): try c.head("unchat", id)
         case .undoc(let id): try c.head("undoc", id)
@@ -192,6 +201,9 @@ extension Request: Codable {
         case "ping": self = .ping(id: id)
         case "list": self = .list(id: id)
         case "unwatch": self = .unwatch(id: id)
+        case "viewport":
+            self = .viewport(
+                id: id, cols: try c.decode(Int.self, forKey: .cols), rows: try c.decode(Int.self, forKey: .rows))
         case "bye": self = .bye(id: id)
         case "watch": self = .watch(id: id, pane: try pane())
         case "chat": self = .chat(id: id, pane: try pane())

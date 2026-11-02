@@ -18,16 +18,21 @@ pub struct Screen {
     pub window: WindowId,
     pub cols: u16,
     pub rows: u16,
+    /// The pane's window, in cells, when the snapshot was taken.
+    pub window_cols: u16,
+    pub window_rows: u16,
     pub data: Vec<u8>,
     pub block: u64,
 }
 
 const SEP: char = '\u{1f}';
 
-const STATE_FIELDS: [&str; 22] = [
+const STATE_FIELDS: [&str; 24] = [
     "window_id",
     "pane_width",
     "pane_height",
+    "window_width",
+    "window_height",
     "cursor_x",
     "cursor_y",
     "cursor_flag",
@@ -94,6 +99,8 @@ pub(crate) fn screen_from(
         window: st.window,
         cols: st.get("pane_width") as u16,
         rows: st.get("pane_height") as u16,
+        window_cols: st.get("window_width") as u16,
+        window_rows: st.get("window_height") as u16,
         data: replay(&st, &screen.lines, &primary.lines, &pending),
         block,
     })
@@ -217,8 +224,8 @@ mod tests {
                     .map(|(_, v)| *v)
                     .unwrap_or(match *f {
                         "window_id" => "@1",
-                        "pane_width" => "10",
-                        "pane_height" => "3",
+                        "pane_width" | "window_width" => "10",
+                        "pane_height" | "window_height" => "3",
                         "scroll_region_lower" => "2",
                         "cursor_flag" | "wrap_flag" => "1",
                         _ => "0",

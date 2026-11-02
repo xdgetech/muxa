@@ -31,3 +31,4 @@
 {"type":"start-loop","id":32,"task":"t-7f3a2c","loop":{"check":"make check"},"reset":true}
 {"type":"start-loop","id":33,"task":"t-7f3a2c","loop":{"check":"cargo test --workspace","maxAttempts":3}}
 {"type":"stop-loop","id":34,"task":"t-7f3a2c"}
+{"type":"viewport","id":35,"cols":120,"rows":40}

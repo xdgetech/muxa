@@ -14,6 +14,9 @@ sealed interface Request {
     @Serializable data class Watch(override val id: Long, val pane: String) : Request
     @Serializable data class Unwatch(override val id: Long) : Request
 
+    /** The grid the pane area shows at the default font (capability `viewport`, ADR 0020). The bridge sizes the watched pane's window for it. */
+    @Serializable data class Viewport(override val id: Long, val cols: Int, val rows: Int) : Request
+
     /** Named keys, e.g. `C-c`, `Up`, `S-Enter`. */
     @Serializable data class Keys(override val id: Long, val pane: String, val keys: kotlin.collections.List<String>) : Request
 

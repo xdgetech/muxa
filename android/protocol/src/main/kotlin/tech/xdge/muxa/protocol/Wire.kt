@@ -54,6 +54,7 @@ object Wire {
         kind<Request.List>("list"),
         kind<Request.Watch>("watch"),
         kind<Request.Unwatch>("unwatch"),
+        kind<Request.Viewport>("viewport"),
         kind<Request.Keys>("keys"),
         kind<Request.Text>("text"),
         kind<Request.RawBytes>("bytes"),

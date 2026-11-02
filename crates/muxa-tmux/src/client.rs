@@ -1,5 +1,5 @@
 //! A tmux control-mode client process. It attaches with `-f ignore-size` and
-//! never sends a size, so it never sizes a window (docs/adr/0001).
+//! no size, so it sizes no window until `sizing` gives it one (ADR 0020).
 
 use std::path::PathBuf;
 use std::process::Stdio;
