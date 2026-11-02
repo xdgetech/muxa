@@ -597,6 +597,7 @@ class PaneSession(
                 // A session that starts or ends may run a Task, and another device may have changed one.
                 runCatching { loadTasks() }
             }
+            Message.TasksChanged -> scope.launch { runCatching { loadTasks() } }
             is Message.Bye -> scope.launch { teardown(message.reason) }
             is Message.TaskSaved -> savedTasks[message.task] = message.record
             is Message.Unknown -> {}

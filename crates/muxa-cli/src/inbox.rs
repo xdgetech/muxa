@@ -2,7 +2,9 @@
 //! tmux-agents (ADR 0017, `docs/agents.md`). The same rule as the apps'
 //! `Inbox.swift` and `Inbox.kt`: every state comes from an adapter.
 
-use muxa_protocol::{Agent, AgentState, Pane, Role, Session, TaskRecord, TaskStatus};
+use muxa_protocol::{
+    Agent, AgentState, LoopReason, LoopState, Pane, Role, Session, TaskRecord, TaskStatus,
+};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -46,6 +48,7 @@ pub fn item<'a>(record: &'a TaskRecord, sessions: &'a [Session]) -> Item<'a> {
         .and_then(|p| p.agent.as_ref());
     let group = match (record.status, agent.map(|a| a.state)) {
         (TaskStatus::Done | TaskStatus::Dropped, _) => Group::Closed,
+        _ if loop_needs_user(record) => Group::NeedsAttention,
         (_, None) => Group::NoAgent,
         (_, Some(AgentState::Waiting | AgentState::Error)) => Group::NeedsAttention,
         (_, Some(AgentState::Running)) => Group::Running,
@@ -57,6 +60,16 @@ pub fn item<'a>(record: &'a TaskRecord, sessions: &'a [Session]) -> Item<'a> {
         agent: agent.filter(|_| group != Group::Closed),
         group,
     }
+}
+
+/// A loop that paused for the user, or stopped for a reason the user did not
+/// give (ADR 0019).
+fn loop_needs_user(record: &TaskRecord) -> bool {
+    record.r#loop.as_ref().is_some_and(|l| match l.state {
+        LoopState::Paused => true,
+        LoopState::Stopped => !matches!(l.reason, Some(LoopReason::User | LoopReason::Status)),
+        LoopState::Armed | LoopState::Checking | LoopState::Passed => false,
+    })
 }
 
 /// The tagged agent pane, else the first visible pane an adapter reports on.
@@ -114,6 +127,8 @@ mod tests {
             session: None,
             note: None,
             runs: Vec::new(),
+            r#loop: None,
+            pending_prompt: None,
         }
     }
 
@@ -252,5 +267,31 @@ mod tests {
         let v = to_json(&item(&lone, &[]));
         assert_eq!(v["group"], "no-agent");
         assert!(v.get("session").is_none() && v.get("agent").is_none());
+    }
+
+    /// `protocol/fixtures/inbox` pins the rule shared with `Inbox.swift` and `Inbox.kt`.
+    #[test]
+    fn groups_match_the_shared_fixture() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../protocol/fixtures/inbox/groups.jsonl"
+        );
+        let text = std::fs::read_to_string(path).expect("the inbox fixture");
+        let mut n = 0;
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let case: Value = serde_json::from_str(line).expect("a fixture line");
+            let record: TaskRecord =
+                serde_json::from_value(case["record"].clone()).expect("a record");
+            let sessions: Vec<Session> =
+                serde_json::from_value(case["sessions"].clone()).expect("sessions");
+            assert_eq!(
+                item(&record, &sessions).group.wire(),
+                case["group"],
+                "{}",
+                case["name"]
+            );
+            n += 1;
+        }
+        assert_eq!(n, 23);
     }
 }

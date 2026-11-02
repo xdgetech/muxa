@@ -5,7 +5,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
+import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.File
 
@@ -29,7 +31,7 @@ class FixtureTest {
     @Test
     fun requestsRoundTrip() {
         val lines = lines("requests.jsonl")
-        assertEquals(29, lines.size)
+        assertEquals(33, lines.size)
         for (line in lines) {
             assertEquals(line, tree(line), tree(Wire.encode(Wire.decodeRequest(line))))
         }
@@ -38,7 +40,7 @@ class FixtureTest {
     @Test
     fun messagesRoundTrip() {
         val lines = lines("messages.jsonl")
-        assertEquals(36, lines.size)
+        assertEquals(39, lines.size)
         for (line in lines) {
             val message = Wire.decodeMessage(line)
             assertFalse("fixture type is unknown: $line", message is Message.Unknown)
@@ -69,6 +71,23 @@ class FixtureTest {
         val run = """{"type":"task-saved","task":1,"record":{"id":"t-1","rev":1,"workspace":"w","title":"t",""" +
             """"goal":"g","status":"open","createdAt":1,"updatedAt":1,"runs":[{"id":1,"startedAt":1,"reason":"resume"}]}}"""
         assertEquals(RunReason("resume"), (Wire.decodeMessage(run) as Message.TaskSaved).record.runs.single().reason)
+        val loop = """{"type":"task-saved","task":1,"record":{"id":"t-1","rev":1,"workspace":"w","title":"t",""" +
+            """"goal":"g","status":"open","createdAt":1,"updatedAt":1,"loop":{"check":"c","maxAttempts":3,""" +
+            """"timeout":600,"state":"resting","attempts":0,"armedAt":1,"since":1,"reason":"quota"}}}"""
+        val decoded = (Wire.decodeMessage(loop) as Message.TaskSaved).record.loop!!
+        assertEquals(LoopState("resting"), decoded.state)
+        assertEquals(LoopReason("quota"), decoded.reason)
+    }
+
+    @Test
+    fun workspaceChecksAreAnyOrAList() {
+        fun checks(json: String) =
+            (Wire.decodeMessage("""{"type":"task-list","tasks":1,"workspaces":[$json],"entries":[]}""") as Message.TaskList)
+                .workspaces.single().checks
+        assertEquals(WorkspaceChecks.Any, checks("""{"name":"w","checks":"any"}"""))
+        assertEquals(WorkspaceChecks.Only(listOf("make check")), checks("""{"name":"w","checks":["make check"]}"""))
+        assertEquals(null, checks("""{"name":"w"}"""))
+        assertThrows(SerializationException::class.java) { checks("""{"name":"w","checks":"all"}""") }
     }
 
     @Test

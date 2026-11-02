@@ -1,9 +1,10 @@
-//! `tasks`, `task new`, `task done` and `task restart`: task records
-//! (`task-records`, ADR 0015; `task-handoff`, ADR 0018).
+//! `tasks`, `task new`, `task done`, `task restart` and the Task Loop: task
+//! records (`task-records`, ADR 0015; `task-handoff`, ADR 0018; `task-loop`,
+//! ADR 0019).
 
 use std::time::Duration;
 
-use muxa_protocol::{Message, Request, TaskRecord, TaskStatus};
+use muxa_protocol::{LoopSpec, LoopState, Message, Request, TaskLoop, TaskRecord, TaskStatus};
 use serde_json::json;
 
 use crate::conn::Conn;
@@ -25,6 +26,46 @@ pub struct NewTask {
     pub repo: Option<String>,
     pub branch: Option<String>,
     pub base: Option<String>,
+    pub r#loop: Option<LoopSpec>,
+}
+
+/// `--check`, `--max-attempts` and `--check-timeout`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LoopFlags {
+    pub check: Option<String>,
+    pub max_attempts: Option<u32>,
+    pub timeout: Option<u64>,
+}
+
+/// ADR 0019's bounds; the host checks them too.
+const ATTEMPTS: std::ops::RangeInclusive<u32> = 1..=10;
+const TIMEOUT: std::ops::RangeInclusive<u64> = 10..=3600;
+
+impl LoopFlags {
+    /// The loop the flags ask for; none without `--check`.
+    pub fn spec(&self) -> Result<Option<LoopSpec>, lexopt::Error> {
+        let bad = |m: &str| Err(lexopt::Error::Custom(m.into()));
+        let Some(check) = &self.check else {
+            if self.max_attempts.is_some() || self.timeout.is_some() {
+                return bad("--max-attempts and --check-timeout need --check");
+            }
+            return Ok(None);
+        };
+        if check.trim().is_empty() {
+            return bad("--check needs a command");
+        }
+        if self.max_attempts.is_some_and(|n| !ATTEMPTS.contains(&n)) {
+            return bad("--max-attempts must be 1 to 10");
+        }
+        if self.timeout.is_some_and(|t| !TIMEOUT.contains(&t)) {
+            return bad("--check-timeout must be 10 to 3600 seconds");
+        }
+        Ok(Some(LoopSpec {
+            check: check.clone(),
+            max_attempts: self.max_attempts,
+            timeout: self.timeout,
+        }))
+    }
 }
 
 impl NewTask {
@@ -90,6 +131,7 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
                 repo: new.repo,
                 branch: new.branch,
                 base: new.base,
+                r#loop: new.r#loop,
             },
             LAUNCH_WAIT,
         )
@@ -163,6 +205,108 @@ pub async fn restart(
     Ok(String::new())
 }
 
+pub async fn start_loop(
+    conn: &mut Conn,
+    task: &str,
+    spec: LoopSpec,
+    reset: bool,
+    as_json: bool,
+) -> Result<String, String> {
+    let messages = conn
+        .call(
+            |id| Request::StartLoop {
+                id,
+                task: task.to_owned(),
+                r#loop: spec,
+                reset,
+            },
+            WAIT,
+        )
+        .await?;
+    let record = saved(&messages).ok_or("the bridge saved no task")?;
+    print_record(conn, record, as_json).await
+}
+
+pub async fn stop_loop(conn: &mut Conn, task: &str, as_json: bool) -> Result<String, String> {
+    let record = stop_one(conn, task).await?;
+    print_record(conn, &record, as_json).await
+}
+
+/// Stops every loop that can still act. A failure does not stop the others;
+/// the error names each task that kept its loop.
+pub async fn stop_all_loops(conn: &mut Conn, as_json: bool) -> Result<String, String> {
+    let (_, records, truncated) = fetch(conn).await?;
+    let active: Vec<String> = records
+        .iter()
+        .filter(|r| r.r#loop.as_deref().is_some_and(is_active))
+        .map(|r| r.id.clone())
+        .collect();
+    let (mut stopped, mut failed) = (Vec::new(), Vec::new());
+    for task in &active {
+        match stop_one(conn, task).await {
+            Ok(record) => stopped.push(record),
+            Err(e) => failed.push(format!("{task}: {e}")),
+        }
+    }
+    if as_json {
+        let sessions = conn.list().await?;
+        let tasks: Vec<_> = stopped
+            .iter()
+            .map(|r| inbox::to_json(&inbox::item(r, &sessions)))
+            .collect();
+        println!("{}", json!({"tasks": tasks}));
+    } else {
+        for r in &stopped {
+            println!("{}", line(r));
+        }
+    }
+    if truncated {
+        failed.push("the bridge listed only some tasks; run it again".to_owned());
+    }
+    if failed.is_empty() {
+        Ok(String::new())
+    } else {
+        Err(failed.join("; "))
+    }
+}
+
+async fn stop_one(conn: &mut Conn, task: &str) -> Result<TaskRecord, String> {
+    let messages = conn
+        .call(
+            |id| Request::StopLoop {
+                id,
+                task: task.to_owned(),
+            },
+            WAIT,
+        )
+        .await?;
+    saved(&messages)
+        .cloned()
+        .ok_or_else(|| "the bridge saved no task".to_owned())
+}
+
+/// A loop that may still check or type. An unknown state is left alone.
+fn is_active(l: &TaskLoop) -> bool {
+    matches!(
+        l.state,
+        LoopState::Armed | LoopState::Checking | LoopState::Paused
+    )
+}
+
+async fn print_record(
+    conn: &mut Conn,
+    record: &TaskRecord,
+    as_json: bool,
+) -> Result<String, String> {
+    if as_json {
+        let sessions = conn.list().await?;
+        println!("{}", inbox::to_json(&inbox::item(record, &sessions)));
+    } else {
+        println!("{}", line(record));
+    }
+    Ok(String::new())
+}
+
 async fn fetch(conn: &mut Conn) -> Result<(Vec<String>, Vec<TaskRecord>, bool), String> {
     let messages = conn.call(|id| Request::ListTasks { id }, WAIT).await?;
     messages
@@ -197,10 +341,32 @@ fn line(r: &TaskRecord) -> String {
     if let Some(session) = &r.session {
         out.push_str(&format!("  [{session}]"));
     }
+    if let Some(l) = &r.r#loop {
+        out.push_str(&format!("  {}", loop_text(l)));
+    }
     if let Some(note) = &r.note {
         out.push_str(&format!("  ({note})"));
     }
     out
+}
+
+/// `loop stopped (limit) 3/3`: the state, its reason, and failed checks of the limit.
+fn loop_text(l: &TaskLoop) -> String {
+    let wire = |v: serde_json::Result<serde_json::Value>| {
+        v.ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default()
+    };
+    let reason = l
+        .reason
+        .map(|r| format!(" ({})", wire(serde_json::to_value(r))))
+        .unwrap_or_default();
+    format!(
+        "loop {}{reason} {}/{}",
+        wire(serde_json::to_value(l.state)),
+        l.attempts,
+        l.max_attempts
+    )
 }
 
 #[cfg(test)]
@@ -268,10 +434,54 @@ mod tests {
             session: Some("fix-login-t-7f3a2c".into()),
             note: Some("not sent".into()),
             runs: Vec::new(),
+            r#loop: None,
+            pending_prompt: None,
         };
         assert_eq!(
             line(&r),
             "t-7f3a2c  review  work  Fix login  [fix-login-t-7f3a2c]  (not sent)"
+        );
+        let looped = TaskRecord {
+            r#loop: Some(Box::new(TaskLoop {
+                check: "make check".into(),
+                max_attempts: 3,
+                timeout: 600,
+                state: LoopState::Stopped,
+                attempts: 3,
+                armed_at: 0,
+                since: 0,
+                reason: Some(muxa_protocol::LoopReason::Limit),
+                last_check: None,
+            })),
+            note: None,
+            ..r
+        };
+        assert_eq!(
+            line(&looped),
+            "t-7f3a2c  review  work  Fix login  [fix-login-t-7f3a2c]  loop stopped (limit) 3/3"
+        );
+    }
+
+    #[test]
+    fn loop_flags_need_a_check_and_stay_in_bounds() {
+        let flags = |check: Option<&str>, n, t| LoopFlags {
+            check: check.map(str::to_owned),
+            max_attempts: n,
+            timeout: t,
+        };
+        assert_eq!(flags(None, None, None).spec().ok(), Some(None));
+        assert!(flags(None, Some(3), None).spec().is_err());
+        assert!(flags(Some(" "), None, None).spec().is_err());
+        assert!(flags(Some("make check"), Some(0), None).spec().is_err());
+        assert!(flags(Some("make check"), Some(11), None).spec().is_err());
+        assert!(flags(Some("make check"), None, Some(5)).spec().is_err());
+        assert_eq!(
+            flags(Some("make check"), Some(10), Some(3600)).spec().ok(),
+            Some(Some(LoopSpec {
+                check: "make check".into(),
+                max_attempts: Some(10),
+                timeout: Some(3600),
+            }))
         );
     }
 }

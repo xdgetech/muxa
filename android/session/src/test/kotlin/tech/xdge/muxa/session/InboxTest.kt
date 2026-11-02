@@ -1,15 +1,23 @@
 package tech.xdge.muxa.session
 
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import tech.xdge.muxa.protocol.Agent
 import tech.xdge.muxa.protocol.AgentState
+import tech.xdge.muxa.protocol.LoopReason
+import tech.xdge.muxa.protocol.LoopState
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import java.io.File
 
 class InboxTest {
     private fun record(id: String, status: TaskStatus = TaskStatus.OPEN, updatedAt: Long = 1) =
@@ -26,6 +34,38 @@ class InboxTest {
         Session(id = "$" + (taskId ?: "x"), name = "s-$taskId", taskId = taskId, panes = panes.toList())
 
     private fun group(record: TaskRecord, vararg sessions: Session) = inboxItem(record, sessions.toList()).group
+
+    /** `protocol/fixtures/inbox` pins the rule shared with `muxa-cli` and `Inbox.swift`. */
+    @Test
+    fun groupsMatchTheSharedFixture() {
+        val json = Json { ignoreUnknownKeys = true }
+        val names = mapOf(
+            "needs-attention" to InboxGroup.NEEDS_ATTENTION,
+            "ready-for-review" to InboxGroup.READY_FOR_REVIEW,
+            "running" to InboxGroup.RUNNING,
+            "no-agent" to InboxGroup.NO_AGENT,
+            "closed" to InboxGroup.CLOSED,
+        )
+        val lines = File(System.getProperty("muxa.fixtures")).resolve("inbox/groups.jsonl").readLines()
+            .filter { it.isNotEmpty() }
+        assertEquals(23, lines.size)
+        for (line in lines) {
+            val case = json.parseToJsonElement(line).jsonObject
+            val record = json.decodeFromJsonElement(TaskRecord.serializer(), case.getValue("record"))
+            val sessions = json.decodeFromJsonElement(ListSerializer(Session.serializer()), case.getValue("sessions"))
+            val name = case.getValue("name").jsonPrimitive.content
+            assertEquals(name, names[case.getValue("group").jsonPrimitive.content], inboxItem(record, sessions).group)
+        }
+    }
+
+    @Test
+    fun aLoopOfAnUnknownStateFollowsTheAgent() {
+        val loop = TaskLoop("make check", 3, 600, LoopState("resting"), 0, 1, 1)
+        val running = session("t-1", pane("%1", state = AgentState.RUNNING))
+        assertEquals(InboxGroup.RUNNING, group(record("t-1").copy(loop = loop), running))
+        val stopped = loop.copy(state = LoopState.STOPPED, reason = LoopReason("quota"))
+        assertEquals(InboxGroup.NEEDS_ATTENTION, group(record("t-1").copy(loop = stopped), running))
+    }
 
     @Test
     fun theAgentStateDecidesTheGroupOfAnOpenTask() {

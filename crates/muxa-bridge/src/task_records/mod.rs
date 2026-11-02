@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use tokio::task::JoinHandle;
 
-use muxa_protocol::{ErrorBody, ErrorCode, Message, Request, TaskStatus, WorkspaceInfo};
+use muxa_protocol::{ErrorBody, ErrorCode, Message, Request, TaskStatus};
 use muxa_tmux::{Client, Role, Session};
 
 use crate::agents::Registry;
@@ -165,6 +165,15 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             status,
         } => one(update(&cx.records, id, task, rev, status).await),
         Request::CreateTask {
+            r#loop: Some(_), ..
+        } => (
+            Vec::new(),
+            Some(error_body(
+                ErrorCode::Unsupported,
+                "this muxa daemon cannot run a Task Loop yet",
+            )),
+        ),
+        Request::CreateTask {
             id,
             workspace,
             title,
@@ -173,6 +182,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             repo,
             branch,
             base,
+            r#loop: None,
         } => match cx.env().await {
             Ok(env) => {
                 let new = NewTask {
@@ -336,13 +346,7 @@ pub async fn list(config: &Config, request: u64) -> Result<Message, ErrorBody> {
         let (records, truncated) = cap(records, MAX_LIST);
         Ok(Message::TaskList {
             tasks: request,
-            workspaces: workspaces
-                .all()
-                .iter()
-                .map(|w| WorkspaceInfo {
-                    name: w.name.clone(),
-                })
-                .collect(),
+            workspaces: workspaces.all().iter().map(convert::workspace).collect(),
             entries: records.into_iter().map(convert::task_record).collect(),
             truncated,
         })

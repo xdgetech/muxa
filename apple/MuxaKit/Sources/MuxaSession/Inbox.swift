@@ -38,7 +38,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         if let pane = agentPane, let agent = pane.agent, agent.shown(shellForeground: pane.shellForeground) != nil {
             self.agent = agent
         }
-        group = Self.group(status: record.status, agent: agent?.state)
+        group = Self.group(status: record.status, loop: record.loop, agent: agent?.state)
     }
 
     /// The pane tagged as the agent, else the first visible pane an adapter reports on.
@@ -47,11 +47,12 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
             ?? session.visiblePanes.first { $0.agent != nil }
     }
 
-    private static func group(status: TaskStatus, agent: AgentState?) -> InboxGroup {
+    private static func group(status: TaskStatus, loop: TaskLoop?, agent: AgentState?) -> InboxGroup {
         switch status {
         case .done, .dropped: return .closed
         case .open, .review, .other: break
         }
+        if loop?.needsUser == true { return .needsAttention }
         switch agent {
         case nil: return .noAgent
         // An error is an adapter's state too, and the user has to look at it.

@@ -134,7 +134,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let tasks = lock.withLock { tasks }
             emit(.taskList(TaskListing(tasks: id, workspaces: tasks.workspaces, entries: tasks.records)))
             ok(id)
-        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _):
+        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, _):
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.createTask(id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch)
             }

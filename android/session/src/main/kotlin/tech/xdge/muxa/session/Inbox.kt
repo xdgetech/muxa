@@ -40,9 +40,14 @@ fun List<Session>.runningTask(record: TaskRecord): Session? = firstOrNull { it.t
 val Session.agentPane: Pane?
     get() = visiblePanes.firstOrNull { it.role == Role.AGENT } ?: visiblePanes.firstOrNull { it.agent != null }
 
-/** Where [record] belongs, from its status and its session's agent state (ADR 0015). */
+/** Where [record] belongs, from its status, its Task Loop and its session's agent state (ADR 0015, 0019). */
 fun inboxItem(record: TaskRecord, sessions: List<Session>): InboxItem {
     if (record.status.isClosed) return InboxItem(record, InboxGroup.CLOSED, sessions.runningTask(record))
+    val item = agentItem(record, sessions)
+    return if (record.loop?.needsUser == true) item.copy(group = InboxGroup.NEEDS_ATTENTION) else item
+}
+
+private fun agentItem(record: TaskRecord, sessions: List<Session>): InboxItem {
     val session = sessions.runningTask(record) ?: return InboxItem(record, InboxGroup.NO_AGENT)
     val pane = session.agentPane
     val agent = pane?.agent

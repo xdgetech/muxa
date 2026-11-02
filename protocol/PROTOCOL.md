@@ -61,9 +61,11 @@ sequenceDiagram
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
 | `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
 | `list-tasks` | `id` | list the task records and workspaces (capability `task-records`); a `task-list` comes before the `result` |
-| `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base` | record a task and start its agent; a `task-saved` comes before the `result` |
+| `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}` | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
 | `update-task` | `id`, `task`, `rev`, `status` | set a task record's status; a `task-saved` comes before the `result` |
 | `restart-agent` | `id`, `task`, optional `force` | restart the task's agent in the same pane, after a handoff (capability `task-handoff`); a `task-saved` comes before the `result` |
+| `start-loop` | `id`, `task`, `loop {check, maxAttempts?, timeout?}`, optional `reset` | start the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
+| `stop-loop` | `id`, `task` | stop the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -90,8 +92,9 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `image-content` | `image`, `path`, `data` (base64), optional `mtime` |
 | `image-ended` | `image`, `reason` |
 | `task-created` | `task`, `session` |
-| `task-list` | `tasks`, `workspaces[] {name}`, `entries[]` (task records), optional `truncated` |
+| `task-list` | `tasks`, `workspaces[] {name, checks?}`, `entries[]` (task records), optional `truncated` |
 | `task-saved` | `task`, `record` (a task record) |
+| `tasks-changed` | none. Send `list-tasks` again (capability `tasks-changed`) |
 | `bye` | `reason` |
 
 Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `conflict`, `tmux`, `internal`.
@@ -135,7 +138,7 @@ Entries are made by the bridge from the agent's own records, which are private f
 A bridge with the `docs` capability serves the Markdown documents that belong to a pane, for reading.
 
 1. `docs {pane}` sends `doc-list`, then `result`. `docs` in the list is the request id.
-2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more. Last come a task's brief and handoff, paths `.muxa/TASK.md` and `.muxa/HANDOFF.md` (`kind: repo`), when they exist at the repo root or, outside a repo, in the pane's directory (ADR 0015, 0018).
+2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more. Last come a task's brief, handoff and last check, paths `.muxa/TASK.md`, `.muxa/HANDOFF.md` and `.muxa/CHECK.md` (`kind: repo`), when they exist at the repo root or, outside a repo, in the pane's directory (ADR 0015, 0018, 0019).
 3. `doc {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `doc-content` with the whole text, and again whenever the file changes (checked every second). The client drops any whose `doc` is not its latest doc request.
 4. `doc-ended` says the document is no longer readable, for example removed, larger than 2 MiB, or a symlink to outside its directory.
 
@@ -181,16 +184,18 @@ A bridge with the `tasks` capability starts tasks: a git worktree on a branch, a
 
 A bridge with the `task-records` capability keeps Tasks: durable records of work, stored on the host (ADR 0015). `new-task` and `close-task` above start and close a session for work. A task record is the Task itself: it has a goal and a status, and it outlives its session.
 
-1. `list-tasks` sends `task-list`, then `result`. `tasks` in the list is the request id. `workspaces` are the host's workspaces, from its config; clients cannot change them. `entries` are the records; `truncated` says the bridge left some out.
+1. `list-tasks` sends `task-list`, then `result`. `tasks` in the list is the request id. `workspaces` are the host's workspaces, from its config; clients cannot change them. A workspace's optional `checks` is what a Task Loop may run there: `"any"`, or a list of exact commands. Absent means no loops in that workspace. `entries` are the records; `truncated` says the bridge left some out.
 2. A task record has:
    - `id`, for example `t-7f3a2c`;
    - `rev`, an integer from 1, one higher after every write;
    - `workspace`, `title`, `goal`;
-   - `status`: `open`, `review`, `done` or `dropped`, set by the user. Treat an unknown status as one without a known meaning, and still show the record;
+   - `status`: `open`, `review`, `done` or `dropped`, set by the user. One exception: a passing Task Loop moves `open` to `review` (ADR 0019 amends ADR 0015). Nothing else changes the status. Treat an unknown status as one without a known meaning, and still show the record;
    - `createdAt`, `updatedAt` in epoch seconds;
    - optional `project` (free text), `repo` (absolute), `branch`, `dir` (where the agent works, absolute), `session` (the last known session name, for display only) and `note` (from the bridge, for example why the launch failed);
-   - optional `runs`, with the `task-handoff` capability: the agents that worked on the task. See Handoff below.
-3. `create-task {workspace, title, goal, project?, repo?, branch?, base?}` records a Task and starts an agent for it. `workspace` is a name from `task-list`.
+   - optional `runs`, with the `task-handoff` capability: the agents that worked on the task. See Handoff below;
+   - optional `loop`: the task's Task Loop. See Task Loop below;
+   - optional `pendingPrompt {kind, since, run}`: a prompt the host still waits to type into the agent. `kind` is `start` or `restart`, `since` is when the wait began (epoch seconds), and `run` is the `id` of the run it is for. It is cleared when the prompt is typed or given up.
+3. `create-task {workspace, title, goal, project?, repo?, branch?, base?, loop?}` records a Task and starts an agent for it. `workspace` is a name from `task-list`. `loop` also starts a Task Loop; see Task Loop below.
    - With `repo`, `branch` is required. The session starts as with `new-task`, and `base` means the same.
    - Without `repo`, the task gets a directory in its workspace, `<root>/tasks/<slug>-<id>`, and a new session of the same name.
    - When the branch's session already runs another task that is `open` or `review`, the request is `bad-request`.
@@ -223,6 +228,32 @@ A bridge with the `task-handoff` capability records the agents that work on a Ta
    - On success the bridge sends `task-saved {task, record}`, then `result`. `task` is the request id.
    - Once the new agent is `idle`, the bridge types `Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.` When that does not happen within 30 seconds, the record's `note` says so.
    - An unknown task is `bad-request`.
+
+## Task Loop
+
+A bridge with the `task-loop` capability can run a Task Loop: after each finished turn of the task's agent, the host runs a check command, and types a fail prompt until the check passes (ADR 0019). The loop runs in the muxa daemon on the host, also while no client is connected. The bridge has the capability only when it reached a daemon of its own version.
+
+1. A loop is asked for with `loop {check, maxAttempts?, timeout?}`, in `create-task` or in `start-loop`.
+   - `check` is a shell command, run in the task's `dir`. It must be allowed by the workspace's `checks`: one of the listed strings, exactly, or any command of at most 4096 bytes with no control character for `"any"`.
+   - `maxAttempts` is how many failed checks stop the loop: 1 to 10, default 3.
+   - `timeout` is how many seconds one check may run: 10 to 3600, default 600.
+   - A workspace without `checks`, a check it does not allow, or a repo task whose repo is not in the workspace is `bad-request`. Without a usable daemon, the request is `unsupported`, and the message says what to run on the host.
+2. `start-loop {task, loop, reset?}` starts the loop of the record whose id is `task`, also a stopped or passed one. The attempt count goes on, unless `reset` is true. `stop-loop {task}` stops it with reason `user`. Both send `task-saved`, then `result`. An unknown task is `bad-request`.
+3. A record's `loop` has:
+   - `check`, `maxAttempts`, `timeout`, as above, with the defaults filled in;
+   - `state`: `armed` (waits for the agent's next finished turn), `checking`, `paused`, `passed` or `stopped`. Treat an unknown state as one without a known meaning;
+   - `attempts`, the failed checks so far;
+   - `armedAt`, epoch seconds when the loop started or last typed a prompt, and `since`, epoch seconds of the last state change;
+   - optional `reason`, set when the state is `paused` or `stopped`: `waiting` (paused while the agent waits for the user), `limit`, `timeout`, `error`, `no-agent`, `not-sent`, `stalled`, `status` (the user set a status other than `open`) or `user`. Treat an unknown reason as one without a known meaning;
+   - optional `lastCheck {attempt, exit?, seconds, at}`: the last check's attempt, exit code, duration and end time in epoch seconds. `exit` is absent when the check timed out.
+4. A passing check sets the state to `passed`, and moves a task with status `open` to `review`. The loop never sets any other status.
+5. The loop never answers the agent's menus. While the agent is `waiting`, the loop is `paused`; it goes on after the user answered.
+6. The check's output is in the task's `.muxa/CHECK.md` (see Documents). The record never carries it.
+7. Clients put a task in **Needs attention** when its loop is `paused`, or `stopped` with a reason other than `user` or `status`, unless the task is `done` or `dropped`. `protocol/fixtures/inbox/groups.jsonl` pins the whole Inbox rule: each line has a `record`, the `sessions` of `list`, and the `group` it belongs to.
+
+## Tasks changed
+
+A bridge with the `tasks-changed` capability sends `tasks-changed` when a task record changed on the host, whoever wrote it: the daemon, another bridge, or `muxa-cli`. It looks every 2 seconds. The message has no fields. Send `list-tasks` again.
 
 ## Rendering a pane
 

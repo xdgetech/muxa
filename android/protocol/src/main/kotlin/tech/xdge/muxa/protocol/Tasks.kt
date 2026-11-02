@@ -29,6 +29,10 @@ data class TaskRecord(
     val note: String? = null,
     /** The agents that worked on the task, oldest first (ADR 0018). Recorded only while a bridge started or restarted them. */
     val runs: List<AgentRun> = emptyList(),
+    /** The task's Task Loop; null when it has none (ADR 0019). */
+    val loop: TaskLoop? = null,
+    /** A start or restart prompt the host still waits to type (ADR 0019). */
+    val pendingPrompt: PendingPrompt? = null,
 )
 
 /** One agent that worked on a task, as the bridge started or restarted it (ADR 0018). */
@@ -62,7 +66,10 @@ value class RunReason(val raw: String) {
     }
 }
 
-/** Set by the user; separate from the agent's state. A status added by a newer bridge keeps its name. */
+/**
+ * Set by the user; separate from the agent's state. A passing Task Loop moves `open` to `review` (ADR 0019).
+ * A status added by a newer bridge keeps its name.
+ */
 @Serializable
 @JvmInline
 value class TaskStatus(val raw: String) {
@@ -76,4 +83,8 @@ value class TaskStatus(val raw: String) {
 
 /** A workspace from the host's config; `create-task` names one. */
 @Serializable
-data class WorkspaceInfo(val name: String)
+data class WorkspaceInfo(
+    val name: String,
+    /** The check commands a Task Loop may run here; null means no loops. */
+    val checks: WorkspaceChecks? = null,
+)

@@ -43,8 +43,11 @@ public enum Message: Equatable, Sendable {
     case taskCreated(task: UInt64, session: String)
     /// The task records for a `list-tasks` request, just before its `result`.
     case taskList(TaskListing)
-    /// The record a `create-task` or `update-task` wrote, just before its `result`.
+    /// The record a task request wrote, just before its `result`.
     case taskSaved(task: UInt64, record: TaskRecord)
+    /// A task record changed on the host: send `list-tasks` again (capability
+    /// `tasks-changed`).
+    case tasksChanged
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -189,6 +192,8 @@ extension Message: Codable {
             self = .taskSaved(
                 task: try c.decode(UInt64.self, forKey: .task),
                 record: try c.decode(TaskRecord.self, forKey: .record))
+        case "tasks-changed":
+            self = .tasksChanged
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -286,6 +291,8 @@ extension Message: Codable {
             try c.encode("task-saved", forKey: .type)
             try c.encode(task, forKey: .task)
             try c.encode(record, forKey: .record)
+        case .tasksChanged:
+            try c.encode("tasks-changed", forKey: .type)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)

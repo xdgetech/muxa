@@ -48,9 +48,10 @@ public enum Request: Equatable, Sendable {
     case listTasks(id: UInt64)
     /// Record a new task and start an agent for it; a `task-saved` comes first.
     /// Without `repo` the task gets a directory in its workspace.
+    /// With `loop`, the host also starts a Task Loop (capability `task-loop`).
     case createTask(
         id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?,
-        branch: String?, base: String?)
+        branch: String?, base: String?, loop: LoopSpec? = nil)
     /// Set a task record's status. `rev` is the one the client saw; a stale one
     /// fails with `conflict`. A `task-saved` comes first.
     case updateTask(id: UInt64, task: String, rev: UInt64, status: TaskStatus)
@@ -58,6 +59,11 @@ public enum Request: Equatable, Sendable {
     /// `task-handoff`, ADR 0018). Refused while the agent runs, unless `force`.
     /// A `task-saved` comes first.
     case restartAgent(id: UInt64, task: String, force: Bool)
+    /// Start a task's Task Loop again (capability `task-loop`, ADR 0019); `reset`
+    /// counts the attempts from zero. A `task-saved` comes first.
+    case startLoop(id: UInt64, task: String, loop: LoopSpec, reset: Bool)
+    /// Stop a task's Task Loop (capability `task-loop`). A `task-saved` comes first.
+    case stopLoop(id: UInt64, task: String)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -68,8 +74,8 @@ public enum Request: Equatable, Sendable {
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
-            .createTask(let id, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
-            .restartAgent(let id, _, _):
+            .createTask(let id, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
+            .restartAgent(let id, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _):
             id
         }
     }
@@ -78,7 +84,7 @@ public enum Request: Equatable, Sendable {
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
-        case workspace, title, goal, project, task, rev, status, force
+        case workspace, title, goal, project, task, rev, status, force, loop, reset
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -104,7 +110,8 @@ extension Request: Codable {
             try c.encode(session, forKey: .session)
             try c.encode(mode, forKey: .mode)
         case .listTasks(let id): try c.head("list-tasks", id)
-        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, let base):
+        case .createTask(
+            let id, let workspace, let title, let goal, let project, let repo, let branch, let base, let loop):
             try c.head("create-task", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(title, forKey: .title)
@@ -113,6 +120,7 @@ extension Request: Codable {
             try c.encodeIfPresent(repo, forKey: .repo)
             try c.encodeIfPresent(branch, forKey: .branch)
             try c.encodeIfPresent(base, forKey: .base)
+            try c.encodeIfPresent(loop, forKey: .loop)
         case .updateTask(let id, let task, let rev, let status):
             try c.head("update-task", id)
             try c.encode(task, forKey: .task)
@@ -122,6 +130,14 @@ extension Request: Codable {
             try c.head("restart-agent", id)
             try c.encode(task, forKey: .task)
             if force { try c.encode(true, forKey: .force) }
+        case .startLoop(let id, let task, let loop, let reset):
+            try c.head("start-loop", id)
+            try c.encode(task, forKey: .task)
+            try c.encode(loop, forKey: .loop)
+            if reset { try c.encode(true, forKey: .reset) }
+        case .stopLoop(let id, let task):
+            try c.head("stop-loop", id)
+            try c.encode(task, forKey: .task)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -198,7 +214,8 @@ extension Request: Codable {
                 project: try c.decodeIfPresent(String.self, forKey: .project),
                 repo: try c.decodeIfPresent(String.self, forKey: .repo),
                 branch: try c.decodeIfPresent(String.self, forKey: .branch),
-                base: try c.decodeIfPresent(String.self, forKey: .base))
+                base: try c.decodeIfPresent(String.self, forKey: .base),
+                loop: try c.decodeIfPresent(LoopSpec.self, forKey: .loop))
         case "update-task":
             self = .updateTask(
                 id: id, task: try c.decode(String.self, forKey: .task),
@@ -208,6 +225,12 @@ extension Request: Codable {
             self = .restartAgent(
                 id: id, task: try c.decode(String.self, forKey: .task),
                 force: try c.decodeIfPresent(Bool.self, forKey: .force) ?? false)
+        case "start-loop":
+            self = .startLoop(
+                id: id, task: try c.decode(String.self, forKey: .task),
+                loop: try c.decode(LoopSpec.self, forKey: .loop),
+                reset: try c.decodeIfPresent(Bool.self, forKey: .reset) ?? false)
+        case "stop-loop": self = .stopLoop(id: id, task: try c.decode(String.self, forKey: .task))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(
