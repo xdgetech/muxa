@@ -346,3 +346,117 @@ async fn notifications_never_arrive_inside_reply_blocks() {
         "the noisy pane produced no output; the test proved nothing"
     );
 }
+
+/// ADR 0021: a device session sizes a window that is not the session's
+/// current one, is hidden from every list, and ends with its client. Closing
+/// the user's session closes its device sessions first.
+#[tokio::test]
+async fn a_device_session_sizes_its_window_and_stays_hidden() {
+    use muxa_tmux::{Device, Grid, kill_session, last_other_session};
+
+    let server = Server::start();
+    let first = server.first_pane();
+    let window: muxa_tmux::WindowId = server
+        .tmux(&[
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{window_id}",
+            "-t",
+            "work",
+            "sh",
+        ])
+        .parse()
+        .expect("window id");
+    let (client, _notes) = Client::attach(&server.options(), None).unwrap();
+    let work = locate(&client, first).await.unwrap().0;
+    let current = server.tmux(&["display-message", "-p", "-t", "work", "#{window_id}"]);
+
+    let device = Device::open(
+        &client,
+        &server.options(),
+        work,
+        window,
+        std::process::id(),
+        1,
+    )
+    .await
+    .unwrap();
+    let size = Grid {
+        cols: 100,
+        rows: 30,
+    };
+    device.take(&client, size).await.unwrap();
+    let target = window.to_string();
+    wait_for(|| {
+        server.tmux(&[
+            "display-message",
+            "-p",
+            "-t",
+            &target,
+            "#{window_width}x#{window_height}",
+        ]) == "100x30"
+    })
+    .await;
+    assert_eq!(
+        server.tmux(&["display-message", "-p", "-t", "work", "#{window_id}"]),
+        current,
+        "the user's session changed its current window"
+    );
+    assert_eq!(
+        server.tmux(&["list-sessions", "-F", "x"]).lines().count(),
+        2
+    );
+
+    let sessions = list_sessions(&client).await.unwrap();
+    assert_eq!(sessions.len(), 1, "the device session is listed");
+    assert_eq!(sessions[0].id, work);
+    let pane: PaneId = server
+        .tmux(&["display-message", "-p", "-t", &target, "#{pane_id}"])
+        .parse()
+        .unwrap();
+    assert_eq!(locate(&client, pane).await.unwrap().0, work);
+    assert_eq!(last_other_session(&client, work).await.unwrap(), None);
+
+    // Closing it ends the session; the window stays in the user's.
+    device.close(&client, Some(size)).await.unwrap();
+    assert_eq!(
+        server.tmux(&["list-sessions", "-F", "x"]).lines().count(),
+        1
+    );
+    assert_eq!(locate(&client, pane).await.unwrap().0, work);
+
+    // Closing the user's session closes its device sessions, so its windows end.
+    let device = Device::open(
+        &client,
+        &server.options(),
+        work,
+        window,
+        std::process::id(),
+        2,
+    )
+    .await
+    .unwrap();
+    let other = server.tmux(&[
+        "new-session",
+        "-d",
+        "-P",
+        "-F",
+        "#{session_id}",
+        "-s",
+        "other",
+        "sh",
+    ]);
+    client
+        .command(&format!("switch-client -t {other}"))
+        .await
+        .unwrap();
+    kill_session(&client, work).await.unwrap();
+    wait_for(|| device.exited()).await;
+    assert!(matches!(locate(&client, pane).await, Err(Error::NoPane(_))));
+    assert_eq!(
+        server.tmux(&["list-sessions", "-F", "#{session_name}"]),
+        "other"
+    );
+}

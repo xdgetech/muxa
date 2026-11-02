@@ -1,10 +1,11 @@
-//! Sizes the bridge's tmux client for the device in use (ADR 0020). The
-//! watcher tells it what happened; it decides when to take, resize or give
-//! back the window, and sends nothing until the client has sent a viewport.
+//! Sizes the watched window for the device in use (ADR 0020), through a
+//! device session per window (ADR 0021). The watcher tells it what happened;
+//! it decides when to take, resize or give back the window, and sends nothing
+//! until the client has sent a viewport.
 
 use std::time::{Duration, Instant};
 
-use muxa_tmux::{Client, Grid, PaneId, Screen, SessionId};
+use muxa_tmux::{Client, Device, Grid, Options, PaneId, Screen, SessionId, WindowId};
 
 use crate::viewport::{Fit, Next, Seen};
 
@@ -13,13 +14,25 @@ const SETTLE: Duration = Duration::from_millis(300);
 const SETTLE_MAX: Duration = Duration::from_secs(2);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Default)]
+/// The watched pane and where it is, once its first snapshot landed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Target {
+    pub pane: PaneId,
+    pub session: SessionId,
+    pub window: WindowId,
+}
+
 pub struct Sizer {
+    opts: Options,
+    /// This process: the owner of its device sessions.
+    owner: u32,
+    opened: u32,
     viewport: Option<Grid>,
-    /// The size the tmux client holds while it is not `ignore-size`.
+    /// The device session of the watched window, while it sizes it.
+    device: Option<Device>,
+    /// The size the device client holds while it is not `ignore-size`.
     held: Option<Grid>,
-    /// The watched pane and its session, once its first snapshot landed.
-    target: Option<(PaneId, SessionId)>,
+    target: Option<Target>,
     seen: Option<Seen>,
     fit: Option<Fit>,
     /// (settled at, at the latest)
@@ -28,9 +41,20 @@ pub struct Sizer {
 }
 
 impl Sizer {
-    /// The size to give back before the client moves to another session.
-    pub fn held(&self) -> Option<Grid> {
-        self.held
+    pub fn new(opts: Options) -> Self {
+        Self {
+            opts,
+            owner: std::process::id(),
+            opened: 0,
+            viewport: None,
+            device: None,
+            held: None,
+            target: None,
+            seen: None,
+            fit: None,
+            settle: None,
+            begin_on_land: false,
+        }
     }
 
     /// A new watch: the fit starts when its first snapshot lands.
@@ -42,11 +66,6 @@ impl Sizer {
         self.begin_on_land = true;
     }
 
-    /// The client moved to another session after giving the size back.
-    pub fn released(&mut self) {
-        self.held = None;
-    }
-
     pub async fn set_viewport(&mut self, client: &Client, viewport: Grid) {
         self.viewport = Some(viewport);
         // Like a terminal resize, a new viewport makes this client latest.
@@ -54,8 +73,8 @@ impl Sizer {
     }
 
     /// A snapshot of the watched pane landed.
-    pub async fn landed(&mut self, client: &Client, pane: PaneId, session: SessionId, seen: Seen) {
-        self.target = Some((pane, session));
+    pub async fn landed(&mut self, client: &Client, target: Target, seen: Seen) {
+        self.target = Some(target);
         self.seen = Some(seen);
         if let Some((_, latest)) = self.settle {
             self.settle = Some(((Instant::now() + SETTLE).min(latest), latest));
@@ -68,10 +87,10 @@ impl Sizer {
     /// The client typed into `pane`. When another client took the window,
     /// this one takes it back, as a key press does for a terminal.
     pub async fn typed(&mut self, client: &Client, pane: PaneId) {
-        let (Some(held), Some((target, _))) = (self.held, self.target) else {
+        let (Some(held), Some(target)) = (self.held, self.target) else {
             return;
         };
-        if target != pane {
+        if target.pane != pane {
             return;
         }
         // Asked, not taken from the last snapshot: the other client's resize
@@ -91,7 +110,7 @@ impl Sizer {
     }
 
     /// Called on every tick; `syncing` while a snapshot is in flight.
-    pub async fn tick(&mut self, client: &Client, syncing: bool) {
+    pub async fn tick(&mut self, syncing: bool) {
         let Some((at, latest)) = self.settle else {
             return;
         };
@@ -100,13 +119,15 @@ impl Sizer {
             return;
         }
         self.settle = None;
-        let (Some(fit), Some(seen)) = (self.fit.as_mut(), self.seen) else {
+        let (Some(fit), Some(seen), Some(device)) =
+            (self.fit.as_mut(), self.seen, self.device.as_ref())
+        else {
             return;
         };
         match fit.settled(seen) {
             Next::Resize(size) => {
-                if let Err(e) = timed(muxa_tmux::resize_client(client, size)).await {
-                    tracing::warn!(error = %e, "resizing the client failed");
+                if let Err(e) = timed(device.resize(size)).await {
+                    tracing::warn!(error = %e, "resizing the device client failed");
                     self.fit = None;
                     return;
                 }
@@ -114,62 +135,155 @@ impl Sizer {
                 self.settle_from(now);
             }
             Next::Done | Next::Stop => {
-                if let Some((pane, _)) = self.target {
-                    tracing::info!(%pane, window = ?seen.window, pane_size = ?seen.pane, "sized for the device");
+                if let Some(target) = self.target {
+                    tracing::info!(pane = %target.pane, window = ?seen.window, pane_size = ?seen.pane, "sized for the device");
                 }
                 self.fit = None;
             }
         }
     }
 
-    /// The watch ended: the windows go back to the other clients.
+    /// Whether the user session that the device session is grouped with is
+    /// gone. The device session then holds its windows open.
+    pub async fn target_gone(&self, client: &Client) -> bool {
+        let Some(device) = &self.device else {
+            return false;
+        };
+        let line = format!("has-session -t {}", device.target());
+        matches!(
+            timed(client.command(&line)).await,
+            Err(muxa_tmux::Error::Tmux { .. })
+        )
+    }
+
+    /// The watch ended: the window goes back to the other clients, and the
+    /// device session ends.
     pub async fn release(&mut self, client: &Client) {
         self.target = None;
         self.fit = None;
         self.settle = None;
         self.begin_on_land = false;
-        let Some(held) = self.held.take() else {
+        self.close_device(client).await;
+    }
+
+    async fn close_device(&mut self, client: &Client) {
+        let held = self.held.take();
+        let Some(device) = self.device.take() else {
             return;
         };
-        if let Err(e) = timed(muxa_tmux::release_size(client, held)).await {
-            tracing::warn!(error = %e, "giving the window size back failed");
+        let (session, window) = (device.session(), device.window());
+        match timed(device.close(client, held)).await {
+            Ok(()) => tracing::info!(%session, %window, "device session closed"),
+            Err(e) => tracing::warn!(%session, error = %e, "closing the device session failed"),
         }
     }
 
     async fn begin(&mut self, client: &Client) {
-        let (Some(viewport), Some((pane, session)), Some(seen)) =
-            (self.viewport, self.target, self.seen)
+        let (Some(viewport), Some(target), Some(seen)) = (self.viewport, self.target, self.seen)
         else {
             return;
         };
-        match timed(muxa_tmux::follows_device(client, pane)).await {
+        match timed(muxa_tmux::follows_device(client, target.pane)).await {
             Ok(true) => {}
             Ok(false) => {
-                tracing::debug!(%pane, "the window's window-size is not latest; not sizing it");
-                self.release(client).await;
-                self.target = Some((pane, session));
+                tracing::debug!(pane = %target.pane, "the window's window-size is not latest; not sizing it");
+                self.close_device(client).await;
+                self.fit = None;
+                self.settle = None;
                 return;
             }
             Err(e) => {
-                tracing::warn!(%pane, error = %e, "reading window-size failed");
+                tracing::warn!(pane = %target.pane, error = %e, "reading window-size failed");
                 return;
             }
         }
+        let Some(device) = self.device_for(client, target).await else {
+            return;
+        };
         let fit = Fit::start(viewport, seen);
         let size = fit.sent();
-        if let Err(e) = timed(muxa_tmux::take_size(client, session, size)).await {
-            tracing::warn!(%pane, error = %e, "sizing the client failed");
+        if let Err(e) = timed(device.take(client, size)).await {
+            tracing::warn!(pane = %target.pane, error = %e, "sizing the device client failed");
             return;
         }
-        let now = Instant::now();
         self.held = Some(size);
         self.fit = Some(fit);
-        self.settle_from(now);
+        self.settle_from(Instant::now());
+    }
+
+    /// The device session for the target's window. A client stays latest of
+    /// every window it was on, so another window gets a new one.
+    async fn device_for(&mut self, client: &Client, target: Target) -> Option<&Device> {
+        let fits = self.device.as_ref().is_some_and(|d| {
+            !d.exited() && d.target() == target.session && d.window() == target.window
+        });
+        if !fits {
+            self.close_device(client).await;
+            remove_leftovers(client).await;
+            self.opened = self.opened.wrapping_add(1);
+            let opened = Device::open(
+                client,
+                &self.opts,
+                target.session,
+                target.window,
+                self.owner,
+                self.opened,
+            );
+            match timed(opened).await {
+                Ok(device) => {
+                    tracing::info!(session = %device.session(), target = %target.session, window = %target.window, "device session opened");
+                    self.device = Some(device);
+                }
+                Err(e) => {
+                    tracing::warn!(target = %target.session, window = %target.window, error = %e, "opening a device session failed");
+                    return None;
+                }
+            }
+        }
+        self.device.as_ref()
     }
 
     fn settle_from(&mut self, now: Instant) {
         self.settle = Some((now + SETTLE, now + SETTLE_MAX));
     }
+}
+
+/// Removes device sessions that a bridge left behind: no client, and their
+/// owner is not running, e.g. after a `kill -9`. Runs when a bridge starts and
+/// before it opens a device session.
+pub async fn remove_leftovers(client: &Client) {
+    let leftovers = match timed(muxa_tmux::unattached_devices(client)).await {
+        Ok(found) => found,
+        Err(e) => {
+            tracing::warn!(error = %e, "listing device sessions failed");
+            return;
+        }
+    };
+    for (session, owner) in leftovers {
+        if owner.is_some_and(running) {
+            continue;
+        }
+        match timed(client.command(&format!("kill-session -t {session}"))).await {
+            Ok(_) => tracing::info!(%session, "removed a leftover device session"),
+            Err(e) => {
+                tracing::warn!(%session, error = %e, "removing a leftover device session failed");
+            }
+        }
+    }
+}
+
+fn running(pid: u32) -> bool {
+    let Some(pid) = i32::try_from(pid)
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    else {
+        return false;
+    };
+    // EPERM still means it runs, as another user.
+    !matches!(
+        rustix::process::test_kill_process(pid),
+        Err(rustix::io::Errno::SRCH)
+    )
 }
 
 /// The pane's size scaled with its window, for a first guess.
@@ -212,4 +326,19 @@ async fn timed<T>(
                 "tmux did not answer in time".into(),
             ))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn this_process_runs_and_a_reaped_child_does_not() {
+        assert!(running(std::process::id()));
+        let mut child = std::process::Command::new("true").spawn().expect("spawn");
+        let pid = child.id();
+        child.wait().expect("wait");
+        assert!(!running(pid));
+        assert!(!running(0));
+    }
 }

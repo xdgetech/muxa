@@ -7,11 +7,11 @@ use std::time::Duration;
 
 use muxa_protocol::Message;
 use muxa_tmux::{
-    Client, Error, Grid, Notification, Notifications, PaneId, Screen, SessionId, WindowId,
+    Client, Error, Grid, Notification, Notifications, Options, PaneId, Screen, SessionId, WindowId,
 };
 use tokio::sync::{mpsc, oneshot};
 
-use crate::sizer::Sizer;
+use crate::sizer::{Sizer, Target};
 
 const SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 /// Output held while a snapshot is in flight; beyond this, take a new one.
@@ -49,6 +49,8 @@ pub enum Command {
     Viewport(Grid),
     /// The client typed into this pane.
     Typed(PaneId),
+    /// The session is ending: give the window back before the bridge exits.
+    Stop(oneshot::Sender<()>),
 }
 
 struct Active {
@@ -74,8 +76,6 @@ struct SyncDone {
 struct Synced {
     screen: Screen,
     session: SessionId,
-    /// The client gave its size back before it left another session.
-    released: bool,
 }
 
 pub struct Watcher {
@@ -89,12 +89,15 @@ pub struct Watcher {
     sync_tx: mpsc::Sender<SyncDone>,
     sync_rx: mpsc::Receiver<SyncDone>,
     list_changed: bool,
+    /// Sessions changed: check that the device session's target still exists.
+    check_device: bool,
     sizer: Sizer,
 }
 
 impl Watcher {
     pub fn new(
         client: Arc<Client>,
+        opts: Options,
         out: mpsc::Sender<Message>,
         notes: Notifications,
         commands: mpsc::Receiver<Command>,
@@ -111,7 +114,8 @@ impl Watcher {
             sync_tx,
             sync_rx,
             list_changed: false,
-            sizer: Sizer::default(),
+            check_device: false,
+            sizer: Sizer::new(opts),
         }
     }
 
@@ -128,6 +132,7 @@ impl Watcher {
                         // with detach-on-destroy, tmux detaches its clients.
                         let reason = self.client.exit_reason();
                         self.gone(Some(reason.clone())).await;
+                        self.sizer.release(&self.client).await;
                         let _ = self.out.send(Message::Bye { reason }).await;
                         return;
                     }
@@ -152,6 +157,11 @@ impl Watcher {
             }
             Command::Typed(pane) => {
                 self.sizer.typed(&self.client, pane).await;
+                return true;
+            }
+            Command::Stop(ack) => {
+                self.sizer.release(&self.client).await;
+                let _ = ack.send(());
                 return true;
             }
         };
@@ -197,10 +207,10 @@ impl Watcher {
         active.held.clear();
         active.held_bytes = 0;
         self.seq += 1;
-        let (seq, pane, session, held) = (self.seq, active.pane, self.session, self.sizer.held());
+        let (seq, pane, session) = (self.seq, active.pane, self.session);
         let (client, tx) = (Arc::clone(&self.client), self.sync_tx.clone());
         tokio::spawn(async move {
-            let result = tokio::time::timeout(SYNC_TIMEOUT, sync(&client, pane, session, held))
+            let result = tokio::time::timeout(SYNC_TIMEOUT, sync(&client, pane, session))
                 .await
                 .unwrap_or_else(|_| Err(Error::Exited("snapshot timed out".into())));
             // Always delivered, so the loop never stays in "syncing".
@@ -216,11 +226,7 @@ impl Watcher {
             return true;
         };
         active.syncing = false;
-        let Synced {
-            screen,
-            session,
-            released,
-        } = match done.result {
+        let Synced { screen, session } = match done.result {
             Ok(synced) => synced,
             Err(Error::NoPane(_)) => return self.gone(None).await,
             Err(e) if !active.retried => {
@@ -237,7 +243,12 @@ impl Watcher {
         let held = std::mem::take(&mut active.held);
         active.held_bytes = 0;
         let (id, pane, dirty) = (active.id, active.pane.to_string(), active.dirty);
-        let (pane_id, seen) = (screen.pane, crate::sizer::seen(&screen));
+        let target = Target {
+            pane: screen.pane,
+            session,
+            window: screen.window,
+        };
+        let seen = crate::sizer::seen(&screen);
         let msg = Message::Screen {
             watch: id,
             pane: pane.clone(),
@@ -253,15 +264,10 @@ impl Watcher {
                 self.emit(id, &pane, data);
             }
         }
-        if released {
-            self.sizer.released();
-        }
         if dirty {
             self.start_sync();
         }
-        self.sizer
-            .landed(&self.client, pane_id, session, seen)
-            .await;
+        self.sizer.landed(&self.client, target, seen).await;
         true
     }
 
@@ -302,6 +308,7 @@ impl Watcher {
         }
         match n.name.as_str() {
             "session-changed" => self.session = n.first_arg().parse().ok(),
+            "sessions-changed" => self.check_device = true,
             "layout-change" | "window-close" | "unlinked-window-close" => {
                 if let Some(active) = self.active.as_mut() {
                     let ours = n.name != "layout-change"
@@ -352,36 +359,31 @@ impl Watcher {
         if resync {
             self.start_sync();
         }
+        if std::mem::take(&mut self.check_device) && self.sizer.target_gone(&self.client).await {
+            // Only the device session holds the pane now: the next snapshot
+            // finds it gone, which closes the device session.
+            match self.active.as_mut() {
+                Some(active) if active.syncing => active.dirty = true,
+                Some(_) => self.start_sync(),
+                None => self.sizer.release(&self.client).await,
+            }
+        }
         let syncing = self.active.as_ref().is_some_and(|a| a.syncing || a.dirty);
-        self.sizer.tick(&self.client, syncing).await;
+        self.sizer.tick(syncing).await;
         !self.out.is_closed()
     }
 }
 
 /// Moves the control client to the pane's session (tmux sends %output only
-/// for that session), then snapshots the pane. A client that holds a size
-/// gives it back first, so the session it leaves goes back to its other clients.
-async fn sync(
-    client: &Client,
-    pane: PaneId,
-    current: Option<SessionId>,
-    held: Option<Grid>,
-) -> Result<Synced, Error> {
+/// for that session), then snapshots the pane. This client never holds a
+/// size: the device session's client does (ADR 0021).
+async fn sync(client: &Client, pane: PaneId, current: Option<SessionId>) -> Result<Synced, Error> {
     let (session, _) = muxa_tmux::locate(client, pane).await?;
-    let mut released = false;
     if current != Some(session) {
-        if let Some(size) = held {
-            muxa_tmux::release_size(client, size).await?;
-            released = true;
-        }
         client
             .command(&format!("switch-client -t {session}"))
             .await?;
     }
     let screen = muxa_tmux::snapshot(client, pane).await?;
-    Ok(Synced {
-        screen,
-        session,
-        released,
-    })
+    Ok(Synced { screen, session })
 }

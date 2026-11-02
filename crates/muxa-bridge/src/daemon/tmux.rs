@@ -125,7 +125,14 @@ impl ClientSource for Lazy {
 async fn attach(opts: &Options) -> Result<Arc<Client>, Error> {
     let (client, _notes) = Client::attach_with(opts, None, Flags { no_output: true })?;
     match tokio::time::timeout(CHECK_TIMEOUT, client.command("display-message -p ok")).await {
-        Ok(Ok(_)) => Ok(Arc::new(client)),
+        Ok(Ok(_)) => {
+            // A device session ends with its device client (ADR 0021); the
+            // daemon must not hold it open.
+            if let Err(e) = muxa_tmux::leave_device_session(&client).await {
+                tracing::warn!(error = %e, "leaving a device session failed");
+            }
+            Ok(Arc::new(client))
+        }
         Ok(Err(e)) => Err(e),
         Err(_) => Err(Error::Exited("tmux did not answer".into())),
     }

@@ -47,6 +47,8 @@ pub enum End {
     Idle,
     TmuxExited,
     WriterFailed,
+    /// SIGTERM.
+    Terminated,
 }
 
 pub async fn serve<R, W>(config: Config, input: R, output: W) -> End
@@ -122,9 +124,24 @@ where
         return End::WriterFailed;
     }
 
+    // A client with no target may land on a device session (ADR 0021).
+    if let Err(e) = muxa_tmux::leave_device_session(&client).await {
+        tracing::warn!(error = %e, "leaving a device session failed");
+    }
+    crate::sizer::remove_leftovers(&client).await;
+
     let (cmd_tx, cmd_rx) = mpsc::channel(8);
-    let mut watcher =
-        tokio::spawn(Watcher::new(Arc::clone(&client), out.clone(), notes, cmd_rx).run());
+    let stop_watch = cmd_tx.clone();
+    let mut watcher = tokio::spawn(
+        Watcher::new(
+            Arc::clone(&client),
+            config.tmux.clone(),
+            out.clone(),
+            notes,
+            cmd_rx,
+        )
+        .run(),
+    );
     // Not in the select below: a chat ending is not tmux exiting.
     let (chat_tx, chat_rx) = mpsc::channel(8);
     let chats = tokio::spawn(
@@ -181,8 +198,14 @@ where
     let end = tokio::select! {
         end = worker.run(req_rx, config.idle) => end,
         _ = &mut watcher => End::TmuxExited,
+        () = terminated() => End::Terminated,
     };
     reader.abort();
+    // The watcher gives the window back and ends its device session.
+    let (ack_tx, ack_rx) = oneshot::channel();
+    if stop_watch.send(Command::Stop(ack_tx)).await.is_ok() {
+        let _ = tokio::time::timeout(COMMAND_TIMEOUT, ack_rx).await;
+    }
     watcher.abort();
     chats.abort();
     docs.abort();
@@ -201,6 +224,20 @@ where
     }
     pending.finish(PENDING_LIMIT).await;
     end
+}
+
+/// Resolves on SIGTERM, e.g. at logout or when sshd stops the session.
+async fn terminated() {
+    use tokio::signal::unix::{SignalKind, signal};
+    match signal(SignalKind::terminate()) {
+        Ok(mut term) => {
+            term.recv().await;
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "cannot watch for SIGTERM");
+            std::future::pending::<()>().await;
+        }
+    }
 }
 
 async fn bye(out: &mpsc::Sender<Message>, reason: String) -> End {

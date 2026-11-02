@@ -110,6 +110,15 @@ muxa-cli --bridge 'muxa-bridge [--socket S]' task new --workspace W --title T --
 - Items come in group order (the order above), newest `updatedAt` first within a group.
 - New fields can appear. Changing a name above is a breaking change.
 
+### Device sessions
+
+While a phone or tablet shows a pane, the bridge holds the pane's window in a session of its own (ADR 0021): a device session, named `_muxa-<pid>-<n>`, with the session option `@muxa_device` set to `1` and `@muxa_device_pid` set to the bridge's pid. It holds only that window, which stays in the user's session too.
+
+- A desktop tool must skip sessions with `@muxa_device` in every list, or it shows the window twice. With tmux 3.1 or later: `list-sessions`, `list-windows -a` and `list-panes -a` with `-f '#{==:#{@muxa_device},}'`.
+- A tool that closes a session must first kill the device sessions that hold its windows. Otherwise the window keeps running in the device session.
+- A tool never kills or changes another device session: the bridge ends it when the device stops watching, and removes leftovers of a bridge that crashed.
+- tmux-agents does all three (its README, "For other tools").
+
 ## Claude Code
 
 - `CLAUDE_CONFIG_DIR` (default `~/.claude`) moves everything below, so the adapter searches each workspace's too.

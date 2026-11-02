@@ -2,6 +2,7 @@
 //! own window, so no existing window or pane changes size (ADR 0007).
 
 use crate::client::Client;
+use crate::device::{DEVICE_TAG, devices_of};
 use crate::escape::quote;
 use crate::{Error, PaneId, SessionId};
 
@@ -201,7 +202,8 @@ pub async fn switch_client(client: &Client, name: &str, session: SessionId) -> R
         .map(drop)
 }
 
-/// The most recently attached session other than `except`.
+/// The most recently attached session other than `except`. Device sessions
+/// (ADR 0021) do not count.
 pub async fn last_other_session(
     client: &Client,
     except: SessionId,
@@ -209,7 +211,9 @@ pub async fn last_other_session(
     let reply = client
         .command(&format!(
             "list-sessions -F {}",
-            quote("#{session_last_attached} #{session_id}")
+            quote(&format!(
+                "#{{session_last_attached}} #{{session_id}} #{{{DEVICE_TAG}}}"
+            ))
         ))
         .await?;
     Ok(most_recent(&lines(&reply.lines), except))
@@ -218,7 +222,11 @@ pub async fn last_other_session(
 pub(crate) fn most_recent(rows: &[String], except: SessionId) -> Option<SessionId> {
     rows.iter()
         .filter_map(|row| {
-            let (at, id) = row.split_once(' ')?;
+            let mut fields = row.split(' ');
+            let (at, id) = (fields.next()?, fields.next()?);
+            if fields.next().is_some_and(|device| !device.is_empty()) {
+                return None;
+            }
             Some((
                 at.parse::<u64>().unwrap_or(0),
                 id.parse::<SessionId>().ok()?,
@@ -229,8 +237,12 @@ pub(crate) fn most_recent(rows: &[String], except: SessionId) -> Option<SessionI
         .map(|(_, id)| id)
 }
 
-/// Closes a session and every pane in it.
+/// Closes a session and every pane in it. Its device sessions go first: they
+/// would keep its windows open (ADR 0021).
 pub async fn kill_session(client: &Client, session: SessionId) -> Result<(), Error> {
+    for device in devices_of(client, session).await? {
+        client.command(&format!("kill-session -t {device}")).await?;
+    }
     client
         .command(&format!("kill-session -t {session}"))
         .await
@@ -280,10 +292,11 @@ mod tests {
     #[test]
     fn the_most_recent_other_session_is_picked() {
         let rows = [
-            "100 $1".to_owned(),
-            "300 $2".into(),
-            "200 $3".into(),
-            " $4".into(),
+            "100 $1 ".to_owned(),
+            "300 $2 ".into(),
+            "200 $3 ".into(),
+            " $4 ".into(),
+            "400 $5 1".into(),
         ];
         assert_eq!(
             most_recent(&rows, SessionId::new(2)),
