@@ -36,7 +36,8 @@ What works today:
      - Done in muxa: `muxa-cli tasks --json` and `task new --json`, the bridge waiting for a start prompt after its client leaves, `--muxa-task` for tmux-agents that announce it, and the contract test against a real tmux-agents (`MUXA_TMUX_AGENTS`).
      - Done in tmux-agents, on its branch `muxa-task-records`, not merged yet: `prefix + N` creates a muxa Task, `prefix + T` shows the Inbox, and `new.sh --muxa-task`.
   7. Done (bridge, protocol, CLI): handoff and agent runs (ADR 0018). The record keeps `runs`; `TASK.md` gets Progress, Decisions and Next actions, which the agent keeps and the bridge never rewrites; `restart-agent` writes `.muxa/HANDOFF.md` from facts and restarts the agent in the same pane with `respawn-pane -k`; `muxa-cli task restart`. The apps do not show runs or offer a restart yet.
-  8. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
+  8. Proposed: the Task Loop in a host daemon (ADR 0019). A `check` command runs after each agent turn; a failure types a fixed prompt, a pass moves the Task to `review`, and every gate stops the loop for the user. The daemon is `muxa-bridge daemon`, started by launchd or `systemd --user`, on a Unix socket only. Phases P1 to P6 are in the ADR.
+  9. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
