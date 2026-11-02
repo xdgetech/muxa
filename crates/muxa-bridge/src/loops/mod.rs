@@ -513,6 +513,36 @@ pub fn stop(config: &Config, task: &str) -> Result<Record, LoopError> {
     Err(StoreError::Busy(task.to_owned()).into())
 }
 
+/// After the daemon typed a start or restart prompt at `at`: an active
+/// loop is `armed` from then, with its attempts kept (ADR 0019,
+/// "`restart-agent` and the loop"). Call it after the keys are sent. Blocking.
+pub fn armed_by_prompt(config: &Config, task: &str, at: u64) -> Result<(), LoopError> {
+    let store = open(config)?;
+    for _ in 0..WRITE_ATTEMPTS {
+        let record = store.get(task)?;
+        let Some(lp) = record.task_loop().ok().flatten().filter(Loop::active) else {
+            return Ok(());
+        };
+        let armed = Loop {
+            state: LoopState::Armed,
+            reason: None,
+            armed_at: at,
+            since: at,
+            ..lp
+        };
+        match store.update(task, record.rev, |r| {
+            if let Err(e) = r.set_loop(Some(&armed)) {
+                tracing::warn!(task, error = %e, "cannot encode a loop");
+            }
+        }) {
+            Ok(_) => return Ok(()),
+            Err(StoreError::Conflict { .. }) => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(StoreError::Busy(task.to_owned()).into())
+}
+
 /// `daemon stop` and `uninstall`: every active loop stops with reason
 /// `user`. Returns the ids it stopped. Blocking.
 pub fn stop_all(config: &Config) -> Result<Vec<String>, LoopError> {
