@@ -218,3 +218,190 @@ async fn the_daemon_client_never_resizes_a_window() {
     assert_eq!(size(&server, "work"), "150x39");
     desktop.close();
 }
+
+fn session_names(server: &Server) -> Vec<String> {
+    server
+        .tmux(&["list-sessions", "-F", "#{session_name}"])
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// What the desktop terminal shows: its session, window and pane.
+fn desktop_view(server: &Server) -> String {
+    server
+        .tmux(&[
+            "list-clients",
+            "-F",
+            "#{client_session} #{window_id} #{pane_id} #{client_flags}",
+        ])
+        .lines()
+        .filter(|l| !l.contains("control-mode"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn new_window(server: &Server) -> String {
+    server.tmux(&[
+        "new-window",
+        "-d",
+        "-P",
+        "-F",
+        "#{window_id}",
+        "-t",
+        "work",
+        "sh",
+    ])
+}
+
+/// ADR 0021: a pane in a window that is not the session's current one takes
+/// the device's size; the desktop keeps its window, pane and size.
+async fn another_window_follows_the_device(aggressive: &str) {
+    let server = Server::start();
+    server.tmux(&["set-option", "-g", "aggressive-resize", aggressive]);
+    let work = server.tmux(&["display-message", "-p", "-t", "work", "#{session_id}"]);
+    let home = server.tmux(&["display-message", "-p", "-t", "work", "#{window_id}"]);
+    let window = new_window(&server);
+    let pane = server.pane(&window);
+    let mut desktop = Desktop::attach(&server, "work", 160, 40);
+    common::wait_until(|| size(&server, &home) == "160x39").await;
+    let before = desktop_view(&server);
+
+    let (mut bridge, _) = Bridge::start(&server, &[]).await;
+    bridge
+        .request(json!({"type": "viewport", "cols": 100, "rows": 30}))
+        .await;
+    bridge.request(json!({"type": "watch", "pane": pane})).await;
+    wait_for(&mut bridge, "the device's size in another window", || {
+        size(&server, &window) == "100x30"
+    })
+    .await;
+    assert_eq!(size(&server, &home), "160x39", "{aggressive}");
+    assert_eq!(desktop_view(&server), before, "{aggressive}");
+    assert_eq!(session_names(&server).len(), 2, "no device session");
+    let Message::Result {
+        sessions: Some(sessions),
+        ..
+    } = bridge.request(json!({"type": "list"})).await
+    else {
+        panic!("list returned no sessions")
+    };
+    assert_eq!(sessions.len(), 1, "list shows the device session");
+    assert_eq!(sessions[0].name, "work");
+
+    // The desktop views that window and types: it takes it back.
+    server.tmux(&["select-window", "-t", &format!("{work}:{window}")]);
+    desktop.type_key();
+    wait_for(&mut bridge, "the desktop's size after it typed", || {
+        size(&server, &window) == "160x39"
+    })
+    .await;
+    // The device types: it takes the window again.
+    bridge
+        .request(json!({"type": "text", "pane": pane, "text": "true"}))
+        .await;
+    wait_for(&mut bridge, "the device's size after it typed", || {
+        size(&server, &window) == "100x30"
+    })
+    .await;
+
+    // The device leaves: its session ends and the desktop's size returns.
+    bridge.request(json!({"type": "bye"})).await;
+    let _ = tokio::time::timeout(common::WAIT, bridge.child.wait()).await;
+    common::wait_until(|| session_names(&server) == ["work"]).await;
+    common::wait_until(|| size(&server, &window) == "160x39").await;
+    desktop.close();
+}
+
+#[tokio::test]
+async fn another_window_follows_the_device_without_aggressive_resize() {
+    another_window_follows_the_device("off").await;
+}
+
+#[tokio::test]
+async fn another_window_follows_the_device_with_aggressive_resize() {
+    another_window_follows_the_device("on").await;
+}
+
+#[tokio::test]
+async fn watching_another_window_moves_the_device_session() {
+    let server = Server::start();
+    let home = server.tmux(&["display-message", "-p", "-t", "work", "#{window_id}"]);
+    let first = server.pane("work");
+    let window = new_window(&server);
+    let desktop = Desktop::attach(&server, "work", 160, 40);
+    common::wait_until(|| size(&server, &home) == "160x39").await;
+
+    let (mut bridge, _) = Bridge::start(&server, &[]).await;
+    bridge
+        .request(json!({"type": "viewport", "cols": 100, "rows": 30}))
+        .await;
+    bridge
+        .request(json!({"type": "watch", "pane": server.pane(&window)}))
+        .await;
+    wait_for(&mut bridge, "the device's size", || {
+        size(&server, &window) == "100x30"
+    })
+    .await;
+    bridge
+        .request(json!({"type": "watch", "pane": first}))
+        .await;
+    wait_for(&mut bridge, "the first window at the device's size", || {
+        size(&server, &home) == "100x30"
+    })
+    .await;
+    // The window it left goes back to the desktop: no client holds it.
+    wait_for(&mut bridge, "the left window at the desktop's size", || {
+        size(&server, &window) == "160x39"
+    })
+    .await;
+    assert_eq!(session_names(&server).len(), 2, "one device session");
+    bridge.request(json!({"type": "unwatch"})).await;
+    wait_for(&mut bridge, "the device session to end", || {
+        session_names(&server) == ["work"]
+    })
+    .await;
+    desktop.close();
+}
+
+#[tokio::test]
+async fn a_killed_bridge_leaves_no_device_session() {
+    let server = Server::start();
+    let window = new_window(&server);
+    let (mut bridge, _) = Bridge::start(&server, &[]).await;
+    bridge
+        .request(json!({"type": "viewport", "cols": 100, "rows": 30}))
+        .await;
+    bridge
+        .request(json!({"type": "watch", "pane": server.pane(&window)}))
+        .await;
+    wait_for(&mut bridge, "a device session", || {
+        session_names(&server).len() == 2
+    })
+    .await;
+    bridge.child.start_kill().expect("kill -9 the bridge");
+    let _ = bridge.child.wait().await;
+
+    // More leftovers: one whose owner is gone, one whose owner runs.
+    let mut gone = std::process::Command::new("true").spawn().expect("spawn");
+    let dead = gone.id();
+    gone.wait().expect("wait");
+    for (name, owner) in [("_muxa-left", dead), ("_muxa-live", std::process::id())] {
+        let id = server.tmux(&[
+            "new-session",
+            "-d",
+            "-P",
+            "-F",
+            "#{session_id}",
+            "-t",
+            "work",
+            "-s",
+            name,
+        ]);
+        server.tmux(&["set-option", "-t", &id, "@muxa_device", "1"]);
+        let owner = owner.to_string();
+        server.tmux(&["set-option", "-t", &id, "@muxa_device_pid", &owner]);
+    }
+    let (_bridge, _) = Bridge::start(&server, &[]).await;
+    common::wait_until(|| session_names(&server) == ["_muxa-live", "work"]).await;
+}

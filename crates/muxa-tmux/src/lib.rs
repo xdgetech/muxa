@@ -1,8 +1,9 @@
 //! tmux control-mode client: discovery, pane snapshots, output stream, input.
-//! It never resizes a window or pane directly. Only `sizing` gives the client a
-//! size, for the device in use (docs/adr/0020-window-size-follows-the-device.md).
+//! It never resizes a window or pane directly. Only `sizing` gives a client a
+//! size, for the device in use, through a device session (ADR 0020, 0021).
 
 mod client;
+mod device;
 mod discover;
 mod error;
 mod escape;
@@ -16,6 +17,9 @@ mod sizing;
 mod snapshot;
 
 pub use client::{Client, Flags, MAX_LINE, Notifications, Options};
+pub use device::{
+    DEVICE_TAG, Device, OWNER_TAG, devices_of, leave_device_session, unattached_devices,
+};
 pub use discover::{AgentState, AgentStatus, Pane, Role, Session, list_sessions, locate, pane};
 pub use error::Error;
 pub use escape::{decode_output, quote};

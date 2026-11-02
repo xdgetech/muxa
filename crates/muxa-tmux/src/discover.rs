@@ -82,7 +82,7 @@ pub struct Session {
 const SEP: char = '\u{1f}';
 
 /// The list-panes format, one entry per field, joined by \x1f.
-const FIELDS: [&str; 24] = [
+const FIELDS: [&str; 25] = [
     "session_id",
     "session_name",
     "window_id",
@@ -108,6 +108,8 @@ const FIELDS: [&str; 24] = [
     "@agent_task",
     "window_index",
     "pane_pid",
+    // A device session (ADR 0021): the same panes again; skipped.
+    "@muxa_device",
 ];
 
 fn format(fields: &[&str]) -> String {
@@ -116,7 +118,7 @@ fn format(fields: &[&str]) -> String {
 }
 
 /// Every session with its panes, in tmux's order. Hidden panes are included
-/// with [`Role::Hidden`].
+/// with [`Role::Hidden`]. Device sessions (ADR 0021) are left out.
 pub async fn list_sessions(client: &Client) -> Result<Vec<Session>, Error> {
     let reply = client
         .command(&format!("list-panes -a -F {}", format(&FIELDS)))
@@ -143,21 +145,25 @@ pub async fn pane(client: &Client, pane: PaneId) -> Result<(String, Pane), Error
         .ok_or(Error::NoPane(pane))
 }
 
-/// The session and window that hold `pane`.
+/// The user session and window that hold `pane`; device sessions do not count.
 pub async fn locate(client: &Client, pane: PaneId) -> Result<(SessionId, WindowId), Error> {
     let filter = quote(&format!("#{{==:#{{pane_id}},{pane}}}"));
     let reply = client
         .command(&format!(
             "list-panes -a -f {filter} -F {}",
-            format(&["session_id", "window_id"])
+            format(&["session_id", "window_id", "@muxa_device"])
         ))
         .await?;
-    let line = reply.lines.first().ok_or(Error::NoPane(pane))?;
-    let text = String::from_utf8_lossy(line);
-    let (s, w) = text
-        .split_once(SEP)
-        .ok_or_else(|| Error::Unexpected("pane location".into()))?;
-    Ok((s.parse()?, w.parse()?))
+    reply
+        .lines
+        .iter()
+        .find_map(|line| {
+            let text = String::from_utf8_lossy(line);
+            let mut f = text.split(SEP);
+            let (s, w, device) = (f.next()?, f.next()?, f.next().unwrap_or(""));
+            device.is_empty().then(|| Ok((s.parse()?, w.parse()?)))
+        })
+        .unwrap_or(Err(Error::NoPane(pane)))
 }
 
 struct Row<'a>(Vec<&'a str>);
@@ -190,6 +196,9 @@ pub(crate) fn parse_sessions(lines: &[Vec<u8>]) -> Vec<Session> {
         // A name or path containing \x1f shifts the fields; skip that row.
         if row.0.len() != FIELDS.len() {
             tracing::warn!("skipping a list-panes row with {} fields", row.0.len());
+            continue;
+        }
+        if !row.get("@muxa_device").is_empty() {
             continue;
         }
         let (Ok(session), Ok(pane), Ok(window)) = (
@@ -258,6 +267,21 @@ mod tests {
             .collect::<Vec<_>>()
             .join(&SEP.to_string())
             .into_bytes()
+    }
+
+    #[test]
+    fn device_sessions_are_left_out() {
+        let pane = |session: &str, device: &str| {
+            row(&[
+                ("session_id", session),
+                ("window_id", "@1"),
+                ("pane_id", "%1"),
+                ("@muxa_device", device),
+            ])
+        };
+        let sessions = parse_sessions(&[pane("$4", "1"), pane("$1", "")]);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, SessionId::new(1));
     }
 
     #[test]
