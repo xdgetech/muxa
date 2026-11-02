@@ -57,12 +57,35 @@ trait TaskLauncher: Send + Sync {
 ```
 
 - `launch` returns the session's id, its name and the worktree. A launcher finds an existing session by its `@agent_worktree`, never by name (invariant 3).
-- `tmux_agents.rs` runs tmux-agents' `new.sh` with `--no-switch`. It is picked when tmux-agents sets `@agents_scripts`, or with `--task-launcher tmux-agents=PATH`. It then finds the branch's worktree with `git worktree list`, and the session whose `@agent_worktree` is that path. `new.sh`'s printed name is used only in error messages.
+- `tmux_agents.rs` runs tmux-agents' `new.sh` with `--no-switch`. It is picked when tmux-agents sets `@agents_scripts`, or with `--task-launcher tmux-agents=PATH`. It then finds the branch's worktree with `git worktree list`, and the session whose `@agent_worktree` is that path. `new.sh`'s printed name is used only in error messages. For a task record it also passes `--muxa-task <id>` when tmux-agents lists `muxa-task` in `@agents_features`, so the session has `@muxa_task` from its creation (ADR 0017).
+- The worktree and naming rules belong to tmux-agents, and `builtin.rs` copies them. `crates/muxa-bridge/tests/tmux_agents.rs` runs both on the same branches and fails when they differ: `MUXA_TMUX_AGENTS=<tmux-agents checkout> make test-tmux`.
 - `builtin.rs` makes the worktree with git and a detached session with the agent command (`--task-command`, default `claude`). It is picked otherwise, or with `--task-launcher builtin`.
 - `close` closes a task's session and removes its worktree as the mode allows, never one with uncommitted changes. `tmux_agents.rs` runs `close.sh`; `builtin.rs` checks the same things itself.
 - `Builtin::launch_in_dir` is the directory mode for a task record without a repo (ADR 0015). It makes `<workspace root>/tasks/<slug>-<id>/` and a detached session of that name running `--task-command`, with the pane tagged `@muxa_role agent`. It is used even when tmux-agents is installed: `new.sh` needs a repo.
-- `create-task` (`crates/muxa-bridge/src/task_records/`) runs a launcher, then tags the session `@muxa_task <id>` and writes `.muxa/TASK.md`. In a repo, `.muxa/` goes into the exclude file of the repo's common git directory first. It then waits up to 30 s for the agent pane's state to be `idle`, and types `Read .muxa/TASK.md and start.` and Enter. It does not type on `waiting`: that state includes a permission menu, where the text would answer it. An agent whose adapter reports no state before its first turn does not get the prompt; the record's note then says to type it.
+- `create-task` (`crates/muxa-bridge/src/task_records/`) runs a launcher, then tags the session `@muxa_task <id>` (again, when the launcher already did) and writes `.muxa/TASK.md`. In a repo, `.muxa/` goes into the exclude file of the repo's common git directory first. It then waits up to 30 s for the agent pane's state to be `idle`, and types `Read .muxa/TASK.md and start.` and Enter. It does not type on `waiting`: that state includes a permission menu, where the text would answer it. An agent whose adapter reports no state before its first turn does not get the prompt; the record's note then says to type it.
 - A launcher must never switch an attached client or change an existing pane when it starts a task. Closing moves the clients on the closed session to another one, as tmux-agents does. The request is checked before any launcher runs (`tasks::validate`).
+- A client may leave right after its `create-task` result. The bridge still finishes the launch and the wait for the prompt (`task_records::Pending`, at most 100 s) before it exits.
+
+## Desktop tools
+
+A tool on the host, such as tmux-agents (ADR 0017), reads and creates Tasks through `muxa-cli` with `--json`. It never reads or writes the record files itself.
+
+```sh
+muxa-cli --bridge 'muxa-bridge [--socket S]' tasks --json
+muxa-cli --bridge 'muxa-bridge [--socket S]' task new --workspace W --title T --goal G \
+  [--repo R --branch B [--base REF]] [--project P] --json
+```
+
+- Each prints one line of JSON on stdout. A failure prints `muxa-cli: <code>: <message>` on stderr and exits non-zero.
+- `tasks --json` prints `{"workspaces": [names], "truncated": bool, "tasks": [item, ...]}`.
+- `task new --json` prints one item as soon as the record is saved. It then stays until the bridge has typed the start prompt, or gave up after 30 s. Read the first line; do not wait for the exit.
+- An item has:
+  - `group`: `needs-attention`, `ready-for-review`, `running`, `no-agent` or `closed`. The rule is ADR 0015's, the same as in the apps (`crates/muxa-cli/src/inbox.rs`). Treat an unknown group as one without a known meaning.
+  - `record`: the task record as `protocol/PROTOCOL.md` describes it.
+  - `session`: optional, `{id, name}` of the session whose `taskId` is the record's id. Target it by `id`.
+  - `agent`: optional, `{state, since?}` of that session's agent pane, only when it can be believed: not with a shell in the foreground, and not for a closed Task.
+- Items come in group order (the order above), newest `updatedAt` first within a group.
+- New fields can appear. Changing a name above is a breaking change.
 
 ## Claude Code
 

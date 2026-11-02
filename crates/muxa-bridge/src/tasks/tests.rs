@@ -49,6 +49,7 @@ fn request(repo: &Path, branch: &str) -> TaskRequest {
         repo: repo.to_path_buf(),
         branch: branch.into(),
         base: None,
+        record: None,
     }
 }
 
@@ -56,6 +57,50 @@ fn request(repo: &Path, branch: &str) -> TaskRequest {
 fn session_names_follow_tmux_agents() {
     assert_eq!(session_name("feat/search.v2"), "feat-search-v2");
     assert_eq!(session_name("fix: a b"), "fix--a-b");
+}
+
+#[test]
+fn features_are_whole_words() {
+    assert!(has_feature("muxa-task", "muxa-task"));
+    assert!(has_feature("other  muxa-task\tmore", "muxa-task"));
+    assert!(!has_feature("muxa-tasks", "muxa-task"));
+    assert!(!has_feature("", "muxa-task"));
+}
+
+fn new_sh_args(muxa_task: bool, record: Option<&str>) -> Vec<String> {
+    let launcher =
+        tmux_agents::TmuxAgents::new("/p/new.sh".into(), "/bin/tmux".into(), None, muxa_task);
+    let req = TaskRequest {
+        record: record.map(str::to_owned),
+        ..request(Path::new("/src/app"), "feat/x")
+    };
+    let cmd = launcher.command(&req);
+    cmd.as_std()
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect()
+}
+
+#[test]
+fn new_sh_gets_the_record_only_when_it_says_it_takes_it() {
+    assert_eq!(
+        new_sh_args(true, Some("t-7f3a2c")),
+        [
+            "/src/app",
+            "feat/x",
+            "--muxa-task",
+            "t-7f3a2c",
+            "--no-switch"
+        ]
+    );
+    assert_eq!(
+        new_sh_args(false, Some("t-7f3a2c")),
+        ["/src/app", "feat/x", "--no-switch"]
+    );
+    assert_eq!(
+        new_sh_args(true, None),
+        ["/src/app", "feat/x", "--no-switch"]
+    );
 }
 
 #[test]

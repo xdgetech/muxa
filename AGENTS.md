@@ -51,6 +51,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `TEST_RUNNER_MUXA_SCREENSHOT_DIR=<dir> make test-app` | also keeps the UI test's portrait and landscape screenshots. |
 | `MUXA_STREAM_RUNS=200 make test-tmux` | more random cut points for the snapshot/stream stress test (default 50). |
 | `MUXA_TEST_PLUGIN=<plugin.tmux> make test-tmux` | also checks that a real layout plugin keeps its layout. |
+| `MUXA_TMUX_AGENTS=<tmux-agents checkout> make test-tmux` | also checks that the built-in launcher follows tmux-agents' worktree and naming rules, and `new.sh --muxa-task` (ADR 0017). |
 | `MUXA_RECORD_SCENARIOS=1 cargo test -p muxa-bridge --features tmux-integration --test stream` | re-records `protocol/fixtures/scenarios/`. |
 | `make sandbox` / `make sandbox-down` | an isolated tmux server (`-L muxa-sandbox`) with two agent + shell sessions. |
 | `scripts/layout-snapshot.sh record -L <socket>` | record a layout; `diff before after` proves nothing changed. |

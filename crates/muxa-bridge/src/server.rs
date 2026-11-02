@@ -26,6 +26,8 @@ pub const MAX_REQUEST: usize = 4 << 20;
 const OUT_QUEUE: usize = 1024;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
+/// After the client leaves: a launch (60 s) and the wait for an idle agent (30 s).
+const PENDING_LIMIT: Duration = Duration::from_secs(100);
 
 pub struct Config {
     pub tmux: Options,
@@ -141,6 +143,7 @@ where
     ));
     let (req_tx, req_rx) = mpsc::channel(64);
     let reader = tokio::spawn(read_requests(input, req_tx, out.clone()));
+    let pending = task_records::Pending::default();
     let worker = Worker {
         client,
         out: out.clone(),
@@ -152,6 +155,7 @@ where
         tasks: Arc::clone(&config.tasks),
         agents: Arc::clone(&config.agents),
         records: Arc::clone(&config.records),
+        pending: pending.clone(),
     };
 
     let end = tokio::select! {
@@ -172,6 +176,7 @@ where
             })
             .await;
     }
+    pending.finish(PENDING_LIMIT).await;
     end
 }
 
@@ -246,6 +251,7 @@ struct Worker {
     tasks: Arc<tasks::Config>,
     agents: Arc<Registry>,
     records: Arc<task_records::Config>,
+    pending: task_records::Pending,
 }
 
 impl Worker {
@@ -557,6 +563,7 @@ impl Worker {
                     tasks: Arc::clone(&self.tasks),
                     records: Arc::clone(&self.records),
                     agents: Arc::clone(&self.agents),
+                    pending: self.pending.clone(),
                 };
                 let new = task_records::NewTask {
                     workspace,
@@ -568,7 +575,7 @@ impl Worker {
                     base,
                 };
                 let out = self.out.clone();
-                tokio::spawn(async move {
+                self.pending.spawn(async move {
                     let (record, error) = task_records::create(&env, new).await;
                     if let Some(record) = record {
                         let record = convert::task_record(record);

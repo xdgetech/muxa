@@ -192,8 +192,24 @@ impl Bridge {
     }
 
     pub async fn result(&mut self, id: Option<u64>) -> Message {
+        self.result_within(id, WAIT).await
+    }
+
+    /// Like `request`, for a slow request: each message may take `wait`.
+    pub async fn request_within(&mut self, mut req: Value, wait: Duration) -> Message {
+        self.next_id += 1;
+        let id = self.next_id;
+        req["id"] = json!(id);
+        self.send_raw(&req.to_string()).await;
+        self.result_within(Some(id), wait).await
+    }
+
+    async fn result_within(&mut self, id: Option<u64>, wait: Duration) -> Message {
         loop {
-            let msg = self.read().await.expect("bridge closed before the result");
+            let msg = self
+                .read_within(wait)
+                .await
+                .expect("bridge closed before the result");
             match &msg {
                 Message::Result { id: got, .. } if *got == id => return msg,
                 _ => self.events.push_back(msg),
@@ -218,8 +234,25 @@ impl Bridge {
         self.next_id
     }
 
+    /// Closes the bridge's input, as a client that leaves does, and returns
+    /// the still running process with its output.
+    pub fn close_input(self) -> (Child, Lines<BufReader<ChildStdout>>) {
+        let Bridge {
+            child,
+            stdin,
+            lines,
+            ..
+        } = self;
+        drop(stdin);
+        (child, lines)
+    }
+
     async fn read(&mut self) -> Option<Message> {
-        let line = tokio::time::timeout(WAIT, self.lines.next_line())
+        self.read_within(WAIT).await
+    }
+
+    async fn read_within(&mut self, wait: Duration) -> Option<Message> {
+        let line = tokio::time::timeout(wait, self.lines.next_line())
             .await
             .ok()?
             .ok()??;

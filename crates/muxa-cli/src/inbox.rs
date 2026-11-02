@@ -1,0 +1,255 @@
+//! The Inbox of ADR 0015, as `--json` prints it for desktop tools such as
+//! tmux-agents (ADR 0017, `docs/agents.md`). The same rule as the apps'
+//! `Inbox.swift` and `Inbox.kt`: every state comes from an adapter.
+
+use muxa_protocol::{Agent, AgentState, Pane, Role, Session, TaskRecord, TaskStatus};
+use serde_json::{Value, json};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Group {
+    NeedsAttention,
+    ReadyForReview,
+    Running,
+    NoAgent,
+    Closed,
+}
+
+impl Group {
+    pub fn wire(self) -> &'static str {
+        match self {
+            Group::NeedsAttention => "needs-attention",
+            Group::ReadyForReview => "ready-for-review",
+            Group::Running => "running",
+            Group::NoAgent => "no-agent",
+            Group::Closed => "closed",
+        }
+    }
+}
+
+/// A record with the session that runs it and the state that can be believed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Item<'a> {
+    pub record: &'a TaskRecord,
+    pub session: Option<&'a Session>,
+    pub agent: Option<&'a Agent>,
+    pub group: Group,
+}
+
+pub fn item<'a>(record: &'a TaskRecord, sessions: &'a [Session]) -> Item<'a> {
+    let session = sessions
+        .iter()
+        .find(|s| s.task_id.as_deref() == Some(record.id.as_str()));
+    // A shell in the foreground means the state is likely stale: no state.
+    let agent = session
+        .and_then(agent_pane)
+        .filter(|p| !p.shell_foreground)
+        .and_then(|p| p.agent.as_ref());
+    let group = match (record.status, agent.map(|a| a.state)) {
+        (TaskStatus::Done | TaskStatus::Dropped, _) => Group::Closed,
+        (_, None) => Group::NoAgent,
+        (_, Some(AgentState::Waiting | AgentState::Error)) => Group::NeedsAttention,
+        (_, Some(AgentState::Running)) => Group::Running,
+        (_, Some(AgentState::Idle | AgentState::Done)) => Group::ReadyForReview,
+    };
+    Item {
+        record,
+        session,
+        agent: agent.filter(|_| group != Group::Closed),
+        group,
+    }
+}
+
+/// The tagged agent pane, else the first visible pane an adapter reports on.
+fn agent_pane(s: &Session) -> Option<&Pane> {
+    let visible = || s.panes.iter().filter(|p| p.role != Role::Hidden);
+    visible()
+        .find(|p| p.role == Role::Agent)
+        .or_else(|| visible().find(|p| p.agent.is_some()))
+}
+
+/// Every record, in group order, newest change first within a group.
+pub fn items<'a>(records: &'a [TaskRecord], sessions: &'a [Session]) -> Vec<Item<'a>> {
+    let mut all: Vec<Item> = records.iter().map(|r| item(r, sessions)).collect();
+    all.sort_by(|a, b| {
+        a.group
+            .cmp(&b.group)
+            .then(b.record.updated_at.cmp(&a.record.updated_at))
+            .then(b.record.id.cmp(&a.record.id))
+    });
+    all
+}
+
+pub fn to_json(item: &Item) -> Value {
+    let mut out = json!({
+        "group": item.group.wire(),
+        "record": item.record,
+    });
+    if let Some(s) = item.session {
+        out["session"] = json!({"id": s.id, "name": s.name});
+    }
+    if let Some(a) = item.agent {
+        out["agent"] = json!(a);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(id: &str, status: TaskStatus, updated_at: u64) -> TaskRecord {
+        TaskRecord {
+            id: id.into(),
+            rev: 1,
+            workspace: "work".into(),
+            title: id.into(),
+            goal: "g".into(),
+            status,
+            created_at: 0,
+            updated_at,
+            project: None,
+            repo: None,
+            branch: None,
+            dir: None,
+            session: None,
+            note: None,
+        }
+    }
+
+    fn pane(role: Role, state: Option<AgentState>, shell_foreground: bool) -> Pane {
+        Pane {
+            id: "%1".into(),
+            window: "@1".into(),
+            index: 0,
+            role,
+            cols: 80,
+            rows: 24,
+            command: "claude".into(),
+            path: "/w".into(),
+            dead: false,
+            shell_foreground,
+            agent: state.map(|state| Agent {
+                state,
+                since: Some(5),
+            }),
+        }
+    }
+
+    fn session(task: &str, panes: Vec<Pane>) -> Session {
+        Session {
+            id: format!("${task}"),
+            name: format!("s-{task}"),
+            repo: None,
+            repo_dir: None,
+            branch: None,
+            worktree: None,
+            task: None,
+            task_id: Some(task.into()),
+            panes,
+        }
+    }
+
+    fn group(status: TaskStatus, panes: Vec<Pane>) -> Group {
+        let r = record("t-1", status, 0);
+        let sessions = [session("t-1", panes)];
+        item(&r, &sessions).group
+    }
+
+    #[test]
+    fn groups_follow_the_agent_state_and_the_status() {
+        use AgentState::*;
+        let agent = |s| vec![pane(Role::Agent, Some(s), false)];
+        assert_eq!(
+            group(TaskStatus::Open, agent(Waiting)),
+            Group::NeedsAttention
+        );
+        assert_eq!(group(TaskStatus::Open, agent(Error)), Group::NeedsAttention);
+        assert_eq!(group(TaskStatus::Open, agent(Running)), Group::Running);
+        assert_eq!(group(TaskStatus::Open, agent(Idle)), Group::ReadyForReview);
+        assert_eq!(
+            group(TaskStatus::Review, agent(Done)),
+            Group::ReadyForReview
+        );
+        assert_eq!(group(TaskStatus::Done, agent(Waiting)), Group::Closed);
+        assert_eq!(group(TaskStatus::Dropped, vec![]), Group::Closed);
+    }
+
+    #[test]
+    fn no_believable_state_is_no_agent() {
+        assert_eq!(group(TaskStatus::Open, vec![]), Group::NoAgent);
+        assert_eq!(
+            group(
+                TaskStatus::Open,
+                vec![pane(Role::Agent, Some(AgentState::Running), true)]
+            ),
+            Group::NoAgent
+        );
+        // A hidden pane never stands for the session.
+        assert_eq!(
+            group(
+                TaskStatus::Open,
+                vec![pane(Role::Hidden, Some(AgentState::Running), false)]
+            ),
+            Group::NoAgent
+        );
+        let r = record("t-2", TaskStatus::Open, 0);
+        let other = [session(
+            "t-1",
+            vec![pane(Role::Agent, Some(AgentState::Running), false)],
+        )];
+        assert_eq!(item(&r, &other).group, Group::NoAgent);
+    }
+
+    #[test]
+    fn an_untagged_pane_with_a_state_stands_for_the_session() {
+        assert_eq!(
+            group(
+                TaskStatus::Open,
+                vec![
+                    pane(Role::Shell, None, true),
+                    pane(Role::Unknown, Some(AgentState::Waiting), false)
+                ]
+            ),
+            Group::NeedsAttention
+        );
+    }
+
+    #[test]
+    fn items_come_in_group_order_newest_first() {
+        let records = [
+            record("t-old", TaskStatus::Open, 1),
+            record("t-done", TaskStatus::Done, 9),
+            record("t-new", TaskStatus::Open, 5),
+            record("t-wait", TaskStatus::Open, 0),
+        ];
+        let sessions = [session(
+            "t-wait",
+            vec![pane(Role::Agent, Some(AgentState::Waiting), false)],
+        )];
+        let ids: Vec<&str> = items(&records, &sessions)
+            .iter()
+            .map(|i| i.record.id.as_str())
+            .collect();
+        assert_eq!(ids, ["t-wait", "t-new", "t-old", "t-done"]);
+    }
+
+    #[test]
+    fn json_names_the_session_by_id_and_the_believed_state() {
+        let r = record("t-1", TaskStatus::Open, 3);
+        let sessions = [session(
+            "t-1",
+            vec![pane(Role::Agent, Some(AgentState::Waiting), false)],
+        )];
+        let v = to_json(&item(&r, &sessions));
+        assert_eq!(v["group"], "needs-attention");
+        assert_eq!(v["session"], json!({"id": "$t-1", "name": "s-t-1"}));
+        assert_eq!(v["agent"], json!({"state": "waiting", "since": 5}));
+        assert_eq!(v["record"]["id"], "t-1");
+        assert_eq!(v["record"]["updatedAt"], 3);
+
+        let lone = record("t-2", TaskStatus::Open, 0);
+        let v = to_json(&item(&lone, &[]));
+        assert_eq!(v["group"], "no-agent");
+        assert!(v.get("session").is_none() && v.get("agent").is_none());
+    }
+}

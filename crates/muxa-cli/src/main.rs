@@ -1,6 +1,7 @@
 //! `muxa-cli`: a terminal client for the muxa protocol, the reference client.
 
 mod conn;
+mod inbox;
 mod tasks;
 mod view;
 
@@ -10,9 +11,9 @@ use muxa_protocol::{Role, Session};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
-       muxa-cli [--bridge CMD] tasks
+       muxa-cli [--bridge CMD] tasks [--json]
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
-                [--project P] [--repo PATH --branch B [--base REF]]
+                [--project P] [--repo PATH --branch B [--base REF]] [--json]
        muxa-cli [--bridge CMD] task done ID
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
@@ -22,7 +23,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   --seconds N    leave after N seconds (default: on Ctrl-])
   tasks          the host's workspaces and task records
   task new       records a task and starts an agent for it; without --repo
-                 it gets a directory in its workspace
+                 it gets a directory in its workspace. It returns once the
+                 agent got its start prompt, or after 30 s without it
+  --json         one line of JSON for other tools: the Inbox for tasks, one
+                 Inbox item for task new (docs/agents.md, Desktop tools)
   task done ID   marks a task record done";
 
 enum Cmd {
@@ -32,8 +36,13 @@ enum Cmd {
         read_only: bool,
         seconds: Option<u64>,
     },
-    Tasks,
-    NewTask(tasks::NewTask),
+    Tasks {
+        json: bool,
+    },
+    NewTask {
+        new: tasks::NewTask,
+        json: bool,
+    },
     Done(String),
 }
 
@@ -41,12 +50,13 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
     use lexopt::prelude::*;
     let mut p = lexopt::Parser::from_env();
     let (mut bridge, mut words) = ("muxa-bridge".to_string(), Vec::new());
-    let (mut read_only, mut seconds) = (false, None);
+    let (mut read_only, mut seconds, mut json) = (false, None, false);
     let mut new = tasks::NewTask::default();
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
             Long("read-only") => read_only = true,
+            Long("json") => json = true,
             Long("seconds") => seconds = Some(p.value()?.parse()?),
             Long("workspace") => new.workspace = p.value()?.string()?,
             Long("title") => new.title = p.value()?.string()?,
@@ -74,8 +84,11 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
             read_only,
             seconds,
         },
-        [w] if w == "tasks" => Cmd::Tasks,
-        [w, n] if w == "task" && n == "new" => Cmd::NewTask(new.checked()?),
+        [w] if w == "tasks" => Cmd::Tasks { json },
+        [w, n] if w == "task" && n == "new" => Cmd::NewTask {
+            new: new.checked()?,
+            json,
+        },
         [w, d, id] if w == "task" && d == "done" => Cmd::Done(id.clone()),
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
@@ -133,8 +146,8 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             let pane = resolve(&conn.list().await?, &target)?;
             view::run(&mut conn, &pane, view::Options { read_only, seconds }).await
         }
-        Cmd::Tasks => tasks::list(&mut conn).await,
-        Cmd::NewTask(new) => tasks::create(&mut conn, new).await,
+        Cmd::Tasks { json } => tasks::list(&mut conn, json).await,
+        Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Done(id) => tasks::done(&mut conn, &id).await,
     }
 }

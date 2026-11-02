@@ -27,6 +27,8 @@ pub struct TaskRequest {
     pub repo: PathBuf,
     pub branch: String,
     pub base: Option<String>,
+    /// The task record the session runs, when a launcher can tag it at creation.
+    pub record: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -144,6 +146,8 @@ pub enum Choice {
 
 /// The tmux option where tmux-agents publishes its scripts directory.
 const AGENTS_SCRIPTS: &str = "@agents_scripts";
+/// What this tmux-agents' scripts accept beyond the first contract (ADR 0017).
+const AGENTS_FEATURES: &str = "@agents_features";
 
 /// The launcher for one request. Asked each time, so installing tmux-agents
 /// needs no bridge restart.
@@ -176,8 +180,26 @@ pub async fn pick(config: &Config, client: &Client) -> Box<dyn TaskLauncher> {
             script,
             config.tmux.clone(),
             config.socket.clone(),
+            tags_at_creation(client).await,
         )),
     }
+}
+
+/// Whether tmux-agents' `new.sh` takes `--muxa-task`. Older ones reject
+/// unknown flags, so they are only given it when they say so.
+async fn tags_at_creation(client: &Client) -> bool {
+    match muxa_tmux::global_option(client, AGENTS_FEATURES).await {
+        Ok(features) => features.is_some_and(|f| has_feature(&f, "muxa-task")),
+        Err(e) => {
+            tracing::warn!(error = %e, "cannot read {AGENTS_FEATURES}");
+            false
+        }
+    }
+}
+
+/// `@agents_features` is a space-separated list.
+pub fn has_feature(features: &str, name: &str) -> bool {
+    features.split_whitespace().any(|f| f == name)
 }
 
 /// Checks a `new-task` request at the boundary.
@@ -212,6 +234,7 @@ pub async fn validate(
         repo,
         branch: branch.to_owned(),
         base: base.map(str::to_owned),
+        record: None,
     })
 }
 

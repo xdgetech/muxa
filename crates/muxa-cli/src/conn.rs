@@ -118,6 +118,27 @@ impl Conn {
         }
     }
 
+    /// Closes the bridge's input and waits up to `wait` for it to exit, so
+    /// work it still runs for this client can finish. Kills it after that.
+    pub async fn finish(self, wait: Duration) {
+        let Conn {
+            _child: mut child,
+            stdin,
+            mut lines,
+            ..
+        } = self;
+        drop(stdin);
+        // Read on, so the bridge never blocks on a full pipe meanwhile.
+        let exited = tokio::time::timeout(wait, async {
+            while let Ok(Some(_)) = lines.next_line().await {}
+            child.wait().await
+        })
+        .await;
+        if exited.is_err() {
+            let _ = child.kill().await;
+        }
+    }
+
     pub async fn list(&mut self) -> Result<Vec<Session>, String> {
         let id = self.id();
         self.send(&Request::List { id }).await?;
