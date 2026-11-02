@@ -28,6 +28,7 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.Wire
@@ -101,11 +102,12 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
                 ok(req.id)
             }
             is Request.Docs -> {
-                // The bridge lists a Task's TASK.md, then its HANDOFF.md.
+                // The bridge lists a Task's TASK.md, its HANDOFF.md, and its CHECK.md once a check ran.
                 val brief = taskOf(req.pane)?.let {
-                    listOf(
+                    listOfNotNull(
                         DocInfo(TASK_DOC, DocInfo.Kind.REPO, "TASK.md", it.createdAt),
                         DocInfo(HANDOFF_DOC, DocInfo.Kind.REPO, "HANDOFF.md", handoffTime(it)),
+                        it.loop?.lastCheck?.let { check -> DocInfo(CHECK_DOC, DocInfo.Kind.REPO, "CHECK.md", check.at) },
                     )
                 }
                 emit(Message.DocList(req.id, content.root, content.docs.map { it.info } + brief.orEmpty()))
@@ -118,6 +120,8 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
             }
             is Request.UpdateTask -> updateTask(req)
             is Request.RestartAgent -> restartAgent(req)
+            is Request.StartLoop -> startLoop(req)
+            is Request.StopLoop -> stopLoop(req)
             is Request.ListTasks -> {
                 emit(Message.TaskList(req.id, content.workspaces, synchronized(lock) { tasks }))
                 ok(req.id)
@@ -195,6 +199,13 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
             synchronized(lock) { openDoc = req.id }
             ok(req.id)
             emit(Message.DocContent(req.id, req.path, handoff(task), handoffTime(task)))
+            return
+        }
+        val check = task?.loop?.lastCheck
+        if (req.path == CHECK_DOC && check != null) {
+            synchronized(lock) { openDoc = req.id }
+            ok(req.id)
+            emit(Message.DocContent(req.id, req.path, checkLog(check), check.at))
             return
         }
         val doc = content.docs.firstOrNull { it.info.path == req.path }
@@ -298,8 +309,13 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
      * keeps the record with a note and no session, as a failed launch does on a host.
      */
     private fun createTask(req: Request.CreateTask) {
-        if (content.workspaces.none { it.name == req.workspace }) {
+        val workspace = content.workspaces.firstOrNull { it.name == req.workspace }
+        if (workspace == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
+            return
+        }
+        req.loop?.let { spec -> loopRefusal(workspace, spec) }?.let {
+            fail(req.id, ErrorCode.BAD_REQUEST, it)
             return
         }
         val now = now()
@@ -311,7 +327,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
             val record = TaskRecord(
                 id, rev = 1, workspace = req.workspace, title = req.title, goal = req.goal, status = TaskStatus.OPEN,
                 createdAt = now, updatedAt = now, project = req.project, repo = req.repo, branch = req.branch,
-                dir = dir, session = name.takeUnless { failed },
+                dir = dir, session = name.takeUnless { failed }, loop = req.loop?.let { startedLoop(null, it, reset = true, now) },
                 note = if (failed) "could not create a worktree for $FAILING_BRANCH: a branch named '$FAILING_BRANCH' already exists" else null,
             )
             tasks = tasks + record
@@ -337,12 +353,49 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         val saved = synchronized(lock) {
             val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
             if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
-            val saved = current.copy(rev = current.rev + 1, status = req.status, updatedAt = now())
+            val now = now()
+            val saved = current.copy(rev = current.rev + 1, status = req.status, updatedAt = now, loop = current.loop?.afterStatus(req.status, now))
             tasks = tasks.map { if (it.id == saved.id) saved else it }
             saved
         }
         emit(Message.TaskSaved(req.id, saved))
         ok(req.id)
+    }
+
+    /** Starts a Task's loop, also a stopped or passed one, when its workspace allows the check. */
+    private fun startLoop(req: Request.StartLoop) = changeLoop(req.id, req.task) { current, now ->
+        val refusal = loopRefusal(content.workspaces.firstOrNull { it.name == current.workspace }, req.loop)
+        if (refusal != null) LoopChange.Refused(refusal) else LoopChange.Saved(startedLoop(current.loop, req.loop, req.reset, now))
+    }
+
+    private fun stopLoop(req: Request.StopLoop) = changeLoop(req.id, req.task) { current, now ->
+        current.loop?.let { LoopChange.Saved(it.stopped(now)) } ?: LoopChange.Refused("${req.task} has no loop")
+    }
+
+    private sealed interface LoopChange {
+        data class Saved(val loop: TaskLoop) : LoopChange
+        data class Refused(val reason: String) : LoopChange
+    }
+
+    /**
+     * Saves the loop [change] makes, with a new rev, then `task-saved`, `result`, and
+     * `tasks-changed` as the host's poll would send it to every bridge.
+     */
+    private fun changeLoop(id: Long, task: String, change: (TaskRecord, Long) -> LoopChange) {
+        val now = now()
+        val saved = synchronized(lock) {
+            val current = tasks.firstOrNull { it.id == task } ?: return fail(id, ErrorCode.BAD_REQUEST, "$task is not a task")
+            val loop = when (val result = change(current, now)) {
+                is LoopChange.Refused -> return fail(id, ErrorCode.BAD_REQUEST, result.reason)
+                is LoopChange.Saved -> result.loop
+            }
+            val saved = current.copy(rev = current.rev + 1, updatedAt = now, loop = loop)
+            tasks = tasks.map { if (it.id == saved.id) saved else it }
+            saved
+        }
+        emit(Message.TaskSaved(id, saved))
+        ok(id)
+        emit(Message.TasksChanged)
     }
 
     /**
@@ -482,11 +535,17 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         /** Where the bridge writes the facts for a restarted agent (ADR 0018). */
         const val HANDOFF_DOC = ".muxa/HANDOFF.md"
 
+        /** Where the daemon writes the last check's result (ADR 0019). */
+        const val CHECK_DOC = ".muxa/CHECK.md"
+
         /** A branch whose task fails, to show the error. */
         const val FAILING_BRANCH = "taken"
 
         private val CAPABILITIES =
-            listOf("chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff")
+            listOf(
+                "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
+                "task-loop", "tasks-changed",
+            )
         private const val UPDATE_DELAY_MILLIS = 2_000L
 
         private fun now() = System.currentTimeMillis() / 1_000

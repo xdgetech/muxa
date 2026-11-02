@@ -33,6 +33,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.knownRepos
@@ -85,7 +86,9 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                     ExposedDropdownMenu(picking, { picking = false }) {
                         for (w in workspaces) {
                             DropdownMenuItem({ Text(w.name) }, {
-                                edit(draft.copy(workspace = w.name))
+                                // Another workspace allows other checks.
+                                val loop = draft.loop?.let { w.checks?.let { checks -> LoopDraft(checks) } }
+                                edit(draft.copy(workspace = w.name, loop = loop))
                                 picking = false
                             }, modifier = Modifier.testTag("workspace-${w.name}"))
                         }
@@ -135,6 +138,7 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
+                NewTaskLoop(model, draft.loop, model.checksOf(draft.workspace)) { edit(draft.copy(loop = it)) }
                 // The draft's problem, once there is a title to complain about.
                 (error ?: draft.problem.takeIf { draft.title.isNotEmpty() })?.let {
                     Text(it, color = Theme.failure, modifier = Modifier.testTag("task-record-error"))
