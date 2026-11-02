@@ -38,6 +38,9 @@ internal interface DemoContent {
     /** With `alerts`: when another agent starts waiting, after connecting. */
     val alertDelayMillis: Long
     fun sessions(now: Long): List<Session>
+
+    /** Panes whose window follows the device in use, as on a host with `window-size latest` (ADR 0020). */
+    val followers: Set<String> get() = emptySet()
     val conversation: List<ChatEntry>
     val docs: List<DemoDoc>
 
@@ -88,6 +91,8 @@ internal object TestContent : DemoContent {
     /** Shells with nothing run yet: a title bar on the first row and the prompt under it. */
     val freshShells = setOf("%8")
 
+    override val followers = setOf("%9")
+
     override fun sessions(now: Long) = listOf(
         Session(
             id = "$1", name = "feature-auth", repo = "app", repoDir = "/src/app", branch = "feat/auth",
@@ -135,6 +140,11 @@ internal object TestContent : DemoContent {
                 Pane("%7", "@6", 0, Role.AGENT, 100, 60, "claude", "/tmp", dead = false, shellForeground = false),
                 Pane("%8", "@6", 1, Role.SHELL, 100, 60, "zsh", "/tmp", dead = false, shellForeground = true),
             ),
+        ),
+        // Made detached at tmux's default 80x24; its window follows the device (ADR 0020).
+        Session(
+            id = "$7", name = "device",
+            panes = listOf(Pane("%9", "@7", 0, Role.SHELL, 80, 24, "zsh", "/tmp", dead = false, shellForeground = true)),
         ),
     )
 

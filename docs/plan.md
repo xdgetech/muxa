@@ -5,11 +5,11 @@
 Pre-alpha. The bridge, the terminal client, the iPad and iPhone app and the Android app work. The iOS app runs on a real iPad and iPhone; the Android app on phones and tablets. The store listings, screenshots, privacy policy and release settings are ready (`store/RELEASE.md`); neither app is published yet.
 
 What works today:
-- **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode without taking part in window sizing, and speaks protocol v1 (`protocol/PROTOCOL.md`).
+- **Bridge** (`muxa-bridge`, macOS and Linux, tmux ≥ 3.2): runs as an SSH exec command, attaches to tmux in control mode, and speaks protocol v1 (`protocol/PROTOCOL.md`). For a client that sends `viewport`, the watched pane's window follows the device in use, as tmux's `window-size latest` does for terminals (ADR 0020, proposed); for other clients it never takes part in window sizing.
 - **Host daemon** (`muxa-bridge daemon`, optional, ADR 0019): installed by hand as a LaunchAgent or a systemd user unit. It serves Task records on a private Unix socket, and runs the Task Loop while no client is connected. Without it, the bridge serves Task records itself, and loops are off.
 - **Terminal client** (`muxa-cli`): a reference client and end-to-end harness. It also lists, creates, finishes and restarts Tasks and starts and stops their loops, with `--json` for desktop tools (`docs/agents.md`).
 - **iPad app:**
-  - one pane at its real size, scaled to fit; wide panes fit the width and scroll with the cursor (ADR 0004);
+  - one pane, sized for the iPad while it is in use (ADR 0020) and rendered at its real size, scaled to fit; wide panes fit the width and scroll with the cursor (ADR 0004);
   - saved hosts, one-time password setup of a restricted key, and host keys pinned on first use;
   - sessions grouped by repo, with each agent's state and its age;
   - the Agent / Terminal switch, and every keyboard shortcut in the README;
@@ -48,6 +48,7 @@ What works today:
   10. The developer accepts or changes ADR 0015 to 0019. All five are still proposed.
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
+- ADR 0020 (window size follows the device): the developer accepts or changes it, then checks it on the real server with a real iPad and laptop, and with tmux-agents. The store listings still say the desktop layout never changes.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
 - Android: two windows on two panes (multi-window).
 - Android: full R8 (renaming and optimization) for release builds, with a release-build test that connects over SSH. 1.0 only removes unused code (ADR 0014): BouncyCastle, sshj and JediTerm load classes by name.
@@ -67,7 +68,7 @@ Also: muxa's own push notifications while the app is closed (APNs needs a relay 
 ```mermaid
 flowchart LR
   iPad[iPad app<br/>SwiftUI + SwiftTerm + Citadel] -- "SSH exec: muxa-bridge<br/>JSON lines, protocol v1" --> B[muxa-bridge<br/>Rust, one per connection]
-  B -- "tmux -C attach -f ignore-size" --> T[tmux server]
+  B -- "tmux -C attach<br/>refresh-client -C for the device" --> T[tmux server]
   Mac[Desktop terminal] --- T
 ```
 
@@ -76,8 +77,8 @@ The decisions and their reasons are in `docs/adr/`. The tmux facts they rely on 
 - **Bridge:** a Rust binary started as the SSH exec command. No network port. SSH handles authentication and host-key pinning (ADR 0003).
 - **Host daemon** (optional, ADR 0019): `muxa-bridge daemon run`, one per user, started by launchd or `systemd --user`. It listens only on `daemon.sock` (directory 0700, socket 0600, peer uid checked). A bridge sends each Task request to it, one connection per request, when it runs the bridge's version; otherwise the bridge serves the request itself. It runs the Task Loop, and attaches its own tmux client with `-f ignore-size,no-output` only while it has work.
 - **Protocol contract:** `protocol/PROTOCOL.md` plus `protocol/fixtures/`. The Rust and Swift tests decode the same fixtures, so a third-party client can rely on them.
-- **Never resize.** The bridge attaches with `-f ignore-size` and never sends `refresh-client -C`, `resize-*`, `select-window`, `select-pane` or `refresh-client -A %p:off`. A lone control client with a size set resizes every window (`scripts/repro/ignore-size.sh`). Plugins that read `client_width` must skip control-mode clients (README).
-- **Rendering:** at the pane's real cols × rows, with the largest font that fits (ADR 0004).
+- **The window follows the device in use** (ADR 0020, proposed). The client sends `viewport`, the grid its pane area shows at its default font. The bridge then takes part in window sizing like a desktop terminal under `window-size latest`: it sizes its control client so that the watched pane gets that grid. Typing on the laptop takes the window back; typing on the device takes it again. Only windows whose `window-size` is `latest` follow. Without `viewport`, the bridge attaches with `-f ignore-size` and sends no size, as before. Nothing sends `resize-*`, `select-window`, `select-pane` or `refresh-client -A %p:off`. Plugins that read `client_width` must skip control-mode clients (README).
+- **Rendering:** at the pane's real cols × rows, with the largest font that fits (ADR 0004). With `viewport`, the pane usually is the device's grid.
 - **Input:**
   - text → `send-keys -l`;
   - named keys → `send-keys`, so tmux encodes them for the pane's modes and extended keys;
@@ -101,7 +102,7 @@ The server:
 
 ### Rejected
 
-- Attaching a normal tmux client, as Multiplex and Remux do: it resizes the window (ADR 0001).
+- Attaching a normal tmux client, as Multiplex and Remux do: it needs a PTY, and it sizes the window to the whole device, not to the pane the device shows (ADR 0001, 0020).
 - A shared Rust client core through UniFFI (ADR 0013). Swift and Kotlin each keep their own session core; `protocol/fixtures` keeps them to one contract.
 
 ## Verification

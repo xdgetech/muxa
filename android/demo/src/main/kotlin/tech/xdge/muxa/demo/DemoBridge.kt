@@ -36,9 +36,11 @@ import tech.xdge.muxa.transport.BridgeChannel
 import java.util.UUID
 
 /**
- * An in-app bridge for a demo without a host: a few sessions, fixed-size panes, typed
- * text echoed back, and a chat for the agent pane %1. No SSH, no tmux. With [alerts],
- * an agent elsewhere starts waiting a few seconds in.
+ * An in-app bridge for a demo without a host: a few sessions, typed text echoed back,
+ * and a chat for the agent pane %1. Most panes have a fixed size; the content's
+ * followers, and new tasks, take the app's viewport as a host with `window-size latest`
+ * does (ADR 0020). No SSH, no tmux. With [alerts], an agent elsewhere starts waiting a
+ * few seconds in.
  */
 class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
@@ -53,6 +55,13 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lock = Any()
     private var watch = 0L
+    private var watchedPane: String? = null
+
+    /** The app's grid at its default font, once it sent one. */
+    private var viewport: Pair<Int, Int>? = null
+
+    /** Panes whose window follows the device in use. */
+    private val followers = content.followers.toMutableSet()
     private var chat: ChatFollow? = null
     private var openDoc: Long? = null
     private var openDiff: Long? = null
@@ -87,6 +96,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         when (val req = Wire.decodeRequest(line)) {
             is Request.List -> emit(Message.Result(req.id, sessions = synchronized(lock) { sessions }))
             is Request.Watch -> watch(req)
+            is Request.Viewport -> viewport(req)
             is Request.Text -> {
                 ok(req.id)
                 echo(req.pane, req.text.toByteArray())
@@ -165,10 +175,35 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
     }
 
     private fun watch(req: Request.Watch) {
-        synchronized(lock) { watch = req.id }
+        synchronized(lock) {
+            watch = req.id
+            watchedPane = req.pane
+        }
         ok(req.id)
-        val p = synchronized(lock) { sessions }.flatMap { it.panes }.firstOrNull { it.id == req.pane } ?: return
+        val p = sized(req.pane) ?: return
         emit(Message.Screen(req.id, req.pane, p.cols, p.rows, Bytes(content.screen(p))))
+    }
+
+    private fun viewport(req: Request.Viewport) {
+        ok(req.id)
+        val (w, pane) = synchronized(lock) {
+            viewport = req.cols to req.rows
+            watch to watchedPane
+        }
+        if (pane == null || synchronized(lock) { pane !in followers }) return
+        val p = sized(pane) ?: return
+        emit(Message.Screen(w, pane, p.cols, p.rows, Bytes(content.screen(p))))
+    }
+
+    /** The pane, at the viewport's size when its window follows the device. */
+    private fun sized(id: String): Pane? = synchronized(lock) {
+        val size = viewport?.takeIf { id in followers }
+        if (size != null) {
+            sessions = sessions.map { s ->
+                s.copy(panes = s.panes.map { if (it.id == id) it.copy(cols = size.first, rows = size.second) else it })
+            }
+        }
+        sessions.flatMap { it.panes }.firstOrNull { it.id == id }
     }
 
     private fun chat(req: Request.Chat) {
@@ -294,7 +329,9 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         synchronized(lock) {
             if (sessions.none { it.name == name }) {
                 val n = 20 + sessions.size
-                val pane = Pane("%$n", "@$n", 0, Role.AGENT, 100, 30, "claude", repo, false, false)
+                // Made detached at tmux's default size; its window follows the device.
+                val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", repo, false, false)
+                followers += pane.id
                 val repoName = repo.split("/").lastOrNull { it.isNotEmpty() }
                 sessions = sessions + Session("$$n", name, repoName, repo, branch, panes = listOf(pane))
             }
@@ -333,7 +370,8 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
             tasks = tasks + record
             if (!failed) {
                 val n = 20 + sessions.size
-                val pane = Pane("%$n", "@$n", 0, Role.AGENT, 100, 30, "claude", dir, false, false, Agent(AgentState.RUNNING, now))
+                val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", dir, false, false, Agent(AgentState.RUNNING, now))
+                followers += pane.id
                 val repoName = req.repo?.split("/")?.lastOrNull { it.isNotEmpty() }
                 sessions = sessions + Session("$$n", name, repoName, req.repo, req.branch, taskId = id, panes = listOf(pane))
             }
@@ -544,7 +582,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
         private val CAPABILITIES =
             listOf(
                 "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-                "task-loop", "tasks-changed",
+                "task-loop", "tasks-changed", "viewport",
             )
         private const val UPDATE_DELAY_MILLIS = 2_000L
 

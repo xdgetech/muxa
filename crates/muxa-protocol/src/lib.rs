@@ -25,6 +25,14 @@ pub enum Request {
     Unwatch {
         id: u64,
     },
+    /// The grid the client's pane area shows at its default font (capability
+    /// `viewport`, ADR 0020). The bridge sizes the watched pane's window for
+    /// it, for this watch and later ones.
+    Viewport {
+        id: u64,
+        cols: u32,
+        rows: u32,
+    },
     /// Named keys, e.g. `C-c`, `Up`, `S-Enter`.
     Keys {
         id: u64,
@@ -211,6 +219,7 @@ impl Request {
             | Request::List { id }
             | Request::Watch { id, .. }
             | Request::Unwatch { id }
+            | Request::Viewport { id, .. }
             | Request::Keys { id, .. }
             | Request::Text { id, .. }
             | Request::Bytes { id, .. }

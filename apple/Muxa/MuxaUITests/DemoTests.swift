@@ -117,6 +117,65 @@ final class DemoTests: XCTestCase {
         save("landscape-fresh-shell")
     }
 
+    /// A session made at tmux's default 80x24 takes the size of the pane area
+    /// (ADR 0020): the demo bridge sizes it for the app's viewport, the pane fills
+    /// the view without scrolling, and a rotation sizes it again.
+    @MainActor
+    func testADetachedSessionTakesTheDeviceSize() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        // Cmd+7: the last session in the sidebar, "device".
+        pane.typeKey("7", modifierFlags: .command)
+        XCTAssertTrue(waitFor(pane, containing: "pane %9 "))
+        let portrait = try XCTUnwrap(sizeOf(pane, "%9"))
+        XCTAssertNotEqual(portrait, Grid(cols: 80, rows: 24), "the pane kept the size it was made with")
+        assertFills(app, pane, portrait)
+        save("portrait-device-size")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        // Each read of the pane's text takes a while, so poll a few times rather than a predicate.
+        var landscape = portrait
+        for _ in 0..<10 where landscape.cols <= portrait.cols {
+            sleep(1)
+            landscape = sizeOf(pane, "%9") ?? portrait
+        }
+        XCTAssertGreaterThan(landscape.cols, portrait.cols, "rotating did not size the pane again")
+        XCTAssertLessThan(landscape.rows, portrait.rows)
+        assertFills(app, pane, landscape)
+        save("landscape-device-size")
+    }
+
+    struct Grid: Equatable {
+        var cols: Int
+        var rows: Int
+    }
+
+    /// The size the demo pane prints on its second row: "zsh — pane %9 120x40".
+    func sizeOf(_ pane: XCUIElement, _ id: String) -> Grid? {
+        let text = pane.value as? String ?? ""
+        guard let range = text.range(of: "pane \(id) ") else { return nil }
+        let size = text[range.upperBound...].prefix { $0.isNumber || $0 == "x" }.split(separator: "x")
+        guard size.count == 2, let cols = Int(size[0]), let rows = Int(size[1]) else { return nil }
+        return Grid(cols: cols, rows: rows)
+    }
+
+    /// The grid is exact (the last row holds cols - 1 cells and an X) and fits the
+    /// view: nothing scrolls.
+    @MainActor
+    func assertFills(_ app: XCUIApplication, _ pane: XCUIElement, _ grid: Grid, file: StaticString = #filePath, line: UInt = #line) {
+        let rows = (pane.value as? String ?? "").components(separatedBy: "\n")
+        XCTAssertTrue(rows.contains { $0.count == grid.cols && $0.hasSuffix("X") }, "no \(grid.cols)-column last row", file: file, line: line)
+        sleep(1)
+        let window = app.windows.firstMatch.frame
+        XCTAssertLessThanOrEqual(pane.frame.width, window.width + 1, file: file, line: line)
+        XCTAssertLessThanOrEqual(pane.frame.height, window.height, file: file, line: line)
+        XCTAssertGreaterThanOrEqual(pane.frame.minY, window.minY, "the pane scrolled", file: file, line: line)
+    }
+
     /// Japanese input: the pane gets the converted text once, never the kana on the way.
     /// Needs the simulator's Japanese (Romaji) keyboard; skipped without it.
     @MainActor

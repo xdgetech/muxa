@@ -4,7 +4,8 @@ import SwiftTerm
 import UIKit
 
 /// Shows a pane at exactly its cols x rows, with the largest font that fits.
-/// It never asks for another size: the pane belongs to the desktop layout.
+/// It may tell the bridge which grid it would like (`viewportGrid`, ADR 0020),
+/// but it always renders the grid the pane has.
 @MainActor
 public final class PaneTerminalView: UIView, PaneRenderer {
     public typealias FitMode = PaneFit
@@ -85,6 +86,12 @@ public final class PaneTerminalView: UIView, PaneRenderer {
             wide: viewport.width > viewport.height,
             wholeFont: metrics.largestFontSize(cols: cols, rows: rows, in: viewport),
             widthFont: metrics.largestFontSize(cols: cols, rows: nil, in: viewport))
+    }
+
+    /// The grid `area` shows at `fontSize`, with cells measured as the fit measures them.
+    public func viewportGrid(in area: CGSize, fontSize: CGFloat) -> PaneViewport? {
+        let cell = CellMetrics(scale: displayScale).cell(for: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular))
+        return PaneViewport.fitting(area, cell: cell)
     }
 
     /// The size the grid needs in `fitMode` for a view of `viewport` size.

@@ -25,7 +25,7 @@ struct FixtureTests {
 
     @Test func requestsRoundTrip() throws {
         let lines = try Self.lines("requests.jsonl")
-        #expect(lines.count == 33)
+        #expect(lines.count == 34)
         for line in lines {
             let request = try Wire.decodeRequest(line)
             let again = try Wire.encode(request)

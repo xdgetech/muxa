@@ -216,6 +216,7 @@ struct PaneHost: UIViewRepresentable {
             }
         }
         view.input.onPaste = { [session] text in session.paste(text) }
+        view.onViewport = { [session] grid in session.setViewport(grid) }
         return view
     }
 
@@ -240,6 +241,9 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     private var cursorWasVisible = true
     var focusRequest = 0
     var onPinch: (PaneFit) -> Void = { _ in }
+    /// The grid this view shows at the default font changed (ADR 0020).
+    var onViewport: (PaneViewport) -> Void = { _ in }
+    private var viewport: PaneViewport?
 
     var fitOverride: PaneFit? {
         didSet { if fitOverride != oldValue { setNeedsLayout() } }
@@ -274,7 +278,9 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     required init?(coder: NSCoder) { nil }
 
     private var mode: PaneFit {
-        fitOverride ?? terminal.automaticFit(in: bounds.size)
+        if let fitOverride { return fitOverride }
+        if let viewport, viewport.showsWhole(cols: terminal.cols, rows: terminal.rows) { return .whole }
+        return terminal.automaticFit(in: bounds.size)
     }
 
     @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
@@ -291,6 +297,10 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     private func layoutContent() {
         scroll.frame = bounds
         guard bounds.width > 0, bounds.height > 0 else { return }
+        // A phone-sized area: compact in either direction, as the layout decides (ADR 0012).
+        let compact = traitCollection.horizontalSizeClass == .compact || traitCollection.verticalSizeClass == .compact
+        viewport = terminal.viewportGrid(in: bounds.size, fontSize: PaneViewport.fontSize(compact: compact))
+        if let viewport { onViewport(viewport) }
         terminal.fitMode = mode
         terminal.viewport = bounds.size
         let grid = terminal.gridSize(in: bounds.size)

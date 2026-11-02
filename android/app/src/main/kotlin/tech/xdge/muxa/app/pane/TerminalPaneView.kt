@@ -24,6 +24,7 @@ import tech.xdge.muxa.session.KeyBar
 import tech.xdge.muxa.session.KeyMap
 import tech.xdge.muxa.session.KeyOutput
 import tech.xdge.muxa.session.PaneFit
+import tech.xdge.muxa.session.PaneViewport
 import tech.xdge.muxa.terminal.PaneScreen
 import tech.xdge.muxa.terminal.ScreenSnapshot
 import kotlin.math.ceil
@@ -33,9 +34,9 @@ import kotlin.math.roundToInt
 
 /**
  * Shows a pane at exactly its cols x rows, with the font its fit picks, and takes the
- * keyboard for it. It never asks for another size: the pane belongs to the desktop
- * layout (ADR 0004). A grid larger than the view scrolls, following the cursor unless
- * the user is reading.
+ * keyboard for it. It tells the bridge which grid it shows at the default font
+ * ([onViewport], ADR 0020), and always renders the grid the pane has. A grid larger
+ * than the view scrolls, following the cursor unless the user is reading.
  *
  * Named keys and chords become host key names; typed text goes as text. An input
  * method's composition (Japanese) is drawn at the cursor and sent only when committed.
@@ -57,6 +58,11 @@ class TerminalPaneView(context: Context) : View(context) {
 
     /** The bar's Ctrl changed. */
     var onKeyBar: (KeyBar) -> Unit = {}
+
+    /** The grid this view shows at the default font changed (ADR 0020). */
+    var onViewport: (PaneViewport) -> Unit = {}
+    var viewport: PaneViewport? = null
+        private set
 
     /** Null lets the view pick (`PaneFit.automatic`). */
     var fitOverride: PaneFit? = null
@@ -109,11 +115,25 @@ class TerminalPaneView(context: Context) : View(context) {
     // Layout and fit
 
     private val mode: PaneFit
-        get() = fitOverride ?: PaneFit.automatic(width > height, largestFont(rowsLimit = true), largestFont(rowsLimit = false))
+        get() = fitOverride
+            ?: PaneFit.WHOLE.takeIf { viewport?.showsWhole(snapshot.cols, snapshot.rows) == true }
+            ?: PaneFit.automatic(width > height, largestFont(rowsLimit = true), largestFont(rowsLimit = false))
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        measureViewport()
         relayout()
+    }
+
+    /** The grid the view shows at the default font: compact windows get the smaller one, as the layout decides (ADR 0012). */
+    private fun measureViewport() {
+        if (width == 0 || height == 0) return
+        val config = resources.configuration
+        val compact = config.screenWidthDp < 600 || config.screenHeightDp < 480
+        val measure = Paint(paint).apply { textSize = PaneViewport.fontSize(compact) * scaledDensity }
+        val fm = measure.fontMetrics
+        viewport = PaneViewport.fitting(width.toFloat(), height.toFloat(), measure.measureText("W"), ceil(fm.descent - fm.ascent))
+        viewport?.let(onViewport)
     }
 
     private fun relayout() {

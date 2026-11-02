@@ -53,6 +53,8 @@ public final class PaneSession {
     public private(set) var tasksTruncated = false
     /// Why the task records could not be listed; the last list stays.
     public private(set) var taskError: String?
+    /// The grid the pane area shows at the default font, kept across reconnects.
+    public private(set) var viewport: PaneViewport?
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -80,6 +82,9 @@ public final class PaneSession {
     /// Ids of input requests in flight; their results only matter when they fail.
     @ObservationIgnored private var inputs: Set<UInt64> = []
     @ObservationIgnored private var hello: CheckedContinuation<Void, any Error>?
+    /// The viewport this bridge has; nil after a connect.
+    @ObservationIgnored private var sentViewport: PaneViewport?
+    @ObservationIgnored private var viewportTask: Task<Void, Never>?
     @ObservationIgnored private let pingEvery: Duration
 
     public init(pingEvery: Duration = .seconds(15)) {
@@ -112,6 +117,8 @@ public final class PaneSession {
             start(channel)
             try await waitForHello()
             phase = .connected
+            // Before the watch, so the pane's window is sized for this device first.
+            sendViewport()
             try await refresh()
             await loadTasks()
             if let pane = watchedPane { try await watch(pane: pane) }
@@ -158,6 +165,34 @@ public final class PaneSession {
             self.watchId = id
             return .watch(id: id, pane: pane)
         }
+    }
+
+    /// The pane area changed (rotation, split view, fold, keyboard). The bridge
+    /// gets the first viewport at once and later ones once they settle for 300 ms,
+    /// so a drag or an animation resizes the window once (ADR 0020).
+    public func setViewport(_ new: PaneViewport) {
+        guard new != viewport else { return }
+        viewport = new
+        viewportTask?.cancel()
+        guard sentViewport != nil else {
+            sendViewport()
+            return
+        }
+        viewportTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            self?.sendViewport()
+        }
+    }
+
+    private func sendViewport() {
+        guard let viewport, viewport != sentViewport, channel != nil, capabilities.contains("viewport") else {
+            return
+        }
+        sentViewport = viewport
+        let id = takeId()
+        inputs.insert(id)
+        enqueue(.viewport(id: id, cols: viewport.cols, rows: viewport.rows))
     }
 
     public var canChat: Bool { capabilities.contains("chat") }
@@ -674,6 +709,9 @@ public final class PaneSession {
         savedTasks = [:]
         createdTasks = [:]
         inputs = []
+        sentViewport = nil
+        viewportTask?.cancel()
+        viewportTask = nil
         let failed = pending
         pending = [:]
         failed.values.forEach { $0.resume(throwing: Failure.notConnected) }

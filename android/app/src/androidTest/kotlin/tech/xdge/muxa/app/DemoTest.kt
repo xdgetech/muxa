@@ -334,6 +334,64 @@ class DemoTest {
         compose.waitUntil(TIMEOUT) { onWeb { !it.canScrollVertically(1) } }
     }
 
+    /**
+     * A session made at tmux's default 80x24 takes the grid the pane view shows at the
+     * default font (ADR 0020), and a new window size sizes it again.
+     */
+    @Test
+    fun aDetachedSessionTakesTheDeviceSize() {
+        launch()
+        waitForTag("composer")
+        // Ctrl+Shift+7: the last session in the list, "device".
+        shortcut(KeyEvent.KEYCODE_7)
+        waitForPane("pane %9 ")
+        compose.waitUntil(TIMEOUT) { paneSize() != null && paneSize() == paneView()?.viewport?.let { it.cols to it.rows } }
+        val first = checkNotNull(paneSize())
+        assertTrue("the pane kept the size it was made with", first != 80 to 24)
+        assertExactGrid(first)
+
+        val wide = compose.onAllNodes(hasTestTag("show-list")).fetchSemanticsNodes().isNotEmpty()
+        try {
+            shell(if (wide) "wm size 1080x2400" else "wm size 2560x1600")
+            compose.waitUntil(TIMEOUT) { paneSize().let { it != null && it != first && it == paneView()?.viewport?.let { v -> v.cols to v.rows } } }
+            assertExactGrid(checkNotNull(paneSize()))
+        } finally {
+            shell("wm size reset")
+        }
+    }
+
+    /** The size the demo pane prints on its second row: "zsh — pane %9 120x40". */
+    private fun paneSize(): Pair<Int, Int>? {
+        val text = compose.onAllNodes(hasTestTag("pane")).fetchSemanticsNodes().firstOrNull()
+            ?.config?.getOrNull(SemanticsProperties.StateDescription) ?: return null
+        val match = Regex("pane %9 (\\d+)x(\\d+)").find(text) ?: return null
+        return match.groupValues[1].toInt() to match.groupValues[2].toInt()
+    }
+
+    /** The grid is exact: the last row holds cols - 1 cells and an X. */
+    private fun assertExactGrid(size: Pair<Int, Int>) {
+        val text = compose.onNodeWithTag("pane").fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription).orEmpty()
+        assertTrue("no ${size.first}-column last row", text.lines().any { it.length == size.first && it.endsWith("X") })
+    }
+
+    private fun paneView(): tech.xdge.muxa.app.pane.TerminalPaneView? {
+        var found: tech.xdge.muxa.app.pane.TerminalPaneView? = null
+        scenario?.onActivity { found = findPane(it.window.decorView) }
+        return found
+    }
+
+    private fun findPane(view: View): tech.xdge.muxa.app.pane.TerminalPaneView? = when (view) {
+        is tech.xdge.muxa.app.pane.TerminalPaneView -> view
+        is android.view.ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { findPane(view.getChildAt(it)) }
+        else -> null
+    }
+
+    /** Runs [command] to its end: the output is read until the command closes it. */
+    private fun shell(command: String) {
+        val out = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() }
+    }
+
     /** The Reader's web view: it is in the Reader's dialog window, out of Compose's reach. */
     private fun readerWebView(): WebView {
         var found: WebView? = null

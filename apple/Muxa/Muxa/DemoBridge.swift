@@ -3,14 +3,21 @@ import MuxaProtocol
 import MuxaTransport
 import UIKit
 
-/// An in-app bridge: a few sessions, fixed-size panes, typed text echoed back, and a
-/// chat for the agent pane %1. No SSH, no tmux. Try the Demo uses it, and so do the
-/// UI tests (launch argument `-demo`, DEBUG only).
+/// An in-app bridge: a few sessions, typed text echoed back, and a chat for the agent
+/// pane %1. Most panes have a fixed size; the content's `followers`, and new tasks,
+/// take the app's viewport as a host with `window-size latest` does (ADR 0020).
+/// No SSH, no tmux. Try the Demo uses it, and so do the UI tests (launch argument
+/// `-demo`, DEBUG only).
 final class DemoBridge: BridgeChannel, @unchecked Sendable {
     let lines: AsyncThrowingStream<Data, any Error>
     private let out: AsyncThrowingStream<Data, any Error>.Continuation
     private let lock = NSLock()
     private var watch: UInt64 = 0
+    private var watchedPane: String?
+    /// The app's grid at its default font, once it sent one.
+    private var viewport: (cols: UInt16, rows: UInt16)?
+    /// Panes whose window follows the device in use.
+    private var followers: Set<String>
     private var chat: (id: UInt64, seq: UInt64, count: Int)?
     private var openDoc: UInt64?
     private var openDiff: UInt64?
@@ -63,7 +70,14 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             Pane(id: "%8", window: "@6", index: 1, role: .shell, cols: 100, rows: 60, command: "zsh",
                  path: "/tmp", dead: false, shellForeground: true),
         ]),
+        // Made detached at tmux's default 80x24; its window follows the device (ADR 0020).
+        Session(id: "$7", name: "device", panes: [
+            Pane(id: "%9", window: "@7", index: 0, role: .shell, cols: 80, rows: 24, command: "zsh",
+                 path: "/tmp", dead: false, shellForeground: true),
+        ]),
     ]
+    /// The panes of `initialSessions` whose window follows the device in use.
+    static let initialFollowers: Set<String> = ["%9"]
     /// Shells with nothing run yet: a title bar on the first row and the prompt under it.
     static let freshShells: Set<String> = ["%8"]
 
@@ -71,6 +85,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     init(content: DemoContent, alerts: Bool) {
         self.content = content
         sessions = content.sessions
+        followers = content.followers
         tasks = content.tasks
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
         if alerts {
@@ -81,7 +96,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     private static let capabilities = [
         "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-        "task-loop", "tasks-changed",
+        "task-loop", "tasks-changed", "viewport",
     ]
 
     func send(_ line: Data) async throws {
@@ -90,10 +105,21 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .list(let id):
             emit(.result(id: id, error: nil, sessions: lock.withLock { sessions }))
         case .watch(let id, let pane):
-            lock.withLock { watch = id }
+            lock.withLock {
+                watch = id
+                watchedPane = pane
+            }
             emit(.result(id: id, error: nil, sessions: nil))
-            guard let p = lock.withLock({ sessions }).flatMap(\.panes).first(where: { $0.id == pane }) else { return }
+            guard let p = sized(pane) else { return }
             emit(.screen(watch: id, pane: pane, cols: p.cols, rows: p.rows, data: content.screen(p)))
+        case .viewport(let id, let cols, let rows):
+            ok(id)
+            let (w, pane) = lock.withLock { () -> (UInt64, String?) in
+                viewport = (UInt16(clamping: cols), UInt16(clamping: rows))
+                return (watch, watchedPane)
+            }
+            guard let pane, let p = sized(pane), lock.withLock({ followers.contains(pane) }) else { return }
+            emit(.screen(watch: w, pane: pane, cols: p.cols, rows: p.rows, data: content.screen(p)))
         case .text(let id, let pane, let text):
             ok(id)
             echo(pane, Data(text.utf8))
@@ -225,6 +251,21 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     func close() async { out.finish() }
 
+    /// The pane, at the viewport's size when its window follows the device.
+    private func sized(_ id: String) -> Pane? {
+        lock.withLock {
+            for s in sessions.indices {
+                guard let i = sessions[s].panes.firstIndex(where: { $0.id == id }) else { continue }
+                if followers.contains(id), let viewport {
+                    sessions[s].panes[i].cols = viewport.cols
+                    sessions[s].panes[i].rows = viewport.rows
+                }
+                return sessions[s].panes[i]
+            }
+            return nil
+        }
+    }
+
     private func startTask(id: UInt64, repo: String, branch: String) {
         guard branch != Self.failingBranch else {
             emit(.result(id: id, error: ErrorBody(
@@ -236,8 +277,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         lock.withLock {
             guard !sessions.contains(where: { $0.name == name }) else { return }
             let n = 20 + sessions.count
-            let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 100, rows: 30,
+            let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 80, rows: 24,
                             command: "claude", path: repo, dead: false, shellForeground: false)
+            followers.insert(pane.id)
             let repoName = repo.split(separator: "/").last.map(String.init)
             sessions.append(Session(id: "$\(n)", name: name, repo: repoName, repoDir: repo, branch: branch, panes: [pane]))
         }
@@ -263,9 +305,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
             if let name = record.session {
                 let n = 20 + sessions.count
-                let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 100, rows: 30,
+                let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 80, rows: 24,
                                 command: "claude", path: record.dir ?? "/", dead: false, shellForeground: false,
                                 agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
+                followers.insert(pane.id)
                 sessions.append(Session(
                     id: "$\(n)", name: name, repo: repo?.split(separator: "/").last.map(String.init), repoDir: repo,
                     branch: branch, worktree: repo == nil ? nil : record.dir, taskId: record.id, panes: [pane]))

@@ -9,10 +9,25 @@ If a script fails on a new tmux version, the design must be revisited before rel
 | Fact | Script |
 |---|---|
 | A control client attached with `-f ignore-size` never resizes a window. This holds next to a desktop client and when it is the only client. | `scripts/repro/ignore-size.sh` |
-| **Hazard:** after `refresh-client -C <size>`, a lone `ignore-size` control client **does** size the window (here to 400x100). muxa never sends `refresh-client -C`. | `scripts/repro/ignore-size.sh` |
+| After `refresh-client -C <size>`, a lone `ignore-size` control client **does** size the window (here to 400x100). `ignore-size` only steps aside for a client without the flag. A bridge that has sent a size stays a candidate while it is the only client (ADR 0020). | `scripts/repro/ignore-size.sh` |
+| A session made with `new-session -d`, as a task launcher makes it, is `default-size` (80x24), not the size of a desktop client attached to another session. Its panes are split from 80x24: tmux-agents' sidebar, agent and shell come out 28, 25 and 25 columns wide. An `ignore-size` control client watching it changes nothing. It gets the desktop's size only once a desktop client views it. `-x`/`-y` at creation set its size. | `scripts/repro/detached-session-size.sh` (set `MUXA_REPRO_PLUGIN` to see tmux-agents' layout) |
 | Hooks see `#{client_width}` = 80 for a control client on `client-attached`. A plugin that hides panes on narrow clients, such as the tmux-agents sidebar, changes the desktop layout. Such plugins must skip control-mode clients (`#{client_control_mode}`). | `scripts/repro/plugin-client-width.sh` (set `MUXA_REPRO_PLUGIN` to check a real plugin) |
 
-The `refresh-client -C` workaround for narrow-client plugins was considered and rejected because of the hazard above. It resized every window as soon as the desktop client had left.
+## Sizing for the device in use (ADR 0020)
+
+| Fact | Script |
+|---|---|
+| `window-size` defaults to `latest` (a server started with `-f /dev/null`). | `scripts/repro/sized-client-latest.sh` |
+| With `latest`, a control client without `ignore-size` that sent `refresh-client -C WxH` sizes the window to exactly WxH (no status line) while it is the window's latest client. A control client that never sent a size sizes nothing. The resize runs `window-resized` hooks; `refresh-client -C` runs no `client-resized` hook. | `scripts/repro/sized-client-latest.sh` |
+| `attach-session` and `switch-client -t <its own session>` make a control client the latest client of the session's current window. Its own `send-keys`, and a repeated `refresh-client -C`, do not. A desktop key press makes the desktop client latest and takes the window back. | `scripts/repro/sized-client-latest.sh` |
+| `refresh-client -f ignore-size` gives the window back to a desktop client, but only at the next size calculation: send `refresh-client -C` again after it. `refresh-client -f '!ignore-size'` (3.2+) drops the flag again. When the sized client detaches, the desktop's size returns at once. | `scripts/repro/sized-client-latest.sh` |
+| A sized control client sizes only windows of its own session. When no other client views that session, it sizes every window of it, also the ones it does not show. They keep that size after it leaves, until a desktop client views them. | `scripts/repro/sized-client-scope.sh` |
+| `smallest` lets a sized control client shrink a window that the desktop client is using; `largest` keeps the larger desktop size; `manual` ignores clients. `resize-window` sets that window's `window-size` to `manual`. `#{window-size}` shows the value in effect for a window. | `scripts/repro/sized-client-scope.sh` |
+| A per-window size, `refresh-client -C @id:WxH` (3.3+; 3.2a answers `%error`), caps that window in every mode, also while the desktop is latest. It cannot follow the device in use. | `scripts/repro/sized-client-scope.sh` |
+| An `ignore-size,no-output` client that never sent a size (the daemon's) sizes nothing, also as the only client. | `scripts/repro/sized-client-scope.sh` |
+| When the window grows, tmux spreads the new columns over side-by-side panes one at a time: 28/25/25 at 80 columns becomes 62/58/58 at 180. A pane reaches a given width only through the window. tmux-agents' `window-resized` hook then puts its sidebar back to `@agents_sidebar_width` and splits the rest by the panes' shares: 28/75/75 at 180, 28/180/180 at 390. | `scripts/repro/sized-client-layout.sh` (set `MUXA_REPRO_PLUGIN` for tmux-agents) |
+
+Before ADR 0020, `refresh-client -C` was rejected as a workaround for narrow-client plugins because a lone `ignore-size` client with a size still sizes windows (Sizing, above). It resized windows once the desktop client had left.
 
 ## Output stream
 

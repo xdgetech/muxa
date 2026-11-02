@@ -49,7 +49,7 @@ class DemoBridgeTest {
         val s = session.state.value
         assertEquals("demo", s.tmuxVersion)
         assertTrue(s.canChat && s.canReadDocs && s.canShowChanges && s.canShowImages && s.canStartTasks && s.canCloseTasks)
-        assertEquals(listOf("feature-auth", "fix-login", "docs-site", "scratch", "tall", "pair"), s.sessions.map { it.name })
+        assertEquals(listOf("feature-auth", "fix-login", "docs-site", "scratch", "tall", "pair", "device"), s.sessions.map { it.name })
     }
 
     @Test
@@ -208,6 +208,19 @@ class DemoBridgeTest {
         assertEquals("日本語 ✓ é  red green blue", rows[3])
         assertEquals("$", rows[5])
         assertEquals(" ".repeat(99) + "X", rows[29])
+    }
+
+    @Test
+    fun theDeviceSessionTakesTheViewportAndFixedPanesKeepTheirSize() = runBlocking {
+        val (session, screen) = connected()
+        session.setViewport(tech.xdge.muxa.session.PaneViewport(120, 40))
+        session.watch("%9")
+        waitUntil { screen.settledRows().getOrNull(1) == "zsh — pane %9 120x40" }
+        // A rotation: the watched pane follows.
+        session.setViewport(tech.xdge.muxa.session.PaneViewport(90, 50))
+        waitUntil { screen.settledRows().getOrNull(1) == "zsh — pane %9 90x50" }
+        session.watch("%1")
+        waitUntil { screen.settledRows().getOrNull(1) == "claude — pane %1 100x30" }
     }
 
     @Test

@@ -229,6 +229,7 @@ private fun PaneHost(model: AppModel, focusRequest: Int?) {
                     onOutput = model.session::send
                     onPaste = model.session::paste
                     onKeyBar = { bar = it }
+                    onViewport = model.session::setViewport
                     onShortcut = { e -> model.shortcut(e) }
                     onContent = { content++ }
                     view = this

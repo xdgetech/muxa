@@ -1,5 +1,6 @@
 //! tmux control-mode client: discovery, pane snapshots, output stream, input.
-//! It never resizes a window or pane; see `docs/adr/0001-control-mode-ignore-size.md`.
+//! It never resizes a window or pane directly. Only `sizing` gives the client a
+//! size, for the device in use (docs/adr/0020-window-size-follows-the-device.md).
 
 mod client;
 mod discover;
@@ -11,6 +12,7 @@ mod lifecycle;
 mod parser;
 mod pending;
 mod roles;
+mod sizing;
 mod snapshot;
 
 pub use client::{Client, Flags, MAX_LINE, Notifications, Options};
@@ -24,4 +26,5 @@ pub use lifecycle::{
     respawn_pane, session_names, set_pane_option, set_session_option, switch_client,
 };
 pub use parser::{Notification, Reply};
+pub use sizing::{Grid, follows_device, release_size, resize_client, take_size, window_size};
 pub use snapshot::{Screen, snapshot};
