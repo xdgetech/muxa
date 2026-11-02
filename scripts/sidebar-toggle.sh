@@ -24,7 +24,7 @@ too_narrow() {
 has_sidebar() { t list-panes -t "$1" -F '#{@agents_sidebar_pane}' 2>/dev/null | grep -qx 1; }
 
 sidebar_panes() {
-  t list-panes -a -F "#{pane_id}${TAB}#{@agents_sidebar_pane}" 2>/dev/null | awk -F'\t' '$2 == "1" { print $1 }'
+  t list-panes -a -f "$AGENTS_VISIBLE" -F "#{pane_id}${TAB}#{@agents_sidebar_pane}" 2>/dev/null | awk -F'\t' '$2 == "1" { print $1 }'
 }
 
 # Prints "<pane> <width>" per work pane, left to right, when the work panes are
@@ -86,7 +86,7 @@ fit() {
 
 ensure_all() {
   local w
-  for w in $(t list-windows -a -F '#{window_id}' 2>/dev/null); do ensure "$w"; done
+  for w in $(t list-windows -a -f "$AGENTS_VISIBLE" -F '#{window_id}' 2>/dev/null); do ensure "$w"; done
 }
 
 kill_all() {
@@ -101,7 +101,7 @@ kill_all() {
 
 reap() {
   local w
-  for w in $(t list-panes -a -F "#{window_id}${TAB}#{@agents_sidebar_pane}" 2>/dev/null |
+  for w in $(t list-panes -a -f "$AGENTS_VISIBLE" -F "#{window_id}${TAB}#{@agents_sidebar_pane}" 2>/dev/null |
     awk -F'\t' '{ n[$1]++; if ($2 != "1") work[$1]++ } END { for (k in n) if (!work[k]) print k }'); do
     t kill-window -t "$w"
   done
@@ -119,7 +119,7 @@ case "${1:-}" in
       kill_all
     elif is_on; then
       ensure_all
-      for w in $(t list-windows -a -F '#{window_id}' 2>/dev/null); do fit "$w"; done
+      for w in $(t list-windows -a -f "$AGENTS_VISIBLE" -F '#{window_id}' 2>/dev/null); do fit "$w"; done
     fi ;;
   reap) reap ;;
   *) echo "usage: sidebar-toggle.sh <on|off|toggle|ensure <window>|fit <window>|sync|reap>" >&2; exit 2 ;;

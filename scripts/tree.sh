@@ -11,9 +11,9 @@ own=""
 [ -n "${1:-}" ] && own="$(t display-message -p -t "$1" "#{session_name}${TAB}#{window_index}" 2>/dev/null)"
 
 {
-  t list-sessions -F "S${TAB}#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_pr}${TAB}#{@agent_pr_state}${TAB}#{session_windows}"
-  t list-windows -a -F "W${TAB}#{session_name}${TAB}#{window_index}${TAB}#{window_name}"
-  t list-panes -a -F "P${TAB}#{session_name}${TAB}#{window_index}${TAB}#{@agent_state}${TAB}#{@agents_sidebar_pane}"
+  t list-sessions -f "$AGENTS_VISIBLE" -F "S${TAB}#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_pr}${TAB}#{@agent_pr_state}${TAB}#{session_windows}"
+  t list-windows -a -f "$AGENTS_VISIBLE" -F "W${TAB}#{session_name}${TAB}#{window_index}${TAB}#{window_name}"
+  t list-panes -a -f "$AGENTS_VISIBLE" -F "P${TAB}#{session_name}${TAB}#{window_index}${TAB}#{@agent_state}${TAB}#{@agents_sidebar_pane}"
 } 2>/dev/null | awk_states -F'\t' \
   -v own_s="${own%%"$TAB"*}" -v own_w="${own#*"$TAB"}" \
   -v icon_repo="$(opt @agents_icon_repo '📂')" -v icon_win="$(opt @agents_icon_window '')" \

@@ -19,6 +19,12 @@ AGENTS_AWK_STATE='
   function sword(r) { return r==5 ? "needs you" : r==4 ? "error" : r==3 ? "working" : r==2 ? "done" : r==1 ? "idle" : "no agent" }
 '
 
+# A -f filter for list-sessions, list-windows -a and list-panes -a. It skips
+# muxa's device sessions (session option @muxa_device): each holds one window
+# of a session while a phone or tablet shows it, so lists would show it twice.
+# shellcheck disable=SC2034  # used by scripts that source this file
+AGENTS_VISIBLE='#{==:#{@muxa_device},}'
+
 # Keys that jump to the 1st, 2nd, ... session of the tree, as tree.sh labels them.
 # Letters work only after prefix + j: the tree uses some of them for its own keys.
 # shellcheck disable=SC2034  # used by scripts that source this file
@@ -117,7 +123,7 @@ watched_windows() {
 # Its pane is the one agent pane in the job's directory. None or several: no pane.
 agent_pane_in() {
   [ -n "$1" ] || return 0
-  t list-panes -a -F "#{pane_id}${TAB}#{pane_current_path}${TAB}#{@agent_session_id}" 2>/dev/null |
+  t list-panes -a -f "$AGENTS_VISIBLE" -F "#{pane_id}${TAB}#{pane_current_path}${TAB}#{@agent_session_id}" 2>/dev/null |
     awk -F'\t' -v d="$1" '$2 == d && $3 != "" { n++; p = $1 } END { if (n == 1) print p }'
 }
 

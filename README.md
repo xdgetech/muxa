@@ -166,6 +166,10 @@ tasks through the names below. They stay stable; a change to one is a breaking c
 - Pane options: `@agents_role` (`ai` or `term`), `@agents_sidebar_pane` (`1` on the
   tree), `@agent_state` (`running`, `waiting`, `idle`, `done`, `error`),
   `@agent_state_at` (epoch seconds), `@agent_session_id`.
+- `@muxa_device`: a session with this option set is muxa's device session. It
+  holds one window of another session while a phone or tablet shows it. The
+  tree, the status line, the keys and the sidebars skip it, and `close.sh`
+  kills it with the session whose window it holds.
 
 ## Test
 

@@ -103,7 +103,7 @@ jump() {
 attention() {
   local s
   s="$({
-    t list-panes -a -F "R${TAB}#{session_name}${TAB}#{@agent_state}"
+    t list-panes -a -f "$AGENTS_VISIBLE" -F "R${TAB}#{session_name}${TAB}#{@agent_state}"
     tree_sessions | sed "s/^/O${TAB}/"
   } | awk -F'\t' -v cur="$(current_session)" "$AGENTS_AWK_STATE"'
     $1 == "R" { r = rank($3); if (r > best[$2]) best[$2] = r; next }
@@ -123,7 +123,7 @@ attention() {
 repo_for() {
   local s dir
   case "$1" in
-    r:*) dir="$(t list-sessions -F "#{@agent_repo}${TAB}#{@agent_repo_dir}" |
+    r:*) dir="$(t list-sessions -f "$AGENTS_VISIBLE" -F "#{@agent_repo}${TAB}#{@agent_repo_dir}" |
                 awk -F'\t' -v g="${1#r:}" '$1 == g && $2 != "" { print $2; exit }')" ;;
     *) s="$(session_of "$1")" && dir="$(target_opt "=$s:" @agent_repo_dir)" ;;
   esac

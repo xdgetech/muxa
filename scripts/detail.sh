@@ -58,7 +58,7 @@ EOF
 
 repo_lines() {
   local g="$1"
-  t list-sessions -F "#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_repo_dir}" 2>/dev/null |
+  t list-sessions -f "$AGENTS_VISIBLE" -F "#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_repo_dir}" 2>/dev/null |
     awk -F'\t' -v g="$g" '($2 == "" ? "~" : $2) == g { print $1 "\t" $3 }' |
     while IFS="$TAB" read -r s dir; do
       printf '%s\t%s\t%s\n' "$s" "$dir" "$(state_of -s -t "=$s:" | cut -d$'\037' -f1)"

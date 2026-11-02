@@ -15,7 +15,7 @@ refresh_one() {
   curl -s -m 1 --unix-socket "$sock" -XPOST http://localhost -d "reload(cat '$rows')" >/dev/null 2>&1
 }
 
-t list-panes -a -F "#{pane_id}${TAB}#{@agents_sock}" 2>/dev/null |
+t list-panes -a -f "$AGENTS_VISIBLE" -F "#{pane_id}${TAB}#{@agents_sock}" 2>/dev/null |
   while IFS="$TAB" read -r pane sock; do
     [ -z "${1:-}" ] || [ "$pane" = "$1" ] || continue
     [ -n "$sock" ] && [ -S "$sock" ] || continue

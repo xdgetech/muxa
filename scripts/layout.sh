@@ -22,7 +22,7 @@ agent_name() {
   local base n i=2
   base="$(t display-message -p -t "$ai" '#{?@agent_repo,#{@agent_repo}-,}#{session_name}')"
   n="$base"
-  while t list-panes -a -F '#{@agent_name}' | grep -qxF "$n"; do
+  while t list-panes -a -f "$AGENTS_VISIBLE" -F '#{@agent_name}' | grep -qxF "$n"; do
     n="$base-$i"
     i=$((i + 1))
   done

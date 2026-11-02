@@ -42,13 +42,23 @@ if [ "$keep" = 0 ] && [ -n "$wt" ] && [ -d "$wt" ]; then
 fi
 
 # Move attached clients to the most recent other session, so they are not detached.
-other="$(t list-sessions -F "#{session_last_attached} #{session_name}" |
+other="$(t list-sessions -f "$AGENTS_VISIBLE" -F "#{session_last_attached} #{session_name}" |
   awk -v s="$s" '{ n = $0; sub(/^[^ ]* /, "", n); if (n != s) print }' | sort -rn | head -n 1 | cut -d' ' -f2-)"
 if [ -n "$other" ]; then
   t list-clients -t "=$s" -F '#{client_name}' 2>/dev/null | while read -r c; do
     t switch-client -c "$c" -t "=$other"
   done
 fi
+
+# A muxa device session that holds one of its windows would keep it running.
+sid="$(t display-message -p -t "=$s:" '#{session_id}')"
+t list-windows -a -F "#{session_id}${TAB}#{window_id}${TAB}#{@muxa_device}" 2>/dev/null |
+  awk -F'\t' -v sid="$sid" '
+    { s[NR] = $1; w[NR] = $2; d[NR] = $3; if ($1 == sid) own[$2] = 1 }
+    END { for (i = 1; i <= NR; i++) if (d[i] != "" && s[i] != sid && (w[i] in own)) print s[i] }' |
+  sort -u | while read -r device; do
+    t kill-session -t "$device"
+  done
 
 t kill-session -t "=$s" || die "could not close $s"
 [ -n "$wt" ] && [ -d "$wt" ] && "$AGENTS_SCRIPTS/stop-worktree.sh" "$wt"
