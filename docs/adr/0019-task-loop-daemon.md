@@ -30,10 +30,10 @@ Proposed. It partly supersedes:
 | Command | What it does |
 |---|---|
 | `muxa-bridge daemon run [flags]` | Runs the daemon in the foreground. launchd and systemd run this. |
-| `muxa-bridge daemon install [flags]` | Writes the LaunchAgent plist or the systemd user unit, then loads and starts it. No sudo. |
+| `muxa-bridge daemon install [flags]` | Writes the LaunchAgent plist or the systemd user unit, then loads and starts it, and waits up to 5 s until it answers with this version. No sudo. |
 | `muxa-bridge daemon install --print` | Prints the file it would write, and changes nothing. |
 | `muxa-bridge daemon stop` | Stops every loop (`stopped`, reason `user`), then stops the daemon. It stays installed and starts again at the next login. |
-| `muxa-bridge daemon restart` | Restarts the daemon, for example after an upgrade. Loops go on. |
+| `muxa-bridge daemon restart` | Restarts the daemon, for example after an upgrade, and waits up to 5 s until it answers with this version. Otherwise it fails and names the log. Loops go on. |
 | `muxa-bridge daemon uninstall` | Like `stop`, then removes the file. Task records stay. |
 | `muxa-bridge daemon status` | Running or not, its version, socket and log file. On macOS, "not loaded" when the LaunchAgent is not loaded in `gui/<uid>`. |
 

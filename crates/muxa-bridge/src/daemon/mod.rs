@@ -10,6 +10,7 @@ pub mod socket;
 mod tmux;
 
 use std::ffi::OsStr;
+use std::io::{ErrorKind, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -34,6 +35,9 @@ use socket::Control;
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 const CONNECT_WAIT: Duration = Duration::from_millis(500);
 const TICK: Duration = Duration::from_secs(2);
+/// What `install` and `restart` wait for the new daemon to answer `hello`.
+const START_WAIT: Duration = Duration::from_secs(5);
+const START_POLL: Duration = Duration::from_millis(100);
 
 /// `$XDG_STATE_HOME/muxa`, else `~/.local/state/muxa`: the parent of `tasks/`.
 pub fn default_dir(xdg_state_home: Option<&OsStr>, home: Option<&Path>) -> Option<PathBuf> {
@@ -42,13 +46,14 @@ pub fn default_dir(xdg_state_home: Option<&OsStr>, home: Option<&Path>) -> Optio
 }
 
 pub fn main(cmd: args::Daemon) -> ExitCode {
+    let out = &mut std::io::stdout().lock();
     let result = match cmd.op {
         DaemonOp::Run => return run(cmd.args),
-        DaemonOp::Install => install(cmd.args, cmd.print),
-        DaemonOp::Stop => stop(cmd.args, false),
-        DaemonOp::Uninstall => stop(cmd.args, true),
-        DaemonOp::Restart => restart(cmd.args),
-        DaemonOp::Status => status(cmd.args),
+        DaemonOp::Install => install(cmd.args, cmd.print, out),
+        DaemonOp::Stop => stop(cmd.args, false, out),
+        DaemonOp::Uninstall => stop(cmd.args, true, out),
+        DaemonOp::Restart => restart(cmd.args, out),
+        DaemonOp::Status => status(cmd.args, out),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -335,7 +340,16 @@ fn locate(args: &args::Args) -> Result<(PathBuf, PathBuf), String> {
     Ok((dir, home))
 }
 
-fn install(args: args::Args, print: bool) -> Result<(), String> {
+/// Writes to stdout. A reader that closed it, as `| head -1` does, is not
+/// an error: the rest of the output is dropped.
+fn say(out: &mut dyn Write, text: std::fmt::Arguments) -> Result<(), String> {
+    match out.write_fmt(text).and_then(|()| out.flush()) {
+        Err(e) if e.kind() != ErrorKind::BrokenPipe => Err(format!("cannot write: {e}")),
+        _ => Ok(()),
+    }
+}
+
+fn install(args: args::Args, print: bool, out: &mut dyn Write) -> Result<(), String> {
     let (dir, home) = locate(&args)?;
     socket::path(&dir)?;
     let path = std::env::var("PATH").ok();
@@ -357,8 +371,7 @@ fn install(args: args::Args, print: bool) -> Result<(), String> {
     let platform = Platform::current();
     let text = platform.render(&spec);
     if print {
-        print!("{text}");
-        return Ok(());
+        return say(out, format_args!("{text}"));
     }
     prepare(&dir)?;
     let file = platform.file(&home);
@@ -368,20 +381,20 @@ fn install(args: args::Args, print: bool) -> Result<(), String> {
     }
     std::fs::write(&file, text).map_err(|e| format!("cannot write {}: {e}", file.display()))?;
     platform.load(&install::System, &file)?;
-    println!("Installed {} and started the daemon.", file.display());
+    say(out, format_args!("Installed {}.\n", file.display()))?;
     if let Some(hint) = platform.hint() {
-        println!("{hint}");
+        say(out, format_args!("{hint}\n"))?;
     }
-    Ok(())
+    report_start(&dir, out)
 }
 
 /// `stop`, and with `remove`, `uninstall`: the loops stop for the user,
 /// then the service is unloaded.
-fn stop(args: args::Args, remove: bool) -> Result<(), String> {
+fn stop(args: args::Args, remove: bool, out: &mut dyn Write) -> Result<(), String> {
     let (dir, home) = locate(&args)?;
     let answered = block_on(shutdown(&dir))??;
     if !answered {
-        println!("The daemon was not running.");
+        say(out, format_args!("The daemon was not running.\n"))?;
     }
     let platform = Platform::current();
     let file = platform.file(&home);
@@ -389,19 +402,25 @@ fn stop(args: args::Args, remove: bool) -> Result<(), String> {
     if remove {
         platform.disable(run)?;
         match std::fs::remove_file(&file) {
-            Ok(()) => println!("Removed {}. Task records stay.", file.display()),
+            Ok(()) => say(
+                out,
+                format_args!("Removed {}. Task records stay.\n", file.display()),
+            )?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(format!("cannot remove {}: {e}", file.display())),
         }
     } else {
         platform.unload(run)?;
-        println!("Stopped. The daemon starts again at the next login.");
+        say(
+            out,
+            format_args!("Stopped. The daemon starts again at the next login.\n"),
+        )?;
     }
     Ok(())
 }
 
-fn restart(args: args::Args) -> Result<(), String> {
-    let (_, home) = locate(&args)?;
+fn restart(args: args::Args, out: &mut dyn Write) -> Result<(), String> {
+    let (dir, home) = locate(&args)?;
     let platform = Platform::current();
     let file = platform.file(&home);
     if !file.is_file() {
@@ -411,24 +430,64 @@ fn restart(args: args::Args) -> Result<(), String> {
         ));
     }
     platform.restart(&install::System, &file)?;
-    println!("Restarted the daemon.");
-    Ok(())
+    report_start(&dir, out)
 }
 
-fn status(args: args::Args) -> Result<(), String> {
+/// Waits until the new daemon answers with this binary's version, so a
+/// `status` right after sees it running.
+fn report_start(dir: &Path, out: &mut dyn Write) -> Result<(), String> {
+    let expected = env!("CARGO_PKG_VERSION");
+    match block_on(wait_for_version(dir, expected, START_WAIT))? {
+        Some(v) if v == expected => say(out, format_args!("The daemon is running, version {v}.\n")),
+        found => {
+            let answer = found.map_or("no answer".to_owned(), |v| format!("version {v}"));
+            Err(format!(
+                "the daemon did not start with version {expected} within {}s ({answer}). See {}",
+                START_WAIT.as_secs(),
+                dir.join(log::FILE).display()
+            ))
+        }
+    }
+}
+
+/// Polls `hello` until it reports `expected` or `wait` ends. Returns the
+/// last version seen, if any.
+async fn wait_for_version(dir: &Path, expected: &str, wait: Duration) -> Option<String> {
+    let deadline = tokio::time::Instant::now() + wait;
+    let mut seen = None;
+    loop {
+        if let Some(v) = version(dir).await {
+            if v == expected {
+                return Some(v);
+            }
+            seen = Some(v);
+        }
+        if tokio::time::Instant::now() + START_POLL > deadline {
+            return seen;
+        }
+        tokio::time::sleep(START_POLL).await;
+    }
+}
+
+fn status(args: args::Args, out: &mut dyn Write) -> Result<(), String> {
     let (dir, _) = locate(&args)?;
     let socket = dir.join(socket::FILE);
     match block_on(version(&dir))? {
-        Some(v) => println!("running, version {v}"),
-        None => println!("not running"),
+        Some(v) => say(out, format_args!("running, version {v}\n"))?,
+        None => say(out, format_args!("not running\n"))?,
     }
     let platform = Platform::current();
     if matches!(platform, Platform::Launchd { .. }) && !platform.loaded(&install::System) {
-        println!("not loaded: the LaunchAgent is not loaded in this GUI session");
+        say(
+            out,
+            format_args!("not loaded: the LaunchAgent is not loaded in this GUI session\n"),
+        )?;
     }
-    println!("socket: {}", socket.display());
-    println!("log: {}", dir.join(log::FILE).display());
-    Ok(())
+    say(out, format_args!("socket: {}\n", socket.display()))?;
+    say(
+        out,
+        format_args!("log: {}\n", dir.join(log::FILE).display()),
+    )
 }
 
 fn block_on<T>(f: impl Future<Output = T>) -> Result<T, String> {
@@ -486,5 +545,60 @@ async fn shutdown(dir: &Path) -> Result<bool, String> {
     {
         Ok(Ok(Some(Message::Result { error: None, .. }))) => Ok(true),
         _ => Err("the daemon did not confirm the shutdown".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stdout whose reader has gone, as with `| head -1`.
+    struct Closed(ErrorKind);
+
+    impl Write for Closed {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(self.0.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_closed_stdout_is_not_an_error() {
+        let out = &mut Closed(ErrorKind::BrokenPipe);
+        assert_eq!(say(out, format_args!("running\n")), Ok(()));
+    }
+
+    #[test]
+    fn other_write_errors_are_reported() {
+        let out = &mut Closed(ErrorKind::PermissionDenied);
+        assert!(say(out, format_args!("running\n")).is_err());
+    }
+
+    #[test]
+    fn waiting_for_a_daemon_that_never_answers_ends() {
+        let dir = std::env::temp_dir().join(format!("muxa-wait-{}", std::process::id()));
+        let started = std::time::Instant::now();
+        let seen = block_on(wait_for_version(&dir, "0.0.0", Duration::from_millis(300)));
+        assert_eq!(seen, Ok(None));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn waiting_returns_once_the_daemon_answers_hello() {
+        let dir = std::env::temp_dir().join(format!("muxa-hello-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let seen = block_on(async {
+            let listener = tokio::net::UnixListener::bind(dir.join(socket::FILE)).unwrap();
+            tokio::spawn(async move {
+                while let Ok((mut stream, _)) = listener.accept().await {
+                    let _ = socket::write(&mut stream, &hello()).await;
+                }
+            });
+            wait_for_version(&dir, env!("CARGO_PKG_VERSION"), START_WAIT).await
+        });
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(seen, Ok(Some(env!("CARGO_PKG_VERSION").to_owned())));
     }
 }
