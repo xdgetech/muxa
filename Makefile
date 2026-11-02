@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -118,6 +118,16 @@ app-icon:
 # App Store screenshots into build/screenshots, README images into docs/images.
 screenshots:
 	scripts/screenshots.sh
+
+# Installs the bridge and muxa-cli on this host, then restarts a running daemon
+# so it runs the new version (ADR 0019). PREFIX picks another root.
+PREFIX ?= $(HOME)/.local
+install:
+	cargo install --locked --path crates/muxa-bridge --root $(PREFIX)
+	cargo install --locked --path crates/muxa-cli --root $(PREFIX)
+	@if $(PREFIX)/bin/muxa-bridge daemon status 2>/dev/null | grep -q '^running'; then \
+		$(PREFIX)/bin/muxa-bridge daemon restart; \
+	fi
 
 # Builds, signs, installs and launches the app on a paired iPad (USB or "Connect via network").
 # MUXA_DEVICE is the device name or identifier from `xcrun devicectl list devices`.

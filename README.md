@@ -38,10 +38,9 @@ flowchart LR
 
 ## Setup
 
-1. On the host, install the bridge and the terminal client:
+1. On the host, install the bridge and the terminal client into `~/.local/bin` (`PREFIX=...` picks another root):
    ```sh
-   cargo install --path crates/muxa-bridge --root ~/.local
-   cargo install --path crates/muxa-cli --root ~/.local
+   make install
    ```
    For the Task Loop, also install the host daemon ([The host daemon](#the-host-daemon)).
 2. Build the app: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`.
@@ -100,8 +99,8 @@ muxa-bridge daemon uninstall        # like stop, then remove the service file
 - While a daemon of the bridge's own version runs, each bridge sends Task requests to it. Otherwise the bridge serves them itself, as before.
 
 To update the host:
-1. Get the new source, and run both `cargo install` commands of Setup again.
-2. Run `muxa-bridge daemon restart`.
+1. Get the new source.
+2. Run `make install`. It also restarts the daemon when one is running.
 
 Until the restart, the bridge does not use the daemon, because its version differs. Tasks still work, but loops are off.
 
