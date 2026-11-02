@@ -133,6 +133,11 @@ repo_for() {
 
 new() {
   local repo; repo="$(repo_for "$target")"
+  # A muxa task when muxa is installed, so every device sees it.
+  if "$S/muxa.sh" available; then
+    "$S/muxa.sh" new "$(t display-message -p '#{client_name}')" "$repo"
+    return
+  fi
   t command-prompt -I "$repo," -p "repo:,branch:" \
     "run-shell -b \"'$S/new.sh' '%1' '%2'\""
 }

@@ -8,6 +8,8 @@ default() { [ -n "$(t show-options -gqv "$1")" ] || t set-option -g "$1" "$2"; }
 # Where other tools find new.sh (see "For other tools" in the README). Set on
 # every load, so it follows the checkout when it moves.
 t set-option -g @agents_scripts "$S"
+# What the scripts accept beyond that first contract, for the same tools.
+t set-option -g @agents_features "muxa-task"
 
 default @agents_sidebar on
 default @agents_sidebar_width 28
@@ -27,6 +29,9 @@ default @agents_key_prev '('
 default @agents_key_attention a
 # prefix + j, then 1-9 or a-z: the task with that label in the tree.
 default @agents_key_jump j
+# The Inbox of muxa tasks, when muxa is installed.
+default @agents_key_inbox T
+default @agents_muxa auto
 
 t bind-key "$(opt @agents_key_focus Tab)" run-shell -b "'$S/action.sh' focus"
 t bind-key "$(opt @agents_key_toggle b)" run-shell -b "'$S/sidebar-toggle.sh' toggle"
@@ -35,6 +40,7 @@ t bind-key "$(opt @agents_key_ide O)" run-shell -b "'$S/action.sh' ide-current"
 t bind-key "$(opt @agents_key_next ')')" run-shell -b "'$S/action.sh' next"
 t bind-key "$(opt @agents_key_prev '(')" run-shell -b "'$S/action.sh' prev"
 t bind-key "$(opt @agents_key_attention a)" run-shell -b "'$S/action.sh' attention"
+t bind-key "$(opt @agents_key_inbox T)" run-shell -b "'$S/muxa.sh' inbox '#{client_name}'"
 t bind-key "$(opt @agents_key_jump j)" switch-client -T agents-jump
 keys="$AGENTS_JUMP_KEYS"
 while [ -n "$keys" ]; do

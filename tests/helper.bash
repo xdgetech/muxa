@@ -12,6 +12,8 @@ setup_server() {
   tx -f /dev/null new-session -d -s base -x 200 -y 50 -c "$TMPDIR"
   tx set-option -g @agents_check_gh off
   tx set-option -g @agents_notify off
+  # A muxa-cli on the developer's PATH must not change what the keys do.
+  tx set-option -g @agents_muxa off
 }
 
 teardown_server() {

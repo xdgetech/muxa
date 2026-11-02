@@ -82,6 +82,7 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 | `prefix + )` / `prefix + (` | next / previous task, in tree order |
 | `prefix + j`, then `1`–`9` or `a`–`z` | the task with that label in the tree |
 | `prefix + a` | the task that needs you most: 🙋, then ❌, then 🏁 |
+| `prefix + T` | the muxa Inbox, in a popup (see [muxa](#muxa)) |
 
 In the tree: `j`/`k` move, `Enter` go to the task, `1`–`9` go to that task
 (letters only through `prefix + j`), `Esc` leave, `n` new task, `c` new window
@@ -120,7 +121,30 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_notify` | `on` | desktop notifications |
 | `@agents_notify_events` | `waiting done error` | which changes notify; `done` means a finished turn |
 | `@agents_notify_cmd` | | command that sends the notification instead, gets `<session> <message>` (e.g. `terminal-notifier`, ntfy) |
-| `@agents_key_focus` / `_toggle` / `_new` / `_ide` | `Tab` / `b` / `N` / `O` | |
+| `@agents_key_focus` / `_toggle` / `_new` / `_ide` / `_inbox` | `Tab` / `b` / `N` / `O` / `T` | |
+| `@agents_muxa` | `auto` | `off`: never use muxa, even when it is installed |
+| `@agents_muxa_cli` | `muxa-cli` on `PATH` | muxa's CLI on this host |
+| `@agents_muxa_bridge` | `muxa-bridge` beside it | the bridge command muxa-cli starts, with its flags |
+| `@agents_muxa_workspace` | the first one | the workspace the new-task form suggests |
+
+## muxa
+
+With [muxa](https://github.com/xdgetech/muxa) on the host, `muxa-cli` and
+`muxa-bridge`, a task is a muxa task record: the same Task its iPad and phone
+apps show, with a goal and a status.
+
+- `prefix + N` opens a form in a popup: workspace, repo, branch, title and goal.
+  Repo `-` starts a task without a repo, in the workspace's own directory.
+  muxa starts the task through `new.sh`, hands the goal to the agent in
+  `.muxa/TASK.md`, and this client moves to the new session.
+- `prefix + T` shows the Inbox: Needs attention, Ready for review, Running,
+  No agent and Closed, with muxa's own grouping. `Enter` moves this client to
+  the task's session. `ctrl-r` reloads, `Esc` closes.
+- Without muxa-cli, or without a muxa workspace (`~/.config/muxa/workspaces.toml`),
+  `prefix + N` makes a plain task as before.
+
+The records stay in muxa. This plugin never writes them; it calls
+`muxa-cli ... --json`, documented in muxa's `docs/agents.md` ("Desktop tools").
 
 ## For other tools
 
@@ -128,13 +152,17 @@ Other tools, such as [muxa](https://github.com/xdgetech/muxa), read and start
 tasks through the names below. They stay stable; a change to one is a breaking change.
 
 - `@agents_scripts`: global option, the directory of these scripts. Set on every load.
-- `new.sh <repo dir> <branch> [--base REF] [--task ID] --no-switch` starts a task,
+- `@agents_features`: global option, a space-separated list of what the scripts
+  accept beyond this list. `muxa-task`: `new.sh` takes `--muxa-task`.
+- `new.sh <repo dir> <branch> [--base REF] [--task ID] [--muxa-task ID] --no-switch` starts a task,
   or finds the running one for the branch. It prints the session name on its last
   line. On failure it exits non-zero. A tool must pass `--no-switch`: without it,
   the attached client moves to the new session.
 - `TMUX_AGENTS_SOCKET`: when set, the scripts use `tmux -L <it>`.
 - Session options: `@agent_repo` (repo name), `@agent_repo_dir` (main checkout),
-  `@agent_branch`, `@agent_worktree`, `@agent_task`.
+  `@agent_branch`, `@agent_worktree`, `@agent_task`, and `@muxa_task`: the muxa
+  task record, set by `--muxa-task` when the session is made. On an existing
+  session it is set only when the session has none.
 - Pane options: `@agents_role` (`ai` or `term`), `@agents_sidebar_pane` (`1` on the
   tree), `@agent_state` (`running`, `waiting`, `idle`, `done`, `error`),
   `@agent_state_at` (epoch seconds), `@agent_session_id`.
