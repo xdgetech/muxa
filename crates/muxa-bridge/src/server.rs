@@ -35,6 +35,8 @@ pub struct Config {
     pub agents: Arc<Registry>,
     pub tasks: Arc<tasks::Config>,
     pub records: Arc<task_records::Config>,
+    /// Where the host daemon's socket is; record requests go there when it runs.
+    pub daemon_dir: Option<std::path::PathBuf>,
 }
 
 /// Why the session ended.
@@ -99,6 +101,11 @@ where
         capabilities.push("task-records".into());
         capabilities.push("task-handoff".into());
     }
+    // Checked once per session (ADR 0019); each record request looks again.
+    if let Some(dir) = &config.daemon_dir {
+        let daemon = task_records::remote::probe(dir).await;
+        tracing::info!(?daemon, "host daemon");
+    }
     let hello = Message::Hello {
         protocol: muxa_protocol::VERSION,
         bridge: env!("CARGO_PKG_VERSION").into(),
@@ -156,6 +163,7 @@ where
         tasks: Arc::clone(&config.tasks),
         agents: Arc::clone(&config.agents),
         records: Arc::clone(&config.records),
+        daemon_dir: config.daemon_dir.clone(),
         pending: pending.clone(),
     };
 
@@ -252,6 +260,7 @@ struct Worker {
     tasks: Arc<tasks::Config>,
     agents: Arc<Registry>,
     records: Arc<task_records::Config>,
+    daemon_dir: Option<std::path::PathBuf>,
     pending: task_records::Pending,
 }
 
@@ -538,90 +547,32 @@ impl Worker {
                 Ok(p) => timed(muxa_tmux::paste(client, p, &text)).await,
                 Err(e) => Err(e),
             },
-            Request::ListTasks { id } => {
-                let listed = task_records::list(&self.records, id).await;
-                return Some(self.send_then_ok(listed).await);
-            }
-            Request::UpdateTask {
-                id,
-                task,
-                rev,
-                status,
-            } => {
-                let saved = task_records::update(&self.records, id, task, rev, status).await;
-                return Some(self.send_then_ok(saved).await);
-            }
-            // A launch takes seconds; keystrokes must not wait for it.
-            Request::CreateTask {
-                id,
-                workspace,
-                title,
-                goal,
-                project,
-                repo,
-                branch,
-                base,
-            } => {
-                let env = task_records::Env {
-                    client: Arc::clone(&self.client),
-                    tasks: Arc::clone(&self.tasks),
-                    records: Arc::clone(&self.records),
-                    agents: Arc::clone(&self.agents),
-                    pending: self.pending.clone(),
-                };
-                let new = task_records::NewTask {
-                    workspace,
-                    title,
-                    goal,
-                    project,
-                    repo,
-                    branch,
-                    base,
-                };
-                let out = self.out.clone();
+            // A launch or a restart takes seconds; keystrokes must not wait for it.
+            req @ (Request::CreateTask { .. } | Request::RestartAgent { .. }) => {
+                let (cx, dir, out) = (
+                    self.records_context(),
+                    self.daemon_dir.clone(),
+                    self.out.clone(),
+                );
                 self.pending.spawn(async move {
-                    let (record, error) = task_records::create(&env, new).await;
-                    if let Some(record) = record {
-                        let record = convert::task_record(record);
-                        let _ = out.send(Message::TaskSaved { task: id, record }).await;
+                    for msg in task_records::remote::serve(&cx, dir.as_deref(), req).await {
+                        let _ = out.send(msg).await;
                     }
-                    let _ = out
-                        .send(Message::Result {
-                            id: Some(id),
-                            error,
-                            sessions: None,
-                        })
-                        .await;
                 });
                 return None;
             }
-            // A restart waits on tmux and the adapters; keystrokes must not wait for it.
-            Request::RestartAgent { id, task, force } => {
-                let env = task_records::Env {
-                    client: Arc::clone(&self.client),
-                    tasks: Arc::clone(&self.tasks),
-                    records: Arc::clone(&self.records),
-                    agents: Arc::clone(&self.agents),
-                    pending: self.pending.clone(),
-                };
-                let out = self.out.clone();
-                self.pending.spawn(async move {
-                    let error = match task_records::restart(&env, task, force).await {
-                        Ok(record) => {
-                            let record = convert::task_record(record);
-                            let _ = out.send(Message::TaskSaved { task: id, record }).await;
-                            None
-                        }
-                        Err(e) => Some(e),
-                    };
-                    let _ = out
-                        .send(Message::Result {
-                            id: Some(id),
-                            error,
-                            sessions: None,
-                        })
-                        .await;
-                });
+            req @ (Request::ListTasks { .. } | Request::UpdateTask { .. }) => {
+                let answer = task_records::remote::serve(
+                    &self.records_context(),
+                    self.daemon_dir.as_deref(),
+                    req,
+                )
+                .await;
+                for msg in answer {
+                    if self.out.send(msg).await.is_err() {
+                        return Some(Err(error_body(ErrorCode::Internal, "the writer stopped")));
+                    }
+                }
                 return None;
             }
             Request::Bye { .. } => Ok(()),
@@ -629,13 +580,14 @@ impl Worker {
         Some(result.map_err(|e| convert::error(&e)))
     }
 
-    /// Sends a request's message; its `result` follows from the caller.
-    async fn send_then_ok(&self, msg: Result<Message, ErrorBody>) -> Result<(), ErrorBody> {
-        let msg = msg?;
-        self.out
-            .send(msg)
-            .await
-            .map_err(|_| error_body(ErrorCode::Internal, "the writer stopped"))
+    fn records_context(&self) -> task_records::Context {
+        task_records::Context {
+            tmux: Arc::new(task_records::Attached(Arc::clone(&self.client))),
+            tasks: Arc::clone(&self.tasks),
+            records: Arc::clone(&self.records),
+            agents: Arc::clone(&self.agents),
+            pending: self.pending.clone(),
+        }
     }
 
     async fn to_watcher(

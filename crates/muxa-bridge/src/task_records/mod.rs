@@ -7,6 +7,7 @@ mod brief;
 mod create;
 mod facts;
 mod handoff;
+pub mod remote;
 mod restart;
 
 pub use brief::{BRIEF, HANDOFF};
@@ -16,14 +17,16 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::task::JoinHandle;
 
-use muxa_protocol::{ErrorBody, ErrorCode, Message, TaskStatus, WorkspaceInfo};
-use muxa_tmux::{Role, Session};
+use muxa_protocol::{ErrorBody, ErrorCode, Message, Request, TaskStatus, WorkspaceInfo};
+use muxa_tmux::{Client, Role, Session};
 
+use crate::agents::Registry;
 use crate::convert::{self, error_body};
 use crate::records::{AgentSettings, Record, Status, Store, StoreError, Workspaces};
 use crate::tasks::same_dir;
@@ -87,6 +90,140 @@ impl Config {
             )
         })
     }
+}
+
+/// Gives the tmux client that a launch or a restart needs. The bridge has
+/// one for its whole session; the daemon attaches only while it has work.
+pub trait ClientSource: Send + Sync {
+    fn client(&self) -> ClientFuture<'_>;
+}
+
+pub type ClientFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Arc<Client>, muxa_tmux::Error>> + Send + 'a>>;
+
+/// The bridge's client, attached for the whole session.
+pub struct Attached(pub Arc<Client>);
+
+impl ClientSource for Attached {
+    fn client(&self) -> ClientFuture<'_> {
+        let client = Arc::clone(&self.0);
+        Box::pin(async move { Ok(client) })
+    }
+}
+
+/// What the record requests need, in the bridge and in the daemon alike.
+#[derive(Clone)]
+pub struct Context {
+    pub tmux: Arc<dyn ClientSource>,
+    pub tasks: Arc<crate::tasks::Config>,
+    pub records: Arc<Config>,
+    pub agents: Arc<Registry>,
+    pub pending: Pending,
+}
+
+impl Context {
+    /// The environment of a request that works in tmux.
+    async fn env(&self) -> Result<Env, ErrorBody> {
+        let client = self.tmux.client().await.map_err(|e| {
+            tracing::warn!(error = %e, "cannot reach tmux for a task request");
+            error_body(
+                ErrorCode::Tmux,
+                format!("cannot reach tmux on the host: {e}"),
+            )
+        })?;
+        Ok(Env {
+            client,
+            tasks: Arc::clone(&self.tasks),
+            records: Arc::clone(&self.records),
+            agents: Arc::clone(&self.agents),
+            pending: self.pending.clone(),
+        })
+    }
+}
+
+/// The requests that read or write task records. One code path serves them,
+/// in the bridge and in the daemon (ADR 0019).
+pub fn is_record_request(req: &Request) -> bool {
+    matches!(
+        req,
+        Request::ListTasks { .. }
+            | Request::CreateTask { .. }
+            | Request::UpdateTask { .. }
+            | Request::RestartAgent { .. }
+    )
+}
+
+/// Answers one record request: its `task-list` or `task-saved`, then its `result`.
+pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
+    let id = req.id();
+    let (mut out, error) = match req {
+        Request::ListTasks { id } => one(list(&cx.records, id).await),
+        Request::UpdateTask {
+            id,
+            task,
+            rev,
+            status,
+        } => one(update(&cx.records, id, task, rev, status).await),
+        Request::CreateTask {
+            id,
+            workspace,
+            title,
+            goal,
+            project,
+            repo,
+            branch,
+            base,
+        } => match cx.env().await {
+            Ok(env) => {
+                let new = NewTask {
+                    workspace,
+                    title,
+                    goal,
+                    project,
+                    repo,
+                    branch,
+                    base,
+                };
+                let (record, error) = create(&env, new).await;
+                (saved(id, record).into_iter().collect(), error)
+            }
+            Err(e) => (Vec::new(), Some(e)),
+        },
+        Request::RestartAgent { id, task, force } => match cx.env().await {
+            Ok(env) => match restart(&env, task, force).await {
+                Ok(record) => (saved(id, Some(record)).into_iter().collect(), None),
+                Err(e) => (Vec::new(), Some(e)),
+            },
+            Err(e) => (Vec::new(), Some(e)),
+        },
+        _ => (
+            Vec::new(),
+            Some(error_body(
+                ErrorCode::Unsupported,
+                "not a task record request",
+            )),
+        ),
+    };
+    out.push(Message::Result {
+        id: Some(id),
+        error,
+        sessions: None,
+    });
+    out
+}
+
+fn one(m: Result<Message, ErrorBody>) -> (Vec<Message>, Option<ErrorBody>) {
+    match m {
+        Ok(m) => (vec![m], None),
+        Err(e) => (Vec::new(), Some(e)),
+    }
+}
+
+fn saved(request: u64, record: Option<Record>) -> Option<Message> {
+    record.map(|r| Message::TaskSaved {
+        task: request,
+        record: convert::task_record(r),
+    })
 }
 
 /// Work a client started that must finish after it leaves: a launch, and

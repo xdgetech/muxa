@@ -1,0 +1,13 @@
+[Unit]
+Description=muxa daemon (the Task Loop)
+
+[Service]
+ExecStart="/opt/muxa/bin/muxa-bridge" "daemon" "run" "--tmux" "/opt/homebrew/bin/tmux" "--socket" "work" "--workspaces" "/Users/example/muxa & co/workspaces.toml" "--task-command" "claude --model \"$$M\" 100%%" "--daemon-dir" "/Users/example/.local/state/muxa"
+Environment="HOME=/Users/example"
+Environment="TMUX_TMPDIR=/tmp/example"
+Environment="PATH=/opt/homebrew/bin:/usr/bin:/bin"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
