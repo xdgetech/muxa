@@ -10,6 +10,9 @@ pub mod check;
 pub mod step;
 pub mod typing;
 
+#[cfg(all(test, feature = "tmux-integration"))]
+mod engine_tests;
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
