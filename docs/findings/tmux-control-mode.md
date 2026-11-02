@@ -10,6 +10,7 @@ If a script fails on a new tmux version, the design must be revisited before rel
 |---|---|
 | A control client attached with `-f ignore-size` never resizes a window. This holds next to a desktop client and when it is the only client. | `scripts/repro/ignore-size.sh` |
 | **Hazard:** after `refresh-client -C <size>`, a lone `ignore-size` control client **does** size the window (here to 400x100). muxa never sends `refresh-client -C`. | `scripts/repro/ignore-size.sh` |
+| A session made with `new-session -d`, as a task launcher makes it, is `default-size` (80x24), not the size of a desktop client attached to another session. Its panes are split from 80x24: tmux-agents' sidebar, agent and shell come out 28, 25 and 25 columns wide. An `ignore-size` control client watching it changes nothing. It gets the desktop's size only once a desktop client views it. `-x`/`-y` at creation set its size. | `scripts/repro/detached-session-size.sh` (set `MUXA_REPRO_PLUGIN` to see tmux-agents' layout) |
 | Hooks see `#{client_width}` = 80 for a control client on `client-attached`. A plugin that hides panes on narrow clients, such as the tmux-agents sidebar, changes the desktop layout. Such plugins must skip control-mode clients (`#{client_control_mode}`). | `scripts/repro/plugin-client-width.sh` (set `MUXA_REPRO_PLUGIN` to check a real plugin) |
 
 The `refresh-client -C` workaround for narrow-client plugins was considered and rejected because of the hazard above. It resized every window as soon as the desktop client had left.
