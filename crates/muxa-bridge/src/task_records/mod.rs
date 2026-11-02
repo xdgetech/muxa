@@ -14,7 +14,12 @@ pub use restart::restart;
 
 use std::cmp::Reverse;
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use tokio::task::JoinHandle;
 
 use muxa_protocol::{ErrorBody, ErrorCode, Message, TaskStatus, WorkspaceInfo};
 use muxa_tmux::{Role, Session};
@@ -81,6 +86,40 @@ impl Config {
                 format!("{e}. Fix the workspaces file on the host."),
             )
         })
+    }
+}
+
+/// Work a client started that must finish after it leaves: a launch, and
+/// the wait to type the start prompt. Without it, a client that sends
+/// `create-task` and closes its input (`muxa-cli task new`) would end the
+/// bridge, and the prompt with it.
+#[derive(Clone, Default)]
+pub struct Pending(Arc<Mutex<Vec<JoinHandle<()>>>>);
+
+impl Pending {
+    pub fn spawn(&self, work: impl Future<Output = ()> + Send + 'static) {
+        let handle = tokio::spawn(work);
+        let mut all = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|h| !h.is_finished());
+        all.push(handle);
+    }
+
+    /// Waits for every pending task, also those started meanwhile, until
+    /// `limit`. Tasks still running then are aborted.
+    pub async fn finish(&self, limit: Duration) {
+        let deadline = tokio::time::Instant::now() + limit;
+        loop {
+            let handles = std::mem::take(&mut *self.0.lock().unwrap_or_else(|e| e.into_inner()));
+            if handles.is_empty() {
+                return;
+            }
+            for mut h in handles {
+                if tokio::time::timeout_at(deadline, &mut h).await.is_err() {
+                    tracing::warn!("a pending task did not finish; stopping it");
+                    h.abort();
+                }
+            }
+        }
     }
 }
 

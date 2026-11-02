@@ -400,6 +400,63 @@ async fn tmux_agents_tasks_are_found_by_their_worktree() {
 }
 
 #[tokio::test]
+async fn a_client_that_leaves_right_away_still_gets_its_start_prompt() {
+    let server = Server::start();
+    let host = Host::new("leaves");
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (r, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let name = r.unwrap().session.unwrap();
+    let pane = server.pane(&format!("={name}:"));
+
+    // Like `muxa-cli task new`: close the input once the result is in.
+    let (mut child, _output) = bridge.close_input();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "the bridge did not wait"
+    );
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "idle"]);
+    common::wait_until(|| prompts(&server, &pane) > 0).await;
+    let exited = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+    assert!(exited.is_ok(), "the bridge did not exit after the prompt");
+}
+
+#[tokio::test]
+async fn tmux_agents_gets_the_record_when_it_takes_it() {
+    let server = Server::start();
+    let host = Host::new("features");
+    let repo = Repo::new("records-features");
+    let scripts = repo.root.join("scripts");
+    let script = fake_new_sh(&scripts, false);
+    server.tmux(&["set-option", "-g", "@agents_features", "muxa-task"]);
+    let flag = format!("tmux-agents={}", script.display());
+    let mut bridge = host.bridge(&server, &["--task-launcher", &flag]).await;
+
+    let (r, result) = create(&mut bridge, json!({"repo": repo.app, "branch": "feat/x"})).await;
+    ok(&result);
+    let r = r.unwrap();
+    let args = std::fs::read_to_string(scripts.join("args")).unwrap();
+    assert_eq!(
+        args.lines().collect::<Vec<_>>(),
+        [
+            repo.app.to_str().unwrap(),
+            "feat/x",
+            "--muxa-task",
+            &r.id,
+            "--no-switch",
+            &format!("socket={}", server.socket),
+        ]
+    );
+    assert_eq!(option(&server, "fake-task", "@muxa_task"), r.id);
+}
+
+#[tokio::test]
 async fn a_failed_launch_keeps_the_record_with_a_note() {
     let server = Server::start();
     let host = Host::new("failed");

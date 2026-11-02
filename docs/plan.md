@@ -31,9 +31,12 @@ What works today:
   2. Done: bridge: task records in `$XDG_STATE_HOME/muxa/tasks/` (`--state-dir`), workspaces from `~/.config/muxa/workspaces.toml` (`--workspaces`), the `@muxa_task` link and its fallback by directory, `TASK.md` and the first prompt once the agent is idle.
   3. Done: CLI: `muxa-cli tasks`, `task new`, `task done`.
   4. Done: apps (iOS and Android): a Tasks list with the Inbox groups (Needs attention, Ready for review, Running, No agent, Closed), a Task detail that opens its pane, Chat, `TASK.md` or its changes, a New Task sheet and status changes. The store screenshots predate it.
-  5. Done: per-workspace agent environment (ADR 0016): `[workspace.agent]` with `command` and `env`, passed with `new-session -e`; the Claude Code and Codex adapters search every workspace's `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. tmux-agents' side waits for ADR 0017; until then such Tasks use the built-in launcher.
-  6. Done (bridge, protocol, CLI): handoff and agent runs (ADR 0018). The record keeps `runs`; `TASK.md` gets Progress, Decisions and Next actions, which the agent keeps and the bridge never rewrites; `restart-agent` writes `.muxa/HANDOFF.md` from facts and restarts the agent in the same pane with `respawn-pane -k`; `muxa-cli task restart`. The apps do not show runs or offer a restart yet.
-  7. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
+  5. Done: per-workspace agent environment (ADR 0016): `[workspace.agent]` with `command` and `env`, passed with `new-session -e`; the Claude Code and Codex adapters search every workspace's `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. tmux-agents' side waits for ADR 0017's `agent-env`; until then such Tasks use the built-in launcher.
+  6. Desktop client (ADR 0017, proposed): tmux-agents shows the same Tasks inside tmux.
+     - Done in muxa: `muxa-cli tasks --json` and `task new --json`, the bridge waiting for a start prompt after its client leaves, `--muxa-task` for tmux-agents that announce it, and the contract test against a real tmux-agents (`MUXA_TMUX_AGENTS`).
+     - Done in tmux-agents, on its branch `muxa-task-records`, not merged yet: `prefix + N` creates a muxa Task, `prefix + T` shows the Inbox, and `new.sh --muxa-task`.
+  7. Done (bridge, protocol, CLI): handoff and agent runs (ADR 0018). The record keeps `runs`; `TASK.md` gets Progress, Decisions and Next actions, which the agent keeps and the bridge never rewrites; `restart-agent` writes `.muxa/HANDOFF.md` from facts and restarts the agent in the same pane with `respawn-pane -k`; `muxa-cli task restart`. The apps do not show runs or offer a restart yet.
+  8. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
@@ -97,6 +100,7 @@ The server:
 |---|---|
 | Everything | `make check` |
 | tmux behavior, the bridge | `make test-tmux`, `make repro`. CI runs them on tmux 3.2a, 3.4 and the latest release, on Linux and macOS. |
+| The contract with tmux-agents | `MUXA_TMUX_AGENTS=<tmux-agents checkout> make test-tmux` (ADR 0017); tmux-agents' own `bats tests` |
 | MuxaKit | `make test-apple`; `make test-apple-tmux` against the real bridge |
 | The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, in the simulator against the in-app demo bridge |
 | The Android client | `make test-android`, `make test-android-tmux`, `make lint-android`; `make test-android-app` on a phone, Pixel Tablet and Pixel Fold emulator, against the in-app demo bridge |

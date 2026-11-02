@@ -6,7 +6,7 @@ use std::sync::Arc;
 use muxa_protocol::{ErrorBody, ErrorCode};
 use muxa_tmux::Client;
 
-use super::{Config, blocking, brief, handoff, store_error};
+use super::{Config, Pending, blocking, brief, handoff, store_error};
 use crate::agents::Registry;
 use crate::convert::{error_body, task_error};
 use crate::records::{NewRecord, Record, RunReason, Status, Workspace};
@@ -22,6 +22,7 @@ pub struct Env {
     pub tasks: Arc<tasks::Config>,
     pub records: Arc<Config>,
     pub agents: Arc<Registry>,
+    pub pending: Pending,
 }
 
 /// A `create-task` request as the client sent it.
@@ -179,8 +180,12 @@ async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, 
     let client = &*env.client;
     let launched = match target {
         Target::Repo(req) => {
-            let launcher = tasks::pick_for(&env.tasks, client, req).await;
-            let result = launcher.launch(client, req).await;
+            let req = TaskRequest {
+                record: Some(record.id.clone()),
+                ..req.clone()
+            };
+            let launcher = tasks::pick_for(&env.tasks, client, &req).await;
+            let result = launcher.launch(client, &req).await;
             if let Err(e) = &result {
                 tracing::warn!(task = %record.id, launcher = launcher.id(), error = %e, "task launch failed");
             }
@@ -257,7 +262,7 @@ async fn linked(
         Err(e) => return (Some(record), Some(e)),
     };
     let run = record.runs.last().map_or(0, |r| r.id);
-    tokio::spawn(handoff::send_prompt(
+    env.pending.spawn(handoff::send_prompt(
         Arc::clone(&env.client),
         Arc::clone(&env.agents),
         Arc::clone(&env.records),

@@ -4,12 +4,16 @@
 use std::time::Duration;
 
 use muxa_protocol::{Message, Request, TaskRecord, TaskStatus};
+use serde_json::json;
 
 use crate::conn::Conn;
+use crate::inbox;
 
 /// A launch makes a worktree and starts an agent; the bridge allows 60 s.
 const LAUNCH_WAIT: Duration = Duration::from_secs(90);
 const WAIT: Duration = Duration::from_secs(10);
+/// The bridge types the start prompt once the agent is idle, within 30 s.
+const HANDOFF_WAIT: Duration = Duration::from_secs(45);
 
 /// `task new`'s flags.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -50,8 +54,18 @@ impl NewTask {
     }
 }
 
-pub async fn list(conn: &mut Conn) -> Result<String, String> {
+pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
     let (workspaces, records, truncated) = fetch(conn).await?;
+    if as_json {
+        let sessions = conn.list().await?;
+        let tasks: Vec<_> = inbox::items(&records, &sessions)
+            .iter()
+            .map(inbox::to_json)
+            .collect();
+        let out = json!({"workspaces": workspaces, "truncated": truncated, "tasks": tasks});
+        println!("{out}");
+        return Ok(String::new());
+    }
     println!("workspaces: {}", workspaces.join(", "));
     for r in &records {
         println!("{}", line(r));
@@ -62,7 +76,9 @@ pub async fn list(conn: &mut Conn) -> Result<String, String> {
     Ok(String::new())
 }
 
-pub async fn create(conn: &mut Conn, new: NewTask) -> Result<String, String> {
+/// Prints the record, then lets the bridge finish handing the goal to the
+/// agent: it exits once the start prompt is typed or given up.
+pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<String, String> {
     let messages = conn
         .call(
             |id| Request::CreateTask {
@@ -79,7 +95,14 @@ pub async fn create(conn: &mut Conn, new: NewTask) -> Result<String, String> {
         )
         .await?;
     let record = saved(&messages).ok_or("the bridge saved no task")?;
-    println!("{}", line(record));
+    if as_json {
+        let sessions = conn.list().await?;
+        println!("{}", inbox::to_json(&inbox::item(record, &sessions)));
+    } else {
+        println!("{}", line(record));
+    }
+    std::io::Write::flush(&mut std::io::stdout()).map_err(|e| e.to_string())?;
+    conn.finish(HANDOFF_WAIT).await;
     Ok(String::new())
 }
 
@@ -107,8 +130,14 @@ pub async fn done(conn: &mut Conn, task: &str) -> Result<String, String> {
     Ok(String::new())
 }
 
-/// The restarted agent gets its prompt later; the record shows the new run.
-pub async fn restart(conn: &mut Conn, task: &str, force: bool) -> Result<String, String> {
+/// Prints the record with its new run, then, like `create`, lets the bridge
+/// finish typing the prompt into the restarted agent.
+pub async fn restart(
+    mut conn: Conn,
+    task: &str,
+    force: bool,
+    as_json: bool,
+) -> Result<String, String> {
     let messages = conn
         .call(
             |id| Request::RestartAgent {
@@ -120,10 +149,17 @@ pub async fn restart(conn: &mut Conn, task: &str, force: bool) -> Result<String,
         )
         .await?;
     let record = saved(&messages).ok_or("the bridge saved no task")?;
-    println!("{}", line(record));
-    if let Some(run) = record.runs.last() {
-        println!("run {}: restarted", run.id);
+    if as_json {
+        let sessions = conn.list().await?;
+        println!("{}", inbox::to_json(&inbox::item(record, &sessions)));
+    } else {
+        println!("{}", line(record));
+        if let Some(run) = record.runs.last() {
+            println!("run {}: restarted", run.id);
+        }
     }
+    std::io::Write::flush(&mut std::io::stdout()).map_err(|e| e.to_string())?;
+    conn.finish(HANDOFF_WAIT).await;
     Ok(String::new())
 }
 

@@ -17,14 +17,17 @@ pub struct TmuxAgents {
     script: PathBuf,
     tmux: PathBuf,
     socket: Option<String>,
+    /// `new.sh` takes `--muxa-task` (`@agents_features`, ADR 0017).
+    muxa_task: bool,
 }
 
 impl TmuxAgents {
-    pub fn new(script: PathBuf, tmux: PathBuf, socket: Option<String>) -> Self {
+    pub fn new(script: PathBuf, tmux: PathBuf, socket: Option<String>, muxa_task: bool) -> Self {
         Self {
             script,
             tmux,
             socket,
+            muxa_task,
         }
     }
 
@@ -33,6 +36,9 @@ impl TmuxAgents {
         cmd.arg(&req.repo).arg(&req.branch);
         if let Some(base) = &req.base {
             cmd.arg("--base").arg(base);
+        }
+        if let Some(record) = req.record.as_ref().filter(|_| self.muxa_task) {
+            cmd.arg("--muxa-task").arg(record);
         }
         // Without it, the desktop client would jump to the new session.
         cmd.arg("--no-switch");
