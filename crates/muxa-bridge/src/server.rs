@@ -28,10 +28,6 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(2);
 /// After the client leaves: a launch (60 s) and the wait for an idle agent (30 s).
 const PENDING_LIMIT: Duration = Duration::from_secs(100);
-/// The Task Loop runs only in the host daemon (ADR 0019), which this bridge
-/// does not reach yet.
-const NO_DAEMON: &str =
-    "The Task Loop needs the muxa daemon. On the host, run: muxa-bridge daemon install";
 
 pub struct Config {
     pub tmux: Options,
@@ -110,6 +106,10 @@ where
     if let Some(dir) = &config.daemon_dir {
         let daemon = task_records::remote::probe(dir).await;
         tracing::info!(?daemon, "host daemon");
+        // A daemon of this version runs the loop engine.
+        if config.records.enabled() && daemon == task_records::remote::Probe::Ready {
+            capabilities.push("task-loop".into());
+        }
     }
     let hello = Message::Hello {
         protocol: muxa_protocol::VERSION,
@@ -560,12 +560,19 @@ impl Worker {
                 Ok(p) => timed(muxa_tmux::paste(client, p, &text)).await,
                 Err(e) => Err(e),
             },
-            Request::CreateTask {
+            // Only the daemon runs loops (ADR 0019). A create takes seconds.
+            req @ (Request::CreateTask {
                 r#loop: Some(_), ..
             }
             | Request::StartLoop { .. }
-            | Request::StopLoop { .. } => {
-                return Some(Err(error_body(ErrorCode::Unsupported, NO_DAEMON)));
+            | Request::StopLoop { .. }) => {
+                let (dir, out) = (self.daemon_dir.clone(), self.out.clone());
+                self.pending.spawn(async move {
+                    for msg in task_records::remote::serve_loop(dir.as_deref(), req).await {
+                        let _ = out.send(msg).await;
+                    }
+                });
+                return None;
             }
             // A launch or a restart takes seconds; keystrokes must not wait for it.
             req @ (Request::CreateTask { .. } | Request::RestartAgent { .. }) => {

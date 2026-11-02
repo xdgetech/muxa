@@ -14,7 +14,6 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 pub use agent_env::AgentSettings;
-#[allow(unused_imports)]
 pub use loops::{Checks, LastCheck, Loop, LoopSpec, LoopState, Reason};
 pub use prompts::{PendingPrompt, PromptKind};
 pub use runs::{MAX_RUNS, Run, RunReason, Seen};

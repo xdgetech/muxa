@@ -3,9 +3,6 @@
 //! hand the Task to the user. `step` decides, `check` runs the command, and
 //! `typing` types only when no person does. The daemon calls [`Engine::tick`].
 
-// Until the daemon calls the engine (ADR 0019 P2, after P1b and P1c).
-#![allow(dead_code)]
-
 pub mod check;
 pub mod step;
 pub mod typing;
@@ -29,8 +26,6 @@ use crate::task_records::{Config, link};
 use check::{CheckError, CheckRun};
 use step::{Action, Agent, Check, CheckEnd, Memory, Observation, effects, step};
 
-/// How often the daemon ticks.
-pub const TICK: Duration = Duration::from_secs(2);
 const LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const WRITE_ATTEMPTS: usize = 3;
 
@@ -435,6 +430,48 @@ pub enum LoopError {
     Config(#[from] crate::records::workspaces::ConfigError),
 }
 
+/// The loop of a `create-task`, checked before the Task exists: the check
+/// is allowed, and `main` (the repo's main checkout) is in the workspace's
+/// `repos`. A Task without a repo gets a directory under the root. Blocking.
+pub fn precheck(
+    config: &Config,
+    workspace: &str,
+    main: Option<&Path>,
+    spec: &LoopSpec,
+) -> Result<(), LoopError> {
+    let workspaces = load(config)?;
+    let ws = known(&workspaces, workspace)?;
+    spec.check(ws.loop_checks.as_ref())
+        .map_err(LoopError::Bad)?;
+    if let Some(main) = main {
+        let main = main.canonicalize().unwrap_or_else(|_| main.to_owned());
+        if !ws.repos.contains(&main) {
+            return Err(LoopError::Bad(format!(
+                "a loop needs a repo from the repos of workspace {workspace:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn load(config: &Config) -> Result<Workspaces, LoopError> {
+    Ok(match &config.workspaces {
+        Some(path) => Workspaces::load(path, config.home.as_deref())?,
+        None => Workspaces::default(),
+    })
+}
+
+fn known<'a>(
+    workspaces: &'a Workspaces,
+    name: &str,
+) -> Result<&'a crate::records::Workspace, LoopError> {
+    workspaces.get(name).ok_or_else(|| {
+        LoopError::Bad(format!(
+            "workspace {name:?} is not in workspaces.toml on the host"
+        ))
+    })
+}
+
 /// `start-loop`, or the loop of a `create-task`: checks the workspace's
 /// rules, arms the loop from now, and puts the check in `TASK.md`. Blocking.
 pub fn start(
@@ -444,18 +481,10 @@ pub fn start(
     reset: bool,
 ) -> Result<Record, LoopError> {
     let store = open(config)?;
-    let workspaces = match &config.workspaces {
-        Some(path) => Workspaces::load(path, config.home.as_deref())?,
-        None => Workspaces::default(),
-    };
+    let workspaces = load(config)?;
     for _ in 0..WRITE_ATTEMPTS {
         let record = store.get(task)?;
-        let ws = workspaces.get(&record.workspace).ok_or_else(|| {
-            LoopError::Bad(format!(
-                "workspace {:?} is not in workspaces.toml on the host",
-                record.workspace
-            ))
-        })?;
+        let ws = known(&workspaces, &record.workspace)?;
         spec.check(ws.loop_checks.as_ref())
             .map_err(LoopError::Bad)?;
         ws.may_loop(&record).map_err(LoopError::Bad)?;

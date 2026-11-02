@@ -24,6 +24,7 @@ use tokio::sync::mpsc;
 use crate::Setup;
 use crate::args::{self, DaemonOp};
 use crate::convert::error_body;
+use crate::loops;
 use crate::server::MAX_REQUEST;
 use crate::task_records::{self, Context, Pending};
 use install::{Platform, Runner, Spec};
@@ -63,15 +64,27 @@ struct Daemon {
     records: Context,
     /// The same client `records` gets its tmux from.
     tmux: Arc<tmux::Lazy>,
+    loops: tokio::sync::Mutex<loops::Engine>,
 }
 
 impl Daemon {
-    /// Called once before the daemon exits for the user's `daemon stop`.
-    async fn on_user_stop(&self) {}
+    /// Called once before the daemon exits for the user's `daemon stop`:
+    /// every loop stops with reason `user`, so the next daemon does not resume them.
+    async fn on_user_stop(&self) {
+        let config = Arc::clone(&self.records.records);
+        match tokio::task::spawn_blocking(move || loops::stop_all(&config)).await {
+            Ok(Ok(stopped)) => tracing::info!(loops = stopped.len(), "loops stopped by the user"),
+            Ok(Err(e)) => tracing::warn!(error = %e, "cannot stop the loops"),
+            Err(e) => tracing::warn!(error = %e, "stopping the loops failed"),
+        }
+        self.loops.lock().await.stop_checks().await;
+    }
 
-    /// Runs every [`TICK`].
+    /// Runs every [`TICK`]. The tmux client stays attached while a loop is active.
     async fn tick(&self) {
-        self.tmux.tick(false).await;
+        let mut engine = self.loops.lock().await;
+        let client = self.tmux.tick(engine.busy()).await;
+        engine.tick(client.as_deref()).await;
     }
 }
 
@@ -140,6 +153,12 @@ fn run(args: args::Args) -> ExitCode {
         }
     };
     let tmux = Arc::new(tmux::Lazy::new(setup.tmux_options()));
+    // Install wrote the shell's PATH into the service: a check's fallback.
+    let engine = loops::Engine::new(
+        Arc::clone(&setup.records),
+        Arc::clone(&setup.agents),
+        std::env::var("PATH").ok(),
+    );
     let daemon = Daemon {
         records: Context {
             tmux: Arc::clone(&tmux) as Arc<dyn task_records::ClientSource>,
@@ -148,6 +167,7 @@ fn run(args: args::Args) -> ExitCode {
             agents: setup.agents,
             pending: Pending::default(),
         },
+        loops: tokio::sync::Mutex::new(engine),
         tmux,
     };
     match runtime.block_on(serve(Arc::new(daemon), &path)) {
@@ -203,6 +223,8 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
             }
         }
     }
+    // A check's process group does not outlive a clean exit (ADR 0019).
+    daemon.loops.lock().await.stop_checks().await;
     if let Err(e) = std::fs::remove_file(path) {
         tracing::warn!(error = %e, "cannot remove the socket");
     }
@@ -214,7 +236,7 @@ fn hello() -> Message {
         protocol: muxa_protocol::VERSION,
         bridge: env!("CARGO_PKG_VERSION").into(),
         tmux: String::new(),
-        capabilities: vec!["task-records".into()],
+        capabilities: vec!["task-records".into(), "task-loop".into()],
     }
 }
 

@@ -9,13 +9,12 @@ use muxa_tmux::{AgentState, AgentStatus, Client, PaneId, Role, SessionId};
 
 use super::{Config, blocking, link};
 use crate::agents::{Processes, Registry};
+use crate::loops::typing;
 use crate::records::{PendingPrompt, PromptKind, Record, Seen, StoreError};
 
 /// How long a new agent gets to report `idle`, in seconds.
 pub const PROMPT_WAIT: u64 = 30;
 const PROMPT_POLL: Duration = Duration::from_secs(1);
-/// Between the text and Enter, so a TUI does not take both as one paste.
-const KEY_GAP: Duration = Duration::from_millis(200);
 const LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const WRITE_ATTEMPTS: usize = 3;
 
@@ -124,13 +123,19 @@ pub async fn send_prompt(
         let found = agent_pane(&client, &agents, &config, which.clone()).await;
         if let Some(found) = found {
             seen = found.seen.or(seen);
-            if prompt.ready(found.status, pending.since) {
+            if prompt.ready(found.status, pending.since)
+                && person_quiet(&client, found.session, &task).await
+            {
                 if !still_pending(&config, &task, pending).await {
                     tracing::info!(task, "the prompt wait ended elsewhere");
                     return;
                 }
-                match type_prompt(&client, found.pane, prompt.text).await {
-                    Ok(()) => tracing::info!(task, pane = %found.pane, "prompt sent"),
+                let at = crate::records::now();
+                match typing::type_prompt(&client, found.pane, prompt.text).await {
+                    Ok(()) => {
+                        tracing::info!(task, pane = %found.pane, "prompt sent");
+                        arm_loop(&config, &task, at).await;
+                    }
                     Err(e) => {
                         tracing::warn!(task, pane = %found.pane, error = %e, "cannot send the prompt")
                     }
@@ -183,10 +188,28 @@ pub async fn end_wait(
     .await;
 }
 
-async fn type_prompt(client: &Client, pane: PaneId, text: &str) -> Result<(), muxa_tmux::Error> {
-    muxa_tmux::send_text(client, pane, text).await?;
-    tokio::time::sleep(KEY_GAP).await;
-    muxa_tmux::send_keys(client, pane, &["Enter".to_owned()]).await
+/// No person typed on the session in the last seconds (ADR 0019). In doubt, wait.
+async fn person_quiet(client: &Client, session: SessionId, task: &str) -> bool {
+    match typing::quiet(client, session, crate::records::now()).await {
+        Ok(quiet) => quiet,
+        Err(e) => {
+            tracing::debug!(task, error = %e, "cannot list clients; not typing yet");
+            false
+        }
+    }
+}
+
+/// A Task's active loop counts turns from the prompt typed at `at` (ADR 0019).
+async fn arm_loop(config: &Arc<Config>, task: &str, at: u64) {
+    let (config, task) = (Arc::clone(config), task.to_owned());
+    let armed =
+        tokio::task::spawn_blocking(move || crate::loops::armed_by_prompt(&config, &task, at))
+            .await;
+    match armed {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::warn!(error = %e, "cannot arm the loop after a prompt"),
+        Err(e) => tracing::warn!(error = %e, "arming the loop stopped"),
+    }
 }
 
 /// The first live agent pane of the linked session, with its state and what

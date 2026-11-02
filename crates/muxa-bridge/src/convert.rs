@@ -57,6 +57,7 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
     use crate::records::Status;
     let path = |p: Option<std::path::PathBuf>| p.map(|p| p.to_string_lossy().into_owned());
     let pending_prompt = r.pending_prompt().map(pending_prompt);
+    let task_loop = loop_of(&r);
     wire::TaskRecord {
         id: r.id,
         rev: r.rev,
@@ -78,8 +79,7 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         session: r.session,
         note: r.note,
         runs: r.runs.into_iter().map(agent_run).collect(),
-        // The store keeps no loop yet; ADR 0019's P2 adds it.
-        r#loop: None,
+        r#loop: task_loop.map(Box::new),
         pending_prompt,
     }
 }
@@ -96,11 +96,82 @@ fn pending_prompt(p: crate::records::PendingPrompt) -> wire::PendingPrompt {
     }
 }
 
-/// `checks` stays absent until the host's `[workspace.loop]` is read (ADR 0019, P2).
+/// `checks` is absent when the workspace has no `[workspace.loop]` (ADR 0019).
 pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
+    use crate::records::Checks;
     wire::WorkspaceInfo {
         name: w.name.clone(),
-        checks: None,
+        checks: w.loop_checks.as_ref().map(|c| match c {
+            Checks::Any => wire::WorkspaceChecks::Any,
+            Checks::List(list) => wire::WorkspaceChecks::List(list.clone()),
+        }),
+    }
+}
+
+/// The record's loop. A state or reason from a newer muxa has no wire value,
+/// so the loop is left out rather than shown with an invented one (invariant 6).
+fn loop_of(r: &crate::records::Record) -> Option<wire::TaskLoop> {
+    use crate::records::{LoopState, Reason};
+    let lp = match r.task_loop() {
+        Ok(lp) => lp?,
+        Err(e) => {
+            tracing::warn!(task = %r.id, error = %e, "unreadable loop; not sent");
+            return None;
+        }
+    };
+    let state = match lp.state {
+        LoopState::Armed => wire::LoopState::Armed,
+        LoopState::Checking => wire::LoopState::Checking,
+        LoopState::Paused => wire::LoopState::Paused,
+        LoopState::Passed => wire::LoopState::Passed,
+        LoopState::Stopped => wire::LoopState::Stopped,
+        LoopState::Unknown(_) => {
+            tracing::warn!(task = %r.id, "a loop state from a newer muxa; not sent");
+            return None;
+        }
+    };
+    let reason = match lp.reason {
+        None => None,
+        Some(reason) => Some(match reason {
+            Reason::Waiting => wire::LoopReason::Waiting,
+            Reason::Limit => wire::LoopReason::Limit,
+            Reason::Timeout => wire::LoopReason::Timeout,
+            Reason::Error => wire::LoopReason::Error,
+            Reason::NoAgent => wire::LoopReason::NoAgent,
+            Reason::NotSent => wire::LoopReason::NotSent,
+            Reason::Stalled => wire::LoopReason::Stalled,
+            Reason::Status => wire::LoopReason::Status,
+            Reason::User => wire::LoopReason::User,
+            Reason::Unknown(_) => {
+                tracing::warn!(task = %r.id, "a loop reason from a newer muxa; not sent");
+                return None;
+            }
+        }),
+    };
+    Some(wire::TaskLoop {
+        check: lp.check,
+        max_attempts: lp.max_attempts,
+        timeout: lp.timeout,
+        state,
+        attempts: lp.attempts,
+        armed_at: lp.armed_at,
+        since: lp.since,
+        reason,
+        last_check: lp.last_check.map(|c| wire::LoopCheck {
+            attempt: c.attempt,
+            exit: c.exit,
+            seconds: c.seconds,
+            at: c.at,
+        }),
+    })
+}
+
+/// A client's loop request, as the records keep it.
+pub fn loop_spec(s: wire::LoopSpec) -> crate::records::LoopSpec {
+    crate::records::LoopSpec {
+        check: s.check,
+        max_attempts: s.max_attempts,
+        timeout: s.timeout,
     }
 }
 
