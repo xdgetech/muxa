@@ -8,6 +8,8 @@ struct TaskDetail: View {
     let id: String
     @State private var saving = false
     @State private var error: String?
+    @State private var loopStart: LoopStart?
+    @State private var loopError: String?
 
     var body: some View {
         if let item = model.inboxItem(id) {
@@ -33,6 +35,7 @@ struct TaskDetail: View {
             }
             // Before the details: a long goal must not push the way into the session off screen.
             open(item)
+            LoopSection(item: item, starting: $loopStart, error: $loopError)
             Section {
                 statusPicker(r)
                 LabeledContent("Agent") {
@@ -52,6 +55,7 @@ struct TaskDetail: View {
         }
         .navigationTitle(r.title)
         .navigationBarTitleDisplayMode(.inline)
+        .loopSheets(starting: $loopStart, error: $loopError)
         .alert("Can't Change the Status", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {

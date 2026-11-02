@@ -602,16 +602,26 @@ final class AppModel {
         inbox.lazy.flatMap(\.items).first { $0.id == id }
     }
 
+    /// The bridge reached the muxa daemon, so tasks can have a Task Loop (ADR 0019).
+    var canLoop: Bool { isConnected && session.canLoop }
+
+    /// The allowed checks of `workspace`; nil means it has no loops.
+    func checks(of workspace: String) -> WorkspaceChecks? {
+        session.workspaces.first { $0.name == workspace }?.checks
+    }
+
     /// What a task opens: its agent as a chat or a terminal, or the Reader at its
-    /// TASK.md, its HANDOFF.md or its changes.
+    /// TASK.md, its HANDOFF.md, its last check or its changes.
     enum TaskOpening {
-        case chat, terminal, taskFile, handoffFile, changes
+        case chat, terminal, taskFile, handoffFile, checkFile, changes
     }
 
     /// Where TASK.md is in a task's directory, as the Reader lists it (ADR 0015).
     static let taskFile = ".muxa/TASK.md"
     /// Where the bridge writes the handoff before it restarts an agent (ADR 0018).
     static let handoffFile = ".muxa/HANDOFF.md"
+    /// Where the daemon writes the last check's result (ADR 0019).
+    static let checkFile = ".muxa/CHECK.md"
 
     /// Closes the Tasks sheet, then opens the task's session as asked.
     func open(_ item: InboxItem, as opening: TaskOpening) {
@@ -630,9 +640,13 @@ final class AppModel {
         switch opening {
         case .chat: await show(.chat)
         case .terminal: if agentPane != nil { await show(.agent) }
-        case .taskFile, .handoffFile:
+        case .taskFile, .handoffFile, .checkFile:
             guard canReadDocs else { return }
-            lastDocs[s.id] = opening == .taskFile ? Self.taskFile : Self.handoffFile
+            lastDocs[s.id] = switch opening {
+            case .handoffFile: Self.handoffFile
+            case .checkFile: Self.checkFile
+            default: Self.taskFile
+            }
             readerTab = .docs
             // Like the plan, it opens by itself, also on a phone.
             readerOpensPlan = true

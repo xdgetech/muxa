@@ -348,6 +348,7 @@ public final class PaneSession {
     /// Records a task and starts its agent. A failed launch still keeps the record,
     /// with a `note` saying why; it is returned then too. Throws when nothing was kept.
     public func createTask(_ new: NewTaskRecord) async throws -> TaskRecord {
+        if new.loop != nil { try requireLoops() }
         var requestId: UInt64 = 0
         var failure: (any Error)?
         do {
@@ -355,7 +356,7 @@ public final class PaneSession {
                 requestId = id
                 return .createTask(
                     id: id, workspace: new.workspace, title: new.title, goal: new.goal, project: new.project,
-                    repo: new.repo, branch: new.branch, base: new.base)
+                    repo: new.repo, branch: new.branch, base: new.base, loop: new.loop)
             }
         } catch {
             failure = error
@@ -415,6 +416,46 @@ public final class PaneSession {
         // The agent pane's state changes with the restart.
         try? await refresh()
         guard let saved else {
+            throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the task."))
+        }
+        return saved
+    }
+
+    /// The host's bridge reached the muxa daemon, so Tasks can have a Task Loop (ADR 0019).
+    public var canLoop: Bool { capabilities.contains("task-loop") }
+
+    /// Starts a task's Task Loop with `loop`, also a stopped or passed one. `reset`
+    /// counts attempts from zero. Throws the host's reason, e.g. a check the workspace
+    /// does not allow; a bridge without `task-loop` is never asked.
+    public func startLoop(_ record: TaskRecord, loop: LoopSpec, reset: Bool = false) async throws -> TaskRecord {
+        try requireLoops()
+        return try await saving { .startLoop(id: $0, task: record.id, loop: loop, reset: reset) }
+    }
+
+    /// Stops a task's Task Loop, with reason `user`.
+    public func stopLoop(_ record: TaskRecord) async throws -> TaskRecord {
+        try requireLoops()
+        return try await saving { .stopLoop(id: $0, task: record.id) }
+    }
+
+    private func requireLoops() throws {
+        guard canLoop else { throw Failure.bridge(ErrorBody(code: .unsupported, message: loopNeedsDaemon)) }
+    }
+
+    /// Sends a request that answers with `task-saved`. The record is kept as it arrives,
+    /// also one sent before a failure.
+    private func saving(_ make: (UInt64) -> Request) async throws -> TaskRecord {
+        var requestId: UInt64 = 0
+        do {
+            try await request { id in
+                requestId = id
+                return make(id)
+            }
+        } catch {
+            savedTasks[requestId] = nil
+            throw error
+        }
+        guard let saved = savedTasks.removeValue(forKey: requestId) else {
             throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the task."))
         }
         return saved

@@ -24,13 +24,27 @@ struct DemoTasks: Sendable {
     private static func record(
         _ id: String, _ workspace: String, _ title: String, _ goal: String, status: TaskStatus = .open,
         ago: UInt64, project: String? = nil, repo: String? = nil, branch: String? = nil, dir: String? = nil,
-        session: String? = nil, note: String? = nil, runs: (_ createdAt: UInt64) -> [AgentRun] = { _ in [] }
+        session: String? = nil, note: String? = nil, loop: TaskLoop? = nil,
+        runs: (_ createdAt: UInt64) -> [AgentRun] = { _ in [] }
     ) -> TaskRecord {
         let createdAt = now - ago - 3600
         return TaskRecord(id: id, rev: 1, workspace: workspace, title: title, goal: goal, status: status,
                           createdAt: createdAt, updatedAt: now - ago, project: project, repo: repo,
                           branch: branch, dir: dir ?? repo.map { _ in "/src/.worktrees/\(id)" }, session: session,
-                          note: note, runs: runs(createdAt))
+                          note: note, runs: runs(createdAt), loop: loop)
+    }
+
+    /// A Task Loop with the host's defaults, which changed state `ago` seconds back; the Android demo serves the same ones.
+    private static func loop(
+        _ check: String, _ state: LoopState, attempts: UInt32, ago: UInt64, reason: LoopReason? = nil,
+        lastCheck: LoopCheck? = nil
+    ) -> TaskLoop {
+        TaskLoop(check: check, maxAttempts: 3, timeout: 600, state: state, attempts: attempts, armedAt: now - ago,
+                 since: now - ago, reason: reason, lastCheck: lastCheck)
+    }
+
+    private static func check(_ attempt: UInt32, exit: Int32?, seconds: UInt64, ago: UInt64) -> LoopCheck {
+        LoopCheck(attempt: attempt, exit: exit, seconds: seconds, at: now - ago)
     }
 
     /// The agent the bridge started with the task, with no session id known.
@@ -38,13 +52,23 @@ struct DemoTasks: Sendable {
         [AgentRun(id: 1, agent: "claude-code", startedAt: createdAt, reason: .start)]
     }
 
-    private static let work = [WorkspaceInfo(name: "work"), WorkspaceInfo(name: "personal")]
+    /// Checks from a list, any check, and no loops at all (ADR 0019).
+    private static let testWorkspaces = [
+        WorkspaceInfo(name: "work", checks: .list(["make check", "cargo test --workspace"])),
+        WorkspaceInfo(name: "personal", checks: .any),
+        WorkspaceInfo(name: "notes"),
+    ]
 
-    /// The UI tests' records, linked to `DemoBridge.initialSessions` by `taskId`.
-    static let tests = DemoTasks(workspaces: work, records: [
+    /// The UI tests' records, linked to `DemoBridge.initialSessions` by `taskId`. Every
+    /// Inbox group, and every loop state: paused, armed, checking, passed, and stopped
+    /// by limit, timeout and the user.
+    static let tests = DemoTasks(workspaces: testWorkspaces, records: [
         record("t-auth01", "work", "Add sign-in with passkeys", "Let users sign in with a passkey instead of a password.",
                ago: 90, project: "App", repo: "/src/app", branch: "feat/auth", dir: "/src/.worktrees/app-feat-auth",
-               session: "feature-auth") { _ in [
+               session: "feature-auth",
+               // The agent waits on a menu, so the loop is paused.
+               loop: loop("make check", .paused, attempts: 1, ago: 90, reason: .waiting,
+                          lastCheck: check(1, exit: 2, seconds: 48, ago: 400))) { _ in [
                    AgentRun(id: 1, agent: "claude-code", startedAt: now - 7290, endedAt: now - 3690,
                             agentSession: "8f14e45f-ceea-4b6a-9f2b-0c3e5d7a1b21",
                             transcript: "/home/dev/.claude/projects/-src--worktrees-app-feat-auth/8f14e45f-ceea-4b6a-9f2b-0c3e5d7a1b21.jsonl",
@@ -54,30 +78,57 @@ struct DemoTasks: Sendable {
                ] },
         record("t-login1", "work", "Fix the login redirect", "After sign-in, return users to the page they came from.",
                ago: 600, project: "App", repo: "/src/app", branch: "fix/login", dir: "/src/.worktrees/app-fix-login",
-               session: "fix-login") { _ in [
+               session: "fix-login",
+               // The agent finished its turn, so the check runs.
+               loop: loop("cargo test --workspace", .checking, attempts: 0, ago: 15)) { _ in [
                    AgentRun(id: 1, agent: "claude-code", startedAt: now - 4200,
                             agentSession: "45c48cce-2e2d-4fbd-a1f4-6b3c8e9d0a12", reason: .start),
                ] },
         record("t-docs01", "work", "Update the docs site", "Document the new settings page.",
-               ago: 20, project: "Docs", repo: "/src/docs", branch: "main", dir: "/src/docs", session: "docs-site") { _ in [
+               ago: 20, project: "Docs", repo: "/src/docs", branch: "main", dir: "/src/docs", session: "docs-site",
+               loop: loop("make check", .armed, attempts: 2, ago: 200,
+                          lastCheck: check(2, exit: 1, seconds: 37, ago: 210))) { _ in [
                    AgentRun(id: 1, agent: "claude-code", startedAt: now - 1220, reason: .start),
                ] },
         record("t-price1", "work", "Draft the pricing page", "Write the copy for the new pricing page, with three plans.",
                ago: 1200, project: "Launch", dir: "/work/tasks/draft-the-pricing-page-t-price1",
                note: "The agent did not start: no agent command is set for this workspace."),
         record("t-relnot", "work", "Write the release notes", "Summarize the changes since 1.2 for the blog.",
-               status: .done, ago: 86_400, project: "Launch", dir: "/work/tasks/write-the-release-notes-t-relnot") { _ in [
+               status: .done, ago: 86_400, project: "Launch", dir: "/work/tasks/write-the-release-notes-t-relnot",
+               loop: loop("make check", .passed, attempts: 1, ago: 86_500,
+                          lastCheck: check(2, exit: 0, seconds: 52, ago: 86_500))) { _ in [
                    AgentRun(id: 1, agent: "codex", startedAt: now - 90_000, agentSession: "rollout-2026-10-31T09-12-44",
                             reason: .start),
                ] },
+        record("t-lint01", "personal", "Fix the lint warnings", "Make npm run lint pass without warnings.",
+               ago: 300, dir: "/personal/tasks/fix-the-lint-warnings-t-lint01",
+               loop: loop("npm run lint", .stopped, attempts: 3, ago: 300, reason: .limit,
+                          lastCheck: check(3, exit: 1, seconds: 14, ago: 300))),
+        record("t-perf01", "work", "Speed up the test suite", "Cut the test suite's run time below five minutes.",
+               ago: 900, project: "App", repo: "/src/app", branch: "perf/tests", dir: "/src/.worktrees/app-perf-tests",
+               loop: loop("cargo test --workspace", .stopped, attempts: 1, ago: 900, reason: .timeout,
+                          lastCheck: check(2, exit: nil, seconds: 600, ago: 900))),
+        record("t-deps01", "work", "Update the dependencies", "Update every dependency to its latest minor version.",
+               ago: 3000, project: "App", dir: "/work/tasks/update-the-dependencies-t-deps01",
+               loop: loop("make check", .stopped, attempts: 1, ago: 3000, reason: .user,
+                          lastCheck: check(1, exit: 2, seconds: 51, ago: 3100))),
+        record("t-notes1", "notes", "Sort the meeting notes", "File last week's meeting notes by project.",
+               ago: 7200, dir: "/notes/tasks/sort-the-meeting-notes-t-notes1"),
     ])
 
+    private static let showcaseWorkspaces = [
+        WorkspaceInfo(name: "work", checks: .list(["make test", "make lint"])),
+        WorkspaceInfo(name: "personal"),
+    ]
+
     /// Try the Demo and the store screenshots, linked to `Showcase.sessions`.
-    static let showcase = DemoTasks(workspaces: work, records: [
+    static let showcase = DemoTasks(workspaces: showcaseWorkspaces, records: [
         record("t-a1b2c3", "work", "Handle Stripe invoice.paid webhook",
                "Mark the invoice paid when Stripe sends invoice.paid, and email a receipt.",
                ago: 75, project: "Billing", repo: "~/src/billing", branch: "feat/stripe-webhooks",
-               dir: "~/src/.worktrees/billing-stripe-webhooks", session: "stripe-webhooks") { _ in [
+               dir: "~/src/.worktrees/billing-stripe-webhooks", session: "stripe-webhooks",
+               loop: loop("make test", .paused, attempts: 1, ago: 75, reason: .waiting,
+                          lastCheck: check(1, exit: 2, seconds: 41, ago: 600))) { _ in [
                    AgentRun(id: 1, agent: "claude-code", startedAt: now - 10_875, endedAt: now - 5475,
                             agentSession: "d3d94468-02a4-4e5c-9b7a-1c2e3f4a5b6c", reason: .start),
                    AgentRun(id: 2, agent: "claude-code", startedAt: now - 5475,
@@ -89,10 +140,13 @@ struct DemoTasks: Sendable {
                dir: "~/src/.worktrees/billing-retry-backoff", session: "retry-backoff", runs: started),
         record("t-0a1b2c", "work", "Dark mode for the dashboard", "Add a dark theme that follows the system setting.",
                ago: 720, project: "Dashboard", repo: "~/src/dashboard", branch: "feat/dark-mode",
-               dir: "~/src/.worktrees/dashboard-dark-mode", session: "dark-mode", runs: started),
+               dir: "~/src/.worktrees/dashboard-dark-mode", session: "dark-mode",
+               loop: loop("make test", .checking, attempts: 0, ago: 20), runs: started),
         record("t-3c4d5e", "work", "Faster search index", "Cut the search index build time in half.",
                status: .review, ago: 1800, project: "Dashboard", repo: "~/src/dashboard", branch: "perf/search-index",
-               dir: "~/src/.worktrees/dashboard-search-index", session: "search-index", runs: started),
+               dir: "~/src/.worktrees/dashboard-search-index", session: "search-index",
+               loop: loop("make test", .passed, attempts: 1, ago: 1800,
+                          lastCheck: check(2, exit: 0, seconds: 63, ago: 1800)), runs: started),
         record("t-6f7a8b", "work", "Plan the Q3 pricing change",
                "Compare our plans with three competitors and propose new prices.",
                ago: 5400, project: "Pricing", dir: "~/work/tasks/plan-the-q3-pricing-change-t-6f7a8b"),
@@ -135,9 +189,11 @@ extension DemoTasks {
 
     /// A new record, or why the bridge refuses it. `launched` is false when the launch fails.
     mutating func create(
-        workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?, launched: Bool
+        workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?, loop: LoopSpec?,
+        launched: Bool
     ) throws(Refusal) -> TaskRecord {
-        guard workspaces.contains(where: { $0.name == workspace }) else { throw .badRequest("\(workspace) is not a workspace") }
+        guard let info = workspaces.first(where: { $0.name == workspace }) else { throw .badRequest("\(workspace) is not a workspace") }
+        if let loop, let why = Self.loopRefusal(info, loop) { throw .badRequest(why) }
         if repo != nil, branch == nil { throw .badRequest("a task with a repo needs a branch") }
         created += 1
         let id = String(format: "t-new%03d", created)
@@ -147,7 +203,8 @@ extension DemoTasks {
             id: id, rev: 1, workspace: workspace, title: title, goal: goal, status: .open,
             createdAt: Self.now, updatedAt: Self.now, project: project, repo: repo, branch: branch, dir: dir,
             session: launched ? slug : nil,
-            note: launched ? nil : "could not create a worktree for \(branch ?? ""): a branch named '\(branch ?? "")' already exists")
+            note: launched ? nil : "could not create a worktree for \(branch ?? ""): a branch named '\(branch ?? "")' already exists",
+            loop: loop.map { Self.started(nil, $0, reset: true, now: Self.now) })
         records.append(record)
         return record
     }
@@ -158,6 +215,7 @@ extension DemoTasks {
         records[i].rev += 1
         records[i].status = status
         records[i].updatedAt = Self.now
+        records[i].loop = records[i].loop?.after(status, now: Self.now)
         return records[i]
     }
 

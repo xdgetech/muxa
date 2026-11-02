@@ -27,6 +27,8 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     var workspaces: [WorkspaceInfo] = [WorkspaceInfo(name: "work")]
     /// Tasks whose agent is running: `restart-agent` without force is refused.
     var runningAgents: Set<String> = []
+    /// False: the daemon went away after `hello`, so loop requests are `unsupported`.
+    var daemon = true
     /// Panes whose `chat` is answered with `unsupported`.
     var unsupportedChats: Set<String> = []
     /// Screen data sent after each successful watch.
@@ -72,7 +74,7 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
         case .listTasks(let id):
             emit(.taskList(TaskListing(tasks: id, workspaces: workspaces, entries: taskRecords)))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .createTask(let id, let workspace, let title, let goal, _, _, let branch, _, _):
+        case .createTask(let id, let workspace, let title, let goal, _, _, let branch, _, let loop):
             guard workspaces.contains(where: { $0.name == workspace }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "no such workspace"), sessions: nil))
                 return
@@ -80,7 +82,8 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             let launched = branch != "taken"
             let record = TaskRecord(
                 id: "t-\(id)", rev: 1, workspace: workspace, title: title, goal: goal, status: .open,
-                createdAt: 1, updatedAt: 1, note: launched ? nil : "the branch exists")
+                createdAt: 1, updatedAt: 1, note: launched ? nil : "the branch exists",
+                loop: loop.map { Self.armed($0, attempts: 0) })
             taskRecords.append(record)
             emit(.taskSaved(task: id, record: record))
             emit(.result(id: id, error: launched ? nil : ErrorBody(code: .taskFailed, message: "launch failed"), sessions: nil))
@@ -108,11 +111,44 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             taskRecords[i].rev += 1
             emit(.taskSaved(task: id, record: taskRecords[i]))
             emit(.result(id: id, error: nil, sessions: nil))
+        case .startLoop(let id, let task, let loop, let reset):
+            changeLoop(id, task) { current in
+                guard loop.check == "make check" else { return nil }
+                return Self.armed(loop, attempts: reset ? 0 : current?.attempts ?? 0)
+            }
+        case .stopLoop(let id, let task):
+            changeLoop(id, task) { current in
+                var stopped = current
+                stopped?.state = .stopped
+                stopped?.reason = .user
+                return stopped
+            }
         case .chat(let id, let pane) where unsupportedChats.contains(pane):
             emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "no adapter"), sessions: nil))
         case .bye: out.finish()
         default: emit(.result(id: req.id, error: nil, sessions: nil))
         }
+    }
+
+    static func armed(_ spec: LoopSpec, attempts: UInt32) -> TaskLoop {
+        TaskLoop(check: spec.check, maxAttempts: spec.maxAttempts ?? 3, timeout: spec.timeout ?? 600, state: .armed,
+                 attempts: attempts, armedAt: 9, since: 9)
+    }
+
+    /// Saves the loop `change` returns; nil refuses the request as the host would.
+    private func changeLoop(_ id: UInt64, _ task: String, _ change: (TaskLoop?) -> TaskLoop?) {
+        guard daemon else {
+            emit(.result(id: id, error: ErrorBody(code: .unsupported, message: loopNeedsDaemon), sessions: nil))
+            return
+        }
+        guard let i = taskRecords.firstIndex(where: { $0.id == task }), let loop = change(taskRecords[i].loop) else {
+            emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "not allowed"), sessions: nil))
+            return
+        }
+        taskRecords[i].loop = loop
+        taskRecords[i].rev += 1
+        emit(.taskSaved(task: id, record: taskRecords[i]))
+        emit(.result(id: id, error: nil, sessions: nil))
     }
 
     func close() async {

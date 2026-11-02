@@ -70,7 +70,7 @@ struct TasksScreen: View {
     }
 }
 
-/// A task's title, where it belongs, and its agent's state with its age.
+/// A task's title, where it belongs, its agent's state with its age, and its loop.
 struct TaskRow: View {
     let item: InboxItem
 
@@ -90,6 +90,7 @@ struct TaskRow: View {
                 if item.record.status != .open {
                     Text(TaskDetail.title(item.record.status)).font(.caption).foregroundStyle(.secondary)
                 }
+                LoopBadge(record: item.record)
             }
         }
     }

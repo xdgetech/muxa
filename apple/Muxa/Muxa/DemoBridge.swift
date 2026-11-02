@@ -76,8 +76,13 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         if alerts {
             DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
         }
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: Self.capabilities))
     }
+
+    private static let capabilities = [
+        "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
+        "task-loop", "tasks-changed",
+    ]
 
     func send(_ line: Data) async throws {
         let req = try Wire.decodeRequest(line)
@@ -117,7 +122,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
             lock.withLock { openDoc = id }
             ok(id)
-            emit(.docContent(doc: id, path: path, text: doc.text, mtime: 1))
+            emit(.docContent(doc: id, path: path, text: doc.text, mtime: doc.info.mtime))
             // The agent keeps writing its plan: an update arrives while it is open.
             if doc.info.kind == .plan, let update = content.planUpdate {
                 DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
@@ -134,9 +139,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let tasks = lock.withLock { tasks }
             emit(.taskList(TaskListing(tasks: id, workspaces: tasks.workspaces, entries: tasks.records)))
             ok(id)
-        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, _):
+        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop):
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.createTask(id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch)
+                self?.createTask(
+                    id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch, loop: loop)
             }
         case .updateTask(let id, let task, let rev, let status):
             let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
@@ -145,6 +151,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .restartAgent(let id, let task, let force):
             restartAgent(id: id, task: task, force: force)
+        case .startLoop(let id, let task, let loop, let reset):
+            changeLoop(id) { (tasks: inout DemoTasks) throws(DemoTasks.Refusal) in try tasks.startLoop(task, spec: loop, reset: reset) }
+        case .stopLoop(let id, let task):
+            changeLoop(id) { (tasks: inout DemoTasks) throws(DemoTasks.Refusal) in try tasks.stopLoop(task) }
         case .changes(let id, _):
             emit(.changeList(ChangeListing(
                 changes: id, root: content.root, entries: content.changes.map(\.info),
@@ -239,14 +249,15 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// Records the task, then starts a session for it, unless its branch is taken:
     /// then the record is kept with a note, as a real bridge does.
     private func createTask(
-        id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?
+        id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?,
+        loop: LoopSpec?
     ) {
         let launched = branch != Self.failingBranch
         let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
             let record: TaskRecord
             do throws(DemoTasks.Refusal) {
                 record = try tasks.create(workspace: workspace, title: title, goal: goal, project: project, repo: repo,
-                                          branch: branch, launched: launched)
+                                          branch: branch, loop: loop, launched: launched)
             } catch {
                 return .failure(error)
             }
@@ -281,6 +292,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .failure(.conflict):
             emit(.result(id: id, error: ErrorBody(code: .conflict, message: "the task changed since you read it"), sessions: nil))
         }
+    }
+
+    /// Saves a loop change, then sends `task-saved`, `result`, and `tasks-changed` as
+    /// the host's poll would send it to every bridge (ADR 0019).
+    private func changeLoop(_ id: UInt64, _ change: (inout DemoTasks) throws(DemoTasks.Refusal) -> TaskRecord) {
+        let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
+            do throws(DemoTasks.Refusal) { return .success(try change(&tasks)) } catch { return .failure(error) }
+        }
+        answer(id, outcome)
+        if case .success = outcome { emit(.tasksChanged) }
     }
 
     /// Restarts a task's agent in its pane, with the bridge's checks (ADR 0018).
@@ -347,15 +368,20 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         emit(.sessionsChanged)
     }
 
-    /// The repo's documents, and TASK.md then HANDOFF.md in a task's session, as the bridge lists them.
+    /// The repo's documents, and TASK.md, HANDOFF.md and, once a check ran, CHECK.md
+    /// in a task's session, as the bridge lists them.
     private func docs(_ pane: String) -> [(info: DocInfo, text: String)] {
         let (session, tasks) = lock.withLock { (sessions.first { $0.panes.contains { $0.id == pane } }, tasks) }
         guard let text = tasks.taskFile(for: session?.taskId), let handoff = tasks.handoffFile(for: session?.taskId)
         else { return content.docs }
-        return content.docs + [
+        var docs = content.docs + [
             (DocInfo(path: DemoTasks.taskFile, kind: .repo, mtime: 1), text),
             (DocInfo(path: DemoTasks.handoffFile, kind: .repo, mtime: 1), handoff),
         ]
+        if let check = tasks.checkFile(for: session?.taskId) {
+            docs.append((DocInfo(path: DemoTasks.checkFile, kind: .repo, mtime: check.mtime), check.text))
+        }
+        return docs
     }
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }

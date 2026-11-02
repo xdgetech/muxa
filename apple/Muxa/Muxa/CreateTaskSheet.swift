@@ -51,6 +51,7 @@ struct CreateTaskSheet: View {
                          ? "The host creates a worktree on the branch. A new branch starts from the base."
                          : "The host creates a directory for the task in its workspace.")
                 }
+                NewTaskLoop(draft: $draft)
                 if let message = error ?? visibleProblem {
                     Section {
                         Label(message, systemImage: Icon.warning)
@@ -80,6 +81,10 @@ struct CreateTaskSheet: View {
             .interactiveDismissDisabled(creating)
             .onAppear { titleFocused = true }
             .onChange(of: draft) { error = nil }
+            // Another workspace allows other checks.
+            .onChange(of: draft.workspace) {
+                if draft.loop != nil { draft.loop = model.checks(of: draft.workspace).map { LoopDraft(checks: $0) } }
+            }
             .onChange(of: withRepo) { _, on in
                 error = nil
                 if on, draft.repo.isEmpty { draft.repo = model.session.sessions.knownRepos.first?.dir ?? "" }

@@ -80,9 +80,12 @@ final class TasksTests: XCTestCase {
         save("task-file")
     }
 
-    /// Fills the New Task sheet; with a branch, in the first known repo.
+    /// Fills the New Task sheet; with a branch, in the first known repo; with a loop,
+    /// with the workspace's first check.
     @MainActor
-    private func createTask(_ app: XCUIApplication, title: String, goal: String, branch: String? = nil) {
+    private func createTask(
+        _ app: XCUIApplication, title: String, goal: String, branch: String? = nil, withLoop: Bool = false
+    ) {
         tapWhenReady(app.buttons["record-new"])
         let titleField = app.textFields["record-title"]
         XCTAssertTrue(titleField.waitForExistence(timeout: 5))
@@ -98,9 +101,18 @@ final class TasksTests: XCTestCase {
             if (toggle.value as? String) != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
             let branchField = app.textFields["record-branch"]
             // On a phone the keyboard can cover the new fields.
-            if branchField.exists, !branchField.isHittable { app.collectionViews.firstMatch.swipeUp() }
+            reveal(app, branchField)
             tapWhenReady(branchField)
             branchField.typeText(branch)
+        }
+        if withLoop {
+            let toggle = app.switches["record-with-loop"]
+            reveal(app, toggle)
+            tapWhenReady(toggle)
+            if (toggle.value as? String) != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
+            let check = app.buttons["loop-check"]
+            reveal(app, check)
+            XCTAssertTrue(waitFor(check, labelOrValue: "make check"))
         }
         save("record-new")
         tapWhenReady(app.buttons["record-start"])
@@ -197,6 +209,8 @@ final class TasksTests: XCTestCase {
     func testMarkingATaskDoneClosesIt() throws {
         let app = launchOnTasks()
         tapWhenReady(app.buttons["task-t-login1"])
+        // The Loop section can push the status below the fold.
+        reveal(app, app.buttons["task-status"])
         tapWhenReady(app.buttons["task-status"])
         tapWhenReady(app.buttons["Done"])
         // The picker shows the saved status once the host has it.
@@ -204,8 +218,109 @@ final class TasksTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: saved, object: app.buttons["task-status"])],
                                       timeout: 5), .completed)
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(header(app, "Closed").waitForExistence(timeout: 5))
+        // Running sits just below where Ready for review was.
+        XCTAssertTrue(header(app, "Running").waitForExistence(timeout: 5))
         XCTAssertFalse(header(app, "Ready for review").exists, "its only task left the group")
+        reveal(app, header(app, "Closed"))
+        XCTAssertTrue(header(app, "Closed").waitForExistence(timeout: 5))
         save("record-done")
+    }
+
+    /// Scrolls the Inbox to a task, then opens it: on a phone the lower groups are off screen.
+    @MainActor
+    private func openTask(_ app: XCUIApplication, _ id: String) {
+        let row = app.buttons["task-\(id)"]
+        XCTAssertTrue(app.collectionViews.firstMatch.waitForExistence(timeout: 5))
+        reveal(app, row)
+        tapWhenReady(row)
+    }
+
+    @MainActor
+    private func waitFor(_ element: XCUIElement, labelOrValue text: String) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", text, text)
+        let exp = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        return XCTWaiter.wait(for: [exp], timeout: 5) == .completed
+    }
+
+    /// Start a stopped loop with the workspace's second listed check, then stop it (ADR 0019).
+    @MainActor
+    func testALoopStartsWithAListedCheckAndStops() throws {
+        let app = launchOnTasks()
+        openTask(app, "t-deps01")
+        let state = app.staticTexts["loop-state"]
+        XCTAssertTrue(waitFor(state, labelOrValue: "Stopped"))
+        XCTAssertTrue(waitFor(app.staticTexts["loop-reason"], labelOrValue: "Stopped by the user."))
+        let start = app.buttons["loop-start"]
+        reveal(app, start)
+        tapWhenReady(start)
+        let check = app.buttons["loop-check"]
+        XCTAssertTrue(waitFor(check, labelOrValue: "make check"), "the last check comes first")
+        tapWhenReady(check)
+        tapWhenReady(app.buttons["cargo test --workspace"])
+        XCTAssertTrue(waitFor(check, labelOrValue: "cargo test --workspace"))
+        save("loop-start")
+        tapWhenReady(app.buttons["loop-start-confirm"])
+        XCTAssertTrue(waitFor(state, labelOrValue: "Armed"))
+        XCTAssertTrue(waitFor(app.staticTexts["loop-check-command"], labelOrValue: "cargo test --workspace"))
+        save("loop-armed")
+        let stop = app.buttons["loop-stop"]
+        reveal(app, stop)
+        tapWhenReady(stop)
+        XCTAssertTrue(waitFor(state, labelOrValue: "Stopped"))
+        XCTAssertTrue(app.buttons["loop-start"].waitForExistence(timeout: 5))
+    }
+
+    /// A loop paused for the user, or stopped at its limit, puts the task in Needs attention.
+    @MainActor
+    func testAPausedLoopNeedsAttention() throws {
+        let app = launchOnTasks()
+        let badge = app.staticTexts["loop-badge-t-auth01"]
+        XCTAssertTrue(badge.waitForExistence(timeout: 5))
+        XCTAssertEqual(badge.label, "Loop paused")
+        // No agent runs this one: only its loop puts it there.
+        let lint = app.buttons["task-t-lint01"]
+        XCTAssertTrue(lint.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["loop-badge-t-lint01"].label, "Loop stopped: limit")
+        XCTAssertLessThan(header(app, "Needs attention").frame.minY, lint.frame.minY)
+        XCTAssertLessThan(lint.frame.minY, header(app, "Ready for review").frame.minY)
+        save("loop-inbox")
+
+        openTask(app, "t-auth01")
+        XCTAssertTrue(waitFor(app.staticTexts["loop-reason"], labelOrValue: "The loop resumes after the agent finishes its turn."))
+        let stop = app.buttons["loop-stop"]
+        reveal(app, stop)
+        XCTAssertTrue(stop.exists)
+        XCTAssertFalse(app.buttons["loop-start"].exists, "an active loop is stopped, not started")
+        save("loop-paused")
+        app.navigationBars.buttons.firstMatch.tap()
+        openTask(app, "t-lint01")
+        XCTAssertTrue(waitFor(app.staticTexts["loop-reason"], labelOrValue: "Stopped: the check failed 3 times."))
+        XCTAssertTrue(waitFor(app.staticTexts["loop-last-check"], labelOrValue: "Attempt 3 · exit 1 · 14 s"))
+    }
+
+    /// Open check log opens the Reader at the task's CHECK.md.
+    @MainActor
+    func testTheCheckLogOpensInTheReader() throws {
+        let app = launchOnTasks()
+        openTask(app, "t-auth01")
+        let open = app.buttons["loop-open-log"]
+        reveal(app, open)
+        tapWhenReady(open)
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.staticTexts["Check"].waitForExistence(timeout: 10))
+        save("loop-check-log")
+    }
+
+    /// A workspace with listed checks offers its first one; the new task's loop is armed.
+    @MainActor
+    func testANewTaskRunsACheckAfterEachTurn() throws {
+        let app = launchOnTasks()
+        createTask(app, title: "Lint the site", goal: "Fix every lint warning.", withLoop: true)
+        XCTAssertTrue(app.navigationBars["Lint the site"].waitForExistence(timeout: 10))
+        let state = app.staticTexts["loop-state"]
+        reveal(app, state)
+        XCTAssertTrue(waitFor(state, labelOrValue: "Armed"))
+        XCTAssertTrue(waitFor(app.staticTexts["loop-check-command"], labelOrValue: "make check"))
+        save("loop-new-task")
     }
 }
