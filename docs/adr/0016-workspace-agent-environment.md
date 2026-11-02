@@ -68,7 +68,7 @@ env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company"
 1. The bridge runs `new.sh` with each value in `new.sh`'s own environment, and the list of keys in `TMUX_AGENTS_ENV` (space-separated). Values never go on `new.sh`'s command line, where `ps` shows them.
 2. `new.sh` makes every listed variable reach the agent pane's process, and any later pane of that session.
 3. The agent command comes from `TMUX_AGENTS_COMMAND` when set.
-4. tmux-agents says it supports this in a way the bridge can read before it runs `new.sh`, for example a global option.
+4. tmux-agents says it supports this with the word `agent-env` in its global option `@agents_features` (ADR 0017), which the bridge reads before it runs `new.sh`.
 
 Until that exists, a Task whose workspace has an `agent` table always uses the built-in launcher, also when tmux-agents is installed or forced with `--task-launcher`. The task then has no tmux-agents layout. A wrong account is worse than a missing layout.
 
