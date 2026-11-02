@@ -602,13 +602,16 @@ final class AppModel {
         inbox.lazy.flatMap(\.items).first { $0.id == id }
     }
 
-    /// What a task opens: its agent as a chat or a terminal, or the Reader at its TASK.md or its changes.
+    /// What a task opens: its agent as a chat or a terminal, or the Reader at its
+    /// TASK.md, its HANDOFF.md or its changes.
     enum TaskOpening {
-        case chat, terminal, taskFile, changes
+        case chat, terminal, taskFile, handoffFile, changes
     }
 
     /// Where TASK.md is in a task's directory, as the Reader lists it (ADR 0015).
     static let taskFile = ".muxa/TASK.md"
+    /// Where the bridge writes the handoff before it restarts an agent (ADR 0018).
+    static let handoffFile = ".muxa/HANDOFF.md"
 
     /// Closes the Tasks sheet, then opens the task's session as asked.
     func open(_ item: InboxItem, as opening: TaskOpening) {
@@ -627,9 +630,9 @@ final class AppModel {
         switch opening {
         case .chat: await show(.chat)
         case .terminal: if agentPane != nil { await show(.agent) }
-        case .taskFile:
+        case .taskFile, .handoffFile:
             guard canReadDocs else { return }
-            lastDocs[s.id] = Self.taskFile
+            lastDocs[s.id] = opening == .taskFile ? Self.taskFile : Self.handoffFile
             readerTab = .docs
             // Like the plan, it opens by itself, also on a phone.
             readerOpensPlan = true
