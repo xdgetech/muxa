@@ -8,6 +8,8 @@ turns.log in its directory. Files in that directory steer it:
   fix    a fail prompt makes the turn create "fixed"
   wait   the next turn goes "waiting" until one more line arrives
   error  the next turn ends in "error"
+  busy   at start, the agent reports "running" instead of a finished turn
+Each turn also appends "<epoch seconds> <line>" to times.log.
 It is Python, not sh, so tmux does not see a shell in the pane's foreground.
 """
 
@@ -48,20 +50,22 @@ def ending():
 
 def main():
     tmux("set-option", "-p", "-t", PANE, "@muxa_role", "agent")
-    state(ending())
+    state("running" if os.path.exists("busy") else ending())
     print("fake agent ready", flush=True)
     for line in sys.stdin:
         line = line.rstrip("\n")
         state("running")
         with open("turns.log", "a") as f:
             f.write(line + "\n")
+        with open("times.log", "a") as f:
+            f.write(f"{int(time.time())} {line}\n")
         if take("wait"):
             state("waiting")
             answer = sys.stdin.readline()
             with open("turns.log", "a") as f:
                 f.write("answer: " + answer)
             state("running")
-        if line.startswith(FAIL_PROMPT) and os.path.exists("fix"):
+        if FAIL_PROMPT in line and os.path.exists("fix"):
             open("fixed", "w").close()
         time.sleep(1)
         state("error" if take("error") else ending())

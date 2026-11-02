@@ -38,7 +38,7 @@ The `refresh-client -C` workaround for narrow-client plugins was considered and 
 |---|---|
 | `attach-session -f ignore-size,no-output` is accepted. With `no-output`, no `%output` arrives while a pane prints; without it, `%output` does. | `scripts/repro/daemon-client.sh` |
 | An `ignore-size,no-output` client that stays attached next to a desktop client, and runs a command every 2 s, changes no layout. Detaching it changes none either. `make repro` keeps it attached 60 s; set `MUXA_REPRO_SECONDS` for longer. | `scripts/repro/daemon-client.sh` |
-| A desktop client's key press updates its `#{client_activity}` (epoch seconds). `send-keys` from a control client does not update another client's `#{client_activity}`. `#{client_flags}` contains `control-mode` for a control client, and not for a desktop client. | `scripts/repro/client-activity.sh` |
+| A desktop client's key press updates its `#{client_activity}` (epoch seconds). `send-keys` from a control client does not update another client's `#{client_activity}`. `#{client_flags}` contains `control-mode` for a control client, and not for a desktop client. In `list-clients`, `#{session_id}` is the client's session id, so the daemon matches sessions by id. | `scripts/repro/client-activity.sh` |
 | When its session is destroyed, the daemon's client is detached like any control client; the daemon attaches again for its next work. | `crates/muxa-bridge/tests/daemon.rs` `the_daemon_attaches_one_no_output_client_and_reattaches` |
 
 ## Answered in Phase 3

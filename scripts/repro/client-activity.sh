@@ -26,6 +26,11 @@ echo "$listed" | grep -q 'control-mode' || fail "client_flags does not name the 
 clients | grep -v control-mode | grep -q . || fail "no desktop client listed"
 pass "#{client_flags} names control clients (control-mode)"
 
+# 4. In list-clients, #{session_id} is the client's session, so no name is needed.
+ids="$(mt list-clients -F '#{session_id}' | sort -u)"
+[ "$ids" = "$session" ] || fail "list-clients #{session_id} is not the client's session $session: $ids"
+pass "list-clients #{session_id} names the client's session by id"
+
 # 2. Keys from a control client leave the desktop client's activity alone.
 sleep 1.5
 { echo "send-keys -t $pane -l hello"; echo "send-keys -t $pane Enter"; sleep 0.5; } \
