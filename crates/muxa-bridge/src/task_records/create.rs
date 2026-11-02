@@ -118,9 +118,22 @@ async fn check(env: &Env, new: &NewTask) -> Result<Target, ErrorBody> {
         (Some(_), None) => return Err(bad("a task with a repo needs a branch".into())),
         (Some(r), Some(b)) => (r, b),
     };
-    let req = tasks::validate(repo, branch, new.base.as_deref())
+    let mut req = tasks::validate(repo, branch, new.base.as_deref())
         .await
         .map_err(|e| task_error(&e))?;
+    let main = builtin::main_checkout(&req.repo)
+        .await
+        .map_err(|e| task_error(&e))?;
+    let listing = workspaces.listing(&main);
+    if !listing.is_empty() && !listing.iter().any(|w| w.name == workspace.name) {
+        // Its agent would run there with this workspace's accounts (ADR 0016).
+        return Err(bad(format!(
+            "{} belongs to workspace {:?}; start the task there",
+            main.display(),
+            listing[0].name
+        )));
+    }
+    req.agent = workspace.agent.clone();
     if let Some(other) = branch_task(env, &req).await? {
         return Err(bad(format!(
             "{branch} already runs task {other}. Open that task, or use another branch."
@@ -166,7 +179,7 @@ async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, 
     let client = &*env.client;
     let launched = match target {
         Target::Repo(req) => {
-            let launcher = tasks::pick(&env.tasks, client).await;
+            let launcher = tasks::pick_for(&env.tasks, client, req).await;
             let result = launcher.launch(client, req).await;
             if let Err(e) = &result {
                 tracing::warn!(task = %record.id, launcher = launcher.id(), error = %e, "task launch failed");
@@ -178,7 +191,9 @@ async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, 
                 .task_dir(&record.title, &record.id)
                 .map_err(Failure::before)?;
             let launcher = builtin::Builtin::new(env.tasks.command.clone());
-            launcher.launch_in_dir(client, &dir).await
+            launcher
+                .launch_in_dir(client, &dir, workspace.agent.as_ref())
+                .await
         }
     }
     .map_err(Failure::before)?;

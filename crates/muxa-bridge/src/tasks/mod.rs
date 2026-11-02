@@ -15,6 +15,8 @@ use muxa_protocol::CloseMode;
 use muxa_tmux::{Client, SessionId};
 use tokio::process::Command;
 
+use crate::records::AgentSettings;
+
 /// A whole launch, worktree and session, at most.
 pub const LAUNCH_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_REF: usize = 200;
@@ -27,6 +29,8 @@ pub struct TaskRequest {
     pub repo: PathBuf,
     pub branch: String,
     pub base: Option<String>,
+    /// The workspace's agent command and environment (ADR 0016).
+    pub agent: Option<AgentSettings>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -180,6 +184,19 @@ pub async fn pick(config: &Config, client: &Client) -> Box<dyn TaskLauncher> {
     }
 }
 
+/// The launcher for `req`. A workspace's agent environment needs the built-in
+/// launcher: tmux-agents cannot pass it to its agent yet (ADR 0016).
+pub async fn pick_for(
+    config: &Config,
+    client: &Client,
+    req: &TaskRequest,
+) -> Box<dyn TaskLauncher> {
+    if req.agent.is_some() {
+        return Box::new(builtin::Builtin::new(config.command.clone()));
+    }
+    pick(config, client).await
+}
+
 /// Checks a `new-task` request at the boundary.
 pub async fn validate(
     repo: &str,
@@ -212,6 +229,7 @@ pub async fn validate(
         repo,
         branch: branch.to_owned(),
         base: base.map(str::to_owned),
+        agent: None,
     })
 }
 

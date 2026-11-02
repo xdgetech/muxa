@@ -469,17 +469,20 @@ impl Worker {
             } => {
                 let client = Arc::clone(&self.client);
                 let config = Arc::clone(&self.tasks);
+                let records = Arc::clone(&self.records);
                 let out = self.out.clone();
                 tokio::spawn(async move {
-                    let error =
-                        match start_task(&client, &config, &repo, &branch, base.as_deref()).await {
-                            Ok(launched) => {
-                                let session = launched.name;
-                                let _ = out.send(Message::TaskCreated { task: id, session }).await;
-                                None
-                            }
-                            Err(e) => Some(convert::task_error(&e)),
-                        };
+                    let started =
+                        start_task(&client, &config, &records, &repo, &branch, base.as_deref())
+                            .await;
+                    let error = match started {
+                        Ok(launched) => {
+                            let session = launched.name;
+                            let _ = out.send(Message::TaskCreated { task: id, session }).await;
+                            None
+                        }
+                        Err(e) => Some(convert::task_error(&e)),
+                    };
                     let _ = out
                         .send(Message::Result {
                             id: Some(id),
@@ -609,12 +612,14 @@ impl Worker {
 async fn start_task(
     client: &Client,
     config: &tasks::Config,
+    records: &task_records::Config,
     repo: &str,
     branch: &str,
     base: Option<&str>,
 ) -> Result<tasks::Launched, TaskError> {
-    let req = tasks::validate(repo, branch, base).await?;
-    let launcher = tasks::pick(config, client).await;
+    let mut req = tasks::validate(repo, branch, base).await?;
+    req.agent = task_records::agent_for_repo(records, &req.repo).await;
+    let launcher = tasks::pick_for(config, client, &req).await;
     let result = launcher.launch(client, &req).await;
     match &result {
         Ok(_) => tracing::info!(launcher = launcher.id(), "task started"),

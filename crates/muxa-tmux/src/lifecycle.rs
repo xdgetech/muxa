@@ -19,26 +19,56 @@ fn lines(raw: &[Vec<u8>]) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn new_session_line(name: &str, dir: &str, command: &str) -> String {
-    format!(
-        "new-session -d -P -F {} -s {} -c {} {}",
+pub(crate) fn new_session_line(
+    name: &str,
+    dir: &str,
+    env: &[(String, String)],
+    command: &str,
+) -> Result<String, Error> {
+    let mut line = format!(
+        "new-session -d -P -F {} -s {} -c {}",
         quote("#{session_id} #{pane_id}"),
         quote(name),
         quote(dir),
-        quote(command)
-    )
+    );
+    for (key, value) in env {
+        if !env_key(key) {
+            // The key only: a value may be a secret.
+            return Err(Error::Unexpected(format!(
+                "{key:?} is not an environment variable name"
+            )));
+        }
+        line.push_str(" -e ");
+        line.push_str(&quote(&format!("{key}={value}")));
+    }
+    line.push(' ');
+    line.push_str(&quote(command));
+    Ok(line)
+}
+
+/// `[A-Za-z_][A-Za-z0-9_]*`: no `=` that would move the split into the value.
+fn env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Starts a detached session `name` in `dir` running `command` (through the
 /// shell), and returns it and its pane. The attached clients stay where they are.
+/// `env` goes to the session's environment (`-e`, tmux 3.2), so the command and
+/// later windows of the session see it. It travels on the control client's
+/// stdin, never on a command line that `ps` shows.
 pub async fn new_session(
     client: &Client,
     name: &str,
     dir: &str,
+    env: &[(String, String)],
     command: &str,
 ) -> Result<(SessionId, PaneId), Error> {
     let reply = client
-        .command(&new_session_line(name, dir, command))
+        .command(&new_session_line(name, dir, env, command)?)
         .await?;
     let line = reply
         .lines
@@ -170,9 +200,26 @@ mod tests {
     #[test]
     fn every_value_is_quoted() {
         assert_eq!(
-            new_session_line("feat-x", "/w/a \"b\"", "claude --model $M"),
+            new_session_line("feat-x", "/w/a \"b\"", &[], "claude --model $M").unwrap(),
             r##"new-session -d -P -F "#{session_id} #{pane_id}" -s "feat-x" -c "/w/a \"b\"" "claude --model \$M""##
         );
+        let env = [
+            ("CLAUDE_CONFIG_DIR".to_owned(), "/h/.claude-a".to_owned()),
+            ("TOKEN".to_owned(), "a\"b $c".to_owned()),
+        ];
+        assert_eq!(
+            new_session_line("t", "/d", &env, "claude").unwrap(),
+            r##"new-session -d -P -F "#{session_id} #{pane_id}" -s "t" -c "/d" -e "CLAUDE_CONFIG_DIR=/h/.claude-a" -e "TOKEN=a\"b \$c" "claude""##
+        );
+    }
+
+    #[test]
+    fn an_env_key_with_equals_is_refused_without_its_value() {
+        let env = [("A=B".to_owned(), "secret".to_owned())];
+        let err = new_session_line("t", "/d", &env, "claude")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("A=B") && !err.contains("secret"), "{err}");
     }
 
     #[test]

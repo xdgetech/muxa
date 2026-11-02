@@ -18,6 +18,8 @@ use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
 use super::{AgentAdapter, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
 pub const ID: &str = "codex";
+/// Moves Codex's state, and with it the rollouts (ADR 0016).
+pub const DIR_ENV: &str = "CODEX_HOME";
 /// The process name, the same for the Homebrew and the npm install.
 const PROCESS: &str = "codex";
 /// How often, in polls, the source checks the process and looks for a newer rollout.
@@ -29,12 +31,13 @@ const DAY: Duration = Duration::from_secs(86_400);
 type ListProcesses = Box<dyn Fn() -> Result<Processes, Error> + Send>;
 
 pub struct CodexAdapter {
-    dir: PathBuf,
+    /// Codex homes, searched together: one per account (ADR 0016).
+    dirs: Vec<PathBuf>,
 }
 
 impl CodexAdapter {
-    pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+    pub fn new(dirs: Vec<PathBuf>) -> Self {
+        Self { dirs }
     }
 }
 
@@ -51,9 +54,9 @@ impl AgentAdapter for CodexAdapter {
         let Some(started) = started(pane, procs) else {
             return Ok(None);
         };
-        let rollout = find_rollout(&self.dir, &pane.path, started)?;
+        let rollout = find_rollout(&self.dirs, &pane.path, started)?;
         Ok(Some(Box::new(CodexSource::new(
-            self.dir.clone(),
+            self.dirs.clone(),
             started,
             rollout,
             Box::new(Processes::list),
@@ -62,7 +65,7 @@ impl AgentAdapter for CodexAdapter {
 
     fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
         let started = started(pane, procs)?;
-        let status = find_rollout(&self.dir, &pane.path, started)
+        let status = find_rollout(&self.dirs, &pane.path, started)
             .ok()
             .flatten()
             .and_then(|path| last_turn(&path))
@@ -80,9 +83,31 @@ fn started(pane: &PaneInfo, procs: &Processes) -> Option<SystemTime> {
         .min()
 }
 
-/// The newest rollout for `cwd` written since `started`. Day directories are
-/// searched back to the day before `started`, which covers time zones.
-fn find_rollout(dir: &Path, cwd: &str, started: SystemTime) -> Result<Option<PathBuf>, Error> {
+/// The newest rollout for `cwd` written since `started`, in any of `dirs`.
+fn find_rollout(
+    dirs: &[PathBuf],
+    cwd: &str,
+    started: SystemTime,
+) -> Result<Option<PathBuf>, Error> {
+    let mut best: Option<(SystemTime, PathBuf)> = None;
+    for dir in dirs {
+        if let Some(found) = newest_rollout(dir, cwd, started)? {
+            if best.as_ref().is_none_or(|(t, _)| found.0 > *t) {
+                best = Some(found);
+            }
+        }
+    }
+    Ok(best.map(|(_, p)| p))
+}
+
+/// The newest rollout for `cwd` in `dir` written since `started`, with its
+/// mtime. Day directories are searched back to the day before `started`,
+/// which covers time zones.
+fn newest_rollout(
+    dir: &Path,
+    cwd: &str,
+    started: SystemTime,
+) -> Result<Option<(SystemTime, PathBuf)>, Error> {
     // `ps` ages are whole seconds.
     let since = started
         .checked_sub(Duration::from_secs(1))
@@ -111,7 +136,7 @@ fn find_rollout(dir: &Path, cwd: &str, started: SystemTime) -> Result<Option<Pat
             }
         }
     }
-    Ok(best.map(|(_, p)| p))
+    Ok(best)
 }
 
 /// `sessions/YYYY/MM/DD` directories whose date is `first` ("YYYY/MM/DD") or later.
@@ -209,7 +234,7 @@ fn turn_event(v: &Value) -> Option<Agent> {
 }
 
 pub struct CodexSource {
-    dir: PathBuf,
+    dirs: Vec<PathBuf>,
     started: SystemTime,
     path: Option<PathBuf>,
     tail: Option<JsonlTail>,
@@ -222,9 +247,14 @@ pub struct CodexSource {
 }
 
 impl CodexSource {
-    fn new(dir: PathBuf, started: SystemTime, path: Option<PathBuf>, list: ListProcesses) -> Self {
+    fn new(
+        dirs: Vec<PathBuf>,
+        started: SystemTime,
+        path: Option<PathBuf>,
+        list: ListProcesses,
+    ) -> Self {
         Self {
-            dir,
+            dirs,
             started,
             path,
             tail: None,
@@ -243,7 +273,7 @@ impl CodexSource {
         if procs.named_within(PROCESS, pane.pid).is_empty() {
             return Err(Error::Gone("Codex exited".into()));
         }
-        let newest = find_rollout(&self.dir, &pane.path, self.started)?;
+        let newest = find_rollout(&self.dirs, &pane.path, self.started)?;
         if newest.is_some() && newest != self.path {
             self.path = newest;
             self.tail = None;

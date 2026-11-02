@@ -25,6 +25,7 @@ trait ChatSource: Send {
 - **`find`** (optional, None by default) says whether the adapter's agent runs in a pane, and its state, without opening it. The bridge uses it to find the agent pane of a window that no tag describes, and the state of an agent pane that has no state tag (ADR 0008). Claude Code uses the same session-file lookup as `open`, and its `status`.
 - **`prompt`** (optional, None by default) names what the agent waits on and the keys that pick each choice, for the approval card (ADR 0009). Return one only when the agent's records show exactly what it waits on, and only with keys checked against that agent's menu.
 - **`documents`** (optional, empty by default) returns files the agent keeps outside the repo, such as its plan, for the Reader. Each comes with the directory it must stay in.
+- **Data directories.** An adapter searches a list of directories, not one (ADR 0016): every `--agent-dir <id>=PATH`, else its default, then each workspace's value of the adapter's variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) from `[workspace.agent]`. The matching rules stay the same; the files of all directories compete under one order. The bridge reads the workspaces once at start for this.
 - **The chat task** (`src/chat.rs`) is agent-neutral. It owns the protocol side: sequence numbers, batching, resending after the client fell behind, and checking the pane every 2 s.
 
 ## Rules for an adapter
@@ -40,7 +41,7 @@ trait ChatSource: Send {
 ## Adding an adapter
 
 1. Add `src/agents/<agent>.rs` with the adapter and its source.
-2. Add it to `Registry::standard`, with a default data directory. `--agent-dir <id>=PATH` overrides it.
+2. Add it to `Registry::standard` and `data_dirs`, with a default data directory and the variable that moves it. `--agent-dir <id>=PATH` replaces the default and may repeat.
 3. Add the sample files and unit tests, and an integration test like `tests/chat.rs`.
 
 **Planned, not built:** an external adapter, an executable named on the command line with `--agent-exec NAME=PATH`, that receives the pane info as JSON and prints entries. It would plug in as one more `ChatSource`. The bridge will never search `PATH` for adapters.
@@ -60,12 +61,14 @@ trait TaskLauncher: Send + Sync {
 - `tmux_agents.rs` runs tmux-agents' `new.sh` with `--no-switch`. It is picked when tmux-agents sets `@agents_scripts`, or with `--task-launcher tmux-agents=PATH`. It then finds the branch's worktree with `git worktree list`, and the session whose `@agent_worktree` is that path. `new.sh`'s printed name is used only in error messages.
 - `builtin.rs` makes the worktree with git and a detached session with the agent command (`--task-command`, default `claude`). It is picked otherwise, or with `--task-launcher builtin`.
 - `close` closes a task's session and removes its worktree as the mode allows, never one with uncommitted changes. `tmux_agents.rs` runs `close.sh`; `builtin.rs` checks the same things itself.
+- A workspace's `[workspace.agent]` (ADR 0016) sets the agent command and environment. The built-in launcher passes the environment as `new-session -e`, on the control client's stdin; only keys are logged. tmux-agents cannot pass it yet, so a Task whose workspace has that table always uses the built-in launcher. A `new-task` without a workspace takes the table of the one workspace whose `repos` lists the repo.
 - `Builtin::launch_in_dir` is the directory mode for a task record without a repo (ADR 0015). It makes `<workspace root>/tasks/<slug>-<id>/` and a detached session of that name running `--task-command`, with the pane tagged `@muxa_role agent`. It is used even when tmux-agents is installed: `new.sh` needs a repo.
 - `create-task` (`crates/muxa-bridge/src/task_records/`) runs a launcher, then tags the session `@muxa_task <id>` and writes `.muxa/TASK.md`. In a repo, `.muxa/` goes into the exclude file of the repo's common git directory first. It then waits up to 30 s for the agent pane's state to be `idle`, and types `Read .muxa/TASK.md and start.` and Enter. It does not type on `waiting`: that state includes a permission menu, where the text would answer it. An agent whose adapter reports no state before its first turn does not get the prompt; the record's note then says to type it.
 - A launcher must never switch an attached client or change an existing pane when it starts a task. Closing moves the clients on the closed session to another one, as tmux-agents does. The request is checked before any launcher runs (`tasks::validate`).
 
 ## Claude Code
 
+- `CLAUDE_CONFIG_DIR` (default `~/.claude`) moves everything below, so the adapter searches each workspace's too.
 - `~/.claude/sessions/<pid>.json`: one file per running instance, with `sessionId`, `cwd`, `kind`, `status` (`busy`, `waiting`, `idle`) and `tmux` (`<session>:@<window>.%<pane>`). Only `kind: interactive` instances own a pane. Files of exited instances can remain, which is why the pid must still run inside the pane.
 - `~/.claude/projects/<cwd with non-alphanumerics as ->/<sessionId>.jsonl`: the conversation.
   - `user` lines hold prompts or `tool_result` blocks.
@@ -85,6 +88,7 @@ trait TaskLauncher: Send + Sync {
 
 Checked with Codex CLI 0.160.0.
 
+- `CODEX_HOME` (default `~/.codex`) moves `sessions/`; the adapter searches each workspace's too, and the newest matching rollout wins.
 - Codex records no pane and no pid. The adapter finds a process named `codex` below `pane_pid` (`Processes::named_within`) and takes its start time from `ps`.
 - `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`: one conversation. The first line, `session_meta`, holds its `cwd`. The adapter follows the newest rollout whose `cwd` is the pane's path and that was written since the process started. Day directories from the day before the start are searched.
 - `response_item` lines hold the conversation:

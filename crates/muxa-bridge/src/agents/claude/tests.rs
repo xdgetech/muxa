@@ -60,7 +60,7 @@ impl Fixture {
     }
 
     fn open(&self, procs: &Processes) -> Option<Box<dyn ChatSource>> {
-        ClaudeAdapter::new(self.dir.clone())
+        ClaudeAdapter::new(vec![self.dir.clone()])
             .open(&pane(), procs)
             .unwrap()
     }
@@ -197,7 +197,9 @@ fn finds_only_the_live_interactive_instance_of_this_pane() {
     assert!(f.open(&procs()).is_none());
 
     f.session("6.json", 200, SESSION_ID, "work:@1.%7", |_| {});
-    let found = find_session(&f.dir, &pane(), &procs()).unwrap().unwrap();
+    let (_, found) = find_session(std::slice::from_ref(&f.dir), &pane(), &procs())
+        .unwrap()
+        .unwrap();
     assert_eq!(found.session_id, SESSION_ID);
 
     // Two live instances: the one in the pane's directory wins.
@@ -208,8 +210,62 @@ fn finds_only_the_live_interactive_instance_of_this_pane() {
         "work:@1.%7",
         |v| v["cwd"] = "/elsewhere".into(),
     );
-    let found = find_session(&f.dir, &pane(), &procs()).unwrap().unwrap();
+    let (_, found) = find_session(std::slice::from_ref(&f.dir), &pane(), &procs())
+        .unwrap()
+        .unwrap();
     assert_eq!(found.session_id, SESSION_ID);
+}
+
+#[test]
+fn every_config_dir_is_searched_with_the_same_rules() {
+    let default = Fixture::new("dirs-default");
+    let company = Fixture::new("dirs-company");
+    // The default dir holds a stale file for this pane, from an exited instance.
+    default.session(
+        "300.json",
+        300,
+        "33333333-0000-0000-0000-000000000000",
+        "work:@1.%7",
+        |_| {},
+    );
+    // The workspace's dir holds the live one, and one for another session's %7.
+    company.session("200.json", 200, SESSION_ID, "work:@1.%7", |_| {});
+    company.session(
+        "201.json",
+        200,
+        "22222222-0000-0000-0000-000000000000",
+        "other:@1.%7",
+        |_| {},
+    );
+    company.transcript(SESSION_ID, &sample("transcript.jsonl"));
+    let dirs = vec![default.dir.clone(), company.dir.clone()];
+
+    let (dir, found) = find_session(&dirs, &pane(), &procs()).unwrap().unwrap();
+    assert_eq!(found.session_id, SESSION_ID);
+    assert_eq!(
+        dir, company.dir,
+        "the transcript is read where the session file is"
+    );
+    let adapter = ClaudeAdapter::new(dirs.clone());
+    let mut source = adapter.open(&pane(), &procs()).unwrap().unwrap();
+    let events = source.poll(&pane()).unwrap();
+    assert!(
+        matches!(events.as_slice(), [ChatEvent::Reset { entries, .. }] if entries.len() == 7),
+        "{events:?}"
+    );
+    assert_eq!(
+        adapter
+            .find(&pane(), &procs())
+            .unwrap()
+            .status
+            .unwrap()
+            .state,
+        AgentState::Running
+    );
+
+    // Only the default dir: nothing live matches, so nothing is reported.
+    let only_default = ClaudeAdapter::new(vec![default.dir.clone()]);
+    assert!(only_default.find(&pane(), &procs()).is_none());
 }
 
 #[test]

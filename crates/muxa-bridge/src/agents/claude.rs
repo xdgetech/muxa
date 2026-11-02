@@ -17,14 +17,17 @@ use super::{AgentAdapter, AgentDoc, ChatEvent, ChatSource, Error, Found, PaneInf
 mod prompt;
 
 pub const ID: &str = "claude-code";
+/// Moves the config dir, and with it the session files (ADR 0016).
+pub const DIR_ENV: &str = "CLAUDE_CONFIG_DIR";
 
 pub struct ClaudeAdapter {
-    dir: PathBuf,
+    /// Config dirs, searched together: one per account (ADR 0016).
+    dirs: Vec<PathBuf>,
 }
 
 impl ClaudeAdapter {
-    pub fn new(dir: PathBuf) -> Self {
-        Self { dir }
+    pub fn new(dirs: Vec<PathBuf>) -> Self {
+        Self { dirs }
     }
 }
 
@@ -38,12 +41,12 @@ impl AgentAdapter for ClaudeAdapter {
         pane: &PaneInfo,
         procs: &Processes,
     ) -> Result<Option<Box<dyn ChatSource>>, Error> {
-        Ok(find_session(&self.dir, pane, procs)?
-            .map(|s| Box::new(ClaudeSource::new(self.dir.clone(), s)) as Box<dyn ChatSource>))
+        Ok(find_session(&self.dirs, pane, procs)?
+            .map(|(dir, s)| Box::new(ClaudeSource::new(dir, s)) as Box<dyn ChatSource>))
     }
 
     fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
-        let session = find_session(&self.dir, pane, procs).ok()??;
+        let (_, session) = find_session(&self.dirs, pane, procs).ok()??;
         Some(Found {
             status: session.agent().filter(|_| !pane.shell_foreground),
         })
@@ -52,10 +55,10 @@ impl AgentAdapter for ClaudeAdapter {
     /// The plan of the instance in `pane`: every transcript line names it as `slug`,
     /// and plan mode writes it to `plans/<slug>.md`.
     fn documents(&self, pane: &PaneInfo, procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
-        let Some(session) = find_session(&self.dir, pane, procs)? else {
+        let Some((dir, session)) = find_session(&self.dirs, pane, procs)? else {
             return Ok(Vec::new());
         };
-        let Some(path) = transcript(&self.dir, &session) else {
+        let Some(path) = transcript(&dir, &session) else {
             return Ok(Vec::new());
         };
         let (_, lines, _) = JsonlTail::open(&path, INITIAL_TAIL)?;
@@ -63,7 +66,7 @@ impl AgentAdapter for ClaudeAdapter {
             let v: Value = serde_json::from_slice(l).ok()?;
             Some(v.get("slug")?.as_str()?.to_owned())
         });
-        let plans = self.dir.join("plans");
+        let plans = dir.join("plans");
         Ok(slug
             .filter(|s| valid_slug(s))
             .map(|s| plans.join(format!("{s}.md")))
@@ -163,18 +166,33 @@ fn valid_session_id(s: &str) -> bool {
     !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
-/// The live, interactive Claude Code instance in `pane`. Pane ids restart with
-/// the tmux server, so the session name must match too, and the process must
-/// still run inside the pane: files of exited instances can remain.
+/// The live, interactive Claude Code instance in `pane`, and the config dir
+/// it writes to. Pane ids restart with the tmux server, so the session name
+/// must match too, and the process must still run inside the pane: files of
+/// exited instances can remain. Every dir's files compete under one order.
 fn find_session(
-    dir: &Path,
+    dirs: &[PathBuf],
     pane: &PaneInfo,
     procs: &Processes,
-) -> Result<Option<SessionFile>, Error> {
+) -> Result<Option<(PathBuf, SessionFile)>, Error> {
+    let mut found = Vec::new();
+    for dir in dirs {
+        found.extend(
+            sessions_in(dir, pane, procs)?
+                .into_iter()
+                .map(|s| (dir.clone(), s)),
+        );
+    }
+    found.sort_by_key(|(_, s)| (s.cwd != pane.path, std::cmp::Reverse(s.mtime)));
+    Ok(found.into_iter().next())
+}
+
+/// The session files in `dir` that match `pane`.
+fn sessions_in(dir: &Path, pane: &PaneInfo, procs: &Processes) -> Result<Vec<SessionFile>, Error> {
     let sessions = dir.join("sessions");
     let entries = match std::fs::read_dir(&sessions) {
         Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(source) => {
             return Err(Error::Io {
                 path: sessions,
@@ -182,7 +200,7 @@ fn find_session(
             });
         }
     };
-    let mut found: Vec<SessionFile> = entries
+    Ok(entries
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "json"))
@@ -194,9 +212,7 @@ fn find_session(
         })
         .filter_map(|p| SessionFile::read(&p))
         .filter(|s| procs.is_within(s.pid, pane.pid))
-        .collect();
-    found.sort_by_key(|s| (s.cwd != pane.path, std::cmp::Reverse(s.mtime)));
-    Ok(found.into_iter().next())
+        .collect())
 }
 
 /// `projects/<cwd with every non-alphanumeric as '-'>/<id>.jsonl`, or a search of

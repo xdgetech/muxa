@@ -49,6 +49,7 @@ fn request(repo: &Path, branch: &str) -> TaskRequest {
         repo: repo.to_path_buf(),
         branch: branch.into(),
         base: None,
+        agent: None,
     }
 }
 

@@ -15,7 +15,7 @@ use muxa_protocol::{ErrorBody, ErrorCode, Message, TaskStatus, WorkspaceInfo};
 use muxa_tmux::{Role, Session};
 
 use crate::convert::{self, error_body};
-use crate::records::{Record, Status, Store, StoreError, Workspaces};
+use crate::records::{AgentSettings, Record, Status, Store, StoreError, Workspaces};
 use crate::tasks::same_dir;
 
 pub use create::{Env, NewTask, create};
@@ -77,6 +77,31 @@ impl Config {
             )
         })
     }
+}
+
+/// The agent settings of the one workspace whose `repos` lists the main
+/// checkout of `repo`, for a `new-task` that names no workspace (ADR 0016).
+/// None when no workspace or several list it.
+pub async fn agent_for_repo(config: &Config, repo: &std::path::Path) -> Option<AgentSettings> {
+    let main = crate::tasks::builtin::main_checkout(repo).await.ok()?;
+    let config = config.clone();
+    blocking(move || {
+        let workspaces = config.load_workspaces()?;
+        let listing = workspaces.listing(&main);
+        if listing.len() > 1 {
+            tracing::warn!(
+                workspaces = listing.len(),
+                "several workspaces list the repo; starting without a workspace environment"
+            );
+        }
+        Ok(match listing.as_slice() {
+            [one] => one.agent.clone(),
+            _ => None,
+        })
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// The `task-list` for a `list-tasks` request.

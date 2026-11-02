@@ -120,22 +120,17 @@ impl Registry {
         Self { adapters }
     }
 
-    /// The default set. `dirs` overrides an adapter's data directory by id.
-    pub fn standard(dirs: &HashMap<String, PathBuf>, home: Option<PathBuf>) -> Self {
-        let claude = dirs
-            .get(claude::ID)
-            .cloned()
-            .or_else(|| home.as_ref().map(|h| h.join(".claude")));
-        let codex = dirs
-            .get(codex::ID)
-            .cloned()
-            .or_else(|| home.map(|h| h.join(".codex")));
+    /// The default set, each adapter with its data directories (`data_dirs`).
+    pub fn standard(dirs: &HashMap<String, Vec<PathBuf>>) -> Self {
+        let of = |id: &str| dirs.get(id).cloned().unwrap_or_default();
         let mut adapters: Vec<Box<dyn AgentAdapter>> = Vec::new();
-        if let Some(dir) = claude {
-            adapters.push(Box::new(claude::ClaudeAdapter::new(dir)));
+        let claude = of(claude::ID);
+        if !claude.is_empty() {
+            adapters.push(Box::new(claude::ClaudeAdapter::new(claude)));
         }
-        if let Some(dir) = codex {
-            adapters.push(Box::new(codex::CodexAdapter::new(dir)));
+        let codex = of(codex::ID);
+        if !codex.is_empty() {
+            adapters.push(Box::new(codex::CodexAdapter::new(codex)));
         }
         Self::new(adapters)
     }
@@ -164,6 +159,39 @@ impl Registry {
         }
         Ok(None)
     }
+}
+
+/// Each adapter's data directories (ADR 0016): every `--agent-dir` given for
+/// it, else its default under `home`; then each directory that `dir_env`
+/// finds for the adapter's variable, such as a workspace's
+/// `CLAUDE_CONFIG_DIR`. No duplicates.
+pub fn data_dirs(
+    flags: &[(String, PathBuf)],
+    home: Option<&std::path::Path>,
+    dir_env: impl Fn(&str) -> Vec<PathBuf>,
+) -> HashMap<String, Vec<PathBuf>> {
+    let adapters = [
+        (claude::ID, ".claude", claude::DIR_ENV),
+        (codex::ID, ".codex", codex::DIR_ENV),
+    ];
+    let mut out = HashMap::new();
+    for (id, default, env) in adapters {
+        let mut dirs: Vec<PathBuf> = flags
+            .iter()
+            .filter(|(a, _)| a == id)
+            .map(|(_, d)| d.clone())
+            .collect();
+        if dirs.is_empty() {
+            dirs.extend(home.map(|h| h.join(default)));
+        }
+        for dir in dir_env(env) {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+        out.insert(id.to_owned(), dirs);
+    }
+    out
 }
 
 /// A snapshot of the process tree: each pid's parent, and its age and name when known.
@@ -300,6 +328,34 @@ mod tests {
         assert_eq!(age, Duration::from_secs(3605));
         assert_eq!(elapsed("2-00:00:01"), Some(Duration::from_secs(172_801)));
         assert_eq!(elapsed("junk"), None);
+    }
+
+    #[test]
+    fn data_dirs_are_the_flags_or_default_then_the_workspaces() {
+        let home = std::path::Path::new("/h");
+        let env = |key: &str| match key {
+            claude::DIR_ENV => vec![PathBuf::from("/h/.claude-co"), PathBuf::from("/h/.claude")],
+            _ => Vec::new(),
+        };
+        let dirs = data_dirs(&[], Some(home), env);
+        assert_eq!(
+            dirs[claude::ID],
+            [PathBuf::from("/h/.claude"), PathBuf::from("/h/.claude-co")],
+            "the default first, no duplicates"
+        );
+        assert_eq!(dirs[codex::ID], [PathBuf::from("/h/.codex")]);
+
+        let flags = [
+            (claude::ID.to_owned(), PathBuf::from("/a")),
+            (claude::ID.to_owned(), PathBuf::from("/b")),
+        ];
+        let dirs = data_dirs(&flags, Some(home), env);
+        assert_eq!(
+            dirs[claude::ID],
+            ["/a", "/b", "/h/.claude-co", "/h/.claude"].map(PathBuf::from),
+            "repeated flags replace the default"
+        );
+        assert!(data_dirs(&[], None, |_| Vec::new())[codex::ID].is_empty());
     }
 
     #[test]

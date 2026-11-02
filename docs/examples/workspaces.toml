@@ -5,7 +5,17 @@
 # root   where Tasks without a repo get their directory: <root>/tasks/<slug>-<id>/.
 #        It must exist. A leading ~/ is your home directory.
 # repos  optional; repos you start Tasks in from this workspace. They must
-#        exist, and may lie outside root.
+#        exist, and may lie outside root. A repo listed here only starts
+#        Tasks in this workspace.
+#
+# [workspace.agent]  optional; how this workspace's agents start (ADR 0016).
+#   command  the agent command; else the bridge's --task-command (claude).
+#   env      variables for the agent. A leading ~/ is your home directory.
+#            CLAUDE_CONFIG_DIR and CODEX_HOME give the workspace its own
+#            Claude Code or Codex login, claude.ai connectors, MCP servers
+#            and settings. Run the agent once with that variable set to log in.
+#            Values may be tokens: the bridge never logs them. TMUX and
+#            TMUX_PANE are refused.
 #
 # Unknown keys are refused, so a typo fails loudly instead of being ignored.
 
@@ -13,6 +23,9 @@
 name = "Company"
 root = "~/work/company"
 repos = ["~/work/company/api", "~/work/company/web"]
+
+[workspace.agent]
+env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company" }
 
 [[workspace]]
 name = "Side project"

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use super::agent_env::{AgentSettings, RawAgent};
 use super::is_valid_id;
 
 /// In characters.
@@ -46,6 +47,8 @@ pub struct Workspace {
     pub root: PathBuf,
     /// Canonical. They may lie outside `root` (ADR 0015).
     pub repos: Vec<PathBuf>,
+    /// How its agents start; None means as `--task-command` (ADR 0016).
+    pub agent: Option<AgentSettings>,
 }
 
 /// The configured workspaces, in file order.
@@ -68,6 +71,7 @@ struct RawWorkspace {
     root: String,
     #[serde(default)]
     repos: Vec<String>,
+    agent: Option<RawAgent>,
 }
 
 impl Workspaces {
@@ -118,10 +122,17 @@ impl Workspaces {
                 .map(|r| resolve(r, home))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|r| invalid(format!("workspace {:?}: repo {r}", w.name)))?;
+            let agent = match w.agent {
+                Some(a) => a
+                    .check(home)
+                    .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?,
+                None => None,
+            };
             list.push(Workspace {
                 name: w.name,
                 root,
                 repos,
+                agent,
             });
         }
         Ok(Self { list })
@@ -133,6 +144,15 @@ impl Workspaces {
 
     pub fn get(&self, name: &str) -> Option<&Workspace> {
         self.list.iter().find(|w| w.name == name)
+    }
+
+    /// Every workspace whose `repos` lists `main`, a main checkout.
+    pub fn listing(&self, main: &Path) -> Vec<&Workspace> {
+        let main = main.canonicalize().unwrap_or_else(|_| main.to_owned());
+        self.list
+            .iter()
+            .filter(|w| w.repos.contains(&main))
+            .collect()
     }
 }
 

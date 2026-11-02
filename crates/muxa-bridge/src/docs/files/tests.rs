@@ -169,7 +169,7 @@ fn the_claude_plan_comes_first_and_is_named_by_the_transcript() {
         "# Reader plan\n\nBody\n",
     );
 
-    let agents = Registry::new(vec![Box::new(ClaudeAdapter::new(claude.clone()))]);
+    let agents = Registry::new(vec![Box::new(ClaudeAdapter::new(vec![claude.clone()]))]);
     let listing = list(&pane(&root), &agents);
     assert_eq!(paths(&listing)[0], "plans/sample-plan.md");
     let plan = &listing.docs[0];

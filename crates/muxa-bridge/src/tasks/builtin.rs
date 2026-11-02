@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use muxa_protocol::CloseMode;
-use muxa_tmux::Client;
+use muxa_tmux::{Client, SessionId};
+
+use crate::records::AgentSettings;
 
 use super::{
     Closing, LAUNCH_TIMEOUT, Launch, Launched, TaskError, TaskLauncher, TaskRequest, TaskSession,
@@ -25,10 +27,38 @@ impl Builtin {
         Self { command }
     }
 
+    /// A detached session `name` in `dir` running the agent, with the
+    /// workspace's command and environment when it has them (ADR 0016).
+    async fn start(
+        &self,
+        client: &Client,
+        name: &str,
+        dir: &Path,
+        agent: Option<&AgentSettings>,
+    ) -> Result<SessionId, TaskError> {
+        let command = agent
+            .and_then(|a| a.command.as_deref())
+            .unwrap_or(&self.command);
+        let env = agent.map(|a| a.env.as_slice()).unwrap_or_default();
+        if let Some(a) = agent {
+            // Keys only: values may be tokens.
+            tracing::info!(keys = ?a.keys(), custom_command = a.command.is_some(), "agent environment");
+        }
+        let (session, pane) =
+            muxa_tmux::new_session(client, name, &dir.to_string_lossy(), env, command).await?;
+        muxa_tmux::set_pane_option(client, pane, "@muxa_role", "agent").await?;
+        Ok(session)
+    }
+
     /// Directory mode, for a task record without a repo (ADR 0015): makes
     /// `dir` and a detached session there running the agent. The session is
     /// named after the directory. No other session, window or pane changes.
-    pub async fn launch_in_dir(&self, client: &Client, dir: &Path) -> Result<Launched, TaskError> {
+    pub async fn launch_in_dir(
+        &self,
+        client: &Client,
+        dir: &Path,
+        agent: Option<&AgentSettings>,
+    ) -> Result<Launched, TaskError> {
         let name = dir
             .file_name()
             .map(|n| session_name(&n.to_string_lossy()))
@@ -40,9 +70,7 @@ impl Builtin {
         }
         std::fs::create_dir_all(dir)
             .map_err(|e| TaskError::Failed(format!("cannot create {}: {e}", dir.display())))?;
-        let (session, pane) =
-            muxa_tmux::new_session(client, &name, &dir.to_string_lossy(), &self.command).await?;
-        muxa_tmux::set_pane_option(client, pane, "@muxa_role", "agent").await?;
+        let session = self.start(client, &name, dir, agent).await?;
         Ok(Launched {
             id: session,
             name,
@@ -75,10 +103,10 @@ impl TaskLauncher for Builtin {
                     req.branch
                 )));
             }
+            let session = self
+                .start(client, &name, &work.path, req.agent.as_ref())
+                .await?;
             let dir = work.path.to_string_lossy();
-            let (session, pane) =
-                muxa_tmux::new_session(client, &name, &dir, &self.command).await?;
-            muxa_tmux::set_pane_option(client, pane, "@muxa_role", "agent").await?;
             // tmux-agents' session tags, so the task is grouped, and can be closed, like one of its own.
             let repo = work
                 .main

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use common::repo::{Repo, fake_new_sh, git};
 use common::{Bridge, Server};
-use muxa_protocol::{ErrorCode, Message, TaskRecord, TaskStatus};
+use muxa_protocol::{AgentState, ErrorCode, Message, TaskRecord, TaskStatus};
 use serde_json::{Value, json};
 
 const PROMPT: &str = "Read .muxa/TASK.md and start.";
@@ -425,4 +425,169 @@ async fn a_failed_launch_keeps_the_record_with_a_note() {
     assert!(r.note.unwrap().contains("boom"));
     assert_eq!(list_tasks(&mut bridge).await.len(), 1);
     assert!(Path::new(&host.dir.join("state")).is_dir());
+}
+
+/// Stands in for Claude Code with a per-workspace `CLAUDE_CONFIG_DIR` (ADR
+/// 0016): it writes its environment beside the config dir, then a session
+/// file for its pane as Claude Code does, and keeps running.
+fn fake_claude(dir: &Path) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let script = dir.join("fake-claude");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+env > "$CLAUDE_CONFIG_DIR.env"
+mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
+session="$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}')"
+printf '{"pid":%s,"sessionId":"0b8c3c0e-1111-4a2b-9c3d-000000000016","cwd":"%s","kind":"interactive","status":"idle","tmux":"%s:@0.%s"}\n' \
+  "$$" "$PWD" "$session" "$TMUX_PANE" > "$CLAUDE_CONFIG_DIR/sessions/$$.json"
+exec sleep 600
+"#,
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+/// Token-like: a space, a quote, `$` and `~/` must arrive unchanged.
+const TOKEN: &str = r#"tok en"$X~/y"#;
+
+/// `[workspace.agent]` text for a workspace, and its Claude config dir.
+fn agent_table(host: &Host) -> (String, PathBuf) {
+    let config = host.dir.join("claude-work");
+    let table = format!(
+        "\n[workspace.agent]\ncommand = \"{}\"\nenv = {{ CLAUDE_CONFIG_DIR = \"{}\", MUXA_IT_TOKEN = '{TOKEN}' }}\n",
+        fake_claude(&host.dir.join("bin")).display(),
+        config.display(),
+    );
+    (table, config)
+}
+
+/// The agent's environment, once it has started.
+async fn agent_env(config: &Path) -> Vec<String> {
+    let file = config.with_extension("env");
+    common::wait_until(|| file.is_file()).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    std::fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+async fn pane_state(bridge: &mut Bridge, pane: &str) -> Option<AgentState> {
+    let Message::Result {
+        sessions: Some(sessions),
+        ..
+    } = bridge.request(json!({"type": "list"})).await
+    else {
+        panic!("no sessions")
+    };
+    sessions
+        .iter()
+        .flat_map(|s| &s.panes)
+        .find(|p| p.id == pane)
+        .and_then(|p| p.agent.as_ref().map(|a| a.state))
+}
+
+#[tokio::test]
+async fn a_workspace_agent_env_reaches_the_agent_and_its_adapter() {
+    let server = Server::start();
+    let host = Host::new("agent-env");
+    let (table, config) = agent_table(&host);
+    let path = host.dir.join("workspaces.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, format!("{text}{table}")).unwrap();
+    // The default Claude dir is empty: the agent can only be found in the workspace's.
+    let empty = host.dir.join("claude-default");
+    std::fs::create_dir_all(&empty).unwrap();
+    let flag = format!("claude-code={}", empty.display());
+    let before = server.layout();
+    let mut bridge = host
+        .bridge(
+            &server,
+            &[
+                "--task-launcher",
+                "builtin",
+                "--task-command",
+                AGENT,
+                "--agent-dir",
+                &flag,
+            ],
+        )
+        .await;
+
+    let (saved, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = saved.expect("task-saved");
+    let env = agent_env(&config).await;
+    assert!(
+        env.contains(&format!("CLAUDE_CONFIG_DIR={}", config.display())),
+        "{env:?}"
+    );
+    assert!(env.contains(&format!("MUXA_IT_TOKEN={TOKEN}")), "{env:?}");
+
+    // The adapter finds the session file in the workspace's config dir.
+    let name = r.session.expect("session");
+    let pane = server.pane(&format!("={name}:"));
+    let sessions = config.join("sessions");
+    common::wait_until(|| sessions.read_dir().is_ok_and(|mut d| d.next().is_some())).await;
+    assert_eq!(pane_state(&mut bridge, &pane).await, Some(AgentState::Idle));
+    assert_eq!(same_panes(&server, &before), before);
+}
+
+#[tokio::test]
+async fn a_repo_task_gets_its_workspace_env_even_with_tmux_agents() {
+    let server = Server::start();
+    let host = Host::new("agent-env-repo");
+    let repo = Repo::new("records-agent-env");
+    let (table, config) = agent_table(&host);
+    let other = host.dir.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    // `work` lists the repo; `other` lists another directory.
+    let path = host.dir.join("workspaces.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        &path,
+        format!(
+            "{text}repos = [\"{}\"]\n{table}\n[[workspace]]\nname = \"other\"\nroot = \"{}\"\nrepos = [\"{}\"]\n",
+            repo.app.display(),
+            other.display(),
+            repo.root.display(),
+        ),
+    )
+    .unwrap();
+    let script = fake_new_sh(&repo.root.join("scripts"), false);
+    let flag = format!("tmux-agents={}", script.display());
+    let mut bridge = host.bridge(&server, &["--task-launcher", &flag]).await;
+
+    let (r, result) = create(&mut bridge, json!({"repo": repo.app, "branch": "feat/x"})).await;
+    ok(&result);
+    let r = r.unwrap();
+    // The built-in launcher ran: tmux-agents cannot pass the env yet.
+    assert_eq!(r.session.as_deref(), Some("feat-x"));
+    assert!(!repo.root.join("scripts/args").exists(), "new.sh ran");
+    let env = agent_env(&config).await;
+    assert!(env.contains(&format!("MUXA_IT_TOKEN={TOKEN}")), "{env:?}");
+
+    // The repo is `work`'s: a Task in `other` would run it with other accounts.
+    let (none, result) = create(
+        &mut bridge,
+        json!({"workspace": "other", "repo": repo.app, "branch": "feat/y"}),
+    )
+    .await;
+    let Message::Result {
+        error: Some(error), ..
+    } = result
+    else {
+        panic!("{result:?}")
+    };
+    assert_eq!(error.code, ErrorCode::BadRequest);
+    assert!(
+        error.message.contains("belongs to workspace \"work\""),
+        "{}",
+        error.message
+    );
+    assert!(none.is_none());
 }

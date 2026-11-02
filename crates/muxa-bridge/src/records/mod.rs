@@ -2,6 +2,7 @@
 //! the workspaces config. Independent of the protocol and the server, so a
 //! later daemon can link it.
 
+pub mod agent_env;
 pub mod store;
 pub mod workspaces;
 
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+pub use agent_env::AgentSettings;
 pub use store::{Store, StoreError};
 pub use workspaces::{Workspace, Workspaces};
 
