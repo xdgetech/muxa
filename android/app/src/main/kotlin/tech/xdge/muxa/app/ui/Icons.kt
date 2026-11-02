@@ -5,6 +5,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -57,6 +58,7 @@ object Icons {
     val close = Material.Filled.Close
     val list = Material.Filled.Menu
     val tasks = Material.AutoMirrored.Filled.Assignment
+    val chevron = Material.AutoMirrored.Filled.KeyboardArrowRight
     val changes = Material.Filled.Difference
     val restartAgent = Material.Filled.RestartAlt
     val copy = Material.Filled.ContentCopy

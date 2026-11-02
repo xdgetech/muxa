@@ -3,6 +3,7 @@ package tech.xdge.muxa.session
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import tech.xdge.muxa.protocol.WorkspaceInfo
 
 class TaskRecordDraftTest {
     private val ready = TaskRecordDraft(workspace = "work", title = "Title", goal = "Goal")
@@ -33,5 +34,19 @@ class TaskRecordDraftTest {
         val req = repo.copy(branch = " feat/x ", base = "").request!!
         assertEquals("feat/x", req.branch)
         assertNull(req.base)
+    }
+
+    @Test
+    fun aRepoPicksTheWorkspaceThatListsIt() {
+        val workspaces = listOf(
+            WorkspaceInfo("work", repos = listOf("/src/app")),
+            WorkspaceInfo("docs", repos = listOf("/src/docs", "/src/site")),
+        )
+        val draft = TaskRecordDraft.inRepo("/src/site", workspaces)
+        assertEquals("docs", draft.workspace)
+        assertEquals("/src/site", draft.repoDir)
+        assertEquals("work", TaskRecordDraft.inRepo("/src/other", workspaces).workspace)
+        assertEquals("work", TaskRecordDraft.inRepo("", workspaces).workspace)
+        assertEquals("", TaskRecordDraft.inRepo("/src/app", emptyList()).workspace)
     }
 }

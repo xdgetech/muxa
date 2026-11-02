@@ -119,7 +119,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** The Terminal Size the user picked, by menu or pinch. Null: the view picks. Kept through a fold. */
     var paneFit by mutableStateOf<PaneFit?>(null)
 
-    /** The New Task sheet, with the repo it starts in. */
+    /** The old New Task sheet, with the repo it starts in: only for a bridge without task records. */
     var newTask by mutableStateOf<TaskDraft?>(null)
 
     /** An agent elsewhere that wants attention, shown for a few seconds. */
@@ -150,7 +150,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     /** The Task shown in the Tasks screen's detail, by id. */
     var selectedTask by mutableStateOf<String?>(null)
 
-    /** The New Task sheet for a task record, over the Tasks screen. */
+    /** The New Task sheet for a task record, from any New Task entry point. */
     var newTaskRecord by mutableStateOf<TaskRecordDraft?>(null)
 
     /** Why the last status change failed, e.g. another device changed the Task first. */
@@ -187,11 +187,12 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     private var stayDisconnected = false
 
     /** Asked for from the session switcher: shown once the switcher has closed. */
-    private var newTaskAfterSwitcher: TaskDraft? = null
+    private var newTaskAfterSwitcher: (() -> Unit)? = null
 
     /** The document last read in each session, opened again next time. */
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
+    private var demoTaskRecords = true
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -220,12 +221,14 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     /** Try the Demo: sample sessions from the in-app bridge. Nothing is saved, and no SSH or key is touched. */
     fun tryDemo() {
+        demoTaskRecords = true
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
 
     /** A debug launch for the UI tests: their [set], and no way out of it. */
-    fun startDemo(set: DemoBridge.Content, alerts: Boolean) {
+    fun startDemo(set: DemoBridge.Content, alerts: Boolean, taskRecords: Boolean = true) {
+        demoTaskRecords = taskRecords
         // The store screenshots show the list: a machine's name there, not the demo's.
         val host = if (set == DemoBridge.Content.SHOWCASE) {
             Host(name = "Mac mini", target = SshTarget(host = "mac-mini.local", user = "you"))
@@ -332,7 +335,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
     }
 
     private suspend fun open(host: Host): BridgeChannel {
-        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts)
+        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords)
         return SshBridge.connect(host.target, keys.loadOrCreate())
     }
 
@@ -676,25 +679,42 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     val canStartTasks: Boolean get() = isConnected && state.canStartTasks
 
-    /** Opens the New Task sheet in [repoDir], else the shown session's repo. */
+    /** Every New Task entry point can open a sheet. */
+    val canCreateTasks: Boolean get() = canShowTasks || canStartTasks
+
+    /**
+     * Opens the New Task sheet in [repoDir], else the shown session's repo. A bridge with
+     * task records gets the record-based sheet.
+     */
     fun startNewTask(repoDir: String? = null) {
-        if (!canStartTasks) return
+        if (!canCreateTasks) return
         val dir = repoDir ?: currentSession?.repoDir ?: state.sessions.knownRepos.firstOrNull()?.dir ?: ""
+        val show: () -> Unit = if (canShowTasks) {
+            { showRecordSheet(dir) }
+        } else {
+            { newTask = TaskDraft(repoDir = dir) }
+        }
         // One sheet at a time.
         if (showSwitcher) {
-            newTaskAfterSwitcher = TaskDraft(repoDir = dir)
+            newTaskAfterSwitcher = show
             showSwitcher = false
             switcherClosed()
         } else {
-            newTask = TaskDraft(repoDir = dir)
+            show()
         }
     }
 
+    private fun showRecordSheet(repoDir: String) = scope.launch {
+        // The workspaces come with the task list.
+        if (state.tasks == null) runCatching { session.loadTasks() }
+        newTaskRecord = TaskRecordDraft.inRepo(repoDir, state.tasks?.workspaces.orEmpty())
+    }
+
     fun switcherClosed() {
-        val draft = newTaskAfterSwitcher
-        if (draft != null) {
+        val show = newTaskAfterSwitcher
+        if (show != null) {
             newTaskAfterSwitcher = null
-            newTask = draft
+            show()
         } else {
             refocusPane()
         }
@@ -745,15 +765,16 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         refocusPane()
     }
 
-    /** Opens the New Task sheet in the first workspace. */
+    /** Opens the New Task sheet in the first workspace, from the Tasks screen. */
     fun startNewTaskRecord() {
         val workspace = state.tasks?.workspaces?.firstOrNull()?.name ?: ""
         newTaskRecord = TaskRecordDraft(workspace = workspace)
     }
 
     /**
-     * Records the Task and shows it. A failed launch also shows it, with the note that says
-     * why. Throws only when nothing was recorded.
+     * Records the Task and shows it: in the Tasks screen when the sheet was opened there,
+     * else its session, as the old sheet did. A failed launch shows the Task's detail, with
+     * the note that says why. Throws only when nothing was recorded.
      */
     suspend fun create(draft: TaskRecordDraft) {
         val req = draft.request ?: return
@@ -763,7 +784,13 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
             e.record
         }
         newTaskRecord = null
-        selectedTask = record.id
+        val running = sessionOf(record)
+        if (showTasks || running == null) {
+            selectedTask = record.id
+            openTasks()
+        } else {
+            openNow(running)
+        }
     }
 
     fun setStatus(record: TaskRecord, status: TaskStatus) = scope.launch {

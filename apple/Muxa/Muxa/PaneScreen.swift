@@ -119,7 +119,7 @@ struct PaneScreen: View {
                 if !phoneLayout {
                     Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
                 }
-                if model.canStartTasks {
+                if model.canCreateTasks {
                     Button("New Task…", systemImage: Icon.newTask) { model.startNewTask() }
                 }
                 if let current = model.currentSession, model.canClose(current) {

@@ -614,6 +614,10 @@ pub struct WorkspaceInfo {
     /// The check commands a Task Loop may run here; absent means no loops.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checks: Option<WorkspaceChecks>,
+    /// The main checkouts the config lists for it, absolute. A client picks
+    /// this workspace for a new task in one of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
 }
 
 /// `"any"` or a list of exact commands, from the host's `[workspace.loop]`.

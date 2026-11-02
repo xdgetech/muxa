@@ -35,7 +35,7 @@ struct SessionSwitcher: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
-                if model.canStartTasks {
+                if model.canCreateTasks {
                     ToolbarItem(placement: .primaryAction) {
                         Button("New Task", systemImage: Icon.newTask) { model.startNewTask() }
                     }

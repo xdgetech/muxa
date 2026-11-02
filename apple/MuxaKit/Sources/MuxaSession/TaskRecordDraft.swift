@@ -57,6 +57,13 @@ public struct TaskRecordDraft: Equatable, Sendable {
         self.loop = loop
     }
 
+    /// A draft in `repo`, in the workspace whose `repos` lists it, else in the
+    /// first workspace. An empty `repo` means a task directory.
+    public init(repo: String, in workspaces: [WorkspaceInfo]) {
+        let workspace = workspaces.first { $0.repos.contains(repo) } ?? workspaces.first
+        self.init(workspace: workspace?.name ?? "", repo: repo)
+    }
+
     /// What to fix before the task can be created; nil when it can.
     public var problem: String? {
         if workspace.trimmed.isEmpty { return "Pick a workspace." }

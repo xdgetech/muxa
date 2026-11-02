@@ -216,12 +216,31 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
     public var name: String
     /// The check commands a Task Loop may run here; nil means no loops.
     public var checks: WorkspaceChecks?
+    /// The main checkouts the config lists for it, absolute.
+    public var repos: [String]
 
     public var id: String { name }
 
-    public init(name: String, checks: WorkspaceChecks? = nil) {
+    public init(name: String, checks: WorkspaceChecks? = nil, repos: [String] = []) {
         self.name = name
         self.checks = checks
+        self.repos = repos
+    }
+
+    private enum Key: String, CodingKey { case name, checks, repos }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        name = try c.decode(String.self, forKey: .name)
+        checks = try c.decodeIfPresent(WorkspaceChecks.self, forKey: .checks)
+        repos = try c.decodeIfPresent([String].self, forKey: .repos) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(checks, forKey: .checks)
+        if !repos.isEmpty { try c.encode(repos, forKey: .repos) }
     }
 }
 

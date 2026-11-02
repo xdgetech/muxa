@@ -63,6 +63,14 @@ struct RootView: View {
         ) {
             if let draft = model.newTask { NewTaskSheet(draft: draft) }
         }
+        .sheet(
+            isPresented: Binding(get: { model.newRecord != nil }, set: { if !$0 { model.newRecord = nil } }),
+            onDismiss: { Task { await model.recordSheetClosed() } }
+        ) {
+            if let draft = model.newRecord {
+                CreateTaskSheet(draft: draft) { model.recordCreated($0) }
+            }
+        }
         .confirmationDialog(
             "Close \(model.closingTask?.name ?? "Task")?",
             isPresented: Binding(get: { model.closingTask != nil }, set: { if !$0 { model.closingTask = nil } }),

@@ -15,6 +15,13 @@ struct CreateTaskSheet: View {
     @State private var error: String?
     @FocusState private var titleFocused: Bool
 
+    /// A draft with a repo opens with the repository fields shown.
+    init(draft: TaskRecordDraft, created: @escaping (TaskRecord) -> Void) {
+        _draft = State(initialValue: draft)
+        _withRepo = State(initialValue: !draft.repo.isEmpty)
+        self.created = created
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -104,6 +111,7 @@ struct CreateTaskSheet: View {
                     Text(repo.name).tag(repo.dir)
                 }
             }
+            .accessibilityIdentifier("record-repo-choice")
             if !repos.contains(where: { $0.dir == draft.repo }) { repoPath }
         }
         TextField("feature/name", text: $draft.branch)

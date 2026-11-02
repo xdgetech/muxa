@@ -87,4 +87,6 @@ data class WorkspaceInfo(
     val name: String,
     /** The check commands a Task Loop may run here; null means no loops. */
     val checks: WorkspaceChecks? = null,
+    /** The main checkouts the config lists for it, absolute. */
+    val repos: List<String> = emptyList(),
 )

@@ -26,6 +26,20 @@ struct Sidebar: View {
                     Text("Hosts added during the demo are not saved.")
                 }
             }
+            // Above the hosts, so a phone shows it on its first screen.
+            if model.canKeepTasks {
+                Section {
+                    Button { model.showTasks = true } label: { TasksEntry(inbox: model.inbox) }
+                        .foregroundStyle(.primary)
+                        .accessibilityIdentifier("open-tasks")
+                    Button("New Task", systemImage: Icon.newTask) { model.startNewTask() }
+                        .accessibilityIdentifier("sidebar-new-task")
+                } header: {
+                    Text("Tasks")
+                } footer: {
+                    Text("A task gets its own agent, directory and session on the host.")
+                }
+            }
             if !model.hosts.hosts.isEmpty {
                 Section("Hosts") {
                     ForEach(model.hosts.hosts) { host in
@@ -40,13 +54,6 @@ struct Sidebar: View {
                             }
                     }
                     .onMove { model.hosts.move(fromOffsets: $0, toOffset: $1) }
-                }
-            }
-            if model.canKeepTasks {
-                Section {
-                    Button { model.showTasks = true } label: { TasksEntry(inbox: model.inbox) }
-                        .foregroundStyle(.primary)
-                        .accessibilityIdentifier("open-tasks")
                 }
             }
             if model.isConnected {
@@ -97,7 +104,7 @@ struct Sidebar: View {
 
     /// Only a repo the host knows the path of can get a task.
     private func newTaskAction(_ group: RepoGroup) -> (() -> Void)? {
-        guard model.canStartTasks, group.repo != nil, let dir = group.sessions.first?.repoDir else { return nil }
+        guard model.canCreateTasks, group.repo != nil, let dir = group.sessions.first?.repoDir else { return nil }
         return { model.startNewTask(in: dir) }
     }
 
@@ -112,7 +119,7 @@ struct TasksEntry: View {
 
     var body: some View {
         HStack {
-            Label("Tasks", systemImage: Icon.tasks)
+            Label("All Tasks", systemImage: Icon.tasks)
             Spacer()
             if let waiting = inbox.first(where: { $0.group == .needsAttention })?.items.count {
                 Text("\(waiting)")
@@ -122,6 +129,9 @@ struct TasksEntry: View {
                     .background(Theme.attention.opacity(0.2), in: Capsule())
                     .accessibilityLabel("\(waiting) need attention")
             }
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
     }
 }

@@ -1,6 +1,7 @@
 package tech.xdge.muxa.app
 
 import android.content.Intent
+import android.view.KeyEvent
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -154,6 +156,62 @@ class TasksTest {
         compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
         waitForTag("reader")
         compose.waitUntilAtLeastOneExists(hasText("HANDOFF.md"), TIMEOUT)
+    }
+
+    /** Ctrl+Shift+N, as a keyboard case sends it. */
+    private fun newTaskShortcut() {
+        val now = android.os.SystemClock.uptimeMillis()
+        val meta = KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_N, 0, meta))
+        instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_N, 0, meta))
+    }
+
+    /**
+     * Ctrl+Shift+N opens the record-based sheet in the shown session's repo and the workspace
+     * that lists it. The new Task shows in Tasks, and its session opens.
+     */
+    @Test
+    fun ctrlShiftNCreatesATaskInTheShownRepo() {
+        launch()
+        waitForTag("composer")
+        compose.waitUntilAtLeastOneExists(hasText("feature-auth"), TIMEOUT)
+        newTaskShortcut()
+        waitForTag("task-title")
+        waitForText("task-workspace", "work")
+        waitForText("task-repo", "/src/app")
+        compose.onNodeWithTag("task-title").performTextInput("Add search")
+        compose.onNodeWithTag("task-goal").performTextInput("Search the docs.")
+        compose.onNodeWithTag("task-branch").performScrollTo().performTextInput("feat/search")
+        compose.onNodeWithTag("task-create").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("task-create"), TIMEOUT)
+        // Its session, not the Tasks screen.
+        compose.waitUntilAtLeastOneExists(hasText("add-search"), TIMEOUT)
+        compose.onNodeWithTag("tasks-done").assertDoesNotExist()
+        // The new agent's pane may show its terminal, so no composer to wait for.
+        waitForTag("more")
+        compose.onNodeWithTag("more").performClick()
+        waitForTag("menu-tasks")
+        compose.onNodeWithTag("menu-tasks").performClick()
+        compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-t-new001"))
+        waitForTag("task-t-new001")
+    }
+
+    /** The list offers Tasks and New Task above the hosts, so a phone's first screen has them. */
+    @Test
+    fun theListOffersTasksAndNewTask() {
+        launch()
+        waitForTag("composer")
+        for (tag in listOf("back", "show-list")) {
+            if (compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()) {
+                compose.onNodeWithTag(tag).performClick()
+                break
+            }
+        }
+        waitForTag("open-tasks")
+        compose.onNodeWithTag("sidebar-new-task").performClick()
+        waitForTag("task-title")
+        waitForText("task-workspace", "work")
     }
 
     private fun newTask(title: String) {

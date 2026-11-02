@@ -42,7 +42,8 @@ import java.util.UUID
  * does (ADR 0020). No SSH, no tmux. With [alerts], an agent elsewhere starts waiting a
  * few seconds in.
  */
-class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : BridgeChannel {
+/** [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test. */
+class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskRecords: Boolean = true) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
 
@@ -89,7 +90,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false) : Bridge
                 agentWaits("$4")
             }
         }
-        emit(Message.Hello(PROTOCOL_VERSION, "demo", "demo", CAPABILITIES))
+        emit(Message.Hello(PROTOCOL_VERSION, "demo", "demo", if (taskRecords) CAPABILITIES else CAPABILITIES - "task-records"))
     }
 
     override suspend fun send(line: String) {

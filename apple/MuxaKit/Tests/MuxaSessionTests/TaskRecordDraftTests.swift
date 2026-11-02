@@ -28,4 +28,17 @@ struct TaskRecordDraftTests {
         #expect(req == NewTaskRecord(
             workspace: "work", title: "T", goal: "G", project: "App", repo: "/src/app", branch: "feat/x"))
     }
+
+    @Test func aRepoPicksTheWorkspaceThatListsIt() {
+        let workspaces = [
+            WorkspaceInfo(name: "work", repos: ["/src/app"]),
+            WorkspaceInfo(name: "docs", repos: ["/src/docs", "/src/site"]),
+        ]
+        let draft = TaskRecordDraft(repo: "/src/site", in: workspaces)
+        #expect(draft.workspace == "docs")
+        #expect(draft.repo == "/src/site")
+        #expect(TaskRecordDraft(repo: "/src/other", in: workspaces).workspace == "work")
+        #expect(TaskRecordDraft(repo: "", in: workspaces).workspace == "work")
+        #expect(TaskRecordDraft(repo: "/src/app", in: []).workspace == "")
+    }
 }

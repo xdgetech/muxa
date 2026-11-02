@@ -374,12 +374,12 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(title("docs-site").waitForExistence(timeout: 10))
     }
 
-    /// Cmd+N starts a task in the shown session's repo; a failure stays in the
-    /// sheet, a success opens the new session.
+    /// On a bridge without task records, Cmd+N starts a task in the shown session's
+    /// repo; a failure stays in the sheet, a success opens the new session.
     @MainActor
     func testANewTaskOpensItsSession() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-no-task-records"]
         app.launch()
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))

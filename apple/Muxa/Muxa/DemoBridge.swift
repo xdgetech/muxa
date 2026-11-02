@@ -94,10 +94,17 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: Self.capabilities))
     }
 
-    private static let capabilities = [
-        "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-        "task-loop", "tasks-changed", "viewport",
-    ]
+    private static var capabilities: [String] {
+        let all = [
+            "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
+            "task-loop", "tasks-changed", "viewport",
+        ]
+        #if DEBUG
+        // A bridge from before task records, for the old New Task sheet's test.
+        if ProcessInfo.processInfo.arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
+        #endif
+        return all
+    }
 
     func send(_ line: Data) async throws {
         let req = try Wire.decodeRequest(line)

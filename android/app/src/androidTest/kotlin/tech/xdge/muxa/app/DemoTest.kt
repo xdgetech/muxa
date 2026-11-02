@@ -47,11 +47,12 @@ class DemoTest {
     val compose = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
 
-    private fun launch(alerts: Boolean = false) {
+    private fun launch(alerts: Boolean = false, taskRecords: Boolean = true) {
         val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_DEMO, true)
             .putExtra(MainActivity.EXTRA_DEMO_ALERTS, alerts)
+            .putExtra(MainActivity.EXTRA_NO_TASK_RECORDS, !taskRecords)
         scenario = ActivityScenario.launch(intent)
     }
 
@@ -250,9 +251,10 @@ class DemoTest {
         compose.waitUntilAtLeastOneExists(hasText("fix-login", substring = false), TIMEOUT)
     }
 
+    /** On a bridge without task records, Ctrl+Shift+N opens the old sheet: a failure stays in it. */
     @Test
     fun aNewTaskOpensItsSession() {
-        launch()
+        launch(taskRecords = false)
         waitForTag("composer")
         shortcut(KeyEvent.KEYCODE_N)
         waitForTag("task-branch")

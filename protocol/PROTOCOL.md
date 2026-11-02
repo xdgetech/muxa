@@ -93,7 +93,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `image-content` | `image`, `path`, `data` (base64), optional `mtime` |
 | `image-ended` | `image`, `reason` |
 | `task-created` | `task`, `session` |
-| `task-list` | `tasks`, `workspaces[] {name, checks?}`, `entries[]` (task records), optional `truncated` |
+| `task-list` | `tasks`, `workspaces[] {name, checks?, repos?}`, `entries[]` (task records), optional `truncated` |
 | `task-saved` | `task`, `record` (a task record) |
 | `tasks-changed` | none. Send `list-tasks` again (capability `tasks-changed`) |
 | `bye` | `reason` |
@@ -185,7 +185,7 @@ A bridge with the `tasks` capability starts tasks: a git worktree on a branch, a
 
 A bridge with the `task-records` capability keeps Tasks: durable records of work, stored on the host (ADR 0015). `new-task` and `close-task` above start and close a session for work. A task record is the Task itself: it has a goal and a status, and it outlives its session.
 
-1. `list-tasks` sends `task-list`, then `result`. `tasks` in the list is the request id. `workspaces` are the host's workspaces, from its config; clients cannot change them. A workspace's optional `checks` is what a Task Loop may run there: `"any"`, or a list of exact commands. Absent means no loops in that workspace. `entries` are the records; `truncated` says the bridge left some out.
+1. `list-tasks` sends `task-list`, then `result`. `tasks` in the list is the request id. `workspaces` are the host's workspaces, from its config; clients cannot change them. A workspace's optional `checks` is what a Task Loop may run there: `"any"`, or a list of exact commands. Absent means no loops in that workspace. `repos` are the main checkouts the config lists for the workspace, absolute; absent when it lists none. A client uses them to pick the workspace for a new task in a repo. `entries` are the records; `truncated` says the bridge left some out.
 2. A task record has:
    - `id`, for example `t-7f3a2c`;
    - `rev`, an integer from 1, one higher after every write;

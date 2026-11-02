@@ -58,6 +58,12 @@ struct TasksScreen: View {
                     CreateTaskSheet(draft: draft) { record in path = [record.id] }
                 }
             }
+            .onAppear {
+                if let id = model.tasksOpening {
+                    model.tasksOpening = nil
+                    path = [id]
+                }
+            }
             .refreshable { await reload() }
             // tmux reports changes only for the bridge's session, so states can be stale.
             .task { await reload() }

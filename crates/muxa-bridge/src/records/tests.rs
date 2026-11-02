@@ -450,6 +450,17 @@ fn a_repo_belongs_to_the_workspaces_that_list_it() {
     assert!(names(&dir.join("b")).is_empty());
 }
 
+#[test]
+fn the_wire_workspace_lists_its_repos_and_omits_none() {
+    let (dir, mut ws) = workspace("wire-repos");
+    ws.repos = vec![dir.join("app")];
+    let wire = crate::convert::workspace(&ws);
+    assert_eq!(wire.repos, [dir.join("app").display().to_string()]);
+    ws.repos.clear();
+    let json = serde_json::to_value(crate::convert::workspace(&ws)).unwrap();
+    assert!(json.get("repos").is_none(), "{json}");
+}
+
 fn workspace(name: &str) -> (PathBuf, Workspace) {
     let dir = temp(name);
     let root = dir.join("root");

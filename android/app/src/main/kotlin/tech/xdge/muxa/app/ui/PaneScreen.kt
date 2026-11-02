@@ -191,7 +191,7 @@ private fun MoreMenu(model: AppModel, stack: Boolean) {
                 leadingIcon = { Icon(Icons.tasks, null) }, modifier = Modifier.testTag("menu-tasks"),
             )
         }
-        if (model.canStartTasks) {
+        if (model.canCreateTasks) {
             DropdownMenuItem({ Text("New Task…") }, { pick { model.startNewTask() } }, leadingIcon = { Icon(Icons.newTask, null) })
         }
         model.currentSession?.takeIf(model::canClose)?.let { current ->

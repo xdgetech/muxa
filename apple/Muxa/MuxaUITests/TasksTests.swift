@@ -80,13 +80,21 @@ final class TasksTests: XCTestCase {
         save("task-file")
     }
 
-    /// Fills the New Task sheet; with a branch, in the first known repo; with a loop,
-    /// with the workspace's first check.
+    /// Opens the New Task sheet from the Tasks screen and fills it.
     @MainActor
     private func createTask(
         _ app: XCUIApplication, title: String, goal: String, branch: String? = nil, withLoop: Bool = false
     ) {
         tapWhenReady(app.buttons["record-new"])
+        fillTask(app, title: title, goal: goal, branch: branch, withLoop: withLoop)
+    }
+
+    /// Fills the open New Task sheet and starts the task; with a branch, in the chosen
+    /// repo, else the first known one; with a loop, with the workspace's first check.
+    @MainActor
+    private func fillTask(
+        _ app: XCUIApplication, title: String, goal: String, branch: String? = nil, withLoop: Bool = false
+    ) {
         let titleField = app.textFields["record-title"]
         XCTAssertTrue(titleField.waitForExistence(timeout: 5))
         tapWhenReady(titleField)
@@ -96,7 +104,8 @@ final class TasksTests: XCTestCase {
         goalField.typeText(goal)
         if let branch {
             let toggle = app.switches["record-with-repo"]
-            tapWhenReady(toggle)
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            if (toggle.value as? String) != "1" { tapWhenReady(toggle) }
             // A tap can land on the label; the switch itself sits at the trailing edge.
             if (toggle.value as? String) != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
             let branchField = app.textFields["record-branch"]
@@ -130,6 +139,49 @@ final class TasksTests: XCTestCase {
         tapWhenReady(app.buttons["task-open-terminal"])
         XCTAssertTrue(app.navigationBars.descendants(matching: .any)["write-the-changelog"].firstMatch
             .waitForExistence(timeout: 10))
+    }
+
+    /// Cmd+N opens the record-based sheet in the shown session's repo and the workspace
+    /// that lists it. The new task shows in Tasks, and its session opens.
+    @MainActor
+    func testCommandNCreatesATaskInTheShownRepo() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+
+        composer.typeKey("n", modifierFlags: .command)
+        XCTAssertTrue(app.textFields["record-title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitFor(app.descendants(matching: .any)["record-workspace"].firstMatch, labelOrValue: "work"))
+        XCTAssertEqual(app.switches["record-with-repo"].value as? String, "1", "the repo fields are shown")
+        XCTAssertTrue(waitFor(app.descendants(matching: .any)["record-repo-choice"].firstMatch, labelOrValue: "app"))
+        save("record-new-from-repo")
+        fillTask(app, title: "Add search", goal: "Search the docs.", branch: "feat/search")
+
+        XCTAssertTrue(app.navigationBars.descendants(matching: .any)["add-search"].firstMatch
+            .waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["record-title"].waitForNonExistence(timeout: 5), "the sheet closes")
+        showSidebar(app)
+        tapWhenReady(app.buttons["open-tasks"])
+        XCTAssertTrue(app.buttons["task-t-new001"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Add search"].exists)
+    }
+
+    /// The sidebar's New Task opens the same sheet; on a phone, Tasks is on the first screen.
+    @MainActor
+    func testTheSidebarOffersTasksAndNewTask() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        showSidebar(app)
+        XCTAssertTrue(app.buttons["open-tasks"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["open-tasks"].isHittable)
+        save("sidebar-tasks")
+        tapWhenReady(app.buttons["sidebar-new-task"])
+        XCTAssertTrue(app.textFields["record-title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitFor(app.descendants(matching: .any)["record-workspace"].firstMatch, labelOrValue: "work"))
     }
 
     /// A launch that fails keeps the task, and its detail says why.

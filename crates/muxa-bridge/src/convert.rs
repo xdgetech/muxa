@@ -105,6 +105,11 @@ pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
             Checks::Any => wire::WorkspaceChecks::Any,
             Checks::List(list) => wire::WorkspaceChecks::List(list.clone()),
         }),
+        repos: w
+            .repos
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect(),
     }
 }
 

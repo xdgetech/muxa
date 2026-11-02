@@ -93,7 +93,6 @@ fun TasksScreen(model: AppModel) {
         }
     }
     // After the screen, so these windows open over it.
-    model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }
     model.taskError?.let { error ->
         AlertDialog(
             onDismissRequest = { model.taskError = null },

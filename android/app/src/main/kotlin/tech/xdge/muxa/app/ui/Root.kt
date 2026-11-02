@@ -154,6 +154,8 @@ fun Root(model: AppModel) {
         }
         if (model.showTasks) TasksScreen(model)
         if (model.showReader) ReaderScreen(model)
+        // After the Tasks screen, so the sheet opens over it too.
+        model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }
     }
 }
 

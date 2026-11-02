@@ -74,14 +74,17 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                     DemoRow("Leave Demo", Icons.leaveDemo, "Hosts added during the demo are not saved.", "leave-demo") { model.leaveDemo() }
                 }
             }
+            // Above the hosts, so a phone shows it on its first screen.
+            if (model.canShowTasks) {
+                item(key = "tasks-header") { SectionHeader("Tasks") }
+                item(key = "tasks") { TasksRow(model) }
+                item(key = "tasks-new") { NewTaskRow(model) }
+            }
             if (model.hostList.hosts.isNotEmpty()) {
                 item { SectionHeader("Hosts") }
                 items(model.hostList.hosts, key = { it.id }) { host ->
                     HostRow(model, host, onEdit)
                 }
-            }
-            if (model.canShowTasks) {
-                item(key = "tasks") { TasksRow(model) }
             }
             if (model.isConnected) {
                 for (group in model.sessionGroups) {
@@ -101,7 +104,7 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
 /** Only a repo the host knows the path of can get a task. */
 private fun newTaskAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
     val dir = group.sessions.firstOrNull()?.repoDir
-    if (!model.canStartTasks || group.repo == null || dir == null) return null
+    if (!model.canCreateTasks || group.repo == null || dir == null) return null
     return { model.startNewTask(dir) }
 }
 
@@ -114,10 +117,23 @@ private fun TasksRow(model: AppModel) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.tasks, null, tint = MaterialTheme.colorScheme.primary)
-        Text("Tasks", Modifier.padding(start = 12.dp).weight(1f))
+        Text("All Tasks", Modifier.padding(start = 12.dp).weight(1f))
         if (waiting > 0) {
             Text("$waiting ${InboxGroup.NEEDS_ATTENTION.title.lowercase()}", style = MaterialTheme.typography.labelSmall, color = Theme.attention)
         }
+        Icon(Icons.chevron, null, Modifier.padding(start = 8.dp).size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Opens the New Task sheet in the shown session's repo. */
+@Composable
+private fun NewTaskRow(model: AppModel) {
+    Row(
+        Modifier.fillMaxWidth().clickable { model.startNewTask() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("sidebar-new-task"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.newTask, null, tint = MaterialTheme.colorScheme.primary)
+        Text("New Task", Modifier.padding(start = 12.dp).weight(1f))
     }
 }
 

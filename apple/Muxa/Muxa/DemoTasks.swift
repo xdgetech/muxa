@@ -54,7 +54,7 @@ struct DemoTasks: Sendable {
 
     /// Checks from a list, any check, and no loops at all (ADR 0019).
     private static let testWorkspaces = [
-        WorkspaceInfo(name: "work", checks: .list(["make check", "cargo test --workspace"])),
+        WorkspaceInfo(name: "work", checks: .list(["make check", "cargo test --workspace"]), repos: ["/src/app", "/src/docs"]),
         WorkspaceInfo(name: "personal", checks: .any),
         WorkspaceInfo(name: "notes"),
     ]

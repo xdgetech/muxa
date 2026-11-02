@@ -22,7 +22,11 @@ class MainActivity : ComponentActivity() {
         // the demo on the test fixtures, and `--ez no-saved-hosts true` starts as a fresh install.
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_DEMO, false)) {
             val set = if (intent.getBooleanExtra(EXTRA_SHOWCASE, false)) DemoBridge.Content.SHOWCASE else DemoBridge.Content.TESTS
-            model.startDemo(set, alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false))
+            model.startDemo(
+                set,
+                alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false),
+                taskRecords = !intent.getBooleanExtra(EXTRA_NO_TASK_RECORDS, false),
+            )
         } else if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_NO_SAVED_HOSTS, false)) {
             model.forgetSavedHosts()
         }
@@ -56,5 +60,6 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_DEMO_ALERTS = "demo-alerts"
         const val EXTRA_SHOWCASE = "showcase"
         const val EXTRA_NO_SAVED_HOSTS = "no-saved-hosts"
+        const val EXTRA_NO_TASK_RECORDS = "no-task-records"
     }
 }

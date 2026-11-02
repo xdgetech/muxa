@@ -54,8 +54,15 @@ final class AppModel {
     /// The Terminal Size the user picked, by menu or pinch. Nil: the view picks.
     /// Kept here, so it survives a fold or a rotation.
     var paneFit: PaneFit?
-    /// The New Task sheet, with the repo it starts in.
+    /// The old New Task sheet, with the repo it starts in: only for a bridge
+    /// without task records.
     var newTask: TaskDraft?
+    /// The New Task sheet that records the task on the host.
+    var newRecord: TaskRecordDraft?
+    /// Created from that sheet: shown once the sheet has closed.
+    private var createdRecord: TaskRecord?
+    /// A task whose detail the Tasks sheet opens at.
+    var tasksOpening: String?
     /// An agent elsewhere that wants attention, shown for a few seconds.
     private(set) var alert: AgentAlert?
     /// The task waiting for the user to pick how to close it.
@@ -63,7 +70,7 @@ final class AppModel {
     /// Why the last close failed; nothing was closed then.
     var closeError: String?
     /// Asked for from the session switcher: shown once the switcher has closed.
-    private var newTaskAfterSwitcher: TaskDraft?
+    private var newTaskAfterSwitcher: (() -> Void)?
     private(set) var docListing: DocListing?
     private(set) var docError: String?
     /// The shown pane's uncommitted changes, as last listed.
@@ -543,23 +550,59 @@ final class AppModel {
 
     var canStartTasks: Bool { isConnected && session.canStartTasks }
 
-    /// Opens the New Task sheet in `repoDir`, else the shown session's repo.
+    /// Every New Task entry point can open a sheet.
+    var canCreateTasks: Bool { canKeepTasks || canStartTasks }
+
+    /// Opens the New Task sheet in `repoDir`, else the shown session's repo. A
+    /// bridge with task records gets the record-based sheet.
     func startNewTask(in repoDir: String? = nil) {
-        guard canStartTasks else { return }
+        guard canCreateTasks else { return }
         let dir = repoDir ?? currentSession?.repoDir ?? session.sessions.knownRepos.first?.dir ?? ""
+        let show: () -> Void = canKeepTasks
+            ? { [self] in Task { await showRecordSheet(repo: dir) } }
+            : { [self] in newTask = TaskDraft(repoDir: dir) }
         // One sheet at a time.
         if showSwitcher {
-            newTaskAfterSwitcher = TaskDraft(repoDir: dir)
+            newTaskAfterSwitcher = show
             showSwitcher = false
         } else {
-            newTask = TaskDraft(repoDir: dir)
+            show()
+        }
+    }
+
+    private func showRecordSheet(repo: String) async {
+        // The workspaces come with the task list.
+        if session.workspaces.isEmpty { await session.loadTasks() }
+        newRecord = TaskRecordDraft(repo: repo, in: session.workspaces)
+    }
+
+    func recordCreated(_ record: TaskRecord) {
+        createdRecord = record
+        newRecord = nil
+    }
+
+    /// Shows the new task's session, as the old sheet did. A task whose agent
+    /// did not start has none: its detail says why.
+    func recordSheetClosed() async {
+        guard let record = createdRecord else {
+            refocusPane()
+            return
+        }
+        createdRecord = nil
+        let s = session.sessions.first { $0.taskId == record.id }
+            ?? record.session.flatMap { name in session.sessions.first { $0.name == name } }
+        if let s {
+            await open(s)
+        } else {
+            tasksOpening = record.id
+            showTasks = true
         }
     }
 
     func switcherClosed() {
-        if let draft = newTaskAfterSwitcher {
+        if let show = newTaskAfterSwitcher {
             newTaskAfterSwitcher = nil
-            newTask = draft
+            show()
         } else {
             refocusPane()
         }

@@ -1,6 +1,7 @@
 package tech.xdge.muxa.session
 
 import tech.xdge.muxa.protocol.LoopSpec
+import tech.xdge.muxa.protocol.WorkspaceInfo
 
 /**
  * What the New Task sheet edits for a task record (`create-task`). Checked here for quick
@@ -66,4 +67,15 @@ data class TaskRecordDraft(
                 loop = loop?.spec,
             )
         }
+
+    companion object {
+        /**
+         * A draft in [repoDir], in the workspace whose `repos` lists it, else in the first
+         * workspace. An empty [repoDir] means a task directory.
+         */
+        fun inRepo(repoDir: String, workspaces: List<WorkspaceInfo>): TaskRecordDraft {
+            val workspace = workspaces.firstOrNull { repoDir in it.repos } ?: workspaces.firstOrNull()
+            return TaskRecordDraft(workspace = workspace?.name.orEmpty(), repoDir = repoDir)
+        }
+    }
 }

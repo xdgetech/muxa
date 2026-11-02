@@ -89,7 +89,7 @@ fun SessionSwitcher(model: AppModel, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            if (model.canStartTasks) TextButton({ model.startNewTask() }) { Text("New Task") }
+            if (model.canCreateTasks) TextButton({ model.startNewTask() }) { Text("New Task") }
         },
         dismissButton = { TextButton(onDismiss) { Text("Close") } },
     )

@@ -59,7 +59,7 @@ struct PaneCommands: Commands {
                 .keyboardShortcut("k")
             Button("New Task…") { model.startNewTask() }
                 .keyboardShortcut("n")
-                .disabled(!model.canStartTasks)
+                .disabled(!model.canCreateTasks)
             Button("Tasks…") { model.showTasks = true }
                 .keyboardShortcut("t")
                 .disabled(!model.canKeepTasks)

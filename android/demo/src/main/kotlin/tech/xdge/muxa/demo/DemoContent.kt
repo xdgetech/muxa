@@ -296,7 +296,7 @@ internal object TestContent : DemoContent {
 
     /** Checks from a list, any check, and no loops at all (ADR 0019). */
     override val workspaces = listOf(
-        WorkspaceInfo("work", WorkspaceChecks.Only(listOf("make check", "cargo test --workspace"))),
+        WorkspaceInfo("work", WorkspaceChecks.Only(listOf("make check", "cargo test --workspace")), listOf("/src/app", "/src/docs")),
         WorkspaceInfo("personal", WorkspaceChecks.Any),
         WorkspaceInfo("notes"),
     )
