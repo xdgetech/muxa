@@ -163,3 +163,12 @@ INBOX='{"workspaces":["work"],"truncated":false,"tasks":[
   [ "$(cat "$TMPDIR/bin/args")" = "$(printf '%s\n' --bridge "muxa-bridge --socket $TMUX_AGENTS_SOCKET" \
     task new --workspace work --title "Form task" --goal "Form task" --json --repo "$REPO" --branch feature/form)" ]
 }
+
+@test "the Inbox renders CLI needs without inferring menus or unknown actions" {
+  result="$(printf '%s' "$INBOX" | jq '.tasks[0].need = "answer" | .tasks[1].need = "none" | .tasks[2].need = "future" | .tasks[3].need = "no-session"' | muxa rows)"
+  [[ "$result" == *'waits for your answer: Enter to open'* ]]
+  [[ "$result" == *'no session'* ]]
+  [[ "$result" != *'future'* ]]
+  [ "$(printf '%s\n' "$result" | head -n 1 | cut -f1)" = '$7' ]
+  [ "$(printf '%s\n' "$result" | wc -l | tr -d ' ')" = 4 ]
+}

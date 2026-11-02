@@ -138,7 +138,7 @@ apps show, with a goal and a status.
   muxa starts the task through `new.sh`, hands the goal to the agent in
   `.muxa/TASK.md`, and this client moves to the new session.
 - `prefix + T` shows the Inbox: Needs attention, Ready for review, Running,
-  No agent and Closed, with muxa's own grouping. `Enter` moves this client to
+  No agent and Closed, with muxa's own grouping. Newer muxa versions also provide each Task's need, such as waiting for your answer or a loop needing attention; the popup displays that label without answering any menu. `Enter` moves this client to
   the task's session. `ctrl-r` reloads, `Esc` closes.
 - Without muxa-cli, or without a muxa workspace (`~/.config/muxa/workspaces.toml`),
   `prefix + N` makes a plain task as before.

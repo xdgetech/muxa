@@ -50,11 +50,15 @@ rows() {
 $(t display-message -p "#{@agents_icon_waiting}"$'\037'"#{@agents_icon_error}"$'\037'"#{@agents_icon_running}"$'\037'"#{@agents_icon_idle}"$'\037'"#{@agents_icon_done}" 2>/dev/null)
 EOF
   jq -r '.tasks[] | [.group, (.session.id // ""), (.agent.state // ""), .record.title,
-                     (.session.name // .record.session // ""), .record.id] | @tsv' |
+                     (.session.name // .record.session // ""), .record.id, (.need // "")] | @tsv' |
     awk -F'\t' -v IW="${w:-🙋}" -v IE="${e:-❌}" -v IR="${r:-⚡}" -v II="${i:-💤}" -v ID="${d:-🏁}" '
       BEGIN {
         title["needs-attention"] = "Needs attention"; title["ready-for-review"] = "Ready for review"
         title["running"] = "Running"; title["no-agent"] = "No agent"; title["closed"] = "Closed"
+        need["answer"] = "waits for your answer: Enter to open"
+        need["agent-error"] = "agent error"; need["loop"] = "loop needs attention"
+        need["review"] = "ready for review"; need["no-agent"] = "no agent state is available"
+        need["no-session"] = "no session"
         icon["waiting"] = IW; icon["error"] = IE; icon["running"] = IR; icon["idle"] = II; icon["done"] = ID
         D = "\033[2m"; BO = "\033[1m"; Z = "\033[0m"
       }
@@ -62,7 +66,7 @@ EOF
         group = ($1 == last ? "" : ($1 in title ? title[$1] : $1)); last = $1
         ic = ($3 in icon ? icon[$3] : "  ")
         where = ($2 == "" ? D "no session" Z : $5)
-        printf "%s\t%s%-16s%s  %s %s  %s%s%s  %s\n", $2, BO, group, Z, ic, $4, D, $6, Z, where
+        printf "%s\t%s%-16s%s  %s %s  %s%s%s  %s%s\n", $2, BO, group, Z, ic, $4, D, $6, Z, where, ($7 in need ? "  " need[$7] : "")
       }'
 }
 
@@ -115,7 +119,7 @@ popup() {
 
 inbox() {
   muxa_cli >/dev/null || die "muxa is not installed; the Inbox needs muxa-cli on this host"
-  popup "$1" "Tasks" "$S/muxa.sh" inbox-ui "$1"
+  popup "$1" "Inbox" "$S/muxa.sh" inbox-ui "$1"
 }
 
 inbox_ui() {
@@ -129,7 +133,7 @@ inbox_ui() {
     case "$picked" in ctrl-r*) continue ;; esac
     sid="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     if [ -n "$sid" ]; then go "$client" "$sid"; return; fi
-    echo "That task has no session. Open it from muxa to start one."
+    echo "That Task has no session. Open its detail in muxa to mark it Done or Dropped."
     sleep 2
   done
 }
