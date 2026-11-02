@@ -33,6 +33,7 @@ import tech.xdge.muxa.terminal.PaneRenderer
 import tech.xdge.muxa.transport.BridgeChannel
 import tech.xdge.muxa.transport.TransportError
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -86,6 +87,8 @@ class PaneSession(
         val image: ImageLog? = null,
         /** The task records, once listed; null when the bridge keeps none or has not answered yet. */
         val tasks: TaskBoard? = null,
+        /** The grid the pane area shows at the default font, kept across reconnects. */
+        val viewport: PaneViewport? = null,
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -131,6 +134,10 @@ class PaneSession(
     private val inputs = mutableSetOf<Long>()
     private var hello: CompletableDeferred<Unit>? = null
 
+    /** The viewport this bridge has; null after a connect. */
+    private var sentViewport: PaneViewport? = null
+    private var viewportJob: Job? = null
+
     // Lifecycle
 
     /**
@@ -155,6 +162,8 @@ class PaneSession(
             start(channel)
             withTimeoutOrNull(helloTimeout) { waitHello.await() } ?: throw Failure.NoHello()
             _state.update { it.copy(phase = Phase.Connected) }
+            // Before the watch, so the pane's window is sized for this device first.
+            sendViewport()
             refresh()
             // The task list is extra: a bridge that fails it still shows its sessions.
             runCatching { loadTasks() }
@@ -493,6 +502,36 @@ class PaneSession(
         name
     }
 
+    /**
+     * The pane area changed (rotation, split screen, fold, keyboard). The bridge gets the
+     * first viewport at once and later ones once they settle for 300 ms, so a drag or an
+     * animation resizes the window once (ADR 0020).
+     */
+    fun setViewport(viewport: PaneViewport) {
+        scope.launch {
+            if (viewport == _state.value.viewport) return@launch
+            _state.update { it.copy(viewport = viewport) }
+            viewportJob?.cancel()
+            if (sentViewport == null) {
+                sendViewport()
+                return@launch
+            }
+            viewportJob = scope.launch {
+                delay(VIEWPORT_SETTLE)
+                sendViewport()
+            }
+        }
+    }
+
+    private fun sendViewport() {
+        val viewport = _state.value.viewport ?: return
+        if (viewport == sentViewport || channel == null || "viewport" !in _state.value.capabilities) return
+        sentViewport = viewport
+        val id = takeId()
+        inputs += id
+        enqueue(Request.Viewport(id, viewport.cols, viewport.rows))
+    }
+
     /** Asks for the watched pane's whole screen again, e.g. after the view lost it. */
     suspend fun resync() = withContext(dispatcher) {
         val pane = _state.value.watchedPane ?: return@withContext
@@ -694,6 +733,9 @@ class PaneSession(
         taskListings.clear()
         savedTasks.clear()
         inputs.clear()
+        sentViewport = null
+        viewportJob?.cancel()
+        viewportJob = null
         val failed = pending.values.toList()
         pending.clear()
         failed.forEach { it.completeExceptionally(Failure.NotConnected()) }
@@ -707,6 +749,9 @@ class PaneSession(
     }
 
     companion object {
+        /** How long a viewport must stay before the bridge gets it. */
+        private val VIEWPORT_SETTLE = 300.milliseconds
+
         /** A message for the user, saying what to do next where there is something to do. */
         fun describe(error: Throwable): String = when (error) {
             is Failure.Bridge ->
