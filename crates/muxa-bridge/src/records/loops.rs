@@ -2,9 +2,6 @@
 //! and where the loop stands. The engine that moves it is `loops/`. The check
 //! command may hold anything: `Debug` leaves it out, and no error names it.
 
-// Until the daemon's tick and the loop requests use it (ADR 0019 P2, P3).
-#![allow(dead_code)]
-
 use std::fmt;
 use std::path::Path;
 
@@ -217,16 +214,6 @@ impl Loop {
             ..self.clone()
         }
     }
-
-    /// The Task belongs in Needs attention (ADR 0019 section 5).
-    pub fn needs_attention(&self) -> bool {
-        match (&self.state, &self.reason) {
-            (LoopState::Paused, _) => true,
-            (LoopState::Stopped, Some(Reason::User | Reason::Status)) => false,
-            (LoopState::Stopped, _) => true,
-            _ => false,
-        }
-    }
 }
 
 impl LoopSpec {
@@ -380,21 +367,6 @@ mod tests {
     fn an_ended_loop_does_not_stop_again() {
         let l = Loop::start(spec("x"), None, false, 1).stopped(Reason::Limit, 5);
         assert_eq!(l.stopped(Reason::User, 9).reason, Some(Reason::Limit));
-    }
-
-    #[test]
-    fn needs_attention_except_for_the_users_own_stop() {
-        let l = Loop::start(spec("x"), None, false, 1);
-        assert!(!l.needs_attention());
-        assert!(l.stopped(Reason::Stalled, 2).needs_attention());
-        assert!(!l.stopped(Reason::User, 2).needs_attention());
-        assert!(!l.stopped(Reason::Status, 2).needs_attention());
-        let paused = Loop {
-            state: LoopState::Paused,
-            reason: Some(Reason::Waiting),
-            ..l
-        };
-        assert!(paused.needs_attention());
     }
 
     fn temp(name: &str) -> std::path::PathBuf {

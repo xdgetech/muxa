@@ -40,6 +40,33 @@ pub async fn serve(cx: &Context, daemon_dir: Option<&Path>, req: Request) -> Vec
     handle(cx, req).await
 }
 
+/// A loop request (ADR 0019): only a daemon of this bridge's version runs
+/// loops, so there is no fallback. The message says what the host needs.
+pub async fn serve_loop(daemon_dir: Option<&Path>, req: Request) -> Vec<Message> {
+    let id = req.id();
+    let refused = |message: String| {
+        vec![Message::Result {
+            id: Some(id),
+            error: Some(error_body(ErrorCode::Unsupported, message)),
+            sessions: None,
+        }]
+    };
+    let Some(dir) = daemon_dir else {
+        return refused(NO_DAEMON.into());
+    };
+    match connect(dir).await {
+        Some((reader, writer, Probe::Ready)) => send(reader, writer, &req).await,
+        Some((_, _, Probe::OtherVersion(v))) => refused(format!(
+            "The muxa daemon on the host runs version {v}. Run: muxa-bridge daemon restart"
+        )),
+        _ => refused(NO_DAEMON.into()),
+    }
+}
+
+/// Without a usable daemon, the Task Loop is off.
+pub const NO_DAEMON: &str =
+    "The Task Loop needs the muxa daemon. On the host, run: muxa-bridge daemon install";
+
 /// Whether a daemon of this bridge's version answers in `dir`.
 pub async fn probe(dir: &Path) -> Probe {
     match connect(dir).await {
@@ -51,14 +78,23 @@ pub async fn probe(dir: &Path) -> Probe {
 /// The daemon's answer, or `None` to fall back. Once the request is sent,
 /// the daemon may have written, so a broken answer is an error, not a fallback.
 async fn forward(dir: &Path, req: &Request) -> Option<Vec<Message>> {
-    let (mut reader, mut writer, probe) = connect(dir).await?;
+    let (reader, writer, probe) = connect(dir).await?;
     if probe != Probe::Ready {
         return None;
     }
+    Some(send(reader, writer, req).await)
+}
+
+/// Sends `req` on a connection that said hello, and reads up to its `result`.
+async fn send(
+    mut reader: BufReader<OwnedReadHalf>,
+    mut writer: OwnedWriteHalf,
+    req: &Request,
+) -> Vec<Message> {
     let id = req.id();
     if let Err(e) = socket::write(&mut writer, req).await {
         tracing::warn!(error = %e, "the muxa daemon closed before the request");
-        return Some(vec![stopped(id)]);
+        return vec![stopped(id)];
     }
     let mut out = Vec::new();
     loop {
@@ -72,7 +108,7 @@ async fn forward(dir: &Path, req: &Request) -> Option<Vec<Message>> {
                 let last = matches!(&msg, Message::Result { id: Some(got), .. } if *got == id);
                 out.push(msg);
                 if last {
-                    return Some(out);
+                    return out;
                 }
             }
             Ok(Ok(None)) => break,
@@ -87,7 +123,7 @@ async fn forward(dir: &Path, req: &Request) -> Option<Vec<Message>> {
         }
     }
     out.push(stopped(id));
-    Some(out)
+    out
 }
 
 fn stopped(id: u64) -> Message {

@@ -150,6 +150,8 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::CreateTask { .. }
             | Request::UpdateTask { .. }
             | Request::RestartAgent { .. }
+            | Request::StartLoop { .. }
+            | Request::StopLoop { .. }
     )
 }
 
@@ -165,15 +167,6 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             status,
         } => one(update(&cx.records, id, task, rev, status).await),
         Request::CreateTask {
-            r#loop: Some(_), ..
-        } => (
-            Vec::new(),
-            Some(error_body(
-                ErrorCode::Unsupported,
-                "this muxa daemon cannot run a Task Loop yet",
-            )),
-        ),
-        Request::CreateTask {
             id,
             workspace,
             title,
@@ -182,23 +175,44 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             repo,
             branch,
             base,
-            r#loop: None,
-        } => match cx.env().await {
-            Ok(env) => {
-                let new = NewTask {
-                    workspace,
-                    title,
-                    goal,
-                    project,
-                    repo,
-                    branch,
-                    base,
-                };
-                let (record, error) = create(&env, new).await;
-                (saved(id, record).into_iter().collect(), error)
+            r#loop,
+        } => {
+            let new = NewTask {
+                workspace,
+                title,
+                goal,
+                project,
+                repo,
+                branch,
+                base,
+            };
+            let spec = r#loop.map(convert::loop_spec);
+            match create_with_loop(cx, new, spec).await {
+                Ok((record, error)) => (saved(id, record).into_iter().collect(), error),
+                Err(e) => (Vec::new(), Some(e)),
             }
-            Err(e) => (Vec::new(), Some(e)),
-        },
+        }
+        Request::StartLoop {
+            id,
+            task,
+            r#loop,
+            reset,
+        } => {
+            let (config, spec) = (Arc::clone(&cx.records), convert::loop_spec(r#loop));
+            one(blocking(move || {
+                crate::loops::start(&config, &task, spec, reset).map_err(|e| loop_error(&e))
+            })
+            .await
+            .map(|r| task_saved(id, r)))
+        }
+        Request::StopLoop { id, task } => {
+            let config = Arc::clone(&cx.records);
+            one(
+                blocking(move || crate::loops::stop(&config, &task).map_err(|e| loop_error(&e)))
+                    .await
+                    .map(|r| task_saved(id, r)),
+            )
+        }
         Request::RestartAgent { id, task, force } => match cx.env().await {
             Ok(env) => match restart(&env, task, force).await {
                 Ok(record) => (saved(id, Some(record)).into_iter().collect(), None),
@@ -261,6 +275,66 @@ pub async fn resume_prompts(cx: &Context) {
             env.records,
             wait,
         ));
+    }
+}
+
+/// `create-task`, with its loop when it asks for one. The loop is checked
+/// against the workspace first, so a refused loop leaves no Task behind.
+async fn create_with_loop(
+    cx: &Context,
+    new: NewTask,
+    spec: Option<crate::records::LoopSpec>,
+) -> Result<(Option<Record>, Option<ErrorBody>), ErrorBody> {
+    if let Some(spec) = &spec {
+        let main = match &new.repo {
+            Some(repo) => Some(
+                crate::tasks::builtin::main_checkout(std::path::Path::new(repo))
+                    .await
+                    .map_err(|e| convert::task_error(&e))?,
+            ),
+            None => None,
+        };
+        let (config, workspace, spec) =
+            (Arc::clone(&cx.records), new.workspace.clone(), spec.clone());
+        blocking(move || {
+            crate::loops::precheck(&config, &workspace, main.as_deref(), &spec)
+                .map_err(|e| loop_error(&e))
+        })
+        .await?;
+    }
+    let env = cx.env().await?;
+    let (record, error) = create(&env, new).await;
+    let (Some(record), None, Some(spec)) = (&record, &error, spec) else {
+        return Ok((record, error));
+    };
+    let (config, task) = (Arc::clone(&cx.records), record.id.clone());
+    match blocking(move || {
+        crate::loops::start(&config, &task, spec, false).map_err(|e| loop_error(&e))
+    })
+    .await
+    {
+        Ok(r) => Ok((Some(r), None)),
+        Err(e) => Ok((Some(record.clone()), Some(e))),
+    }
+}
+
+fn task_saved(request: u64, record: Record) -> Message {
+    Message::TaskSaved {
+        task: request,
+        record: convert::task_record(record),
+    }
+}
+
+/// Loop messages name ids and fields, never the check command (invariant 5).
+fn loop_error(e: &crate::loops::LoopError) -> ErrorBody {
+    use crate::loops::LoopError;
+    match e {
+        LoopError::Bad(m) => error_body(ErrorCode::BadRequest, m.clone()),
+        LoopError::Store(s) => store_error(s),
+        LoopError::Config(c) => {
+            tracing::warn!(error = %c, "cannot load workspaces for a loop");
+            error_body(ErrorCode::Internal, e.to_string())
+        }
     }
 }
 

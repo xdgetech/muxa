@@ -253,7 +253,6 @@ fn the_prompt_waits_while_a_person_types_and_gives_up_after_30_s() {
     assert_eq!(late.state.state, LoopState::Stopped);
     assert_eq!(late.state.reason, Some(Reason::NotSent));
     assert_eq!(late.state.attempts, 1, "the failed check counts");
-    assert!(late.state.needs_attention());
 }
 
 #[test]
@@ -436,7 +435,6 @@ fn a_status_other_than_open_stops_quietly() {
         };
         let s = step(&checking(&armed()), &Memory::default(), &o);
         assert_eq!(s.state.reason, Some(Reason::Status));
-        assert!(!s.state.needs_attention());
         assert_eq!(effects(&armed(), &s.state).note, None);
         assert!(!effects(&armed(), &s.state).review);
     }
