@@ -76,7 +76,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         if alerts {
             DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
         }
-        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records"]))
+        emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: ["chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff"]))
     }
 
     func send(_ line: Data) async throws {
@@ -143,6 +143,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 do throws(DemoTasks.Refusal) { return .success(try tasks.update(task, rev: rev, status: status)) } catch { return .failure(error) }
             }
             answer(id, outcome)
+        case .restartAgent(let id, let task, let force):
+            restartAgent(id: id, task: task, force: force)
         case .changes(let id, _):
             emit(.changeList(ChangeListing(
                 changes: id, root: content.root, entries: content.changes.map(\.info),
@@ -281,6 +283,43 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         }
     }
 
+    /// Restarts a task's agent in its pane, with the bridge's checks (ADR 0018).
+    private func restartAgent(id: UInt64, task: String, force: Bool) {
+        enum Outcome {
+            case saved(TaskRecord)
+            case refused(ErrorBody)
+        }
+        let outcome = lock.withLock { () -> Outcome in
+            guard tasks.record(task) != nil else {
+                return .refused(ErrorBody(code: .badRequest, message: "\(task) is not a task"))
+            }
+            guard let s = sessions.firstIndex(where: { $0.taskId == task }),
+                let p = sessions[s].panes.firstIndex(where: { $0.role == .agent && !$0.dead })
+            else {
+                return .refused(ErrorBody(code: .taskFailed, message: "No session runs this task's agent."))
+            }
+            if sessions[s].panes[p].agent?.state == .running, !force {
+                return .refused(ErrorBody(code: .badRequest, message: "The agent is running. Restart with force to stop it."))
+            }
+            let record: TaskRecord
+            do throws(DemoTasks.Refusal) {
+                record = try tasks.restart(task)
+            } catch {
+                return .refused(ErrorBody(code: .badRequest, message: "\(task) is not a task"))
+            }
+            sessions[s].panes[p].agent = Agent(state: .running, since: UInt64(Date().timeIntervalSince1970))
+            return .saved(record)
+        }
+        switch outcome {
+        case .saved(let record):
+            emit(.taskSaved(task: id, record: record))
+            ok(id)
+            emit(.sessionsChanged)
+        case .refused(let error):
+            emit(.result(id: id, error: error, sessions: nil))
+        }
+    }
+
     private func agentWaits(_ session: String) {
         lock.withLock {
             guard let i = sessions.firstIndex(where: { $0.id == session }), !sessions[i].panes.isEmpty else { return }
@@ -308,11 +347,15 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         emit(.sessionsChanged)
     }
 
-    /// The repo's documents, and TASK.md in a task's session.
+    /// The repo's documents, and TASK.md then HANDOFF.md in a task's session, as the bridge lists them.
     private func docs(_ pane: String) -> [(info: DocInfo, text: String)] {
         let (session, tasks) = lock.withLock { (sessions.first { $0.panes.contains { $0.id == pane } }, tasks) }
-        guard let text = tasks.taskFile(for: session?.taskId) else { return content.docs }
-        return content.docs + [(DocInfo(path: DemoTasks.taskFile, kind: .repo, mtime: 1), text)]
+        guard let text = tasks.taskFile(for: session?.taskId), let handoff = tasks.handoffFile(for: session?.taskId)
+        else { return content.docs }
+        return content.docs + [
+            (DocInfo(path: DemoTasks.taskFile, kind: .repo, mtime: 1), text),
+            (DocInfo(path: DemoTasks.handoffFile, kind: .repo, mtime: 1), handoff),
+        ]
     }
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }

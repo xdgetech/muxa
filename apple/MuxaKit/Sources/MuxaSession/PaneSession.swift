@@ -389,6 +389,37 @@ public final class PaneSession {
         return saved ?? record
     }
 
+    public var canRestartAgents: Bool { capabilities.contains("task-handoff") }
+
+    /// Shown when the bridge cannot restart agents.
+    public static let restartUnsupported = "This host's bridge can't restart agents. Update muxa on the host."
+
+    /// Restarts a task's agent in its pane, after a handoff (ADR 0018). Without
+    /// `force`, the bridge refuses a running agent. Returns the record with its new run.
+    public func restartAgent(task: String, force: Bool) async throws -> TaskRecord {
+        guard canRestartAgents else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.restartUnsupported))
+        }
+        var requestId: UInt64 = 0
+        do {
+            try await request { id in
+                requestId = id
+                return .restartAgent(id: id, task: task, force: force)
+            }
+        } catch {
+            savedTasks[requestId] = nil
+            throw error
+        }
+        // The record arrives just before the result, and already replaced the listed one.
+        let saved = savedTasks.removeValue(forKey: requestId)
+        // The agent pane's state changes with the restart.
+        try? await refresh()
+        guard let saved else {
+            throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the task."))
+        }
+        return saved
+    }
+
     /// A newer record replaces the one listed; an older one is ignored.
     private func keep(_ record: TaskRecord) {
         if let i = taskRecords.firstIndex(where: { $0.id == record.id }) {

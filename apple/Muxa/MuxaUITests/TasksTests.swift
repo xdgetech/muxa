@@ -131,6 +131,67 @@ final class TasksTests: XCTestCase {
         save("record-launch-failed")
     }
 
+    /// Scrolls the task detail until `element` can be tapped; a phone shows less of it.
+    @MainActor
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, up: Bool = false) {
+        let list = app.collectionViews.firstMatch
+        for _ in 0..<4 where !(element.exists && element.isHittable) {
+            if up { list.swipeDown() } else { list.swipeUp() }
+        }
+    }
+
+    /// Restarting an idle agent adds a run and leaves a HANDOFF.md to read (ADR 0018).
+    @MainActor
+    func testRestartingAnIdleAgentAddsARun() throws {
+        let app = launchOnTasks()
+        tapWhenReady(app.buttons["task-t-login1"])
+        XCTAssertFalse(app.buttons["task-open-handoff"].exists, "no restart yet, so no handoff")
+        let restart = app.buttons["task-restart"]
+        XCTAssertTrue(restart.waitForExistence(timeout: 5))
+        reveal(app, restart)
+        tapWhenReady(restart)
+        let alert = app.alerts["Restart the agent?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertTrue(alert.staticTexts.containing(NSPredicate(format: "label CONTAINS 'reads TASK.md and HANDOFF.md'"))
+            .firstMatch.exists)
+        XCTAssertFalse(alert.buttons["Stop and restart"].exists, "an idle agent needs no force")
+        save("restart-confirm")
+        alert.buttons["Restart"].firstMatch.tap()
+
+        let run = app.staticTexts["Run 2 · claude-code"]
+        reveal(app, run)
+        XCTAssertTrue(run.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Run 1 · claude-code"].exists)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Restarted · '")).firstMatch.exists)
+        save("restart-new-run")
+
+        let handoff = app.buttons["task-open-handoff"]
+        // The list shows only the rows on screen, and the Runs pushed the button up.
+        reveal(app, handoff, up: true)
+        XCTAssertTrue(handoff.waitForExistence(timeout: 5))
+        tapWhenReady(handoff)
+        XCTAssertTrue(app.webViews.firstMatch.staticTexts["Handoff"].waitForExistence(timeout: 10))
+    }
+
+    /// A running agent is stopped only through an explicit "Stop and restart".
+    @MainActor
+    func testRestartingARunningAgentAsksForForce() throws {
+        let app = launchOnTasks()
+        tapWhenReady(app.buttons["task-t-docs01"])
+        let restart = app.buttons["task-restart"]
+        XCTAssertTrue(restart.waitForExistence(timeout: 5))
+        reveal(app, restart)
+        tapWhenReady(restart)
+        let alert = app.alerts["Restart the agent?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertFalse(alert.buttons["Restart"].exists, "a plain restart would be refused")
+        save("restart-force")
+        alert.buttons["Stop and restart"].firstMatch.tap()
+        let run = app.staticTexts["Run 2 · claude-code"]
+        reveal(app, run)
+        XCTAssertTrue(run.waitForExistence(timeout: 5))
+    }
+
     /// Marking a task done moves it to Closed.
     @MainActor
     func testMarkingATaskDoneClosesIt() throws {

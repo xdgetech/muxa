@@ -48,6 +48,7 @@ struct TaskDetail: View {
                 if let dir = r.dir { LabeledContent("Directory", value: dir) }
             }
             .font(.callout)
+            TaskRunsSection(item: item)
         }
         .navigationTitle(r.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -98,11 +99,16 @@ struct TaskDetail: View {
                 if model.session.canReadDocs {
                     Button("Read TASK.md", systemImage: Icon.document) { model.open(item, as: .taskFile) }
                         .accessibilityIdentifier("task-open-file")
+                    if model.session.canRestartAgents, item.hasHandoff {
+                        Button("Read HANDOFF.md", systemImage: Icon.document) { model.open(item, as: .handoffFile) }
+                            .accessibilityIdentifier("task-open-handoff")
+                    }
                     if model.session.canShowChanges {
                         Button("Changes", systemImage: Icon.changes) { model.open(item, as: .changes) }
                             .accessibilityIdentifier("task-open-changes")
                     }
                 }
+                if model.session.canRestartAgents { RestartAgentButton(item: item) }
             } header: {
                 Text("Open")
             }

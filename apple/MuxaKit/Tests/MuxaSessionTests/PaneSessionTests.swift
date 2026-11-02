@@ -25,6 +25,8 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     var images: [ImageInfo] = []
     var taskRecords: [TaskRecord] = []
     var workspaces: [WorkspaceInfo] = [WorkspaceInfo(name: "work")]
+    /// Tasks whose agent is running: `restart-agent` without force is refused.
+    var runningAgents: Set<String> = []
     /// Panes whose `chat` is answered with `unsupported`.
     var unsupportedChats: Set<String> = []
     /// Screen data sent after each successful watch.
@@ -89,6 +91,21 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             }
             taskRecords[i].rev += 1
             taskRecords[i].status = status
+            emit(.taskSaved(task: id, record: taskRecords[i]))
+            emit(.result(id: id, error: nil, sessions: nil))
+        case .restartAgent(let id, let task, let force):
+            guard let i = taskRecords.firstIndex(where: { $0.id == task }) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(task) is not a task"), sessions: nil))
+                return
+            }
+            guard force || !runningAgents.contains(task) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "the agent is running"), sessions: nil))
+                return
+            }
+            let next = (taskRecords[i].runs.last?.id ?? 0) + 1
+            if !taskRecords[i].runs.isEmpty { taskRecords[i].runs[taskRecords[i].runs.count - 1].endedAt = 9 }
+            taskRecords[i].runs.append(AgentRun(id: next, startedAt: 9, reason: .restart))
+            taskRecords[i].rev += 1
             emit(.taskSaved(task: id, record: taskRecords[i]))
             emit(.result(id: id, error: nil, sessions: nil))
         case .chat(let id, let pane) where unsupportedChats.contains(pane):
