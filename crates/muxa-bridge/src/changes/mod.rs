@@ -1,7 +1,7 @@
 //! `changes` and `diff`: lists the files of a pane's repo that differ from HEAD,
 //! and follows the diff of the open one, sending it again whenever it changes.
 
-mod git;
+pub(crate) mod git;
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;

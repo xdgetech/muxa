@@ -6,10 +6,10 @@ use std::sync::Arc;
 use muxa_protocol::{ErrorBody, ErrorCode};
 use muxa_tmux::Client;
 
-use super::{Config, blocking, handoff, store_error};
+use super::{Config, blocking, brief, handoff, store_error};
 use crate::agents::Registry;
 use crate::convert::{error_body, task_error};
-use crate::records::{NewRecord, Record, Status, Workspace};
+use crate::records::{NewRecord, Record, RunReason, Status, Workspace};
 use crate::tasks::{self, Launched, TaskRequest, builtin};
 
 /// The session option that links a session to its record.
@@ -214,7 +214,7 @@ async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, 
         .map_err(|e| Failure::after(&launched, e))?;
     let (dir, saved, in_repo) = (launched.dir.clone(), record.clone(), record.repo.is_some());
     blocking(move || {
-        handoff::write(&dir, &saved, in_repo).map_err(|m| error_body(ErrorCode::Internal, m))
+        brief::create(&dir, &saved, in_repo).map_err(|m| error_body(ErrorCode::Internal, m))
     })
     .await
     .map_err(|e| Failure::after(&launched, e.message))?;
@@ -231,7 +231,8 @@ async fn tag_of(env: &Env, launched: &Launched) -> Result<Option<String>, muxa_t
         .and_then(|s| s.task_id))
 }
 
-/// Stores where the agent works, and starts waiting to type the prompt.
+/// Stores where the agent works and its first run, and starts waiting to
+/// type the prompt.
 async fn linked(
     env: &Env,
     record: Record,
@@ -246,6 +247,7 @@ async fn linked(
             .update(&id, rev, |r| {
                 r.dir = Some(dir);
                 r.session = Some(name);
+                r.start_run(RunReason::Start, crate::records::now());
             })
             .map_err(|e| store_error(&e))
     })
@@ -254,12 +256,15 @@ async fn linked(
         Ok(r) => r,
         Err(e) => return (Some(record), Some(e)),
     };
+    let run = record.runs.last().map_or(0, |r| r.id);
     tokio::spawn(handoff::send_prompt(
         Arc::clone(&env.client),
         Arc::clone(&env.agents),
         Arc::clone(&env.records),
         record.id.clone(),
         launched.id,
+        run,
+        handoff::START,
     ));
     (Some(record), None)
 }

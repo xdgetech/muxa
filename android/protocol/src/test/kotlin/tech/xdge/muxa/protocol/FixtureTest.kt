@@ -29,7 +29,7 @@ class FixtureTest {
     @Test
     fun requestsRoundTrip() {
         val lines = lines("requests.jsonl")
-        assertEquals(27, lines.size)
+        assertEquals(29, lines.size)
         for (line in lines) {
             assertEquals(line, tree(line), tree(Wire.encode(Wire.decodeRequest(line))))
         }
@@ -38,7 +38,7 @@ class FixtureTest {
     @Test
     fun messagesRoundTrip() {
         val lines = lines("messages.jsonl")
-        assertEquals(34, lines.size)
+        assertEquals(36, lines.size)
         for (line in lines) {
             val message = Wire.decodeMessage(line)
             assertFalse("fixture type is unknown: $line", message is Message.Unknown)
@@ -66,6 +66,9 @@ class FixtureTest {
         val saved = """{"type":"task-saved","task":1,"record":{"id":"t-1","rev":1,"workspace":"w","title":"t",""" +
             """"goal":"g","status":"blocked","createdAt":1,"updatedAt":1}}"""
         assertEquals(TaskStatus("blocked"), (Wire.decodeMessage(saved) as Message.TaskSaved).record.status)
+        val run = """{"type":"task-saved","task":1,"record":{"id":"t-1","rev":1,"workspace":"w","title":"t",""" +
+            """"goal":"g","status":"open","createdAt":1,"updatedAt":1,"runs":[{"id":1,"startedAt":1,"reason":"resume"}]}}"""
+        assertEquals(RunReason("resume"), (Wire.decodeMessage(run) as Message.TaskSaved).record.runs.single().reason)
     }
 
     @Test

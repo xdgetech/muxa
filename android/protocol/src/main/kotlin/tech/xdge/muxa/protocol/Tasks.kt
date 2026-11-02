@@ -27,7 +27,40 @@ data class TaskRecord(
     val session: String? = null,
     /** From the bridge, e.g. why the launch failed. */
     val note: String? = null,
+    /** The agents that worked on the task, oldest first (ADR 0018). Recorded only while a bridge started or restarted them. */
+    val runs: List<AgentRun> = emptyList(),
 )
+
+/** One agent that worked on a task, as the bridge started or restarted it (ADR 0018). */
+@Serializable
+data class AgentRun(
+    /** From 1, one higher than the previous run's. */
+    val id: Long,
+    /** The adapter that saw the agent, e.g. `claude-code`; null until one did. */
+    val agent: String? = null,
+    /** Epoch seconds. */
+    val startedAt: Long,
+    /** Epoch seconds when the bridge restarted it; null otherwise. */
+    val endedAt: Long? = null,
+    /** The agent's own session id. */
+    val agentSession: String? = null,
+    /** The session's transcript on the host, absolute. A path only. */
+    val transcript: String? = null,
+    val reason: RunReason,
+)
+
+/** Why the bridge started a run. A reason added by a newer bridge keeps its name. */
+@Serializable
+@JvmInline
+value class RunReason(val raw: String) {
+    companion object {
+        /** `create-task` started the agent. */
+        val START = RunReason("start")
+
+        /** `restart-agent` replaced the agent. */
+        val RESTART = RunReason("restart")
+    }
+}
 
 /** Set by the user; separate from the agent's state. A status added by a newer bridge keeps its name. */
 @Serializable

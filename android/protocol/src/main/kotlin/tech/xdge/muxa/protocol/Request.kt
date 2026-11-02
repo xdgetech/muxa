@@ -79,6 +79,13 @@ sealed interface Request {
     @Serializable
     data class UpdateTask(override val id: Long, val task: String, val rev: Long, val status: TaskStatus) : Request
 
+    /**
+     * Restart a task's agent in the same pane, after a handoff (capability `task-handoff`, ADR 0018).
+     * Refused while the agent runs, unless [force]. A `task-saved` comes first.
+     */
+    @Serializable
+    data class RestartAgent(override val id: Long, val task: String, val force: Boolean = false) : Request
+
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request
 }

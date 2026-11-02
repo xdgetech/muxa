@@ -143,7 +143,7 @@ fn claim_agents(s: &mut Session, agents: &Registry, procs: &Processes) {
     }
 }
 
-fn info(session: &str, p: &Pane) -> PaneInfo {
+pub(crate) fn info(session: &str, p: &Pane) -> PaneInfo {
     PaneInfo {
         pane: p.id.to_string(),
         session: session.to_owned(),

@@ -3,6 +3,7 @@
 //! later daemon can link it.
 
 pub mod agent_env;
+pub mod runs;
 pub mod store;
 pub mod workspaces;
 
@@ -11,7 +12,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 pub use agent_env::AgentSettings;
-pub use store::{Store, StoreError};
+pub use runs::{MAX_RUNS, Run, RunReason, Seen};
+pub use store::{Store, StoreError, now};
 pub use workspaces::{Workspace, Workspaces};
 
 /// The record file format this code writes, and the newest it reads.
@@ -57,6 +59,9 @@ pub struct Record {
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The agents the bridge started or restarted, oldest first (ADR 0018).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<Run>,
     /// Fields written by a newer muxa; kept on rewrite.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,

@@ -25,3 +25,5 @@
 {"type":"create-task","id":26,"workspace":"product","title":"Draft the pricing page","goal":"Write a first draft of the pricing page copy.\nKeep it under 300 words.","project":"launch"}
 {"type":"create-task","id":27,"workspace":"app","title":"Fix the login timeout","goal":"Find why login times out after 30 s and fix it.","repo":"/work/app","branch":"fix/login-timeout","base":"origin/main"}
 {"type":"update-task","id":28,"task":"t-7f3a2c","rev":3,"status":"done"}
+{"type":"restart-agent","id":29,"task":"t-7f3a2c"}
+{"type":"restart-agent","id":30,"task":"t-7f3a2c","force":true}

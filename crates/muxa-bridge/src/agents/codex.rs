@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, cap};
 use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
-use super::{AgentAdapter, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
+use super::{AgentAdapter, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
 pub const ID: &str = "codex";
 /// Moves Codex's state, and with it the rollouts (ADR 0016).
@@ -65,12 +65,18 @@ impl AgentAdapter for CodexAdapter {
 
     fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
         let started = started(pane, procs)?;
-        let status = find_rollout(&self.dirs, &pane.path, started)
-            .ok()
-            .flatten()
-            .and_then(|path| last_turn(&path))
+        let rollout = find_rollout(&self.dirs, &pane.path, started).ok().flatten();
+        let status = rollout
+            .as_deref()
+            .and_then(last_turn)
             .filter(|_| !pane.shell_foreground);
-        Some(Found { status })
+        let session = rollout.and_then(|path| {
+            Some(AgentSession {
+                id: meta(&path)?.id?,
+                transcript: Some(path),
+            })
+        });
+        Some(Found { status, session })
     }
 }
 
@@ -175,25 +181,19 @@ fn numbered(dir: &Path) -> Result<Vec<String>, Error> {
 
 /// "YYYY/MM/DD" of `t` in UTC, as Codex names its day directories.
 fn day_key(t: SystemTime) -> String {
-    let days = t
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() / 86_400)
-        .unwrap_or(0) as i64;
-    // Howard Hinnant's civil_from_days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
+    let secs = t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let (year, month, day) = crate::utc::date(secs);
     format!("{year:04}/{month:02}/{day:02}")
 }
 
-/// The cwd in a rollout's first line.
-fn meta_cwd(path: &Path) -> Option<String> {
+/// What a rollout's first line (`session_meta`) says.
+struct Meta {
+    cwd: String,
+    /// The session id, when it looks like one.
+    id: Option<String>,
+}
+
+fn meta(path: &Path) -> Option<Meta> {
     let file = File::open(path).ok()?;
     let mut line = Vec::new();
     BufReader::new(file.take(MAX_LINE as u64))
@@ -203,7 +203,25 @@ fn meta_cwd(path: &Path) -> Option<String> {
     if v.get("type")?.as_str()? != "session_meta" {
         return None;
     }
-    Some(v["payload"].get("cwd")?.as_str()?.to_owned())
+    let payload = &v["payload"];
+    Some(Meta {
+        cwd: payload.get("cwd")?.as_str()?.to_owned(),
+        id: payload
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| valid_id(id))
+            .map(str::to_owned),
+    })
+}
+
+/// The cwd in a rollout's first line.
+fn meta_cwd(path: &Path) -> Option<String> {
+    meta(path).map(|m| m.cwd)
+}
+
+/// A UUID's characters only: the id is shown and stored, never trusted further.
+fn valid_id(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
 /// The state after the last turn event near the end of a rollout.

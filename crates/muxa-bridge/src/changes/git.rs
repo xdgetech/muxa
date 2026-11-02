@@ -84,7 +84,7 @@ pub struct Diff {
 
 /// git in `dir`. It never takes optional locks, so it does not contend with
 /// the agent's own git commands.
-fn git(dir: &Path) -> Command {
+pub(crate) fn git(dir: &Path) -> Command {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(dir)
@@ -120,11 +120,18 @@ pub fn list(dir: &Path) -> Changes {
     }
 }
 
+/// The branch's base, as for [`Branch`], and its fork point with HEAD. None
+/// when the repo has no base, or HEAD and the base share no history.
+pub fn fork_point(root: &Path) -> Option<(String, String)> {
+    let base = default_branch(root)?;
+    let fork = output_line(git(root).args(["merge-base", "HEAD", &base]))?;
+    Some((base, fork))
+}
+
 /// The branch's own commits against its base. None on the base itself, when
 /// the repo has no base, or when HEAD and the base share no history.
 fn branch(root: &Path) -> Option<Branch> {
-    let base = default_branch(root)?;
-    let fork = output_line(git(root).args(["merge-base", "HEAD", &base]))?;
+    let (base, fork) = fork_point(root)?;
     let head = output_line(git(root).args(["rev-parse", "HEAD"]))?;
     if fork == head {
         return None;

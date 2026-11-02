@@ -74,7 +74,8 @@ Nothing yet.
 ```
 
 - The bridge owns everything above the marker. The agent owns the marker's line and everything below it.
-- When the bridge writes `TASK.md` again, it renders the header and keeps the old file from the marker line on, byte for byte. The marker is found as a line that starts with `<!-- muxa:notes`.
+- `create-task` writes a new `TASK.md`, as before (ADR 0015). A branch whose worktree is reused gets the new Task's file.
+- When `restart-agent` writes `TASK.md` again, it renders the header and keeps the old file from the marker line on, byte for byte. The marker is found as a line that starts with `<!-- muxa:notes`.
 - A `TASK.md` without the marker was written before this ADR, or edited by hand. The bridge writes the new header and the default sections, and then keeps the whole old text under `## Earlier notes`. Nothing is lost.
 - The sections are a request to the agent, not a check. The bridge never reads them.
 

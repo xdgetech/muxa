@@ -14,6 +14,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
                 [--project P] [--repo PATH --branch B [--base REF]]
        muxa-cli [--bridge CMD] task done ID
+       muxa-cli [--bridge CMD] task restart ID [--force]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -23,7 +24,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   tasks          the host's workspaces and task records
   task new       records a task and starts an agent for it; without --repo
                  it gets a directory in its workspace
-  task done ID   marks a task record done";
+  task done ID   marks a task record done
+  task restart ID
+                 restarts the task's agent in the same pane, after a handoff
+                 in .muxa/HANDOFF.md; --force also while the agent runs";
 
 enum Cmd {
     List,
@@ -35,18 +39,23 @@ enum Cmd {
     Tasks,
     NewTask(tasks::NewTask),
     Done(String),
+    Restart {
+        task: String,
+        force: bool,
+    },
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
     use lexopt::prelude::*;
     let mut p = lexopt::Parser::from_env();
     let (mut bridge, mut words) = ("muxa-bridge".to_string(), Vec::new());
-    let (mut read_only, mut seconds) = (false, None);
+    let (mut read_only, mut seconds, mut force) = (false, None, false);
     let mut new = tasks::NewTask::default();
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
             Long("read-only") => read_only = true,
+            Long("force") => force = true,
             Long("seconds") => seconds = Some(p.value()?.parse()?),
             Long("workspace") => new.workspace = p.value()?.string()?,
             Long("title") => new.title = p.value()?.string()?,
@@ -77,6 +86,10 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
         [w] if w == "tasks" => Cmd::Tasks,
         [w, n] if w == "task" && n == "new" => Cmd::NewTask(new.checked()?),
         [w, d, id] if w == "task" && d == "done" => Cmd::Done(id.clone()),
+        [w, r, id] if w == "task" && r == "restart" => Cmd::Restart {
+            task: id.clone(),
+            force,
+        },
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
     Ok(Some((bridge, cmd)))
@@ -136,6 +149,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Tasks => tasks::list(&mut conn).await,
         Cmd::NewTask(new) => tasks::create(&mut conn, new).await,
         Cmd::Done(id) => tasks::done(&mut conn, &id).await,
+        Cmd::Restart { task, force } => tasks::restart(&mut conn, &task, force).await,
     }
 }
 

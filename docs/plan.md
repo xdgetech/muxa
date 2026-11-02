@@ -32,7 +32,8 @@ What works today:
   3. Done: CLI: `muxa-cli tasks`, `task new`, `task done`.
   4. Done: apps (iOS and Android): a Tasks list with the Inbox groups (Needs attention, Ready for review, Running, No agent, Closed), a Task detail that opens its pane, Chat, `TASK.md` or its changes, a New Task sheet and status changes. The store screenshots predate it.
   5. Done: per-workspace agent environment (ADR 0016): `[workspace.agent]` with `command` and `env`, passed with `new-session -e`; the Claude Code and Codex adapters search every workspace's `CLAUDE_CONFIG_DIR` and `CODEX_HOME`. tmux-agents' side waits for ADR 0017; until then such Tasks use the built-in launcher.
-  6. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
+  6. Done (bridge, protocol, CLI): handoff and agent runs (ADR 0018). The record keeps `runs`; `TASK.md` gets Progress, Decisions and Next actions, which the agent keeps and the bridge never rewrites; `restart-agent` writes `.muxa/HANDOFF.md` from facts and restarts the agent in the same pane with `respawn-pane -k`; `muxa-cli task restart`. The apps do not show runs or offer a restart yet.
+  7. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
@@ -43,7 +44,7 @@ What works today:
 
 Direction from `docs/vision.md`, not commitments:
 - **Workspace and Task foundation** (vision phase 2): after the first slice, Resources beyond one repo (documents, issue trackers), a Project entity if needed, and repos limited to workspace roots.
-- **Managed agent execution** (phase 3): muxa starts and follows agent runs for a Task and keeps their history; context handoff between runs.
+- **Managed agent execution** (phase 3): muxa starts and follows agent runs for a Task and keeps their history while no client is connected; context handoff between runs. The first part, recorded only while a bridge acts, is in the first slice (ADR 0018).
 - **Workflow orchestration** (phase 4): Tasks in a graph, where one step's result starts the next. This likely needs a daemon (ADR 0015).
 - **Autonomous work** (phase 5): agents take and finish Tasks within approval gates and workspace isolation.
 

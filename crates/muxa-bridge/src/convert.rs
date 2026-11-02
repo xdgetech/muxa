@@ -76,6 +76,23 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         dir: path(r.dir),
         session: r.session,
         note: r.note,
+        runs: r.runs.into_iter().map(agent_run).collect(),
+    }
+}
+
+fn agent_run(r: crate::records::Run) -> wire::AgentRun {
+    use crate::records::RunReason;
+    wire::AgentRun {
+        id: r.id,
+        agent: r.agent,
+        started_at: r.started_at,
+        ended_at: r.ended_at,
+        agent_session: r.agent_session,
+        transcript: r.transcript.map(|p| p.to_string_lossy().into_owned()),
+        reason: match r.reason {
+            RunReason::Start => wire::RunReason::Start,
+            RunReason::Restart => wire::RunReason::Restart,
+        },
     }
 }
 

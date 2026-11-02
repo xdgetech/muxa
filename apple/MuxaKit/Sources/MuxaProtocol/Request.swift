@@ -54,6 +54,10 @@ public enum Request: Equatable, Sendable {
     /// Set a task record's status. `rev` is the one the client saw; a stale one
     /// fails with `conflict`. A `task-saved` comes first.
     case updateTask(id: UInt64, task: String, rev: UInt64, status: TaskStatus)
+    /// Restart a task's agent in the same pane, after a handoff (capability
+    /// `task-handoff`, ADR 0018). Refused while the agent runs, unless `force`.
+    /// A `task-saved` comes first.
+    case restartAgent(id: UInt64, task: String, force: Bool)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -64,7 +68,8 @@ public enum Request: Equatable, Sendable {
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
-            .createTask(let id, _, _, _, _, _, _, _), .updateTask(let id, _, _, _):
+            .createTask(let id, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
+            .restartAgent(let id, _, _):
             id
         }
     }
@@ -73,7 +78,7 @@ public enum Request: Equatable, Sendable {
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
-        case workspace, title, goal, project, task, rev, status
+        case workspace, title, goal, project, task, rev, status, force
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -113,6 +118,10 @@ extension Request: Codable {
             try c.encode(task, forKey: .task)
             try c.encode(rev, forKey: .rev)
             try c.encode(status, forKey: .status)
+        case .restartAgent(let id, let task, let force):
+            try c.head("restart-agent", id)
+            try c.encode(task, forKey: .task)
+            if force { try c.encode(true, forKey: .force) }
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -195,6 +204,10 @@ extension Request: Codable {
                 id: id, task: try c.decode(String.self, forKey: .task),
                 rev: try c.decode(UInt64.self, forKey: .rev),
                 status: try c.decode(TaskStatus.self, forKey: .status))
+        case "restart-agent":
+            self = .restartAgent(
+                id: id, task: try c.decode(String.self, forKey: .task),
+                force: try c.decodeIfPresent(Bool.self, forKey: .force) ?? false)
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

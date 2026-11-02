@@ -70,6 +70,16 @@ pub trait AgentAdapter: Send + Sync {
 pub struct Found {
     /// As the agent records it; None when it records none, or the pane is back at a shell.
     pub status: Option<Agent>,
+    /// The agent's own session, when the adapter knows it (ADR 0018).
+    pub session: Option<AgentSession>,
+}
+
+/// An agent's own session: its id, and where its transcript is. A path only;
+/// the transcript stays the agent's (invariant 5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSession {
+    pub id: String,
+    pub transcript: Option<PathBuf>,
 }
 
 /// A document an agent keeps outside the repo, e.g. a plan.
@@ -147,7 +157,14 @@ impl Registry {
 
     /// The first adapter that sees its agent running in `pane`.
     pub fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
-        self.adapters.iter().find_map(|a| a.find(pane, procs))
+        self.identify(pane, procs).map(|(_, found)| found)
+    }
+
+    /// Like `find`, with the id of the adapter that saw the agent.
+    pub fn identify(&self, pane: &PaneInfo, procs: &Processes) -> Option<(&'static str, Found)> {
+        self.adapters
+            .iter()
+            .find_map(|a| a.find(pane, procs).map(|found| (a.id(), found)))
     }
 
     pub fn open(&self, pane: &PaneInfo) -> Result<Option<Opened>, Error> {

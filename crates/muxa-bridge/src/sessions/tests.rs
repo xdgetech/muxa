@@ -24,6 +24,7 @@ impl AgentAdapter for Stub {
                 state: muxa_protocol::AgentState::Waiting,
                 since: Some(7),
             }),
+            session: None,
         })
     }
 }

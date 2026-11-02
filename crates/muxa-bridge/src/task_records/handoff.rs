@@ -1,191 +1,212 @@
-//! How the goal reaches the agent (ADR 0015): `.muxa/TASK.md` in the task's
-//! directory, then one fixed prompt typed once the agent is idle. No user
-//! text goes on a command line or into a log.
+//! How work reaches the agent (ADR 0015, 0018): one fixed prompt typed once
+//! the agent is idle, and the run it belongs to filled in from what the
+//! adapter reports. No user text goes on a command line or into a log.
 
-use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use muxa_tmux::{AgentState, Client, PaneId, Role, SessionId};
+use muxa_tmux::{AgentState, AgentStatus, Client, PaneId, Role, SessionId};
 
-use super::{Config, blocking};
-use crate::agents::Registry;
-use crate::records::{Record, StoreError};
+use super::{Config, blocking, link};
+use crate::agents::{Processes, Registry};
+use crate::records::{Record, Seen, StoreError};
 
-pub const PROMPT: &str = "Read .muxa/TASK.md and start.";
 /// How long a new agent gets to report `idle`.
 const PROMPT_WAIT: Duration = Duration::from_secs(30);
 const PROMPT_POLL: Duration = Duration::from_secs(1);
 /// Between the text and Enter, so a TUI does not take both as one paste.
 const KEY_GAP: Duration = Duration::from_millis(200);
 const LIST_TIMEOUT: Duration = Duration::from_secs(5);
-const NOTE_ATTEMPTS: usize = 3;
-const DIR: &str = ".muxa";
-const FILE: &str = "TASK.md";
-/// `TASK.md` relative to the task's directory, as the Reader lists it.
-pub const BRIEF: &str = ".muxa/TASK.md";
-/// The pattern added to git's exclude file.
-const EXCLUDE: &str = ".muxa/";
-const NOT_SENT: &str = "The agent did not become idle within 30 seconds, so the start prompt \
-     was not sent. In its pane, type: Read .muxa/TASK.md and start.";
+const WRITE_ATTEMPTS: usize = 3;
 
-/// The text of `TASK.md`.
-pub fn render(r: &Record) -> String {
-    let mut out = format!(
-        "# {}\n\n## Goal\n\n{}\n\n## Context\n\n",
-        r.title,
-        r.goal.trim_end()
-    );
-    out.push_str(&format!("- Task: {}\n- Workspace: {}\n", r.id, r.workspace));
-    if let Some(project) = &r.project {
-        out.push_str(&format!("- Project: {project}\n"));
-    }
-    if let Some(repo) = &r.repo {
-        out.push_str(&format!("- Repo: {}\n", repo.display()));
-    }
-    if let Some(branch) = &r.branch {
-        out.push_str(&format!("- Branch: {branch}\n"));
-    }
-    out
+/// A fixed prompt, and the note that replaces it when the agent never became idle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Prompt {
+    pub text: &'static str,
+    pub not_sent: &'static str,
+    /// Only an `idle` since this time counts, in epoch seconds. A state tag
+    /// survives `respawn-pane`, and an old `idle` would type into a starting agent.
+    pub idle_since: Option<u64>,
 }
 
-/// Writes `<dir>/.muxa/TASK.md`. In a repo, `.muxa/` is excluded first, so
-/// it never shows as a change. Blocking.
-pub fn write(dir: &Path, record: &Record, in_repo: bool) -> Result<PathBuf, String> {
-    if in_repo {
-        exclude(dir)?;
+pub const START: Prompt = Prompt {
+    text: "Read .muxa/TASK.md and start.",
+    not_sent: "The agent did not become idle within 30 seconds, so the start prompt \
+               was not sent. In its pane, type: Read .muxa/TASK.md and start.",
+    idle_since: None,
+};
+
+pub fn restart(at: u64) -> Prompt {
+    Prompt {
+        text: "Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.",
+        not_sent: "The restarted agent did not become idle within 30 seconds, so the \
+                   prompt was not sent. In its pane, type: Read .muxa/TASK.md and \
+                   .muxa/HANDOFF.md, then continue.",
+        idle_since: Some(at),
     }
-    let folder = dir.join(DIR);
-    std::fs::create_dir_all(&folder)
-        .map_err(|e| format!("cannot create {}: {e}", folder.display()))?;
-    let path = folder.join(FILE);
-    std::fs::write(&path, render(record))
-        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-    Ok(path)
 }
 
-/// Adds `.muxa/` to the repo's `info/exclude`, shared by all its worktrees.
-fn exclude(dir: &Path) -> Result<(), String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|e| format!("cannot run git: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("{} is not in a git repository", dir.display()));
+impl Prompt {
+    fn ready(&self, status: Option<AgentStatus>) -> bool {
+        let Some(s) = status.filter(|s| s.state == AgentState::Idle) else {
+            return false;
+        };
+        match self.idle_since {
+            None => true,
+            Some(at) => s.since.is_some_and(|since| since >= at),
+        }
     }
-    let common = String::from_utf8_lossy(&out.stdout);
-    let info = Path::new(common.trim_end_matches('\n')).join("info");
-    let path = info.join("exclude");
-    let existing = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
-    };
-    let Some(addition) = exclude_addition(&existing) else {
-        return Ok(());
-    };
-    std::fs::create_dir_all(&info).map_err(|e| format!("cannot create {}: {e}", info.display()))?;
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .and_then(|mut f| f.write_all(addition.as_bytes()))
-        .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
-/// What to append to an exclude file, or None when it already has the line.
-pub fn exclude_addition(existing: &str) -> Option<String> {
-    let present = existing
-        .lines()
-        .map(str::trim)
-        .any(|l| l == EXCLUDE || l == "/.muxa/" || l == ".muxa");
-    if present {
-        return None;
-    }
-    let lead = if existing.is_empty() || existing.ends_with('\n') {
-        ""
-    } else {
-        "\n"
-    };
-    Some(format!("{lead}{EXCLUDE}\n"))
+/// The agent pane of a Task's session, as tags and adapters describe it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentPane {
+    pub session: SessionId,
+    pub pane: PaneId,
+    pub status: Option<AgentStatus>,
+    /// What an adapter reports about the agent there.
+    pub seen: Option<Seen>,
 }
 
-/// Types [`PROMPT`] into the session's agent pane once its adapter reports
-/// `idle`. Not on `waiting`: that includes a permission menu, where the
-/// text would pick an option. After [`PROMPT_WAIT`], the record's note says
-/// the prompt was not sent.
+/// Which session to look in.
+#[derive(Debug, Clone)]
+pub enum Linked {
+    Session(SessionId),
+    /// The session that runs this record, by tag or by `dir` (ADR 0015).
+    Task(String),
+}
+
+/// Types `prompt` into the session's agent pane once it is ready, and fills
+/// in run `run` from what the adapter reports. Not on `waiting`: that
+/// includes a permission menu, where the text would pick an option. After
+/// [`PROMPT_WAIT`], the record's note says the prompt was not sent.
 pub async fn send_prompt(
     client: Arc<Client>,
     agents: Arc<Registry>,
     config: Arc<Config>,
     task: String,
     session: SessionId,
+    run: u32,
+    prompt: Prompt,
 ) {
     let deadline = tokio::time::Instant::now() + PROMPT_WAIT;
+    let mut seen = None;
     loop {
-        if let Some((pane, Some(AgentState::Idle))) = agent_pane(&client, &agents, session).await {
-            match type_prompt(&client, pane).await {
-                Ok(()) => tracing::info!(task, %pane, "start prompt sent"),
-                Err(e) => tracing::warn!(task, %pane, error = %e, "cannot send the start prompt"),
+        let found = agent_pane(&client, &agents, &config, Linked::Session(session)).await;
+        if let Some(found) = found {
+            seen = found.seen.or(seen);
+            if prompt.ready(found.status) {
+                match type_prompt(&client, found.pane, prompt.text).await {
+                    Ok(()) => tracing::info!(task, pane = %found.pane, "prompt sent"),
+                    Err(e) => {
+                        tracing::warn!(task, pane = %found.pane, error = %e, "cannot send the prompt")
+                    }
+                }
+                if let Some(seen) = seen {
+                    fill_run(&config, task, run, seen).await;
+                }
+                return;
             }
-            return;
         }
         if tokio::time::Instant::now() >= deadline {
             break;
         }
         tokio::time::sleep(PROMPT_POLL).await;
     }
-    tracing::info!(task, %session, "agent not idle; start prompt not sent");
-    note(&config, task, NOT_SENT).await;
+    tracing::info!(task, %session, "agent not idle; prompt not sent");
+    let note = prompt.not_sent;
+    write(&config, task, move |r| {
+        r.note = Some(note.to_owned());
+        if let Some(seen) = &seen {
+            if let Some(run) = r.run_mut(run) {
+                run.fill(seen);
+            }
+        }
+    })
+    .await;
 }
 
-async fn type_prompt(client: &Client, pane: PaneId) -> Result<(), muxa_tmux::Error> {
-    muxa_tmux::send_text(client, pane, PROMPT).await?;
+async fn type_prompt(client: &Client, pane: PaneId, text: &str) -> Result<(), muxa_tmux::Error> {
+    muxa_tmux::send_text(client, pane, text).await?;
     tokio::time::sleep(KEY_GAP).await;
     muxa_tmux::send_keys(client, pane, &["Enter".to_owned()]).await
 }
 
-/// The session's agent pane and the state its tags or adapter give.
-async fn agent_pane(
+/// The first live agent pane of the linked session, with its state and what
+/// its adapter reports.
+pub async fn agent_pane(
     client: &Client,
     agents: &Arc<Registry>,
-    session: SessionId,
-) -> Option<(PaneId, Option<AgentState>)> {
+    config: &Arc<Config>,
+    which: Linked,
+) -> Option<AgentPane> {
     let listed = tokio::time::timeout(LIST_TIMEOUT, muxa_tmux::list_sessions(client))
         .await
         .ok()?
         .ok()?;
-    let mut mine: Vec<_> = listed.into_iter().filter(|s| s.id == session).collect();
-    if mine.is_empty() {
-        return None;
-    }
-    let agents = Arc::clone(agents);
-    let mine = tokio::task::spawn_blocking(move || {
+    let (agents, config) = (Arc::clone(agents), Arc::clone(config));
+    tokio::task::spawn_blocking(move || {
+        let mut sessions = listed;
+        if matches!(which, Linked::Task(_)) {
+            link(&mut sessions, &config);
+        }
+        let mut mine: Vec<_> = sessions
+            .into_iter()
+            .filter(|s| match &which {
+                Linked::Session(id) => s.id == *id,
+                Linked::Task(task) => s.task_id.as_deref() == Some(task.as_str()),
+            })
+            .take(1)
+            .collect();
         crate::sessions::fill_agents(&mut mine, &agents);
-        mine
+        let session = mine.into_iter().next()?;
+        let pane = session
+            .panes
+            .iter()
+            .find(|p| p.role == Role::Agent && !p.dead)?;
+        let procs = Processes::list().ok()?;
+        let seen = agents
+            .identify(&crate::sessions::info(&session.name, pane), &procs)
+            .map(|(agent, found)| Seen {
+                agent: agent.to_owned(),
+                session: found.session.as_ref().map(|s| s.id.clone()),
+                transcript: found.session.and_then(|s| s.transcript),
+            });
+        Some(AgentPane {
+            session: session.id,
+            pane: pane.id,
+            status: pane.agent,
+            seen,
+        })
     })
     .await
-    .ok()?;
-    mine.into_iter()
-        .flat_map(|s| s.panes)
-        .find(|p| p.role == Role::Agent && !p.dead)
-        .map(|p| (p.id, p.agent.map(|a| a.state)))
+    .ok()
+    .flatten()
 }
 
-/// Sets the record's note, retrying when another bridge wrote in between.
-pub async fn note(config: &Config, task: String, text: &'static str) {
+async fn fill_run(config: &Config, task: String, run: u32, seen: Seen) {
+    write(config, task, move |r| {
+        if let Some(run) = r.run_mut(run) {
+            run.fill(&seen);
+        }
+    })
+    .await;
+}
+
+/// Applies `change` to the current record, retrying when another bridge
+/// wrote in between. Returns the record written.
+pub async fn write(
+    config: &Config,
+    task: String,
+    change: impl Fn(&mut Record) + Send + 'static,
+) -> Option<Record> {
     let config = config.clone();
     let done = blocking(move || {
         let store = config.store()?;
-        for _ in 0..NOTE_ATTEMPTS {
+        for _ in 0..WRITE_ATTEMPTS {
             let rev = store.get(&task).map_err(|e| super::store_error(&e))?.rev;
-            match store.update(&task, rev, |r| r.note = Some(text.to_owned())) {
-                Ok(_) => return Ok(()),
+            match store.update(&task, rev, &change) {
+                Ok(r) => return Ok(r),
                 Err(StoreError::Conflict { .. }) => continue,
                 Err(e) => return Err(super::store_error(&e)),
             }
@@ -193,7 +214,38 @@ pub async fn note(config: &Config, task: String, text: &'static str) {
         Err(super::store_error(&StoreError::Busy(task)))
     })
     .await;
-    if let Err(e) = done {
-        tracing::warn!(error = %e.message, "cannot set a task note");
+    match done {
+        Ok(r) => Some(r),
+        Err(e) => {
+            tracing::warn!(error = %e.message, "cannot update a task record");
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn idle(since: Option<u64>) -> Option<AgentStatus> {
+        Some(AgentStatus {
+            state: AgentState::Idle,
+            since,
+        })
+    }
+
+    #[test]
+    fn a_restart_prompt_waits_for_an_idle_newer_than_the_restart() {
+        assert!(START.ready(idle(None)));
+        assert!(!START.ready(None));
+        let p = restart(100);
+        assert!(!p.ready(idle(Some(99))), "an idle from before the restart");
+        assert!(!p.ready(idle(None)), "an idle of unknown age");
+        assert!(p.ready(idle(Some(100))));
+        let running = Some(AgentStatus {
+            state: AgentState::Running,
+            since: Some(200),
+        });
+        assert!(!p.ready(running));
     }
 }

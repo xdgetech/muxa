@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, cap};
 use super::tail::{INITIAL_TAIL, JsonlTail, Poll};
-use super::{AgentAdapter, AgentDoc, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
+use super::{
+    AgentAdapter, AgentDoc, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes,
+};
 
 mod prompt;
 
@@ -46,9 +48,13 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
-        let (_, session) = find_session(&self.dirs, pane, procs).ok()??;
+        let (dir, session) = find_session(&self.dirs, pane, procs).ok()??;
         Some(Found {
             status: session.agent().filter(|_| !pane.shell_foreground),
+            session: Some(AgentSession {
+                id: session.session_id.clone(),
+                transcript: transcript(&dir, &session),
+            }),
         })
     }
 

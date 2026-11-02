@@ -46,6 +46,7 @@ selected="$(selection)"
 old_pid="$(mt display-message -p -t "$agent" '#{pane_pid}')"
 
 {
+  # shellcheck disable=SC2016 # the $ is for tmux, escaped
   printf 'respawn-pane -k -t %s -c "%s" -e "MUXA_REPRO_WORKSPACE=a b\\"c\\$d"\n' "$agent" "$tmp/work"
   sleep 0.5
 } | mt_control "$base" >/dev/null

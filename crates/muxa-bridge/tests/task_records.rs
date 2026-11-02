@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use common::repo::{Repo, fake_new_sh, git};
 use common::{Bridge, Server};
-use muxa_protocol::{AgentState, ErrorCode, Message, TaskRecord, TaskStatus};
+use muxa_protocol::{AgentState, ErrorCode, Message, RunReason, TaskRecord, TaskStatus};
 use serde_json::{Value, json};
 
 const PROMPT: &str = "Read .muxa/TASK.md and start.";
@@ -590,4 +590,223 @@ async fn a_repo_task_gets_its_workspace_env_even_with_tmux_agents() {
         error.message
     );
     assert!(none.is_none());
+}
+
+const RESTART_PROMPT: &str = "Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.";
+/// The session id `fake_claude` writes.
+const FAKE_SESSION: &str = "0b8c3c0e-1111-4a2b-9c3d-000000000016";
+
+async fn restart(bridge: &mut Bridge, task: &str, force: bool) -> (Option<TaskRecord>, Message) {
+    send(
+        bridge,
+        json!({"type": "restart-agent", "task": task, "force": force}),
+    )
+    .await
+}
+
+/// `Server::layout` without the pids, which a restart changes.
+fn shape(server: &Server) -> String {
+    server
+        .layout()
+        .lines()
+        .map(|l| l.rsplit_once(' ').map_or(l, |(shape, _pid)| shape))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+async fn record_of(bridge: &mut Bridge, id: &str) -> TaskRecord {
+    list_tasks(bridge)
+        .await
+        .into_iter()
+        .find(|r| r.id == id)
+        .expect("the record")
+}
+
+#[tokio::test]
+async fn a_restart_keeps_the_pane_hands_off_and_records_runs() {
+    let server = Server::start();
+    let host = Host::new("restart");
+    let (table, config) = agent_table(&host);
+    let path = host.dir.join("workspaces.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, format!("{text}{table}")).unwrap();
+    let empty = host.dir.join("claude-default");
+    std::fs::create_dir_all(&empty).unwrap();
+    let flag = format!("claude-code={}", empty.display());
+    let mut bridge = host
+        .bridge(
+            &server,
+            &[
+                "--task-launcher",
+                "builtin",
+                "--task-command",
+                AGENT,
+                "--agent-dir",
+                &flag,
+            ],
+        )
+        .await;
+
+    let (saved, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = saved.expect("task-saved");
+    assert_eq!(r.runs.len(), 1);
+    assert_eq!(r.runs[0].reason, RunReason::Start);
+    let pane = server.pane(&format!("={}:", r.session.clone().unwrap()));
+    agent_env(&config).await;
+    // The prompt path fills in the run from the adapter.
+    common::wait_until(|| prompts(&server, &pane) > 0).await;
+    let mut listed = record_of(&mut bridge, &r.id).await;
+    for _ in 0..20 {
+        if listed.runs[0].agent_session.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        listed = record_of(&mut bridge, &r.id).await;
+    }
+    assert_eq!(listed.runs[0].agent.as_deref(), Some("claude-code"));
+    assert_eq!(listed.runs[0].agent_session.as_deref(), Some(FAKE_SESSION));
+
+    // The agent's notes, and a transcript the adapter can point to.
+    let dir = PathBuf::from(r.dir.clone().unwrap());
+    let brief = dir.join(".muxa/TASK.md");
+    let text = std::fs::read_to_string(&brief).unwrap();
+    let notes_at = text.find("<!-- muxa:notes").expect("marker");
+    let notes = format!("{}\n- Fixed the form.\n", &text[notes_at..]);
+    std::fs::write(&brief, format!("{}{notes}", &text[..notes_at])).unwrap();
+    let transcript = config.join(format!("projects/x/{FAKE_SESSION}.jsonl"));
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    std::fs::write(&transcript, "{}\n").unwrap();
+    std::fs::remove_file(config.with_extension("env")).unwrap();
+    let before = shape(&server);
+    let pid = server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"]);
+
+    let (saved, result) = restart(&mut bridge, &r.id, false).await;
+    ok(&result);
+    let saved = saved.expect("task-saved");
+    assert_eq!(saved.runs.len(), 2);
+    let (first, second) = (&saved.runs[0], &saved.runs[1]);
+    assert!(first.ended_at.is_some());
+    assert_eq!(first.agent_session.as_deref(), Some(FAKE_SESSION));
+    assert_eq!(
+        first.transcript.as_deref(),
+        Some(transcript.to_str().unwrap())
+    );
+    assert_eq!((second.id, second.reason), (2, RunReason::Restart));
+    assert_eq!(second.started_at, first.ended_at.unwrap());
+
+    // Same pane, same size, same layout; a new process with the workspace env.
+    let env = agent_env(&config).await;
+    assert!(env.contains(&format!("MUXA_IT_TOKEN={TOKEN}")), "{env:?}");
+    assert_eq!(shape(&server), before);
+    assert_ne!(
+        server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"]),
+        pid
+    );
+
+    // TASK.md keeps the notes; HANDOFF.md has the facts.
+    let text = std::fs::read_to_string(&brief).unwrap();
+    assert!(text.ends_with(&notes), "{text}");
+    let handoff = std::fs::read_to_string(dir.join(".muxa/HANDOFF.md")).unwrap();
+    assert!(handoff.contains("- Run 1 (start)"), "{handoff}");
+    assert!(handoff.contains(transcript.to_str().unwrap()), "{handoff}");
+    assert!(handoff.contains("## Files changed since"), "{handoff}");
+
+    // The new agent reports idle, then gets the prompt once.
+    let restarted = || {
+        server
+            .capture(&pane)
+            .iter()
+            .filter(|l| l.as_str() == RESTART_PROMPT)
+            .count()
+    };
+    common::wait_until(|| restarted() == 1).await;
+}
+
+#[tokio::test]
+async fn a_running_agent_is_restarted_only_with_force() {
+    let server = Server::start();
+    let host = Host::new("restart-running");
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (r, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = r.unwrap();
+    let pane = server.pane(&format!("={}:", r.session.clone().unwrap()));
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "running"]);
+
+    let (none, result) = restart(&mut bridge, &r.id, false).await;
+    assert!(none.is_none());
+    let Message::Result {
+        error: Some(error), ..
+    } = result
+    else {
+        panic!("{result:?}")
+    };
+    assert_eq!(error.code, ErrorCode::BadRequest);
+    assert!(error.message.contains("running"), "{}", error.message);
+    assert_eq!(record_of(&mut bridge, &r.id).await.runs.len(), 1);
+    let dir = PathBuf::from(r.dir.clone().unwrap());
+    assert!(!dir.join(".muxa/HANDOFF.md").exists());
+
+    let before = shape(&server);
+    let (saved, result) = restart(&mut bridge, &r.id, true).await;
+    ok(&result);
+    assert_eq!(saved.unwrap().runs.len(), 2);
+    assert_eq!(shape(&server), before);
+
+    let (_, result) = restart(&mut bridge, "t-000000", false).await;
+    assert_eq!(error_code(&result), ErrorCode::BadRequest);
+}
+
+#[tokio::test]
+async fn an_agent_typed_into_a_shell_is_typed_again() {
+    let server = Server::start();
+    let host = Host::new("restart-typed");
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (r, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = r.unwrap();
+    let dir = r.dir.clone().unwrap();
+    // As tmux-agents does it: a shell pane, the agent typed into it.
+    server.tmux(&["kill-session", "-t", &format!("={}", r.session.unwrap())]);
+    server.tmux(&["new-session", "-d", "-s", "typed", "-c", &dir]);
+    let pane = server.pane("=typed:");
+    server.tmux(&["set-option", "-p", "-t", &pane, "@muxa_role", "agent"]);
+    let start = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &pane,
+        "#{pane_start_command}",
+    ]);
+    assert_eq!(start.trim(), "");
+    let before = shape(&server);
+
+    let (saved, result) = restart(&mut bridge, &r.id, false).await;
+    ok(&result);
+    assert_eq!(saved.unwrap().runs.len(), 2);
+    let command = || {
+        server
+            .tmux(&[
+                "display-message",
+                "-p",
+                "-t",
+                &pane,
+                "#{pane_current_command}",
+            ])
+            .trim()
+            .to_owned()
+    };
+    common::wait_until(|| command() == AGENT).await;
+    assert_eq!(shape(&server), before);
 }

@@ -31,6 +31,14 @@ pub(crate) fn new_session_line(
         quote(name),
         quote(dir),
     );
+    push_env(&mut line, env)?;
+    line.push(' ');
+    line.push_str(&quote(command));
+    Ok(line)
+}
+
+/// Appends ` -e "KEY=VALUE"` for each pair.
+fn push_env(line: &mut String, env: &[(String, String)]) -> Result<(), Error> {
     for (key, value) in env {
         if !env_key(key) {
             // The key only: a value may be a secret.
@@ -41,9 +49,45 @@ pub(crate) fn new_session_line(
         line.push_str(" -e ");
         line.push_str(&quote(&format!("{key}={value}")));
     }
-    line.push(' ');
-    line.push_str(&quote(command));
+    Ok(())
+}
+
+pub(crate) fn respawn_pane_line(
+    pane: PaneId,
+    dir: &str,
+    env: &[(String, String)],
+) -> Result<String, Error> {
+    let mut line = format!("respawn-pane -k -t {pane} -c {}", quote(dir));
+    push_env(&mut line, env)?;
     Ok(line)
+}
+
+/// Replaces the process of `pane` in place (`respawn-pane -k`): the pane
+/// keeps its id, its size and its place in the layout, and nothing is
+/// selected (`scripts/repro/respawn-pane.sh`). With no command given, tmux
+/// reruns the pane's start command, or starts a shell when it had none.
+/// `env` travels on the control client's stdin, as for [`new_session`].
+pub async fn respawn_pane(
+    client: &Client,
+    pane: PaneId,
+    dir: &str,
+    env: &[(String, String)],
+) -> Result<(), Error> {
+    client
+        .command(&respawn_pane_line(pane, dir, env)?)
+        .await
+        .map(drop)
+}
+
+/// The command `pane` was started with; empty when it started the default shell.
+pub async fn pane_start_command(client: &Client, pane: PaneId) -> Result<String, Error> {
+    let reply = client
+        .command(&format!(
+            "display-message -p -t {pane} {}",
+            quote("#{pane_start_command}")
+        ))
+        .await?;
+    Ok(lines(&reply.lines).concat())
 }
 
 /// `[A-Za-z_][A-Za-z0-9_]*`: no `=` that would move the split into the value.
@@ -211,6 +255,17 @@ mod tests {
             new_session_line("t", "/d", &env, "claude").unwrap(),
             r##"new-session -d -P -F "#{session_id} #{pane_id}" -s "t" -c "/d" -e "CLAUDE_CONFIG_DIR=/h/.claude-a" -e "TOKEN=a\"b \$c" "claude""##
         );
+    }
+
+    #[test]
+    fn a_respawn_names_the_pane_by_id_and_quotes_every_value() {
+        let env = [("TOKEN".to_owned(), "a\"b $c".to_owned())];
+        assert_eq!(
+            respawn_pane_line(PaneId::new(7), "/w/a b", &env).unwrap(),
+            r##"respawn-pane -k -t %7 -c "/w/a b" -e "TOKEN=a\"b \$c""##
+        );
+        let bad = [("A=B".to_owned(), "secret".to_owned())];
+        assert!(respawn_pane_line(PaneId::new(7), "/d", &bad).is_err());
     }
 
     #[test]

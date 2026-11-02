@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::{
-    FORMAT_VERSION, MAX_FIELD, MAX_FILE, MAX_GOAL, MAX_TITLE, NewRecord, Record, Status,
+    FORMAT_VERSION, MAX_FIELD, MAX_FILE, MAX_GOAL, MAX_RUNS, MAX_TITLE, NewRecord, Record, Status,
     is_valid_id, new_id,
 };
 
@@ -151,6 +151,7 @@ impl Store {
             dir: new.dir,
             session: new.session,
             note: new.note,
+            runs: Vec::new(),
             extra: serde_json::Map::new(),
         };
         check(&record)?;
@@ -331,22 +332,50 @@ fn check(r: &Record) -> Result<(), StoreError> {
         }
     }
     for (field, path) in [("repo", &r.repo), ("dir", &r.dir)] {
-        let Some(path) = path else { continue };
-        if !path.is_absolute() {
-            return invalid(field, "is not an absolute path");
-        }
+        check_path(field, path.as_deref())?;
+    }
+    check_runs(r)
+}
+
+fn check_path(field: &'static str, path: Option<&Path>) -> Result<(), StoreError> {
+    let Some(path) = path else { return Ok(()) };
+    let reason = if !path.is_absolute() {
+        "is not an absolute path".to_owned()
+    } else {
         match path.to_str() {
-            None => return invalid(field, "is not valid UTF-8"),
-            Some(p) if p.len() > MAX_FIELD => {
-                return invalid(field, &format!("is longer than {MAX_FIELD} bytes"));
-            }
-            Some(_) => {}
+            None => "is not valid UTF-8".to_owned(),
+            Some(p) if p.len() > MAX_FIELD => format!("is longer than {MAX_FIELD} bytes"),
+            Some(_) => return Ok(()),
         }
+    };
+    Err(StoreError::Invalid { field, reason })
+}
+
+fn check_runs(r: &Record) -> Result<(), StoreError> {
+    if r.runs.len() > MAX_RUNS {
+        return Err(StoreError::Invalid {
+            field: "runs",
+            reason: format!("has more than {MAX_RUNS} entries"),
+        });
+    }
+    for run in &r.runs {
+        for (field, text) in [
+            ("run agent", &run.agent),
+            ("run session", &run.agent_session),
+        ] {
+            if text.as_ref().is_some_and(|t| t.len() > MAX_FIELD) {
+                return Err(StoreError::Invalid {
+                    field,
+                    reason: format!("is longer than {MAX_FIELD} bytes"),
+                });
+            }
+        }
+        check_path("run transcript", run.transcript.as_deref())?;
     }
     Ok(())
 }
 
-fn now() -> u64 {
+pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())

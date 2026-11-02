@@ -95,6 +95,7 @@ where
     .into();
     if config.records.enabled() {
         capabilities.push("task-records".into());
+        capabilities.push("task-handoff".into());
     }
     let hello = Message::Hello {
         protocol: muxa_protocol::VERSION,
@@ -577,6 +578,34 @@ impl Worker {
                         let record = convert::task_record(record);
                         let _ = out.send(Message::TaskSaved { task: id, record }).await;
                     }
+                    let _ = out
+                        .send(Message::Result {
+                            id: Some(id),
+                            error,
+                            sessions: None,
+                        })
+                        .await;
+                });
+                return None;
+            }
+            // A restart waits on tmux and the adapters; keystrokes must not wait for it.
+            Request::RestartAgent { id, task, force } => {
+                let env = task_records::Env {
+                    client: Arc::clone(&self.client),
+                    tasks: Arc::clone(&self.tasks),
+                    records: Arc::clone(&self.records),
+                    agents: Arc::clone(&self.agents),
+                };
+                let out = self.out.clone();
+                tokio::spawn(async move {
+                    let error = match task_records::restart(&env, task, force).await {
+                        Ok(record) => {
+                            let record = convert::task_record(record);
+                            let _ = out.send(Message::TaskSaved { task: id, record }).await;
+                            None
+                        }
+                        Err(e) => Some(e),
+                    };
                     let _ = out
                         .send(Message::Result {
                             id: Some(id),

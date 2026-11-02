@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use muxa_tmux::{Pane, PaneId, Role, Session, SessionId, WindowId};
 
-use super::handoff::{exclude_addition, render};
+use super::brief::{exclude_addition, merge, render};
 use super::*;
 use crate::records::FORMAT_VERSION;
 
@@ -23,6 +23,7 @@ fn record(id: &str, created_at: u64, status: Status, dir: Option<&str>) -> Recor
         dir: dir.map(PathBuf::from),
         session: None,
         note: None,
+        runs: Vec::new(),
         extra: serde_json::Map::new(),
     }
 }
@@ -121,11 +122,70 @@ fn task_md_holds_the_goal_and_where_the_work_is() {
     r.project = Some("auth".into());
     r.repo = Some("/src/app".into());
     r.branch = Some("feat/login".into());
+    let text = render(&r);
+    // ADR 0015's part comes first, unchanged.
+    assert!(text.starts_with(LEGACY), "{text}");
+    // Then the request to the agent, the marker and its sections (ADR 0018).
+    let notes = text.find(MARKER).expect("marker");
+    assert!(text[..notes].contains("## How to use this file"));
     assert_eq!(
-        render(&r),
-        "# Fix login\n\n## Goal\n\nMake login work.\n\n## Context\n\n\
-         - Task: t-7f3a2c\n- Workspace: work\n- Project: auth\n\
-         - Repo: /src/app\n- Branch: feat/login\n"
+        &text[notes..],
+        format!(
+            "{MARKER}\n\n## Progress\n\nNothing yet.\n\n## Decisions\n\nNothing yet.\n\n## Next actions\n\nNothing yet.\n"
+        )
+    );
+}
+
+const LEGACY: &str = "# Fix login\n\n## Goal\n\nMake login work.\n\n## Context\n\n\
+     - Task: t-7f3a2c\n- Workspace: work\n- Project: auth\n\
+     - Repo: /src/app\n- Branch: feat/login\n";
+const MARKER: &str = "<!-- muxa:notes - muxa never changes anything below this line. -->";
+
+fn full_record() -> Record {
+    let mut r = record("t-7f3a2c", 1, Status::Open, None);
+    r.project = Some("auth".into());
+    r.repo = Some("/src/app".into());
+    r.branch = Some("feat/login".into());
+    r
+}
+
+#[test]
+fn a_rewrite_keeps_the_agents_notes_byte_for_byte() {
+    let r = full_record();
+    let notes = format!(
+        "{MARKER}\n\n## Progress\n\n- Found the bug in `auth.rs`.\n\n## Decisions\n\n\
+         - Kept the old API.\n\n## Next actions\n\n1. Add a test\n\n## Extra\n\nno trailing newline"
+    );
+    let old = format!("# An old title\n\nedited by hand\n\n{notes}");
+    let new = merge(&r, Some(&old));
+    assert!(new.starts_with(LEGACY), "{new}");
+    assert!(new.ends_with(&notes), "{new}");
+    assert_eq!(new.matches(MARKER).count(), 1);
+    assert!(
+        !new.contains("edited by hand"),
+        "the header is the bridge's"
+    );
+    // Twice is the same as once.
+    assert_eq!(merge(&r, Some(&new)), new);
+    // A marker line with other words after its start still counts.
+    let other = "<!-- muxa:notes, written by an older muxa -->\nmine\n";
+    assert!(merge(&r, Some(other)).ends_with(other));
+}
+
+#[test]
+fn a_file_without_the_marker_loses_nothing() {
+    let r = full_record();
+    // What ADR 0015 wrote is replaced.
+    assert_eq!(merge(&r, Some(LEGACY)), render(&r));
+    assert_eq!(merge(&r, None), render(&r));
+    assert_eq!(merge(&r, Some("  \n")), render(&r));
+    // Anything else is kept under "Earlier notes".
+    let edited = format!("{LEGACY}\nMy own notes");
+    let new = merge(&r, Some(&edited));
+    assert!(new.starts_with(&render(&r)), "{new}");
+    assert!(
+        new.ends_with(&format!("## Earlier notes\n\n{edited}\n")),
+        "{new}"
     );
 }
 

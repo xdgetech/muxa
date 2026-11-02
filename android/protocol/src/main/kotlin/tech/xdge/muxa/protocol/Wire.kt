@@ -73,6 +73,7 @@ object Wire {
         kind<Request.ListTasks>("list-tasks"),
         kind<Request.CreateTask>("create-task"),
         kind<Request.UpdateTask>("update-task"),
+        kind<Request.RestartAgent>("restart-agent"),
         kind<Request.Bye>("bye"),
     )
 

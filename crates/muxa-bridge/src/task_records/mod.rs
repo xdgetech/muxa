@@ -1,11 +1,16 @@
-//! Serves task records to clients (ADR 0015): `list-tasks`, `create-task`,
-//! `update-task`, and the link between a record and its session. The store
-//! itself is `records/`, which knows nothing of tmux or the protocol.
+//! Serves task records to clients (ADR 0015, 0018): `list-tasks`,
+//! `create-task`, `update-task`, `restart-agent`, and the link between a
+//! record and its session. The store itself is `records/`, which knows
+//! nothing of tmux or the protocol.
 
+mod brief;
 mod create;
+mod facts;
 mod handoff;
+mod restart;
 
-pub use handoff::BRIEF;
+pub use brief::BRIEF;
+pub use restart::restart;
 
 use std::cmp::Reverse;
 use std::collections::HashSet;

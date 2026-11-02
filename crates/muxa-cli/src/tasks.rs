@@ -1,4 +1,5 @@
-//! `tasks`, `task new` and `task done`: task records (`task-records`, ADR 0015).
+//! `tasks`, `task new`, `task done` and `task restart`: task records
+//! (`task-records`, ADR 0015; `task-handoff`, ADR 0018).
 
 use std::time::Duration;
 
@@ -106,6 +107,26 @@ pub async fn done(conn: &mut Conn, task: &str) -> Result<String, String> {
     Ok(String::new())
 }
 
+/// The restarted agent gets its prompt later; the record shows the new run.
+pub async fn restart(conn: &mut Conn, task: &str, force: bool) -> Result<String, String> {
+    let messages = conn
+        .call(
+            |id| Request::RestartAgent {
+                id,
+                task: task.to_owned(),
+                force,
+            },
+            LAUNCH_WAIT,
+        )
+        .await?;
+    let record = saved(&messages).ok_or("the bridge saved no task")?;
+    println!("{}", line(record));
+    if let Some(run) = record.runs.last() {
+        println!("run {}: restarted", run.id);
+    }
+    Ok(String::new())
+}
+
 async fn fetch(conn: &mut Conn) -> Result<(Vec<String>, Vec<TaskRecord>, bool), String> {
     let messages = conn.call(|id| Request::ListTasks { id }, WAIT).await?;
     messages
@@ -210,6 +231,7 @@ mod tests {
             dir: None,
             session: Some("fix-login-t-7f3a2c".into()),
             note: Some("not sent".into()),
+            runs: Vec::new(),
         };
         assert_eq!(
             line(&r),

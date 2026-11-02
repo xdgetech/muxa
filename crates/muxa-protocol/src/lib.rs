@@ -167,6 +167,16 @@ pub enum Request {
         rev: u64,
         status: TaskStatus,
     },
+    /// Restart the agent of a task in the same pane, with a handoff written
+    /// first (ADR 0018). Needs the `task-handoff` capability. Refused while the
+    /// agent is running, unless `force`. A `task-saved` comes before the `result`.
+    RestartAgent {
+        id: u64,
+        /// The record's id, e.g. `t-7f3a2c`.
+        task: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        force: bool,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -200,6 +210,7 @@ impl Request {
             | Request::ListTasks { id }
             | Request::CreateTask { id, .. }
             | Request::UpdateTask { id, .. }
+            | Request::RestartAgent { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -395,6 +406,43 @@ pub struct TaskRecord {
     /// From the bridge, e.g. why the launch failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The agents that worked on the task, oldest first (ADR 0018). Recorded
+    /// only while a bridge started or restarted them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runs: Vec<AgentRun>,
+}
+
+/// One agent that worked on a task, as the bridge started or restarted it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRun {
+    /// From 1, one higher than the previous run's.
+    pub id: u32,
+    /// The adapter that saw the agent, e.g. `claude-code`; absent until one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Epoch seconds.
+    pub started_at: u64,
+    /// Epoch seconds when the bridge restarted it; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<u64>,
+    /// The agent's own session id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session: Option<String>,
+    /// The session's transcript on the host, absolute. A path only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
+    pub reason: RunReason,
+}
+
+/// Why the bridge started a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunReason {
+    /// `create-task` started the agent.
+    Start,
+    /// `restart-agent` replaced the agent.
+    Restart,
 }
 
 /// Set by the user; separate from the agent's state.
