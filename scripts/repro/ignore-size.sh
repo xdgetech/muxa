@@ -2,7 +2,8 @@
 # Fact: a control client attached with -f ignore-size never resizes a window,
 # next to a desktop client and also as the only client.
 # Hazard: after `refresh-client -C <size>`, an ignore-size client that is the
-# only client DOES size the window. muxa must never send refresh-client -C.
+# only client DOES size the window. The bridge sends a size only for a client
+# that asked for one, and drops ignore-size with it (ADR 0020).
 set -euo pipefail
 MUXA_SOCKET="muxa-repro-$$"
 . "$(dirname "$0")/../lib/tmux.bash"

@@ -23,6 +23,23 @@ mt_down() {
 # Returns 0: tmux exits 1 after a command error, and callers check the output.
 mt_control() { mt -C attach-session -t "$1" -f ignore-size 2>&1 || true; }
 
+# A control-mode client on session id $2 that stays attached and reads command
+# lines written to file descriptor $1 until the caller closes it (exec 3>&-).
+# $3: optional client flags. Its output goes to $MT_CONTROL_LOG (default none).
+# Usage: mt_control_open 3 "$session" ignore-size; echo 'refresh-client -C 90x30' >&3
+mt_control_open() {
+  local fifo
+  fifo="$(mktemp -u "${TMPDIR:-/tmp}/muxa-ctl.XXXXXX")"
+  mkfifo "$fifo"
+  if [ -n "${3:-}" ]; then
+    mt -C attach-session -t "$2" -f "$3" <"$fifo" >"${MT_CONTROL_LOG:-/dev/null}" 2>&1 &
+  else
+    mt -C attach-session -t "$2" <"$fifo" >"${MT_CONTROL_LOG:-/dev/null}" 2>&1 &
+  fi
+  eval "exec $1>\"\$fifo\""
+  rm -f "$fifo"
+}
+
 # A real (non-control) client on a pty, like a desktop terminal.
 # Usage: mt_desktop <session id> <cols> <rows> <seconds> [<type "x" after seconds>] &
 mt_desktop() {
