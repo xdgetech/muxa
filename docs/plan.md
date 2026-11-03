@@ -71,7 +71,9 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 ## Requested follow-on design
 
 - **Inbox queue** (proposed ADR 0025, simplified by ADR 0027): an ordered list with Act, Done, Move down and Later, a separate manual Sessions destination and an All Tasks destination. Move down and Later are optional fields on the Task record. Implemented: the manual Sessions filter in both apps, and Move down and Later on the host, in the CLI and in the shared queue code (`protocol/fixtures/inbox/queue.jsonl`, 16 cases). Not yet: the app actions that replace the local Snooze.
-- **Routines** (proposed ADR 0026): a Routine runs an agent on a trigger, for example every morning. The agent reads its sources (Slack, Linear, Notion and others) through its own native tools and publishes briefings and proposals to Inbox. An approved proposal becomes one new Task that performs the action. A run is a record of kind `routine-run`, not a Task in the UI. Nothing is implemented. Phase 3 of the order above.
+- **Routines** (proposed ADR 0026): a Routine runs an agent on a trigger, for example every morning. The agent reads its sources (Slack, Linear, Notion and others) through its own native tools and publishes briefings and proposals to Inbox. An approved proposal becomes one new Task that performs the action. A run is a record of kind `routine-run`, not a Task in the UI. Phase 3 of the order above.
+  - Done on the host (S0–S2): `[[routine]]`, the schedule on the daemon tick with DST and one catch-up, run-now, `routine-run` records with the output check and publish, stored Inbox entries with approve, dismiss and later, behind the capability `work:1`. CLI: `muxa-cli routines`, `routine run`, `inbox`. Verified with a fake agent on real tmux, in the daemon and the bridge.
+  - Next: the Inbox and Routine UI in one app, then the other (S3); one real source with a real login; Codex after ADR 0028.
 
 Milestones and dependencies are in `docs/workers.md`; the domain definitions are in `docs/work-model.md`.
 
@@ -135,6 +137,7 @@ The server:
 | Everything | `make check` |
 | tmux behavior, the bridge | `make test-tmux`, `make repro`. CI runs them on tmux 3.2a, 3.4 and the latest release, on Linux and macOS. |
 | The host daemon and the Task Loop | `make check` (the loop's `step`, the check runner, the `install --print` golden files); `make test-tmux` (`tests/daemon.rs`, `tests/loops.rs`: a real daemon, a fake agent, the layout snapshot and the log grep); `make repro` (`daemon-client.sh`, `client-activity.sh`); loading the real LaunchAgent or systemd unit by hand |
+| Routines | `make check` (config, schedule with DST and catch-up, output validation, publish); `make test-tmux` (`tests/routines.rs`: a real daemon and a fake agent run, publish, retry and approve; a scheduled run; the bridge without a daemon) |
 | The contract with tmux-agents | `MUXA_TMUX_AGENTS=<tmux-agents checkout> make test-tmux` (ADR 0017); tmux-agents' own `bats tests` |
 | MuxaKit | `make test-apple`; `make test-apple-tmux` against the real bridge |
 | The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, in the simulator against the in-app demo bridge |

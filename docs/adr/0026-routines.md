@@ -83,6 +83,18 @@ A Routine can write directly, without a proposal, only when its output policy ex
 - Direct writes skip the user's review. They are opt-in per Routine.
 - Renaming a Routine in `workspaces.toml` starts a new history. That is accepted for configuration a single developer edits.
 
+## Implementation notes (S0–S2)
+
+Decisions made while building S0–S2, each the simplest that met the sections above:
+
+- **Capability.** The host advertises `work:1`; later features raise the level (ADR 0027 section 5).
+- **Session and directory.** A run gets a new directory `<root>/routines/<name>-<id>` in its workspace and a session tagged `@muxa_task` with the run's id. The alternative, one long-lived session per Routine, needs a restart path for each run.
+- **Stage.** `.muxa/routine/output.json` in the run's directory, version 1; the committed state is handed in as `.muxa/routine/state.json`. Schema in `protocol/PROTOCOL.md`.
+- **Store.** One state file per Routine under the state directory, `routines/r-<hash>.json`, holds the schedule state, the open run, the committed state and the stored entries. One locked atomic write is the publish step. It keeps 200 entries per Routine, closed ones dropped first, so dedup covers those 200.
+- **Schedule.** A first look records the latest past occurrence without running it, so a new or re-enabled Routine runs no catch-up. A disabled Routine's last occurrence moves on too.
+- **Approval.** The Task's goal ends with `muxa-proposal: <entry> <hash>`; approval finds an existing Task by that line before it creates one. The Task runs on the workspace default agent.
+- **Run-now and the bridge.** Runs need the daemon: without it, `run-routine` is `unsupported`. Lists and Inbox actions work in the bridge too.
+
 ## Delivery slices
 
 | Slice | Scope | Acceptance |

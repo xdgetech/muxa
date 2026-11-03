@@ -81,6 +81,19 @@ The daemon (`muxa-bridge daemon run`, `crates/muxa-bridge/src/daemon/`, ADR 0019
 - **Typing.** The loop types its fixed prompt with `send-keys -l` and Enter, only on a finished turn, and only when no desktop client on the Task's session was active in the last 5 s (`loops/typing.rs`). It never sends menu keys.
 - **The adapters' directories** come from the daemon's own flags and `workspaces.toml`, read when it starts. Restart the daemon after a change to `[workspace.agent]`.
 
+## Routines
+
+A Routine (ADR 0026, `src/routines/`) is a `[[routine]]` in `workspaces.toml` that the daemon runs on its trigger, or on `run-routine`. Each run is a task record of kind `routine-run`: the same create path, session tag, runs, delivery claims and Loop engine as a Task. `list-tasks` skips it.
+
+- **Where it runs.** A new directory `<root>/routines/<name>-<id>` in the Routine's workspace, in a session tagged `@muxa_task`, so it is not a manual session. Its `.muxa/TASK.md` holds the Routine's instructions and a fixed Output section.
+- **How the agent writes output.** It writes `.muxa/routine/output.json` (the schema is in `protocol/PROTOCOL.md`, "Routine output"), then ends its turn. The state the last successful run committed is in `.muxa/routine/state.json`. The folder is the run's private stage; nothing outside the run reads it before the check.
+- **The check.** The Loop's check for this kind runs in the daemon's process, not as a shell command (`routines/check.rs`). It validates kinds, the item limit, sizes and links. On a pass, one locked write of `<state dir>/routines/r-<hash>.json` stores the new entries, skips keys the Routine already stored, commits the state and closes the run; the record becomes `done`. On a fail, the reasons go to `.muxa/checks/<attempt>.log`, and the loop types: `The Routine output did not pass the check. The reasons are in .muxa/checks/<attempt>.log. Fix .muxa/routine/output.json, then end your turn.` After 3 fails, the run is dropped and the Routine shows the failure.
+- **What needs an adapter.** The same as the Task Loop: a finished turn with its `since`. A Routine has no person to type the start prompt, so it needs automatic delivery. Codex does not have it yet (ADR 0028); a Routine whose worker or default command is Codex is refused before it starts.
+- **Approval.** `update-inbox approve` creates one Task through `create-task`'s path. Its goal holds the proposal unchanged, its hash, and a last line `muxa-proposal: <entry> <hash>`. A second approval, also after a crash, finds that Task by the line instead of making another.
+- **Logs.** Ids, counts and outcomes only. Never instructions, titles, bodies, links or state.
+
+From a terminal: `muxa-cli routines`, `routine run [WORKSPACE/]NAME`, `inbox`, and `inbox approve|dismiss ENTRY` or `inbox later ENTRY --until 4h`.
+
 ## Desktop tools
 
 A tool on the host, such as tmux-agents (ADR 0017), reads and creates Tasks through `muxa-cli` with `--json`. It never reads or writes the record files itself.

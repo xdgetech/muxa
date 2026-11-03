@@ -47,3 +47,30 @@ repos = ["~/projects/side/app"]
 [[workspace]]
 name = "Personal"
 root = "~/personal"
+
+# [[routine]]  optional; an agent run on a trigger that publishes briefings
+#   and proposals to Inbox (ADR 0026). The muxa daemon runs it.
+#   workspace     the workspace it runs in; its run gets a directory in
+#                 <root>/routines/
+#   name          its id within the workspace
+#   at, timezone  a daily local time, HH:MM, and an IANA time zone. Leave
+#                 both out for a Routine that runs only on run-now
+#   worker        optional; a [[worker]] name. Without it, the workspace
+#                 default agent runs it. Codex cannot run a Routine yet
+#   instructions  an absolute or ~/ path to a Markdown file, read on every run
+#   project       optional; the label on Tasks its proposals create
+#   enabled       required; nothing runs, also not run-now, while false
+#   [routine.output]  optional
+#     items          at most this many items per run, 1 to 50 (default 10)
+#     direct_writes  the agent may change external systems without a
+#                    proposal (default false)
+
+# Remove the # signs, write the instructions file, then enable it.
+# [[routine]]
+# workspace = "Company"
+# name = "Morning brief"
+# at = "08:30"
+# timezone = "Europe/Berlin"
+# instructions = "~/.config/muxa/routines/morning-brief.md"
+# project = "Ops"
+# enabled = false
