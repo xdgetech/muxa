@@ -27,7 +27,7 @@ Manual tmux work has a separate Sessions destination, while managed execution/hi
 
 The desired daily surface is an ordered Inbox list: work from the top, complete an action, move it down, or defer it until a chosen time. Briefings and proposed work can enter Inbox before an agent Task exists. Proposed ADR 0025 extends ADR 0023 with host-owned order and cross-device dispositions; today's grouped List/Triage and local Snooze remain the implemented slice.
 
-A small scheduled-intake slice bridges Phases 3 and 4: a project Routine can collect an 08:00 Slack digest and actionable proposals while clients are disconnected. It reuses reliable worker execution but has its own clock, source cursors, deduplication and failure history. The existing per-Task check/retry Loop remains separate. Intake does not require the full workflow graph or autonomous execution; suggested work still awaits explicit acceptance. See [ADR 0025](adr/0025-inbox-queue-and-scheduled-intake.md).
+Routines bridge Phases 3 and 4. A Routine runs a worker on a trigger, for example every morning, while clients are disconnected. The worker reads its sources (Slack, Linear, Notion and others) through its own native tools, works in the Task Loop engine, and publishes briefings and proposals to Inbox. An approved proposal becomes a new Task that performs the action. Routine runs are not Tasks. Routines do not require the full workflow graph or autonomous execution. See [ADR 0026](adr/0026-routines.md).
 
 For the shared domain and UI definitions, see [Inbox, Tasks and Sessions](work-model.md); the integrated W/Q/S/M milestones are in [the delivery plan](workers.md#product-milestones-across-the-vision).
 
@@ -44,7 +44,7 @@ These stay separate. Merging two of them makes a later phase hard.
 | tmux session | The actual execution/interaction location, containing windows/panes; can be manual or associated with managed work. |
 | Agent run | One agent execution on a Task. Restart can create a new run in the same tmux session/pane; state comes from an adapter. |
 | Inbox entry | A request for human action, referencing a Task need, briefing or proposed work; not another copy of the Task. |
-| Routine | Scheduled project information collection that publishes briefings/proposed actions to Inbox; proposed in ADR 0025. |
+| Routine | A worker run on a trigger that publishes briefings and proposals to Inbox; an approved proposal becomes a new Task. Proposed in ADR 0026. |
 | Workflow | A graph of Tasks and the rules that connect them. |
 
 A Task is not a tmux session. A session can end and the Task continues. A Task can have several agent runs over time.

@@ -10,7 +10,7 @@ ADR 0022 is Proposed. This document makes its release gates and implementation o
 W does not wait for M's completion detection, workspace locks or journal. M does not require a named worker. Neither includes workflow graphs, worker-specific credentials, a new daemon service or a new native role file format.
 
 3. **Q: Inbox queue and manual-session navigation** (proposed ADR 0025). Make Inbox the list of things needing human action; retain Tasks for managed work/history and a separate manual-session destination. Shared Move down/Later state replaces local-only deferral only after its contract is implemented.
-4. **S: Scheduled project intake** (proposed ADR 0025). Add stable project references and daemon-owned Routines, such as an 08:00 Slack collection that publishes a briefing and bounded proposals into Inbox. It does not automatically execute the proposals.
+4. **S: Routines** (proposed ADR 0026). Add stable project references and daemon-owned Routines: a worker runs on a trigger, reads its sources through native tools and publishes briefings and proposals into Inbox. An approved proposal becomes one new Task that performs the action.
 
 W execution work and Q design/implementation can progress in parallel. S0 project identity/configuration and M's observation/contract work can also proceed independently. Actual S2 collection needs verified execution, scheduling and Inbox publication/acceptance; it does not require M or the full Phase 4 workflow graph. M remains its own release rather than blocking the daily Inbox/Routine path. The current next coding slice is still W2 worker execution integration; Q/S are recorded follow-on milestones, not shipped functionality.
 
@@ -23,18 +23,18 @@ W execution work and Q design/implementation can progress in parallel. S0 projec
 | Milestone | Vision phase | Deliverable and completion boundary | Current status |
 |---|---|---|---|
 | W0–W4 Workers | 3 | resolve a named/default worker, create/handoff safely, preserve Task/Session identity, observe each new run, validate native roles and clients | configuration/client preparation, internal launch/staging integration and default-agent recovery implemented; native execution/readiness/CI gates remain |
-| Q0 Work/queue contract | 2–3 | distinct Task/Session/Run/Inbox ids, explicit associations and Task references; shared unknown-kind fixtures; no automatic manual-session adoption | proposed, not implemented |
+| Q0 Work/queue contract (replaced by ADR 0027 §4 and ADR 0026 §4) | 2–3 | distinct Task/Session/Run/Inbox ids, explicit associations and Task references; shared unknown-kind fixtures; no automatic manual-session adoption | proposed, not implemented |
 | Q1 Daily Inbox and navigation | 2–3 | list-first Inbox; Tasks for running/history; separate manual-session entry with All Sessions inspection; host-owned Move down order; actor changes never reclassify work | proposed, not implemented; existing slice 1 remains |
-| Q2 Shared dispositions | 2–3 | timed Later with reconnect/device consistency, attention change handling and idempotent proposal acceptance/dismissal on the shared queue | proposed, not implemented |
-| S0 Project/Routine foundation | 2 → 3 | stable project id, rename-safe Routine references, timezone/source/collector/output limits and explicit enabling | proposed; Project currently remains free text |
-| S1 Durable schedule | 3 → 4 | daemon runs while clients disconnect; no overlap; bounded wake catch-up; timezone/DST, failure history and uncertain-run recovery | proposed, not implemented |
-| S2 Source → Inbox | 3 → 4 | one read-only Slack digest path with provenance, cursor/batch coherence, deduplication and bounded proposals; explicit acceptance before downstream work | proposed, not implemented; source auth and native collector verification required |
-| S3 Routine UX/release | 3 → 4 | configure/pause/run-now/history, project-scoped Inbox flow, real-source/device/crash tests and capability gates | proposed, not implemented |
-| M0–M5 Workspace memory | 3 | ordered completion evidence, full WORKSPACE.md snapshots, generation-bound close-out, reviewed diff/apply and recovery | M0 source/fixture audit exists; native completion and M1–M5 implementation remain |
+| Q2 Shared dispositions (Tasks: record fields, ADR 0027 §4; proposals: S3) | 2–3 | timed Later with reconnect/device consistency, attention change handling and idempotent proposal acceptance/dismissal on the shared queue | proposed, not implemented |
+| S0 Routine configuration | 2 → 3 | `[[routine]]` in `workspaces.toml`; trigger/timezone/worker/instructions/output-policy validation and explicit enabling; Project stays a label | proposed, not implemented |
+| S1 Triggers | 3 → 4 | schedule on the daemon tick and run-now; no overlap; one catch-up after wake; timezone/DST; last failure visible | proposed, not implemented |
+| S2 Routine runs → Inbox | 3 → 4 | runs stored as records of kind `routine-run`; Task Loop engine with output validation as its check; staged publish of briefings/proposals with opaque state commit and `(routine, key)` dedup; no source-specific code | proposed, not implemented; needs W4 |
+| S3 Inbox list and clients | 3 → 4 | stored entries in Inbox with approve/dismiss/Later; approval → one Task with fixed content; Routine detail with runs and run-now; CLI first, then one app, then the other | proposed, not implemented |
+| M0–M5 Workspace memory (replaced by a Routine, ADR 0027 §6) | 3 | ordered completion evidence, full WORKSPACE.md snapshots, generation-bound close-out, reviewed diff/apply and recovery | M0 source/fixture audit exists; native completion and M1–M5 implementation remain |
 | Workflow graph | 4 | dependencies between Tasks and rules for starting the next Task | future direction, outside W/M/Q/S slices |
 | Autonomous assignment | 5 | automatic picking/execution within explicit approval, budget and permission limits | future direction, outside W/M/Q/S slices |
 
-The preferred delivery path is reliable W execution → Q daily Inbox → S scheduled intake, with M progressing in parallel. Q0/Q1 and S0 design need not wait for Workers release verification. The detailed Q0–Q2/S0–S3 acceptance contract remains in [ADR 0025](adr/0025-inbox-queue-and-scheduled-intake.md).
+The order and parallel lanes are in `docs/plan.md` Next (ADR 0027): Workers first, then Routines with the Inbox list, then memory as a Routine. Q0–Q2 acceptance is in [ADR 0025](adr/0025-inbox-queue-and-scheduled-intake.md), simplified by ADR 0027; S0–S3 are in [ADR 0026](adr/0026-routines.md).
 
 
 Current W0 results and the outstanding native/concurrency gates are in `docs/findings/workers-w0.md`. Proposed ADR 0024 specifies the restart lock, durable phases, delivery claim and explicit recovery actions; its default-agent recovery paths and local kill-boundary tests are implemented, while named-worker/native release acceptance remains pending.
@@ -166,7 +166,7 @@ Snapshot locking applies at creation, restart and close-out, not just apply. Sna
 
 ## What is ready next
 
-The next W deliverable is **connecting worker resolution to create/restart and fresh native run binding**, with remaining R01–R16 acceptance cases and W0 native/CI evidence. Recovery staging, delivery claims, API and client actions are implemented; their local acceptance evidence is recorded below. The developer explicitly authorized W1 contract/type/fixture work while W0 remains incomplete. The developer later authorized parallel W2/W3 groundwork and client preparation. This does not enable workers or waive native, recovery or end-to-end release gates. Memory's design stays reviewable separately while Workers becomes concrete. Record remaining uncertainty explicitly; do not implement per-worker env or infer new agent state to avoid a failed gate.
+The next W deliverable is **the simplified selection contract (ADR 0027 section 1) and named create/restart end to end**, with the supported tmux CI matrix. ADR 0027 stops the R01–R16 matrix at its current coverage and lists the rest as known gaps; Codex continues restarted runs by hand. Recovery staging, delivery claims, API and client actions are implemented; their local acceptance evidence is recorded below. The developer explicitly authorized W1 contract/type/fixture work while W0 remains incomplete. The developer later authorized parallel W2/W3 groundwork and client preparation. This does not enable workers or waive native, recovery or end-to-end release gates. Memory's design stays reviewable separately while Workers becomes concrete. Record remaining uncertainty explicitly; do not implement per-worker env or infer new agent state to avoid a failed gate.
 
 ## Restart-recovery integration evidence
 

@@ -30,6 +30,16 @@ What works today:
 
 ## Next
 
+Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow below.
+
+1. **Phase 0, clean up:** commit the open work, remove merged agent worktrees, merge `plan/workspace-vision` into `main`.
+2. **Phase 1, ship 1.0:** real-device checks, the daemon on a Mac, the developer's decisions on ADR 0015–0021 and 0023, then publish. Agent lane: the supported tmux CI matrix.
+3. **Phase 2, Workers:** simplify the selection contract (ADR 0027 section 1), named create and restart, the pickers, then advertise `workers`. Codex continues restarted runs by hand. Parallel lanes: the Sessions filter (UI only); the Codex session-ownership ADR.
+4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other.
+5. **Phase 4:** workspace memory as a Routine (ADR 0027 section 6). Then, as needed, the Linux daemon and tmux-agents (ADR 0017).
+6. **Phase 5:** workflow graph, then autonomous work.
+7. **Any time:** Android full R8, Android multi-window, scrollback, mouse, `pause-after`, watching several panes.
+
 - **Inbox visibility and navigation** (ADR 0023, slice 1 accepted; `docs/inbox.md`): identify Task sessions by title, group, reported age and loop; retain List/detail and add Triage navigation, Next and local Snooze. Phones open Triage once per connection for Needs attention only. Existing Chat keeps approvals and composition.
   - P0 done: shared needs and deterministic queue order, CLI `need`, 26 cross-client fixture cases. Verified with `make check`, `make test-apple` and `make test-android`.
   - P1 done: iOS and Android Task titles, group/age and loop badges in session rows; switcher search includes titles.
@@ -62,18 +72,21 @@ What works today:
 
 ## Requested follow-on design
 
-- **Daily Inbox queue and project Routines** (proposed ADR 0025): primary ordered list with explicit Act/Done/Move down/Later, separate manual Sessions and an All Tasks destination for running work/history; host-owned cross-device dispositions; scheduled read-only project collection (for example 08:00 Slack digest plus bounded actionable proposals). Q0–Q2 cover the shared queue and clients; S0–S3 cover stable project identity, durable daemon scheduling, coherent source/batch publication and native/client release verification. No scheduler or external connection is implemented. This follows reliable worker execution and can ship before a general workflow graph or autonomous assignment; it is separate from the current per-Task check/retry Loop. See `docs/adr/0025-inbox-queue-and-scheduled-intake.md`; integrated W/Q/S/M milestones and dependencies are in `docs/workers.md`, with domain definitions in `docs/work-model.md`. This section records requested direction; the current Workers/memory Next commitment is unchanged.
+- **Inbox queue** (proposed ADR 0025, simplified by ADR 0027): an ordered list with Act, Done, Move down and Later, a separate manual Sessions destination and an All Tasks destination. Move down and Later are optional fields on the Task record. Nothing is implemented.
+- **Routines** (proposed ADR 0026): a Routine runs an agent on a trigger, for example every morning. The agent reads its sources (Slack, Linear, Notion and others) through its own native tools and publishes briefings and proposals to Inbox. An approved proposal becomes one new Task that performs the action. A run is a record of kind `routine-run`, not a Task in the UI. Nothing is implemented. Phase 3 of the order above.
+
+Milestones and dependencies are in `docs/workers.md`; the domain definitions are in `docs/work-model.md`.
 
 ## Later
 
 Direction from `docs/vision.md`, not commitments:
-- **Workers and workspace memory** (ADR 0022, proposed): native agent roles, per-Task worker handoff and reviewed WORKSPACE.md close-out. The refined plan splits Workers/handoff (W) from workspace memory/close-out (M). Native role and restart probes gate W; completion and transaction recovery gate M. Per-worker environment/account overrides and exact reset are deferred. See `docs/findings/workers-design-review.md`.
+- **Workspace memory** (ADR 0022 release M, proposed): reviewed WORKSPACE.md close-out. ADR 0027 builds it as a Routine instead of its own transaction model. Per-worker environment/account overrides and exact reset are deferred. See `docs/findings/workers-design-review.md`.
 - **Workspace and Task foundation** (vision phase 2): after the first slice, Resources beyond one repo (documents, issue trackers), a Project entity if needed, and repos limited to workspace roots.
 - **Managed agent execution** (phase 3): muxa starts and follows agent runs for a Task and keeps their history while no client is connected; context handoff between runs. The first part, recorded only while a bridge or the daemon handles a request, is in the first slice (ADR 0018, 0019).
 - **Workflow orchestration** (phase 4): Tasks in a graph, where one step's result starts the next. The host daemon (ADR 0019) can run it.
 - **Autonomous work** (phase 5): agents take and finish Tasks within approval gates and workspace isolation.
 
-Also: muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008), `pause-after` for slow links, scrollback, watching several panes, mouse, input leases for two typing devices.
+Also: `pause-after` for slow links, scrollback, watching several panes, mouse. Deferred with no date (ADR 0027): muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008). Cut: input leases for two typing devices.
 
 ## Design
 

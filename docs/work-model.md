@@ -1,6 +1,6 @@
 # Inbox, Tasks and Sessions
 
-This defines the product concepts used by the vision and milestone plan. Proposed navigation changes are in ADR 0025. The concepts below do not claim that every lifecycle operation already has a UI or wire endpoint.
+This defines the product concepts used by the vision and milestone plan. Proposed navigation changes are in ADR 0025; Routines are in ADR 0026. The concepts below do not claim that every lifecycle operation already has a UI or wire endpoint.
 
 ## Different kinds of things
 
@@ -8,8 +8,9 @@ This defines the product concepts used by the vision and milestone plan. Propose
 |---|---|---|
 | Task | What result are we trying to achieve? | Durable work id, goal, workspace/project, status, requested worker and run history. It survives a closed terminal or agent process |
 | tmux Session | Where can I run commands and interact with the work? | An actual tmux session containing windows/panes and their processes. It may be manual or explicitly linked to managed work |
-| Agent run | Which agent execution worked on the Task? | One recorded execution with observed native agent/session identity when available. Restart creates a new run while the tmux session/pane can stay the same |
+| Agent run | Which agent execution did this work? | One recorded execution with observed native agent/session identity when available. Its owner is a Task or a Routine (ADR 0026). Restart creates a new run while the tmux session/pane can stay the same |
 | Worker | Which reusable native role/profile should execute work? | Host configuration, not a Task, terminal or running process |
+| Routine | What runs on a trigger, and what does it propose? | Host configuration with a stable id: workspace, project, trigger, worker, instructions and output policy. Its runs are not Tasks; they appear only in its history and as running work |
 | Inbox entry | What needs my action now? | An ordered request for attention: a Task need, briefing or proposed action. Completing/deferring an Inbox action does not implicitly end its underlying Task/session |
 
 A Session is not inherently manual, and a Task is not a renamed tmux Session. A manual shell or manually launched Claude/Codex can exist without a Task. A Task can have no live session, for example after its session ends. A person can type inside a Task's session while its Task identity remains unchanged. No process-name or terminal-content heuristic promotes a manual session into a Task.
@@ -24,7 +25,12 @@ A Session is not inherently manual, and a Task is not a renamed tmux Session. A 
 
 Conceptually a Task can continue in a replacement session. Current restart/recovery implements replacement in the existing pane. Starting a new session for an existing no-session Task, or adopting an existing manual session as a Task, still needs an explicit design/host operation; neither is already provided by this model.
 
-A proposed action from a Routine remains an Inbox proposal until accepted into managed work. Acceptance must be idempotent. The collector's execution is linked to the Routine's run history, not duplicated as a human ToDo.
+A decision in Inbox has one of two results:
+
+1. A Task need (approval, review): the user's answer continues the same Task. No new Task is created.
+2. A Routine proposal: approval creates one new Task, which performs the approved action with its content unchanged. Approving twice still creates one Task. Dismissal never closes another Task.
+
+A Routine run's execution belongs to the Routine's run history. It is not duplicated as a Task or a human ToDo.
 
 ## Destinations in the UI
 
@@ -36,4 +42,4 @@ These are navigation destinations, not mutually exclusive copies of domain objec
 
 ## Milestone implications
 
-Q0 freezes the distinct identities, Task-to-Inbox references and explicit session associations. Q1 separates the destinations while preserving access to existing manual tmux work. Q2 adds shared order/deferral and proposal acceptance without coupling Inbox completion to Task completion. W2/W3 preserve the distinction between worker assignment, agent run and tmux Session. S0–S3 reuse it for project intake, while M remains independent of queue/scheduler delivery.
+Q0 freezes the distinct identities, Task-to-Inbox references and explicit session associations. Q1 separates the destinations while preserving access to existing manual tmux work. Q2 adds shared order/deferral and proposal acceptance without coupling Inbox completion to Task completion. W2/W3 preserve the distinction between worker assignment, agent run and tmux Session. S0–S3 (ADR 0026) add Routines; a Routine run is stored as a record of kind `routine-run`, which the Tasks destination skips. M remains independent of queue/scheduler delivery.
