@@ -63,9 +63,13 @@ final class InboxListTests: XCTestCase {
         XCTAssertEqual(rowIds(app).first, "t-auth01")
         save("inbox-list")
         let run = row(app, "t-r00002")
+        // The list makes rows only as they come on screen.
+        reveal(app, run)
         XCTAssertTrue(run.exists)
         XCTAssertTrue(run.label.contains("Routine run waits for your answer"), run.label)
+        reveal(app, row(app, "e-000000a1"))
         XCTAssertTrue(row(app, "e-000000a1").exists)
+        reveal(app, run)
         tapWhenReady(run)
         XCTAssertTrue(app.navigationBars["linear-triage-t-r00002"].waitForExistence(timeout: 10), "Act opens the run's terminal")
     }
@@ -105,7 +109,7 @@ final class InboxListTests: XCTestCase {
     func testApprovingAProposalCreatesOneTaskAndOpensIt() throws {
         let app = launchOnInbox()
         let title = "Close the stale issue ENG-12"
-        XCTAssertTrue(row(app, "e-000000a2").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["inbox-list"].firstMatch.waitForExistence(timeout: 5))
         act(app, "e-000000a2", "Approve…")
         XCTAssertTrue(app.staticTexts["approve-action"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["approve-action"].label, "Close the issue")
@@ -132,7 +136,8 @@ final class InboxListTests: XCTestCase {
     func testDismissRemovesAProposal() throws {
         let app = launchOnInbox()
         let entry = row(app, "e-000000a3")
-        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        reveal(app, entry)
+        XCTAssertTrue(entry.exists)
         act(app, "e-000000a3", "Dismiss")
         XCTAssertTrue(entry.waitForNonExistence(timeout: 5))
     }
@@ -170,8 +175,12 @@ final class InboxListTests: XCTestCase {
         let run = app.buttons["routine-run-now"]
         reveal(app, run)
         tapWhenReady(run)
+        let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == false"), object: run)
+        XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 5), .completed, "one run at a time")
+        let window = app.windows.firstMatch
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
         XCTAssertTrue(field("routine-running").waitForExistence(timeout: 5))
-        XCTAssertFalse(run.isEnabled, "one run at a time")
         XCTAssertTrue(app.buttons["routine-open-terminal"].exists)
 
         app.navigationBars.buttons.firstMatch.tap()

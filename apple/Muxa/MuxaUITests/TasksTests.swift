@@ -155,17 +155,17 @@ final class TasksTests: XCTestCase {
             if (toggle.value as? String) != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
             let branchField = app.textFields["record-branch"]
             // On a phone the keyboard can cover the new fields.
-            reveal(app, branchField)
+            reveal(app, branchField, in: "record-form")
             tapWhenReady(branchField)
             branchField.typeText(branch)
         }
         if withLoop {
             let toggle = app.switches["record-with-loop"]
-            reveal(app, toggle)
+            reveal(app, toggle, in: "record-form")
             tapWhenReady(toggle)
             if (toggle.value as? String) != "1" { toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
             let check = app.buttons["loop-check"]
-            reveal(app, check)
+            reveal(app, check, in: "record-form")
             XCTAssertTrue(waitFor(check, labelOrValue: "make check"))
         }
         save("record-new")
@@ -248,8 +248,8 @@ final class TasksTests: XCTestCase {
 
     /// Scrolls the task detail until `element` can be tapped; a phone shows less of it.
     @MainActor
-    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, up: Bool = false) {
-        let list = app.collectionViews.firstMatch
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, up: Bool = false, in id: String? = nil) {
+        let list = id.map { app.collectionViews[$0] } ?? app.collectionViews.firstMatch
         for _ in 0..<4 where !(element.exists && element.isHittable) {
             if up { list.swipeDown() } else { list.swipeUp() }
         }

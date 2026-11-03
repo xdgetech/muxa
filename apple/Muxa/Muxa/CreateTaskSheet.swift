@@ -78,8 +78,7 @@ struct CreateTaskSheet: View {
                     }
                 }
             }
-            // On a phone the keyboard covers the repo fields; a swipe puts it away.
-            .scrollDismissesKeyboard(.immediately)
+            .accessibilityIdentifier("record-form")
             .navigationTitle("New Task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
