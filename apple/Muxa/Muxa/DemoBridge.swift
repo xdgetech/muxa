@@ -29,6 +29,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var sessions: [Session]
     /// Grows when a task record is created.
     private var tasks: DemoTasks
+    /// Routines and stored Inbox entries (ADR 0026).
+    private var work: DemoWork
+    /// Set until the first watch, when the alert's clock starts.
+    private var alertsPending: Bool
     private let content: DemoContent
     static let chatPane = "%1"
     /// A branch whose task fails, to show the error.
@@ -84,24 +88,26 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// With `alerts`, an agent elsewhere starts waiting a few seconds in.
     init(content: DemoContent, alerts: Bool) {
         self.content = content
-        sessions = content.sessions
+        sessions = content.sessions + content.work.sessions
         followers = content.followers
         tasks = content.tasks
+        work = content.work
+        alertsPending = alerts
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
-        if alerts {
-            DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
-        }
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: Self.capabilities))
     }
 
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport",
+            "task-loop", "tasks-changed", "viewport", "task-inbox", "work:1",
         ]
         #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before task records, for the old New Task sheet's test.
-        if ProcessInfo.processInfo.arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
+        if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
+        // A bridge from before the shared Inbox order and Routines, for the local Snooze's test.
+        if arguments.contains("-no-task-inbox") { return all.filter { $0 != "task-inbox" && $0 != "work:1" } }
         #endif
         return all
     }
@@ -112,9 +118,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .list(let id):
             emit(.result(id: id, error: nil, sessions: lock.withLock { sessions }))
         case .watch(let id, let pane):
-            lock.withLock {
+            // The alert comes a few seconds after the first pane shows, so a phone's
+            // first Inbox does not hide it.
+            let startAlert = lock.withLock { () -> Bool in
                 watch = id
                 watchedPane = pane
+                defer { alertsPending = false }
+                return alertsPending
+            }
+            if startAlert {
+                DispatchQueue.global().asyncAfter(deadline: .now() + content.alertDelay) { [weak self] in self?.agentWaits("$4") }
             }
             emit(.result(id: id, error: nil, sessions: nil))
             guard let p = sized(pane) else { return }
@@ -178,6 +191,14 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 self?.createTask(
                     id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch, loop: loop)
             }
+        case .updateInbox(let id, let task, let rev, let change):
+            guard Self.capabilities.contains("task-inbox") else { return unsupported(id, Self.noRequest) }
+            let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
+                do throws(DemoTasks.Refusal) { return .success(try tasks.place(task, rev: rev, change)) } catch { return .failure(error) }
+            }
+            answer(id, outcome)
+        case .listRoutines, .listInbox, .runRoutine, .updateInboxEntry:
+            serveWork(req)
         case .updateTask(let id, let task, let rev, let status):
             let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
                 do throws(DemoTasks.Refusal) { return .success(try tasks.update(task, rev: rev, status: status)) } catch { return .failure(error) }
@@ -253,11 +274,84 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 default: echo(pane, Data("\u{1b}[7m<\(key)>\u{1b}[0m".utf8))
                 }
             }
+        case .ping(let id), .unwatch(let id), .bytes(let id, _, _):
+            ok(id)
         case .bye:
             out.finish()
-        default:
-            ok(req.id)
         }
+    }
+
+    /// What a bridge says to a request it does not know.
+    static let noRequest = "The demo bridge does not support this request."
+
+    /// Routines and stored entries, refused as a bridge without `work:1` refuses them.
+    private func serveWork(_ req: Request) {
+        guard Self.capabilities.contains("work:1") else { return unsupported(req.id, Self.noRequest) }
+        switch req {
+        case .listRoutines(let id):
+            emit(.routineList(routines: id, entries: lock.withLock { work.routines }))
+            ok(id)
+        case .listInbox(let id):
+            emit(.inboxList(inbox: id, entries: lock.withLock { work.shownEntries }))
+            ok(id)
+        case .runRoutine(let id, let workspace, let routine):
+            let outcome = lock.withLock { () -> Result<RoutineInfo, DemoWork.Refusal> in
+                do throws(DemoWork.Refusal) {
+                    let (saved, session) = try work.run(workspace: workspace, routine: routine, sessionNumber: 20 + sessions.count)
+                    sessions.append(session)
+                    return .success(saved)
+                } catch { return .failure(error) }
+            }
+            switch outcome {
+            case .success(let routine):
+                emit(.routineSaved(routine: id, entry: routine))
+                ok(id)
+                emit(.sessionsChanged)
+            case .failure(let refusal):
+                emit(.result(id: id, error: refusal.body, sessions: nil))
+            }
+        case .updateInboxEntry(let id, let entry, let action, let until):
+            updateEntry(id: id, entry: entry, action: action, until: until)
+        default:
+            unsupported(req.id, Self.noRequest)
+        }
+    }
+
+    /// Approve creates one Task, as `create-task` would, and opens no session for a
+    /// second approval; dismiss and later touch no Task.
+    private func updateEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?) {
+        let outcome = lock.withLock { () -> Result<(InboxEntry, created: Bool), DemoWork.Refusal> in
+            do throws(DemoWork.Refusal) {
+                let (saved, goal) = try work.update(entry, action: action, until: until)
+                guard let goal, saved.task == nil else { return .success((saved, false)) }
+                let routine = work.routines.first { $0.workspace == saved.workspace && $0.name == saved.routine }
+                let record: TaskRecord
+                do throws(DemoTasks.Refusal) {
+                    record = try tasks.create(workspace: saved.workspace, title: saved.title, goal: goal,
+                                              project: routine?.project, repo: nil, branch: nil, loop: nil, launched: true)
+                } catch {
+                    throw DemoWork.Refusal(.badRequest, "\(saved.workspace) is not a workspace")
+                }
+                sessions.append(Self.taskSession(record, number: 20 + sessions.count))
+                return .success((work.approved(entry, task: record.id), true))
+            } catch { return .failure(error) }
+        }
+        switch outcome {
+        case .success(let (saved, created)):
+            emit(.inboxSaved(inbox: id, entry: saved))
+            ok(id)
+            if created { emit(.sessionsChanged) }
+        case .failure(let refusal):
+            emit(.result(id: id, error: refusal.body, sessions: nil))
+        }
+    }
+
+    /// A running agent in its own session for a new task record.
+    private static func taskSession(_ record: TaskRecord, number n: Int) -> Session {
+        let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 80, rows: 24,
+                        command: "claude", path: record.dir ?? "/", dead: false, shellForeground: false,
+                        agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
+        return Session(id: "$\(n)", name: record.session ?? record.id, taskId: record.id, panes: [pane])
     }
 
     func close() async { out.finish() }
@@ -438,8 +532,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         return docs
     }
 
-    private func unsupported(_ id: UInt64) {
-        emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "Workers are not implemented in the demo."), sessions: nil))
+    private func unsupported(_ id: UInt64, _ message: String = "Workers are not implemented in the demo.") {
+        emit(.result(id: id, error: ErrorBody(code: .unsupported, message: message), sessions: nil))
     }
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }

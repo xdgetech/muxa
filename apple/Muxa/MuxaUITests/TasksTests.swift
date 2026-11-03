@@ -12,34 +12,42 @@ final class TasksTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    /// The Inbox list replaced Triage (ADR 0025): a phone opens on it at connect.
     @MainActor
-    func testPhoneStartsInTriageWhenAttentionIsWaiting() throws {
+    func testPhoneStartsInTheInboxWhenAttentionIsWaiting() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
         guard app.windows.firstMatch.frame.width < 600 else { throw XCTSkip("Phone layout only") }
-        XCTAssertTrue(app.descendants(matching: .any)["triage-card"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["inbox-list"].firstMatch.waitForExistence(timeout: 10))
         tapWhenReady(app.buttons["Close"])
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
     }
 
+    /// A host without `task-inbox` keeps the device-local Snooze: the Task leaves this
+    /// device's Inbox, and Show snoozed brings it back. It replaces the Triage test,
+    /// because Triage with Next and Previous is gone.
     @MainActor
-    func testTriageNavigationSnoozeAndList() throws {
+    func testAnOlderHostKeepsTheLocalSnooze() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-no-task-inbox"]
         app.launch()
-        let card = app.descendants(matching: .any)["triage-card"].firstMatch
-        if !card.waitForExistence(timeout: 3) {
+        let list = app.descendants(matching: .any)["inbox-list"].firstMatch
+        if !list.waitForExistence(timeout: 3) {
             showSidebar(app)
             tapWhenReady(app.buttons["open-tasks"])
         }
-        XCTAssertTrue(card.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["triage-need"].exists)
-        tapWhenReady(app.buttons["triage-next"])
-        XCTAssertTrue(card.exists)
-        tapWhenReady(app.buttons["triage-snooze"])
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Show snoozed'")).firstMatch.exists)
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["List"])
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let row = app.buttons["inbox-row-t-auth01"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["inbox-row-e-000000a1"].exists, "an older host has no stored entries")
+        tapWhenReady(app.buttons["inbox-actions-t-auth01"])
+        XCTAssertFalse(app.buttons["Move Down"].exists, "no shared order on this host")
+        tapWhenReady(app.buttons["Snooze"])
+        XCTAssertTrue(row.waitForNonExistence(timeout: 5))
+        tapWhenReady(app.buttons["inbox-show-snoozed"])
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
         XCTAssertTrue(header(app, "Needs attention").waitForExistence(timeout: 5))
     }
 
@@ -53,7 +61,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showSidebar(app)
         tapWhenReady(app.buttons["open-tasks"])
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["List"])
+        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
         XCTAssertTrue(app.navigationBars["Inbox"].waitForExistence(timeout: 5))
         return app
     }
@@ -67,13 +75,17 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testTheInboxGroupsTasksByWhatTheyNeed() throws {
         let app = launchOnTasks()
+        // The sheet's list: on a phone the sidebar's list lies under the sheet and comes first.
+        let list = app.collectionViews["all-tasks"]
+        // Routines sit above the groups, so the last group can start below the fold.
         for title in ["Needs attention", "Ready for review", "Running", "No agent"] {
+            if !header(app, title).waitForExistence(timeout: 2) { list.swipeUp() }
             XCTAssertTrue(header(app, title).waitForExistence(timeout: 5), title)
         }
-        XCTAssertTrue(app.buttons["task-t-auth01"].exists)
+        list.swipeDown()
+        XCTAssertTrue(app.buttons["task-t-auth01"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Fix the login redirect"].exists)
         save("tasks-inbox")
-        let list = app.collectionViews.firstMatch
         if !header(app, "Closed").exists { list.swipeUp() }
         XCTAssertTrue(header(app, "Closed").waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Write the release notes"].exists)
@@ -201,7 +213,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.textFields["record-title"].waitForNonExistence(timeout: 5), "the sheet closes")
         showSidebar(app)
         tapWhenReady(app.buttons["open-tasks"])
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["List"])
+        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
         XCTAssertTrue(app.buttons["task-t-new001"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Add search"].exists)
     }

@@ -29,20 +29,26 @@ struct Sidebar: View {
             // Above the hosts, so a phone shows it on its first screen.
             if model.canKeepTasks {
                 Section {
-                    if model.inboxQueue.isEmpty { Text("Nothing needs you").foregroundStyle(.secondary) }
-                    ForEach(Array(model.inboxQueue.prefix(3))) { item in
-                        Button { model.showInbox(item.id) } label: {
+                    let rows = model.inboxRows
+                    if rows.isEmpty { Text("Nothing needs you").foregroundStyle(.secondary) }
+                    ForEach(Array(rows.prefix(3))) { row in
+                        Button { model.showInbox(row.id) } label: {
                             VStack(alignment: .leading) {
-                                Text(item.record.title)
-                                Text(item.need.title).font(.caption).foregroundStyle(.secondary)
+                                Text(row.title)
+                                Text(row.subtitle).font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
                     Button { model.showInbox() } label: {
-                        Label(model.inboxQueue.isEmpty ? "All Tasks" : "Triage all (\(model.inboxQueue.count))", systemImage: Icon.tasks)
+                        Label(rows.isEmpty ? "All Tasks" : "Inbox (\(rows.count))", systemImage: Icon.tasks)
                     }
                         .foregroundStyle(.primary)
                         .accessibilityIdentifier("open-tasks")
+                    if model.canUseRoutines {
+                        Button("Routines", systemImage: Icon.routine) { model.showRoutines() }
+                            .foregroundStyle(.primary)
+                            .accessibilityIdentifier("sidebar-routines")
+                    }
                     Button("New Task", systemImage: Icon.newTask) { model.startNewTask() }
                         .accessibilityIdentifier("sidebar-new-task")
                 } header: {

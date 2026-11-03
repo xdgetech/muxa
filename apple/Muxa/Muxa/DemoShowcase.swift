@@ -19,6 +19,7 @@ struct DemoContent: Sendable {
     /// With alerts on: when another agent starts waiting, in seconds after connecting.
     var alertDelay: Double
     var tasks: DemoTasks
+    var work: DemoWork
     var screen: @Sendable (Pane) -> Data
 
     #if DEBUG
@@ -31,12 +32,12 @@ struct DemoContent: Sendable {
     static let tests = DemoContent(
         sessions: DemoBridge.initialSessions, followers: DemoBridge.initialFollowers, conversation: DemoBridge.conversation, chatStatus: .running,
         root: "app", docs: DemoBridge.docs, changes: DemoBridge.changes,
-        planUpdate: DemoBridge.planUpdate, diffUpdate: DemoBridge.diffUpdate, alertDelay: 4, tasks: .tests, screen: DemoBridge.screen(for:))
+        planUpdate: DemoBridge.planUpdate, diffUpdate: DemoBridge.diffUpdate, alertDelay: 4, tasks: .tests, work: .tests, screen: DemoBridge.screen(for:))
 
     static let showcase = DemoContent(
         sessions: Showcase.sessions, followers: [], conversation: Showcase.conversation, chatStatus: .waiting,
         root: "billing", docs: Showcase.docs, changes: Showcase.changes,
-        planUpdate: nil, diffUpdate: nil, alertDelay: 10, tasks: .showcase, screen: Showcase.screen(for:))
+        planUpdate: nil, diffUpdate: nil, alertDelay: 10, tasks: .showcase, work: .showcase, screen: Showcase.screen(for:))
 }
 
 /// A developer's evening: two repos, four agents, one of them asking a question.

@@ -56,4 +56,9 @@ enum Icon {
     static let warning = "exclamationmark.triangle"
     static let waiting = "hand.raised.fill"
     static let send = "arrow.up.circle.fill"
+    static let routine = "clock.arrow.circlepath"
+    static let briefing = "newspaper"
+    static let proposal = "lightbulb"
+    static let moveDown = "arrow.down.to.line"
+    static let later = "clock"
 }
