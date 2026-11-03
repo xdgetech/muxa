@@ -243,10 +243,7 @@ async fn worker_create_validates_before_writes_and_records_the_requested_assignm
     assert!(error.is_none(), "{error:?}");
     let record = record.unwrap();
     assert_eq!(record.worker(), Some("Reviewer"));
-    assert_eq!(
-        record.runs[0].extra["assignment"],
-        serde_json::json!({"kind":"worker", "name":"Reviewer"})
-    );
+    assert_eq!(record.runs[0].worker().as_deref(), Some("Reviewer"));
     let dir = record.dir.as_ref().unwrap();
     tokio::time::timeout(Duration::from_secs(5), async {
         while !dir.join("env").exists() {
@@ -371,10 +368,7 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
     assert_ne!(pid(), first_pid);
     assert_eq!(restarted.worker(), Some("Reviewer"));
     assert_eq!(restarted.runs.len(), 2);
-    assert_eq!(
-        restarted.runs[1].extra["assignment"],
-        serde_json::json!({"kind":"worker","name":"Reviewer"})
-    );
+    assert_eq!(restarted.runs[1].worker().as_deref(), Some("Reviewer"));
     let text = std::fs::read_to_string(&task_file).unwrap();
     assert!(text.contains("Edited worker instructions."));
     assert!(!text.contains("First worker instructions."));
@@ -414,10 +408,7 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
     assert_ne!(pid(), current_pid);
     assert_eq!(cleared.worker(), None);
     assert_eq!(cleared.runs.len(), 3);
-    assert_eq!(
-        cleared.runs[2].extra["assignment"],
-        serde_json::json!({"kind":"workspace-default"})
-    );
+    assert_eq!(cleared.runs[2].worker().as_deref(), Some("default"));
     let text = std::fs::read_to_string(&task_file).unwrap();
     assert!(!text.contains("## Worker"));
     assert!(!text.contains("Edited worker instructions."));
