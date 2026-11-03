@@ -19,8 +19,11 @@ use serde_json::json;
 /// tmux keeps one region per terminal, vt100 (and SwiftTerm) one per screen.
 /// A region set is followed by an explicit cursor move: vt100 homes the
 /// cursor to the region's top, tmux to the screen's (docs/findings).
+/// It stops between two writes once the file $1 exists. Ctrl-C could cut a
+/// write inside a UTF-8 character on a loaded machine; tmux draws the rest
+/// as U+FFFD and vt100 drops it, so the screens would differ in the test only.
 const GENERATOR: &str = r#"i=0
-while :; do
+while [ ! -e "$1" ]; do
   i=$((i+1)); k=$((i % 140))
   case $((i % 6)) in
     0) printf '\033[%d;%dH\033[3%dmcup%d\033[0m' $((i % 20 + 1)) $((i % 60 + 1)) $((i % 7)) $i ;;
@@ -48,13 +51,16 @@ async fn screen_plus_stream_matches_tmux() {
     let pane = server.pane("work");
     let script = std::env::temp_dir().join(format!("muxa-gen-{}.sh", server.socket));
     std::fs::write(&script, GENERATOR).unwrap();
+    let stop = std::env::temp_dir().join(format!("muxa-gen-{}.stop", server.socket));
     let (mut bridge, _) = Bridge::start(&server, &[]).await;
     let mut rng = rand::rng();
 
     for run in 0..runs {
+        let _ = std::fs::remove_file(&stop);
         let start = format!(
-            "printf '\\033[?1049l\\033[r\\033[0m'; clear; sh {}",
-            script.display()
+            "printf '\\033[?1049l\\033[r\\033[0m'; clear; sh {} {}",
+            script.display(),
+            stop.display()
         );
         server.tmux(&["send-keys", "-t", &pane, &start, "Enter"]);
         tokio::time::sleep(Duration::from_millis(rng.random_range(0..150))).await;
@@ -73,7 +79,7 @@ async fn screen_plus_stream_matches_tmux() {
                 recorded.push(msg);
             }
         }
-        server.tmux(&["send-keys", "-t", &pane, "C-c"]);
+        std::fs::write(&stop, b"").unwrap();
         recorded.extend(common::drain(&mut bridge, &mut term, watch, QUIET).await);
 
         let (want, cursor) = (server.capture(&pane), server.cursor(&pane));
@@ -89,6 +95,7 @@ async fn screen_plus_stream_matches_tmux() {
         }
     }
     let _ = std::fs::remove_file(script);
+    let _ = std::fs::remove_file(stop);
 }
 
 fn write_scenario(name: &str, messages: &[Message], rows: &[String], cursor: (u16, u16)) {
