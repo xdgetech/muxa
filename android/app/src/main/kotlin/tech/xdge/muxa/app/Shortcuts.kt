@@ -1,6 +1,8 @@
 package tech.xdge.muxa.app
 
 import android.view.KeyEvent
+import tech.xdge.muxa.session.InboxRow
+import tech.xdge.muxa.session.hasKnownActions
 
 /**
  * The app's shortcuts are Ctrl+Shift chords: plain Ctrl chords belong to the pane's
@@ -15,14 +17,8 @@ fun AppModel.shortcut(event: KeyEvent): Boolean {
     if (showTasks) {
         when (event.keyCode) {
             KeyEvent.KEYCODE_N -> startNewTaskRecord()
-            KeyEvent.KEYCODE_L -> { inboxList = !inboxList; selectedTask = null }
-            KeyEvent.KEYCODE_DPAD_DOWN -> if (!inboxList && selectedTask == null) stepInbox(1)
-            KeyEvent.KEYCODE_DPAD_UP -> if (!inboxList && selectedTask == null) stepInbox(-1)
-            KeyEvent.KEYCODE_S -> if (!inboxList && selectedTask == null && !inboxEnded) snoozeInbox()
-            KeyEvent.KEYCODE_O -> if (!inboxList && selectedTask == null && !inboxEnded) {
-                val item = inboxQueue.firstOrNull { it.record.id == inboxFocus } ?: inboxQueue.firstOrNull()
-                if (item != null) openTask(item.record, if (state.canChat && item.agentPane != null) AppModel.PaneView.CHAT else AppModel.PaneView.AGENT)
-            }
+            KeyEvent.KEYCODE_L -> if (event.isAltPressed) laterKey() else toggleInboxPage()
+            else -> if (inboxPage == InboxPage.INBOX) inboxKey(event)
         }
         return true
     }
@@ -38,4 +34,38 @@ fun AppModel.shortcut(event: KeyEvent): Boolean {
         else -> return false
     }
     return true
+}
+
+/** Inbox and All Tasks; Routines count as All Tasks. */
+private fun AppModel.toggleInboxPage() {
+    inboxPage = if (inboxPage == InboxPage.INBOX) InboxPage.TASKS else InboxPage.INBOX
+    clearInboxSelection()
+}
+
+/**
+ * The Inbox list's keys, as Command on iPad: Up/Down focus a row, O opens it, Alt+Down moves
+ * a Task down, and S snoozes it on a host without the shared order.
+ */
+private fun AppModel.inboxKey(event: KeyEvent) {
+    val row = focusedRow ?: return
+    when (event.keyCode) {
+        KeyEvent.KEYCODE_DPAD_DOWN -> if (event.isAltPressed) {
+            if (row is InboxRow.Task && canPlaceTasks) moveDown(row)
+        } else {
+            stepInbox(1)
+        }
+        KeyEvent.KEYCODE_DPAD_UP -> stepInbox(-1)
+        KeyEvent.KEYCODE_O -> act(row)
+        KeyEvent.KEYCODE_S -> if (row is InboxRow.Task && !canPlaceTasks) snooze(row.item)
+    }
+}
+
+/** Asks for Later on the focused row, where the host keeps it. */
+private fun AppModel.laterKey() {
+    if (inboxPage != InboxPage.INBOX) return
+    when (val row = focusedRow) {
+        is InboxRow.Task -> if (canPlaceTasks) inboxPrompt = InboxPrompt.Later(row)
+        is InboxRow.Entry -> if (row.entry.hasKnownActions) inboxPrompt = InboxPrompt.Later(row)
+        is InboxRow.Routine, null -> {}
+    }
 }

@@ -36,8 +36,10 @@ import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
 import tech.xdge.muxa.session.attentionKey
-import tech.xdge.muxa.session.need
-import tech.xdge.muxa.session.InboxNeed
+import tech.xdge.muxa.session.InboxItem
+import tech.xdge.muxa.session.InboxRow
+import tech.xdge.muxa.session.inboxRows
+import tech.xdge.muxa.session.triageQueue
 import tech.xdge.muxa.session.InboxGroup
 import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.runningTask
@@ -152,36 +154,69 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** The Tasks screen, over the list and the pane like the Reader. */
     var showTasks by mutableStateOf(false)
     var phoneInbox = false
-    var inboxList by mutableStateOf(false)
+
+    /** What the Inbox screen's list shows: the Inbox list, All Tasks, or the Routines. */
+    var inboxPage by mutableStateOf(InboxPage.INBOX)
+
+    /** The Inbox row the keys act on, by id. */
     var inboxFocus by mutableStateOf<String?>(null)
-    var inboxEnded by mutableStateOf(false)
-    var inboxSkipped by mutableStateOf<Set<String>>(emptySet())
+
+    /** Device-local Snooze, only for a host without `task-inbox` (ADR 0023). */
     var inboxSnoozes by mutableStateOf<Map<String, String>>(emptyMap())
+
+    /** The stored entry shown in the Inbox screen's detail, by id. */
+    var selectedEntry by mutableStateOf<String?>(null)
+
+    /** The Routine shown in the Inbox screen's detail, by `workspace/name`. */
+    var selectedRoutine by mutableStateOf<String?>(null)
+
+    /** An Inbox action that asks first: Later's times, a picked time, or an approval. */
+    var inboxPrompt by mutableStateOf<InboxPrompt?>(null)
+
+    /** Why the last Inbox action failed, from the host. */
+    var inboxError by mutableStateOf<String?>(null)
     private var returnToInbox = false
-    val inboxSnoozedCount get() = inbox.flatMap { it.items }.count { it.need != InboxNeed.NONE && inboxSnoozes[it.record.id] == it.attentionKey }
-    val inboxQueue get() = inbox.flatMap { it.items }.filter { it.need != InboxNeed.NONE && inboxSnoozes[it.record.id] != it.attentionKey }
+
+    /** The host keeps Move down and Later, so the local Snooze is off. */
+    val canPlaceTasks: Boolean get() = isConnected && state.canPlaceTasks
+    val canUseRoutines: Boolean get() = isConnected && state.canUseRoutines
+    private val hostQueue get() = triageQueue(state.tasks?.records.orEmpty(), state.sessions)
+    val inboxSnoozedCount: Int
+        get() = if (state.canPlaceTasks) 0 else hostQueue.count { inboxSnoozes[it.record.id] == it.attentionKey }
+
+    /** The Task needs in the host's order, without the ones snoozed on this device. */
+    val inboxQueue: List<InboxItem>
+        get() = if (state.canPlaceTasks) hostQueue else hostQueue.filter { inboxSnoozes[it.record.id] != it.attentionKey }
+
+    /** The Inbox list: Task needs, waiting Routine runs, briefings and proposals. */
+    val inboxRows: List<InboxRow> get() = inboxRows(inboxQueue, state.inboxEntries, state.routines, state.sessions)
+
+    /** Opens the Inbox screen on the Inbox list, focused on row [id]; on All Tasks when nothing needs the user. */
     fun showInbox(id: String? = null) {
-        selectedTask = null
-        inboxList = inboxQueue.isEmpty()
-        inboxFocus = id ?: inboxQueue.firstOrNull()?.record?.id
-        inboxEnded = false
-        inboxSkipped = emptySet()
+        clearInboxSelection()
+        val rows = inboxRows
+        inboxPage = if (rows.isEmpty()) InboxPage.TASKS else InboxPage.INBOX
+        inboxFocus = id ?: rows.firstOrNull()?.id
         openTasks()
     }
-    fun stepInbox(offset: Int) {
-        val queue = inboxQueue
-        if (queue.isEmpty()) return
-        if (inboxEnded && offset < 0) { inboxEnded = false; inboxFocus = queue.last().record.id; return }
-        val index = queue.indexOfFirst { it.record.id == inboxFocus }.coerceAtLeast(0)
-        val next = index + offset
-        if (offset > 0) inboxSkipped = inboxSkipped + queue[index].record.id
-        if (next >= queue.size) { inboxEnded = true }
-        else if (next >= 0) { inboxFocus = queue[next].record.id; inboxEnded = false }
+
+    fun showRoutines() {
+        clearInboxSelection()
+        inboxPage = InboxPage.ROUTINES
+        openTasks()
     }
-    fun snoozeInbox() {
-        val item = inboxQueue.firstOrNull { it.record.id == inboxFocus } ?: inboxQueue.firstOrNull() ?: return
-        inboxSnoozes = inboxSnoozes + (item.record.id to item.attentionKey)
-        inboxFocus = inboxQueue.firstOrNull()?.record?.id
+
+    fun clearInboxSelection() {
+        selectedTask = null
+        selectedEntry = null
+        selectedRoutine = null
+    }
+
+    /** Leaves the Inbox screen for [s]'s agent: a Routine run's terminal. */
+    fun openTerminal(s: Session) = scope.launch {
+        showTasks = false
+        openNow(s)
+        if (agentPane != null) show(PaneView.AGENT).join()
     }
 
     /** The Task shown in the Tasks screen's detail, by id. */
@@ -230,6 +265,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
     private var demoTaskRecords = true
+    private var demoTaskInbox = true
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -259,13 +295,15 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** Try the Demo: sample sessions from the in-app bridge. Nothing is saved, and no SSH or key is touched. */
     fun tryDemo() {
         demoTaskRecords = true
+        demoTaskInbox = true
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
 
     /** A debug launch for the UI tests: their [set], and no way out of it. */
-    fun startDemo(set: DemoBridge.Content, alerts: Boolean, taskRecords: Boolean = true) {
+    fun startDemo(set: DemoBridge.Content, alerts: Boolean, taskRecords: Boolean = true, taskInbox: Boolean = true) {
         demoTaskRecords = taskRecords
+        demoTaskInbox = taskInbox
         // The store screenshots show the list: a machine's name there, not the demo's.
         val host = if (set == DemoBridge.Content.SHOWCASE) {
             Host(name = "Mac mini", target = SshTarget(host = "mac-mini.local", user = "you"))
@@ -277,13 +315,15 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
 
     /** What a new window needs to show this window's pane on its host. */
     class WindowStart(val host: Host, val pane: String?, val demo: Demo?) {
-        class Demo(val set: DemoBridge.Content, val alerts: Boolean, val taskRecords: Boolean, val canLeave: Boolean)
+        class Demo(
+            val set: DemoBridge.Content, val alerts: Boolean, val taskRecords: Boolean, val canLeave: Boolean, val taskInbox: Boolean = true,
+        )
     }
 
     /** This window's host and pane, for a new window; null when no host is shown. */
     fun windowStart(): WindowStart? {
         val host = currentHost ?: return null
-        val demo = if (demo && host.id == demoHostId) WindowStart.Demo(demoSet, demoAlerts, demoTaskRecords, canLeaveDemo) else null
+        val demo = if (demo && host.id == demoHostId) WindowStart.Demo(demoSet, demoAlerts, demoTaskRecords, canLeaveDemo, demoTaskInbox) else null
         return WindowStart(host, state.watchedPane, demo)
     }
 
@@ -295,6 +335,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             return
         }
         demoTaskRecords = demo.taskRecords
+        demoTaskInbox = demo.taskInbox
         beginDemo(demo.set, demo.alerts, start.host, start.pane)
         canLeaveDemo = demo.canLeave
     }
@@ -341,7 +382,9 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         paneFit = null
         showReader = false
         showTasks = false
-        selectedTask = null
+        clearInboxSelection()
+        inboxPrompt = null
+        inboxError = null
         newTaskRecord = null
         taskError = null
         restartingTask = null
@@ -404,7 +447,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     }
 
     private suspend fun open(host: Host): BridgeChannel {
-        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords)
+        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords, demoTaskInbox)
         return SshBridge.connect(host.target, keys.loadOrCreate())
     }
 
@@ -842,7 +885,10 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     fun openTasks() {
         if (!canShowTasks) return
         showTasks = true
-        scope.launch { runCatching { session.loadTasks() } }
+        scope.launch {
+            runCatching { session.loadTasks() }
+            session.loadWork()
+        }
     }
 
     fun closeTasks() {

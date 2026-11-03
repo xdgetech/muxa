@@ -60,39 +60,60 @@ class TasksTest {
         compose.onNodeWithTag("more").performClick()
         waitForTag("menu-tasks")
         compose.onNodeWithTag("menu-tasks").performClick()
-        waitForTag("inbox-list-mode")
-        compose.onNodeWithTag("inbox-list-mode").performClick()
+        waitForTag("inbox-mode-tasks")
+        compose.onNodeWithTag("inbox-mode-tasks").performClick()
         waitForTag("tasks-done")
     }
 
+    /** The Inbox list replaced Triage (ADR 0025): a phone opens on it at connect. */
     @Test
-    fun phoneStartsInTriageWhenAttentionIsWaiting() {
+    fun phoneStartsInTheInboxWhenAttentionIsWaiting() {
         launch(leaveInbox = false)
         val model = ApplicationProvider.getApplicationContext<MuxaApplication>().model
         compose.waitUntil(TIMEOUT) { model.isConnected && !model.connecting }
         if (model.phoneInbox) {
-            waitForTag("triage-card")
-            waitForTag("triage-need")
-            compose.onNodeWithTag("inbox-close").performClick()
+            waitForTag("inbox-list")
+            waitForTag("inbox-row-t-auth01")
+            compose.onNodeWithTag("tasks-done").performClick()
             waitForTag("composer")
         } else {
             waitForTag("composer")
         }
     }
 
+    /**
+     * A host without `task-inbox` keeps the device-local Snooze: the Task leaves this device's
+     * Inbox, and Show snoozed brings it back. It replaces the Triage test, because Triage with
+     * Next and Previous is gone, as on iOS.
+     */
     @Test
-    fun triageNavigatesSnoozesAndKeepsList() {
-        launch()
-        openTasks()
-        compose.onNodeWithTag("inbox-triage").performClick()
-        waitForTag("triage-card")
-        compose.onNodeWithTag("triage-next").performClick()
-        waitForTag("triage-card")
-        compose.onNodeWithTag("triage-snooze").performClick()
-        waitForTag("triage-card")
-        compose.onNodeWithTag("inbox-list-mode").performClick()
+    fun anOlderHostKeepsTheLocalSnooze() {
+        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
+        val intent = Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_DEMO, true)
+            .putExtra(MainActivity.EXTRA_NO_TASK_INBOX, true)
+        scenario = ActivityScenario.launch(intent)
+        compose.leaveInitialInbox()
+        waitForTag("composer")
+        compose.onNodeWithTag("more").performClick()
+        waitForTag("menu-tasks")
+        compose.onNodeWithTag("menu-tasks").performClick()
+        waitForTag("inbox-row-t-auth01")
+        compose.onNodeWithTag("inbox-row-e-000000a1").assertDoesNotExist()
+        compose.onNodeWithTag("inbox-actions-t-auth01").performClick()
+        waitForTag("inbox-snooze")
+        compose.onNodeWithTag("inbox-move-down").assertDoesNotExist()
+        compose.onNodeWithTag("inbox-snooze").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("inbox-row-t-auth01"), TIMEOUT)
+        compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag("inbox-show-snoozed"))
+        compose.onNodeWithTag("inbox-show-snoozed").performClick()
+        waitForTag("inbox-row-t-auth01")
+        compose.onNodeWithTag("inbox-mode-tasks").performClick()
         waitForTag("task-list")
-        for (group in InboxGroup.entries) waitForTag("inbox-${group.name}")
+        for (group in InboxGroup.entries) {
+            compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("inbox-${group.name}"))
+            waitForTag("inbox-${group.name}")
+        }
     }
 
     /** Scrolls the list to the Task first: on a phone the lower groups are off screen. */
@@ -115,7 +136,12 @@ class TasksTest {
     fun everyGroupShowsAndATaskOpensItsPane() {
         launch()
         openTasks()
-        for (group in InboxGroup.entries) waitForTag("inbox-${group.name}")
+        // The Routines sit above the groups, so the last group can start below the fold.
+        for (group in InboxGroup.entries) {
+            waitForTag("task-list")
+            compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("inbox-${group.name}"))
+            waitForTag("inbox-${group.name}")
+        }
         openTask("t-login1")
         waitForTag("task-open-pane")
         compose.onNodeWithTag("task-open-pane").performClick()
@@ -226,8 +252,8 @@ class TasksTest {
         compose.onNodeWithTag("more").performClick()
         waitForTag("menu-tasks")
         compose.onNodeWithTag("menu-tasks").performClick()
-        waitForTag("inbox-list-mode")
-        compose.onNodeWithTag("inbox-list-mode").performClick()
+        waitForTag("inbox-mode-tasks")
+        compose.onNodeWithTag("inbox-mode-tasks").performClick()
         compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-t-new001"))
         waitForTag("task-t-new001")
     }

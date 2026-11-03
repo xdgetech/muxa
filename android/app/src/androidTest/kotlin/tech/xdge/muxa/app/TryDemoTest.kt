@@ -45,8 +45,8 @@ class TryDemoTest {
         compose.waitUntilAtLeastOneExists(hasTestTag("try-demo"), TIMEOUT)
         compose.onAllNodesWithTag("try-demo").onFirst().performClick()
         if (context.model.phoneInbox) {
-            compose.waitUntilAtLeastOneExists(hasTestTag("triage-card"), TIMEOUT)
-            compose.onNodeWithTag("inbox-close").performClick()
+            compose.waitUntilAtLeastOneExists(hasTestTag("inbox-list"), TIMEOUT)
+            compose.onNodeWithTag("tasks-done").performClick()
         }
         compose.waitUntilAtLeastOneExists(hasTestTag("composer"), TIMEOUT)
         // Its agent waits: the waiting row once grew over the messages and the composer on a phone.

@@ -31,6 +31,13 @@ import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.DisabledByDefault
+import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Newspaper
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PlayArrow
 
 /** One icon per concept, used everywhere that concept appears (as `Icon` on iOS). */
 object Icons {
@@ -64,4 +71,11 @@ object Icons {
     val restartAgent = Material.Filled.RestartAlt
     val copy = Material.Filled.ContentCopy
     val newWindow = Material.AutoMirrored.Filled.OpenInNew
+    val routine = Material.Filled.Update
+    val briefing = Material.Filled.Newspaper
+    val proposal = Material.Filled.Lightbulb
+    val moveDown = Material.Filled.VerticalAlignBottom
+    val later = Material.Filled.Schedule
+    val check = Material.Filled.Check
+    val run = Material.Filled.PlayArrow
 }

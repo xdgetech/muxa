@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
                 set,
                 alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false),
                 taskRecords = !intent.getBooleanExtra(EXTRA_NO_TASK_RECORDS, false),
+                taskInbox = !intent.getBooleanExtra(EXTRA_NO_TASK_INBOX, false),
             )
         } else if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_NO_SAVED_HOSTS, false)) {
             model.forgetSavedHosts()
@@ -84,6 +85,19 @@ class MainActivity : ComponentActivity() {
                 item("Session 1 to 9", KeyEvent.KEYCODE_1),
             ),
         )
+        val moved = chord or KeyEvent.META_ALT_ON
+        data += KeyboardShortcutGroup(
+            "Inbox",
+            listOf(
+                item("Previous row", KeyEvent.KEYCODE_DPAD_UP),
+                item("Next row", KeyEvent.KEYCODE_DPAD_DOWN),
+                item("Open", KeyEvent.KEYCODE_O),
+                item("Inbox / All Tasks", KeyEvent.KEYCODE_L),
+                KeyboardShortcutInfo("Move down", KeyEvent.KEYCODE_DPAD_DOWN, moved),
+                KeyboardShortcutInfo("Later", KeyEvent.KEYCODE_L, moved),
+                item("Snooze (older hosts)", KeyEvent.KEYCODE_S),
+            ),
+        )
     }
 
     companion object {
@@ -97,5 +111,8 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_SHOWCASE = "showcase"
         const val EXTRA_NO_SAVED_HOSTS = "no-saved-hosts"
         const val EXTRA_NO_TASK_RECORDS = "no-task-records"
+
+        /** A bridge from before the shared Inbox order and Routines, for the local Snooze's test. */
+        const val EXTRA_NO_TASK_INBOX = "no-task-inbox"
     }
 }

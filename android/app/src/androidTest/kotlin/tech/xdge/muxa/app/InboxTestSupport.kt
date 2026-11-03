@@ -10,6 +10,6 @@ import androidx.compose.ui.test.performClick
 @OptIn(ExperimentalTestApi::class)
 fun ComposeTestRule.leaveInitialInbox() {
     fun exists(tag: String) = onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-    waitUntil(10_000) { exists("triage-card") || exists("composer") || exists("pane") }
-    if (exists("triage-card")) onNodeWithTag("inbox-close").performClick()
+    waitUntil(10_000) { exists("inbox-list") || exists("composer") || exists("pane") }
+    if (exists("inbox-list")) onNodeWithTag("tasks-done").performClick()
 }
