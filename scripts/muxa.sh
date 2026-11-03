@@ -3,8 +3,9 @@
 # new tasks that are muxa task records, the same ones its iPad and phone apps
 # show. muxa owns the records and the Inbox rule; this only renders them.
 # Usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal>
-#        muxa.sh inbox <client> | new <client> <repo>    (open a popup)
-#        muxa.sh inbox-ui <client> | form <client> <repo> (run inside it)
+#        muxa.sh repo-rows <workspace> <default repo> [none] | start-ask <workspace> <repo>
+#        muxa.sh inbox <client> | new <client> <repo> | ask <client> <repo>  (open a popup)
+#        muxa.sh inbox-ui <client> | form <client> <repo> | ask-ui <client> <json file> <repo>
 set -u
 . "$(dirname "$0")/lib.sh"
 
@@ -78,7 +79,9 @@ create() {
   cli="$(muxa_cli)" || { fail "muxa-cli is not installed"; return 1; }
   [ -n "$goal" ] || goal="$title"
   set -- task new --workspace "$ws" --title "$title" --goal "$goal" --json
-  [ -n "$repo" ] && set -- "$@" --repo "$repo" --branch "$branch"
+  [ -n "$repo" ] && set -- "$@" --repo "$repo"
+  # Without a branch, a work:2 host names one after the title.
+  [ -n "$repo" ] && [ -n "$branch" ] && set -- "$@" --branch "$branch"
   err="$(agents_run_dir)/muxa-$$.err"
   exec 3< <(nohup "$cli" --bridge "$(bridge_cmd "$cli")" "$@" </dev/null 2>"$err" 3>&-)
   IFS= read -r line <&3 || line=""
@@ -147,8 +150,8 @@ new() {
 plain_form() {
   local client="$1" repo="$2" branch name
   echo "muxa has no workspace (~/.config/muxa/workspaces.toml), so this task gets no muxa record."
-  repo="$(ask repo "$repo")" || return 0
-  branch="$(ask branch "")" || return 0
+  repo="$(read_answer repo "$repo")" || return 0
+  branch="$(read_answer branch "")" || return 0
   [ -n "$branch" ] || return 0
   if name="$("$S/new.sh" "$repo" "$branch" --no-switch 2>&1)"; then
     go "$client" "=$name"
@@ -159,7 +162,7 @@ plain_form() {
 }
 
 # "label [default]: " -> the answer, or the default when empty.
-ask() {
+read_answer() {
   local answer
   printf '%s%s: ' "$1" "${2:+ [$2]}" >&2
   IFS= read -r answer || return 1
@@ -167,31 +170,153 @@ ask() {
 }
 
 form() {
-  local client="$1" repo="$2" json spaces ws branch title goal sid
+  local client="$1" repo="$2" json spaces ws branch="" title goal sid w2=""
   json="$(tasks 2>/dev/null)" || json=""
-  spaces="$(printf '%s' "$json" | jq -r '.workspaces // [] | join(" ")' 2>/dev/null)"
+  spaces="$(printf '%s' "$json" | ws_names)"
   if [ -z "$spaces" ]; then
     plain_form "$client" "$repo"
     return
   fi
-  ws="$(opt @agents_muxa_workspace '')"
-  case " $spaces " in *" $ws "*) ;; *) ws="${spaces%% *}" ;; esac
+  printf '%s' "$json" | work2 && w2=1
   echo "A muxa task: the same record on every device. Workspaces: $spaces"
-  echo "Repo '-' starts a task without a repo, in its workspace."
-  ws="$(ask workspace "$ws")" || return 0
-  repo="$(ask repo "$repo")" || return 0
+  ws="$(choose_ws "$spaces" "$(default_ws "$json" "$repo")")" || return 0
+  repo="$(pick_repo "$(repo_rows "$json" "$ws" "$repo" none)" "Enter pick  - no repo, in the workspace  Esc cancel")" || return 0
   [ "$repo" = - ] && repo=""
-  if [ -n "$repo" ]; then
-    branch="$(ask branch "")" || return 0
-    [ -n "$branch" ] || { echo "A repo task needs a branch."; sleep 2; return 1; }
+  [ -n "$repo" ] && echo "repo: $repo"
+  if [ -n "$repo" ] && [ -n "$w2" ]; then
+    branch="$(read_answer "branch (empty: named after the title)" "")" || return 0
+  elif [ -n "$repo" ]; then
+    branch="$(read_answer branch "")" || return 0
+    [ -n "$branch" ] || { echo "A repo task needs a branch: this muxa cannot name one."; sleep 2; return 1; }
   fi
-  title="$(ask title "${branch:-}")" || return 0
-  goal="$(ask goal "$title")" || return 0
+  title="$(read_answer title "$branch")" || return 0
+  [ -n "$title" ] || { echo "A task needs a title."; sleep 2; return 1; }
+  goal="$(read_answer goal "$title")" || return 0
   echo "Starting..."
-  if sid="$(create "$ws" "$repo" "${branch:-}" "$title" "$goal" 2>&1)" && [ -n "$sid" ]; then
+  if sid="$(create "$ws" "$repo" "$branch" "$title" "$goal" 2>&1)" && [ -n "$sid" ]; then
     go "$client" "$sid"
   else
     printf '%s\nPress Enter.\n' "${sid:-muxa started the task, but it has no session}"
+    read -r _
+  fi
+}
+
+# Workspace names: plain strings from older muxa-cli, else {name, root?, repos?}.
+ws_names() {
+  jq -r '.workspaces // [] | map(if type == "string" then . else .name end) | join(" ")' 2>/dev/null
+}
+
+# Whether the host has muxa's work level 2 (ADR 0031): repos relative to the
+# root, a branch named after the title, and ask sessions. A listed capability
+# decides; else a workspace root, which came in the same muxa release.
+work2() {
+  jq -e '((.capabilities // []) | map(select(type == "string" and test("^work:[0-9]+$")) | ltrimstr("work:") | tonumber) | max // 0) >= 2
+         or any(.workspaces[]?; type == "object" and .root != null)' >/dev/null 2>&1
+}
+
+# <dir> with symlinks resolved, or nothing when it does not exist.
+real_dir() { [ -n "$1" ] && (cd "$1" 2>/dev/null && pwd -P); }
+
+# The first "<path> TAB ..." line on stdin whose path is <dir>, symlinks
+# resolved: muxa and git may each name a repo through another link.
+line_for_dir() {
+  local want path rest
+  want="$(real_dir "$1")" || return 0
+  while IFS="$TAB" read -r path rest; do
+    [ "$(real_dir "$path")" = "$want" ] && { printf '%s\t%s\n' "$path" "$rest"; return; }
+  done
+}
+
+# The workspace whose repos hold <repo>, else @agents_muxa_workspace, else the first.
+default_ws() {
+  local json="$1" spaces owner ws
+  spaces="$(printf '%s' "$json" | ws_names)"
+  owner="$(printf '%s' "$json" | jq -r '.workspaces[]? | objects | .name as $n | (.repos // [])[] | [., $n] | @tsv' 2>/dev/null |
+    line_for_dir "$2" | cut -f2)"
+  [ -n "$owner" ] && { printf '%s' "$owner"; return; }
+  ws="$(opt @agents_muxa_workspace '')"
+  case " $spaces " in *" $ws "*) ;; *) ws="${spaces%% *}" ;; esac
+  printf '%s' "$ws"
+}
+
+# The workspace: the only one, else asked with <default>.
+choose_ws() {
+  case "$1" in *" "*) read_answer workspace "$2" ;; *) printf '%s' "$1" ;; esac
+}
+
+# Picker rows "<path> TAB <shown>" for workspace <ws>: <default repo> first,
+# then the workspace's repos. A repo under the root shows relative to it,
+# others with ~ for $HOME. "none" adds "-", no repo.
+repo_rows() {
+  local json="$1" ws="$2" def="$3" rows first
+  rows="$(printf '%s' "$json" | jq -r --arg ws "$ws" --arg home "$HOME" '
+    .workspaces[]? | objects | select(.name == $ws) | (.root // "" | rtrimstr("/")) as $root |
+    (.repos // [])[] | select(type == "string") |
+    if $root != "" and startswith($root + "/") then [., ltrimstr($root + "/")]
+    elif startswith($home + "/") then [., "~/" + ltrimstr($home + "/")]
+    else [., .] end | @tsv' 2>/dev/null)"
+  first="$(printf '%s\n' "$rows" | line_for_dir "$def")"
+  if [ -z "$first" ] && [ -n "$def" ] && git -C "$def" rev-parse --git-dir >/dev/null 2>&1; then
+    case "$def" in "$HOME"/*) first="$def$TAB~/${def#"$HOME"/}" ;; *) first="$def$TAB$def" ;; esac
+  fi
+  { [ -n "$first" ] && printf '%s\n' "$first"
+    [ -n "$rows" ] && printf '%s\n' "$rows" | grep -vxF -- "$first"
+    [ "${4:-}" = none ] && printf -- '-\t- no repo\n'
+  } | awk 'NF'
+}
+
+# The picked repo's path, or the typed text when no row matches it. Fails on Esc.
+pick_repo() {
+  local out rc q
+  out="$(printf '%s\n' "$1" | awk 'NF' | fzf --delimiter '\t' --with-nth 2 --exact --print-query \
+    --layout reverse --info hidden --prompt 'repo> ' --header "$2  (or type a path)")"
+  rc=$?
+  case "$rc" in
+    0) printf '%s\n' "$out" | sed -n '2p' | cut -f1 ;;
+    1) q="$(printf '%s\n' "$out" | head -n 1)"
+       [ -n "$q" ] || return 1
+       case "$q" in \~) q="$HOME" ;; \~/*) q="$HOME/${q#\~/}" ;; esac
+       printf '%s' "$q" ;;
+    *) return 1 ;;
+  esac
+}
+
+# An ask session (muxa's work:2): the workspace's agent in <repo>'s main
+# checkout, with no Task and no worktree. Prints its session id.
+start_ask() {
+  local out
+  out="$(run_muxa ask "$2" --workspace "$1" --json </dev/null)" || return 1
+  notify_change
+  printf '%s' "$out" | jq -r '.session // empty'
+}
+
+# The checks run before the popup, so a host that cannot ask opens nothing.
+ask_key() {
+  local client="$1" repo="$2" json f
+  muxa_cli >/dev/null || die "ask sessions need muxa: muxa-cli is not installed, or @agents_muxa is off"
+  json="$(tasks 2>/dev/null)" || die "muxa could not list its workspaces; try muxa-cli tasks"
+  [ -n "$(printf '%s' "$json" | ws_names)" ] || die "ask sessions need a muxa workspace (~/.config/muxa/workspaces.toml)"
+  printf '%s' "$json" | work2 || die "this muxa cannot start ask sessions; update muxa-cli and muxa-bridge"
+  f="$(agents_run_dir)/ask-$$.json"
+  printf '%s' "$json" >"$f" || die "could not write $f"
+  popup "$client" "Ask" "$S/muxa.sh" ask-ui "$client" "$f" "$repo"
+}
+
+ask_ui() {
+  local client="$1" json spaces ws repo="$3" sid
+  json="$(cat "$2")" || return 1
+  rm -f "$2"
+  spaces="$(printf '%s' "$json" | ws_names)"
+  echo "Ask about a repo: an agent in its main checkout, with no task and no worktree."
+  echo "The agent can change files there. Workspaces: $spaces"
+  ws="$(choose_ws "$spaces" "$(default_ws "$json" "$repo")")" || return 0
+  repo="$(pick_repo "$(repo_rows "$json" "$ws" "$repo")" "Enter ask in this repo  Esc cancel")" || return 0
+  [ -n "$repo" ] && [ "$repo" != - ] || return 0
+  echo "Starting an agent in $repo..."
+  if sid="$(start_ask "$ws" "$repo" 2>&1)" && [ -n "$sid" ]; then
+    go "$client" "$sid"
+  else
+    printf '%s\nPress Enter.\n' "$(printf '%s' "${sid:-muxa started no session}" | sed 's/^muxa-cli: //')"
     read -r _
   fi
 }
@@ -205,5 +330,9 @@ case "${1:-}" in
   inbox-ui) inbox_ui "${2:?client}" ;;
   new) new "${2:?client}" "${3:-}" ;;
   form) form "${2:?client}" "${3:-}" ;;
-  *) echo "usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> | inbox <client> | new <client> <repo>" >&2; exit 2 ;;
+  repo-rows) repo_rows "$(cat)" "${2:?workspace}" "${3:-}" "${4:-}" ;;
+  start-ask) start_ask "${2:?workspace}" "${3:?repo}" ;;
+  ask) ask_key "${2:?client}" "${3:-}" ;;
+  ask-ui) ask_ui "${2:?client}" "${3:?json file}" "${4:-}" ;;
+  *) echo "usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> | repo-rows <workspace> <repo> [none] | start-ask <workspace> <repo> | inbox <client> | new <client> <repo> | ask <client> <repo>" >&2; exit 2 ;;
 esac

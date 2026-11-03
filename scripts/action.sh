@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What the sidebar keys and the prefix bindings do.
-# Usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|force|rename> [target]
+# Usage: action.sh <go|out|focus|new|ask|win|ide|ide-current|close|keep|force|rename> [target]
 #        action.sh <next|prev|attention> | jump <key>
 # Targets come from tree.sh: r:<repo>, s:<session>, w:<session>:<window index>.
 set -u
@@ -142,6 +142,9 @@ new() {
     "run-shell -b \"'$S/new.sh' '%1' '%2'\""
 }
 
+# An ask session through muxa, in the current repo by default.
+ask() { "$S/muxa.sh" ask "$(t display-message -p '#{client_name}')" "$(repo_for "$target")"; }
+
 win() {
   local s wt w
   s="$(session_of "$target")" || return 0
@@ -165,6 +168,7 @@ case "$verb" in
   out) out ;;
   focus) focus ;;
   new) new ;;
+  ask) ask ;;
   win) win ;;
   ide) s="$(session_of "$target")" && "$S/ide.sh" "$s" ;;
   ide-current) "$S/ide.sh" "$(t display-message -p '#{session_name}')" ;;

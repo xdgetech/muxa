@@ -31,6 +31,9 @@ default @agents_key_attention a
 default @agents_key_jump j
 # The Inbox of muxa tasks, when muxa is installed.
 default @agents_key_inbox T
+# An ask session through muxa: an agent in a repo's main checkout, no task.
+# Not a tmux default key.
+default @agents_key_ask A
 default @agents_muxa auto
 
 t bind-key "$(opt @agents_key_focus Tab)" run-shell -b "'$S/action.sh' focus"
@@ -41,6 +44,7 @@ t bind-key "$(opt @agents_key_next ')')" run-shell -b "'$S/action.sh' next"
 t bind-key "$(opt @agents_key_prev '(')" run-shell -b "'$S/action.sh' prev"
 t bind-key "$(opt @agents_key_attention a)" run-shell -b "'$S/action.sh' attention"
 t bind-key "$(opt @agents_key_inbox T)" run-shell -b "'$S/muxa.sh' inbox '#{client_name}'"
+t bind-key "$(opt @agents_key_ask A)" run-shell -b "'$S/action.sh' ask"
 t bind-key "$(opt @agents_key_jump j)" switch-client -T agents-jump
 keys="$AGENTS_JUMP_KEYS"
 while [ -n "$keys" ]; do
