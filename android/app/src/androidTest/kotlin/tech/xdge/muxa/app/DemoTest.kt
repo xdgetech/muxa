@@ -116,9 +116,28 @@ class DemoTest {
         // Ctrl+Shift+J: the terminal side of the same session.
         shortcut(KeyEvent.KEYCODE_J)
         waitForPane("pane %2 100x30")
-        // Ctrl+Shift+4: the fourth session in the list's repo order, a bigger pane.
-        shortcut(KeyEvent.KEYCODE_4)
+        // Ctrl+Shift+1: the first manual session in the list, a bigger pane.
+        shortcut(KeyEvent.KEYCODE_1)
         waitForPane("pane %3 132x43")
+    }
+
+    /** Sessions lists manual sessions; All Sessions adds the Tasks' sessions and numbers them too. */
+    @Test
+    fun sessionsListsManualSessionsUnlessAllIsChosen() {
+        launch()
+        waitForTag("composer")
+        shortcut(KeyEvent.KEYCODE_K)
+        waitForTag("switcher-search")
+        compose.onNodeWithTag("switch-scratch").assertExists()
+        assertTrue(compose.onAllNodes(hasTestTag("switch-feature-auth")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("session-filter-all").performClick()
+        waitForTag("switch-feature-auth")
+        compose.onNodeWithText("Close").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("switcher-search"), TIMEOUT)
+
+        // Ctrl+Shift+2 is a Task's session now, in the bar's title.
+        shortcut(KeyEvent.KEYCODE_2)
+        compose.waitUntilAtLeastOneExists(hasText("fix-login", substring = false), TIMEOUT)
     }
 
     /** A hardware Enter starts a new line in the composer; Ctrl+Enter sends. */
@@ -345,8 +364,8 @@ class DemoTest {
     fun aDetachedSessionTakesTheDeviceSize() {
         launch()
         waitForTag("composer")
-        // Ctrl+Shift+7: the last session in the list, "device".
-        shortcut(KeyEvent.KEYCODE_7)
+        // Ctrl+Shift+4: the last session in the list, "device".
+        shortcut(KeyEvent.KEYCODE_4)
         waitForPane("pane %9 ")
         compose.waitUntil(TIMEOUT) { paneSize() != null && paneSize() == paneView()?.viewport?.let { it.cols to it.rows } }
         val first = checkNotNull(paneSize())

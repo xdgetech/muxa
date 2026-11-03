@@ -23,6 +23,8 @@ final class AppModel {
     /// What the user can do about `connectError`, when the app knows.
     private(set) var connectFix: ConnectFix?
     var showSwitcher = false
+    /// The Sessions list shows manual sessions unless the user asks for all (ADR 0025).
+    var sessionFilter: SessionFilter = .manual
     /// Bumped when a sheet closes, so the pane takes the keyboard back.
     private(set) var focusRequest = 0
     /// Bumped when the user asks for the detail: a connection or a session. On a
@@ -306,14 +308,26 @@ final class AppModel {
     // MARK: Panes
 
     /// Sessions with a pane to show, grouped by repo like the desktop's session list.
+    /// The filter only shapes the list: resuming, Open Terminal and alerts reach any session.
     var sessionGroups: [RepoGroup] {
-        session.sessions.filter { $0.defaultPane != nil }.groupedByRepo()
+        paneSessions.shown(by: sessionFilter).groupedByRepo()
     }
 
     /// The sessions in the order shown, which Cmd+1…9 and Cmd+Shift+[ ] follow.
     var visibleSessions: [Session] {
         sessionGroups.flatMap(\.sessions)
     }
+
+    /// Every session with a pane, in tmux's order, whatever the filter.
+    private var paneSessions: [Session] {
+        session.sessions.filter { $0.defaultPane != nil }
+    }
+
+    /// The filter hides every session there is.
+    var sessionsAllFiltered: Bool { visibleSessions.isEmpty && !paneSessions.isEmpty }
+
+    /// The first session in repo order, whatever the filter: the pane-first fallback.
+    private var firstSession: Session? { paneSessions.groupedByRepo().first?.sessions.first }
 
     var currentSession: Session? {
         guard let pane = session.watchedPane else { return nil }
@@ -361,7 +375,7 @@ final class AppModel {
         guard session.watchedPane == nil else { return }
         if let id = currentHostID, let last = hosts.lastPanes[id], let pane = session.sessions.resuming(last) {
             await watch(pane.id)
-        } else if let first = visibleSessions.first {
+        } else if let first = firstSession {
             await open(first)
         }
     }
@@ -662,7 +676,7 @@ final class AppModel {
             closeError = PaneSession.describe(error)
             return
         }
-        if wasShown, let next = visibleSessions.first { await open(next) }
+        if wasShown, let next = firstSession { await open(next) }
         refocusPane()
     }
 

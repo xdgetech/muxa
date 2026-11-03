@@ -29,6 +29,7 @@ import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneFit
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.RepoGroup
+import tech.xdge.muxa.session.SessionFilter
 import tech.xdge.muxa.session.TaskDraft
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.alerts
@@ -43,6 +44,7 @@ import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.runningTask
 import tech.xdge.muxa.session.knownRepos
 import tech.xdge.muxa.session.resuming
+import tech.xdge.muxa.session.shown
 import tech.xdge.muxa.transport.BridgeChannel
 import tech.xdge.muxa.transport.HostKey
 import tech.xdge.muxa.transport.KeySetup
@@ -106,6 +108,9 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     var connectFix by mutableStateOf<ConnectFix?>(null)
         private set
     var showSwitcher by mutableStateOf(false)
+
+    /** The Sessions list shows manual sessions unless the user asks for all (ADR 0025). */
+    var sessionFilter by mutableStateOf(SessionFilter.MANUAL)
 
     /** Bumped when a dialog closes, so the pane takes the keyboard back. */
     var focusRequest by mutableIntStateOf(0)
@@ -497,11 +502,23 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
 
     // Panes
 
-    /** Sessions with a pane to show, grouped by repo like the desktop's session list. */
-    val sessionGroups: List<RepoGroup> get() = state.sessions.filter { it.defaultPane != null }.groupedByRepo()
+    /**
+     * Sessions with a pane to show, grouped by repo like the desktop's session list.
+     * The filter only shapes the list: resuming, Open Terminal and alerts reach any session.
+     */
+    val sessionGroups: List<RepoGroup> get() = paneSessions.shown(sessionFilter).groupedByRepo()
 
     /** The sessions in the order shown, which the session shortcuts follow. */
     val visibleSessions: List<Session> get() = sessionGroups.flatMap { it.sessions }
+
+    /** Every session with a pane, in tmux's order, whatever the filter. */
+    private val paneSessions: List<Session> get() = state.sessions.filter { it.defaultPane != null }
+
+    /** The filter hides every session there is. */
+    val sessionsAllFiltered: Boolean get() = visibleSessions.isEmpty() && paneSessions.isNotEmpty()
+
+    /** The first session in repo order, whatever the filter: the pane-first fallback. */
+    private val firstSession: Session? get() = paneSessions.groupedByRepo().firstOrNull()?.sessions?.firstOrNull()
 
     val currentSession: Session?
         get() {
@@ -545,7 +562,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         if (state.watchedPane != null) return
         val last = currentHostId?.let { hostList.lastPanes[it] }
         val pane = last?.let { state.sessions.resuming(it) }
-        if (pane != null) watch(pane.id) else visibleSessions.firstOrNull()?.let { openNow(it) }
+        if (pane != null) watch(pane.id) else firstSession?.let { openNow(it) }
     }
 
     private suspend fun watch(pane: String) {
@@ -814,7 +831,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             closeError = PaneSession.describe(e)
             return@launch
         }
-        if (wasShown) visibleSessions.firstOrNull()?.let { openNow(it) }
+        if (wasShown) firstSession?.let { openNow(it) }
         refocusPane()
     }
 

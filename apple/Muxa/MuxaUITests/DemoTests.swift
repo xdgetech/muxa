@@ -36,8 +36,9 @@ final class DemoTests: XCTestCase {
         // Cmd+J: the terminal side of the same session.
         pane.typeKey("j", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %2 100x30"))
-        // Cmd+4: the fourth session in the sidebar's repo order, a bigger pane.
-        pane.typeKey("4", modifierFlags: .command)
+        // Cmd+1: the first manual session in the sidebar, a bigger pane. Task sessions
+        // are listed under All Sessions only.
+        pane.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %3 132x43"))
         save("portrait-132x43")
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -59,7 +60,7 @@ final class DemoTests: XCTestCase {
 
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
-        pane.typeKey("5", modifierFlags: .command)
+        pane.typeKey("2", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %4 100x60"))
 
         // The grid stays exactly 100x60: the last row holds 99 cells and an X in column 100.
@@ -106,7 +107,7 @@ final class DemoTests: XCTestCase {
 
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
-        pane.typeKey("6", modifierFlags: .command)
+        pane.typeKey("3", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %7 100x60"))
         sleep(1)
         let window = app.windows.firstMatch.frame
@@ -131,8 +132,8 @@ final class DemoTests: XCTestCase {
         leaveInitialInbox(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
-        // Cmd+7: the last session in the sidebar, "device".
-        pane.typeKey("7", modifierFlags: .command)
+        // Cmd+4: the last session in the sidebar, "device".
+        pane.typeKey("4", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %9 "))
         let portrait = try XCTUnwrap(sizeOf(pane, "%9"))
         XCTAssertNotEqual(portrait, Grid(cols: 80, rows: 24), "the pane kept the size it was made with")
@@ -533,11 +534,15 @@ final class DemoTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         assertToolbarDoesNotOverlap(app)
         XCUIDevice.shared.orientation = .portrait
-        pane.typeKey("4", modifierFlags: .command)
+        pane.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %3 132x43"))
         XCTAssertFalse(app.descendants(matching: .any)["chat"].firstMatch.exists)
         XCTAssertFalse(segments.buttons["Chat"].exists)
         XCUIDevice.shared.orientation = .landscapeLeft
+        // All Sessions numbers the Task sessions too: Cmd+1 is the Task's again.
+        pane.typeKey("k", modifierFlags: .command)
+        tapWhenReady(app.segmentedControls["session-filter"].buttons["All Sessions"])
+        app.buttons["Close"].tap()
         pane.typeKey("1", modifierFlags: .command)
         // The pane was last shown as Agent, and opens that way again.
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
@@ -678,8 +683,15 @@ final class DemoTests: XCTestCase {
         // The sidebar: hosts, and the connected host's sessions.
         showSidebar(app)
         XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
+        // Sessions lists manual sessions; the Tasks' sessions are under All Sessions.
+        XCTAssertTrue(app.staticTexts["Other Sessions"].exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'scratch'")).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["app"].exists)
+        XCTAssertFalse(app.staticTexts["docs"].exists)
+        save("sidebar-manual")
+        tapWhenReady(app.segmentedControls["session-filter"].buttons["All Sessions"])
         // Sessions are grouped by repo, untagged ones last.
-        XCTAssertTrue(app.staticTexts["app"].exists)
+        XCTAssertTrue(app.staticTexts["app"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["docs"].exists)
         XCTAssertTrue(app.staticTexts["Other Sessions"].exists)
         save("sidebar")

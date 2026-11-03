@@ -11,7 +11,7 @@ What works today:
 - **iPad app:**
   - one pane, sized for the iPad while it is in use (ADR 0020) and rendered at its real size, scaled to fit; wide panes fit the width and scroll with the cursor (ADR 0004);
   - saved hosts, one-time password setup of a restricted key, and host keys pinned on first use;
-  - sessions grouped by repo, with each agent's state and its age;
+  - sessions grouped by repo, with each agent's state and its age; the list shows manual sessions, and All Sessions adds the Tasks' sessions (ADR 0025);
   - the Agent / Terminal switch, and every keyboard shortcut in the README;
   - Chat: a Claude Code or Codex conversation as messages, with a composer and quick keys (ADR 0005, `docs/agents.md`);
   - approval cards in Chat when Claude Code waits on a permission, a question or a plan (ADR 0009);
@@ -34,7 +34,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 
 1. **Phase 0, clean up:** done. The open work is committed and merged agent worktrees are removed. Work continues on `plan/workspace-vision`; it is not merged into `main` yet.
 2. **Phase 1, ship 1.0:** real-device checks, the daemon on a Mac, the developer's decisions on ADR 0015–0021 and 0023, then publish. Agent lane: the supported tmux CI matrix.
-3. **Phase 2, Workers:** simplify the selection contract (ADR 0027 section 1), named create and restart, the pickers, then advertise `workers`. Codex continues restarted runs by hand. Parallel lanes: the Sessions filter (UI only); the Codex session-ownership ADR (proposed ADR 0028: muxa creates the thread and sends turns by id; waits for the developer's checks with a real login).
+3. **Phase 2, Workers:** simplify the selection contract (ADR 0027 section 1), named create and restart, the pickers, then advertise `workers`. Codex continues restarted runs by hand. Parallel lanes: the Sessions filter (UI only, done in both apps); the Codex session-ownership ADR (proposed ADR 0028: muxa creates the thread and sends turns by id; waits for the developer's checks with a real login).
 4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other.
 5. **Phase 4:** workspace memory as a Routine (ADR 0027 section 6). Then, as needed, the Linux daemon and tmux-agents (ADR 0017).
 6. **Phase 5:** workflow graph, then autonomous work.
@@ -70,7 +70,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 
 ## Requested follow-on design
 
-- **Inbox queue** (proposed ADR 0025, simplified by ADR 0027): an ordered list with Act, Done, Move down and Later, a separate manual Sessions destination and an All Tasks destination. Move down and Later are optional fields on the Task record. Nothing is implemented.
+- **Inbox queue** (proposed ADR 0025, simplified by ADR 0027): an ordered list with Act, Done, Move down and Later, a separate manual Sessions destination and an All Tasks destination. Move down and Later are optional fields on the Task record. Only the manual Sessions filter is implemented, in both apps.
 - **Routines** (proposed ADR 0026): a Routine runs an agent on a trigger, for example every morning. The agent reads its sources (Slack, Linear, Notion and others) through its own native tools and publishes briefings and proposals to Inbox. An approved proposal becomes one new Task that performs the action. A run is a record of kind `routine-run`, not a Task in the UI. Nothing is implemented. Phase 3 of the order above.
 
 Milestones and dependencies are in `docs/workers.md`; the domain definitions are in `docs/work-model.md`.

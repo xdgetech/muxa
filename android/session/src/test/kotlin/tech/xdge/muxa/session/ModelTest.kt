@@ -59,6 +59,27 @@ class ModelTest {
         assertEquals(listOf(listOf("a1", "a2"), listOf("b1", "b2"), listOf("x", "y")), groups.map { g -> g.sessions.map { it.name } })
     }
 
+    private fun session(name: String, taskId: String?, pane: Pane) = Session("$$name", name, taskId = taskId, panes = listOf(pane))
+
+    @Test
+    fun manualShowsOnlySessionsWithoutATaskAndAllShowsEvery() {
+        val sessions = listOf(
+            session("task", "t-1", pane("%1", Role.AGENT, state = AgentState.WAITING)),
+            session("mine", null, pane("%2", Role.SHELL, shell = true)),
+            session("other", "t-2", pane("%3", Role.SHELL, shell = true)),
+            session("blank", "", pane("%4", Role.UNKNOWN)),
+        )
+        assertEquals(listOf("mine", "blank"), sessions.shown(SessionFilter.MANUAL).map { it.name })
+        assertEquals(listOf("task", "mine", "other", "blank"), sessions.shown(SessionFilter.ALL).map { it.name })
+    }
+
+    /** An agent started by hand stays manual; a person at a Task's shell keeps the Task. */
+    @Test
+    fun onlyTheTaskAssociationClassifies() {
+        assertTrue(!session("hand", null, pane("%1", Role.AGENT, state = AgentState.WAITING)).runsTask)
+        assertTrue(session("typed", "t-1", pane("%2", Role.SHELL, shell = true)).runsTask)
+    }
+
     private val images = listOf(
         "build/screenshots/en/login.png", "build/screenshots/en/home.png", "build/screenshots/ja/login.png",
         "docs/images/chat.jpg", "logo.png",

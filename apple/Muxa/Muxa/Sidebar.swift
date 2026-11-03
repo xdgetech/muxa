@@ -68,6 +68,15 @@ struct Sidebar: View {
                 }
             }
             if model.isConnected {
+                Section {
+                    SessionFilterPicker()
+                    if model.sessionsAllFiltered {
+                        Text("No manual sessions. Tasks have theirs under All Sessions.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Sessions")
+                }
                 let numbers = Dictionary(
                     uniqueKeysWithValues: model.visibleSessions.enumerated().map { ($1.id, $0 + 1) })
                 ForEach(model.sessionGroups, id: \.repo) { group in

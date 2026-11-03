@@ -57,12 +57,15 @@ class ShowcaseTest {
         if (exists("back")) {
             click("back")
             waitForTag("host-Mac mini")
+            // Every agent, the Tasks' too.
+            click("session-filter-all")
             snap("3-switcher")
             click("session-stripe-webhooks")
             waitForTag("view-Agent")
         } else {
             shortcut(KeyEvent.KEYCODE_K)
             waitForTag("switcher-search")
+            click("session-filter-all")
             snap("3-switcher")
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_ESCAPE)
             compose.waitUntilDoesNotExist(hasTestTag("switcher-search"), TIMEOUT)

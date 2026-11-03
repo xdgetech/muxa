@@ -36,6 +36,8 @@ final class ShowcaseTests: XCTestCase {
         try save("2-agent", in: app)
 
         pane.typeKey("k", modifierFlags: .command)
+        // Every agent, the Tasks' too.
+        tapWhenReady(app.segmentedControls["session-filter"].buttons["All Sessions"])
         XCTAssertTrue(app.staticTexts["search-index"].waitForExistence(timeout: 5))
         try save("3-switcher", in: app)
         app.buttons["Close"].tap()
@@ -79,6 +81,7 @@ final class ShowcaseTests: XCTestCase {
         // A phone's session switcher is its list: every agent with its state.
         showSidebar(app)
         XCTAssertTrue(app.buttons["host-Mac mini"].waitForExistence(timeout: 5))
+        tapWhenReady(app.segmentedControls["session-filter"].buttons["All Sessions"])
         try save("3-switcher", in: app)
         app.buttons.matching(NSPredicate(format: "label CONTAINS 'stripe-webhooks'")).firstMatch.tap()
         XCTAssertTrue(pane.waitForExistence(timeout: 5))
