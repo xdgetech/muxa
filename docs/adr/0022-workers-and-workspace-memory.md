@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Implementation plan: `docs/workers.md`. Reviewed with GPT-6 Astra (`docs/findings/workers-design-review.md`). This ADR proposes two independent releases: **W, Workers and handoff**, then **M, workspace memory and close-out**. W1 contract/type/fixture work is authorized while W0 gates remain open; neither runtime feature is implemented. Per-worker environment/account overrides are deferred; workspace environments continue to follow ADR 0016. ADR 0027 simplifies the worker selection contract to a name with reserved `default`, and replaces release M with a Routine.
+Proposed. Implementation plan: `docs/workers.md`. Reviewed with GPT-6 Astra (`docs/findings/workers-design-review.md`). This ADR proposes two independent releases: **W, Workers and handoff**, then **M, workspace memory and close-out**. W1 contract/type/fixture work is authorized while W0 gates remain open. Named create and restart are implemented but `workers` is not advertised; M is not implemented. Per-worker environment/account overrides are deferred; workspace environments continue to follow ADR 0016. ADR 0027 simplifies the worker selection contract to a name with reserved `default`, and replaces release M with a Routine.
 
 ## Context
 
@@ -62,6 +62,8 @@ A worker command replaces the workspace's `agent.command` or bridge default. mux
 The bridge writes a `## Worker` section in TASK.md's managed header with the selected name and current instruction text. The agent-maintained notes below the marker remain untouched. Native persona/tool rules stay in native role files; muxa does not copy them into TASK.md. Native startup prompts that automatically begin work must be disabled or proven compatible with muxa's fixed first prompt in W0. Worker `args` are trusted host configuration; they must launch an interactive agent in the Task directory, without resuming an unrelated conversation or starting a separate native worktree/background/remote session. muxa does not silently rewrite native settings to satisfy this contract.
 
 ### W2. Task assignment and restart
+
+> **Superseded in part by ADR 0027 section 1.** A worker-aware client sends a worker name or `default` (the workspace default agent). A legacy client omits `worker` and keeps the current worker. `worker: null` no longer clears; the CLI uses `--worker default` instead of `--workspace-default`. `rev` is optional and checked only when sent. Runs record `worker` (a name or `default`) instead of `assignment {kind, name?}`; a legacy run without it stays unrecorded. The text below is the original decision.
 
 Records gain optional `worker`; absence means the workspace default. Each new run gets an explicit `assignment`: `{kind: workspace-default}` or `{kind: worker, name: Reviewer}`. Absent `assignment` on a legacy run means unrecorded, not evidence that it used today's default. Do not infer historical assignment from current config. A run's observed `agent` still comes only from the adapter. Resolve command, scope, environment and instructions on **every** restart, including same-name restarts; do not pair newly loaded instructions with an obsolete pane command.
 

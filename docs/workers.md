@@ -44,13 +44,13 @@ Current W0 results and the outstanding native/concurrency gates are in `docs/fin
 | Slice | Implemented now | Remaining release gate |
 |---|---|---|
 | W0 | isolated command/argv/env/layout probes, OS-lock owner-death probe, native startup attempts | authenticated native role/profile selection and rematching; supported tmux CI results |
-| W1 | shared Rust/Swift/Kotlin types and fixtures | contract-only implementation complete; no capability enabled |
-| W2 configuration | strict host worker parser and resolver; create and restart preparation share a validated config/instruction snapshot, native argv and workspace-only env; explicit initial-run assignment and instruction-preserving header refresh | wire selection remains rejected; named-worker prompt delivery, native startup binding/delivery and full execution/recovery acceptance remain |
+| W1 | shared Rust/Swift/Kotlin types and fixtures; simplified to a worker name or `default` (ADR 0027 section 1) | done; `workers` not advertised |
+| W2 configuration | strict host worker parser (rejects the name `default`) and resolver; create and restart share a validated config/instruction snapshot, native argv and workspace-only env; each run records its worker; `task-list` lists workers; named create and Keep/default/named restart work through the wire in bridge and daemon | native startup with real Claude/Codex logins |
 | W2 restart recovery | durable staged TASK/HANDOFF pair, process-start identity, prepared/dispatching/replaced intent, delivery claim, explicit recovery endpoint and atomic action receipts; Task/loop/close claims; legacy records without runs preserved | named-worker end-to-end execution, fresh native role/profile validation and remaining R01–R16 release cases |
-| W3 clients | worker selection remains capability-gated; CLI/iOS/Android now also inspect and explicitly resolve restart recovery with displayed revision/id, phase/action intersection and unconfirmed history | named-worker host integration and end-to-end native release verification |
+| W3 clients | CLI `--worker NAME` (`default` for the workspace default); iOS/Android pickers send a name or `default`, behind the capability; recovery inspection and actions | end-to-end check against a host with real logins |
 | M0 | adapter/source audit, fixture counterexamples and M01–M17 acceptance matrix in `docs/findings/memory-m0.md` | ordered completed-turn evidence, native completion probes, workspace revision/journal implementation |
 
-Named worker requests and workspace memory remain disabled. Internal create/restart preparation now resolves selection before record/file/process changes and uses direct native argv rather than a reconstructed shell command. Restart preparation checks the displayed revision, stages the selected instruction snapshot without publishing it, and preserves agent notes; normal loop/header refresh retains that run’s instruction snapshot. Resolver/staging tests cover invalid instructions and immutable snapshots. An internal real-tmux test with a fake agent also exercises same-name command/instruction edits, stale revision rejection and explicit default clearing while preserving Task/session/pane/layout and notes. This does not verify authenticated native workers or enable the wire request path. Active Chat now discards the old transcript source on pane PID/session replacement, and session-state notifications include PID and report-time changes. Retained tags, child-agent changes within an unchanged pane PID and native readiness still require separate fresh-evidence verification. Restart recovery is now implemented independently under `task-restart-recovery`: normal restart stages files before dispatch, records successful replacement identity before publishing, and finalizes run/pending state atomically. Delivery claims are durable before startup/restart/loop input; uncertain delivery never retries automatically. Recovery cancel/finish/leave actions never respawn or type a prompt, stop automatic work, and commit a bounded idempotency receipt with the resolution. Retained stages after an uncertain/cancelled operation may remain private for inspection; no unbounded terminal/document content enters records or logs.
+The bridge now serves named create and restart through the wire (ADR 0027 section 1); `workers` stays unadvertised. Workspace memory remains disabled. Create/restart preparation resolves selection before record/file/process changes and uses direct native argv rather than a reconstructed shell command. Restart preparation checks the displayed revision, stages the selected instruction snapshot without publishing it, and preserves agent notes; normal loop/header refresh retains that run’s instruction snapshot. Resolver/staging tests cover invalid instructions and immutable snapshots. An internal real-tmux test with a fake agent also exercises same-name command/instruction edits, stale revision rejection and explicit default clearing while preserving Task/session/pane/layout and notes. This does not verify authenticated native workers. Active Chat now discards the old transcript source on pane PID/session replacement, and session-state notifications include PID and report-time changes. Retained tags, child-agent changes within an unchanged pane PID and native readiness still require separate fresh-evidence verification. Restart recovery is now implemented independently under `task-restart-recovery`: normal restart stages files before dispatch, records successful replacement identity before publishing, and finalizes run/pending state atomically. Delivery claims are durable before startup/restart/loop input; uncertain delivery never retries automatically. Recovery cancel/finish/leave actions never respawn or type a prompt, stop automatic work, and commit a bounded idempotency receipt with the resolution. Retained stages after an uncertain/cancelled operation may remain private for inspection; no unbounded terminal/document content enters records or logs.
 
 Integrated local verification passed after the shared quoting fix and claim integration: `make check` (ShellCheck 0.11.0), `make test-tmux`, `make repro`, `make test-apple`, `make test-android`, `make build-app`, `make build-android` and `make lint-android`. The linked-close integration test covers tagged and directory-matched Tasks. These are local regression/component results; they do not close the native, supported-version CI or full recovery gates. Optional external tmux plugin checks were skipped without their environment variables.
 
@@ -62,9 +62,9 @@ Proposed ADR 0028 would replace this Codex fallback with a thread muxa creates a
 
 ## W1 contract status
 
-W1 now defines WorkerInfo, presence-preserving Keep/default/named selection, Task worker, explicit run assignment and optional restart revision in Rust, Swift and Kotlin. `protocol/fixtures/workers/` pins the shared wire forms; PROTOCOL.md describes the extension within v1. Known/unknown assignment tags remain distinguishable from legacy missing assignment. Older record/run extras, including unknown assignment subfields, survive rewrite.
+W1 defines WorkerInfo, the worker selection, the Task worker, the run worker and the optional restart revision in Rust, Swift and Kotlin. `protocol/fixtures/workers/` pins the wire forms; PROTOCOL.md describes them. ADR 0027 section 1 replaced the omitted/null/named tri-state and the run `assignment` object with a worker name. Runs written before that still read: the bridge keeps `assignment` on rewrite and lists it as a name or `default`.
 
-This is contract preparation authorized by the developer while W0 remains incomplete. The bridge and demo bridges do not advertise `workers`. Named create, explicit restart selection/clear, and restart revision are unsupported before side effects. A stored named worker also blocks a legacy Keep restart on this W1 host. Existing default Task requests keep their encoding and launcher behavior. Restart now requires the Task’s workspace to remain configured; a removed workspace is rejected before staging or respawn rather than using the host fallback command. Host config parsing, CLI selection flags and app pickers are now prepared in W2/W3 as shown above. Worker execution still requires its integration gates. The independent restart-recovery implementation is described above.
+The bridge and demo bridges do not advertise `workers`. Requests without `worker` keep their encoding and launcher. Restart requires the Task's workspace to stay configured; a removed workspace is rejected before staging or respawn.
 
 ## Current evidence and W0 gates
 
@@ -104,24 +104,20 @@ A config/instruction change during an operation applies to the next operation; d
 
 W1 validation passed: `make check` (ShellCheck 0.11.0), `make test-apple`, `make test-android`, `make build-app`, and the bridge Task-record integration suite (35 tests). W0’s isolated tmux probes and repro checks also passed locally.
 
-## Assignment contract defined in W1
-
-These wire shapes are now defined in PROTOCOL.md; their execution semantics remain gated on W2.
+## Selection contract (ADR 0027 section 1)
 
 | Input/state | Meaning |
 |---|---|
-| create-task omits worker or sends null | use workspace default |
-| restart-agent omits worker | Keep current assignment |
-| restart-agent has worker: null | clear assignment; workspace default |
-| restart-agent has worker: "Reviewer" | select Reviewer |
-| Task record omits worker | workspace default assignment |
-| new run assignment: {kind: workspace-default} | default was explicitly selected for that run |
-| new run assignment: {kind: worker, name: Reviewer} | named worker selected for that run |
-| legacy run omits assignment | historical assignment unrecorded |
+| create-task omits worker, or sends `default` | workspace default |
+| create-task sends `Reviewer` | Reviewer |
+| restart-agent omits worker (legacy client) | keep the current worker |
+| restart-agent sends `default` | clear the worker; workspace default |
+| restart-agent sends `Reviewer` | select Reviewer |
+| Task record omits worker | workspace default |
+| run has worker `default` or `Reviewer` | the worker requested for that run |
+| legacy run omits worker | unrecorded, not the workspace default |
 
-`rev` on restart is additive. Worker-aware clients send the displayed record revision even for Keep current. A stale revision conflicts before files, loop state or process changes. Explicit worker selection/clearing without `rev` is bad-request; omission of both fields remains the legacy Keep path. Older clients can continue generic restarts through the same resolved-current-assignment path; they cannot choose/clear a worker without capability support.
-
-Do not deserialize the request with a codec that merges missing and null. Model Keep, Default and Named explicitly, and pin all three serialized forms in Rust, Swift and Kotlin fixtures. Run history uses an explicit assignment enum to avoid treating legacy absence as proof of a default. Unknown future assignment kinds display as unknown; do not reinterpret them as Workspace default.
+A worker-aware client always sends a name. `rev` is optional: when sent, a stale revision conflicts before files, loop state or process changes. A host worker may not be named `default`. A removed or disallowed worker is `bad-request`, also on Keep; there is no fallback. JSON `null` reads as omitted.
 
 ## Restart failure and concurrency table
 
@@ -146,7 +142,7 @@ Lifecycle operations need serialization in addition to per-record writes. Docume
 | Phase | Scope/files | Acceptance and handoff |
 |---|---|---|
 | W0 Facts and failure model | `scripts/repro/`, findings, adapter fixtures, restart design | no-model A → B → default/same-name probes, native launch observations, concurrency/crash table; ADR W scope accepted before production changes |
-| W1 Contract | PROTOCOL.md, fixtures, Rust protocol/record types, Swift/Kotlin protocol types | omitted/null/named round trips, explicit/default/unknown run assignments, optional revision, old record unknown-field preservation; no capability advertised yet |
+| W1 Contract | PROTOCOL.md, fixtures, Rust protocol/record types, Swift/Kotlin protocol types | name/`default`/omitted round trips, recorded and legacy run workers, optional revision, old record unknown-field preservation; no capability advertised yet |
 | W2 Host and CLI | workspace/worker parsing, create/restart resolver and lifecycle claim, header/handoff, CLI flags and JSON | create named/default; Keep/set/clear with current command; disallowed/removed names; A → B → A → default; argument bytes; preflight failures; simultaneous daemon/fallback requests; uncertain-side-effect recovery; no content/secrets in logs; unchanged pane/layout |
 | W3 Apps and demo | worker pickers in New Task/restart, handoff confirmation, detail/run/Inbox labels, demo fixtures; maintain the shared Task/Run/Session model | both apps: workspace filtering, capabilities absent, removed current worker, explicit default vs Keep, stale-revision conflict, rejected restart preserves current UI, unconfirmed operation presentation |
 | W4 Release verification | example config, docs/agents.md, README, plan, SECURITY.md | make check, make test-tmux, make repro, make test-apple, make test-android, app/UI tests and Android lint; native checks recorded; advertise workers only for complete host support |
@@ -168,7 +164,9 @@ Snapshot locking applies at creation, restart and close-out, not just apply. Sna
 
 ## What is ready next
 
-The next W deliverable is **the simplified selection contract (ADR 0027 section 1) and named create/restart end to end**, with the supported tmux CI matrix. ADR 0027 stops the R01–R16 matrix at its current coverage and lists the rest as known gaps; Codex continues restarted runs by hand. Recovery staging, delivery claims, API and client actions are implemented; their local acceptance evidence is recorded below. The developer explicitly authorized W1 contract/type/fixture work while W0 remains incomplete. The developer later authorized parallel W2/W3 groundwork and client preparation. This does not enable workers or waive native, recovery or end-to-end release gates. Memory's design stays reviewable separately while Workers becomes concrete. Record remaining uncertainty explicitly; do not implement per-worker env or infer new agent state to avoid a failed gate.
+ADR 0027 section 1 and named create/restart are done through the wire, in the bridge and the daemon, with the CLI and both app pickers behind the capability. Codex continues restarted runs by hand (fixed prompt in Terminal).
+
+Before `workers` is advertised, the developer checks it natively: create a Task with a named Claude worker and a named Codex worker with real logins, then restart A → B → `default` → A. Record the versions and results in `docs/findings/workers-w0.md`. The supported tmux CI matrix is a separate Phase 1 lane. ADR 0027 section 3 lists the remaining R01–R16 cases as known gaps, not gates.
 
 ## Restart-recovery integration evidence
 

@@ -231,26 +231,31 @@ A bridge with the `task-handoff` capability records the agents that work on a Ta
    - Once the new agent has finished a turn (`idle` or `done`, since the restart), the bridge types `Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.` When that does not happen within 30 seconds, the record's `note` says so.
    - An unknown task is `bad-request`.
 
-## Workers (contract only; not enabled)
+## Workers (implemented; not advertised)
 
-ADR 0022 release W adds the optional `workers` capability within protocol v1. This checkout defines the types/fixtures, but its bridge and demo bridges **do not advertise workers**. They return `unsupported` for create with a named worker, or restart with worker selection or `rev`, before starting/replacing an agent or changing Task files. Legacy requests for default Tasks are unchanged; even a legacy Keep restart is unsupported when its stored Task names a worker, so a downgraded host cannot silently ignore the assignment. Native runtime, lifecycle claims and recovery remain W0/W2 release gates.
+ADR 0022 release W adds the optional `workers` capability within protocol v1. ADR 0027 section 1 sets the selection contract below. The bridge serves named create and Keep/default/named restart, but it does **not advertise `workers`** yet. The demo bridges reject worker requests as `unsupported`.
 
-Clients MUST check the capability before sending worker selection or restart `rev`; older bridges may ignore unknown fields. A listing alone is not complete support. A future supporting host advertises it only when create, Keep/set/clear restart, revision conflicts and fresh run observation work end to end.
+Clients MUST check the capability before they send `worker` or restart `rev`. Older bridges may ignore unknown fields.
 
 - `task-list` gains optional `workers[] {name, agent, description?, workspaces?, loop?}`. Missing means an empty list. Missing `workspaces` allows every workspace; `[]` allows none. `loop` uses LoopSpec's `{check, maxAttempts?, timeout?}` as creation defaults, subject to the workspace allowlist and `task-loop`. Selecting a worker never creates a loop or replaces an existing check. `agent` is a native program/adapter configuration id, not observed state. Unknown ids have no known launch action. Native args, instruction content, config paths and environment are never included.
-- `create-task` gains optional `worker: string`; absent or null uses Workspace default. Names are host-owned and validated against the Task's workspace. Canonical encoding omits a default selection, as other absent optional fields do.
-- `restart-agent` gains `worker` and `rev`. **Missing worker means Keep current**, explicit `null` means clear to Workspace default, and a string selects that worker. Codecs must preserve this three-way distinction. Worker-aware clients send the displayed `rev` even for Keep. On a supporting host, explicit selection/clearing without `rev` is `bad-request`; a stale revision is `conflict` before side effects. Omitting both fields keeps legacy behavior. No implicit fallback for a removed/disallowed worker.
-- Task records gain optional `worker: string`, the requested assignment. Absence means Workspace default. This label does not prove the native role or its permissions were applied.
-- Runs gain optional `assignment {kind, name?}`. Known forms are `{"kind":"workspace-default"}` and `{"kind":"worker","name":"Reviewer"}`. Missing means historical assignment was unrecorded; do not reconstruct it from current config. Unknown kinds, a named assignment without a nonempty name, or a default assignment with a name have no known meaning and must not become Workspace default. Observed `run.agent` stays separate and comes only from the adapter.
-- Older record readers retain `worker`, `runs[].assignment` and unknown assignment subfields on disk rewrite. In W1, these remain additive record extras and typed accessors do not mutate their original values. Normal unknown-wire-field rules still apply.
+- A worker is selected by name. The reserved name `default` is the workspace default agent. A host worker may not be named `default`.
+- `create-task` gains optional `worker: string`: a worker name or `default`. Absent is the workspace default.
+- `restart-agent` gains optional `worker` and `rev`. A worker-aware client always sends `worker`: a name or `default`. A legacy client omits it, and the Task keeps its current worker. JSON `null` is read as omitted.
+- `rev` is optional. When sent, a stale revision is `conflict` before any side effect. Without it, no revision is checked.
+- An unknown, removed or disallowed worker is `bad-request` before side effects. There is no fallback to another worker, also when a restart keeps a removed worker.
+- Task records gain optional `worker: string`, the requested worker. Absence means the workspace default. This label does not prove the native role or its permissions were applied.
+- Runs gain optional `worker: string`: the name requested for that run, or `default`. Missing means a legacy run: the worker is unrecorded, not the workspace default. Observed `run.agent` stays separate and comes only from the adapter.
+- Runs that a host wrote before ADR 0027 carry `assignment {kind, name?}` on disk. The bridge keeps it on rewrite and lists `{"kind":"workspace-default"}` as `default` and `{"kind":"worker","name":N}` as `N`. Any other form lists as unrecorded.
 
-The shared `fixtures/workers/requests.jsonl` and `messages.jsonl` pin selection presence, worker metadata, scope defaults, legacy/explicit/unknown run assignments and errors. The hypothetical hello fixture includes workers; it is not a capability declaration by the current implementation. Memory/close-out requests are not part of W1.
+After a restart, a guarded Codex run gets the fixed prompt in Terminal instead of automatic input (ADR 0027 section 2).
+
+The shared `fixtures/workers/requests.jsonl` and `messages.jsonl` pin the request forms, worker metadata, scope defaults, legacy and recorded run workers, and errors. The hello fixture includes `workers`; no host sends it yet.
 
 ## Restart recovery (contract; capability gated)
 
 `task-restart-recovery` is independent of `workers`. These additive protocol-v1 types do not by themselves enable a host implementation. Advertise the capability only after durable restart phases, recovery validation and failure probes work end to end. Hosts without it reject `recover-restart` as `unsupported` before side effects. `protocol/fixtures/restart-recovery/` describes the contract, including a hypothetical capability-bearing hello.
 
-A Task record may have `restartOperation {id, phase, assignment?, actions?}`. This is public recovery metadata; no process command, instruction bytes, staged file content or environment is sent. `assignment` is the requested `WorkerAssignment`, not confirmation of an effective native role. `actions` is a list of strings, absent meaning empty. Unknown phase/action strings remain displayable but do not acquire a known action. An incomplete or unrecognized persisted operation is exposed as `phase: "unknown"` with no permitted action; never treat it as absent or automatically retry ordinary restart. Clients block ordinary restart while a summary is present and offer Terminal when no recovery action is understood.
+A Task record may have `restartOperation {id, phase, worker?, actions?}`. This is public recovery metadata; no process command, instruction bytes, staged file content or environment is sent. `worker` is the requested worker name or `default`, not confirmation of an effective native role. `actions` is a list of strings, absent meaning empty. Unknown phase/action strings remain displayable but do not acquire a known action. An incomplete or unrecognized persisted operation is exposed as `phase: "unknown"` with no permitted action; never treat it as absent or automatically retry ordinary restart. Clients block ordinary restart while a summary is present and offer Terminal when no recovery action is understood.
 
 Clients intersect the host's `actions` with these known phase/action pairs and require the capability before offering mutation:
 
