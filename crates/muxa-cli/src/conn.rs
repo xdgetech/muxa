@@ -56,6 +56,10 @@ impl Conn {
         }
     }
 
+    pub fn capabilities(&self) -> &[String] {
+        &self.capabilities
+    }
+
     pub fn supports(&self, capability: &str) -> bool {
         self.capabilities.iter().any(|c| c == capability)
     }

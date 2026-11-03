@@ -2,13 +2,14 @@
 
 mod conn;
 mod inbox;
+mod routines;
 mod tasks;
 mod view;
 mod when;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{InboxChange, LoopSpec, RestartRecoveryAction, Role, Session};
+use muxa_protocol::{InboxAction, InboxChange, LoopSpec, RestartRecoveryAction, Role, Session};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
@@ -26,6 +27,11 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--max-attempts N] [--check-timeout S] [--reset] [--json]
        muxa-cli [--bridge CMD] task loop stop ID [--json]
        muxa-cli [--bridge CMD] task stop-loop (ID | --all) [--json]
+       muxa-cli [--bridge CMD] routines [--json]
+       muxa-cli [--bridge CMD] routine run [WORKSPACE/]NAME [--json]
+       muxa-cli [--bridge CMD] inbox [--all] [--json]
+       muxa-cli [--bridge CMD] inbox (approve | dismiss) ENTRY [--json]
+       muxa-cli [--bridge CMD] inbox later ENTRY --until TIME [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -70,7 +76,19 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   task loop stop ID, task stop-loop ID
                  stops the task's loop
   task stop-loop --all
-                 stops every loop that is armed, checking or paused";
+                 stops every loop that is armed, checking or paused
+  routines       the host's Routines: trigger, next run, last success and
+                 failure, the open run (ADR 0026)
+  routine run NAME
+                 starts a run of an enabled Routine now; needs the daemon
+  inbox          the Routines' briefings and proposals that are open or
+                 later, and Routine runs that wait for an answer; --all
+                 also lists approved and dismissed entries
+  inbox approve ENTRY
+                 creates one Task that performs the proposal; approving
+                 again returns the same Task
+  inbox dismiss ENTRY, inbox later ENTRY --until TIME
+                 closes the entry, or hides it until TIME, as task later";
 
 enum Cmd {
     List,
@@ -114,6 +132,23 @@ enum Cmd {
         json: bool,
     },
     StopAllLoops {
+        json: bool,
+    },
+    Routines {
+        json: bool,
+    },
+    RunRoutine {
+        target: String,
+        json: bool,
+    },
+    Inbox {
+        all: bool,
+        json: bool,
+    },
+    Act {
+        entry: String,
+        action: InboxAction,
+        until: Option<u64>,
         json: bool,
     },
 }
@@ -205,10 +240,11 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 .into(),
         )),
     };
-    let is_later = matches!(words.as_slice(), [w, l, _] if w == "task" && l == "later");
+    let is_later =
+        matches!(words.as_slice(), [w, l, _] if (w == "task" || w == "inbox") && l == "later");
     if until.is_some() != is_later {
         return Err(lexopt::Error::Custom(
-            "task later needs --until, and only task later takes it".into(),
+            "task later and inbox later need --until, and only they take it".into(),
         ));
     }
     if new.worker.is_some() && !is_new && !is_restart {
@@ -275,6 +311,30 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             },
             json,
         },
+        [w] if w == "routines" => Cmd::Routines { json },
+        [w, r, name] if w == "routine" && r == "run" => Cmd::RunRoutine {
+            target: name.clone(),
+            json,
+        },
+        [w] if w == "inbox" => Cmd::Inbox { all, json },
+        [w, a, entry] if w == "inbox" => {
+            let action = match a.as_str() {
+                "approve" => InboxAction::Approve,
+                "dismiss" => InboxAction::Dismiss,
+                "later" => InboxAction::Later,
+                _ => return Err(lexopt::Error::Custom(USAGE.into())),
+            };
+            Cmd::Act {
+                entry: entry.clone(),
+                action,
+                until: until
+                    .as_deref()
+                    .map(|t| when::parse(t, when::now()))
+                    .transpose()
+                    .map_err(|e| lexopt::Error::Custom(e.into()))?,
+                json,
+            }
+        }
         [w, r, id] if w == "task" && r == "recover" => Cmd::Recover {
             task: id.clone(),
             resolution,
@@ -365,6 +425,15 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         } => tasks::start_loop(&mut conn, &task, spec, reset, json).await,
         Cmd::StopLoop { task, json } => tasks::stop_loop(&mut conn, &task, json).await,
         Cmd::StopAllLoops { json } => tasks::stop_all_loops(&mut conn, json).await,
+        Cmd::Routines { json } => routines::list(&mut conn, json).await,
+        Cmd::RunRoutine { target, json } => routines::run(&mut conn, &target, json).await,
+        Cmd::Inbox { all, json } => routines::inbox(&mut conn, all, json).await,
+        Cmd::Act {
+            entry,
+            action,
+            until,
+            json,
+        } => routines::act(conn, &entry, action, until, json).await,
     }
 }
 
