@@ -91,6 +91,8 @@ Direction from `docs/vision.md`, not commitments:
 - **Workflow orchestration** (phase 4): Tasks in a graph, where one step's result starts the next. The host daemon (ADR 0019) can run it.
 - **Autonomous work** (phase 5): agents take and finish Tasks within approval gates and workspace isolation.
 
+Scheduled: find why the snapshot/stream stress test (`crates/muxa-bridge/tests/stream.rs`) sees an 11-row shift in about 1 of 1000 runs under heavy load. It may be a snapshot/stream ordering bug.
+
 Also: `pause-after` for slow links, scrollback, watching several panes, mouse. Deferred with no date (ADR 0027): muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008). Cut: input leases for two typing devices.
 
 ## Design

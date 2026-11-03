@@ -12,7 +12,7 @@ Proposed. It amends ADR 0020: the rule, the protocol and the pane fit stay; how 
 - The facts, each with a repro script (`docs/findings/tmux-control-mode.md`, "Sizing from a device session"):
   1. A session of its own can hold one window of the user's session (`new-session -d`, `link-window`, `kill-window` of its first window). The user's session keeps its windows, its current window and its clients' view.
   2. A sized control client in that session sizes that window only, also when it is not the desktop's current window, with `aggressive-resize` off and on. A desktop key press in that window takes it back; the device client's `switch-client` takes it again.
-  3. A grouped session (`new-session -t`) shares every window. With `aggressive-resize off` its client sizes every window whose latest client is gone, also windows the device does not show.
+  3. A grouped session (`new-session -t`) shares every window. With `aggressive-resize off` its client may size every window whose latest client is gone, also windows the device does not show. It does in most runs, not all.
   4. A command with no target, such as `tmux attach` on the laptop, picks the session switched to last. That is the device session right after the device's `switch-client`, until another client switches to the user's session.
   5. Killing the user's session leaves the linked window alive in the device session.
   6. `list-sessions`, `list-windows -a` and `list-panes -a` show the device session. A session option hides it from a `-f` filter.
@@ -73,7 +73,7 @@ Typing, a new viewport and the pane fit of ADR 0020 send their `switch-client` a
 - Tools that list sessions, windows or panes must skip `@muxa_device`. muxa and tmux-agents do; other plugins show the window twice.
 
 Rejected:
-- **A grouped session** (`new-session -t`) with `select-window` in it. It holds every window, so with `aggressive-resize off` its client sizes windows the device does not show (fact 3).
+- **A grouped session** (`new-session -t`) with `select-window` in it. It holds every window, so with `aggressive-resize off` its client may size windows the device does not show (fact 3).
 - **Zoom (`resize-pane -Z`).** It changes the user's layout: the laptop would see the zoomed pane too.
 - **Per-window sizes** (`refresh-client -C @id:WxH`). tmux 3.2a refuses them, and they pin the window in every mode, so the laptop cannot take it back (ADR 0020, fact 7).
 - **`select-window` in the user's session.** The laptop would jump to the watched window.
