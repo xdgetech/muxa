@@ -106,7 +106,7 @@ where
         capabilities.push("task-restart-recovery".into());
         capabilities.push("tasks-changed".into());
         capabilities.push("task-inbox".into());
-        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_ROUTINES));
+        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_ASK));
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {
@@ -566,6 +566,41 @@ impl Worker {
                             None
                         }
                         Err(e) => Some(convert::task_error(&e)),
+                    };
+                    let _ = out
+                        .send(Message::Result {
+                            id: Some(id),
+                            error,
+                            sessions: None,
+                        })
+                        .await;
+                });
+                return None;
+            }
+            Request::StartSession {
+                id,
+                workspace,
+                repo,
+            } => {
+                let client = Arc::clone(&self.client);
+                let config = Arc::clone(&self.tasks);
+                let records = Arc::clone(&self.records);
+                let out = self.out.clone();
+                self.pending.spawn(async move {
+                    let started =
+                        task_records::start_session(&client, &config, &records, &workspace, &repo)
+                            .await;
+                    let error = match started {
+                        Ok(launched) => {
+                            let msg = Message::SessionStarted {
+                                start: id,
+                                session: launched.id.to_string(),
+                                name: launched.name,
+                            };
+                            let _ = out.send(msg).await;
+                            None
+                        }
+                        Err(e) => Some(e),
                     };
                     let _ = out
                         .send(Message::Result {

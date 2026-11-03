@@ -152,6 +152,34 @@ fn restart_recovery_fixtures_preserve_public_identity_and_unknown_values() {
 }
 
 #[test]
+fn workspace_fixtures_round_trip() {
+    use muxa_protocol::{WORK_ASK, work_level};
+    assert_eq!(round_trip::<Request>("workspaces/requests.jsonl"), 2);
+    assert_eq!(round_trip::<Message>("workspaces/messages.jsonl"), 3);
+    let path = format!(
+        "{}/../../protocol/fixtures/workspaces/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let lines: Vec<Message> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &lines[0] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_ASK);
+    let Message::TaskList { workspaces, .. } = &lines[1] else {
+        panic!()
+    };
+    assert_eq!(workspaces[0].root.as_deref(), Some("/work/lisk"));
+    assert_eq!(workspaces[1].repos, Vec::<String>::new());
+    // A bridge before ADR 0031 sends no root.
+    let old: muxa_protocol::WorkspaceInfo = serde_json::from_str(r#"{"name":"w"}"#).unwrap();
+    assert_eq!(old.root, None);
+}
+
+#[test]
 fn routine_contract_fixtures_round_trip() {
     use muxa_protocol::{Disposition, InboxAction, work_level};
     assert_eq!(round_trip::<Request>("routines/requests.jsonl"), 6);

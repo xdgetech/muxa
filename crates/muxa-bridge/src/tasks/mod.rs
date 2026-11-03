@@ -2,6 +2,8 @@
 //! agent in it, for a client. tmux-agents when it is installed, the built-in
 //! launcher otherwise. See `docs/agents.md` and ADR 0007.
 
+pub mod ask;
+pub mod branch;
 pub mod builtin;
 pub mod tmux_agents;
 

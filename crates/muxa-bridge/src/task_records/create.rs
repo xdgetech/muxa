@@ -79,12 +79,12 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
         Ok(t) => t,
         Err(e) => return (None, Some(e)),
     };
-    let repo = match &target {
+    let (repo, branch) = match &target {
         Target::Repo(req) => match builtin::main_checkout(&req.repo).await {
-            Ok(main) => Some(main),
+            Ok(main) => (Some(main), Some(req.branch.clone())),
             Err(e) => return (None, Some(task_error(&e))),
         },
-        Target::Dir(_) => None,
+        Target::Dir(_) => (None, None),
     };
     let fields = NewRecord {
         workspace: new.workspace,
@@ -93,7 +93,7 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
         goal: new.goal,
         project: new.project,
         repo,
-        branch: new.branch,
+        branch,
         extra: new.routine.as_ref().map(|r| r.fields()).unwrap_or_default(),
         ..NewRecord::default()
     };
@@ -141,25 +141,33 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
     if new.routine.is_some() && (new.repo.is_some() || new.branch.is_some() || new.base.is_some()) {
         return Err(bad("a routine run has no repo".into()));
     }
-    let (repo, branch) = match (&new.repo, &new.branch) {
-        (None, None) if new.base.is_none() => return Ok((Target::Dir(workspace), resolved)),
-        (None, _) => return Err(bad("branch and base need a repo".into())),
-        (Some(_), None) => return Err(bad("a task with a repo needs a branch".into())),
-        (Some(r), Some(b)) => (r, b),
+    let repo = match &new.repo {
+        None if new.branch.is_none() && new.base.is_none() => {
+            return Ok((Target::Dir(workspace), resolved));
+        }
+        None => return Err(bad("branch and base need a repo".into())),
+        Some(r) => workspace
+            .repo_path(r)
+            .map_err(|e| bad(e.to_string()))?
+            .to_string_lossy()
+            .into_owned(),
     };
-    let mut req = tasks::validate(repo, branch, new.base.as_deref())
+    let branch = match &new.branch {
+        Some(b) => b.clone(),
+        None => branch_from_title(&repo, &new.title).await?,
+    };
+    let branch = &branch;
+    let mut req = tasks::validate(&repo, branch, new.base.as_deref())
         .await
         .map_err(|e| task_error(&e))?;
     let main = builtin::main_checkout(&req.repo)
         .await
         .map_err(|e| task_error(&e))?;
-    let listing = workspaces.listing(&main);
-    if !listing.is_empty() && !listing.iter().any(|w| w.name == workspace.name) {
-        // Its agent would run there with this workspace's accounts (ADR 0016).
+    if let Some(owner) = workspaces.owner_elsewhere(&main, &workspace.name) {
         return Err(bad(format!(
             "{} belongs to workspace {:?}; start the task there",
             main.display(),
-            listing[0].name
+            owner.name
         )));
     }
     req.agent = if resolved.worker.is_some() {
@@ -187,6 +195,24 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
         )));
     }
     Ok((Target::Repo(req), resolved))
+}
+
+/// A new branch named after the title (ADR 0031). Its base is the repo's
+/// default branch, never the main checkout's current one.
+async fn branch_from_title(repo: &str, title: &str) -> Result<String, ErrorBody> {
+    let path = std::path::Path::new(repo);
+    if !path.is_dir() {
+        return Err(error_body(
+            ErrorCode::BadRequest,
+            format!("{repo} is not a directory; give the repo's absolute path"),
+        ));
+    }
+    let main = builtin::main_checkout(path)
+        .await
+        .map_err(|e| task_error(&e))?;
+    tasks::branch::from_title(&main, title)
+        .await
+        .map_err(|e| task_error(&e))
 }
 
 /// The open task that the branch's session already runs, if any.

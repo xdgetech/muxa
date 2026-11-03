@@ -404,7 +404,9 @@ async fn a_branch_that_runs_an_open_task_is_refused(mode: Mode) {
     // Wrong requests keep no record either.
     for wrong in [
         json!({"workspace": "nowhere"}),
-        json!({"repo": repo.app}),
+        // A repo without a branch gets one from the title (ADR 0031), so a
+        // relative repo that is not under the root takes its place here.
+        json!({"repo": "no-such-repo"}),
         json!({"branch": "feat/y"}),
         json!({"repo": repo.app, "branch": "a..b"}),
         json!({"repo": "/no/such/repo", "branch": "feat/y"}),

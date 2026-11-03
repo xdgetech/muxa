@@ -372,7 +372,8 @@ async fn without_a_daemon_a_bridge_lists_routines_but_runs_none() {
     let Message::Hello { capabilities, .. } = &hello else {
         panic!("{hello:?}")
     };
-    assert_eq!(work_level(capabilities), 1);
+    // The bridge also serves ask sessions (ADR 0031); its daemon does not.
+    assert_eq!(work_level(capabilities), muxa_protocol::WORK_ASK);
     assert!(matches!(
         bridge.request(json!({"type": "list-routines"})).await,
         Message::Result { error: None, .. }

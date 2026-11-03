@@ -265,11 +265,11 @@ pub fn command_shape(check: &str) -> Result<(), String> {
 }
 
 impl Workspace {
-    /// Only a Task inside its workspace can have a loop: a repo Task whose
-    /// repo is in `repos`, or a Task without a repo under the root.
+    /// Only a Task inside its workspace can have a loop: a repo Task in one
+    /// of its repos (ADR 0031), or a Task without a repo under the root.
     pub fn may_loop(&self, record: &Record) -> Result<(), String> {
         let inside = match (&record.repo, &record.dir) {
-            (Some(repo), _) => self.repos.contains(&canonical(repo)),
+            (Some(repo), _) => self.has_repo(&canonical(repo)),
             (None, Some(dir)) => canonical(dir).starts_with(&self.root),
             (None, None) => false,
         };
@@ -277,7 +277,7 @@ impl Workspace {
             Ok(())
         } else {
             Err(format!(
-                "task {} is outside workspace {:?}: a loop needs a repo from its repos, \
+                "task {} is outside workspace {:?}: a loop needs one of its repos, \
                  or a directory under its root",
                 record.id, self.name
             ))

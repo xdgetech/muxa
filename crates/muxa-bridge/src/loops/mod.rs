@@ -578,8 +578,8 @@ pub enum LoopError {
 }
 
 /// The loop of a `create-task`, checked before the Task exists: the check
-/// is allowed, and `main` (the repo's main checkout) is in the workspace's
-/// `repos`. A Task without a repo gets a directory under the root. Blocking.
+/// is allowed, and `main` (the repo's main checkout) is one of the
+/// workspace's repos (ADR 0031). A Task without a repo gets a directory under the root. Blocking.
 pub fn precheck(
     config: &Config,
     workspace: &str,
@@ -592,7 +592,7 @@ pub fn precheck(
         .map_err(LoopError::Bad)?;
     if let Some(main) = main {
         let main = main.canonicalize().unwrap_or_else(|_| main.to_owned());
-        if !ws.repos.contains(&main) {
+        if !ws.has_repo(&main) {
             return Err(LoopError::Bad(format!(
                 "a loop needs a repo from the repos of workspace {workspace:?}"
             )));

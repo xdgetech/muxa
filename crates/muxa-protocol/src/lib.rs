@@ -7,8 +7,8 @@ mod workers;
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
-    RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_CAPABILITY, WORK_ROUTINES,
-    work_capability, work_level,
+    RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK, WORK_CAPABILITY,
+    WORK_ROUTINES, work_capability, work_level,
 };
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
@@ -167,9 +167,12 @@ pub enum Request {
         /// Free text that groups tasks.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<String>,
-        /// An absolute path inside a repo; without one the task gets a directory.
+        /// An absolute path inside a repo, or, with `work` level 2, a repo
+        /// relative to the workspace root. Without one the task gets a directory.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         repo: Option<String>,
+        /// With `work` level 2 it may be absent: the bridge derives one from
+        /// the title (ADR 0031).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<String>,
         /// Where a new branch starts; the repo's default branch when absent.
@@ -268,6 +271,15 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         until: Option<u64>,
     },
+    /// Start an agent session in a repo's main checkout, to ask about its
+    /// code: no Task, no worktree (capability `work` level 2, ADR 0031). A
+    /// `session-started` comes before the `result`.
+    StartSession {
+        id: u64,
+        workspace: String,
+        /// As `create-task`'s `repo`.
+        repo: String,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -310,6 +322,7 @@ impl Request {
             | Request::RunRoutine { id, .. }
             | Request::ListInbox { id }
             | Request::UpdateInbox { id, .. }
+            | Request::StartSession { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -488,6 +501,14 @@ pub enum Message {
     },
     /// The entry an `update-inbox` wrote, sent just before its `result`.
     InboxSaved { inbox: u64, entry: InboxEntry },
+    /// The session a `start-session` made, sent just before its `result`.
+    SessionStarted {
+        /// The request's id.
+        start: u64,
+        /// `$n`
+        session: String,
+        name: String,
+    },
     /// The bridge is exiting.
     Bye { reason: String },
 }
@@ -740,11 +761,16 @@ pub enum TaskStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceInfo {
     pub name: String,
+    /// The workspace's root folder, absolute (ADR 0031). A client shows a
+    /// repo under it by its relative path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
     /// The check commands a Task Loop may run here; absent means no loops.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checks: Option<WorkspaceChecks>,
-    /// The main checkouts the config lists for it, absolute. A client picks
-    /// this workspace for a new task in one of them.
+    /// Its main checkouts, absolute and sorted: the repos under its root and
+    /// those the config lists. A client picks this workspace for a new task
+    /// in one of them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<String>,
 }

@@ -180,3 +180,52 @@ async fn the_main_checkout_branch_is_refused() {
     let err = builtin::worktree(&request(&app, "main")).await.unwrap_err();
     assert!(matches!(err, TaskError::Invalid(m) if m.contains("main checkout")));
 }
+
+#[test]
+fn a_title_becomes_a_branch_name() {
+    assert_eq!(
+        branch::candidate("Fix the login page!", 1),
+        "fix-the-login-page"
+    );
+    assert_eq!(
+        branch::candidate("Fix the login page!", 3),
+        "fix-the-login-page-3"
+    );
+    assert_eq!(
+        branch::candidate("  --Ünïcode  title-- ", 1),
+        "n-code-title"
+    );
+    assert_eq!(branch::candidate(&"a".repeat(60), 1).len(), 40);
+    assert_eq!(branch::candidate("日本語のタイトル", 1), "task");
+}
+
+#[tokio::test]
+async fn a_taken_branch_or_worktree_gets_the_next_number() {
+    let app = repo("from-title");
+    let next = || branch::from_title(&app, "Fix login");
+    assert_eq!(next().await.unwrap(), "fix-login");
+    sh(&app, &["branch", "fix-login"]);
+    assert_eq!(next().await.unwrap(), "fix-login-2");
+    std::fs::create_dir_all(worktree_path(&app, "fix-login-2")).unwrap();
+    assert_eq!(next().await.unwrap(), "fix-login-3");
+    sh(
+        &app,
+        &["update-ref", "refs/remotes/origin/fix-login-3", "HEAD"],
+    );
+    assert_eq!(next().await.unwrap(), "fix-login-4");
+    // Never the main checkout's branch.
+    assert_eq!(branch::from_title(&app, "Main").await.unwrap(), "main-2");
+    assert!(matches!(
+        branch::from_title(&app, " ").await,
+        Err(TaskError::Invalid(_))
+    ));
+}
+
+#[test]
+fn an_ask_session_is_named_after_its_repo() {
+    assert_eq!(
+        ask::name(Path::new("/p/lisk/cto-copilot"), 1),
+        "ask-cto-copilot-1"
+    );
+    assert_eq!(ask::name(Path::new("/p/My.Repo"), 2), "ask-my-repo-2");
+}

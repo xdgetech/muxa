@@ -19,8 +19,8 @@ const MAX_NAME: usize = 64;
 /// In characters, before `-<id>`.
 const MAX_SLUG: usize = 40;
 const SLUG_FALLBACK: &str = "task";
-const TASKS_DIR: &str = "tasks";
-const ROUTINES_DIR: &str = "routines";
+pub(super) const TASKS_DIR: &str = "tasks";
+pub(super) const ROUTINES_DIR: &str = "routines";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -49,7 +49,8 @@ pub struct Workspace {
     pub name: String,
     /// Canonical.
     pub root: PathBuf,
-    /// Canonical. They may lie outside `root` (ADR 0015).
+    /// Canonical. They may lie outside `root` (ADR 0015); the repos under
+    /// `root` need no entry (ADR 0031, `repos.rs`).
     pub repos: Vec<PathBuf>,
     /// How its agents start; None means as `--task-command` (ADR 0016).
     pub agent: Option<AgentSettings>,
@@ -246,13 +247,21 @@ impl Workspaces {
         self.list.iter().find(|w| w.name == name)
     }
 
-    /// Every workspace whose `repos` lists `main`, a main checkout.
+    /// Every workspace that has `main`, a main checkout, among its repos:
+    /// listed, or under its root.
     pub fn listing(&self, main: &Path) -> Vec<&Workspace> {
         let main = main.canonicalize().unwrap_or_else(|_| main.to_owned());
-        self.list
-            .iter()
-            .filter(|w| w.repos.contains(&main))
-            .collect()
+        self.list.iter().filter(|w| w.has_repo(&main)).collect()
+    }
+
+    /// Another workspace that has `main` when `workspace` does not. An agent
+    /// there would run with the wrong accounts (ADR 0016).
+    pub fn owner_elsewhere(&self, main: &Path, workspace: &str) -> Option<&Workspace> {
+        let listing = self.listing(main);
+        if listing.iter().any(|w| w.name == workspace) {
+            return None;
+        }
+        listing.first().copied()
     }
 }
 

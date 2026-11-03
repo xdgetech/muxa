@@ -42,7 +42,7 @@ impl Builtin {
 
     /// A detached session `name` in `dir` running the agent, with the
     /// workspace's command and environment when it has them (ADR 0016).
-    async fn start(
+    pub(crate) async fn start(
         &self,
         client: &Client,
         name: &str,
@@ -384,7 +384,7 @@ pub(crate) fn find_worktree(porcelain: &str, main: &Path, branch: &str) -> Optio
     None
 }
 
-async fn current_branch(dir: &Path) -> Option<String> {
+pub(crate) async fn current_branch(dir: &Path) -> Option<String> {
     let out = run(
         git(dir).args(["branch", "--show-current"]),
         GIT_TIMEOUT,
@@ -395,7 +395,7 @@ async fn current_branch(dir: &Path) -> Option<String> {
     last_line(&out.stdout)
 }
 
-async fn has_ref(dir: &Path, name: &str) -> bool {
+pub(crate) async fn has_ref(dir: &Path, name: &str) -> bool {
     run(
         git(dir).args(["show-ref", "--verify", "-q", name]),
         GIT_TIMEOUT,

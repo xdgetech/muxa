@@ -306,6 +306,7 @@ fn the_example_config_loads() {
         "work/company/api",
         "work/company/web",
         "projects/side/app",
+        "src/shared-ui",
         "personal",
     ] {
         std::fs::create_dir_all(home.join(dir)).unwrap();

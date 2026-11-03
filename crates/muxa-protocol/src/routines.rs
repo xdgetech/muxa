@@ -8,6 +8,9 @@ pub const WORK_CAPABILITY: &str = "work";
 /// Level 1: Routines (`list-routines`, `run-routine`) and stored Inbox
 /// entries (`list-inbox`, `update-inbox`).
 pub const WORK_ROUTINES: u32 = 1;
+/// Level 2: repos relative to the workspace root, a branch from the title,
+/// and `start-session` (ADR 0031).
+pub const WORK_ASK: u32 = 2;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {

@@ -330,9 +330,11 @@ async fn create_with_loop(
     if let Some(spec) = &spec {
         let main = match &new.repo {
             Some(repo) => Some(
-                crate::tasks::builtin::main_checkout(std::path::Path::new(repo))
-                    .await
-                    .map_err(|e| convert::task_error(&e))?,
+                crate::tasks::builtin::main_checkout(
+                    &repo_path(&cx.records, &new.workspace, repo).await?,
+                )
+                .await
+                .map_err(|e| convert::task_error(&e))?,
             ),
             None => None,
         };
@@ -358,6 +360,46 @@ async fn create_with_loop(
         Ok(r) => Ok((Some(r), None)),
         Err(e) => Ok((Some(record.clone()), Some(e))),
     }
+}
+
+/// `repo` as `create-task` names it, resolved in `workspace` (ADR 0031).
+async fn repo_path(
+    config: &Arc<Config>,
+    workspace: &str,
+    repo: &str,
+) -> Result<PathBuf, ErrorBody> {
+    let (config, workspace, repo) = (Arc::clone(config), workspace.to_owned(), repo.to_owned());
+    blocking(move || {
+        let workspaces = config.load_workspaces()?;
+        let ws = workspaces.get(&workspace).ok_or_else(|| {
+            error_body(
+                ErrorCode::BadRequest,
+                format!("no workspace named {workspace:?}; list-tasks shows the host's workspaces"),
+            )
+        })?;
+        ws.repo_path(&repo)
+            .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))
+    })
+    .await
+}
+
+/// `start-session`: an ask session in a repo's main checkout (ADR 0031).
+/// Not a record request: the bridge serves it with its own client.
+pub async fn start_session(
+    client: &Client,
+    tasks: &crate::tasks::Config,
+    config: &Config,
+    workspace: &str,
+    repo: &str,
+) -> Result<crate::tasks::Launched, ErrorBody> {
+    let loaded = config.clone();
+    let workspaces = blocking(move || loaded.load_workspaces()).await?;
+    crate::tasks::ask::start(client, &tasks.command, &workspaces, workspace, repo)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = %e, "ask session did not start");
+            convert::task_error(&e)
+        })
 }
 
 fn task_saved(request: u64, record: Record) -> Message {

@@ -109,6 +109,7 @@ fn pending_prompt(p: crate::records::PendingPrompt) -> wire::PendingPrompt {
 }
 
 /// `checks` is absent when the workspace has no `[workspace.loop]` (ADR 0019).
+/// Blocking: it scans the root for repos (ADR 0031).
 pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
     use crate::records::Checks;
     wire::WorkspaceInfo {
@@ -117,8 +118,9 @@ pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
             Checks::Any => wire::WorkspaceChecks::Any,
             Checks::List(list) => wire::WorkspaceChecks::List(list.clone()),
         }),
+        root: Some(w.root.to_string_lossy().into_owned()),
         repos: w
-            .repos
+            .repo_list()
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
