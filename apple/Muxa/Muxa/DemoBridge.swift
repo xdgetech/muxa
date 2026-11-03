@@ -276,6 +276,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
         case .ping(let id), .unwatch(let id), .bytes(let id, _, _):
             ok(id)
+        case .startSession(let id, _, _):
+            // The demo has no `work:2`, so it refuses ask sessions as an older bridge does.
+            unsupported(id, Self.noRequest)
         case .bye:
             out.finish()
         }
