@@ -557,22 +557,11 @@ mod tests {
                 started: "fixture-start".into(),
             },
         );
-        for assignment in [
-            serde_json::json!({"kind":"worker","name":"Other"}),
-            serde_json::json!({"kind":"workspace-default"}),
-            serde_json::json!({"kind":"future","name":"Reviewer"}),
-        ] {
-            record
-                .run_mut(run)
-                .unwrap()
-                .extra
-                .insert("assignment".into(), assignment);
+        for worker in [Some("Other"), None] {
+            record.run_mut(run).unwrap().set_worker(worker);
             assert!(!supports_prompt(&record, pending));
         }
-        record.run_mut(run).unwrap().extra.insert(
-            "assignment".into(),
-            serde_json::json!({"kind":"worker","name":"Reviewer"}),
-        );
+        record.run_mut(run).unwrap().set_worker(Some("Reviewer"));
         assert!(supports_prompt(&record, pending));
         assert!(!supports_prompt(
             &record,

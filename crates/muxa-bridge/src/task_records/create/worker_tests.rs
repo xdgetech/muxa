@@ -273,7 +273,6 @@ async fn worker_create_validates_before_writes_and_records_the_requested_assignm
 #[tokio::test]
 async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane() {
     use super::super::restart::restart_record;
-    use muxa_protocol::WorkerSelection;
     let fixture = Fixture::new();
     let env = fixture.env().await;
     let instruction_file = fixture.dir.join("instructions.md");
@@ -349,15 +348,9 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
     std::fs::remove_file(dir.join("env")).unwrap();
     std::fs::remove_file(dir.join("argv")).unwrap();
     let old_rev = record.rev;
-    let restarted = restart_record(
-        &env,
-        record,
-        true,
-        WorkerSelection::Named("Reviewer".into()),
-        Some(old_rev),
-    )
-    .await
-    .unwrap();
+    let restarted = restart_record(&env, record, true, Some("Reviewer".into()), Some(old_rev))
+        .await
+        .unwrap();
     env.pending.finish(Duration::ZERO).await;
     tokio::time::timeout(Duration::from_secs(5), async {
         while !dir.join("env").exists() {
@@ -393,7 +386,7 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
         &env,
         restarted.clone(),
         true,
-        WorkerSelection::WorkspaceDefault,
+        Some(muxa_protocol::DEFAULT_WORKER.into()),
         Some(old_rev),
     )
     .await
@@ -411,7 +404,7 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
         &env,
         restarted,
         true,
-        WorkerSelection::WorkspaceDefault,
+        Some(muxa_protocol::DEFAULT_WORKER.into()),
         Some(rev),
     )
     .await
@@ -436,7 +429,6 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
 async fn concurrent_named_restarts_use_one_claim_and_a_stale_loser_cannot_retry() {
     use super::super::restart::restart_record;
     use crate::records::Store;
-    use muxa_protocol::WorkerSelection;
     let fixture = Fixture::new();
     let (env, record, pane) = fixture.started().await;
     let other = fixture.second_client(&env).await;
@@ -449,7 +441,7 @@ async fn concurrent_named_restarts_use_one_claim_and_a_stale_loser_cannot_retry(
         &other,
         record.clone(),
         true,
-        WorkerSelection::Named("Reviewer".into()),
+        Some("Reviewer".into()),
         Some(record.rev),
     )
     .await
@@ -471,7 +463,7 @@ async fn concurrent_named_restarts_use_one_claim_and_a_stale_loser_cannot_retry(
                 &env,
                 record.clone(),
                 true,
-                WorkerSelection::Named("Reviewer".into()),
+                Some("Reviewer".into()),
                 Some(record.rev),
             )
             .await
@@ -487,7 +479,7 @@ async fn concurrent_named_restarts_use_one_claim_and_a_stale_loser_cannot_retry(
                 &other,
                 record.clone(),
                 true,
-                WorkerSelection::Named("Reviewer".into()),
+                Some("Reviewer".into()),
                 Some(record.rev),
             )
             .await
@@ -510,15 +502,9 @@ async fn concurrent_named_restarts_use_one_claim_and_a_stale_loser_cannot_retry(
         std::fs::read(dir.join(".muxa/TASK.md")).unwrap(),
         std::fs::read(dir.join(".muxa/HANDOFF.md")).unwrap(),
     );
-    let stale = restart_record(
-        &other,
-        record.clone(),
-        true,
-        WorkerSelection::Keep,
-        Some(record.rev),
-    )
-    .await
-    .unwrap_err();
+    let stale = restart_record(&other, record.clone(), true, None, Some(record.rev))
+        .await
+        .unwrap_err();
     assert_eq!(stale.code, ErrorCode::Conflict);
     assert_eq!(fixture.process(pane), current);
     assert_eq!(store.get(&record.id).unwrap(), winner);
@@ -551,7 +537,6 @@ async fn concurrent_named_restarts_use_one_claim_and_a_stale_loser_cannot_retry(
 #[tokio::test]
 async fn named_restart_rejects_changed_source_before_dispatch() {
     use super::super::restart::restart_record;
-    use muxa_protocol::WorkerSelection;
     let fixture = Fixture::new();
     let (env, record, pane) = fixture.started().await;
     let proxied = fixture.intercepted_client(&env, &record, false).await;
@@ -565,7 +550,7 @@ async fn named_restart_rejects_changed_source_before_dispatch() {
                 &proxied,
                 record.clone(),
                 true,
-                WorkerSelection::Named("Reviewer".into()),
+                Some("Reviewer".into()),
                 Some(record.rev),
             )
             .await
@@ -613,7 +598,6 @@ async fn named_restart_rejects_changed_source_before_dispatch() {
 #[tokio::test]
 async fn named_restart_instruction_errors_leave_a_running_task_untouched() {
     use super::super::restart::restart_record;
-    use muxa_protocol::WorkerSelection;
     let fixture = Fixture::new();
     let (env, record, pane) = fixture.started().await;
     let dir = record.dir.as_ref().unwrap();
@@ -635,7 +619,7 @@ async fn named_restart_instruction_errors_leave_a_running_task_untouched() {
             &env,
             record.clone(),
             true,
-            WorkerSelection::Named("Reviewer".into()),
+            Some("Reviewer".into()),
             Some(record.rev),
         )
         .await
@@ -654,7 +638,6 @@ async fn named_restart_instruction_errors_leave_a_running_task_untouched() {
 #[tokio::test]
 async fn a_refused_named_respawn_keeps_dispatch_uncertain_and_never_retries() {
     use super::super::restart::{restart_record, summary};
-    use muxa_protocol::WorkerSelection;
     let fixture = Fixture::new();
     let (env, record, pane) = fixture.started().await;
     let proxied = fixture.intercepted_client(&env, &record, true).await;
@@ -665,7 +648,7 @@ async fn a_refused_named_respawn_keeps_dispatch_uncertain_and_never_retries() {
         &proxied,
         record.clone(),
         true,
-        WorkerSelection::Named("Reviewer".into()),
+        Some("Reviewer".into()),
         Some(record.rev),
     )
     .await
@@ -682,15 +665,9 @@ async fn a_refused_named_respawn_keeps_dispatch_uncertain_and_never_retries() {
     let operation = summary(&uncertain).unwrap();
     assert_eq!(operation.phase, "dispatching");
     assert_eq!(operation.actions, vec!["leave-unconfirmed"]);
-    let retry = restart_record(
-        &env,
-        uncertain.clone(),
-        true,
-        WorkerSelection::Keep,
-        Some(uncertain.rev),
-    )
-    .await
-    .unwrap_err();
+    let retry = restart_record(&env, uncertain.clone(), true, None, Some(uncertain.rev))
+        .await
+        .unwrap_err();
     assert_eq!(retry.code, ErrorCode::Conflict);
     assert_eq!(store.get(&record.id).unwrap(), uncertain);
     assert_eq!(fixture.process(pane), before);
@@ -830,15 +807,9 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
         (true, "0b8c3c0e-1111-4a2b-9c3d-000000000007"),
     ] {
         let rev = current.rev;
-        current = super::super::restart::restart_record(
-            &env,
-            current,
-            true,
-            muxa_protocol::WorkerSelection::Keep,
-            Some(rev),
-        )
-        .await
-        .unwrap();
+        current = super::super::restart::restart_record(&env, current, true, None, Some(rev))
+            .await
+            .unwrap();
         let replacement = current
             .open_run()
             .unwrap()
@@ -951,7 +922,7 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
         &env,
         current,
         true,
-        muxa_protocol::WorkerSelection::Named("Reviewer".into()),
+        Some("Reviewer".into()),
         Some(rev),
     )
     .await

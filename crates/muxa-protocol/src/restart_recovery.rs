@@ -1,8 +1,6 @@
 //! Explicit recovery of an interrupted restart, independent of worker support.
 use serde::{Deserialize, Serialize};
 
-use crate::WorkerAssignment;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RestartRecoveryAction {
@@ -36,8 +34,9 @@ pub struct RestartOperation {
     pub id: String,
     /// Future phases remain visible but have no known action.
     pub phase: String,
+    /// The requested worker name or `default`, not a confirmed native role.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub assignment: Option<WorkerAssignment>,
+    pub worker: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<String>,
 }

@@ -606,5 +606,9 @@ fn worker_fields_survive_legacy_record_and_run_rewrites() {
     assert_eq!(loaded, rewritten);
     assert_eq!(loaded.worker(), Some("Reviewer"));
     assert_eq!(loaded.runs[0].extra.get("assignment"), Some(&assignment));
-    assert!(!loaded.runs[0].assignment().unwrap().is_known());
+    assert_eq!(
+        loaded.runs[0].worker(),
+        None,
+        "an unknown kind is unrecorded"
+    );
 }

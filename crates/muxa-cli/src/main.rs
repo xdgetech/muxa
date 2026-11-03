@@ -7,7 +7,7 @@ mod view;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{LoopSpec, RestartRecoveryAction, Role, Session, WorkerSelection};
+use muxa_protocol::{LoopSpec, RestartRecoveryAction, Role, Session};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
@@ -16,8 +16,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--project P] [--repo PATH --branch B [--base REF]] [--worker NAME]
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task done ID
-       muxa-cli [--bridge CMD] task restart ID [--force] [--json]
-                [--worker NAME | --workspace-default]
+       muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
        muxa-cli [--bridge CMD] task recover ID [--json]
                 [--operation OP --rev N --action ACTION]
        muxa-cli [--bridge CMD] task loop start ID --check CMD
@@ -41,9 +40,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   task restart ID
                  restarts the task's agent in the same pane, after a handoff
                  in .muxa/HANDOFF.md; --force also while the agent runs
-  --worker NAME  selects a host-defined worker for new/restart; requires workers
-  --workspace-default
-                 clears the worker on restart; omission keeps the assignment
+  --worker NAME  selects a host-defined worker for new/restart, or `default`
+                 for the workspace default agent; requires workers. Without
+                 it, restart keeps the current worker
   task recover ID
                  inspects an interrupted restart. To resolve it, supply its
                  displayed --operation and --rev, with --action cancel-prepared,
@@ -81,7 +80,7 @@ enum Cmd {
         task: String,
         force: bool,
         json: bool,
-        worker: WorkerSelection,
+        worker: Option<String>,
     },
     Recover {
         task: String,
@@ -112,7 +111,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut bridge, mut words) = ("muxa-bridge".to_string(), Vec::new());
     let (mut read_only, mut seconds, mut json, mut force) = (false, None, false, false);
     let (mut reset, mut all) = (false, false);
-    let mut workspace_default = false;
     let (mut operation, mut revision, mut action) = (None, None, None);
     let mut new = tasks::NewTask::default();
     let mut check = tasks::LoopFlags::default();
@@ -131,7 +129,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("branch") => new.branch = Some(p.value()?.string()?),
             Long("base") => new.base = Some(p.value()?.string()?),
             Long("worker") => new.worker = Some(p.value()?.string()?),
-            Long("workspace-default") => workspace_default = true,
             Long("operation") => operation = Some(p.value()?.string()?),
             Long("rev") => revision = Some(p.value()?.parse()?),
             Long("action") => {
@@ -159,11 +156,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
         }
-    }
-    if new.worker.is_some() && workspace_default {
-        return Err(lexopt::Error::Custom(
-            "--worker and --workspace-default are mutually exclusive".into(),
-        ));
     }
     if new
         .worker
@@ -195,9 +187,9 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 .into(),
         )),
     };
-    if (new.worker.is_some() && !is_new && !is_restart) || (workspace_default && !is_restart) {
+    if new.worker.is_some() && !is_new && !is_restart {
         return Err(lexopt::Error::Custom(
-            "--worker requires task new/restart; --workspace-default requires task restart".into(),
+            "--worker requires task new or task restart".into(),
         ));
     }
     let cmd = match words.as_slice() {
@@ -243,12 +235,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             task: id.clone(),
             force,
             json,
-            worker: if workspace_default {
-                WorkerSelection::WorkspaceDefault
-            } else {
-                new.worker
-                    .map_or(WorkerSelection::Keep, WorkerSelection::Named)
-            },
+            worker: new.worker,
         },
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };

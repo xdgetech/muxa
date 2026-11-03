@@ -1,6 +1,4 @@
 //! Host-owned worker definitions. Native roles remain native; resolution does not launch them.
-// Runtime use remains gated until lifecycle and native acceptance pass.
-#![allow(dead_code)]
 use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
@@ -161,6 +159,12 @@ impl RawWorker {
         workspaces: &[Workspace],
     ) -> Result<Worker, String> {
         text(&self.name, 64).map_err(|reason| format!("worker name {reason}"))?;
+        if self.name == muxa_protocol::DEFAULT_WORKER {
+            return Err(format!(
+                "worker name {:?} is reserved for the workspace default agent",
+                muxa_protocol::DEFAULT_WORKER
+            ));
+        }
         if let Some(description) = &self.description {
             if description.chars().count() > 200 || description.chars().any(char::is_control) {
                 return Err("worker description is too long or has a control character".into());
@@ -569,6 +573,7 @@ mod tests {
             format!("{REVIEWER}\nother = true"),
             format!("{REVIEWER}\n{REVIEWER}"),
             REVIEWER.replace("name = 'Reviewer'", "name = ''"),
+            REVIEWER.replace("name = 'Reviewer'", "name = 'default'"),
             REVIEWER.replace("claude-code", "unknown-agent"),
             REVIEWER.replace("['Company']", "['Missing']"),
             REVIEWER.replace("['Company']", "['Company', 'Company']"),

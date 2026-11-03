@@ -119,9 +119,10 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
     let fallback = env.tasks.command.clone();
     let (workspaces, resolved) = blocking(move || {
         let workspaces = config.load_workspaces()?;
-        let choice = selected
-            .as_deref()
-            .map_or(WorkerChoice::WorkspaceDefault, WorkerChoice::Named);
+        let choice = match selected.as_deref() {
+            None | Some(muxa_protocol::DEFAULT_WORKER) => WorkerChoice::WorkspaceDefault,
+            Some(name) => WorkerChoice::Named(name),
+        };
         let resolved = workspaces
             .resolve_worker(&workspace_name, choice, None, &fallback)
             .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))?;
@@ -326,10 +327,7 @@ async fn linked(
                 let now = crate::records::now();
                 let run = r.start_run(RunReason::Start, now);
                 if let Some(current) = r.run_mut(run) {
-                    current.extra.insert(
-                        "assignment".into(),
-                        serde_json::json!({"kind":"workspace-default"}),
-                    );
+                    current.set_worker(None);
                 }
                 r.set_pending_prompt(Some(PendingPrompt {
                     kind: PromptKind::Start,
@@ -421,9 +419,9 @@ async fn create_worker(
                 record.session = Some(name);
                 let now = crate::records::now();
                 let run = record.start_run(RunReason::Start, now);
-                let assignment = serde_json::json!({"kind":"worker", "name":record.worker()});
+                let worker = record.worker().map(str::to_owned);
                 if let Some(current) = record.run_mut(run) {
-                    current.extra.insert("assignment".into(), assignment);
+                    current.set_worker(worker.as_deref());
                     crate::records::observation::bind_start(
                         current,
                         &operation,

@@ -604,7 +604,7 @@ pub fn start(
         let record = store.get(task)?;
         if record.worker().is_some() && !record.worker_run_bound() {
             return Err(LoopError::Bad(
-                "workers are not implemented on this host".into(),
+                "the worker's run is not confirmed; restart the agent first".into(),
             ));
         }
         let ws = known(&workspaces, &record.workspace)?;

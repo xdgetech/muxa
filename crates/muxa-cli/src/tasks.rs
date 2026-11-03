@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop, TaskRecord, TaskStatus,
-    WorkerInfo, WorkerSelection,
+    WorkerInfo,
 };
 use serde_json::json;
 
@@ -81,6 +81,9 @@ pub async fn recover(
         if let Some(operation) = &record.restart_operation {
             println!("operation: {}", operation.id);
             println!("phase: {} (requested/unconfirmed)", operation.phase);
+            if let Some(worker) = &operation.worker {
+                println!("requested worker: {worker}");
+            }
             let actions = operation
                 .actions
                 .iter()
@@ -265,10 +268,10 @@ pub async fn restart(
     task: &str,
     force: bool,
     as_json: bool,
-    worker: WorkerSelection,
+    worker: Option<String>,
 ) -> Result<String, String> {
     let supports_workers = conn.supports("workers");
-    require_workers(supports_workers, !worker.is_keep())?;
+    require_workers(supports_workers, worker.is_some())?;
     let rev = if supports_workers {
         let (_, records, _, _) = fetch(&mut conn).await?;
         Some(

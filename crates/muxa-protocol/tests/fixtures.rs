@@ -61,16 +61,15 @@ fn workspace_checks_are_any_or_a_list() {
 
 #[test]
 fn worker_contract_fixtures_round_trip() {
-    use muxa_protocol::{WorkerAssignment, WorkerSelection};
-    assert_eq!(round_trip::<Request>("workers/requests.jsonl"), 6);
+    use muxa_protocol::AgentRun;
+    assert_eq!(round_trip::<Request>("workers/requests.jsonl"), 7);
     assert_eq!(round_trip::<Message>("workers/messages.jsonl"), 5);
+    // A legacy client omits the worker; null is read the same way.
     for (field, expected) in [
-        ("", WorkerSelection::Keep),
-        (r#", "worker":null"#, WorkerSelection::WorkspaceDefault),
-        (
-            r#", "worker":"Reviewer""#,
-            WorkerSelection::Named("Reviewer".into()),
-        ),
+        ("", None),
+        (r#", "worker":null"#, None),
+        (r#", "worker":"default""#, Some("default")),
+        (r#", "worker":"Reviewer""#, Some("Reviewer")),
     ] {
         let request: Request = serde_json::from_str(&format!(
             r#"{{"type":"restart-agent","id":1,"task":"t-000001"{field}}}"#
@@ -79,7 +78,7 @@ fn worker_contract_fixtures_round_trip() {
         let Request::RestartAgent { worker, .. } = request else {
             panic!()
         };
-        assert_eq!(worker, expected);
+        assert_eq!(worker.as_deref(), expected);
     }
     for bad in ["true", "17", "{}", "[]"] {
         assert!(
@@ -89,14 +88,10 @@ fn worker_contract_fixtures_round_trip() {
             .is_err()
         );
     }
-    let unknown: WorkerAssignment =
-        serde_json::from_str(r#"{"kind":"future-assignment","name":"Scheduler"}"#).unwrap();
-    assert!(!unknown.is_known());
-    let create: Request = serde_json::from_str(
-        r#"{"type":"create-task","id":1,"workspace":"w","title":"t","goal":"g","worker":null}"#,
-    )
-    .unwrap();
-    assert!(matches!(create, Request::CreateTask { worker: None, .. }));
+    // A legacy run has no worker: unrecorded, not the workspace default.
+    let legacy: AgentRun =
+        serde_json::from_str(r#"{"id":1,"startedAt":1,"reason":"start"}"#).unwrap();
+    assert_eq!(legacy.worker, None);
 }
 
 #[test]
@@ -116,7 +111,7 @@ fn restart_recovery_fixtures_preserve_public_identity_and_unknown_values() {
         let operation = RestartOperation {
             id: "fixture".into(),
             phase: phase.into(),
-            assignment: None,
+            worker: None,
             actions: vec![advertised.into()],
         };
         let action = RestartRecoveryAction::from_wire(advertised).unwrap();

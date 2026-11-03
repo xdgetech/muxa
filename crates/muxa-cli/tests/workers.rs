@@ -70,7 +70,7 @@ record = {'id':'t-000001','rev':7,'workspace':'work','title':'Fixture','goal':'W
           'status':'open','createdAt':1,'updatedAt':1,'runs':[], 'worker':'Reviewer'}
 if recovery:
     record['restartOperation'] = {'id':'restart-fixture','phase':'replaced',
-        'assignment':{'kind':'worker','name':'Reviewer'},
+        'worker':'Reviewer',
         'actions':['finish-replacement','leave-unconfirmed','future-action']}
 send({'type':'hello','protocol':1,'bridge':'fixture','tmux':'fixture',
       'capabilities':['task-records','task-handoff'] + (['workers'] if workers else [])
@@ -89,17 +89,17 @@ for line in sys.stdin:
         saved = dict(record, rev=8)
         if kind == 'recover-restart': saved.pop('restartOperation', None)
         if 'worker' in req:
-            if req['worker'] is None: saved.pop('worker', None)
+            if req['worker'] == 'default': saved.pop('worker', None)
             else: saved['worker'] = req['worker']
         send({'type':'task-saved','task':ident,'record':saved})
     send({'type':'result','id':ident, **({'sessions':[]} if kind == 'list' else {})})
 "#;
 
 #[test]
-fn workers_restart_preserves_keep_clear_and_named_intent_with_revision() {
+fn workers_restart_sends_keep_default_and_named_intent_with_revision() {
     for (flags, expected) in [
         (vec![], None),
-        (vec!["--workspace-default"], Some(Value::Null)),
+        (vec!["--worker", "default"], Some(json!("default"))),
         (vec!["--worker", "Reviewer"], Some(json!("Reviewer"))),
     ] {
         let bridge = Bridge::new();
@@ -135,7 +135,7 @@ fn legacy_restart_omits_worker_and_revision() {
 fn explicit_workers_require_capability_before_any_request() {
     for args in [
         vec!["task", "restart", "t-000001", "--worker", "Reviewer"],
-        vec!["task", "restart", "t-000001", "--workspace-default"],
+        vec!["task", "restart", "t-000001", "--worker", "default"],
         vec![
             "task",
             "new",
@@ -211,19 +211,13 @@ fn conflict_is_reported_without_retrying_restart() {
 }
 
 #[test]
-fn worker_selectors_are_rejected_when_conflicting_empty_or_out_of_scope() {
+fn worker_selectors_are_rejected_when_empty_removed_or_out_of_scope() {
     for args in [
-        vec![
-            "task",
-            "restart",
-            "t-000001",
-            "--worker",
-            "Reviewer",
-            "--workspace-default",
-        ],
+        // ADR 0027 replaced this flag with `--worker default`.
+        vec!["task", "restart", "t-000001", "--workspace-default"],
         vec!["task", "restart", "t-000001", "--worker", " "],
         vec!["tasks", "--worker", "Reviewer"],
-        vec!["task", "new", "--workspace-default"],
+        vec!["task", "done", "t-000001", "--worker", "default"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_muxa-cli"))
             .args(["--bridge", "exit 99"])
@@ -264,16 +258,8 @@ fn recovery_inspection_does_not_mutate_and_unknown_phase_has_no_action() {
 }
 
 #[test]
-fn recovery_stays_available_without_workers_and_preserves_unknown_assignment_kind() {
+fn recovery_stays_available_without_workers_and_shows_the_requested_worker() {
     let bridge = Bridge::new();
-    fs::write(
-        bridge.0.join("bridge.py"),
-        BRIDGE.replace(
-            "'assignment':{'kind':'worker','name':'Reviewer'}",
-            "'assignment':{'kind':'future-assignment','name':'Future'}",
-        ),
-    )
-    .unwrap();
     let output = bridge.run_recovery(
         false,
         true,
@@ -282,15 +268,13 @@ fn recovery_stays_available_without_workers_and_preserves_unknown_assignment_kin
     );
     assert!(output.status.success(), "{output:?}");
     let record: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(
-        record["restartOperation"]["assignment"],
-        json!({"kind":"future-assignment","name":"Future"})
-    );
+    assert_eq!(record["restartOperation"]["worker"], "Reviewer");
     assert_eq!(bridge.requests(), [json!({"type":"list-tasks","id":1})]);
     let output = bridge.run_recovery(false, true, false, &["task", "recover", "t-000001"]);
     assert!(output.status.success(), "{output:?}");
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("requested/unconfirmed"));
+    assert!(text.contains("requested worker: Reviewer"));
     assert!(text.contains("actions: finish-replacement, leave-unconfirmed"));
     assert!(!text.contains("future-action"));
     assert_eq!(bridge.requests(), [json!({"type":"list-tasks","id":1})]);

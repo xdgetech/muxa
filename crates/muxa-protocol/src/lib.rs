@@ -4,7 +4,7 @@
 mod restart_recovery;
 mod workers;
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
-pub use workers::{WorkerAssignment, WorkerInfo, WorkerSelection};
+pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
 use serde::{Deserialize, Serialize};
 
@@ -172,6 +172,7 @@ pub enum Request {
         /// Start a Task Loop with the agent (capability `task-loop`, ADR 0019).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         r#loop: Option<LoopSpec>,
+        /// A worker name or `default`; absent is the workspace default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worker: Option<String>,
     },
@@ -194,8 +195,10 @@ pub enum Request {
         task: String,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         force: bool,
-        #[serde(default, skip_serializing_if = "WorkerSelection::is_keep")]
-        worker: WorkerSelection,
+        /// A worker name or `default`; absent keeps the current worker.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<String>,
+        /// When sent, a stale revision fails with `conflict`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rev: Option<u64>,
     },
@@ -610,8 +613,10 @@ pub struct AgentRun {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcript: Option<String>,
     pub reason: RunReason,
+    /// The worker requested for this run, or `default`. Absent on a legacy
+    /// run: unrecorded, not the workspace default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub assignment: Option<WorkerAssignment>,
+    pub worker: Option<String>,
     /// An interrupted restart may have replaced a process without confirmation.
     /// Absent on legacy/confirmed runs; unknown values have no known meaning.
     #[serde(default, skip_serializing_if = "Option::is_none")]

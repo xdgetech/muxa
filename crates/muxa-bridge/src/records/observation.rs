@@ -57,7 +57,7 @@ pub fn bind_start(
 }
 
 impl Record {
-    /// Named execution needs a known requested assignment and locally stored process binding.
+    /// Named execution needs the run's requested worker and locally stored process binding.
     pub fn worker_run_bound(&self) -> bool {
         let Some(name) = self.worker() else {
             return false;
@@ -72,11 +72,10 @@ impl Record {
         {
             return false;
         }
-        run.assignment().is_some_and(|assignment| {
-            assignment.kind == "worker" && assignment.name.as_deref() == Some(name)
-        }) && run
-            .restart_observation()
-            .is_ok_and(|baseline| baseline.is_some())
+        run.worker().as_deref() == Some(name)
+            && run
+                .restart_observation()
+                .is_ok_and(|baseline| baseline.is_some())
     }
 }
 

@@ -117,6 +117,21 @@ pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
     }
 }
 
+/// A worker's public metadata. Args, instructions and env stay on the host.
+pub fn worker(w: &crate::records::workers::Worker) -> wire::WorkerInfo {
+    wire::WorkerInfo {
+        name: w.name.clone(),
+        agent: w.agent.id().to_owned(),
+        description: w.description.clone(),
+        workspaces: w.workspaces.clone(),
+        r#loop: w.loop_defaults.as_ref().map(|l| wire::LoopSpec {
+            check: l.check.clone(),
+            max_attempts: l.max_attempts,
+            timeout: l.timeout,
+        }),
+    }
+}
+
 /// The record's loop. A state or reason from a newer muxa has no wire value,
 /// so the loop is left out rather than shown with an invented one (invariant 6).
 fn loop_of(r: &crate::records::Record) -> Option<wire::TaskLoop> {
@@ -186,7 +201,7 @@ pub fn loop_spec(s: wire::LoopSpec) -> crate::records::LoopSpec {
 
 fn agent_run(r: crate::records::Run) -> wire::AgentRun {
     use crate::records::RunReason;
-    let assignment = r.assignment();
+    let worker = r.worker();
     let outcome = r
         .extra
         .get("outcome")
@@ -199,7 +214,7 @@ fn agent_run(r: crate::records::Run) -> wire::AgentRun {
         ended_at: r.ended_at,
         agent_session: r.agent_session,
         transcript: r.transcript.map(|p| p.to_string_lossy().into_owned()),
-        assignment,
+        worker,
         outcome,
         reason: match r.reason {
             RunReason::Start => wire::RunReason::Start,

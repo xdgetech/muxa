@@ -10,6 +10,8 @@ use super::Record;
 /// The newest runs a record keeps.
 pub const MAX_RUNS: usize = 50;
 
+const WORKER: &str = "worker";
+
 /// One agent on a Task. Times are Unix epoch seconds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,10 +51,24 @@ pub struct Seen {
 }
 
 impl Run {
-    pub fn assignment(&self) -> Option<muxa_protocol::WorkerAssignment> {
-        self.extra
-            .get("assignment")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    /// The worker requested for this run, or `default`; `None` is unrecorded.
+    /// Runs written before ADR 0027 carry `assignment {kind, name?}` instead.
+    pub fn worker(&self) -> Option<String> {
+        if let Some(name) = self.extra.get(WORKER).and_then(|v| v.as_str()) {
+            return Some(name.to_owned());
+        }
+        let old = self.extra.get("assignment")?;
+        match (old["kind"].as_str(), old["name"].as_str()) {
+            (Some("workspace-default"), None) => Some(muxa_protocol::DEFAULT_WORKER.to_owned()),
+            (Some("worker"), Some(name)) if !name.is_empty() => Some(name.to_owned()),
+            _ => None,
+        }
+    }
+
+    /// Records the requested worker: a name, or `None` for the workspace default.
+    pub fn set_worker(&mut self, worker: Option<&str>) {
+        let name = worker.unwrap_or(muxa_protocol::DEFAULT_WORKER);
+        self.extra.insert(WORKER.into(), serde_json::json!(name));
     }
 
     /// Takes what the adapter saw. A known session id is replaced only by
@@ -173,6 +189,45 @@ mod tests {
             (run.agent_session.as_deref(), &run.transcript),
             (Some("b2"), &None)
         );
+    }
+
+    #[test]
+    fn run_worker_is_a_name_and_old_assignments_still_read() {
+        let read = |json: &str| serde_json::from_str::<Run>(json).unwrap().worker();
+        let base = r#"{"id":1,"startedAt":1,"reason":"start""#;
+        assert_eq!(read(&format!("{base}}}")), None, "legacy: unrecorded");
+        assert_eq!(
+            read(&format!(r#"{base},"worker":"default"}}"#)).as_deref(),
+            Some("default")
+        );
+        assert_eq!(
+            read(&format!(
+                r#"{base},"assignment":{{"kind":"workspace-default"}}}}"#
+            ))
+            .as_deref(),
+            Some("default")
+        );
+        assert_eq!(
+            read(&format!(
+                r#"{base},"assignment":{{"kind":"worker","name":"Reviewer"}}}}"#
+            ))
+            .as_deref(),
+            Some("Reviewer")
+        );
+        assert_eq!(
+            read(&format!(
+                r#"{base},"assignment":{{"kind":"future","name":"Scheduler"}}}}"#
+            )),
+            None,
+            "an unknown kind is not the workspace default"
+        );
+        let mut r = record();
+        let id = r.start_run(RunReason::Start, 1);
+        let run = r.run_mut(id).unwrap();
+        run.set_worker(None);
+        assert_eq!(run.worker().as_deref(), Some("default"));
+        run.set_worker(Some("Reviewer"));
+        assert_eq!(run.worker().as_deref(), Some("Reviewer"));
     }
 
     #[test]

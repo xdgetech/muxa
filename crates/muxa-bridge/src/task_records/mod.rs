@@ -160,21 +160,6 @@ pub fn is_record_request(req: &Request) -> bool {
 /// Answers one record request: its `task-list` or `task-saved`, then its `result`.
 pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
     let id = req.id();
-    let worker_intent = match &req {
-        Request::CreateTask { worker, .. } => worker.is_some(),
-        Request::RestartAgent { worker, rev, .. } => !worker.is_keep() || rev.is_some(),
-        _ => false,
-    };
-    if worker_intent {
-        return vec![Message::Result {
-            id: Some(id),
-            error: Some(error_body(
-                ErrorCode::Unsupported,
-                "workers are not implemented on this host",
-            )),
-            sessions: None,
-        }];
-    }
     let (mut out, error) = match req {
         Request::ListTasks { id } => one(list(&cx.records, id).await),
         Request::UpdateTask {
@@ -193,10 +178,10 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             branch,
             base,
             r#loop,
-            worker: _,
+            worker,
         } => {
             let new = NewTask {
-                worker: None,
+                worker,
                 workspace,
                 title,
                 goal,
@@ -245,9 +230,13 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             Err(e) => (Vec::new(), Some(e)),
         },
         Request::RestartAgent {
-            id, task, force, ..
+            id,
+            task,
+            force,
+            worker,
+            rev,
         } => match cx.env().await {
-            Ok(env) => match restart(&env, task, force).await {
+            Ok(env) => match restart(&env, task, force, worker, rev).await {
                 Ok(record) => (saved(id, Some(record)).into_iter().collect(), None),
                 Err(e) => (Vec::new(), Some(e)),
             },
@@ -459,7 +448,7 @@ pub async fn list(config: &Config, request: u64) -> Result<Message, ErrorBody> {
             workspaces: workspaces.all().iter().map(convert::workspace).collect(),
             entries: records.into_iter().map(convert::task_record).collect(),
             truncated,
-            workers: Vec::new(),
+            workers: workspaces.workers().iter().map(convert::worker).collect(),
         })
     })
     .await

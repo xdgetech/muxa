@@ -60,7 +60,8 @@ both!(
     recovery_prepared_is_cancelled_once_and_old_tokens_conflict,
     recovery_uncertain_dispatch_and_delivery_never_replace_or_send,
     recovery_replaced_reconciles_a_partial_pair_and_sends_no_prompt,
-    worker_contract_is_rejected_without_runtime_support,
+    workers_create_and_restart_through_the_wire,
+    old_run_assignments_read_as_worker_names,
     another_writer_s_change_is_announced,
     a_task_without_a_repo_gets_its_own_directory_and_session,
     a_fresh_done_gets_the_start_prompt,
@@ -1182,53 +1183,150 @@ async fn a_daemon_that_crashed_during_a_prompt_wait_resumes_it() {
     host.daemon = Some(daemon);
 }
 
-async fn worker_contract_is_rejected_without_runtime_support(mode: Mode) {
-    let server = Server::start();
-    let mut host = Host::new(&mode.name("worker-contract"), mode);
-    let mut bridge = host.bridge(&server, &["--task-command", AGENT]).await;
-    let before = server.layout();
-    for request in [
-        json!({"type":"create-task", "workspace":"work", "title":"Review", "goal":"Review", "worker":"Reviewer"}),
-        json!({"type":"restart-agent", "task":"t-000001", "worker":"Reviewer", "rev":1}),
-        json!({"type":"restart-agent", "task":"t-000001", "worker":null, "rev":1}),
-        json!({"type":"restart-agent", "task":"t-000001", "rev":1}),
-    ] {
-        let (saved, result) = send(&mut bridge, request).await;
-        assert!(saved.is_none());
-        assert_eq!(error_code(&result), ErrorCode::Unsupported);
-        assert_eq!(
-            server.layout(),
-            before,
-            "unsupported worker intent replaced a process or changed layout"
-        );
-        assert!(list_tasks(&mut bridge).await.is_empty());
-        assert_eq!(
-            std::fs::read_dir(&host.root).unwrap().count(),
-            0,
-            "unsupported intent created Task files"
-        );
+/// A host with a `Reviewer` worker whose `claude` is a synthetic script on
+/// the workspace's PATH. It records its argv in the Task directory.
+fn worker_host(name: &str, mode: Mode) -> Host {
+    let host = Host::new(name, mode);
+    let bin = host.dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(
+        bin.join("claude"),
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> argv\nexec sleep 600\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = host.dir.join("workspaces.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        &path,
+        format!(
+            "{text}[workspace.agent]\nenv = {{ PATH = \"{}:/usr/bin:/bin\" }}\n[[worker]]\nname = \"Reviewer\"\nagent = \"claude-code\"\nargs = [\"--agent\", \"reviewer\"]\n",
+            bin.display()
+        ),
+    )
+    .unwrap();
+    host
+}
+
+async fn restart_with(bridge: &mut Bridge, fields: Value) -> (Option<TaskRecord>, Message) {
+    let mut req = json!({"type": "restart-agent", "force": true});
+    for (k, v) in fields.as_object().unwrap() {
+        req[k] = v.clone();
     }
-    // A downgraded host may read an additive worker field, but must not ignore it on restart.
-    let stored = json!({"version":1, "id":"t-000001", "rev":1, "workspace":"work",
-        "title":"Review", "goal":"Review", "status":"open", "createdAt":1, "updatedAt":1,
-        "dir":host.root, "worker":"Reviewer", "runs":[{"id":1,"startedAt":1,"reason":"start",
-        "assignment":{"kind":"worker","name":"Reviewer"}}]});
-    let record_path = host.dir.join("state/t-000001.json");
-    std::fs::write(&record_path, serde_json::to_vec(&stored).unwrap()).unwrap();
-    let records = list_tasks(&mut bridge).await;
-    assert_eq!(records[0].worker.as_deref(), Some("Reviewer"));
-    assert!(records[0].runs[0].assignment.as_ref().unwrap().is_known());
+    send(bridge, req).await
+}
+
+/// ADR 0027 section 1 through the wire: a name, `default`, or no field (Keep);
+/// `rev` is checked only when sent. `workers` stays unadvertised.
+async fn workers_create_and_restart_through_the_wire(mode: Mode) {
+    let server = Server::start();
+    let mut host = worker_host("workers", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+
+    let (saved, result) = create(&mut bridge, json!({"worker": "Missing"})).await;
+    assert_eq!(error_code(&result), ErrorCode::BadRequest);
+    assert!(saved.is_none());
+    assert!(list_tasks(&mut bridge).await.is_empty());
+
+    let (saved, result) = create(&mut bridge, json!({"worker": "Reviewer"})).await;
+    ok(&result);
+    let r = saved.expect("task-saved");
+    assert_eq!(r.worker.as_deref(), Some("Reviewer"));
+    assert_eq!(r.runs[0].worker.as_deref(), Some("Reviewer"));
+    let argv = r.dir.as_ref().map(|d| Path::new(d).join("argv")).unwrap();
+    common::wait_until(|| argv.is_file()).await;
+    assert_eq!(
+        std::fs::read_to_string(&argv).unwrap(),
+        "--agent reviewer\n"
+    );
+    let pane = server.pane(&format!("={}:", r.session.clone().unwrap()));
+    let before = shape(&server);
+
+    // A stale revision conflicts before any process or file changes.
+    let current = record_of(&mut bridge, &r.id).await;
+    let record_path = host.dir.join(format!("state/{}.json", r.id));
     let bytes = std::fs::read(&record_path).unwrap();
-    let (saved, result) = send(
+    let (saved, result) = restart_with(
         &mut bridge,
-        json!({"type":"restart-agent", "task":"t-000001", "force":true}),
+        json!({"task": r.id, "worker": "default", "rev": current.rev + 5}),
     )
     .await;
+    assert_eq!(error_code(&result), ErrorCode::Conflict);
     assert!(saved.is_none());
-    assert_eq!(error_code(&result), ErrorCode::Unsupported);
     assert_eq!(std::fs::read(&record_path).unwrap(), bytes);
-    assert_eq!(server.layout(), before);
-    assert_eq!(std::fs::read_dir(&host.root).unwrap().count(), 0);
+
+    // `default` clears the worker and records it on the run.
+    let (saved, result) = restart_with(
+        &mut bridge,
+        json!({"task": r.id, "worker": "default", "rev": current.rev}),
+    )
+    .await;
+    ok(&result);
+    let cleared = saved.expect("task-saved");
+    assert_eq!(cleared.worker, None);
+    assert_eq!(
+        cleared.runs.last().unwrap().worker.as_deref(),
+        Some("default")
+    );
+
+    // A name without `rev` selects the worker again.
+    let (saved, result) =
+        restart_with(&mut bridge, json!({"task": r.id, "worker": "Reviewer"})).await;
+    ok(&result);
+    let named = saved.expect("task-saved");
+    assert_eq!(named.worker.as_deref(), Some("Reviewer"));
+    assert_eq!(
+        named.runs.last().unwrap().worker.as_deref(),
+        Some("Reviewer")
+    );
+
+    // No field keeps the current worker, as a legacy client expects.
+    let (saved, result) = restart_with(&mut bridge, json!({"task": r.id})).await;
+    ok(&result);
+    let kept = saved.expect("task-saved");
+    assert_eq!(kept.worker.as_deref(), Some("Reviewer"));
+    assert_eq!(
+        kept.runs.last().unwrap().worker.as_deref(),
+        Some("Reviewer")
+    );
+    assert_eq!(kept.runs.len(), 4);
+    common::wait_until(|| std::fs::read_to_string(&argv).is_ok_and(|a| a.lines().count() == 3))
+        .await;
+    assert_eq!(shape(&server), before, "a restart changed the layout");
+    assert_eq!(server.pane(&format!("={}:", r.session.unwrap())), pane);
+}
+
+/// Runs written before ADR 0027 keep their `assignment`, and list as a worker name.
+async fn old_run_assignments_read_as_worker_names(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("old-assignment", mode);
+    let mut bridge = host.bridge(&server, &["--task-command", AGENT]).await;
+    let stored = json!({"version":1, "id":"t-000001", "rev":1, "workspace":"work",
+        "title":"Review", "goal":"Review", "status":"open", "createdAt":1, "updatedAt":1,
+        "runs":[
+            {"id":1,"startedAt":1,"endedAt":2,"reason":"start"},
+            {"id":2,"startedAt":2,"endedAt":3,"reason":"restart","assignment":{"kind":"workspace-default"}},
+            {"id":3,"startedAt":3,"endedAt":4,"reason":"restart","assignment":{"kind":"worker","name":"Reviewer"}},
+            {"id":4,"startedAt":4,"reason":"restart","assignment":{"kind":"future","name":"Later"}}]});
+    std::fs::create_dir_all(host.dir.join("state")).unwrap();
+    std::fs::write(
+        host.dir.join("state/t-000001.json"),
+        serde_json::to_vec(&stored).unwrap(),
+    )
+    .unwrap();
+    let records = list_tasks(&mut bridge).await;
+    let workers: Vec<_> = records[0]
+        .runs
+        .iter()
+        .map(|r| r.worker.as_deref())
+        .collect();
+    assert_eq!(workers, [None, Some("default"), Some("Reviewer"), None]);
 }
 
 struct RecoveryFixture {

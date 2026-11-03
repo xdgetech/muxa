@@ -2,7 +2,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use muxa_protocol::{ErrorBody, ErrorCode, RestartRecoveryAction, WorkerSelection};
+use muxa_protocol::{DEFAULT_WORKER, ErrorBody, ErrorCode, RestartRecoveryAction};
 use muxa_tmux::{AgentState, PaneId, SessionId};
 
 use super::create::Env;
@@ -16,25 +16,26 @@ use crate::records::{
     PendingPrompt, PromptKind, Record, RunReason, Seen, Workspaces, now, restart_files,
 };
 
-pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, ErrorBody> {
+/// `worker` is a name or `default`; `None` keeps the current worker. `rev`,
+/// when sent, must be the record's current revision.
+pub async fn restart(
+    env: &Env,
+    task: String,
+    force: bool,
+    worker: Option<String>,
+    rev: Option<u64>,
+) -> Result<Record, ErrorBody> {
     let config = Arc::clone(&env.records);
     let id = task.clone();
     let record = blocking(move || config.store()?.get(&id).map_err(|e| store_error(&e))).await?;
-    // The wire gate remains closed until native-worker acceptance passes.
-    if record.worker().is_some() {
-        return Err(error_body(
-            ErrorCode::Unsupported,
-            "workers are not implemented on this host",
-        ));
-    }
-    restart_record(env, record, force, WorkerSelection::Keep, None).await
+    restart_record(env, record, force, worker, rev).await
 }
 
 pub(super) async fn restart_record(
     env: &Env,
     record: Record,
     force: bool,
-    choice: WorkerSelection,
+    worker: Option<String>,
     rev: Option<u64>,
 ) -> Result<Record, ErrorBody> {
     let config = Arc::clone(&env.records);
@@ -42,7 +43,7 @@ pub(super) async fn restart_record(
     let fallback = env.tasks.command.clone();
     let resolved = blocking(move || {
         let workspaces = config.load_workspaces()?;
-        resolve(&workspaces, &snapshot, &choice, rev, &fallback)
+        resolve(&workspaces, &snapshot, worker.as_deref(), rev, &fallback)
     })
     .await?;
     let config = Arc::clone(&env.records);
@@ -364,9 +365,7 @@ fn finalize(
         .update(move |r| {
             let run = advance(r, op.seen.as_ref(), op.since);
             if let Some(current) = r.run_mut(run) {
-                current
-                    .extra
-                    .insert("assignment".into(), assignment(&op.worker));
+                current.set_worker(op.worker.as_deref());
                 crate::records::observation::bind_restart(current, &op);
             }
             set_worker(r, &op.worker);
@@ -503,8 +502,7 @@ pub async fn recover(
                 if op.phase != Phase::Delivering {
                     let run = advance(r, op.seen.as_ref(), now());
                     if let Some(run) = r.run_mut(run) {
-                        run.extra
-                            .insert("assignment".into(), assignment(&op.worker));
+                        run.set_worker(op.worker.as_deref());
                         run.extra
                             .insert("outcome".into(), serde_json::json!("unconfirmed"));
                     }
@@ -557,7 +555,7 @@ pub fn summary(record: &Record) -> Option<muxa_protocol::RestartOperation> {
         return Some(muxa_protocol::RestartOperation {
             id: String::new(),
             phase: "unknown".into(),
-            assignment: None,
+            worker: None,
             actions: vec![],
         });
     };
@@ -591,7 +589,7 @@ pub fn summary(record: &Record) -> Option<muxa_protocol::RestartOperation> {
             Phase::Delivering => "delivering",
         }
         .into(),
-        assignment: serde_json::from_value(assignment(&op.worker)).ok(),
+        worker: Some(op.worker.unwrap_or_else(|| DEFAULT_WORKER.to_owned())),
         actions,
     })
 }
@@ -614,36 +612,24 @@ fn set_worker(record: &mut Record, worker: &Option<String>) {
         record.extra.remove("worker");
     }
 }
-fn assignment(worker: &Option<String>) -> serde_json::Value {
-    match worker {
-        Some(name) => serde_json::json!({"kind":"worker", "name":name}),
-        None => serde_json::json!({"kind":"workspace-default"}),
-    }
-}
 /// Validate one immutable configuration snapshot before claiming or staging anything.
 fn resolve(
     workspaces: &Workspaces,
     record: &Record,
-    choice: &WorkerSelection,
+    worker: Option<&str>,
     rev: Option<u64>,
     fallback: &str,
 ) -> Result<ResolvedWorker, ErrorBody> {
     if rev.is_some_and(|rev| rev != record.rev) {
         return Err(conflict("task changed; refresh before restarting"));
     }
-    if !choice.is_keep() && rev.is_none() {
-        return Err(error_body(
-            ErrorCode::BadRequest,
-            "worker selection requires a revision",
-        ));
-    }
     if record.extra.contains_key(FIELD) {
         return Err(conflict("task restart requires recovery"));
     }
-    let choice = match choice {
-        WorkerSelection::Keep => WorkerChoice::Keep,
-        WorkerSelection::WorkspaceDefault => WorkerChoice::WorkspaceDefault,
-        WorkerSelection::Named(name) => WorkerChoice::Named(name),
+    let choice = match worker {
+        None => WorkerChoice::Keep,
+        Some(DEFAULT_WORKER) => WorkerChoice::WorkspaceDefault,
+        Some(name) => WorkerChoice::Named(name),
     };
     workspaces
         .resolve_worker(&record.workspace, choice, record.worker(), fallback)
@@ -729,22 +715,25 @@ mod worker_tests {
         let fixture = Fixture::new();
         let record = fixture.record();
         let config = fixture.config("reviewer");
-        let choice = WorkerSelection::Named("Reviewer".into());
+        let choice = Some("Reviewer");
         assert_eq!(
-            resolve(&config, &record, &choice, Some(record.rev + 1), "fallback")
+            resolve(&config, &record, choice, Some(record.rev + 1), "fallback")
                 .unwrap_err()
                 .code,
             ErrorCode::Conflict
         );
+        // ADR 0027: without `rev`, no revision is checked.
+        fs::write(fixture.0.join("instructions.md"), "Valid.").unwrap();
         assert_eq!(
-            resolve(&config, &record, &choice, None, "fallback")
-                .unwrap_err()
-                .code,
-            ErrorCode::BadRequest
+            resolve(&config, &record, choice, None, "fallback")
+                .unwrap()
+                .worker
+                .as_deref(),
+            Some("Reviewer")
         );
         for bytes in [vec![0xff], vec![b'x'; 16 * 1024 + 1], b"a\0b".to_vec()] {
             fs::write(fixture.0.join("instructions.md"), bytes).unwrap();
-            assert!(resolve(&config, &record, &choice, Some(record.rev), "fallback").is_err());
+            assert!(resolve(&config, &record, choice, Some(record.rev), "fallback").is_err());
             assert!(!fixture.0.join(".muxa").exists());
         }
         assert_eq!(
@@ -770,8 +759,14 @@ mod worker_tests {
         )
         .unwrap();
         let config = fixture.config("reviewer");
-        let choice = WorkerSelection::Named("Reviewer".into());
-        let selected = resolve(&config, &record, &choice, Some(record.rev), "fallback").unwrap();
+        let selected = resolve(
+            &config,
+            &record,
+            Some("Reviewer"),
+            Some(record.rev),
+            "fallback",
+        )
+        .unwrap();
         fs::write(fixture.0.join("instructions.md"), "Next operation only.").unwrap();
         let manifest =
             prepare_files(&record, &fixture.0, "selection-test", None, 7, &selected).unwrap();
@@ -789,7 +784,7 @@ mod worker_tests {
         let edited = resolve(
             &fixture.config("edited-reviewer"),
             &record,
-            &WorkerSelection::Keep,
+            None,
             None,
             "fallback",
         )
@@ -799,7 +794,7 @@ mod worker_tests {
         let cleared = resolve(
             &config,
             &record,
-            &WorkerSelection::WorkspaceDefault,
+            Some(DEFAULT_WORKER),
             Some(record.rev),
             "fallback",
         )

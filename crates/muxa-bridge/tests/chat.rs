@@ -355,7 +355,7 @@ async fn an_incomplete_named_start_blocks_chat_and_clears_tagged_state() {
     server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "waiting"]);
     let mut confirmed = managed_record(&server, &pane, &pid, &state);
     confirmed["worker"] = "Reviewer".into();
-    confirmed["runs"][0]["assignment"] = json!({"kind":"worker","name":"Reviewer"});
+    confirmed["runs"][0]["worker"] = "Reviewer".into();
     let mut no_run = confirmed.clone();
     no_run["runs"] = json!([]);
     write_managed(&state, &no_run);
