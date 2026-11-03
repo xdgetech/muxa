@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     InboxChange, LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop,
-    TaskRecord, TaskStatus, WORK_ASK, WorkerInfo, work_level,
+    TaskRecord, TaskStatus, WORK_ASK, WorkerInfo, WorkspaceInfo, work_level,
 };
 use serde_json::json;
 
@@ -179,8 +179,13 @@ pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
             .iter()
             .map(inbox::to_json)
             .collect();
+        let names: Vec<&str> = workspaces.iter().map(|w| w.name.as_str()).collect();
+        // `workspaces` stays a list of names for desktop clients that read only
+        // names; `workspaceInfo` carries root and repos (ADR 0031).
         let mut out = json!({
-            "workspaces": workspaces,
+            "workspaces": names,
+            "workspaceInfo": workspaces,
+            "capabilities": conn.capabilities(),
             "truncated": truncated,
             "tasks": tasks,
             "queue": queue,
@@ -191,7 +196,14 @@ pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
         println!("{out}");
         return Ok(String::new());
     }
-    println!("workspaces: {}", workspaces.join(", "));
+    println!(
+        "workspaces: {}",
+        workspaces
+            .iter()
+            .map(|w| w.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     if conn.supports("workers") {
         println!(
             "workers: {}",
@@ -460,7 +472,7 @@ async fn print_record(
 
 async fn fetch(
     conn: &mut Conn,
-) -> Result<(Vec<String>, Vec<TaskRecord>, bool, Vec<WorkerInfo>), String> {
+) -> Result<(Vec<WorkspaceInfo>, Vec<TaskRecord>, bool, Vec<WorkerInfo>), String> {
     let messages = conn.call(|id| Request::ListTasks { id }, WAIT).await?;
     messages
         .into_iter()
@@ -471,12 +483,7 @@ async fn fetch(
                 truncated,
                 workers,
                 ..
-            } => Some((
-                workspaces.into_iter().map(|w| w.name).collect(),
-                entries,
-                truncated,
-                workers,
-            )),
+            } => Some((workspaces, entries, truncated, workers)),
             _ => None,
         })
         .ok_or_else(|| "the bridge sent no task list".to_owned())

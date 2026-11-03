@@ -80,7 +80,8 @@ for line in sys.stdin:
     log.write(json.dumps(req) + '\n'); log.flush()
     kind, ident = req['type'], req['id']
     if kind == 'list-tasks':
-        send({'type':'task-list','tasks':ident,'workspaces':[{'name':'work'}],
+        send({'type':'task-list','tasks':ident,
+              'workspaces':[{'name':'work','root':'/w','repos':['/w/app','/x/tool']}],
               'entries':[record], 'workers':[{'name':'Reviewer','agent':'codex'}]})
     elif kind in ('restart-agent','create-task','recover-restart'):
         if conflict:
@@ -191,6 +192,24 @@ fn selected_worker_is_sent_on_create_and_list_metadata_is_public() {
         json!([{"name":"Reviewer", "agent":"codex"}])
     );
     assert_eq!(listed["tasks"][0]["record"]["worker"], "Reviewer");
+}
+
+#[test]
+fn tasks_json_keeps_workspace_names_and_adds_their_details_and_capabilities() {
+    let bridge = Bridge::new();
+    let output = bridge.run(false, false, &["tasks", "--json"]);
+    assert!(output.status.success(), "{:?}", output);
+    let listed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    // Desktop clients that read names only keep working.
+    assert_eq!(listed["workspaces"], json!(["work"]));
+    assert_eq!(
+        listed["workspaceInfo"],
+        json!([{"name":"work", "root":"/w", "repos":["/w/app", "/x/tool"]}])
+    );
+    assert_eq!(
+        listed["capabilities"],
+        json!(["task-records", "task-handoff"])
+    );
 }
 
 #[test]
