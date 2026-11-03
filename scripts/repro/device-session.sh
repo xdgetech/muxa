@@ -38,6 +38,9 @@ done
 out="$(mt new-session -d -P -F '#{session_id} #{window_id}' -s _muxa-repro cat)"
 device="${out% *}"
 dummy="${out#* }"
+# The hook expands #{window_id} when it runs, which tmux may defer past the
+# next command: on a loaded machine it can then see the linked window.
+wait_for "grep -q 'session-created' '$hooks'" || fail "no session-created hook ran"
 mt link-window -d -s "$second" -t "$device:" \; kill-window -t "$dummy"
 [ "$(windows "$device")" = "$second " ] || fail "the device session holds $(windows "$device"), expected $second"
 [ "$(mt display-message -p -t "$device" '#{window_id}')" = "$second" ] || fail "the linked window is not the device session's current window"
@@ -60,12 +63,13 @@ pass "list-sessions, list-windows -a and list-panes -a list it; -f '$hide' hides
 # 3. A command with no target picks the session switched to last.
 mt_control_open 3 "$device" ignore-size,no-output
 mt_control_open 4 "$target" ignore-size
-sleep 0.5
+mt_control_sync 3
+mt_control_sync 4
 echo "switch-client -t $device" >&3
-sleep 0.3
+mt_control_sync 3
 [ "$(mt display-message -p '#{session_id}')" = "$device" ] || fail "the best session is not the device session after a switch to it"
 echo "switch-client -t $target" >&4
-sleep 0.3
+mt_control_sync 4
 [ "$(mt display-message -p '#{session_id}')" = "$target" ] || fail "a switch-client to the user's session did not make it the best session again"
 pass "with no target, tmux picks the session switched to last: the device session, until a client switches to the user's session again"
 
@@ -87,7 +91,8 @@ mt link-window -d -s "$second" -t "$device:" \; kill-window -t "${out#* }"
 mt_control_open 3 "$device" ignore-size,no-output
 wait_for "[ \"\$(controls)\" = 2 ]"
 mt kill-session -t "$device"
-sleep 0.5
+# A detached client would not answer.
+mt_control_sync 3 || fail "without its own detach-on-destroy, the client was detached"
 [ "$(controls)" = 2 ] || fail "without its own detach-on-destroy, the client was detached"
 exec 3>&-
 mt set-option -gu detach-on-destroy
