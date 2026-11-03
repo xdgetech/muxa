@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     InboxChange, LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop,
-    TaskRecord, TaskStatus, WorkerInfo,
+    TaskRecord, TaskStatus, WORK_ASK, WorkerInfo, work_level,
 };
 use serde_json::json;
 
@@ -158,13 +158,10 @@ impl NewTask {
                 format!("task new needs {flag}").into(),
             ));
         }
-        if self.repo.is_some() != self.branch.is_some() {
+        if self.repo.is_none() && (self.branch.is_some() || self.base.is_some()) {
             return Err(lexopt::Error::Custom(
-                "task new needs --repo and --branch together".into(),
+                "--branch and --base need --repo".into(),
             ));
-        }
-        if self.base.is_some() && self.repo.is_none() {
-            return Err(lexopt::Error::Custom("--base needs --repo".into()));
         }
         Ok(self)
     }
@@ -219,6 +216,9 @@ pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
 /// agent: it exits once the start prompt is typed or given up.
 pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<String, String> {
     require_workers(conn.supports("workers"), new.worker.is_some())?;
+    if new.repo.is_some() && new.branch.is_none() && work_level(conn.capabilities()) < WORK_ASK {
+        return Err("this host needs --branch with --repo; update muxa-bridge on the host".into());
+    }
     let messages = conn
         .call(
             |id| Request::CreateTask {
@@ -569,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn task_new_needs_its_flags_and_a_branch_with_a_repo() {
+    fn task_new_needs_its_flags_and_a_repo_for_a_branch() {
         assert!(new().checked().is_ok());
         assert!(
             NewTask {
@@ -583,7 +583,16 @@ mod tests {
             repo: Some("/src/app".into()),
             ..new()
         };
-        assert!(repo.clone().checked().is_err());
+        // The host names the branch after the title (ADR 0031).
+        assert!(repo.clone().checked().is_ok());
+        assert!(
+            NewTask {
+                branch: Some("feat/x".into()),
+                ..new()
+            }
+            .checked()
+            .is_err()
+        );
         assert!(
             NewTask {
                 branch: Some("feat/x".into()),

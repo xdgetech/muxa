@@ -1,5 +1,6 @@
 //! `muxa-cli`: a terminal client for the muxa protocol, the reference client.
 
+mod ask;
 mod conn;
 mod inbox;
 mod routines;
@@ -15,9 +16,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
        muxa-cli [--bridge CMD] tasks [--json]
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
-                [--project P] [--repo PATH --branch B [--base REF]] [--worker NAME]
+                [--project P] [--repo REPO [--branch B] [--base REF]] [--worker NAME]
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task done ID
+       muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
        muxa-cli [--bridge CMD] task (down | requeue) ID [--json]
        muxa-cli [--bridge CMD] task later ID --until TIME [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
@@ -42,6 +44,12 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   task new       records a task and starts an agent for it; without --repo
                  it gets a directory in its workspace. It returns once the
                  agent got its start prompt, or after 30 s without it
+  --repo REPO    an absolute path, or a repo under the workspace root, such
+                 as app or group/app. Without --branch, the host names a new
+                 branch after the title (ADR 0031)
+  ask REPO       starts the workspace's agent in the repo's main checkout, to
+                 ask about its code: no task and no worktree. Prints the
+                 session id. Without --workspace, the one that has REPO
   --json         one line of JSON for other tools: the Inbox for tasks, one
                  Inbox item for task new and task restart (docs/agents.md,
                  Desktop tools)
@@ -98,6 +106,11 @@ enum Cmd {
         seconds: Option<u64>,
     },
     Tasks {
+        json: bool,
+    },
+    Ask {
+        repo: String,
+        workspace: Option<String>,
         json: bool,
     },
     NewTask {
@@ -260,6 +273,11 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             seconds,
         },
         [w] if w == "tasks" => Cmd::Tasks { json },
+        [w, repo] if w == "ask" => Cmd::Ask {
+            repo: repo.clone(),
+            workspace: Some(new.workspace).filter(|w| !w.trim().is_empty()),
+            json,
+        },
         [w, n] if w == "task" && n == "new" => Cmd::NewTask {
             new: tasks::NewTask {
                 r#loop: check.spec()?,
@@ -403,6 +421,11 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             view::run(&mut conn, &pane, view::Options { read_only, seconds }).await
         }
         Cmd::Tasks { json } => tasks::list(&mut conn, json).await,
+        Cmd::Ask {
+            repo,
+            workspace,
+            json,
+        } => ask::ask(&mut conn, &repo, workspace, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Done(id) => tasks::done(&mut conn, &id).await,
         Cmd::Place { task, change, json } => tasks::place(&mut conn, &task, change, json).await,
