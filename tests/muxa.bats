@@ -198,6 +198,24 @@ args_are() { [ "$(cat "$TMPDIR/bin/args")" = "$(printf '%s\n' --bridge "muxa-bri
   [ "$output" = "$expected" ]
 }
 
+# muxa-cli's own shape: names in workspaces, details in workspaceInfo.
+cli_tasks() {
+  printf '{"workspaces":["home","work"],"workspaceInfo":[{"name":"home","root":"%s/home"},{"name":"work","root":"%s/repos","repos":["%s","%s/repos/group/plan","/opt/tool"]}],"capabilities":["task-records","work:2"],"truncated":false,"tasks":[]}' \
+    "$TMPDIR" "$TMPDIR" "$REPO" "$TMPDIR"
+}
+
+@test "the repo picker reads workspaceInfo as muxa-cli prints it" {
+  mkdir -p "$TMPDIR/repos/group/plan" && git -C "$TMPDIR/repos/group/plan" init -q
+  run bash -c "printf '%s' '$(cli_tasks)' | '$ROOT/scripts/muxa.sh' repo-rows work '$TMPDIR/repos/group/plan' none"
+  [ "$status" -eq 0 ]
+  expected="$(printf '%s\n' \
+    "$TMPDIR/repos/group/plan${TAB}group/plan" \
+    "$REPO${TAB}app" \
+    "/opt/tool${TAB}/opt/tool" \
+    "-${TAB}- no repo")"
+  [ "$output" = "$expected" ]
+}
+
 @test "the repo picker lists the current repo first, also outside the workspace" {
   other="$TMPDIR/elsewhere/lib"
   mkdir -p "$other" && git -C "$other" init -q

@@ -202,6 +202,8 @@ form() {
 }
 
 # Workspace names: plain strings from older muxa-cli, else {name, root?, repos?}.
+# muxa-cli prints the objects in workspaceInfo and keeps workspaces as names;
+# The readers below take the objects from either.
 ws_names() {
   jq -r '.workspaces // [] | map(if type == "string" then . else .name end) | join(" ")' 2>/dev/null
 }
@@ -211,7 +213,7 @@ ws_names() {
 # decides; else a workspace root, which came in the same muxa release.
 work2() {
   jq -e '((.capabilities // []) | map(select(type == "string" and test("^work:[0-9]+$")) | ltrimstr("work:") | tonumber) | max // 0) >= 2
-         or any(.workspaces[]?; type == "object" and .root != null)' >/dev/null 2>&1
+         or any((.workspaceInfo // .workspaces // [])[]?; type == "object" and .root != null)' >/dev/null 2>&1
 }
 
 # <dir> with symlinks resolved, or nothing when it does not exist.
@@ -231,7 +233,7 @@ line_for_dir() {
 default_ws() {
   local json="$1" spaces owner ws
   spaces="$(printf '%s' "$json" | ws_names)"
-  owner="$(printf '%s' "$json" | jq -r '.workspaces[]? | objects | .name as $n | (.repos // [])[] | [., $n] | @tsv' 2>/dev/null |
+  owner="$(printf '%s' "$json" | jq -r '(.workspaceInfo // .workspaces // [])[]? | objects | .name as $n | (.repos // [])[] | [., $n] | @tsv' 2>/dev/null |
     line_for_dir "$2" | cut -f2)"
   [ -n "$owner" ] && { printf '%s' "$owner"; return; }
   ws="$(opt @agents_muxa_workspace '')"
@@ -250,7 +252,7 @@ choose_ws() {
 repo_rows() {
   local json="$1" ws="$2" def="$3" rows first
   rows="$(printf '%s' "$json" | jq -r --arg ws "$ws" --arg home "$HOME" '
-    .workspaces[]? | objects | select(.name == $ws) | (.root // "" | rtrimstr("/")) as $root |
+    (.workspaceInfo // .workspaces // [])[]? | objects | select(.name == $ws) | (.root // "" | rtrimstr("/")) as $root |
     (.repos // [])[] | select(type == "string") |
     if $root != "" and startswith($root + "/") then [., ltrimstr($root + "/")]
     elif startswith($home + "/") then [., "~/" + ltrimstr($home + "/")]
