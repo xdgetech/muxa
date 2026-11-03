@@ -124,7 +124,7 @@ pub struct Context {
 
 impl Context {
     /// The environment of a request that works in tmux.
-    async fn env(&self) -> Result<Env, ErrorBody> {
+    pub(crate) async fn env(&self) -> Result<Env, ErrorBody> {
         let client = self.tmux.client().await.map_err(|e| {
             tracing::warn!(error = %e, "cannot reach tmux for a task request");
             error_body(
@@ -154,6 +154,10 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::RecoverRestart { .. }
             | Request::StartLoop { .. }
             | Request::StopLoop { .. }
+            | Request::ListRoutines { .. }
+            | Request::RunRoutine { .. }
+            | Request::ListInbox { .. }
+            | Request::UpdateInbox { .. }
     )
 }
 
@@ -197,6 +201,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
                 repo,
                 branch,
                 base,
+                routine: None,
             };
             let spec = r#loop.map(convert::loop_spec);
             match create_with_loop(cx, new, spec).await {
@@ -250,6 +255,10 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             },
             Err(e) => (Vec::new(), Some(e)),
         },
+        req @ (Request::ListRoutines { .. }
+        | Request::RunRoutine { .. }
+        | Request::ListInbox { .. }
+        | Request::UpdateInbox { .. }) => crate::routines::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(
@@ -449,7 +458,9 @@ pub async fn list(config: &Config, request: u64) -> Result<Message, ErrorBody> {
     let config = config.clone();
     blocking(move || {
         let workspaces = config.load_workspaces()?;
-        let records = config.store()?.list().map_err(|e| store_error(&e))?;
+        let mut records = config.store()?.list().map_err(|e| store_error(&e))?;
+        // A Routine run is not a Task (ADR 0026 section 3).
+        records.retain(|r| !r.is_routine_run());
         let (records, truncated) = cap(records, MAX_LIST);
         Ok(Message::TaskList {
             tasks: request,

@@ -1,0 +1,185 @@
+//! Routines (ADR 0026): a configured agent run on a trigger that publishes
+//! briefings and proposals to Inbox. Config is `records::routines`; a run is
+//! a task record of kind `routine-run` that reuses the Task machinery; this
+//! module schedules runs, checks and publishes their output, and serves the
+//! `work` level 1 requests.
+
+pub mod brief;
+pub mod check;
+pub mod inbox;
+pub mod output;
+pub mod record;
+pub mod runs;
+pub mod schedule;
+pub mod store;
+
+use std::path::Path;
+use std::sync::Arc;
+
+use muxa_protocol::{ErrorBody, ErrorCode, Message, Request, RoutineInfo, RoutineTrigger};
+
+use crate::convert::error_body;
+use crate::records::Record;
+use crate::records::routines::Routine;
+use crate::task_records::{Config, Context};
+use runs::{StartError, When};
+use store::{RoutineState, RoutineStore};
+
+pub use runs::tick;
+
+/// Answers a `work` level 1 request: its list or saved message, and its error.
+pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
+    let result = match req {
+        Request::ListRoutines { id } => {
+            let config = Arc::clone(&cx.records);
+            blocking(move || list(&config))
+                .await
+                .map(|entries| Message::RoutineList {
+                    routines: id,
+                    entries,
+                })
+        }
+        Request::RunRoutine {
+            id,
+            workspace,
+            routine,
+        } => run_now(cx, id, &workspace, &routine).await,
+        Request::ListInbox { id } => {
+            let config = Arc::clone(&cx.records);
+            blocking(move || inbox::list(&config))
+                .await
+                .map(|entries| Message::InboxList { inbox: id, entries })
+        }
+        Request::UpdateInbox {
+            id,
+            entry,
+            action,
+            until,
+        } => inbox::update(cx, entry, action, until)
+            .await
+            .map(|entry| Message::InboxSaved { inbox: id, entry }),
+        _ => Err(error_body(ErrorCode::Unsupported, "not a routine request")),
+    };
+    match result {
+        Ok(m) => (vec![m], None),
+        Err(e) => (Vec::new(), Some(e)),
+    }
+}
+
+async fn run_now(
+    cx: &Context,
+    id: u64,
+    workspace: &str,
+    routine: &str,
+) -> Result<Message, ErrorBody> {
+    let state = runs::start(cx, workspace, routine, When::Now(crate::records::now()))
+        .await
+        .map_err(|e| start_error(&e))?;
+    let config = Arc::clone(&cx.records);
+    let (ws, name) = (workspace.to_owned(), routine.to_owned());
+    blocking(move || {
+        let workspaces = runs::load(&config).map_err(|e| start_error(&e))?;
+        let routine = workspaces
+            .routine(&ws, &name)
+            .ok_or_else(|| error_body(ErrorCode::BadRequest, "the Routine was removed"))?;
+        Ok(Message::RoutineSaved {
+            routine: id,
+            entry: info(routine, &state, crate::records::now()),
+        })
+    })
+    .await
+}
+
+fn start_error(e: &StartError) -> ErrorBody {
+    let code = match e {
+        StartError::Bad(_) => ErrorCode::BadRequest,
+        StartError::Busy(_) | StartError::Handled => ErrorCode::Conflict,
+        StartError::Unsupported(_) => ErrorCode::Unsupported,
+        StartError::Failed(_) => ErrorCode::TaskFailed,
+    };
+    error_body(code, e.to_string())
+}
+
+/// Blocking. Every configured Routine with its state, in file order.
+pub fn list(config: &Config) -> Result<Vec<RoutineInfo>, ErrorBody> {
+    let workspaces = runs::load(config).map_err(|e| start_error(&e))?;
+    let store = match config.state_dir.as_ref().filter(|d| d.is_dir()) {
+        Some(dir) => Some(RoutineStore::open(dir).map_err(|e| {
+            tracing::warn!(error = %e, "cannot open routine state");
+            error_body(ErrorCode::Internal, e.to_string())
+        })?),
+        None => None,
+    };
+    let at = crate::records::now();
+    Ok(workspaces
+        .routines()
+        .iter()
+        .map(|r| {
+            let state = store
+                .as_ref()
+                .and_then(|s| s.get(&r.workspace, &r.name).ok())
+                .unwrap_or_else(|| RoutineState::new(&r.workspace, &r.name));
+            info(r, &state, at)
+        })
+        .collect())
+}
+
+/// The wire form. `nextDue` only for an enabled Routine with a trigger.
+pub fn info(r: &Routine, state: &RoutineState, at: u64) -> RoutineInfo {
+    let next_due = match (&r.trigger, r.enabled) {
+        (Some(t), true) => jiff::Timestamp::from_second(at as i64)
+            .ok()
+            .and_then(|now| schedule::next_due(t, now, runs::last_date(state)).ok())
+            .and_then(|ts| u64::try_from(ts.as_second()).ok()),
+        _ => None,
+    };
+    RoutineInfo {
+        workspace: r.workspace.clone(),
+        name: r.name.clone(),
+        trigger: r.trigger.as_ref().map(|t| RoutineTrigger {
+            at: t.at(),
+            timezone: t.timezone.clone(),
+        }),
+        enabled: r.enabled,
+        worker: r.worker.clone(),
+        project: r.project.clone(),
+        next_due,
+        last_success: state.last_success.clone(),
+        last_failure: state.last_failure.clone(),
+        running: state.running.clone(),
+    }
+}
+
+/// Blocking. Before the agent starts: the private stage folder (0700) and
+/// the state the last successful run committed. Called by `create-task`'s path.
+pub fn prepare(config: &Config, record: &Record, dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt;
+    let run = record
+        .routine_run()
+        .ok_or("the record is not a Routine run")?;
+    let stage = dir.join(output::STAGE_DIR);
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&stage)
+        .map_err(|e| format!("cannot create {}: {e}", stage.display()))?;
+    let state_dir = runs::dir(config).map_err(|e| e.to_string())?;
+    let state = RoutineStore::open(&state_dir)
+        .and_then(|s| s.get(&record.workspace, &run.name))
+        .map_err(|e| e.to_string())?;
+    if let Some(value) = state.state {
+        let path = dir.join(output::STATE);
+        let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+        std::fs::write(&path, bytes)
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
+) -> Result<T, ErrorBody> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .unwrap_or_else(|_| Err(error_body(ErrorCode::Internal, "the routine store stopped")))
+}

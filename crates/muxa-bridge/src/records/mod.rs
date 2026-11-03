@@ -9,6 +9,7 @@ pub mod loops;
 pub mod observation;
 pub mod prompts;
 pub mod restart_files;
+pub mod routines;
 pub mod runs;
 pub mod store;
 pub mod workers;
@@ -99,6 +100,8 @@ pub struct NewRecord {
     pub session: Option<String>,
     pub note: Option<String>,
     pub worker: Option<String>,
+    /// More record fields, e.g. a Routine run's `kind` (ADR 0026).
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// `t-` and 6 lowercase hex digits. Ids become file names, so nothing else passes.

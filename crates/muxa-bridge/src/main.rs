@@ -11,6 +11,7 @@ mod docs;
 mod lines;
 mod loops;
 mod records;
+mod routines;
 mod server;
 mod sessions;
 mod sizer;

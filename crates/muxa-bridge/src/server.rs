@@ -106,6 +106,7 @@ where
         capabilities.push("task-restart-recovery".into());
         capabilities.push("tasks-changed".into());
         capabilities.push("task-inbox".into());
+        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_ROUTINES));
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {
@@ -619,7 +620,8 @@ impl Worker {
                 r#loop: Some(_), ..
             }
             | Request::StartLoop { .. }
-            | Request::StopLoop { .. }) => {
+            | Request::StopLoop { .. }
+            | Request::RunRoutine { .. }) => {
                 let (dir, out) = (self.daemon_dir.clone(), self.out.clone());
                 self.pending.spawn(async move {
                     for msg in task_records::remote::serve_loop(dir.as_deref(), req).await {
@@ -631,7 +633,8 @@ impl Worker {
             // A launch or a restart takes seconds; keystrokes must not wait for it.
             req @ (Request::CreateTask { .. }
             | Request::RestartAgent { .. }
-            | Request::RecoverRestart { .. }) => {
+            | Request::RecoverRestart { .. }
+            | Request::UpdateInbox { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -644,7 +647,10 @@ impl Worker {
                 });
                 return None;
             }
-            req @ (Request::ListTasks { .. } | Request::UpdateTask { .. }) => {
+            req @ (Request::ListTasks { .. }
+            | Request::UpdateTask { .. }
+            | Request::ListRoutines { .. }
+            | Request::ListInbox { .. }) => {
                 let answer = task_records::remote::serve(
                     &self.records_context(),
                     self.daemon_dir.as_deref(),
@@ -657,15 +663,6 @@ impl Worker {
                     }
                 }
                 return None;
-            }
-            Request::ListRoutines { .. }
-            | Request::RunRoutine { .. }
-            | Request::ListInbox { .. }
-            | Request::UpdateInbox { .. } => {
-                return Some(Err(error_body(
-                    ErrorCode::Unsupported,
-                    "this bridge does not serve Routines yet",
-                )));
             }
             Request::Bye { .. } => Ok(()),
         };

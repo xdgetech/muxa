@@ -11,6 +11,7 @@ use serde::Deserialize;
 use super::agent_env::{AgentSettings, RawAgent};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
+use super::routines::{RawRoutine, Routine};
 use super::workers::{RawWorker, Worker};
 
 /// In characters.
@@ -19,6 +20,7 @@ const MAX_NAME: usize = 64;
 const MAX_SLUG: usize = 40;
 const SLUG_FALLBACK: &str = "task";
 const TASKS_DIR: &str = "tasks";
+const ROUTINES_DIR: &str = "routines";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -60,6 +62,7 @@ pub struct Workspace {
 pub struct Workspaces {
     list: Vec<Workspace>,
     workers: Vec<Worker>,
+    routines: Vec<Routine>,
 }
 
 #[derive(Deserialize)]
@@ -69,6 +72,8 @@ struct RawConfig {
     workspace: Vec<RawWorkspace>,
     #[serde(default)]
     worker: Vec<RawWorker>,
+    #[serde(default)]
+    routine: Vec<RawRoutine>,
 }
 
 #[derive(Deserialize)]
@@ -191,7 +196,35 @@ impl Workspaces {
             }
             workers.push(worker);
         }
-        Ok(Self { list, workers })
+        let mut routines: Vec<Routine> = Vec::with_capacity(raw.routine.len());
+        for raw_routine in raw.routine {
+            let routine = raw_routine.check(home, &list, &workers).map_err(invalid)?;
+            if routines
+                .iter()
+                .any(|r| r.workspace == routine.workspace && r.name == routine.name)
+            {
+                return Err(invalid(format!(
+                    "routine {:?} appears twice in workspace {:?}",
+                    routine.name, routine.workspace
+                )));
+            }
+            routines.push(routine);
+        }
+        Ok(Self {
+            list,
+            workers,
+            routines,
+        })
+    }
+
+    pub fn routines(&self) -> &[Routine] {
+        &self.routines
+    }
+
+    pub fn routine(&self, workspace: &str, name: &str) -> Option<&Routine> {
+        self.routines
+            .iter()
+            .find(|r| r.workspace == workspace && r.name == name)
     }
 
     // Metadata publication remains gated with the workers runtime.
@@ -233,6 +266,19 @@ impl Workspace {
             .root
             .join(TASKS_DIR)
             .join(format!("{}-{id}", slug(title)));
+        self.inside(&dir)
+    }
+
+    /// `<root>/routines/<slug>-<id>` for a Routine run (ADR 0026), checked
+    /// to stay inside the root. It is not created.
+    pub fn routine_dir(&self, routine: &str, id: &str) -> Result<PathBuf, PathError> {
+        if !is_valid_id(id) {
+            return Err(PathError::InvalidId);
+        }
+        let dir = self
+            .root
+            .join(ROUTINES_DIR)
+            .join(format!("{}-{id}", slug(routine)));
         self.inside(&dir)
     }
 

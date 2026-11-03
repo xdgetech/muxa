@@ -153,7 +153,7 @@ impl Store {
             session: new.session,
             note: new.note,
             runs: Vec::new(),
-            extra: serde_json::Map::new(),
+            extra: new.extra,
         };
         if let Some(worker) = new.worker {
             record
@@ -426,7 +426,8 @@ pub fn now() -> u64 {
 }
 
 /// The inode stays in place; unlinking it would split ownership between writers.
-struct Lock {
+/// Routine state files (`routines/`) share it.
+pub(crate) struct Lock {
     _file: File,
 }
 
@@ -441,7 +442,7 @@ impl Drop for Lock {
 }
 
 impl Lock {
-    fn acquire(dir: &Path, id: &str, wait: bool) -> Result<Self, StoreError> {
+    pub(crate) fn acquire(dir: &Path, id: &str, wait: bool) -> Result<Self, StoreError> {
         let path = dir.join(format!(".{id}.lock"));
         let file = OpenOptions::new()
             .read(true)

@@ -51,21 +51,30 @@ pub async fn serve_loop(daemon_dir: Option<&Path>, req: Request) -> Vec<Message>
             sessions: None,
         }]
     };
+    let absent = if matches!(req, Request::RunRoutine { .. }) {
+        NO_DAEMON_ROUTINES
+    } else {
+        NO_DAEMON
+    };
     let Some(dir) = daemon_dir else {
-        return refused(NO_DAEMON.into());
+        return refused(absent.into());
     };
     match connect(dir).await {
         Some((reader, writer, Probe::Ready)) => send(reader, writer, &req).await,
         Some((_, _, Probe::OtherVersion(v))) => refused(format!(
             "The muxa daemon on the host runs version {v}. Run: muxa-bridge daemon restart"
         )),
-        _ => refused(NO_DAEMON.into()),
+        _ => refused(absent.into()),
     }
 }
 
 /// Without a usable daemon, the Task Loop is off.
 pub const NO_DAEMON: &str =
     "The Task Loop needs the muxa daemon. On the host, run: muxa-bridge daemon install";
+
+/// Without a usable daemon, Routines do not run (ADR 0026 section 2).
+pub const NO_DAEMON_ROUTINES: &str =
+    "Routines run in the muxa daemon. On the host, run: muxa-bridge daemon install";
 
 /// Whether a daemon of this bridge's version answers in `dir`.
 pub async fn probe(dir: &Path) -> Probe {

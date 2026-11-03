@@ -90,6 +90,8 @@ impl Daemon {
         let mut engine = self.loops.lock().await;
         let client = self.tmux.tick(engine.busy()).await;
         engine.tick(client.as_deref()).await;
+        drop(engine);
+        crate::routines::tick(&self.records).await;
     }
 }
 
@@ -245,6 +247,7 @@ fn hello() -> Message {
             "task-records".into(),
             "task-loop".into(),
             "task-restart-recovery".into(),
+            muxa_protocol::work_capability(muxa_protocol::WORK_ROUTINES),
         ],
     }
 }

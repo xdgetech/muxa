@@ -328,7 +328,12 @@ impl Engine {
                     let Ok(Ok(mut claim)) = claimed else {
                         return;
                     };
-                    match typing::type_prompt(client, f.pane, &typing::fail_prompt(attempt)).await {
+                    let prompt = if record.is_routine_run() {
+                        crate::routines::record::fail_prompt(attempt)
+                    } else {
+                        typing::fail_prompt(attempt)
+                    };
+                    match typing::type_prompt(client, f.pane, &prompt).await {
                         Ok(()) => {
                             tracing::info!(task, pane = %f.pane, attempt, "fail prompt sent");
                             let then = Loop {
@@ -450,6 +455,25 @@ impl Engine {
         env: Vec<(String, String)>,
         claim: crate::records::store::ClaimedTask,
     ) {
+        if record.is_routine_run() {
+            // muxa's own output check, in process (ADR 0026 section 3).
+            let (config, record) = (Arc::clone(&self.config), record.clone());
+            let live = self.live.entry(record.id.clone()).or_default();
+            live.check = Some(tokio::spawn(async move {
+                drop(claim);
+                let dir = record.dir.clone().unwrap_or_default();
+                tokio::task::spawn_blocking(move || {
+                    crate::routines::check::run(&config, &record, attempt)
+                })
+                .await
+                .map_err(|e| CheckError::Io {
+                    action: "check the routine output of",
+                    path: dir,
+                    source: std::io::Error::other(e),
+                })
+            }));
+            return;
+        }
         let Some(dir) = record.dir.clone() else {
             return;
         };
@@ -502,7 +526,12 @@ fn write(dir: &Path, task: &str, old: &Loop, new: &Loop) -> Result<bool, StoreEr
                 return;
             }
             if fx.review && r.status == crate::records::Status::Open {
-                r.status = crate::records::Status::Review;
+                // A published Routine run is finished; a Task waits for review.
+                r.status = if r.is_routine_run() {
+                    crate::records::Status::Done
+                } else {
+                    crate::records::Status::Review
+                };
             }
             if let Some(note) = &fx.note {
                 r.note = Some(note.clone());

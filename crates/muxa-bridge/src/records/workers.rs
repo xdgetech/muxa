@@ -360,7 +360,7 @@ fn text(value: &str, max: usize) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn instruction_path(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+pub(super) fn instruction_path(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     if raw.chars().any(char::is_control) {
         return Err("worker instructions path has a control character".into());
     }

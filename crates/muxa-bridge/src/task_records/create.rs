@@ -39,6 +39,8 @@ pub struct NewTask {
     pub repo: Option<String>,
     pub branch: Option<String>,
     pub base: Option<String>,
+    /// Set when the daemon starts a Routine run (ADR 0026); never from a client.
+    pub routine: Option<crate::routines::record::RunOf>,
 }
 
 /// Why a task did not start, and the session if one was made anyway.
@@ -92,6 +94,7 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
         project: new.project,
         repo,
         branch: new.branch,
+        extra: new.routine.as_ref().map(|r| r.fields()).unwrap_or_default(),
         ..NewRecord::default()
     };
     let config = Arc::clone(&env.records);
@@ -135,6 +138,9 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
             new.workspace
         ))
     })?;
+    if new.routine.is_some() && (new.repo.is_some() || new.branch.is_some() || new.base.is_some()) {
+        return Err(bad("a routine run has no repo".into()));
+    }
     let (repo, branch) = match (&new.repo, &new.branch) {
         (None, None) if new.base.is_none() => return Ok((Target::Dir(workspace), resolved)),
         (None, _) => return Err(bad("branch and base need a repo".into())),
@@ -246,9 +252,25 @@ async fn start(
             result
         }
         Target::Dir(workspace) => {
-            let dir = workspace
-                .task_dir(&record.title, &record.id)
-                .map_err(Failure::before)?;
+            let dir = match record.routine_run() {
+                Some(run) => {
+                    let dir = workspace
+                        .routine_dir(&run.name, &record.id)
+                        .map_err(Failure::before)?;
+                    let (config, saved, at) =
+                        (Arc::clone(&env.records), record.clone(), dir.clone());
+                    blocking(move || {
+                        crate::routines::prepare(&config, &saved, &at)
+                            .map_err(|m| error_body(ErrorCode::Internal, m))
+                    })
+                    .await
+                    .map_err(|e| Failure::before(e.message))?;
+                    dir
+                }
+                None => workspace
+                    .task_dir(&record.title, &record.id)
+                    .map_err(Failure::before)?,
+            };
             if resolved.worker.is_some() {
                 builtin::Builtin::with_worker(resolved)
                     .launch_in_dir(client, &dir, Some(&resolved.environment)).await
@@ -329,6 +351,7 @@ async fn linked(
                 if let Some(current) = r.run_mut(run) {
                     current.set_worker(None);
                 }
+                crate::routines::record::arm(r, now);
                 r.set_pending_prompt(Some(PendingPrompt {
                     kind: PromptKind::Start,
                     since: now,
@@ -435,6 +458,7 @@ async fn create_worker(
                     since: now,
                     run,
                 }));
+                crate::routines::record::arm(record, now);
             })
             .map_err(|error| store_error(&error))?;
         Ok(claim.record().clone())
