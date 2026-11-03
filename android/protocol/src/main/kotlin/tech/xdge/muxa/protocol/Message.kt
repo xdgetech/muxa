@@ -164,6 +164,10 @@ sealed interface Message {
     @Serializable
     data class InboxSaved(val inbox: Long, val entry: InboxEntry) : Message
 
+    /** The session a `start-session` made, just before its `result`. [start] is the request id, [session] the `$n` id. */
+    @Serializable
+    data class SessionStarted(val start: Long, val session: String, val name: String) : Message
+
     /** The bridge is exiting. */
     @Serializable
     data class Bye(val reason: String) : Message

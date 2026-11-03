@@ -731,7 +731,7 @@ public final class PaneSession {
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
             .diffContent, .diffEnded, .imageContent, .imageEnded,
-            .routineList, .routineSaved, .inboxList, .inboxSaved:
+            .routineList, .routineSaved, .inboxList, .inboxSaved, .sessionStarted:
             break
         }
     }

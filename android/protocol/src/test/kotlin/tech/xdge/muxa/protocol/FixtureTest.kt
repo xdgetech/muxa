@@ -94,6 +94,32 @@ class FixtureTest {
     }
 
     @Test
+    fun workspaceContractRoundTrips() {
+        val requests = lines("workspaces/requests.jsonl")
+        assertEquals(2, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("workspaces/messages.jsonl")
+        assertEquals(3, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        assertEquals(WORK_ASK, workLevel((Wire.decodeMessage(messages[0]) as Message.Hello).capabilities))
+        val listing = Wire.decodeMessage(messages[1]) as Message.TaskList
+        assertEquals("/work/lisk", listing.workspaces[0].root)
+        assertEquals(emptyList<String>(), listing.workspaces[1].repos)
+        assertEquals(
+            Message.SessionStarted(start = 41, session = "$7", name = "ask-cto-copilot-1"),
+            Wire.decodeMessage(messages[2]),
+        )
+        assertEquals(
+            Request.StartSession(id = 41, workspace = "lisk", repo = "cto-copilot"),
+            Wire.decodeRequest(requests[0]),
+        )
+    }
+
+    @Test
     fun routineContractRoundTrips() {
         val requests = lines("routines/requests.jsonl")
         assertEquals(6, requests.size)

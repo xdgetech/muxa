@@ -80,6 +80,10 @@ public enum Request: Equatable, Sendable {
     case listInbox(id: UInt64)
     /// Approve, dismiss or defer a stored entry; `until` goes with `later`.
     case updateInboxEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?)
+    /// An agent session in a repo's main checkout, to ask about its code: no
+    /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as
+    /// `createTask`'s. A `session-started` comes first.
+    case startSession(id: UInt64, workspace: String, repo: String)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -93,7 +97,7 @@ public enum Request: Equatable, Sendable {
             .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _), .updateInbox(let id, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
-            .updateInboxEntry(let id, _, _, _):
+            .updateInboxEntry(let id, _, _, _), .startSession(let id, _, _):
             id
         }
     }
@@ -182,6 +186,10 @@ extension Request: Codable {
             try c.encode(workspace, forKey: .workspace)
             try c.encode(routine, forKey: .routine)
         case .listInbox(let id): try c.head("list-inbox", id)
+        case .startSession(let id, let workspace, let repo):
+            try c.head("start-session", id)
+            try c.encode(workspace, forKey: .workspace)
+            try c.encode(repo, forKey: .repo)
         case .updateInboxEntry(let id, let entry, let action, let until):
             try c.head("update-inbox", id)
             try c.encode(entry, forKey: .entry)
@@ -301,6 +309,10 @@ extension Request: Codable {
                 id: id, workspace: try c.decode(String.self, forKey: .workspace),
                 routine: try c.decode(String.self, forKey: .routine))
         case "list-inbox": self = .listInbox(id: id)
+        case "start-session":
+            self = .startSession(
+                id: id, workspace: try c.decode(String.self, forKey: .workspace),
+                repo: try c.decode(String.self, forKey: .repo))
         case "update-inbox":
             self = .updateInboxEntry(
                 id: id, entry: try c.decode(String.self, forKey: .entry),

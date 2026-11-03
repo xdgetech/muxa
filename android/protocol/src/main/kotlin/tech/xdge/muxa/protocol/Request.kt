@@ -124,6 +124,13 @@ sealed interface Request {
     @Serializable
     data class UpdateInbox(override val id: Long, val entry: String, val action: InboxAction, val until: Long? = null) : Request
 
+    /**
+     * An agent session in a repo's main checkout, to ask about its code: no Task, no
+     * worktree (capability `work` level 2, ADR 0031). [repo] is as `create-task`'s.
+     * A `session-started` comes first.
+     */
+    @Serializable data class StartSession(override val id: Long, val workspace: String, val repo: String) : Request
+
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request
 }

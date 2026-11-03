@@ -56,6 +56,9 @@ public enum Message: Equatable, Sendable {
     case inboxList(inbox: UInt64, entries: [InboxEntry])
     /// The entry an `update-inbox` wrote, just before its `result`.
     case inboxSaved(inbox: UInt64, entry: InboxEntry)
+    /// The session a `start-session` made, just before its `result`. `start`
+    /// is the request id, `session` the `$n` id.
+    case sessionStarted(start: UInt64, session: String, name: String)
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -113,6 +116,7 @@ extension Message: Codable {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
         case routines, routine, entries, entry, inbox
+        case start, name
     }
 
     public init(from decoder: any Decoder) throws {
@@ -219,6 +223,11 @@ extension Message: Codable {
             self = .inboxSaved(
                 inbox: try c.decode(UInt64.self, forKey: .inbox),
                 entry: try c.decode(InboxEntry.self, forKey: .entry))
+        case "session-started":
+            self = .sessionStarted(
+                start: try c.decode(UInt64.self, forKey: .start),
+                session: try c.decode(String.self, forKey: .session),
+                name: try c.decode(String.self, forKey: .name))
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -334,6 +343,11 @@ extension Message: Codable {
             try c.encode("inbox-saved", forKey: .type)
             try c.encode(inbox, forKey: .inbox)
             try c.encode(entry, forKey: .entry)
+        case .sessionStarted(let start, let session, let name):
+            try c.encode("session-started", forKey: .type)
+            try c.encode(start, forKey: .start)
+            try c.encode(session, forKey: .session)
+            try c.encode(name, forKey: .name)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)

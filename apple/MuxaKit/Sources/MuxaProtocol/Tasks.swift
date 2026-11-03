@@ -279,24 +279,30 @@ extension TaskStatus: Codable {
 /// A workspace from the host's config; `create-task` names one.
 public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var name: String
+    /// The root folder, absolute (ADR 0031); nil from older hosts. A repo
+    /// under it shows by its relative path.
+    public var root: String?
     /// The check commands a Task Loop may run here; nil means no loops.
     public var checks: WorkspaceChecks?
-    /// The main checkouts the config lists for it, absolute.
+    /// Its main checkouts, absolute and sorted: the repos under its root and
+    /// those the config lists.
     public var repos: [String]
 
     public var id: String { name }
 
-    public init(name: String, checks: WorkspaceChecks? = nil, repos: [String] = []) {
+    public init(name: String, root: String? = nil, checks: WorkspaceChecks? = nil, repos: [String] = []) {
         self.name = name
+        self.root = root
         self.checks = checks
         self.repos = repos
     }
 
-    private enum Key: String, CodingKey { case name, checks, repos }
+    private enum Key: String, CodingKey { case name, root, checks, repos }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
         name = try c.decode(String.self, forKey: .name)
+        root = try c.decodeIfPresent(String.self, forKey: .root)
         checks = try c.decodeIfPresent(WorkspaceChecks.self, forKey: .checks)
         repos = try c.decodeIfPresent([String].self, forKey: .repos) ?? []
     }
@@ -304,6 +310,7 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: Key.self)
         try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(root, forKey: .root)
         try c.encodeIfPresent(checks, forKey: .checks)
         if !repos.isEmpty { try c.encode(repos, forKey: .repos) }
     }

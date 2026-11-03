@@ -9,6 +9,9 @@ const val WORK_CAPABILITY = "work"
 /** Level 1: Routines and stored Inbox entries (ADR 0026). */
 const val WORK_ROUTINES = 1
 
+/** Level 2: repos relative to the workspace root, a branch from the title, and `start-session` (ADR 0031). */
+const val WORK_ASK = 2
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }

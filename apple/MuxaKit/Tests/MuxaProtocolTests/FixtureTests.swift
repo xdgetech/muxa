@@ -82,6 +82,32 @@ struct FixtureTests {
         #expect(list.entries[0].runs.map(\.worker) == [nil, defaultWorker, "Reviewer"])
     }
 
+    @Test func workspaceContractRoundTrips() throws {
+        let requests = try Self.lines("workspaces/requests.jsonl")
+        #expect(requests.count == 2)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("workspaces/messages.jsonl")
+        #expect(messages.count == 3)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workAsk)
+        guard case .taskList(let listing) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected task-list"); return
+        }
+        #expect(listing.workspaces[0].root == "/work/lisk")
+        #expect(listing.workspaces[1].repos.isEmpty)
+        guard case .sessionStarted(let start, let session, let name) = try Wire.decodeMessage(messages[2]) else {
+            Issue.record("expected session-started"); return
+        }
+        #expect(start == 41 && session == "$7" && name == "ask-cto-copilot-1")
+    }
+
     @Test func routineContractRoundTrips() throws {
         let requests = try Self.lines("routines/requests.jsonl")
         #expect(requests.count == 6)

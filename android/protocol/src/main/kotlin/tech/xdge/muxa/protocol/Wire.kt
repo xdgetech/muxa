@@ -50,6 +50,7 @@ object Wire {
         kind<Message.RoutineSaved>("routine-saved"),
         kind<Message.InboxList>("inbox-list"),
         kind<Message.InboxSaved>("inbox-saved"),
+        kind<Message.SessionStarted>("session-started"),
         kind<Message.Bye>("bye"),
     )
 
@@ -87,6 +88,7 @@ object Wire {
         kind<Request.RunRoutine>("run-routine"),
         kind<Request.ListInbox>("list-inbox"),
         kind<Request.UpdateInbox>("update-inbox"),
+        kind<Request.StartSession>("start-session"),
         kind<Request.Bye>("bye"),
     )
 
