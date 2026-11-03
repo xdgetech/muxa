@@ -155,6 +155,14 @@ fun Root(model: AppModel) {
                 confirmButton = { TextButton({ model.closeError = null; model.refocusPane() }) { Text("OK") } },
             )
         }
+        model.askError?.let { error ->
+            AlertDialog(
+                onDismissRequest = { model.askError = null; model.refocusPane() },
+                title = { Text("Can't Ask About the Repo") },
+                text = { Text(error) },
+                confirmButton = { TextButton({ model.askError = null; model.refocusPane() }) { Text("OK") } },
+            )
+        }
         if (model.showTasks) TasksScreen(model)
         if (model.showReader) ReaderScreen(model)
         // After the Tasks screen, so the sheet opens over it too.

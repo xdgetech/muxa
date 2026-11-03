@@ -108,7 +108,7 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                     }
                 }
                 for (group in model.sessionGroups) {
-                    item(key = "repo-${group.repo}") { RepoHeader(group, newTaskAction(model, group)) }
+                    item(key = "repo-${group.repo}") { RepoHeader(group, newTaskAction(model, group), askAction(model, group)) }
                     items(group.sessions, key = { it.id }) { s ->
                         SessionRow(model, s, current = s.id == model.currentSession?.id, number = numbers[s.id])
                     }
@@ -126,6 +126,13 @@ private fun newTaskAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
     val dir = group.sessions.firstOrNull()?.repoDir
     if (!model.canCreateTasks || group.repo == null || dir == null) return null
     return { model.startNewTask(dir) }
+}
+
+/** Ask about a repo: only one a workspace holds, on a host with ask sessions (ADR 0031). */
+private fun askAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
+    val dir = group.sessions.firstOrNull()?.repoDir
+    if (group.repo == null || dir == null || model.askWorkspace(dir) == null) return null
+    return { model.askAbout(dir) }
 }
 
 /** Opens the Inbox screen; says how many rows wait and how many Tasks need attention. */
@@ -239,8 +246,11 @@ private fun HostRow(model: AppModel, host: Host, onEdit: (HostDraft) -> Unit) {
 
 /** A repo's section header; sessions without a repo tag come last. */
 @Composable
-private fun RepoHeader(group: RepoGroup, newTask: (() -> Unit)?) {
+private fun RepoHeader(group: RepoGroup, newTask: (() -> Unit)?, ask: (() -> Unit)?) {
     SectionHeader(group.repo ?: "Other Sessions") {
+        if (ask != null && group.repo != null) {
+            IconButton(ask, Modifier.testTag("ask-${group.repo}")) { Icon(Icons.ask, "Ask about ${group.repo}") }
+        }
         if (newTask != null && group.repo != null) {
             IconButton(newTask, Modifier.testTag("new-task-${group.repo}")) { Icon(Icons.add, "New Task in ${group.repo}") }
         }

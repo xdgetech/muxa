@@ -37,7 +37,7 @@ import tech.xdge.muxa.protocol.DEFAULT_WORKER
 import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
-import tech.xdge.muxa.session.knownRepos
+import tech.xdge.muxa.session.repoChoices
 import tech.xdge.muxa.session.allows
 import tech.xdge.muxa.session.workerProblem
 
@@ -49,9 +49,13 @@ import tech.xdge.muxa.session.workerProblem
 @Composable
 fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
     val workspaces = model.state.tasks?.workspaces.orEmpty()
-    val repos = model.state.sessions.knownRepos
-    var draft by remember { mutableStateOf(initial) }
+    fun choicesIn(workspace: String) =
+        repoChoices(workspaces.firstOrNull { it.name == workspace }, workspaces, model.state.sessions)
+    // A level 2 host names the branch after the title (ADR 0031).
+    var draft by remember { mutableStateOf(initial.copy(branchFromTitle = model.state.canAsk)) }
     var withRepo by remember { mutableStateOf(initial.repoDir.isNotEmpty()) }
+    // A repo the workspace does not list keeps the typed path.
+    var otherPath by remember { mutableStateOf(initial.repoDir.isNotEmpty() && choicesIn(initial.workspace).none { it.dir == initial.repoDir }) }
     var creating by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
@@ -76,6 +80,20 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
             }
         }
     }
+    fun ask() {
+        if (creating) return
+        creating = true
+        scope.launch {
+            try {
+                model.ask(draft.workspace, draft.repoDir.trim())
+            } catch (e: PaneSession.Failure) {
+                error = PaneSession.describe(e)
+            } finally {
+                creating = false
+            }
+        }
+    }
+    val choices = choicesIn(draft.workspace)
     AlertDialog(
         onDismissRequest = { if (!creating) model.newTaskRecord = null },
         title = { Text("New Task") },
@@ -93,7 +111,10 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                             DropdownMenuItem({ Text(w.name) }, {
                                 // Another workspace allows other checks.
                                 val loop = draft.loop?.let { w.checks?.let { checks -> LoopDraft(checks) } }
-                                edit(draft.copy(workspace = w.name, loop = loop, worker = draft.worker?.takeIf { name -> model.state.tasks?.workers.orEmpty().any { it.name == name && it.allows(w.name) } }))
+                                // Another workspace offers its own repos.
+                                val inWorkspace = choicesIn(w.name)
+                                val repoDir = if (!withRepo || otherPath || inWorkspace.any { it.dir == draft.repoDir }) draft.repoDir else inWorkspace.firstOrNull()?.dir.orEmpty()
+                                edit(draft.copy(workspace = w.name, repoDir = repoDir, loop = loop, worker = draft.worker?.takeIf { name -> model.state.tasks?.workers.orEmpty().any { it.name == name && it.allows(w.name) } }))
                                 picking = false
                             }, modifier = Modifier.testTag("workspace-${w.name}"))
                         }
@@ -118,17 +139,27 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                     Switch(withRepo, {
                         withRepo = it
                         if (!it) edit(draft.copy(repoDir = "", branch = "", base = ""))
-                        else if (draft.repoDir.isEmpty()) edit(draft.copy(repoDir = repos.firstOrNull()?.dir ?: ""))
+                        else if (draft.repoDir.isEmpty()) edit(draft.copy(repoDir = choices.firstOrNull()?.dir ?: ""))
                     }, Modifier.testTag("task-with-repo"))
                 }
                 if (withRepo) {
-                    OutlinedTextField(
-                        draft.repoDir, { edit(draft.copy(repoDir = it)) }, Modifier.fillMaxWidth().testTag("task-repo"),
-                        label = { Text("Repository path") }, placeholder = { Text("/path/to/repo") }, singleLine = true, keyboardOptions = plain,
-                    )
+                    if (choices.isNotEmpty()) {
+                        RepoChoiceField(choices, draft.repoDir, otherPath, pick = {
+                            otherPath = false
+                            edit(draft.copy(repoDir = it))
+                        }, other = { otherPath = true })
+                    }
+                    if (choices.isEmpty() || otherPath || choices.none { it.dir == draft.repoDir }) {
+                        OutlinedTextField(
+                            draft.repoDir, { edit(draft.copy(repoDir = it)) }, Modifier.fillMaxWidth().testTag("task-repo"),
+                            label = { Text("Repository path") }, placeholder = { Text("/path/to/repo") }, singleLine = true, keyboardOptions = plain,
+                        )
+                    }
                     OutlinedTextField(
                         draft.branch, { edit(draft.copy(branch = it)) }, Modifier.fillMaxWidth().testTag("task-branch"),
-                        label = { Text("Branch") }, placeholder = { Text("feature/name") }, singleLine = true, keyboardOptions = plain,
+                        label = { Text(if (draft.branchFromTitle) "Branch (optional)" else "Branch") },
+                        placeholder = { Text(if (draft.branchFromTitle) "Named after the title" else "feature/name") },
+                        singleLine = true, keyboardOptions = plain,
                     )
                     OutlinedTextField(
                         draft.base, { edit(draft.copy(base = it)) }, Modifier.fillMaxWidth(),
@@ -143,6 +174,13 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
+                if (withRepo && model.canAsk) {
+                    TextButton(
+                        ::ask, Modifier.testTag("record-ask"),
+                        enabled = !creating && draft.workspace.isNotBlank() && draft.repoDir.trim().startsWith("/"),
+                    ) { Text("Ask about this repo") }
+                    Text("Ask runs the workspace's agent in the main checkout. No task, no worktree, no record.", style = MaterialTheme.typography.bodySmall)
+                }
                 if (model.state.canUseWorkers) {
                     WorkerPicker(
                         model.state.tasks?.workers.orEmpty().filter { it.allows(draft.workspace) }.map { it.name },

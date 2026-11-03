@@ -18,6 +18,7 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
@@ -32,6 +33,7 @@ import tech.xdge.muxa.session.RepoGroup
 import tech.xdge.muxa.session.TaskDraft
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.alerts
+import tech.xdge.muxa.session.containing
 import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
@@ -225,6 +227,9 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** The New Task sheet for a task record, from any New Task entry point. */
     var newTaskRecord by mutableStateOf<TaskRecordDraft?>(null)
 
+    /** Why the last ask session from a repo header did not start, from the bridge. */
+    var askError by mutableStateOf<String?>(null)
+
     /** Why the last status change failed, e.g. another device changed the Task first. */
     var taskError by mutableStateOf<String?>(null)
 
@@ -266,6 +271,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     private var demoAlerts = false
     private var demoTaskRecords = true
     private var demoTaskInbox = true
+    private var demoWorkLevel = WORK_ASK
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -296,14 +302,22 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     fun tryDemo() {
         demoTaskRecords = true
         demoTaskInbox = true
+        demoWorkLevel = WORK_ASK
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
 
     /** A debug launch for the UI tests: their [set], and no way out of it. */
-    fun startDemo(set: DemoBridge.Content, alerts: Boolean, taskRecords: Boolean = true, taskInbox: Boolean = true) {
+    fun startDemo(
+        set: DemoBridge.Content,
+        alerts: Boolean,
+        taskRecords: Boolean = true,
+        taskInbox: Boolean = true,
+        workLevel: Int = WORK_ASK,
+    ) {
         demoTaskRecords = taskRecords
         demoTaskInbox = taskInbox
+        demoWorkLevel = workLevel
         // The store screenshots show the list: a machine's name there, not the demo's.
         val host = if (set == DemoBridge.Content.SHOWCASE) {
             Host(name = "Mac mini", target = SshTarget(host = "mac-mini.local", user = "you"))
@@ -316,14 +330,23 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** What a new window needs to show this window's pane on its host. */
     class WindowStart(val host: Host, val pane: String?, val demo: Demo?) {
         class Demo(
-            val set: DemoBridge.Content, val alerts: Boolean, val taskRecords: Boolean, val canLeave: Boolean, val taskInbox: Boolean = true,
+            val set: DemoBridge.Content,
+            val alerts: Boolean,
+            val taskRecords: Boolean,
+            val canLeave: Boolean,
+            val taskInbox: Boolean = true,
+            val workLevel: Int = WORK_ASK,
         )
     }
 
     /** This window's host and pane, for a new window; null when no host is shown. */
     fun windowStart(): WindowStart? {
         val host = currentHost ?: return null
-        val demo = if (demo && host.id == demoHostId) WindowStart.Demo(demoSet, demoAlerts, demoTaskRecords, canLeaveDemo, demoTaskInbox) else null
+        val demo = if (demo && host.id == demoHostId) {
+            WindowStart.Demo(demoSet, demoAlerts, demoTaskRecords, canLeaveDemo, demoTaskInbox, demoWorkLevel)
+        } else {
+            null
+        }
         return WindowStart(host, state.watchedPane, demo)
     }
 
@@ -336,6 +359,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         }
         demoTaskRecords = demo.taskRecords
         demoTaskInbox = demo.taskInbox
+        demoWorkLevel = demo.workLevel
         beginDemo(demo.set, demo.alerts, start.host, start.pane)
         canLeaveDemo = demo.canLeave
     }
@@ -387,6 +411,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         inboxError = null
         newTaskRecord = null
         taskError = null
+        askError = null
         restartingTask = null
         restartError = null
         startingLoop = null
@@ -447,7 +472,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     }
 
     private suspend fun open(host: Host): BridgeChannel {
-        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords, demoTaskInbox)
+        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords, demoTaskInbox, demoWorkLevel)
         return SshBridge.connect(host.target, keys.loadOrCreate())
     }
 
@@ -922,6 +947,38 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             openTasks()
         } else {
             openNow(running)
+        }
+    }
+
+    // Ask sessions (ADR 0031)
+
+    /** The host starts ask sessions: the workspace's agent in a repo's main checkout, with no Task. */
+    val canAsk: Boolean get() = isConnected && state.canAsk
+
+    /** The workspace a repo header's Ask starts in; null when no workspace holds [repoDir]. */
+    fun askWorkspace(repoDir: String?): String? =
+        repoDir?.takeIf { canAsk }?.let { state.tasks?.workspaces.orEmpty().containing(it)?.name }
+
+    /**
+     * Starts an ask session in [repoDir] and shows its agent pane, as a manual session.
+     * Throws what the bridge said went wrong.
+     */
+    suspend fun ask(workspace: String, repoDir: String) {
+        val started = session.startSession(workspace, repoDir)
+        newTaskRecord = null
+        showTasks = false
+        val s = state.sessions.firstOrNull { it.id == started.session } ?: return
+        openNow(s)
+        show(PaneView.AGENT).join()
+    }
+
+    /** Ask from a repo header: a failure lands in [askError]. */
+    fun askAbout(repoDir: String) = scope.launch {
+        val workspace = askWorkspace(repoDir) ?: return@launch
+        try {
+            ask(workspace, repoDir)
+        } catch (e: PaneSession.Failure) {
+            askError = PaneSession.describe(e)
         }
     }
 

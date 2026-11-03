@@ -20,6 +20,8 @@ data class TaskRecordDraft(
     /** Also start a Task Loop; null for none. */
     val loop: LoopDraft? = null,
     val worker: String? = null,
+    /** The host names a repo Task's branch after its title when none is given (`work` level 2, ADR 0031). */
+    val branchFromTitle: Boolean = false,
 ) {
     data class Create(
         val workspace: String,
@@ -46,8 +48,11 @@ data class TaskRecordDraft(
             }
             if (!repo.startsWith("/")) return "The repository path must start with /."
             val branch = branch.trim()
-            if (branch.isEmpty()) return "Name the branch."
-            TaskDraft.refProblem(branch, "branch")?.let { return it }
+            if (branch.isEmpty()) {
+                if (!branchFromTitle) return "Name the branch."
+            } else {
+                TaskDraft.refProblem(branch, "branch")?.let { return it }
+            }
             val base = base.trim()
             if (base.isNotEmpty()) TaskDraft.refProblem(base, "base")?.let { return it }
             return null
@@ -64,7 +69,7 @@ data class TaskRecordDraft(
                 goal = goal.trim(),
                 project = project.trim().ifEmpty { null },
                 repo = repo,
-                branch = repo?.let { branch.trim() },
+                branch = repo?.let { branch.trim().ifEmpty { null } },
                 base = repo?.let { base.trim().ifEmpty { null } },
                 loop = loop?.spec,
                 worker = worker,

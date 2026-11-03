@@ -33,6 +33,9 @@ import tech.xdge.muxa.protocol.TaskInbox
 import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WORK_ASK
+import tech.xdge.muxa.protocol.WORK_CAPABILITY
+import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
 import java.util.UUID
@@ -47,12 +50,15 @@ import java.util.UUID
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
  * [taskInbox] false plays one from before the shared Inbox order and Routines, for the local Snooze's test.
+ * [workLevel] is the `work` level it advertises; below [WORK_ASK] it plays a host from before
+ * ask sessions and branches named after the title (ADR 0031).
  */
 class DemoBridge(
     set: Content = Content.TESTS,
     alerts: Boolean = false,
     taskRecords: Boolean = true,
     taskInbox: Boolean = true,
+    workLevel: Int = WORK_ASK,
 ) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
@@ -89,7 +95,11 @@ class DemoBridge(
     private var sessions: List<Session> = content.sessions(now()) + work.sessions
     private val capabilities = CAPABILITIES
         .filter { taskRecords || it != "task-records" }
-        .filter { taskInbox || (it != "task-inbox" && it != WORK_1) }
+        .filter { taskInbox || it != "task-inbox" } +
+        listOfNotNull("$WORK_CAPABILITY:$workLevel".takeIf { taskInbox && workLevel > 0 })
+
+    /** The level it advertises: none without the shared Inbox order. */
+    private val workLevel = tech.xdge.muxa.protocol.workLevel(capabilities)
     private val images = content.images(now())
 
     /** The host's task records; grows when a task is created. */
@@ -144,6 +154,7 @@ class DemoBridge(
                 delay(1_000)
                 createTask(req)
             }
+            is Request.StartSession -> startSession(req)
             is Request.UpdateTask -> updateTask(req)
             is Request.RecoverRestart -> fail(req.id, ErrorCode.UNSUPPORTED, "Restart recovery is not implemented on this host.")
             is Request.RestartAgent -> restartAgent(req)
@@ -183,15 +194,13 @@ class DemoBridge(
             is Request.Keys -> keys(req)
             is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
-            // The demo has no `work:2`, so it refuses ask sessions as an older bridge does.
-            is Request.StartSession -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
             is Request.Bye -> out.close()
         }
     }
 
-    /** Routines and stored entries, refused as a bridge without `work:1` refuses them. */
+    /** Routines and stored entries, refused as a bridge without `work` level 1 refuses them. */
     private fun serveWork(req: Request) {
-        if (WORK_1 !in capabilities) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        if (workLevel < WORK_ROUTINES) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
         val now = now()
         when (req) {
             is Request.ListRoutines -> {
@@ -474,15 +483,21 @@ class DemoBridge(
             fail(req.id, ErrorCode.BAD_REQUEST, it)
             return
         }
+        // A level 2 host names the branch after the title.
+        val branch = req.branch ?: req.repo?.let { if (workLevel >= WORK_ASK) slug(req.title) else null }
+        if (req.repo != null && branch == null) {
+            fail(req.id, ErrorCode.BAD_REQUEST, "a task with a repo needs a branch")
+            return
+        }
         val now = now()
-        val failed = req.branch == FAILING_BRANCH
+        val failed = branch == FAILING_BRANCH
         val record = synchronized(lock) {
             val id = "t-new%03d".format(++createdCount)
             val name = slug(req.title)
             val dir = req.repo?.let { "/src/.worktrees/$name" } ?: "/${req.workspace}/tasks/$name-$id"
             val record = TaskRecord(
                 id, rev = 1, workspace = req.workspace, title = req.title, goal = req.goal, status = TaskStatus.OPEN,
-                createdAt = now, updatedAt = now, project = req.project, repo = req.repo, branch = req.branch,
+                createdAt = now, updatedAt = now, project = req.project, repo = req.repo, branch = branch,
                 dir = dir, session = name.takeUnless { failed }, loop = req.loop?.let { startedLoop(null, it, reset = true, now) },
                 note = if (failed) "could not create a worktree for $FAILING_BRANCH: a branch named '$FAILING_BRANCH' already exists" else null,
             )
@@ -492,7 +507,7 @@ class DemoBridge(
                 val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", dir, false, false, Agent(AgentState.RUNNING, now))
                 followers += pane.id
                 val repoName = req.repo?.split("/")?.lastOrNull { it.isNotEmpty() }
-                sessions = sessions + Session("$$n", name, repoName, req.repo, req.branch, taskId = id, panes = listOf(pane))
+                sessions = sessions + Session("$$n", name, repoName, req.repo, branch, taskId = id, panes = listOf(pane))
             }
             record
         }
@@ -501,6 +516,32 @@ class DemoBridge(
             fail(req.id, ErrorCode.TASK_FAILED, record.note ?: "")
             return
         }
+        ok(req.id)
+        emit(Message.SessionsChanged)
+    }
+
+    /**
+     * An ask session: the workspace's agent in the repo's main checkout, with no Task and no
+     * record (ADR 0031). Its name counts the ask sessions of that repo.
+     */
+    private fun startSession(req: Request.StartSession) {
+        if (workLevel < WORK_ASK) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        val workspace = content.workspaces.firstOrNull { it.name == req.workspace }
+            ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
+        val dir = if (req.repo.startsWith("/")) req.repo else workspace.root?.let { "${it.trimEnd('/')}/${req.repo}" }
+        if (dir == null || dir !in workspace.repos) {
+            return fail(req.id, ErrorCode.BAD_REQUEST, "${req.repo} is not a repo of ${req.workspace}")
+        }
+        val repoName = dir.substringAfterLast('/')
+        val started = synchronized(lock) {
+            val n = 20 + sessions.size
+            val name = "ask-$repoName-${1 + sessions.count { it.name.startsWith("ask-$repoName-") }}"
+            val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", dir, false, false, Agent(AgentState.RUNNING, now()))
+            followers += pane.id
+            sessions = sessions + Session("$$n", name, repoName, dir, "main", panes = listOf(pane))
+            Message.SessionStarted(req.id, "$$n", name)
+        }
+        emit(started)
         ok(req.id)
         emit(Message.SessionsChanged)
     }
@@ -707,11 +748,8 @@ class DemoBridge(
         private val CAPABILITIES =
             listOf(
                 "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-                "task-loop", "tasks-changed", "viewport", "task-inbox", WORK_1,
+                "task-loop", "tasks-changed", "viewport", "task-inbox",
             )
-
-        /** Routines and stored Inbox entries (ADR 0026). */
-        private const val WORK_1 = "work:1"
 
         /** What a bridge says to a request it does not know. */
         const val NO_REQUEST = "The demo bridge does not support this request."

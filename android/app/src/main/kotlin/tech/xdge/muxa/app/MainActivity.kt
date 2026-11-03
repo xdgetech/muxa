@@ -12,6 +12,8 @@ import kotlinx.coroutines.launch
 import tech.xdge.muxa.demo.DemoBridge
 import tech.xdge.muxa.app.ui.MuxaTheme
 import tech.xdge.muxa.app.ui.Root
+import tech.xdge.muxa.protocol.WORK_ASK
+import tech.xdge.muxa.protocol.WORK_ROUTINES
 
 /** One app window. Each window has its own [AppModel]: its connection, pane and keyboard (ADR 0029). */
 class MainActivity : ComponentActivity() {
@@ -40,6 +42,8 @@ class MainActivity : ComponentActivity() {
                 alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false),
                 taskRecords = !intent.getBooleanExtra(EXTRA_NO_TASK_RECORDS, false),
                 taskInbox = !intent.getBooleanExtra(EXTRA_NO_TASK_INBOX, false),
+                // A host from before ask sessions (ADR 0031).
+                workLevel = if (intent.getBooleanExtra(EXTRA_WORK1, false)) WORK_ROUTINES else WORK_ASK,
             )
         } else if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_NO_SAVED_HOSTS, false)) {
             model.forgetSavedHosts()
@@ -114,5 +118,8 @@ class MainActivity : ComponentActivity() {
 
         /** A bridge from before the shared Inbox order and Routines, for the local Snooze's test. */
         const val EXTRA_NO_TASK_INBOX = "no-task-inbox"
+
+        /** A bridge from before ask sessions and branches named after the title. */
+        const val EXTRA_WORK1 = "work1"
     }
 }

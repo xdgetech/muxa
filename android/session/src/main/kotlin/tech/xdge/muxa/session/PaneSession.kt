@@ -34,6 +34,7 @@ import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.RestartRecoveryAction
 import tech.xdge.muxa.protocol.WORK_ROUTINES
+import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.workLevel
 import tech.xdge.muxa.terminal.PaneRenderer
@@ -123,6 +124,9 @@ class PaneSession(
         /** The host's `work` level; 0 when it has none (ADR 0027 §5). */
         val workLevel get() = workLevel(capabilities)
         val canUseRoutines get() = workLevel >= WORK_ROUTINES
+
+        /** The host starts ask sessions, names a branch after the title and takes relative repos (ADR 0031). */
+        val canAsk get() = workLevel >= WORK_ASK
     }
 
     private val _state = MutableStateFlow(State())
@@ -154,6 +158,7 @@ class PaneSession(
     private val inboxListings = mutableMapOf<Long, List<InboxEntry>>()
     private val savedRoutines = mutableMapOf<Long, RoutineInfo>()
     private val savedEntries = mutableMapOf<Long, InboxEntry>()
+    private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
 
     /** Ids of input requests in flight; their results only matter when they fail. */
@@ -697,6 +702,29 @@ class PaneSession(
     }
 
     /**
+     * Starts an ask session: [workspace]'s agent in [repo]'s main checkout, with no Task
+     * (ADR 0031). Returns the session once the session list has it.
+     */
+    suspend fun startSession(workspace: String, repo: String): Message.SessionStarted = withContext(dispatcher) {
+        if (!_state.value.canAsk) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ASK_UNSUPPORTED))
+        var requestId = 0L
+        try {
+            request { id ->
+                requestId = id
+                Request.StartSession(id, workspace, repo)
+            }
+        } catch (e: Exception) {
+            startedSessions.remove(requestId)
+            throw e
+        }
+        // `session-started` arrives just before the result.
+        val started = startedSessions.remove(requestId)
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "The bridge did not name the session."))
+        refresh()
+        started
+    }
+
+    /**
      * The pane area changed (rotation, split screen, fold, keyboard). The bridge gets the
      * first viewport at once and later ones once they settle for 300 ms, so a drag or an
      * animation resizes the window once (ADR 0020).
@@ -893,7 +921,7 @@ class PaneSession(
                 savedEntries[message.inbox] = message.entry
                 keep(message.entry)
             }
-            is Message.SessionStarted -> {}
+            is Message.SessionStarted -> startedSessions[message.start] = message
             is Message.Unknown -> {}
         }
     }
@@ -946,6 +974,7 @@ class PaneSession(
         inboxListings.clear()
         savedRoutines.clear()
         savedEntries.clear()
+        startedSessions.clear()
         inputs.clear()
         sentViewport = null
         viewportJob?.cancel()
@@ -963,6 +992,9 @@ class PaneSession(
     }
 
     companion object {
+        /** Shown when the host cannot start ask sessions. */
+        const val ASK_UNSUPPORTED = "This host cannot start ask sessions. Update muxa on the host."
+
         /** How long a viewport must stay before the bridge gets it. */
         private val VIEWPORT_SETTLE = 300.milliseconds
 

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.QuestionAnswer
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.ViewList
@@ -53,6 +54,7 @@ object Icons {
     val disconnect = Material.Filled.LinkOff
     val add = Material.Filled.Add
     val newTask = Material.Filled.AddBox
+    val ask = Material.Filled.QuestionAnswer
     val closeTask = Material.Filled.DisabledByDefault
     val edit = Material.Filled.Edit
     val delete = Material.Filled.Delete

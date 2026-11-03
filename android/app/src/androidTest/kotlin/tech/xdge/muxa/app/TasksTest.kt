@@ -238,7 +238,8 @@ class TasksTest {
         newTaskShortcut()
         waitForTag("task-title")
         waitForText("task-workspace", "work")
-        waitForText("task-repo", "/src/app")
+        // A listed repo shows by its name under the workspace root (ADR 0031).
+        waitForText("record-repo-choice", "app")
         compose.onNodeWithTag("task-title").performTextInput("Add search")
         compose.onNodeWithTag("task-goal").performTextInput("Search the docs.")
         compose.onNodeWithTag("task-branch").performScrollTo().performTextInput("feat/search")
@@ -308,6 +309,11 @@ class TasksTest {
         openTasks()
         newTask("Taken branch")
         compose.onNodeWithTag("task-with-repo").performClick()
+        // A typed path, as for a repo the workspace does not list.
+        compose.onNodeWithTag("record-repo-choice").performClick()
+        waitForTag("repo-other")
+        compose.onNodeWithTag("repo-other").performClick()
+        waitForTag("task-repo")
         compose.onNodeWithTag("task-repo").performTextClearance()
         compose.onNodeWithTag("task-repo").performTextInput("/src/app")
         compose.onNodeWithTag("task-branch").performTextInput("taken")

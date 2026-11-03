@@ -299,7 +299,11 @@ internal object TestContent : DemoContent {
 
     /** Checks from a list, any check, and no loops at all (ADR 0019). */
     override val workspaces = listOf(
-        WorkspaceInfo("work", WorkspaceChecks.Only(listOf("make check", "cargo test --workspace")), listOf("/src/app", "/src/docs")),
+        // Repos under the root show by their relative path, the one outside it with `~` (ADR 0031).
+        WorkspaceInfo(
+            "work", WorkspaceChecks.Only(listOf("make check", "cargo test --workspace")),
+            listOf("/home/dev/forks/tmux", "/src/app", "/src/docs", "/src/libs/core"), root = "/src",
+        ),
         WorkspaceInfo("personal", WorkspaceChecks.Any),
         WorkspaceInfo("notes"),
     )
