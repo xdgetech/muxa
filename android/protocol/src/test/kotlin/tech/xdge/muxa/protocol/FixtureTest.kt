@@ -94,6 +94,26 @@ class FixtureTest {
     }
 
     @Test
+    fun routineContractRoundTrips() {
+        val requests = lines("routines/requests.jsonl")
+        assertEquals(6, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("routines/messages.jsonl")
+        assertEquals(6, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        assertEquals(WORK_ROUTINES, workLevel((Wire.decodeMessage(messages[0]) as Message.Hello).capabilities))
+        assertEquals(2, workLevel(listOf("work:2", "work:x", "workers")))
+        assertEquals(0, workLevel(listOf("task-records", "work")))
+        val inbox = Wire.decodeMessage(messages[3]) as Message.InboxList
+        assertEquals(listOf("open", "later"), inbox.entries.map { it.disposition })
+        assertEquals(InboxAction.LATER, (Wire.decodeRequest(requests[5]) as Request.UpdateInbox).action)
+    }
+
+    @Test
     fun unknownTypesAndFieldsAreIgnored() {
         assertEquals(Message.Unknown("future-thing"), Wire.decodeMessage("""{"type":"future-thing","x":1}"""))
         assertEquals(

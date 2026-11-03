@@ -727,6 +727,7 @@ class PaneSession(
             Message.TasksChanged -> scope.launch { runCatching { loadTasks() } }
             is Message.Bye -> scope.launch { teardown(message.reason) }
             is Message.TaskSaved -> savedTasks[message.task] = message.record
+            is Message.RoutineList, is Message.RoutineSaved, is Message.InboxList, is Message.InboxSaved -> {}
             is Message.Unknown -> {}
         }
     }

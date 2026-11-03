@@ -46,6 +46,10 @@ object Wire {
         kind<Message.TaskList>("task-list"),
         kind<Message.TaskSaved>("task-saved"),
         kind<Message.TasksChanged>("tasks-changed"),
+        kind<Message.RoutineList>("routine-list"),
+        kind<Message.RoutineSaved>("routine-saved"),
+        kind<Message.InboxList>("inbox-list"),
+        kind<Message.InboxSaved>("inbox-saved"),
         kind<Message.Bye>("bye"),
     )
 
@@ -79,6 +83,10 @@ object Wire {
         kind<Request.RecoverRestart>("recover-restart"),
         kind<Request.StartLoop>("start-loop"),
         kind<Request.StopLoop>("stop-loop"),
+        kind<Request.ListRoutines>("list-routines"),
+        kind<Request.RunRoutine>("run-routine"),
+        kind<Request.ListInbox>("list-inbox"),
+        kind<Request.UpdateInbox>("update-inbox"),
         kind<Request.Bye>("bye"),
     )
 

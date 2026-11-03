@@ -148,6 +148,22 @@ sealed interface Message {
     @Serializable
     data object TasksChanged : Message
 
+    /** The Routines for a `list-routines` request, just before its `result`. */
+    @Serializable
+    data class RoutineList(val routines: Long, val entries: List<RoutineInfo>) : Message
+
+    /** The Routine a `run-routine` started, just before its `result`. */
+    @Serializable
+    data class RoutineSaved(val routine: Long, val entry: RoutineInfo) : Message
+
+    /** The stored Inbox entries for a `list-inbox` request, newest first. */
+    @Serializable
+    data class InboxList(val inbox: Long, val entries: List<InboxEntry>) : Message
+
+    /** The entry an `update-inbox` wrote, just before its `result`. */
+    @Serializable
+    data class InboxSaved(val inbox: Long, val entry: InboxEntry) : Message
+
     /** The bridge is exiting. */
     @Serializable
     data class Bye(val reason: String) : Message

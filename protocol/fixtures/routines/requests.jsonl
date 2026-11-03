@@ -1,0 +1,6 @@
+{"type":"list-routines","id":200}
+{"type":"run-routine","id":201,"workspace":"work","routine":"Morning brief"}
+{"type":"list-inbox","id":202}
+{"type":"update-inbox","id":203,"entry":"e-1a2b3c4d","action":"approve"}
+{"type":"update-inbox","id":204,"entry":"e-5e6f7a8b","action":"dismiss"}
+{"type":"update-inbox","id":205,"entry":"e-5e6f7a8b","action":"later","until":1762246800}

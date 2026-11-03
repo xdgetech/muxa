@@ -150,3 +150,41 @@ fn restart_recovery_fixtures_preserve_public_identity_and_unknown_values() {
             .unwrap();
     assert_eq!(operation.actions, ["future-action"]);
 }
+
+#[test]
+fn routine_contract_fixtures_round_trip() {
+    use muxa_protocol::{Disposition, InboxAction, work_level};
+    assert_eq!(round_trip::<Request>("routines/requests.jsonl"), 6);
+    assert_eq!(round_trip::<Message>("routines/messages.jsonl"), 6);
+    let path = format!(
+        "{}/../../protocol/fixtures/routines/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut lines = text.lines();
+    let Ok(Message::Hello { capabilities, .. }) = serde_json::from_str(lines.next().unwrap())
+    else {
+        panic!()
+    };
+    assert_eq!(work_level(&capabilities), 1);
+    let later: Request = serde_json::from_str(
+        r#"{"type":"update-inbox","id":1,"entry":"e-00000000","action":"later","until":5}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        later,
+        Request::UpdateInbox {
+            action: InboxAction::Later,
+            until: Some(5),
+            ..
+        }
+    ));
+    let Ok(Message::InboxList { entries, .. }) = serde_json::from_str(lines.nth(2).unwrap()) else {
+        panic!()
+    };
+    assert_eq!(
+        entries.iter().map(|e| e.disposition).collect::<Vec<_>>(),
+        [Disposition::Open, Disposition::Later]
+    );
+    assert!(entries[0].proposal.is_some() && entries[1].proposal.is_none());
+}

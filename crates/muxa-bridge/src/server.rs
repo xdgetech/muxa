@@ -658,6 +658,15 @@ impl Worker {
                 }
                 return None;
             }
+            Request::ListRoutines { .. }
+            | Request::RunRoutine { .. }
+            | Request::ListInbox { .. }
+            | Request::UpdateInbox { .. } => {
+                return Some(Err(error_body(
+                    ErrorCode::Unsupported,
+                    "this bridge does not serve Routines yet",
+                )));
+            }
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))

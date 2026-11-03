@@ -48,6 +48,14 @@ public enum Message: Equatable, Sendable {
     /// A task record changed on the host: send `list-tasks` again (capability
     /// `tasks-changed`).
     case tasksChanged
+    /// The Routines for a `list-routines` request, just before its `result`.
+    case routineList(routines: UInt64, entries: [RoutineInfo])
+    /// The Routine a `run-routine` started, just before its `result`.
+    case routineSaved(routine: UInt64, entry: RoutineInfo)
+    /// The stored Inbox entries for a `list-inbox` request, newest first.
+    case inboxList(inbox: UInt64, entries: [InboxEntry])
+    /// The entry an `update-inbox` wrote, just before its `result`.
+    case inboxSaved(inbox: UInt64, entry: InboxEntry)
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -104,6 +112,7 @@ extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
+        case routines, routine, entries, entry, inbox
     }
 
     public init(from decoder: any Decoder) throws {
@@ -194,6 +203,22 @@ extension Message: Codable {
                 record: try c.decode(TaskRecord.self, forKey: .record))
         case "tasks-changed":
             self = .tasksChanged
+        case "routine-list":
+            self = .routineList(
+                routines: try c.decode(UInt64.self, forKey: .routines),
+                entries: try c.decode([RoutineInfo].self, forKey: .entries))
+        case "routine-saved":
+            self = .routineSaved(
+                routine: try c.decode(UInt64.self, forKey: .routine),
+                entry: try c.decode(RoutineInfo.self, forKey: .entry))
+        case "inbox-list":
+            self = .inboxList(
+                inbox: try c.decode(UInt64.self, forKey: .inbox),
+                entries: try c.decode([InboxEntry].self, forKey: .entries))
+        case "inbox-saved":
+            self = .inboxSaved(
+                inbox: try c.decode(UInt64.self, forKey: .inbox),
+                entry: try c.decode(InboxEntry.self, forKey: .entry))
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -293,6 +318,22 @@ extension Message: Codable {
             try c.encode(record, forKey: .record)
         case .tasksChanged:
             try c.encode("tasks-changed", forKey: .type)
+        case .routineList(let routines, let entries):
+            try c.encode("routine-list", forKey: .type)
+            try c.encode(routines, forKey: .routines)
+            try c.encode(entries, forKey: .entries)
+        case .routineSaved(let routine, let entry):
+            try c.encode("routine-saved", forKey: .type)
+            try c.encode(routine, forKey: .routine)
+            try c.encode(entry, forKey: .entry)
+        case .inboxList(let inbox, let entries):
+            try c.encode("inbox-list", forKey: .type)
+            try c.encode(inbox, forKey: .inbox)
+            try c.encode(entries, forKey: .entries)
+        case .inboxSaved(let inbox, let entry):
+            try c.encode("inbox-saved", forKey: .type)
+            try c.encode(inbox, forKey: .inbox)
+            try c.encode(entry, forKey: .entry)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)

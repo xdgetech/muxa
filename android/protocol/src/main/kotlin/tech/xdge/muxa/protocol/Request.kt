@@ -111,6 +111,19 @@ sealed interface Request {
     /** Stop a task's Task Loop (capability `task-loop`). A `task-saved` comes first. */
     @Serializable data class StopLoop(override val id: Long, val task: String) : Request
 
+    /** The host's Routines (capability `work` level 1, ADR 0026); a `routine-list` comes first. */
+    @Serializable data class ListRoutines(override val id: Long) : Request
+
+    /** Start a run of an enabled Routine now. Needs the host daemon. A `routine-saved` comes first. */
+    @Serializable data class RunRoutine(override val id: Long, val workspace: String, val routine: String) : Request
+
+    /** The stored Inbox entries (capability `work` level 1); an `inbox-list` comes first. */
+    @Serializable data class ListInbox(override val id: Long) : Request
+
+    /** Approve, dismiss or defer a stored entry; [until] goes with `later`. An `inbox-saved` comes first. */
+    @Serializable
+    data class UpdateInbox(override val id: Long, val entry: String, val action: InboxAction, val until: Long? = null) : Request
+
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request
 }

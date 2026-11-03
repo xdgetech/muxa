@@ -72,6 +72,14 @@ public enum Request: Equatable, Sendable {
     case startLoop(id: UInt64, task: String, loop: LoopSpec, reset: Bool)
     /// Stop a task's Task Loop (capability `task-loop`). A `task-saved` comes first.
     case stopLoop(id: UInt64, task: String)
+    /// The host's Routines (capability `work` level 1, ADR 0026).
+    case listRoutines(id: UInt64)
+    /// Start a run of an enabled Routine now. Needs the host daemon.
+    case runRoutine(id: UInt64, workspace: String, routine: String)
+    /// The stored Inbox entries (capability `work` level 1).
+    case listInbox(id: UInt64)
+    /// Approve, dismiss or defer a stored entry; `until` goes with `later`.
+    case updateInboxEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -84,7 +92,8 @@ public enum Request: Equatable, Sendable {
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
             .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _), .updateInbox(let id, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
-            .viewport(let id, _, _):
+            .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
+            .updateInboxEntry(let id, _, _, _):
             id
         }
     }
@@ -95,6 +104,7 @@ extension Request: Codable {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker, inbox
         case cols, rows, operation, action
+        case routine, entry, until
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -166,6 +176,17 @@ extension Request: Codable {
         case .stopLoop(let id, let task):
             try c.head("stop-loop", id)
             try c.encode(task, forKey: .task)
+        case .listRoutines(let id): try c.head("list-routines", id)
+        case .runRoutine(let id, let workspace, let routine):
+            try c.head("run-routine", id)
+            try c.encode(workspace, forKey: .workspace)
+            try c.encode(routine, forKey: .routine)
+        case .listInbox(let id): try c.head("list-inbox", id)
+        case .updateInboxEntry(let id, let entry, let action, let until):
+            try c.head("update-inbox", id)
+            try c.encode(entry, forKey: .entry)
+            try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(until, forKey: .until)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -274,6 +295,17 @@ extension Request: Codable {
                 loop: try c.decode(LoopSpec.self, forKey: .loop),
                 reset: try c.decodeIfPresent(Bool.self, forKey: .reset) ?? false)
         case "stop-loop": self = .stopLoop(id: id, task: try c.decode(String.self, forKey: .task))
+        case "list-routines": self = .listRoutines(id: id)
+        case "run-routine":
+            self = .runRoutine(
+                id: id, workspace: try c.decode(String.self, forKey: .workspace),
+                routine: try c.decode(String.self, forKey: .routine))
+        case "list-inbox": self = .listInbox(id: id)
+        case "update-inbox":
+            self = .updateInboxEntry(
+                id: id, entry: try c.decode(String.self, forKey: .entry),
+                action: try c.decode(InboxAction.self, forKey: .action),
+                until: try c.decodeIfPresent(UInt64.self, forKey: .until))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

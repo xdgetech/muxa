@@ -68,6 +68,10 @@ sequenceDiagram
 | `recover-restart` | `id`, `task`, `rev`, `operation`, `action` | explicitly resolve an interrupted restart (capability `task-restart-recovery`, contract below); `task-saved` precedes `result` |
 | `start-loop` | `id`, `task`, `loop {check, maxAttempts?, timeout?}`, optional `reset` | start the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
 | `stop-loop` | `id`, `task` | stop the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
+| `list-routines` | `id` | list the host's Routines (capability `work` level 1, Routines below); a `routine-list` comes before the `result` |
+| `run-routine` | `id`, `workspace`, `routine` | start a run of an enabled Routine now; needs the muxa daemon; a `routine-saved` comes before the `result` |
+| `list-inbox` | `id` | list the stored Inbox entries (capability `work` level 1); an `inbox-list` comes before the `result` |
+| `update-inbox` | `id`, `entry`, `action`, optional `until` | approve, dismiss or defer a stored entry; an `inbox-saved` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -97,6 +101,10 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `task-list` | `tasks`, `workspaces[] {name, checks?, repos?}`, `entries[]` (task records), optional `truncated`, `workers[]` (Workers below) |
 | `task-saved` | `task`, `record` (a task record) |
 | `tasks-changed` | none. Send `list-tasks` again (capability `tasks-changed`) |
+| `routine-list` | `routines`, `entries[]` (Routines below) |
+| `routine-saved` | `routine`, `entry` (a Routine) |
+| `inbox-list` | `inbox`, `entries[]` (stored Inbox entries, newest first) |
+| `inbox-saved` | `inbox`, `entry` (a stored Inbox entry) |
 | `bye` | `reason` |
 
 Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `conflict`, `tmux`, `internal`.
@@ -318,6 +326,55 @@ A bridge with the `task-loop` capability can run a Task Loop: after each finishe
 ## Tasks changed
 
 A bridge with the `tasks-changed` capability sends `tasks-changed` when a task record changed on the host, whoever wrote it: the daemon, another bridge, or `muxa-cli`. It looks every 2 seconds. The message has no fields. Send `list-tasks` again.
+
+## Routines and stored Inbox entries
+
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+
+1. `list-routines` sends `routine-list {routines, entries[]}`. A Routine has:
+   - `workspace` and `name`: together, its id;
+   - optional `trigger {at, timezone}`: `at` is a local `HH:MM`, `timezone` an IANA name. Absent: it runs only on `run-routine`;
+   - `enabled`. Nothing runs while it is false, also not `run-routine`;
+   - optional `worker` (absent: the workspace default agent) and `project` (the label on Tasks its proposals create);
+   - optional `nextDue`, epoch seconds;
+   - optional `lastSuccess {at, occurrence, task, published}`, `lastFailure {at, occurrence, task?, reason}` and `running {occurrence, startedAt, task?}`. `reason` is one sentence with ids only.
+2. `run-routine {workspace, routine}` starts a run now. A Routine has at most one open run: a second one is `conflict`. A disabled or unknown Routine is `bad-request`. Without a usable daemon, or with a Codex agent (ADR 0026, Consequences), it is `unsupported`. On success: `routine-saved {routine, entry}`, then `result`.
+3. A run is a task record with `kind: "routine-run"`. `list-tasks` never lists it. Its session carries `taskId`, so a client can open it, and can show a need of the run (an agent waiting on the user) by matching `running.task` with a session's `taskId`.
+4. Each scheduled run has an `occurrence` id: the local date and time, e.g. `2026-11-03T09:00`. A run-now is `now-<epoch seconds>`. After sleep or a restart, at most one missed occurrence runs. A repeated local time (DST) runs once. A local time that does not exist that day runs at the next valid minute.
+5. `list-inbox` sends `inbox-list {inbox, entries[]}`, newest first. An entry has `id` (`e-` and 8 hex digits), `workspace`, `routine`, `key`, `kind` (`briefing` or `proposal`), `title`, `body`, optional `links[] {url, title?}`, `createdAt`, `run` (the run's record id), `occurrence`, `disposition` (`open`, `later`, `approved` or `dismissed`), optional `until`, optional `proposal {action, target, content, hash}` and optional `task`. Treat an unknown kind or disposition as one without a known action. A `later` entry whose `until` has passed is listed as `open`.
+6. `update-inbox {entry, action, until?}`:
+   - `approve`, for a proposal only: creates one Task, as `create-task` would, in the Routine's workspace and project, with the proposal unchanged in its goal, and its `hash` (`sha256:` and the hex SHA-256 of `action`, a NUL byte, `target`, a NUL byte, and `content`). The entry gets `disposition: "approved"` and `task`. Approving again returns the same entry and creates nothing.
+   - `dismiss`; `later` with `until` (epoch seconds, in the future). Neither touches a Task.
+   - On success: `inbox-saved {inbox, entry}`, then `result`. An unknown entry, a briefing to approve, or an entry already approved or dismissed is `bad-request`.
+
+### Routine output
+
+The run's agent writes its output to `.muxa/routine/output.json` in the run's directory. The last committed state is in `.muxa/routine/state.json` (absent before the first success). When the agent ends a turn, the host checks the output. A failed check types a fixed prompt, up to 3 times. A passing check stores the entries and the new state in one write, and the run is done.
+
+```json
+{
+  "version": 1,
+  "items": [
+    {"kind": "briefing", "key": "slack:C01:1762150000", "title": "Release thread",
+     "body": "The release moved to Thursday.",
+     "links": [{"url": "https://example.slack.com/archives/C01/p1762150000", "title": "Thread"}]},
+    {"kind": "proposal", "key": "linear:ENG-12:stale", "title": "Close the stale issue ENG-12",
+     "body": "No activity for 30 days.", "action": "Close the issue", "target": "linear:ENG-12",
+     "content": "Closing: no activity for 30 days."}
+  ],
+  "state": {"cursor": "1762150000"}
+}
+```
+
+- `version` is 1. `items` holds at most the Routine's item limit (default 10, at most 50).
+- `key`: 1 to 200 bytes, no control character, unique in the file. A key the Routine already stored is skipped, so a retry stores nothing twice.
+- `title`: 1 to 200 characters, one line. `body`: at most 4096 bytes; line breaks and tabs are the only control characters.
+- `links`: at most 10. `url` is `https` or `http`, at most 2048 bytes, without spaces; `title` at most 200 characters.
+- A proposal also has `action` (1 to 200 characters, one line), `target` (1 to 500 bytes, one line) and `content` (at most 8192 bytes). A briefing has none of them.
+- `state` is any JSON value, at most 16 KiB encoded. Absent keeps the previous state; it advances only with a successful publish.
+- The whole file is at most 256 KiB, a regular file, not a symlink. Unknown fields are refused, so a typo is not lost silently.
+
+The check's reasons are in `.muxa/checks/<attempt>.log`. Logs on the host carry ids, sizes and outcomes, never titles, bodies, links or state.
 
 ## Rendering a pane
 

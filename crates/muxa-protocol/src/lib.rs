@@ -2,8 +2,14 @@
 //! `protocol/PROTOCOL.md`; the shared fixtures in `protocol/fixtures` are the contract.
 
 mod restart_recovery;
+mod routines;
 mod workers;
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
+pub use routines::{
+    Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
+    RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_CAPABILITY, WORK_ROUTINES,
+    work_capability, work_level,
+};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
 use serde::{Deserialize, Serialize};
@@ -233,6 +239,35 @@ pub enum Request {
         /// The record's id, e.g. `t-7f3a2c`.
         task: String,
     },
+    /// The host's Routines (capability `work` level 1, ADR 0026). A
+    /// `routine-list` comes before the `result`.
+    ListRoutines {
+        id: u64,
+    },
+    /// Start a run of an enabled Routine now. Needs the muxa daemon. A
+    /// `routine-saved` comes before the `result`.
+    RunRoutine {
+        id: u64,
+        workspace: String,
+        /// The Routine's name in that workspace.
+        routine: String,
+    },
+    /// The stored Inbox entries (capability `work` level 1). An
+    /// `inbox-list` comes before the `result`.
+    ListInbox {
+        id: u64,
+    },
+    /// Approve, dismiss or defer a stored Inbox entry. An `inbox-saved`
+    /// comes before the `result`.
+    UpdateInbox {
+        id: u64,
+        /// e.g. `e-1a2b3c4d`.
+        entry: String,
+        action: InboxAction,
+        /// With `later`: epoch seconds.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        until: Option<u64>,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -271,6 +306,10 @@ impl Request {
             | Request::RecoverRestart { id, .. }
             | Request::StartLoop { id, .. }
             | Request::StopLoop { id, .. }
+            | Request::ListRoutines { id }
+            | Request::RunRoutine { id, .. }
+            | Request::ListInbox { id }
+            | Request::UpdateInbox { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -434,6 +473,21 @@ pub enum Message {
     /// A task record changed on the host: send `list-tasks` again (capability
     /// `tasks-changed`).
     TasksChanged,
+    /// The Routines for a `list-routines` request, sent just before its `result`.
+    RoutineList {
+        routines: u64,
+        entries: Vec<RoutineInfo>,
+    },
+    /// The Routine a `run-routine` started, sent just before its `result`.
+    RoutineSaved { routine: u64, entry: RoutineInfo },
+    /// The stored Inbox entries for a `list-inbox` request, newest first,
+    /// sent just before its `result`.
+    InboxList {
+        inbox: u64,
+        entries: Vec<InboxEntry>,
+    },
+    /// The entry an `update-inbox` wrote, sent just before its `result`.
+    InboxSaved { inbox: u64, entry: InboxEntry },
     /// The bridge is exiting.
     Bye { reason: String },
 }

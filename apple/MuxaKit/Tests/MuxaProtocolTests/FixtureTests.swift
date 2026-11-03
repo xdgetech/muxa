@@ -82,6 +82,30 @@ struct FixtureTests {
         #expect(list.entries[0].runs.map(\.worker) == [nil, defaultWorker, "Reviewer"])
     }
 
+    @Test func routineContractRoundTrips() throws {
+        let requests = try Self.lines("routines/requests.jsonl")
+        #expect(requests.count == 6)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("routines/messages.jsonl")
+        #expect(messages.count == 6)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workRoutines)
+        #expect(workLevel(["work:2", "work:x", "workers"]) == 2)
+        #expect(workLevel(["task-records"]) == 0)
+        guard case .inboxList(_, let entries) = try Wire.decodeMessage(messages[3]) else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(entries.map(\.disposition) == ["open", "later"])
+        #expect(entries[0].proposal?.hash.hasPrefix("sha256:") == true)
+    }
+
     @Test func restartRecoveryRoundTrips() throws {
         for name in ["restart-recovery/requests.jsonl", "restart-recovery/messages.jsonl"] {
             let entries = try Self.lines(name)
