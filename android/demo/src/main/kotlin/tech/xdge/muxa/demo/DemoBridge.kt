@@ -394,11 +394,13 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
 
     /** Sets a status, refusing a stale [Request.UpdateTask.rev] as the bridge does. */
     private fun updateTask(req: Request.UpdateTask) {
+        // The demo does not advertise `task-inbox`.
+        val status = req.status ?: return fail(req.id, ErrorCode.UNSUPPORTED, "the demo keeps no Inbox order")
         val saved = synchronized(lock) {
             val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
             if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
             val now = now()
-            val saved = current.copy(rev = current.rev + 1, status = req.status, updatedAt = now, loop = current.loop?.afterStatus(req.status, now))
+            val saved = current.copy(rev = current.rev + 1, status = status, updatedAt = now, loop = current.loop?.afterStatus(status, now))
             tasks = tasks.map { if (it.id == saved.id) saved else it }
             saved
         }

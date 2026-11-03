@@ -92,7 +92,8 @@ muxa-cli --bridge 'muxa-bridge [--socket S]' task new --workspace W --title T --
 ```
 
 - Each prints one line of JSON on stdout. A failure prints `muxa-cli: <code>: <message>` on stderr and exits non-zero.
-- `tasks --json` prints `{"workspaces": [names], "truncated": bool, "tasks": [item, ...]}`.
+- `tasks --json` prints `{"workspaces": [names], "truncated": bool, "tasks": [item, ...], "queue": [ids]}`. `queue` is the Inbox queue now: the ids of the Tasks that need the user, with Move down and Later applied (`protocol/PROTOCOL.md`, Inbox queue).
+- `task down ID --json`, `task later ID --until TIME --json` and `task requeue ID --json` set or clear Move down and Later, and print the Task's item. `TIME` is `2026-11-04T09:00Z` (UTC), `+30m`, `+2h`, `+1d` or epoch seconds. They need the `task-inbox` capability; without it the command fails with `unsupported`.
 - `task new --json` prints one item as soon as the record is saved. It then stays until the bridge has typed the start prompt, or gave up after 30 s. Read the first line; do not wait for the exit.
 - `task restart ID [--force] --json` (ADR 0018) prints the restarted Task's item the same way.
 - Task Loop commands (ADR 0019). Each needs the daemon on the host; without it the error code is `unsupported`, and the message says what to run.

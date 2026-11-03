@@ -81,9 +81,14 @@ sealed interface Request {
         val worker: String? = null,
     ) : Request
 
-    /** Set a task record's status. [rev] is the one the client saw; a stale one fails with `conflict`. */
+    /**
+     * Set a task record's [status], or its place in the Inbox queue (capability `task-inbox`, ADR 0027 §4).
+     * Carries one of the two. [rev] is the one the client saw; a stale one fails with `conflict`.
+     */
     @Serializable
-    data class UpdateTask(override val id: Long, val task: String, val rev: Long, val status: TaskStatus) : Request
+    data class UpdateTask(
+        override val id: Long, val task: String, val rev: Long, val status: TaskStatus? = null, val inbox: InboxChange? = null,
+    ) : Request
 
     /**
      * Restart a task's agent in the same pane, after a handoff (capability `task-handoff`, ADR 0018).

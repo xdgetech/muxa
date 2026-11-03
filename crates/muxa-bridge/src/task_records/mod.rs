@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use tokio::task::JoinHandle;
 
-use muxa_protocol::{ErrorBody, ErrorCode, Message, Request, TaskStatus};
+use muxa_protocol::{ErrorBody, ErrorCode, InboxChange, Message, Request, TaskStatus};
 use muxa_tmux::{Client, Role, Session};
 
 use crate::agents::Registry;
@@ -167,7 +167,15 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             task,
             rev,
             status,
-        } => one(update(&cx.records, id, task, rev, status).await),
+            inbox,
+        } => one(match (status, inbox) {
+            (Some(status), None) => update(&cx.records, id, task, rev, status).await,
+            (None, Some(inbox)) => update_inbox(&cx.records, id, task, rev, inbox).await,
+            _ => Err(error_body(
+                ErrorCode::BadRequest,
+                "update-task needs one of status and inbox",
+            )),
+        }),
         Request::CreateTask {
             id,
             workspace,
@@ -469,6 +477,33 @@ pub async fn update(
             .update(&task, rev, |r| r.status = status_of(status))
             .map_err(|e| store_error(&e))?;
         tracing::info!(task = %record.id, rev = record.rev, "task status set");
+        Ok(Message::TaskSaved {
+            task: request,
+            record: convert::task_record(record),
+        })
+    })
+    .await
+}
+
+/// Move down and Later (ADR 0027 §4). The new place replaces the old one;
+/// the status and the session do not change.
+pub async fn update_inbox(
+    config: &Config,
+    request: u64,
+    task: String,
+    rev: u64,
+    change: InboxChange,
+) -> Result<Message, ErrorBody> {
+    let place =
+        crate::records::inbox::place(change.down, change.until, crate::records::inbox::now_ms())
+            .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))?;
+    let config = config.clone();
+    blocking(move || {
+        let record = config
+            .store()?
+            .update(&task, rev, |r| r.set_inbox(place))
+            .map_err(|e| store_error(&e))?;
+        tracing::info!(task = %record.id, rev = record.rev, "task inbox place set");
         Ok(Message::TaskSaved {
             task: request,
             record: convert::task_record(record),

@@ -35,6 +35,22 @@ fn messages_round_trip() {
 }
 
 #[test]
+fn inbox_fixtures_round_trip() {
+    assert_eq!(round_trip::<Request>("inbox/requests.jsonl"), 3);
+    assert_eq!(round_trip::<Message>("inbox/messages.jsonl"), 2);
+    // A status change from an older client still reads as one.
+    let old: Request = serde_json::from_str(
+        r#"{"type":"update-task","id":1,"task":"t-000001","rev":2,"status":"done"}"#,
+    )
+    .unwrap();
+    let Request::UpdateTask { status, inbox, .. } = old else {
+        panic!()
+    };
+    assert_eq!(status, Some(muxa_protocol::TaskStatus::Done));
+    assert_eq!(inbox, None);
+}
+
+#[test]
 fn bytes_are_base64() {
     let line = r#"{"type":"bytes","id":7,"pane":"%12","data":"G1tBw6k="}"#;
     let Request::Bytes { data, .. } = serde_json::from_str(line).unwrap() else {

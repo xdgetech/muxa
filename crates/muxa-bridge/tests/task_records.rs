@@ -68,6 +68,7 @@ both!(
     a_repo_task_runs_in_its_worktree_with_task_md_excluded,
     a_branch_that_runs_an_open_task_is_refused,
     a_stale_rev_is_a_conflict_and_changes_nothing,
+    move_down_and_later_are_saved_on_the_record,
     without_the_tag_a_session_links_by_its_directory,
     tmux_agents_tasks_are_found_by_their_worktree,
     a_client_that_leaves_right_away_still_gets_its_start_prompt,
@@ -495,6 +496,52 @@ async fn a_stale_rev_is_a_conflict_and_changes_nothing(mode: Mode) {
     )
     .await;
     assert_eq!(error_code(&result), ErrorCode::BadRequest);
+}
+
+/// ADR 0027 §4: the place in the Inbox queue is shared state on the record.
+async fn move_down_and_later_are_saved_on_the_record(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("inbox", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (r, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = r.unwrap();
+    let inbox = |rev: u64, inbox: Value| json!({"type": "update-task", "task": r.id, "rev": rev, "inbox": inbox});
+
+    let (down, result) = send(&mut bridge, inbox(r.rev, json!({"down": true}))).await;
+    ok(&result);
+    let down = down.unwrap();
+    let place = down.inbox.clone().unwrap();
+    assert_eq!((down.status, place.until), (r.status, None));
+    assert!(place.order.unwrap() / 1000 >= place.since.saturating_sub(1));
+
+    let until = place.since + 3600;
+    let (later, result) = send(&mut bridge, inbox(down.rev, json!({"until": until}))).await;
+    ok(&result);
+    let later = later.unwrap();
+    assert_eq!(
+        later.inbox.as_ref().map(|p| (p.order, p.until)),
+        Some((None, Some(until)))
+    );
+    assert_eq!(list_tasks(&mut bridge).await[0].inbox, later.inbox);
+
+    // A past time, a stale rev, or both fields at once change nothing.
+    let (_, result) = send(&mut bridge, inbox(later.rev, json!({"until": 1}))).await;
+    assert_eq!(error_code(&result), ErrorCode::BadRequest);
+    let (_, result) = send(&mut bridge, inbox(r.rev, json!({}))).await;
+    assert_eq!(error_code(&result), ErrorCode::Conflict);
+    let both = json!({"type": "update-task", "task": r.id, "rev": later.rev, "status": "done", "inbox": {}});
+    let (_, result) = send(&mut bridge, both).await;
+    assert_eq!(error_code(&result), ErrorCode::BadRequest);
+
+    let (cleared, result) = send(&mut bridge, inbox(later.rev, json!({}))).await;
+    ok(&result);
+    assert_eq!(cleared.unwrap().inbox, None);
 }
 
 async fn without_the_tag_a_session_links_by_its_directory(mode: Mode) {

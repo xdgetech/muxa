@@ -34,12 +34,15 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
     public var pendingPrompt: PendingPrompt?
     public var worker: String?
     public var restartOperation: RestartOperation?
+    /// Move down and Later in the Inbox queue (ADR 0027 §4).
+    public var inbox: TaskInbox?
 
     public init(
         id: String, rev: UInt64, workspace: String, title: String, goal: String, status: TaskStatus,
         createdAt: UInt64, updatedAt: UInt64, project: String? = nil, repo: String? = nil,
         branch: String? = nil, dir: String? = nil, session: String? = nil, note: String? = nil,
-        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil, worker: String? = nil, restartOperation: RestartOperation? = nil
+        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil, worker: String? = nil, restartOperation: RestartOperation? = nil,
+        inbox: TaskInbox? = nil
     ) {
         self.id = id
         self.rev = rev
@@ -60,11 +63,12 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         self.pendingPrompt = pendingPrompt
         self.worker = worker
         self.restartOperation = restartOperation
+        self.inbox = inbox
     }
 
     private enum Key: String, CodingKey {
         case id, rev, workspace, title, goal, status, createdAt, updatedAt
-        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt, worker, restartOperation
+        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt, worker, restartOperation, inbox
     }
 
     public init(from decoder: any Decoder) throws {
@@ -88,6 +92,7 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         pendingPrompt = try c.decodeIfPresent(PendingPrompt.self, forKey: .pendingPrompt)
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
         restartOperation = try c.decodeIfPresent(RestartOperation.self, forKey: .restartOperation)
+        inbox = try c.decodeIfPresent(TaskInbox.self, forKey: .inbox)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -111,6 +116,53 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         try c.encodeIfPresent(pendingPrompt, forKey: .pendingPrompt)
         try c.encodeIfPresent(worker, forKey: .worker)
         try c.encodeIfPresent(restartOperation, forKey: .restartOperation)
+        try c.encodeIfPresent(inbox, forKey: .inbox)
+    }
+}
+
+/// A Task's place in the Inbox queue, shared by every device (ADR 0027 §4).
+public struct TaskInbox: Codable, Equatable, Sendable {
+    /// Move down: the host's clock in epoch milliseconds. A larger one is lower
+    /// in the queue, below every Task without one.
+    public var order: UInt64?
+    /// Later: out of the queue until this time, in epoch seconds (UTC).
+    public var until: UInt64?
+    /// Epoch seconds when the host wrote it. Attention that began after it voids
+    /// `order` and `until`.
+    public var since: UInt64
+
+    public init(order: UInt64? = nil, until: UInt64? = nil, since: UInt64) {
+        self.order = order
+        self.until = until
+        self.since = since
+    }
+}
+
+/// What `update-task` asks for the Task's place in the Inbox queue (capability
+/// `task-inbox`). It replaces the record's `inbox`; neither field clears it.
+public struct InboxChange: Codable, Equatable, Sendable {
+    /// Move down: the host sets `order` to its clock.
+    public var down: Bool
+    /// Later: epoch seconds, after the host's clock.
+    public var until: UInt64?
+
+    public init(down: Bool = false, until: UInt64? = nil) {
+        self.down = down
+        self.until = until
+    }
+
+    private enum Key: String, CodingKey { case down, until }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        down = try c.decodeIfPresent(Bool.self, forKey: .down) ?? false
+        until = try c.decodeIfPresent(UInt64.self, forKey: .until)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        if down { try c.encode(true, forKey: .down) }
+        try c.encodeIfPresent(until, forKey: .until)
     }
 }
 

@@ -176,15 +176,19 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worker: Option<String>,
     },
-    /// Set a task record's status. Fails with `conflict` when `rev` is not the
-    /// record's current one. A `task-saved` comes before the `result`.
+    /// Set a task record's status, or its place in the Inbox queue (capability
+    /// `task-inbox`). Carries one of the two. Fails with `conflict` when `rev`
+    /// is not the record's current one. A `task-saved` comes before the `result`.
     UpdateTask {
         id: u64,
         /// The record's id, e.g. `t-7f3a2c`.
         task: String,
         /// The `rev` the client last saw.
         rev: u64,
-        status: TaskStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<TaskStatus>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inbox: Option<InboxChange>,
     },
     /// Restart the agent of a task in the same pane, with a handoff written
     /// first (ADR 0018). Needs the `task-handoff` capability. Refused while the
@@ -479,6 +483,9 @@ pub struct TaskRecord {
     pub pending_prompt: Option<PendingPrompt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker: Option<String>,
+    /// Move down and Later in the Inbox queue (ADR 0027 §4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox: Option<Box<TaskInbox>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restart_operation: Option<Box<RestartOperation>>,
 }
@@ -569,6 +576,36 @@ pub struct LoopCheck {
     pub seconds: u64,
     /// Epoch seconds when it ended.
     pub at: u64,
+}
+
+/// A Task's place in the Inbox queue, shared by every device (ADR 0027 §4).
+/// The host writes it from an `update-task` with `inbox`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskInbox {
+    /// Move down: the host's clock in epoch milliseconds. A larger one is
+    /// lower in the queue, below every Task without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u64>,
+    /// Later: out of the queue until this time, in epoch seconds (UTC).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<u64>,
+    /// Epoch seconds when the host wrote it. Attention that began after it
+    /// voids `order` and `until`.
+    pub since: u64,
+}
+
+/// What `update-task` asks for the Task's place in the Inbox queue. It
+/// replaces the record's `inbox`; `{}` clears it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxChange {
+    /// Move down: the host sets `order` to its clock.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub down: bool,
+    /// Later: epoch seconds, after the host's clock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<u64>,
 }
 
 /// A prompt the host waits to type into the task's agent, kept in the record

@@ -44,6 +44,19 @@ struct FixtureTests {
         }
     }
 
+    @Test func inboxPlaceRoundTrips() throws {
+        let requests = try Self.lines("inbox/requests.jsonl")
+        #expect(requests.count == 3)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("inbox/messages.jsonl")
+        #expect(messages.count == 2)
+        for line in messages { #expect(try canonical(Wire.encode(Wire.decodeMessage(line))) == canonical(line)) }
+        guard case .updateInbox(_, _, _, let change) = try Wire.decodeRequest(requests[0]) else {
+            Issue.record("expected an inbox change"); return
+        }
+        #expect(change == InboxChange(down: true))
+    }
+
     @Test func workerContractRoundTripsAWorkerNameOrNone() throws {
         let requests = try Self.lines("workers/requests.jsonl")
         #expect(requests.count == 7)

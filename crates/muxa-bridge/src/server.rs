@@ -105,6 +105,7 @@ where
         capabilities.push("task-handoff".into());
         capabilities.push("task-restart-recovery".into());
         capabilities.push("tasks-changed".into());
+        capabilities.push("task-inbox".into());
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {

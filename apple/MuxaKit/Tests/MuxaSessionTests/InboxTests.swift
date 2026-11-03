@@ -38,11 +38,30 @@ struct InboxTests {
             var need: String
         }
         let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
-        #expect(lines.count == 26)
+        #expect(lines.count == 28)
         for line in lines {
             let c = try JSONDecoder().decode(Case.self, from: Data(line.utf8))
             #expect(InboxItem(record: c.record, sessions: c.sessions).need.rawValue == c.need, "\(c.name)")
             #expect(group(c.record, c.sessions) == names[c.group], "\(c.name)")
+        }
+    }
+
+    /// `protocol/fixtures/inbox/queue.jsonl` pins Move down and Later for all three clients.
+    @Test func theQueueMatchesTheSharedFixture() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../protocol/fixtures/inbox/queue.jsonl").standardized
+        struct Case: Decodable {
+            var name: String
+            var now: UInt64
+            var records: [TaskRecord]
+            var sessions: [Session]
+            var queue: [String]
+        }
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        #expect(lines.count == 16)
+        for line in lines {
+            let c = try JSONDecoder().decode(Case.self, from: Data(line.utf8))
+            #expect(c.records.triageQueue(sessions: c.sessions, now: c.now).map(\.id) == c.queue, "\(c.name)")
         }
     }
 

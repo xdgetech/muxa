@@ -131,7 +131,7 @@ open class FakeBridge : BridgeChannel {
                     emit(Message.Result(req.id, ErrorBody(ErrorCode.CONFLICT, "stale rev")))
                     return
                 }
-                val saved = current.copy(rev = current.rev + 1, status = req.status)
+                val saved = current.copy(rev = current.rev + 1, status = req.status ?: current.status)
                 tasks = tasks.map { if (it.id == saved.id) saved else it }
                 emit(Message.TaskSaved(req.id, saved))
                 emit(Message.Result(req.id))

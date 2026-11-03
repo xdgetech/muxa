@@ -1,6 +1,7 @@
 package tech.xdge.muxa.session
 
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -48,7 +49,7 @@ class InboxTest {
         )
         val lines = File(System.getProperty("muxa.fixtures")).resolve("inbox/groups.jsonl").readLines()
             .filter { it.isNotEmpty() }
-        assertEquals(26, lines.size)
+        assertEquals(28, lines.size)
         for (line in lines) {
             val case = json.parseToJsonElement(line).jsonObject
             val record = json.decodeFromJsonElement(TaskRecord.serializer(), case.getValue("record"))
@@ -56,6 +57,23 @@ class InboxTest {
             val name = case.getValue("name").jsonPrimitive.content
             assertEquals(name, case.getValue("need").jsonPrimitive.content, inboxItem(record, sessions).need.wire)
             assertEquals(name, names[case.getValue("group").jsonPrimitive.content], inboxItem(record, sessions).group)
+        }
+    }
+
+    /** `protocol/fixtures/inbox/queue.jsonl` pins Move down and Later for all three clients. */
+    @Test
+    fun theQueueMatchesTheSharedFixture() {
+        val json = Json { ignoreUnknownKeys = true }
+        val lines = File(System.getProperty("muxa.fixtures")).resolve("inbox/queue.jsonl").readLines()
+            .filter { it.isNotEmpty() }
+        assertEquals(16, lines.size)
+        for (line in lines) {
+            val case = json.parseToJsonElement(line).jsonObject
+            val records = json.decodeFromJsonElement(ListSerializer(TaskRecord.serializer()), case.getValue("records"))
+            val sessions = json.decodeFromJsonElement(ListSerializer(Session.serializer()), case.getValue("sessions"))
+            val expected = json.decodeFromJsonElement(ListSerializer(String.serializer()), case.getValue("queue"))
+            val now = case.getValue("now").jsonPrimitive.content.toLong()
+            assertEquals(case.getValue("name").jsonPrimitive.content, expected, triageQueue(records, sessions, now).map { it.record.id })
         }
     }
 

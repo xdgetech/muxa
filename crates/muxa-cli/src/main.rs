@@ -4,10 +4,11 @@ mod conn;
 mod inbox;
 mod tasks;
 mod view;
+mod when;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{LoopSpec, RestartRecoveryAction, Role, Session};
+use muxa_protocol::{InboxChange, LoopSpec, RestartRecoveryAction, Role, Session};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
@@ -16,6 +17,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--project P] [--repo PATH --branch B [--base REF]] [--worker NAME]
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task done ID
+       muxa-cli [--bridge CMD] task (down | requeue) ID [--json]
+       muxa-cli [--bridge CMD] task later ID --until TIME [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
        muxa-cli [--bridge CMD] task recover ID [--json]
                 [--operation OP --rev N --action ACTION]
@@ -37,6 +40,14 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  Inbox item for task new and task restart (docs/agents.md,
                  Desktop tools)
   task done ID   marks a task record done
+  task down ID   moves the task to the end of the Inbox queue (Move down).
+                 Its status does not change. Needs task-inbox
+  task later ID --until TIME
+                 hides the task from the Inbox queue until TIME (Later):
+                 2026-11-04T09:00Z (UTC), +30m, +2h, +1d or epoch seconds
+  task requeue ID
+                 clears Move down and Later. A new need of the agent or the
+                 loop also clears them
   task restart ID
                  restarts the task's agent in the same pane, after a handoff
                  in .muxa/HANDOFF.md; --force also while the agent runs
@@ -76,6 +87,11 @@ enum Cmd {
         json: bool,
     },
     Done(String),
+    Place {
+        task: String,
+        change: InboxChange,
+        json: bool,
+    },
     Restart {
         task: String,
         force: bool,
@@ -114,6 +130,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut operation, mut revision, mut action) = (None, None, None);
     let mut new = tasks::NewTask::default();
     let mut check = tasks::LoopFlags::default();
+    let mut until = None;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -144,6 +161,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("max-attempts") => check.max_attempts = Some(p.value()?.parse()?),
             Long("check-timeout") => check.timeout = Some(p.value()?.parse()?),
             Long("reset") => reset = true,
+            Long("until") => until = Some(p.value()?.string()?),
             Long("all") => all = true,
             Long("version") => {
                 println!("muxa-cli {}", env!("CARGO_PKG_VERSION"));
@@ -187,6 +205,12 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 .into(),
         )),
     };
+    let is_later = matches!(words.as_slice(), [w, l, _] if w == "task" && l == "later");
+    if until.is_some() != is_later {
+        return Err(lexopt::Error::Custom(
+            "task later needs --until, and only task later takes it".into(),
+        ));
+    }
     if new.worker.is_some() && !is_new && !is_restart {
         return Err(lexopt::Error::Custom(
             "--worker requires task new or task restart".into(),
@@ -226,6 +250,31 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         },
         [w, s] if w == "task" && s == "stop-loop" && all => Cmd::StopAllLoops { json },
         [w, d, id] if w == "task" && d == "done" => Cmd::Done(id.clone()),
+        [w, d, id] if w == "task" && d == "down" => Cmd::Place {
+            task: id.clone(),
+            change: InboxChange {
+                down: true,
+                until: None,
+            },
+            json,
+        },
+        [w, r, id] if w == "task" && r == "requeue" => Cmd::Place {
+            task: id.clone(),
+            change: InboxChange::default(),
+            json,
+        },
+        [w, l, id] if w == "task" && l == "later" => Cmd::Place {
+            task: id.clone(),
+            change: InboxChange {
+                down: false,
+                until: until
+                    .as_deref()
+                    .map(|t| when::parse(t, when::now()))
+                    .transpose()
+                    .map_err(|e| lexopt::Error::Custom(e.into()))?,
+            },
+            json,
+        },
         [w, r, id] if w == "task" && r == "recover" => Cmd::Recover {
             task: id.clone(),
             resolution,
@@ -296,6 +345,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Tasks { json } => tasks::list(&mut conn, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Done(id) => tasks::done(&mut conn, &id).await,
+        Cmd::Place { task, change, json } => tasks::place(&mut conn, &task, change, json).await,
         Cmd::Recover {
             task,
             resolution,
@@ -374,4 +424,42 @@ fn resolve(sessions: &[Session], target: &str) -> Result<String, String> {
     };
     pane.map(|p| p.id.clone())
         .ok_or_else(|| format!("session {name:?} has no such pane"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn place(args: &[&str]) -> Result<InboxChange, String> {
+        match parse_with(lexopt::Parser::from_args(args.iter().copied())) {
+            Ok(Some((_, Cmd::Place { change, .. }))) => Ok(change),
+            Ok(_) => Err("another command".into()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[test]
+    fn down_later_and_requeue_ask_for_a_place() {
+        assert_eq!(
+            place(&["task", "down", "t-1"]),
+            Ok(InboxChange {
+                down: true,
+                until: None
+            })
+        );
+        assert_eq!(
+            place(&["task", "later", "t-1", "--until", "1767340800"]),
+            Ok(InboxChange {
+                down: false,
+                until: Some(1_767_340_800)
+            })
+        );
+        assert_eq!(
+            place(&["task", "requeue", "t-1"]),
+            Ok(InboxChange::default())
+        );
+        assert!(place(&["task", "later", "t-1"]).is_err());
+        assert!(place(&["task", "down", "t-1", "--until", "+1h"]).is_err());
+        assert!(place(&["task", "later", "t-1", "--until", "soon"]).is_err());
+    }
 }

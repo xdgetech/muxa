@@ -63,7 +63,7 @@ sequenceDiagram
 | `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
 | `list-tasks` | `id` | list the task records and workspaces (capability `task-records`); a `task-list` comes before the `result` |
 | `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}`, `worker` (Workers below) | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
-| `update-task` | `id`, `task`, `rev`, `status` | set a task record's status; a `task-saved` comes before the `result` |
+| `update-task` | `id`, `task`, `rev`, and `status` or `inbox {down?, until?}` | set a task record's status, or its place in the Inbox queue (capability `task-inbox`, Inbox queue below); a `task-saved` comes before the `result` |
 | `restart-agent` | `id`, `task`, optional `force`, `worker`, `rev` (Workers below) | restart the task's agent in the same pane, after a handoff (capability `task-handoff`); a `task-saved` comes before the `result` |
 | `recover-restart` | `id`, `task`, `rev`, `operation`, `action` | explicitly resolve an interrupted restart (capability `task-restart-recovery`, contract below); `task-saved` precedes `result` |
 | `start-loop` | `id`, `task`, `loop {check, maxAttempts?, timeout?}`, optional `reset` | start the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
@@ -196,7 +196,8 @@ A bridge with the `task-records` capability keeps Tasks: durable records of work
    - optional `project` (free text), `repo` (absolute), `branch`, `dir` (where the agent works, absolute), `session` (the last known session name, for display only) and `note` (from the bridge, for example why the launch failed);
    - optional `runs`, with the `task-handoff` capability: the agents that worked on the task. See Handoff below;
    - optional `loop`: the task's Task Loop. See Task Loop below;
-   - optional `pendingPrompt {kind, since, run}`: a prompt the host still waits to type into the agent. `kind` is `start` or `restart`, `since` is when the wait began (epoch seconds), and `run` is the `id` of the run it is for. It is cleared when the prompt is typed or given up.
+   - optional `pendingPrompt {kind, since, run}`: a prompt the host still waits to type into the agent. `kind` is `start` or `restart`, `since` is when the wait began (epoch seconds), and `run` is the `id` of the run it is for. It is cleared when the prompt is typed or given up;
+   - optional `inbox {order?, until?, since}`, with the `task-inbox` capability: the Task's place in the Inbox queue. See Inbox queue below.
 3. `create-task {workspace, title, goal, project?, repo?, branch?, base?, loop?}` records a Task and starts an agent for it. `workspace` is a name from `task-list`. `loop` also starts a Task Loop; see Task Loop below.
    - With `repo`, `branch` is required. The session starts as with `new-task`, and `base` means the same.
    - Without `repo`, the task gets a directory in its workspace, `<root>/tasks/<slug>-<id>`, and a new session of the same name.
@@ -209,6 +210,22 @@ A bridge with the `task-records` capability keeps Tasks: durable records of work
 4. `update-task {task, rev, status}` sets the status of the record whose id is `task`. `rev` is the one the client last saw. When the record changed since, the request fails with `conflict` and nothing changes: list again and retry. On success, `task-saved` with the new record comes before the `result`. Changing the status never starts or closes a session.
 5. A session runs a Task when its `taskId` is the record's `id`. The agent's state stays on the session's panes; the Task's `status` does not follow it.
 6. `taskId` comes from the session option `@muxa_task`. Options end with the tmux server, so a session without one gets the `id` of the record whose `dir` is the session's `worktree`, or the path of its first visible pane. A record whose tag a session carries is not matched again. The bridge does not write the tag back.
+
+## Inbox queue
+
+A bridge with the `task-inbox` capability keeps Move down and Later on the Task record, so every device shows the same queue (ADR 0027 §4). The host only stores them. Clients derive the queue; the rule is pinned by `fixtures/inbox/queue.jsonl`.
+
+1. `update-task {task, rev, inbox}` sends `inbox` instead of `status`. A request with both, or neither, is `bad-request`. `inbox` replaces the record's `inbox`, and the status does not change:
+   - `{"down": true}` is Move down. The host sets `order` to its clock in epoch milliseconds.
+   - `{"until": T}` is Later. `T` is epoch seconds (UTC), after the host's clock and at most 366 days ahead; otherwise `bad-request`.
+   - Both together move the Task down and hide it until `T`. `{}` clears both.
+   - The host sets `since` to its clock in epoch seconds.
+2. The queue is every Task whose need is not `none` (`docs/inbox.md`), in this order:
+   1. Tasks without a valid `order`, in group order, newest `updatedAt` first, then the larger id.
+   2. Tasks with a valid `order`, smallest first. Equal orders keep the order of step 1.
+3. A Task whose valid `until` is after now is not in the queue. At `until` it returns to its place.
+4. `order` and `until` are void when the Task's attention began after `since`: the believed agent state's `since`, or a loop's `since` when the loop needs the user. A new need, for example a new approval after Move down, then surfaces again. Nothing is guessed: with no reported time, they stay valid.
+5. A record without `inbox` keeps its place. Clients ignore unknown fields in `inbox`.
 
 ## Handoff
 
