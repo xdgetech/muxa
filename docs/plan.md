@@ -35,7 +35,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 1. **Phase 0, clean up:** done. The open work is committed and merged agent worktrees are removed. Work continues on `plan/workspace-vision`; it is not merged into `main` yet.
 2. **Phase 1, ship 1.0:** real-device checks, the daemon on a Mac, the developer's decisions on ADR 0015–0021 and 0023, then publish. Agent lane: the supported tmux CI matrix.
 3. **Phase 2, Workers:** simplify the selection contract (ADR 0027 section 1), named create and restart, the pickers, then advertise `workers`. Codex continues restarted runs by hand. Parallel lanes: the Sessions filter (UI only, done in both apps); the Codex session-ownership ADR (proposed ADR 0028: muxa creates the thread and sends turns by id; waits for the developer's checks with a real login).
-4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other.
+4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other. Move down and Later on the Task record are done on the host and in the CLI (`task-inbox`, `task down`, `task later`, `task requeue`); the shared queue code in both apps follows them, and the app UI still uses the local Snooze.
 5. **Phase 4:** workspace memory as a Routine (ADR 0027 section 6). Then, as needed, the Linux daemon and tmux-agents (ADR 0017).
 6. **Phase 5:** workflow graph, then autonomous work.
 7. **Any time:** scrollback, mouse, `pause-after`, watching several panes.
@@ -70,7 +70,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 
 ## Requested follow-on design
 
-- **Inbox queue** (proposed ADR 0025, simplified by ADR 0027): an ordered list with Act, Done, Move down and Later, a separate manual Sessions destination and an All Tasks destination. Move down and Later are optional fields on the Task record. Only the manual Sessions filter is implemented, in both apps.
+- **Inbox queue** (proposed ADR 0025, simplified by ADR 0027): an ordered list with Act, Done, Move down and Later, a separate manual Sessions destination and an All Tasks destination. Move down and Later are optional fields on the Task record. Implemented: the manual Sessions filter in both apps, and Move down and Later on the host, in the CLI and in the shared queue code (`protocol/fixtures/inbox/queue.jsonl`, 16 cases). Not yet: the app actions that replace the local Snooze.
 - **Routines** (proposed ADR 0026): a Routine runs an agent on a trigger, for example every morning. The agent reads its sources (Slack, Linear, Notion and others) through its own native tools and publishes briefings and proposals to Inbox. An approved proposal becomes one new Task that performs the action. A run is a record of kind `routine-run`, not a Task in the UI. Nothing is implemented. Phase 3 of the order above.
 
 Milestones and dependencies are in `docs/workers.md`; the domain definitions are in `docs/work-model.md`.

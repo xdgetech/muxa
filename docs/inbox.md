@@ -45,6 +45,16 @@ Scope shortcuts to the visible screen and suspend pane navigation chords while I
 
 The developer wants an ordered actionable list with Act, Done, Move down and Later. Proposed ADR 0025 defines host-owned cross-device order and deferral, plus briefings/proposed work from scheduled project Routines. Move down keeps an item visible at the tail; Later has a return time. This is a proposed successor to slice 1, not an implemented change to current local Snooze or accepted queue sorting. All Tasks retains the grouped maintenance view.
 
+### Shared Move down and Later (host and CLI)
+
+ADR 0027 §4 is implemented on the host and in the CLI. A Task record has an optional `inbox {order, until, since}`, written by `update-task` (capability `task-inbox`):
+
+- Move down puts the Task at the end of the queue. `order` is the host's clock in milliseconds, so the latest Move down is last. The status does not change.
+- Later hides the Task until `until` (UTC). Then it returns to its place.
+- A new need surfaces again. When the believed agent state, or a loop that needs the user, began after `since`, the client ignores `order` and `until`.
+
+The shared queue code in `muxa-cli`, MuxaKit and the Android `:session` module follows `protocol/fixtures/inbox/queue.jsonl`. The apps' Triage queue applies the host's fields already. Their UI still offers only the local Snooze; replacing it with Move down and Later is the next app change.
+
 ### Separate destinations
 
 The proposed UI has three logical destinations: Inbox for actionable ToDos/briefings/proposals, All Tasks for running work and history, and Sessions for manual tmux work. All Tasks may be a link inside Inbox rather than a top-level tab; exact navigation placement remains a UI decision. Sessions defaults to explicitly unassociated sessions, with an All Sessions filter for inspection. Open Terminal on a Task returns to that Task's pane.
