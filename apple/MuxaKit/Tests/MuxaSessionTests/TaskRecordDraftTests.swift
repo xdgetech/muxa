@@ -41,4 +41,21 @@ struct TaskRecordDraftTests {
         #expect(TaskRecordDraft(repo: "", in: workspaces).workspace == "work")
         #expect(TaskRecordDraft(repo: "/src/app", in: []).workspace == "")
     }
+
+    @Test func aRepoUnderARootPicksItsWorkspace() {
+        let workspaces = [WorkspaceInfo(name: "work"), WorkspaceInfo(name: "lisk", root: "/lisk")]
+        #expect(TaskRecordDraft(repo: "/lisk/lisk-app", in: workspaces).workspace == "lisk")
+    }
+
+    /// A `work` level 2 host names the branch after the title (ADR 0031).
+    @Test func aHostThatNamesBranchesNeedsNone() throws {
+        var draft = TaskRecordDraft(workspace: "work", title: "T", goal: "G", repo: "/src/app", branchFromTitle: true)
+        #expect(draft.problem == nil)
+        #expect(try #require(draft.request) == NewTaskRecord(workspace: "work", title: "T", goal: "G", repo: "/src/app"))
+        draft.branch = " feat/x "
+        #expect(try #require(draft.request).branch == "feat/x")
+        draft.branch = "a b"
+        #expect(draft.problem != nil, "a typed branch is still checked")
+        #expect(TaskRecordDraft(repo: "/src/app", in: [WorkspaceInfo(name: "work")], branchFromTitle: true).branchFromTitle)
+    }
 }

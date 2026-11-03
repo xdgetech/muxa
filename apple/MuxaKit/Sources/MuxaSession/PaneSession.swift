@@ -91,6 +91,8 @@ public final class PaneSession {
     @ObservationIgnored var inboxListings: [UInt64: [InboxEntry]] = [:]
     @ObservationIgnored var savedRoutines: [UInt64: RoutineInfo] = [:]
     @ObservationIgnored var savedEntries: [UInt64: InboxEntry] = [:]
+    /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
+    @ObservationIgnored var startedSessions: [UInt64: StartedSession] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
     /// Ids of input requests in flight; their results only matter when they fail.
     @ObservationIgnored private var inputs: Set<UInt64> = []
@@ -758,10 +760,12 @@ public final class PaneSession {
         case .inboxSaved(let id, let entry):
             savedEntries[id] = entry
             keep(entry)
+        case .sessionStarted(let start, let session, let name):
+            startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded, .sessionStarted:
+            .diffContent, .diffEnded, .imageContent, .imageEnded:
             break
         }
     }
@@ -798,6 +802,7 @@ public final class PaneSession {
         inboxListings = [:]
         savedRoutines = [:]
         savedEntries = [:]
+        startedSessions = [:]
         inputs = []
         sentViewport = nil
         viewportTask?.cancel()

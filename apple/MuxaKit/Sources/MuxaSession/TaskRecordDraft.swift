@@ -45,10 +45,13 @@ public struct TaskRecordDraft: Equatable, Sendable {
     /// Also start a Task Loop; nil for none.
     public var loop: LoopDraft?
     public var worker: String?
+    /// The host names an empty branch after the title (`work` level 2, ADR 0031).
+    public var branchFromTitle: Bool
 
     public init(
         workspace: String = "", title: String = "", goal: String = "", project: String = "", repo: String = "",
-        branch: String = "", base: String = "", loop: LoopDraft? = nil, worker: String? = nil
+        branch: String = "", base: String = "", loop: LoopDraft? = nil, worker: String? = nil,
+        branchFromTitle: Bool = false
     ) {
         self.workspace = workspace
         self.title = title
@@ -59,13 +62,14 @@ public struct TaskRecordDraft: Equatable, Sendable {
         self.base = base
         self.loop = loop
         self.worker = worker
+        self.branchFromTitle = branchFromTitle
     }
 
-    /// A draft in `repo`, in the workspace whose `repos` lists it, else in the
-    /// first workspace. An empty `repo` means a task directory.
-    public init(repo: String, in workspaces: [WorkspaceInfo]) {
-        let workspace = workspaces.first { $0.repos.contains(repo) } ?? workspaces.first
-        self.init(workspace: workspace?.name ?? "", repo: repo)
+    /// A draft in `repo`, in the workspace it belongs to, else in the first
+    /// workspace. An empty `repo` means a task directory.
+    public init(repo: String, in workspaces: [WorkspaceInfo], branchFromTitle: Bool = false) {
+        let workspace = (repo.isEmpty ? nil : workspaces.workspace(of: repo)) ?? workspaces.first
+        self.init(workspace: workspace?.name ?? "", repo: repo, branchFromTitle: branchFromTitle)
     }
 
     /// What to fix before the task can be created; nil when it can.
@@ -78,7 +82,7 @@ public struct TaskRecordDraft: Equatable, Sendable {
         if repo.isEmpty { return nil }
         if !repo.hasPrefix("/") { return "The repository path must start with /." }
         let branch = branch.trimmed
-        if branch.isEmpty { return "Name the branch." }
+        if branch.isEmpty { return branchFromTitle ? nil : "Name the branch." }
         if let why = TaskDraft.refProblem(branch, what: "branch") { return why }
         let base = base.trimmed
         if !base.isEmpty, let why = TaskDraft.refProblem(base, what: "base") { return why }
@@ -86,13 +90,13 @@ public struct TaskRecordDraft: Equatable, Sendable {
     }
 
     /// The `create-task` fields; nil while there is a problem. Branch and base go
-    /// only with a repo.
+    /// only with a repo, and an empty branch not at all.
     public var request: NewTaskRecord? {
         guard problem == nil else { return nil }
         let repo = repo.trimmed.nonEmpty
         return NewTaskRecord(
             workspace: workspace.trimmed, title: title.trimmed, goal: goal.trimmed, project: project.trimmed.nonEmpty,
-            repo: repo, branch: repo == nil ? nil : branch.trimmed, base: repo == nil ? nil : base.trimmed.nonEmpty,
+            repo: repo, branch: repo == nil ? nil : branch.trimmed.nonEmpty, base: repo == nil ? nil : base.trimmed.nonEmpty,
             loop: loop?.spec, worker: worker)
     }
 }
