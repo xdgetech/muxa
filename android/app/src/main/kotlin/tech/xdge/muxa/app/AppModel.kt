@@ -1,6 +1,5 @@
 package tech.xdge.muxa.app
 
-import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -51,14 +50,15 @@ import tech.xdge.muxa.transport.KeySetup
 import tech.xdge.muxa.transport.SshBridge
 import tech.xdge.muxa.transport.SshTarget
 import tech.xdge.muxa.transport.TransportError
-import java.io.File
 import kotlin.time.Duration.Companion.seconds
 
-/** App state: the saved hosts, the connection, and which pane is shown. */
-class AppModel(context: Context, private val scope: CoroutineScope) {
+/**
+ * One window's state: its connection and which pane it shows. The saved hosts and the
+ * device key are the app's, shared by every window (ADR 0029).
+ */
+class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: ClientKeyStore) {
     val session = PaneSession(Dispatchers.Main.immediate)
-    private val keys = ClientKeyStore(context)
-    private var savedHosts = HostStore(File(context.filesDir, "hosts.json"))
+    private var savedHosts = saved
 
     /** The saved hosts, or during the demo its one host, kept in memory only. */
     var hosts = savedHosts
@@ -275,8 +275,32 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         beginDemo(set, alerts, host)
     }
 
+    /** What a new window needs to show this window's pane on its host. */
+    class WindowStart(val host: Host, val pane: String?, val demo: Demo?) {
+        class Demo(val set: DemoBridge.Content, val alerts: Boolean, val taskRecords: Boolean, val canLeave: Boolean)
+    }
+
+    /** This window's host and pane, for a new window; null when no host is shown. */
+    fun windowStart(): WindowStart? {
+        val host = currentHost ?: return null
+        val demo = if (demo && host.id == demoHostId) WindowStart.Demo(demoSet, demoAlerts, demoTaskRecords, canLeaveDemo) else null
+        return WindowStart(host, state.watchedPane, demo)
+    }
+
+    /** A new window: its own connection to [start]'s host, at its pane. */
+    fun begin(start: WindowStart) {
+        val demo = start.demo
+        if (demo == null) {
+            scope.launch { connectNow(start.host.id, start.pane) }
+            return
+        }
+        demoTaskRecords = demo.taskRecords
+        beginDemo(demo.set, demo.alerts, start.host, start.pane)
+        canLeaveDemo = demo.canLeave
+    }
+
     /** One demo host, nothing saved. */
-    private fun beginDemo(set: DemoBridge.Content, alerts: Boolean, host: Host) {
+    private fun beginDemo(set: DemoBridge.Content, alerts: Boolean, host: Host, pane: String? = null) {
         // Each start begins over: UI tests share one process and so one model.
         resetHostState()
         demo = true
@@ -290,7 +314,7 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         hosts.markUsed(host.id)
         scope.launch {
             session.disconnect()
-            connectNow(host.id)
+            connectNow(host.id, pane)
         }
     }
 
@@ -343,7 +367,8 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
 
     fun connect(id: String) = scope.launch { connectNow(id) }
 
-    private suspend fun connectNow(id: String) {
+    /** Connects to host [id] and shows [pane] when it is there, else the pane last shown. */
+    private suspend fun connectNow(id: String, pane: String? = null) {
         val host = hosts.host(id) ?: return
         val sameHost = id == currentHostId
         currentHostId = id
@@ -358,7 +383,9 @@ class AppModel(context: Context, private val scope: CoroutineScope) {
         val initialRequest = detailRequest
         try {
             session.connect(samePanes = sameHost) { open(host) }
-            if (phoneInbox && initialRequest == detailRequest && canShowTasks && inboxQueue.any { it.group == InboxGroup.NEEDS_ATTENTION }) {
+            if (pane != null && state.sessions.any { s -> s.panes.any { it.id == pane } }) {
+                watch(pane)
+            } else if (phoneInbox && initialRequest == detailRequest && canShowTasks && inboxQueue.any { it.group == InboxGroup.NEEDS_ATTENTION }) {
                 showInbox()
             } else openDefaultPane()
         } catch (e: TransportError.HostKeyMismatch) {

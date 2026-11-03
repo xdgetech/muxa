@@ -28,6 +28,10 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- The system's "new window" action opens a second window on its own connection (ADR 0029). -->
+            <property
+                android:name="android.window.PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI"
+                android:value="true" />
             <!-- A desktop window keeps a few rows of a pane at the 9 sp floor. -->
             <layout
                 android:minWidth="360dp"

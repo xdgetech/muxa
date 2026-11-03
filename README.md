@@ -75,6 +75,8 @@ Approvals: when Claude Code waits on a permission, a question or its plan, Chat 
 
 Alerts: while the app is open, a banner tells you when an agent in another session needs your input, finishes, or fails. Tap it to go there.
 
+Two windows (Android): **Open in New Window** in the pane's More menu opens the pane in a second window, beside the first in split screen or as a desktop window. Each window has its own connection, pane and keyboard, so you can switch one of them to another pane. When both show panes of one tmux window, that window takes the size of the app window you typed in or resized last (ADR 0029).
+
 Keys: Cmd+K switch session, Cmd+N new task, Cmd+J agent/terminal, Cmd+Shift+[ and ] previous/next session, Cmd+1…9 session by number. On Android they are Ctrl+Shift chords (Ctrl+Shift+K, N, J, R, D, [ ], 1…9), because plain Ctrl chords belong to the shell. In the chat's composer, Return starts a new line and Cmd+Return sends (Ctrl+Enter on Android). Every other key goes to the pane. Without a hardware keyboard, a bar above the on-screen keyboard adds Esc, Tab, Shift+Tab, Ctrl (for the next key), the arrows and ^C.
 
 ## The host daemon

@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.app.openInNewWindow
 import tech.xdge.muxa.app.shortcut
 import tech.xdge.muxa.app.pane.TerminalPaneView
 import tech.xdge.muxa.session.KeyBar
@@ -185,6 +187,11 @@ private fun MoreMenu(model: AppModel, stack: Boolean) {
         if (!stack) {
             DropdownMenuItem({ Text("Sessions…") }, { pick { model.showSwitcher = true } }, leadingIcon = { Icon(Icons.session, null) })
         }
+        val context = LocalContext.current
+        DropdownMenuItem(
+            { Text("Open in New Window") }, { pick { context.openInNewWindow(model) } },
+            leadingIcon = { Icon(Icons.newWindow, null) }, modifier = Modifier.testTag("menu-new-window"),
+        )
         if (model.canShowTasks) {
             DropdownMenuItem(
                 { Text("Inbox…") }, { pick { model.showInbox() } },

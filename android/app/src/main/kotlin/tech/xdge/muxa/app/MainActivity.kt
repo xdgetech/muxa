@@ -8,16 +8,29 @@ import android.view.Menu
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import kotlinx.coroutines.launch
 import tech.xdge.muxa.demo.DemoBridge
 import tech.xdge.muxa.app.ui.MuxaTheme
 import tech.xdge.muxa.app.ui.Root
 
+/** One app window. Each window has its own [AppModel]: its connection, pane and keyboard (ADR 0029). */
 class MainActivity : ComponentActivity() {
-    private val model: AppModel get() = (application as MuxaApplication).model
+    private val app: MuxaApplication get() = application as MuxaApplication
+    private lateinit var windowId: String
+    private lateinit var model: AppModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val requested = savedInstanceState?.getString(KEY_WINDOW) ?: intent.getStringExtra(EXTRA_WINDOW)
+        // The process restarted: the window opens its own pane again, not the one last shown anywhere.
+        val restarted = requested != null && !app.windows.has(requested)
+        windowId = app.windows.claim(requested)
+        model = app.windows.model(windowId)
+        if (restarted && savedInstanceState != null) restore(savedInstanceState)
+        // The system's "new window" action: the app is already in the foreground, so this
+        // window connects on its own, to the host and pane last used.
+        if (requested == null && windowId != Windows.MAIN) model.scope.launch { model.resume() }
         // Debug builds only, for the UI tests: `adb shell am start ... --ez demo true` starts
         // the demo on the test fixtures, and `--ez no-saved-hosts true` starts as a fresh install.
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_DEMO, false)) {
@@ -31,6 +44,23 @@ class MainActivity : ComponentActivity() {
             model.forgetSavedHosts()
         }
         setContent { MuxaTheme { Root(model) } }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_WINDOW, windowId)
+        outState.putString(KEY_HOST, model.currentHostId)
+        outState.putString(KEY_PANE, model.state.watchedPane)
+    }
+
+    private fun restore(saved: Bundle) {
+        val host = model.hostList.hosts.firstOrNull { it.id == saved.getString(KEY_HOST) } ?: return
+        model.begin(AppModel.WindowStart(host, saved.getString(KEY_PANE), demo = null))
+    }
+
+    override fun onDestroy() {
+        app.windowClosed(windowId, finished = isFinishing && !isChangingConfigurations)
+        super.onDestroy()
     }
 
     /** The app's shortcuts when nothing in the window has focus (Root takes them otherwise). */
@@ -57,6 +87,11 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** The window an Activity shows, from [openInNewWindow]. */
+        const val EXTRA_WINDOW = "window"
+        private const val KEY_WINDOW = "window"
+        private const val KEY_HOST = "host"
+        private const val KEY_PANE = "pane"
         const val EXTRA_DEMO = "demo"
         const val EXTRA_DEMO_ALERTS = "demo-alerts"
         const val EXTRA_SHOWCASE = "showcase"

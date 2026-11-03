@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddBox
@@ -62,4 +63,5 @@ object Icons {
     val changes = Material.Filled.Difference
     val restartAgent = Material.Filled.RestartAlt
     val copy = Material.Filled.ContentCopy
+    val newWindow = Material.AutoMirrored.Filled.OpenInNew
 }

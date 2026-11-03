@@ -405,3 +405,89 @@ async fn a_killed_bridge_leaves_no_device_session() {
     let (_bridge, _) = Bridge::start(&server, &[]).await;
     common::wait_until(|| session_names(&server) == ["_muxa-live", "work"]).await;
 }
+
+/// Like `wait_for`, reading both bridges' messages.
+async fn wait_both(a: &mut Bridge, b: &mut Bridge, what: &str, mut cond: impl FnMut() -> bool) {
+    let start = Instant::now();
+    while start.elapsed() < SETTLE {
+        if cond() {
+            return;
+        }
+        let _ = a.event(Duration::from_millis(50)).await;
+        let _ = b.event(Duration::from_millis(50)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+/// Two app windows, or two devices, on one window (ADR 0029): each bridge has
+/// its own device session; the one used last sizes the window, and the other
+/// one's size returns when it leaves.
+#[tokio::test]
+async fn two_bridges_on_one_window_follow_the_one_used_last() {
+    let server = Server::start();
+    let home = server.tmux(&["display-message", "-p", "-t", "work", "#{window_id}"]);
+    let window = new_window(&server);
+    let pane = server.pane(&window);
+    let desktop = Desktop::attach(&server, "work", 160, 40);
+    common::wait_until(|| size(&server, &home) == "160x39").await;
+    let before = desktop_view(&server);
+
+    let (mut first, _) = Bridge::start(&server, &[]).await;
+    let (mut second, _) = Bridge::start(&server, &[]).await;
+    first
+        .request(json!({"type": "viewport", "cols": 100, "rows": 30}))
+        .await;
+    first.request(json!({"type": "watch", "pane": pane})).await;
+    wait_both(&mut first, &mut second, "the first device's size", || {
+        size(&server, &window) == "100x30"
+    })
+    .await;
+    second
+        .request(json!({"type": "viewport", "cols": 120, "rows": 35}))
+        .await;
+    second.request(json!({"type": "watch", "pane": pane})).await;
+    wait_both(&mut first, &mut second, "the second device's size", || {
+        size(&server, &window) == "120x35"
+    })
+    .await;
+    assert_eq!(session_names(&server).len(), 3, "one device session each");
+
+    // The first one types: it takes the window back, and keeps it.
+    first
+        .request(json!({"type": "text", "pane": pane, "text": "true"}))
+        .await;
+    wait_both(
+        &mut first,
+        &mut second,
+        "the first device's size after it typed",
+        || size(&server, &window) == "100x30",
+    )
+    .await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(
+        size(&server, &window),
+        "100x30",
+        "the bridges fought over the window"
+    );
+    assert_eq!(size(&server, &home), "160x39");
+    assert_eq!(desktop_view(&server), before);
+
+    // The first one leaves: the second one's size returns, not the desktop's.
+    first.request(json!({"type": "bye"})).await;
+    let _ = tokio::time::timeout(common::WAIT, first.child.wait()).await;
+    wait_for(&mut second, "the remaining device's size", || {
+        size(&server, &window) == "120x35"
+    })
+    .await;
+    assert_eq!(
+        session_names(&server).len(),
+        2,
+        "the second device session stays"
+    );
+
+    second.request(json!({"type": "bye"})).await;
+    let _ = tokio::time::timeout(common::WAIT, second.child.wait()).await;
+    common::wait_until(|| session_names(&server) == ["work"]).await;
+    common::wait_until(|| size(&server, &window) == "160x39").await;
+    desktop.close();
+}

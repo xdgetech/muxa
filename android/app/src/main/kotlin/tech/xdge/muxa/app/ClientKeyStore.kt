@@ -22,7 +22,8 @@ import javax.crypto.spec.GCMParameterSpec
 class ClientKeyStore(context: Context) {
     private val file = File(context.noBackupFilesDir, "client-key")
 
-    /** The stored key, or a new one that is stored first. */
+    /** The stored key, or a new one that is stored first. Two windows may connect at once. */
+    @Synchronized
     fun loadOrCreate(): ClientKey = try {
         if (file.exists()) ClientKey.fromRaw(open(file.readBytes())) else ClientKey.generate().also { file.writeBytes(seal(it.raw)) }
     } catch (e: GeneralSecurityException) {

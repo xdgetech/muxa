@@ -42,7 +42,7 @@ Jetpack WindowManager's `FoldingFeature` gives the hinge:
   - The iPad shortcuts use Ctrl+Shift, not Ctrl: plain Ctrl chords (Ctrl+R, Ctrl+K, Ctrl+N, Ctrl+J) belong to the pane's shell, and Ctrl+Shift is the Linux terminal convention. They are listed in the system shortcut helper (`onProvideKeyboardShortcuts`).
   - Hardware keys reach the IME before `onKeyDown`. The terminal view takes them first (`Modifier.onInterceptKeyBeforeSoftKeyboard`, the Compose form of `View.onKeyPreIme`) only for keys the IME does not use: Esc, Tab, arrows, Ctrl and Alt chords.
   - A mouse wheel or a two-finger trackpad scroll moves the readable viewport; it never sends input to the pane.
-- **Multi-window.** Two muxa windows can show two panes side by side (split screen, or desktop windows). Each window watches its own pane over the one connection. This is a later step; the first release has one window. It needs `FLAG_ACTIVITY_MULTIPLE_TASK`, and `PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI` (API 35) for the system's "new window" action. The connection is app-scoped (below), not in a `ViewModel`, which belongs to one Activity.
+- **Multi-window.** Two muxa windows can show two panes side by side (split screen, or desktop windows). Each window has its own connection, not one shared connection: ADR 0029 amends this. It uses `FLAG_ACTIVITY_MULTIPLE_TASK`, and `PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI` (API 35) for the system's "new window" action. Each connection is app-scoped (below), not in a `ViewModel`, which belongs to one Activity.
 - The manifest's `<layout android:minWidth android:minHeight>` bounds a desktop window, so the pane keeps a few rows at the 9 sp floor.
 - ChromeOS runs the same build. It is not a target, but the same rules cover it.
 

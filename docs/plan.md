@@ -25,7 +25,7 @@ What works today:
   - a bar with Esc, Tab, Ctrl and the arrows above the on-screen keyboard.
 - **iPhone app** (the same app, ADR 0012): the layout follows the size classes, so a folded iPhone Duo gets the phone layout and an unfolded one the iPad layout, without losing the pane, its screen or the keyboard. On a phone, a pane whose font would go below 9 pt keeps 9 pt and scrolls on both axes.
 
-- **Android app** (ADR 0013): the same features as the iOS app, for phones, tablets and foldables. The layout follows the window and the hinge: a stack when compact, the list beside the pane when wide, the list and the pane on either side of a half-open book fold, and the keys below the hinge on a table. A fold, a rotation or a window resize keeps the connection, the pane, its screen and the keyboard. The pane is drawn from JediTerm at its real size; shortcuts are Ctrl+Shift chords.
+- **Android app** (ADR 0013): the same features as the iOS app, for phones, tablets and foldables. The layout follows the window and the hinge: a stack when compact, the list beside the pane when wide, the list and the pane on either side of a half-open book fold, and the keys below the hinge on a table. A fold, a rotation or a window resize keeps the connection, the pane, its screen and the keyboard. The pane is drawn from JediTerm at its real size; shortcuts are Ctrl+Shift chords. Two windows show two panes (split screen, desktop windows, or the system's "new window" action), each with its own connection, viewport and keyboard; Open in New Window is in the pane's More menu (ADR 0029, proposed). Not yet checked on a real tablet.
 - **Try the Demo** (both apps, every build): sample sessions from the in-app demo bridge, with no host and nothing saved. App Review and Play review use it.
 
 ## Next
@@ -38,7 +38,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other.
 5. **Phase 4:** workspace memory as a Routine (ADR 0027 section 6). Then, as needed, the Linux daemon and tmux-agents (ADR 0017).
 6. **Phase 5:** workflow graph, then autonomous work.
-7. **Any time:** Android full R8, Android multi-window, scrollback, mouse, `pause-after`, watching several panes.
+7. **Any time:** Android full R8, scrollback, mouse, `pause-after`, watching several panes.
 
 - **Inbox visibility and navigation** (ADR 0023, slice 1 accepted; `docs/inbox.md`): identify Task sessions by title, group, reported age and loop; retain List/detail and add Triage navigation, Next and local Snooze. Phones open Triage once per connection for Needs attention only. Existing Chat keeps approvals and composition.
   - P0 done: shared needs and deterministic queue order, CLI `need`, 26 cross-client fixture cases. Verified with `make check`, `make test-apple` and `make test-android`.
@@ -64,10 +64,9 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
   9. Real work by the developer: one coding Task, and a product and an admin Task without a repo. With two real logins, check that the workspaces' accounts stay apart (ADR 0016, Consequences).
   10. The developer accepts or changes ADR 0015 to 0019. All five are still proposed.
 - Check the iPhone app on a real iPhone: the 9 pt floor, and the key bar (the iPhone simulator reports a hardware keyboard, so its UI test skips there).
-- Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, and a hardware keyboard.
+- Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, a hardware keyboard, and two windows in split screen and desktop windows.
 - ADR 0020 and 0021 (window size follows the device, from a device session): the developer accepts or changes them, then checks them on the real server with a real iPad and laptop, and with tmux-agents. tmux-agents skips device sessions from its `muxa-task-records` branch on. The store listings still say the desktop layout never changes.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
-- Android: two windows on two panes (multi-window).
 - Android: full R8 (renaming and optimization) for release builds, with a release-build test that connects over SSH. 1.0 only removes unused code (ADR 0014): BouncyCastle, sshj and JediTerm load classes by name.
 
 ## Requested follow-on design
