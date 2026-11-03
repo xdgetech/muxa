@@ -8,6 +8,7 @@ public struct RunLine: Equatable, Sendable, Identifiable {
     /// "Restarted · 1 h ago · 42 min".
     public var detail: String
     public var agentSession: String?
+    public var assignment: String? = nil
 }
 
 extension InboxItem {
@@ -17,7 +18,9 @@ extension InboxItem {
         let newest = record.runs.max { $0.id < $1.id }?.id
         return record.runs.sorted { $0.id > $1.id }.map { run in
             let tail: String
-            if let ended = run.endedAt {
+            if let outcome = run.outcome {
+                tail = outcome == "unconfirmed" ? "unconfirmed outcome" : "unknown outcome"
+            } else if let ended = run.endedAt {
                 tail = RunLine.duration(ended.saturatingMinus(run.startedAt))
             } else if run.id == newest, agent != nil {
                 tail = "still running"
@@ -28,7 +31,7 @@ extension InboxItem {
             return RunLine(
                 id: run.id, title: "Run \(run.id) · \(run.agent ?? "unknown agent")",
                 detail: [RunLine.reason(run.reason), started, tail].joined(separator: " · "),
-                agentSession: run.agentSession)
+                agentSession: run.agentSession, assignment: run.assignment?.displayName ?? "Worker unrecorded")
         }
     }
 

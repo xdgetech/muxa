@@ -8,7 +8,7 @@ mod create;
 mod facts;
 mod handoff;
 pub mod remote;
-mod restart;
+pub(crate) mod restart;
 
 pub use brief::{BRIEF, HANDOFF};
 pub use restart::restart;
@@ -150,6 +150,7 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::CreateTask { .. }
             | Request::UpdateTask { .. }
             | Request::RestartAgent { .. }
+            | Request::RecoverRestart { .. }
             | Request::StartLoop { .. }
             | Request::StopLoop { .. }
     )
@@ -158,6 +159,21 @@ pub fn is_record_request(req: &Request) -> bool {
 /// Answers one record request: its `task-list` or `task-saved`, then its `result`.
 pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
     let id = req.id();
+    let worker_intent = match &req {
+        Request::CreateTask { worker, .. } => worker.is_some(),
+        Request::RestartAgent { worker, rev, .. } => !worker.is_keep() || rev.is_some(),
+        _ => false,
+    };
+    if worker_intent {
+        return vec![Message::Result {
+            id: Some(id),
+            error: Some(error_body(
+                ErrorCode::Unsupported,
+                "workers are not implemented on this host",
+            )),
+            sessions: None,
+        }];
+    }
     let (mut out, error) = match req {
         Request::ListTasks { id } => one(list(&cx.records, id).await),
         Request::UpdateTask {
@@ -176,6 +192,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             branch,
             base,
             r#loop,
+            worker: _,
         } => {
             let new = NewTask {
                 workspace,
@@ -213,7 +230,21 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
                     .map(|r| task_saved(id, r)),
             )
         }
-        Request::RestartAgent { id, task, force } => match cx.env().await {
+        Request::RecoverRestart {
+            id,
+            task,
+            rev,
+            operation,
+            action,
+        } => match cx.env().await {
+            Ok(env) => one(restart::recover(&env, task, rev, operation, action)
+                .await
+                .map(|r| task_saved(id, r))),
+            Err(e) => (Vec::new(), Some(e)),
+        },
+        Request::RestartAgent {
+            id, task, force, ..
+        } => match cx.env().await {
             Ok(env) => match restart(&env, task, force).await {
                 Ok(record) => (saved(id, Some(record)).into_iter().collect(), None),
                 Err(e) => (Vec::new(), Some(e)),
@@ -245,6 +276,7 @@ pub async fn resume_prompts(cx: &Context) {
         Ok(config
             .records_if_any()
             .into_iter()
+            .filter(|r| r.worker().is_none())
             .filter_map(|r| Some((r.id.clone(), r.pending_prompt()?)))
             .collect::<Vec<_>>())
     })
@@ -423,6 +455,7 @@ pub async fn list(config: &Config, request: u64) -> Result<Message, ErrorBody> {
             workspaces: workspaces.all().iter().map(convert::workspace).collect(),
             entries: records.into_iter().map(convert::task_record).collect(),
             truncated,
+            workers: Vec::new(),
         })
     })
     .await
@@ -515,7 +548,7 @@ fn status_of(s: TaskStatus) -> Status {
 /// Store messages carry ids, paths and field names only (invariant 5).
 fn store_error(e: &StoreError) -> ErrorBody {
     let code = match e {
-        StoreError::Conflict { .. } => ErrorCode::Conflict,
+        StoreError::Conflict { .. } | StoreError::Busy(_) => ErrorCode::Conflict,
         StoreError::NotFound(_) | StoreError::InvalidId | StoreError::Invalid { .. } => {
             ErrorCode::BadRequest
         }

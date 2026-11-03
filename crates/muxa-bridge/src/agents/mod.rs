@@ -327,6 +327,55 @@ fn elapsed(s: &str) -> Option<Duration> {
 mod tests {
     use super::*;
 
+    /// W0: registry selection is fresh per snapshot; this is not a native-role probe.
+    #[test]
+    fn registry_rematches_replaced_processes_in_the_same_pane() {
+        struct FixtureAdapter(&'static str, u32);
+        impl AgentAdapter for FixtureAdapter {
+            fn id(&self) -> &'static str {
+                self.0
+            }
+            fn open(
+                &self,
+                _: &PaneInfo,
+                _: &Processes,
+            ) -> Result<Option<Box<dyn ChatSource>>, Error> {
+                Ok(None)
+            }
+            fn find(&self, pane: &PaneInfo, _: &Processes) -> Option<Found> {
+                (pane.pid == self.1 && !pane.shell_foreground).then_some(Found {
+                    status: None,
+                    session: None,
+                })
+            }
+        }
+        let registry = Registry::new(vec![
+            Box::new(FixtureAdapter("fixture-a", 101)),
+            Box::new(FixtureAdapter("fixture-b", 202)),
+            Box::new(FixtureAdapter("fixture-a", 303)),
+        ]);
+        let mut pane = PaneInfo {
+            pane: "%1".into(),
+            session: "fixture".into(),
+            pid: 101,
+            path: "/fixture".into(),
+            shell_foreground: false,
+        };
+        let procs = Processes::default();
+        for (pid, expected) in [
+            (101, Some("fixture-a")),
+            (202, Some("fixture-b")),
+            (303, Some("fixture-a")),
+            (404, None),
+        ] {
+            pane.pid = pid;
+            assert_eq!(registry.identify(&pane, &procs).map(|(id, _)| id), expected);
+        }
+        pane.pid = 303;
+        pane.shell_foreground = true;
+        assert!(registry.identify(&pane, &procs).is_none());
+    }
+
     #[test]
     fn names_and_ages_come_from_ps() {
         let procs = Processes::parse(

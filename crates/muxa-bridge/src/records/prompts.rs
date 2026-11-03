@@ -27,6 +27,10 @@ pub enum PromptKind {
 impl Record {
     /// None also when the field is unreadable: a wait nobody can resume.
     pub fn pending_prompt(&self) -> Option<PendingPrompt> {
+        // Even an unknown operation format suppresses automatic input.
+        if self.extra.contains_key(super::lifecycle::FIELD) {
+            return None;
+        }
         let value = self.extra.get(FIELD)?;
         match serde_json::from_value(value.clone()) {
             Ok(p) => Some(p),

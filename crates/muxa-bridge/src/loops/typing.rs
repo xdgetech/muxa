@@ -1,7 +1,7 @@
 //! Typing into an agent pane with no user watching (ADR 0019, "How a prompt
 //! is typed"): only on a finished turn, which `step` decides, and only when
-//! no person typed on the Task's session in the last few seconds. The record
-//! is written after the keys are sent, never before.
+//! no person typed on the Task's session in the last few seconds. Callers persist
+//! a delivery claim before typing, then record the result after sending.
 
 use std::time::Duration;
 

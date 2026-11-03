@@ -241,7 +241,11 @@ fn hello() -> Message {
         protocol: muxa_protocol::VERSION,
         bridge: env!("CARGO_PKG_VERSION").into(),
         tmux: String::new(),
-        capabilities: vec!["task-records".into(), "task-loop".into()],
+        capabilities: vec![
+            "task-records".into(),
+            "task-loop".into(),
+            "task-restart-recovery".into(),
+        ],
     }
 }
 

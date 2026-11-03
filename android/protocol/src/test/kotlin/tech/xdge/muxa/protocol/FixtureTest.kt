@@ -49,6 +49,38 @@ class FixtureTest {
     }
 
     @Test
+    fun workerContractRoundTripsAndKeepsSelectionPresence() {
+        val requests = lines("workers/requests.jsonl")
+        assertEquals(6, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("workers/messages.jsonl")
+        assertEquals(5, messages.size)
+        messages.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeMessage(it)))) }
+        val expected = listOf(WorkerSelection.Keep, WorkerSelection.Keep, WorkerSelection.WorkspaceDefault, WorkerSelection.Named("Reviewer"))
+        requests.subList(1, 5).zip(expected).forEach { (line, selection) ->
+            assertEquals(selection, (Wire.decodeRequest(line) as Request.RestartAgent).worker)
+        }
+        for (bad in listOf("true", "17", "{}", "[]")) {
+            assertThrows(SerializationException::class.java) {
+                Wire.decodeRequest("""{"type":"restart-agent","id":1,"task":"t-000001","worker":$bad}""")
+            }
+        }
+        assertFalse(WorkerAssignment("future-assignment", "Scheduler").isKnown)
+    }
+
+    @Test
+    fun restartRecoveryRoundTrips() {
+        for (name in listOf("restart-recovery/requests.jsonl", "restart-recovery/messages.jsonl")) {
+            val entries = lines(name)
+            assertFalse(entries.isEmpty())
+            entries.forEach {
+                val encoded = if (name.contains("requests")) Wire.encode(Wire.decodeRequest(it)) else Wire.encode(Wire.decodeMessage(it))
+                assertEquals(it, tree(it), tree(encoded))
+            }
+        }
+    }
+
+    @Test
     fun unknownTypesAndFieldsAreIgnored() {
         assertEquals(Message.Unknown("future-thing"), Wire.decodeMessage("""{"type":"future-thing","x":1}"""))
         assertEquals(

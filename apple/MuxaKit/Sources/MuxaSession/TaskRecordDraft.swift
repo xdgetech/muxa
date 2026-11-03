@@ -12,10 +12,11 @@ public struct NewTaskRecord: Equatable, Sendable {
     public var base: String?
     /// Also start a Task Loop (ADR 0019).
     public var loop: LoopSpec?
+    public var worker: String?
 
     public init(
         workspace: String, title: String, goal: String, project: String? = nil, repo: String? = nil,
-        branch: String? = nil, base: String? = nil, loop: LoopSpec? = nil
+        branch: String? = nil, base: String? = nil, loop: LoopSpec? = nil, worker: String? = nil
     ) {
         self.workspace = workspace
         self.title = title
@@ -25,6 +26,7 @@ public struct NewTaskRecord: Equatable, Sendable {
         self.branch = branch
         self.base = base
         self.loop = loop
+        self.worker = worker
     }
 }
 
@@ -42,10 +44,11 @@ public struct TaskRecordDraft: Equatable, Sendable {
     public var base: String
     /// Also start a Task Loop; nil for none.
     public var loop: LoopDraft?
+    public var worker: String?
 
     public init(
         workspace: String = "", title: String = "", goal: String = "", project: String = "", repo: String = "",
-        branch: String = "", base: String = "", loop: LoopDraft? = nil
+        branch: String = "", base: String = "", loop: LoopDraft? = nil, worker: String? = nil
     ) {
         self.workspace = workspace
         self.title = title
@@ -55,6 +58,7 @@ public struct TaskRecordDraft: Equatable, Sendable {
         self.branch = branch
         self.base = base
         self.loop = loop
+        self.worker = worker
     }
 
     /// A draft in `repo`, in the workspace whose `repos` lists it, else in the
@@ -89,7 +93,7 @@ public struct TaskRecordDraft: Equatable, Sendable {
         return NewTaskRecord(
             workspace: workspace.trimmed, title: title.trimmed, goal: goal.trimmed, project: project.trimmed.nonEmpty,
             repo: repo, branch: repo == nil ? nil : branch.trimmed, base: repo == nil ? nil : base.trimmed.nonEmpty,
-            loop: loop?.spec)
+            loop: loop?.spec, worker: worker)
     }
 }
 

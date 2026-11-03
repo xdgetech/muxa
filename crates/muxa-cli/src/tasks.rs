@@ -4,7 +4,10 @@
 
 use std::time::Duration;
 
-use muxa_protocol::{LoopSpec, LoopState, Message, Request, TaskLoop, TaskRecord, TaskStatus};
+use muxa_protocol::{
+    LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop, TaskRecord, TaskStatus,
+    WorkerInfo, WorkerSelection,
+};
 use serde_json::json;
 
 use crate::conn::Conn;
@@ -26,7 +29,75 @@ pub struct NewTask {
     pub repo: Option<String>,
     pub branch: Option<String>,
     pub base: Option<String>,
+    pub worker: Option<String>,
     pub r#loop: Option<LoopSpec>,
+}
+
+pub struct Recovery {
+    pub operation: String,
+    pub rev: u64,
+    pub action: RestartRecoveryAction,
+}
+
+/// Mutation uses only the identity explicitly supplied after inspection.
+pub async fn recover(
+    conn: &mut Conn,
+    task: &str,
+    resolution: Option<Recovery>,
+    as_json: bool,
+) -> Result<String, String> {
+    if let Some(resolution) = resolution {
+        if !conn.supports("task-restart-recovery") {
+            return Err("unsupported: this host does not advertise task-restart-recovery".into());
+        }
+        let messages = conn
+            .call(
+                |id| Request::RecoverRestart {
+                    id,
+                    task: task.into(),
+                    rev: resolution.rev,
+                    operation: resolution.operation,
+                    action: resolution.action,
+                },
+                WAIT,
+            )
+            .await?;
+        let record = saved(&messages).ok_or("the bridge saved no task")?;
+        return print_record(conn, record, as_json).await;
+    }
+    let (_, records, _, _) = fetch(conn).await?;
+    let record = records
+        .iter()
+        .find(|r| r.id == task)
+        .ok_or_else(|| format!("no task {task} in the bridge's task list"))?;
+    if as_json {
+        println!(
+            "{}",
+            serde_json::to_string(record).map_err(|e| e.to_string())?
+        );
+    } else {
+        println!("{}", line(record));
+        println!("revision: {}", record.rev);
+        if let Some(operation) = &record.restart_operation {
+            println!("operation: {}", operation.id);
+            println!("phase: {} (requested/unconfirmed)", operation.phase);
+            let actions = operation
+                .actions
+                .iter()
+                .filter_map(|value| RestartRecoveryAction::from_wire(value))
+                .filter(|action| operation.allows(*action))
+                .map(RestartRecoveryAction::as_str)
+                .collect::<Vec<_>>();
+            if conn.supports("task-restart-recovery") && !actions.is_empty() {
+                println!("actions: {}", actions.join(", "));
+            } else {
+                println!("no recovery action is available; open Terminal");
+            }
+        } else {
+            println!("no pending restart operation");
+        }
+    }
+    Ok(String::new())
 }
 
 /// `--check`, `--max-attempts` and `--check-timeout`.
@@ -96,18 +167,31 @@ impl NewTask {
 }
 
 pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
-    let (workspaces, records, truncated) = fetch(conn).await?;
+    let (workspaces, records, truncated, workers) = fetch(conn).await?;
     if as_json {
         let sessions = conn.list().await?;
         let tasks: Vec<_> = inbox::items(&records, &sessions)
             .iter()
             .map(inbox::to_json)
             .collect();
-        let out = json!({"workspaces": workspaces, "truncated": truncated, "tasks": tasks});
+        let mut out = json!({"workspaces": workspaces, "truncated": truncated, "tasks": tasks});
+        if conn.supports("workers") {
+            out["workers"] = json!(workers);
+        }
         println!("{out}");
         return Ok(String::new());
     }
     println!("workspaces: {}", workspaces.join(", "));
+    if conn.supports("workers") {
+        println!(
+            "workers: {}",
+            workers
+                .iter()
+                .map(|w| w.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
     for r in &records {
         println!("{}", line(r));
     }
@@ -120,9 +204,11 @@ pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
 /// Prints the record, then lets the bridge finish handing the goal to the
 /// agent: it exits once the start prompt is typed or given up.
 pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<String, String> {
+    require_workers(conn.supports("workers"), new.worker.is_some())?;
     let messages = conn
         .call(
             |id| Request::CreateTask {
+                worker: new.worker,
                 id,
                 workspace: new.workspace,
                 title: new.title,
@@ -150,7 +236,7 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
 
 /// Reads the record's `rev` first; a `conflict` means it changed meanwhile.
 pub async fn done(conn: &mut Conn, task: &str) -> Result<String, String> {
-    let (_, records, _) = fetch(conn).await?;
+    let (_, records, _, _) = fetch(conn).await?;
     let rev = records
         .iter()
         .find(|r| r.id == task)
@@ -179,10 +265,27 @@ pub async fn restart(
     task: &str,
     force: bool,
     as_json: bool,
+    worker: WorkerSelection,
 ) -> Result<String, String> {
+    let supports_workers = conn.supports("workers");
+    require_workers(supports_workers, !worker.is_keep())?;
+    let rev = if supports_workers {
+        let (_, records, _, _) = fetch(&mut conn).await?;
+        Some(
+            records
+                .iter()
+                .find(|r| r.id == task)
+                .map(|r| r.rev)
+                .ok_or_else(|| format!("no task {task} in the bridge's task list"))?,
+        )
+    } else {
+        None
+    };
     let messages = conn
         .call(
             |id| Request::RestartAgent {
+                worker,
+                rev,
                 id,
                 task: task.to_owned(),
                 force,
@@ -235,7 +338,7 @@ pub async fn stop_loop(conn: &mut Conn, task: &str, as_json: bool) -> Result<Str
 /// Stops every loop that can still act. A failure does not stop the others;
 /// the error names each task that kept its loop.
 pub async fn stop_all_loops(conn: &mut Conn, as_json: bool) -> Result<String, String> {
-    let (_, records, truncated) = fetch(conn).await?;
+    let (_, records, truncated, _) = fetch(conn).await?;
     let active: Vec<String> = records
         .iter()
         .filter(|r| r.r#loop.as_deref().is_some_and(is_active))
@@ -307,7 +410,9 @@ async fn print_record(
     Ok(String::new())
 }
 
-async fn fetch(conn: &mut Conn) -> Result<(Vec<String>, Vec<TaskRecord>, bool), String> {
+async fn fetch(
+    conn: &mut Conn,
+) -> Result<(Vec<String>, Vec<TaskRecord>, bool, Vec<WorkerInfo>), String> {
     let messages = conn.call(|id| Request::ListTasks { id }, WAIT).await?;
     messages
         .into_iter()
@@ -316,15 +421,25 @@ async fn fetch(conn: &mut Conn) -> Result<(Vec<String>, Vec<TaskRecord>, bool), 
                 workspaces,
                 entries,
                 truncated,
+                workers,
                 ..
             } => Some((
                 workspaces.into_iter().map(|w| w.name).collect(),
                 entries,
                 truncated,
+                workers,
             )),
             _ => None,
         })
         .ok_or_else(|| "the bridge sent no task list".to_owned())
+}
+
+fn require_workers(supported: bool, selected: bool) -> Result<(), String> {
+    if selected && !supported {
+        Err("unsupported: this host does not advertise workers".into())
+    } else {
+        Ok(())
+    }
 }
 
 fn saved(messages: &[Message]) -> Option<&TaskRecord> {
@@ -340,6 +455,21 @@ fn line(r: &TaskRecord) -> String {
     let mut out = format!("{}  {status:<7} {}  {}", r.id, r.workspace, r.title);
     if let Some(session) = &r.session {
         out.push_str(&format!("  [{session}]"));
+    }
+    if let Some(worker) = &r.worker {
+        out.push_str(&format!("  worker: {worker}"));
+    }
+    if let Some(operation) = &r.restart_operation {
+        out.push_str(&format!(
+            "  restart recovery: {} ({})",
+            operation.id, operation.phase
+        ));
+    }
+    if r.runs
+        .last()
+        .is_some_and(|run| run.outcome.as_deref() == Some("unconfirmed"))
+    {
+        out.push_str("  latest run: unconfirmed");
     }
     if let Some(l) = &r.r#loop {
         out.push_str(&format!("  {}", loop_text(l)));
@@ -419,6 +549,8 @@ mod tests {
     #[test]
     fn a_line_shows_status_session_and_note() {
         let r = TaskRecord {
+            restart_operation: None,
+            worker: None,
             id: "t-7f3a2c".into(),
             rev: 2,
             workspace: "work".into(),

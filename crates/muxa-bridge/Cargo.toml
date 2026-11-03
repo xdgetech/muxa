@@ -17,6 +17,7 @@ muxa-tmux = { version = "0.1.0", path = "../muxa-tmux" }
 rustix = { version = "1.1.5", features = ["fs", "process"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.10.9"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt", "macros", "io-util", "io-std", "net", "signal", "sync", "time", "process"] }
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde"] }

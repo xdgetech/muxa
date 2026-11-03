@@ -1,6 +1,11 @@
 //! The muxa client/bridge wire format: one JSON object per line. See
 //! `protocol/PROTOCOL.md`; the shared fixtures in `protocol/fixtures` are the contract.
 
+mod restart_recovery;
+mod workers;
+pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
+pub use workers::{WorkerAssignment, WorkerInfo, WorkerSelection};
+
 use serde::{Deserialize, Serialize};
 
 /// Changes when a message changes incompatibly.
@@ -167,6 +172,8 @@ pub enum Request {
         /// Start a Task Loop with the agent (capability `task-loop`, ADR 0019).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         r#loop: Option<LoopSpec>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<String>,
     },
     /// Set a task record's status. Fails with `conflict` when `rev` is not the
     /// record's current one. A `task-saved` comes before the `result`.
@@ -187,6 +194,19 @@ pub enum Request {
         task: String,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         force: bool,
+        #[serde(default, skip_serializing_if = "WorkerSelection::is_keep")]
+        worker: WorkerSelection,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rev: Option<u64>,
+    },
+    /// Resolve an interrupted restart without an automatic process or prompt retry.
+    /// Requires `task-restart-recovery`; task-saved precedes result.
+    RecoverRestart {
+        id: u64,
+        task: String,
+        rev: u64,
+        operation: String,
+        action: RestartRecoveryAction,
     },
     /// Start or restart the Task Loop of a task (capability `task-loop`,
     /// ADR 0019). A `task-saved` comes before the `result`.
@@ -241,6 +261,7 @@ impl Request {
             | Request::CreateTask { id, .. }
             | Request::UpdateTask { id, .. }
             | Request::RestartAgent { id, .. }
+            | Request::RecoverRestart { id, .. }
             | Request::StartLoop { id, .. }
             | Request::StopLoop { id, .. }
             | Request::Bye { id } => *id,
@@ -398,6 +419,8 @@ pub enum Message {
         /// More records exist than were listed.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         truncated: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        workers: Vec<WorkerInfo>,
     },
     /// The record a task request wrote, sent just before its `result`.
     TaskSaved { task: u64, record: TaskRecord },
@@ -451,6 +474,10 @@ pub struct TaskRecord {
     /// A start or restart prompt the host still waits to type (ADR 0019).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_prompt: Option<PendingPrompt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart_operation: Option<Box<RestartOperation>>,
 }
 
 /// What a client asks for when it starts a Task Loop. The host fills in the
@@ -583,6 +610,12 @@ pub struct AgentRun {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcript: Option<String>,
     pub reason: RunReason,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignment: Option<WorkerAssignment>,
+    /// An interrupted restart may have replaced a process without confirmation.
+    /// Absent on legacy/confirmed runs; unknown values have no known meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
 }
 
 /// Why the bridge started a run.

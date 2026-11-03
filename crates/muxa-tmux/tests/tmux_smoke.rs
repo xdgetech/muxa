@@ -460,3 +460,312 @@ async fn a_device_session_sizes_its_window_and_stays_hidden() {
         "other"
     );
 }
+
+/// W0: explicit worker commands replace each other without changing the pane.
+/// These are shell fixtures, not native agent sessions or role validation.
+#[tokio::test]
+async fn worker_commands_respawn_in_place_with_exact_arguments() {
+    use muxa_tmux::{new_session, respawn_pane, respawn_pane_command};
+    use std::path::PathBuf;
+
+    struct ProbeDir(PathBuf);
+    impl Drop for ProbeDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn shell_arg(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+    let server = Server::start();
+    let dir = ProbeDir(std::env::temp_dir().join(format!(
+        "muxa-worker-probe-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::SeqCst)
+    )));
+    std::fs::create_dir_all(&dir.0).unwrap();
+    let script = dir.0.join("fake-worker.sh");
+    std::fs::write(
+        &script,
+        r#"set -eu
+out=$1
+shift
+printf '%s\000' "$@" > "$out.argv"
+printf '%s' "${MUXA_WORKER_PROBE_ENV-unset}" > "$out.env"
+printf '%s' "$$" > "$out.pid"
+exec sleep 600
+"#,
+    )
+    .unwrap();
+    let args = [
+        "a b",
+        "a'b",
+        "a\"b",
+        "$HOME",
+        "\\path",
+        "~",
+        "日本語",
+        "--profile",
+        "semi;colon",
+        "#{literal}",
+        "",
+    ];
+    let command = |out: &std::path::Path, role: &str| {
+        std::iter::once("/bin/sh".to_owned())
+            .chain([
+                shell_arg(&script.to_string_lossy()),
+                shell_arg(&out.to_string_lossy()),
+                shell_arg(role),
+            ])
+            .chain(args.iter().map(|arg| shell_arg(arg)))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let (client, _notes) = Client::attach(&server.options(), None).unwrap();
+    let workspace_env = "synthetic workspace ' \" $ \\ 日本語";
+    let first = command(&dir.0.join("0"), "default");
+    let (session, pane) = new_session(
+        &client,
+        "worker-probe",
+        &dir.0.to_string_lossy(),
+        &[("MUXA_WORKER_PROBE_ENV".into(), workspace_env.into())],
+        &first,
+    )
+    .await
+    .unwrap();
+    // A different pane is active: replacing the worker must not select it.
+    server.tmux(&[
+        "split-window",
+        "-d",
+        "-h",
+        "-t",
+        &pane.to_string(),
+        "sleep 600",
+    ]);
+    let other = server.tmux(&["list-panes", "-t", &session.to_string(), "-F", "#{pane_id}"]);
+    let other = other.lines().find(|id| *id != pane.to_string()).unwrap();
+    server.tmux(&["select-pane", "-t", other]);
+    server.tmux(&[
+        "new-window",
+        "-d",
+        "-t",
+        &format!("{session}:"),
+        "sleep 600",
+    ]);
+    server.tmux(&["select-window", "-t", &format!("{session}:1")]);
+    struct Desktop(Child);
+    impl Drop for Desktop {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let _desktop = Desktop(
+        Command::new("python3")
+            .args([
+                "-I",
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../scripts/lib/pty-client.py"
+                ),
+                &server.socket,
+                &session.to_string(),
+                "120",
+                "30",
+                "60",
+            ])
+            .env_remove("TMUX")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for(|| {
+        server
+            .tmux(&["list-clients", "-F", "#{client_control_mode}"])
+            .lines()
+            .any(|line| line == "0")
+    })
+    .await;
+    let shape = || {
+        server.tmux(&[
+            "display-message", "-p", "-t", &pane.to_string(),
+            "#{pane_id} #{pane_width}x#{pane_height} #{window_layout} #{pane_active} #{window_active}",
+        ])
+    };
+    let selection = || {
+        format!(
+            "{}\n{}",
+            server.tmux(&[
+                "list-sessions",
+                "-F",
+                "#{session_id} #{window_id} #{pane_id}"
+            ]),
+            server.tmux(&[
+                "list-clients",
+                "-F",
+                "#{client_control_mode} #{session_id} #{window_id} #{pane_id}"
+            ])
+        )
+    };
+    let before = shape();
+    let selected = selection();
+    let initial_pid = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &pane.to_string(),
+        "#{pane_pid}",
+    ]);
+    for invalid in [
+        vec![],
+        vec!["worker".to_owned(), "synthetic\0value".to_owned()],
+    ] {
+        assert!(
+            respawn_pane_command(&client, pane, &dir.0.to_string_lossy(), &[], &invalid)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server.tmux(&[
+                "display-message",
+                "-p",
+                "-t",
+                &pane.to_string(),
+                "#{pane_pid}"
+            ]),
+            initial_pid
+        );
+        assert_eq!(shape(), before);
+        assert_eq!(selection(), selected);
+    }
+    let mut previous_pid = String::new();
+    for (i, role) in ["default", "A", "B", "A-edited", "default"]
+        .iter()
+        .enumerate()
+    {
+        let out = dir.0.join(i.to_string());
+        let cmd = command(&out, role);
+        for explicit in [true, false] {
+            if !explicit {
+                respawn_pane(&client, pane, &dir.0.to_string_lossy(), &[])
+                    .await
+                    .unwrap();
+            } else if i > 0 {
+                let selected = if matches!(i, 2 | 3) {
+                    // Multiple tmux arguments exec directly; no shell re-quoting.
+                    std::iter::once("/bin/sh".to_owned())
+                        .chain([
+                            script.to_string_lossy().into_owned(),
+                            out.to_string_lossy().into_owned(),
+                            (*role).to_owned(),
+                        ])
+                        .chain(args.iter().map(|arg| (*arg).to_owned()))
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![cmd.clone()]
+                };
+                respawn_pane_command(&client, pane, &dir.0.to_string_lossy(), &[], &selected)
+                    .await
+                    .unwrap();
+            }
+            let pid = server.tmux(&[
+                "display-message",
+                "-p",
+                "-t",
+                &pane.to_string(),
+                "#{pane_pid}",
+            ]);
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if std::fs::read_to_string(out.with_extension("pid"))
+                        .ok()
+                        .as_deref()
+                        == Some(pid.as_str())
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("the fake worker started");
+            assert_ne!(
+                pid, previous_pid,
+                "a new worker process replaced the previous one"
+            );
+            previous_pid = pid;
+            let expected: Vec<u8> = std::iter::once(*role)
+                .chain(args)
+                .flat_map(|a| a.bytes().chain([0]))
+                .collect();
+            assert_eq!(std::fs::read(out.with_extension("argv")).unwrap(), expected);
+            assert_eq!(
+                std::fs::read(out.with_extension("env")).unwrap(),
+                workspace_env.as_bytes()
+            );
+
+            assert_eq!(shape(), before);
+            assert_eq!(selection(), selected);
+        }
+    }
+}
+
+/// W0 baseline: tmux does not turn an old hook tag into fresh process evidence.
+#[tokio::test]
+async fn worker_respawn_retains_old_hook_tags() {
+    use muxa_tmux::{AgentState, respawn_pane_command, set_pane_option};
+    let server = Server::start();
+    let pane = server.first_pane();
+    let (client, _notes) = Client::attach(&server.options(), None).unwrap();
+    set_pane_option(&client, pane, "@muxa_role", "agent")
+        .await
+        .unwrap();
+    set_pane_option(&client, pane, "@agent_state", "waiting")
+        .await
+        .unwrap();
+    set_pane_option(&client, pane, "@agent_state_at", "1")
+        .await
+        .unwrap();
+    set_pane_option(&client, pane, "@agent_session_id", "old-fixture-session")
+        .await
+        .unwrap();
+    let old_pid = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &pane.to_string(),
+        "#{pane_pid}",
+    ]);
+    let dir = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &pane.to_string(),
+        "#{pane_current_path}",
+    ]);
+    respawn_pane_command(&client, pane, &dir, &[], &["exec sleep 600".into()])
+        .await
+        .unwrap();
+    let sessions = list_sessions(&client).await.unwrap();
+    let found = sessions
+        .iter()
+        .flat_map(|s| &s.panes)
+        .find(|p| p.id == pane)
+        .unwrap();
+    assert_ne!(found.pid.to_string(), old_pid);
+    assert_eq!(found.agent.unwrap().state, AgentState::Waiting);
+    assert_eq!(found.agent.unwrap().since, Some(1));
+    assert_eq!(
+        server.tmux(&[
+            "show-options",
+            "-p",
+            "-qv",
+            "-t",
+            &pane.to_string(),
+            "@agent_session_id"
+        ]),
+        "old-fixture-session"
+    );
+}

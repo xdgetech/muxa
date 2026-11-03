@@ -71,7 +71,7 @@ struct RestartAgentTests {
         #expect(saved.runs[1].reason == .restart)
         #expect(session.taskRecords.first == saved)
         #expect(bridge.received.contains {
-            if case .restartAgent(_, "t-000001", false) = $0 { true } else { false }
+            if case .restartAgent(_, "t-000001", false, .keep, nil) = $0 { true } else { false }
         })
     }
 

@@ -11,6 +11,7 @@ use serde::Deserialize;
 use super::agent_env::{AgentSettings, RawAgent};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
+use super::workers::{RawWorker, Worker};
 
 /// In characters.
 const MAX_NAME: usize = 64;
@@ -58,6 +59,7 @@ pub struct Workspace {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Workspaces {
     list: Vec<Workspace>,
+    workers: Vec<Worker>,
 }
 
 #[derive(Deserialize)]
@@ -65,6 +67,8 @@ pub struct Workspaces {
 struct RawConfig {
     #[serde(default)]
     workspace: Vec<RawWorkspace>,
+    #[serde(default)]
+    worker: Vec<RawWorker>,
 }
 
 #[derive(Deserialize)]
@@ -178,7 +182,27 @@ impl Workspaces {
                 loop_checks,
             });
         }
-        Ok(Self { list })
+        let mut worker_names = HashSet::new();
+        let mut workers = Vec::with_capacity(raw.worker.len());
+        for raw_worker in raw.worker {
+            let worker = raw_worker.check(home, &list).map_err(invalid)?;
+            if !worker_names.insert(worker.name.clone()) {
+                return Err(invalid("worker name appears twice".into()));
+            }
+            workers.push(worker);
+        }
+        Ok(Self { list, workers })
+    }
+
+    // Metadata publication remains gated with the workers runtime.
+    #[allow(dead_code)]
+    pub fn workers(&self) -> &[Worker] {
+        &self.workers
+    }
+
+    #[allow(dead_code)]
+    pub fn worker(&self, name: &str) -> Option<&Worker> {
+        self.workers.iter().find(|worker| worker.name == name)
     }
 
     pub fn all(&self) -> &[Workspace] {

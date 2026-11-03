@@ -87,7 +87,23 @@ pub fn log_path(dir: &Path, attempt: u32) -> PathBuf {
 /// Runs the check to its end or its timeout, then writes `CHECK.md` and
 /// drops the oldest logs. The process group is gone when this returns, also
 /// when the future is dropped.
+#[cfg(test)]
 pub async fn run(spec: CheckRun) -> Result<CheckEnd, CheckError> {
+    run_with_claim(spec, None).await
+}
+
+/// Keep restart excluded until the check process has actually been spawned.
+pub async fn run_claimed(
+    spec: CheckRun,
+    claim: crate::records::store::ClaimedTask,
+) -> Result<CheckEnd, CheckError> {
+    run_with_claim(spec, Some(claim)).await
+}
+
+async fn run_with_claim(
+    spec: CheckRun,
+    claim: Option<crate::records::store::ClaimedTask>,
+) -> Result<CheckEnd, CheckError> {
     let path = log_path(&spec.dir, spec.attempt);
     let folder = path.parent().unwrap_or(&spec.dir).to_owned();
     std::fs::create_dir_all(&folder).map_err(io("create", &folder))?;
@@ -114,6 +130,7 @@ pub async fn run(spec: CheckRun) -> Result<CheckEnd, CheckError> {
             dir: spec.dir.clone(),
             source,
         })?;
+    drop(claim);
     let group = Group(child.id());
     let mut readers: Vec<_> = [
         child

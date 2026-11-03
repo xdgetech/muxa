@@ -58,6 +58,17 @@ struct CreateTaskSheet: View {
                          ? "The host creates a worktree on the branch. A new branch starts from the base."
                          : "The host creates a directory for the task in its workspace.")
                 }
+                if model.session.canUseWorkers {
+                    Section("Worker") {
+                        Picker("Worker", selection: $draft.worker) {
+                            Text("Workspace default").tag(String?.none)
+                            ForEach(model.session.workers.filter { $0.allows(workspace: draft.workspace) }, id: \.name) { worker in
+                                Text(worker.name).tag(Optional(worker.name))
+                            }
+                        }
+                        .accessibilityIdentifier("record-worker")
+                    }
+                }
                 NewTaskLoop(draft: $draft)
                 if let message = error ?? visibleProblem {
                     Section {
@@ -90,6 +101,7 @@ struct CreateTaskSheet: View {
             .onChange(of: draft) { error = nil }
             // Another workspace allows other checks.
             .onChange(of: draft.workspace) {
+                if let name = draft.worker, !model.session.workers.contains(where: { $0.name == name && $0.allows(workspace: draft.workspace) }) { draft.worker = nil }
                 if draft.loop != nil { draft.loop = model.checks(of: draft.workspace).map { LoopDraft(checks: $0) } }
             }
             .onChange(of: withRepo) { _, on in
@@ -138,11 +150,15 @@ struct CreateTaskSheet: View {
         return d
     }
 
-    private var request: NewTaskRecord? { effective.request }
+    private var workerIssue: String? {
+        workerProblem(name: draft.worker, workspace: draft.workspace, workers: model.session.workers)
+    }
+
+    private var request: NewTaskRecord? { workerIssue == nil ? effective.request : nil }
 
     /// The draft's problem, once a title has been typed.
     private var visibleProblem: String? {
-        draft.title.isEmpty ? nil : effective.problem
+        workerIssue ?? (draft.title.isEmpty ? nil : effective.problem)
     }
 
     private func create() {

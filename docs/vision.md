@@ -12,12 +12,24 @@ muxa grows from a remote view of your tmux panes into a workspace where work run
 |---|---|---|
 | 1. Remote tmux workspace | Your existing panes on a phone or tablet, at their real size, without changing the desktop layout. | Built |
 | 1b. Agent-aware workspace | Agent states, chat, approval cards, alerts, the Reader, starting and closing worktree sessions. | Built |
-| 2. Workspace and Task foundation | Durable Tasks with a goal, grouped by Workspace; an Inbox of what needs you. | Next (ADR 0015) |
-| 3. Task execution | muxa launches and follows agent runs for a Task, and keeps their history. | Direction |
+| 2. Workspace and Task foundation | Durable Tasks with a goal, grouped by Workspace; an Inbox of what needs you. | Built first slice: records, workspaces, Inbox and non-repo Tasks; real-account/device verification and ADR acceptance remain |
+| 3. Task execution | muxa launches and follows agent runs for a Task, and keeps their history. | Partly built: launch, run history, handoff and daemon loops; default-agent restart recovery implemented, Workers in progress, workspace memory not implemented |
 | 4. Workflow orchestration | Tasks connected in a graph: one step's result starts the next. | Direction |
 | 5. Autonomous work | Agents pick up and finish Tasks with little supervision, inside the limits you set. | Direction |
 
-Each phase keeps everything before it.
+Each phase keeps everything before it. “Built” describes local code and validation, not a published product or completed real-device/native-agent release verification.
+
+The current execution work is split into Workers/handoff (W) and workspace memory/close-out (M), tracked in [the delivery plan](workers.md). Worker configuration and capability-gated CLI/iOS/Android selection are prepared; native role discovery, worker execution integration and release gates remain. Default-agent restart recovery is implemented independently of named Workers. Memory has an adapter/source audit and acceptance matrix, but no complete snapshot/proposal/apply implementation. In particular, the existing normalized agent state cannot distinguish some same-second completed turns, so close-out readiness cannot safely reuse it unchanged. Workspace environment selection is implemented, but real-account checks remain; workspace scope lists are not an OS security boundary. Workflow orchestration and autonomous execution have no implementation commitment yet.
+
+## Inbox and recurring project intake
+
+Manual tmux work has a separate Sessions destination, while managed execution/history lives under Tasks. Association determines the category: manually launched AI stays manual, and human typing inside a Task keeps its Task identity.
+
+The desired daily surface is an ordered Inbox list: work from the top, complete an action, move it down, or defer it until a chosen time. Briefings and proposed work can enter Inbox before an agent Task exists. Proposed ADR 0025 extends ADR 0023 with host-owned order and cross-device dispositions; today's grouped List/Triage and local Snooze remain the implemented slice.
+
+A small scheduled-intake slice bridges Phases 3 and 4: a project Routine can collect an 08:00 Slack digest and actionable proposals while clients are disconnected. It reuses reliable worker execution but has its own clock, source cursors, deduplication and failure history. The existing per-Task check/retry Loop remains separate. Intake does not require the full workflow graph or autonomous execution; suggested work still awaits explicit acceptance. See [ADR 0025](adr/0025-inbox-queue-and-scheduled-intake.md).
+
+For the shared domain and UI definitions, see [Inbox, Tasks and Sessions](work-model.md); the integrated W/Q/S/M milestones are in [the delivery plan](workers.md#product-milestones-across-the-vision).
 
 ## Concepts
 
@@ -27,10 +39,12 @@ These stay separate. Merging two of them makes a later phase hard.
 |---|---|
 | Workspace | A body of work with its own root directory and its own credentials, for example a company or a personal area. |
 | Project | A goal inside a Workspace that groups Tasks. For now a free-text field on a Task. |
-| Task | One unit of work with a goal, a status and a record that outlives any session. |
+| Task | Durable managed work: a goal, status and history that outlive its execution session. |
 | Resource | What a Task works on: a repo, documents, an issue tracker. For now zero or one repo. |
-| tmux session | Where work runs. tmux stays the execution layer. |
-| Agent run | One agent process working on a Task in a session. Its state comes from an adapter. |
+| tmux session | The actual execution/interaction location, containing windows/panes; can be manual or associated with managed work. |
+| Agent run | One agent execution on a Task. Restart can create a new run in the same tmux session/pane; state comes from an adapter. |
+| Inbox entry | A request for human action, referencing a Task need, briefing or proposed work; not another copy of the Task. |
+| Routine | Scheduled project information collection that publishes briefings/proposed actions to Inbox; proposed in ADR 0025. |
 | Workflow | A graph of Tasks and the rules that connect them. |
 
 A Task is not a tmux session. A session can end and the Task continues. A Task can have several agent runs over time.

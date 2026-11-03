@@ -37,6 +37,8 @@ import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.knownRepos
+import tech.xdge.muxa.session.allows
+import tech.xdge.muxa.session.workerProblem
 
 /**
  * Records a Task on the host and starts an agent for it: in a directory of its workspace,
@@ -53,13 +55,14 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
     var error by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val workerIssue = workerProblem(draft.worker, draft.workspace, model.state.tasks?.workers.orEmpty())
     val plain = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false)
     fun edit(next: TaskRecordDraft) {
         draft = next
         error = null
     }
     fun create() {
-        if (draft.problem != null || creating) return
+        if (draft.problem != null || workerIssue != null || creating) return
         creating = true
         scope.launch {
             try {
@@ -88,7 +91,7 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                             DropdownMenuItem({ Text(w.name) }, {
                                 // Another workspace allows other checks.
                                 val loop = draft.loop?.let { w.checks?.let { checks -> LoopDraft(checks) } }
-                                edit(draft.copy(workspace = w.name, loop = loop))
+                                edit(draft.copy(workspace = w.name, loop = loop, worker = draft.worker?.takeIf { name -> model.state.tasks?.workers.orEmpty().any { it.name == name && it.allows(w.name) } }))
                                 picking = false
                             }, modifier = Modifier.testTag("workspace-${w.name}"))
                         }
@@ -138,9 +141,15 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
-                NewTaskLoop(model, draft.loop, model.checksOf(draft.workspace)) { edit(draft.copy(loop = it)) }
+                if (model.state.canUseWorkers) {
+                    WorkerPicker(
+                        model.state.tasks?.workers.orEmpty().filter { it.allows(draft.workspace) },
+                        draft.worker, "task-worker",
+                    ) { edit(draft.copy(worker = it)) }
+                }
+                NewTaskLoop(model, draft.loop, model.checksOf(draft.workspace), defaults = if (model.state.canUseWorkers) model.state.tasks?.workers?.firstOrNull { it.name == draft.worker && it.allows(draft.workspace) }?.loop else null) { edit(draft.copy(loop = it)) }
                 // The draft's problem, once there is a title to complain about.
-                (error ?: draft.problem.takeIf { draft.title.isNotEmpty() })?.let {
+                (error ?: workerIssue ?: draft.problem.takeIf { draft.title.isNotEmpty() })?.let {
                     Text(it, color = Theme.failure, modifier = Modifier.testTag("task-record-error"))
                 }
             }
@@ -149,7 +158,7 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
             if (creating) {
                 CircularProgressIndicator()
             } else {
-                TextButton(::create, enabled = draft.problem == null, modifier = Modifier.testTag("task-create")) { Text("Create") }
+                TextButton(::create, enabled = draft.problem == null && workerIssue == null, modifier = Modifier.testTag("task-create")) { Text("Create") }
             }
         },
         dismissButton = { TextButton({ model.newTaskRecord = null }, enabled = !creating) { Text("Cancel") } },

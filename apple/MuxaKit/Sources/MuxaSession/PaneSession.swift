@@ -49,6 +49,7 @@ public final class PaneSession {
     public private(set) var taskRecords: [TaskRecord] = []
     /// The host's workspaces, from its config.
     public private(set) var workspaces: [WorkspaceInfo] = []
+    public private(set) var workers: [WorkerInfo] = []
     /// The last listing left some records out.
     public private(set) var tasksTruncated = false
     /// Why the task records could not be listed; the last list stays.
@@ -108,6 +109,7 @@ public final class PaneSession {
             image = nil
             taskRecords = []
             workspaces = []
+            workers = []
             tasksTruncated = false
             taskError = nil
         }
@@ -357,6 +359,10 @@ public final class PaneSession {
         return name
     }
 
+    public var canRecoverRestarts: Bool { capabilities.contains("task-restart-recovery") }
+
+    public var canUseWorkers: Bool { capabilities.contains("workers") }
+
     public var canKeepTasks: Bool { capabilities.contains("task-records") }
 
     /// Lists the task records and workspaces again. A failure lands in `taskError`.
@@ -376,6 +382,7 @@ public final class PaneSession {
         guard let listing = taskListings.removeValue(forKey: requestId) else { return }
         taskRecords = listing.entries
         workspaces = listing.workspaces
+        workers = listing.workers
         tasksTruncated = listing.truncated
         taskError = nil
     }
@@ -384,6 +391,10 @@ public final class PaneSession {
     /// with a `note` saying why; it is returned then too. Throws when nothing was kept.
     public func createTask(_ new: NewTaskRecord) async throws -> TaskRecord {
         if new.loop != nil { try requireLoops() }
+        if let worker = new.worker {
+            try requireWorkers()
+            try requireWorkerChoice(worker, workspace: new.workspace)
+        }
         var requestId: UInt64 = 0
         var failure: (any Error)?
         do {
@@ -391,7 +402,7 @@ public final class PaneSession {
                 requestId = id
                 return .createTask(
                     id: id, workspace: new.workspace, title: new.title, goal: new.goal, project: new.project,
-                    repo: new.repo, branch: new.branch, base: new.base, loop: new.loop)
+                    repo: new.repo, branch: new.branch, base: new.base, loop: new.loop, worker: new.worker)
             }
         } catch {
             failure = error
@@ -425,6 +436,18 @@ public final class PaneSession {
         return saved ?? record
     }
 
+    private func requireWorkerChoice(_ name: String, workspace: String) throws {
+        if let problem = workerProblem(name: name, workspace: workspace, workers: workers) {
+            throw Failure.bridge(ErrorBody(code: .badRequest, message: problem))
+        }
+    }
+
+    private func requireWorkers() throws {
+        guard canUseWorkers else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: "This host does not support workers."))
+        }
+    }
+
     public var canRestartAgents: Bool { capabilities.contains("task-handoff") }
 
     /// Shown when the bridge cannot restart agents.
@@ -432,7 +455,21 @@ public final class PaneSession {
 
     /// Restarts a task's agent in its pane, after a handoff (ADR 0018). Without
     /// `force`, the bridge refuses a running agent. Returns the record with its new run.
-    public func restartAgent(task: String, force: Bool) async throws -> TaskRecord {
+    public func restartAgent(task: String, force: Bool, worker: WorkerSelection = .keep, rev: UInt64? = nil) async throws -> TaskRecord {
+        if taskRecords.first(where: { $0.id == task })?.restartOperation?.blocksRestart == true {
+            throw Failure.bridge(ErrorBody(code: .conflict, message: "Resolve the interrupted restart before restarting again."))
+        }
+        if worker != .keep { try requireWorkers() }
+        if case .named(let name) = worker {
+            guard let record = taskRecords.first(where: { $0.id == task }) else {
+                throw Failure.bridge(ErrorBody(code: .badRequest, message: "Reload the task before restarting."))
+            }
+            try requireWorkerChoice(name, workspace: record.workspace)
+        }
+        let revision = canUseWorkers ? (rev ?? taskRecords.first { $0.id == task }?.rev) : nil
+        if canUseWorkers, revision == nil {
+            throw Failure.bridge(ErrorBody(code: .badRequest, message: "Reload the task before restarting."))
+        }
         guard canRestartAgents else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.restartUnsupported))
         }
@@ -440,10 +477,11 @@ public final class PaneSession {
         do {
             try await request { id in
                 requestId = id
-                return .restartAgent(id: id, task: task, force: force)
+                return .restartAgent(id: id, task: task, force: force, worker: worker, rev: revision)
             }
         } catch {
             savedTasks[requestId] = nil
+            if case Failure.bridge(let body) = error, body.code == .conflict { await loadTasks() }
             throw error
         }
         // The record arrives just before the result, and already replaced the listed one.
@@ -454,6 +492,24 @@ public final class PaneSession {
             throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the task."))
         }
         return saved
+    }
+
+    /// Explicit action bound to the operation/revision the user reviewed. Never retries automatically.
+    public func recoverRestart(_ record: TaskRecord, operation: String, action: RestartRecoveryAction) async throws -> TaskRecord {
+        guard canRecoverRestarts else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: "This host does not support restart recovery."))
+        }
+        guard let summary = record.restartOperation, summary.id == operation, summary.recoveryActions.contains(action),
+              let current = taskRecords.first(where: { $0.id == record.id })?.restartOperation,
+              current.id == operation, current.recoveryActions.contains(action) else {
+            throw Failure.bridge(ErrorBody(code: .conflict, message: "Reload the task and review its recovery options again."))
+        }
+        do {
+            return try await saving { .recoverRestart(id: $0, task: record.id, rev: record.rev, operation: operation, action: action) }
+        } catch {
+            await loadTasks()
+            throw error
+        }
     }
 
     /// The host's bridge reached the muxa daemon, so Tasks can have a Task Loop (ADR 0019).

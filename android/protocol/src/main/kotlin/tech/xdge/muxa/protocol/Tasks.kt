@@ -33,6 +33,8 @@ data class TaskRecord(
     val loop: TaskLoop? = null,
     /** A start or restart prompt the host still waits to type (ADR 0019). */
     val pendingPrompt: PendingPrompt? = null,
+    val worker: String? = null,
+    val restartOperation: RestartOperation? = null,
 )
 
 /** One agent that worked on a task, as the bridge started or restarted it (ADR 0018). */
@@ -51,6 +53,8 @@ data class AgentRun(
     /** The session's transcript on the host, absolute. A path only. */
     val transcript: String? = null,
     val reason: RunReason,
+    val assignment: WorkerAssignment? = null,
+    val outcome: String? = null,
 )
 
 /** Why the bridge started a run. A reason added by a newer bridge keeps its name. */

@@ -35,6 +35,7 @@ struct TaskDetail: View {
             }
             // Before the details: a long goal must not push the way into the session off screen.
             open(item)
+            RestartRecoverySection(record: r)
             LoopSection(item: item, starting: $loopStart, error: $loopError)
             Section {
                 statusPicker(r)
@@ -46,6 +47,9 @@ struct TaskDetail: View {
                     } else { Text("none") }
                 }
                 LabeledContent("Workspace", value: r.workspace)
+                if model.session.canUseWorkers || r.worker != nil {
+                    LabeledContent("Worker", value: r.worker ?? "Workspace default")
+                }
                 if let project = r.project { LabeledContent("Project", value: project) }
             }
             Section("Where") {

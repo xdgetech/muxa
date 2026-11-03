@@ -185,7 +185,13 @@ fn concurrent_writers_lose_no_update() {
         .map(|e| e.unwrap().file_name())
         .filter(|n| n.to_string_lossy().starts_with('.'))
         .collect();
-    assert!(leftovers.is_empty(), "{leftovers:?}");
+    // OS-lock inodes persist across owners; temporary record files do not.
+    assert_eq!(
+        leftovers,
+        vec![std::ffi::OsString::from(format!(".{id}.lock"))]
+    );
+    let claim = store.claim(&id, r.rev);
+    assert!(claim.is_ok(), "{:?}", claim.err());
 }
 
 #[test]
@@ -530,4 +536,75 @@ fn paths_that_leave_the_root_are_refused() {
         ws.inside(&ws.root.join("dangling/new")),
         Err(PathError::Outside { .. })
     ));
+}
+
+/// W0 counterexample: record CAS cannot undo external effects that happened first.
+#[test]
+fn record_lock_does_not_serialize_external_restart_effects() {
+    use std::sync::{Arc, Barrier};
+    let store = store("restart-external-effects");
+    let record = store.create(new("Task")).unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let effects = store.dir().join("fixture-effects");
+    std::fs::create_dir(&effects).unwrap();
+    let actors: Vec<_> = (0..2)
+        .map(|actor| {
+            let store = Store::open(store.dir()).unwrap();
+            let id = record.id.clone();
+            let barrier = Arc::clone(&barrier);
+            let effect = effects.join(actor.to_string());
+            std::thread::spawn(move || {
+                let rev = store.get(&id).unwrap().rev;
+                barrier.wait();
+                // A stand-in for respawn, outside the record transaction.
+                std::fs::write(effect, b"synthetic effect").unwrap();
+                barrier.wait();
+                store.update(&id, rev, |r| r.note = Some("fixture".into()))
+            })
+        })
+        .collect();
+    let results: Vec<_> = actors.into_iter().map(|a| a.join().unwrap()).collect();
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| matches!(r, Err(StoreError::Conflict { .. })))
+            .count(),
+        1
+    );
+    assert_eq!(std::fs::read_dir(effects).unwrap().count(), 2);
+    assert_eq!(store.get(&record.id).unwrap().rev, record.rev + 1);
+}
+
+#[test]
+fn worker_fields_survive_legacy_record_and_run_rewrites() {
+    let store = store("worker-fields");
+    let record = store.create(new("Worker Task")).unwrap();
+    let assignment =
+        serde_json::json!({"kind":"future-assignment", "name":"Scheduler", "later":true});
+    let saved = store
+        .update(&record.id, record.rev, |r| {
+            r.extra
+                .insert("worker".into(), serde_json::json!("Reviewer"));
+            r.start_run(RunReason::Start, r.created_at);
+            r.runs[0]
+                .extra
+                .insert("assignment".into(), assignment.clone());
+        })
+        .unwrap();
+    let rewritten = store
+        .update(&record.id, saved.rev, |r| {
+            r.status = Status::Review;
+            r.runs[0].fill(&Seen {
+                agent: "codex".into(),
+                session: None,
+                transcript: None,
+            });
+        })
+        .unwrap();
+    let loaded = store.get(&record.id).unwrap();
+    assert_eq!(loaded, rewritten);
+    assert_eq!(loaded.worker(), Some("Reviewer"));
+    assert_eq!(loaded.runs[0].extra.get("assignment"), Some(&assignment));
+    assert!(!loaded.runs[0].assignment().unwrap().is_known());
 }

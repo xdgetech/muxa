@@ -130,6 +130,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
                 createTask(req)
             }
             is Request.UpdateTask -> updateTask(req)
+            is Request.RecoverRestart -> fail(req.id, ErrorCode.UNSUPPORTED, "Restart recovery is not implemented on this host.")
             is Request.RestartAgent -> restartAgent(req)
             is Request.StartLoop -> startLoop(req)
             is Request.StopLoop -> stopLoop(req)
@@ -347,6 +348,10 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
      * keeps the record with a note and no session, as a failed launch does on a host.
      */
     private fun createTask(req: Request.CreateTask) {
+        if (req.worker != null) {
+            fail(req.id, ErrorCode.UNSUPPORTED, "Workers are not implemented in the demo.")
+            return
+        }
         val workspace = content.workspaces.firstOrNull { it.name == req.workspace }
         if (workspace == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
@@ -442,6 +447,10 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
      * restart run, and the agent runs again. A running agent needs [Request.RestartAgent.force].
      */
     private fun restartAgent(req: Request.RestartAgent) {
+        if (req.worker != tech.xdge.muxa.protocol.WorkerSelection.Keep || req.rev != null) {
+            fail(req.id, ErrorCode.UNSUPPORTED, "Workers are not implemented in the demo.")
+            return
+        }
         val now = now()
         val saved = synchronized(lock) {
             val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")

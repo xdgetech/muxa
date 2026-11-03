@@ -1,13 +1,15 @@
 //! The record files: one `<id>.json` per Task, written atomically. `rev` is
-//! the optimistic lock between bridges; a short-lived lock file makes each
-//! read-compare-write a single step.
+//! the optimistic lock between bridges; a persistent OS-lock inode makes each
+//! read-compare-write a single step and supports a wider Task claim.
 
 use std::ffi::OsStr;
-use std::fs::{self, DirBuilder, OpenOptions};
+use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use rustix::fs::{FlockOperation, flock};
 
 use super::{
     FORMAT_VERSION, MAX_FIELD, MAX_FILE, MAX_GOAL, MAX_RUNS, MAX_TITLE, NewRecord, Record, Status,
@@ -20,8 +22,6 @@ const FILE_MODE: u32 = 0o600;
 const ID_ATTEMPTS: usize = 16;
 const LOCK_WAIT: Duration = Duration::from_secs(2);
 const LOCK_POLL: Duration = Duration::from_millis(5);
-/// A lock older than this was left by a writer that died.
-const LOCK_STALE: Duration = Duration::from_secs(10);
 
 /// Messages carry ids, paths and field names, never title, goal or note text.
 #[derive(Debug, thiserror::Error)]
@@ -88,6 +88,7 @@ impl Store {
             .mode(DIR_MODE)
             .create(&dir)
             .map_err(io_error("create", &dir))?;
+        let dir = fs::canonicalize(&dir).map_err(io_error("resolve", &dir))?;
         Ok(Self { dir })
     }
 
@@ -163,7 +164,10 @@ impl Store {
             let linked = fs::hard_link(&tmp, &target);
             remove_temp(&tmp);
             match linked {
-                Ok(()) => return Ok(record),
+                Ok(()) => {
+                    sync_directory(&self.dir)?;
+                    return Ok(record);
+                }
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(io_error("write", &target)(e)),
             }
@@ -183,8 +187,42 @@ impl Store {
         if !is_valid_id(id) {
             return Err(StoreError::InvalidId);
         }
-        let _lock = Lock::acquire(&self.dir, id)?;
+        let _lock = Lock::acquire(&self.dir, id, true)?;
         let current = self.read(id)?;
+        if current.extra.contains_key("restartOperation") {
+            return Err(StoreError::Busy(id.to_owned()));
+        }
+        self.update_current(current, expected_rev, change)
+    }
+
+    /// A nonblocking lifecycle claim. Keep this guard through external effects.
+    pub fn claim(&self, id: &str, expected_rev: u64) -> Result<ClaimedTask, StoreError> {
+        if !is_valid_id(id) {
+            return Err(StoreError::InvalidId);
+        }
+        let lock = Lock::acquire(&self.dir, id, false)?;
+        let record = self.read(id)?;
+        if record.rev != expected_rev {
+            return Err(StoreError::Conflict {
+                id: id.to_owned(),
+                expected: expected_rev,
+                current: record.rev,
+            });
+        }
+        Ok(ClaimedTask {
+            store: self.clone(),
+            _lock: lock,
+            record,
+        })
+    }
+
+    fn update_current(
+        &self,
+        current: Record,
+        expected_rev: u64,
+        change: impl FnOnce(&mut Record),
+    ) -> Result<Record, StoreError> {
+        let id = current.id.clone();
         if current.rev != expected_rev {
             return Err(StoreError::Conflict {
                 id: id.to_owned(),
@@ -200,12 +238,13 @@ impl Store {
         next.created_at = current.created_at;
         next.updated_at = now().max(current.updated_at);
         check(&next)?;
-        let tmp = self.write_temp(id, &encode(&next)?)?;
-        let target = self.path(id);
+        let tmp = self.write_temp(&id, &encode(&next)?)?;
+        let target = self.path(&id);
         if let Err(e) = fs::rename(&tmp, &target) {
             remove_temp(&tmp);
             return Err(io_error("write", &target)(e));
         }
+        sync_directory(&self.dir)?;
         Ok(next)
     }
 
@@ -381,54 +420,83 @@ pub fn now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-/// `.<id>.lock`, held while one writer reads, compares and replaces a record.
+/// The inode stays in place; unlinking it would split ownership between writers.
 struct Lock {
-    path: PathBuf,
-}
-
-impl Lock {
-    fn acquire(dir: &Path, id: &str) -> Result<Self, StoreError> {
-        let path = dir.join(format!(".{id}.lock"));
-        let start = Instant::now();
-        loop {
-            let created = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(FILE_MODE)
-                .open(&path);
-            match created {
-                Ok(_) => return Ok(Self { path }),
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(e) => return Err(io_error("create", &path)(e)),
-            }
-            if is_stale(&path) {
-                tracing::warn!(id, "removing a stale task lock");
-                match fs::remove_file(&path) {
-                    Ok(()) => continue,
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-                    Err(e) => return Err(io_error("remove", &path)(e)),
-                }
-            }
-            if start.elapsed() > LOCK_WAIT {
-                return Err(StoreError::Busy(id.to_owned()));
-            }
-            std::thread::sleep(LOCK_POLL);
-        }
-    }
+    _file: File,
 }
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        if let Err(e) = fs::remove_file(&self.path) {
-            tracing::warn!(path = %self.path.display(), error = %e, "cannot remove a task lock");
+        // A concurrent spawn can briefly inherit the open description before
+        // exec closes it. Normal release must not wait for that child's exec.
+        if let Err(error) = flock(&self._file, FlockOperation::Unlock) {
+            tracing::warn!(error = %error, "cannot release task lock");
         }
     }
 }
 
-fn is_stale(path: &Path) -> bool {
-    fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.elapsed().ok())
-        .is_some_and(|age| age > LOCK_STALE)
+impl Lock {
+    fn acquire(dir: &Path, id: &str, wait: bool) -> Result<Self, StoreError> {
+        let path = dir.join(format!(".{id}.lock"));
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(FILE_MODE)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
+            .open(&path)
+            .map_err(io_error("open lock", &path))?;
+        if !file
+            .metadata()
+            .map_err(io_error("inspect lock", &path))?
+            .is_file()
+        {
+            return Err(StoreError::Invalid {
+                field: "lock",
+                reason: "is not a regular file".into(),
+            });
+        }
+        let start = Instant::now();
+        loop {
+            match flock(&file, FlockOperation::NonBlockingLockExclusive) {
+                Ok(()) => return Ok(Self { _file: file }),
+                Err(rustix::io::Errno::WOULDBLOCK) => {
+                    if !wait || start.elapsed() >= LOCK_WAIT {
+                        return Err(StoreError::Busy(id.to_owned()));
+                    }
+                    std::thread::sleep(LOCK_POLL);
+                }
+                Err(error) => return Err(io_error("lock", &path)(error.into())),
+            }
+        }
+    }
+}
+
+/// Writes under one OS guard, without reacquiring it through a second descriptor.
+pub struct ClaimedTask {
+    store: Store,
+    _lock: Lock,
+    record: Record,
+}
+
+impl ClaimedTask {
+    pub fn record(&self) -> &Record {
+        &self.record
+    }
+
+    pub fn update(&mut self, change: impl FnOnce(&mut Record)) -> Result<&Record, StoreError> {
+        // Refresh under the guard, retaining revision checks even for internal callers.
+        let current = self.store.read(&self.record.id)?;
+        self.record = self
+            .store
+            .update_current(current, self.record.rev, change)?;
+        Ok(&self.record)
+    }
+}
+
+fn sync_directory(dir: &Path) -> Result<(), StoreError> {
+    File::open(dir)
+        .and_then(|f| f.sync_all())
+        .map_err(io_error("sync directory", dir))
 }

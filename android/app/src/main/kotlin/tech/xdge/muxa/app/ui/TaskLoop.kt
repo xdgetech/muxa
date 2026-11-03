@@ -39,6 +39,7 @@ import tech.xdge.muxa.app.ReaderTab
 import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.WorkspaceChecks
+import tech.xdge.muxa.protocol.LoopSpec
 import tech.xdge.muxa.session.InboxItem
 import tech.xdge.muxa.session.LOOP_NEEDS_DAEMON
 import tech.xdge.muxa.session.LoopDraft
@@ -218,7 +219,7 @@ private fun Picker(label: String, value: String, options: List<String>, tag: Str
 
 /** The New Task sheet's switch, and the loop's fields when it is on. */
 @Composable
-fun NewTaskLoop(model: AppModel, loop: LoopDraft?, checks: WorkspaceChecks?, onChange: (LoopDraft?) -> Unit) {
+fun NewTaskLoop(model: AppModel, loop: LoopDraft?, checks: WorkspaceChecks?, defaults: LoopSpec? = null, onChange: (LoopDraft?) -> Unit) {
     if (!model.canLoop) {
         Text(LOOP_NEEDS_DAEMON, style = MaterialTheme.typography.bodySmall)
         return
@@ -226,7 +227,11 @@ fun NewTaskLoop(model: AppModel, loop: LoopDraft?, checks: WorkspaceChecks?, onC
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Run a check after each turn", Modifier.weight(1f))
         Switch(
-            loop != null, { onChange(if (it) LoopDraft(checks) else null) },
+            loop != null, { enabled ->
+                val draft = defaults?.let { LoopDraft(checks, it.check, it.maxAttempts ?: LoopDraft.DEFAULT_MAX_ATTEMPTS) }
+                    ?: LoopDraft(checks)
+                onChange(if (enabled) draft else null)
+            },
             Modifier.testTag("task-with-loop"), enabled = checks != null,
         )
     }

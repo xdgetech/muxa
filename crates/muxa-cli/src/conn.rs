@@ -15,6 +15,7 @@ pub struct Conn {
     stdin: ChildStdin,
     lines: Lines<BufReader<ChildStdout>>,
     next_id: u64,
+    capabilities: Vec<String>,
 }
 
 impl Conn {
@@ -34,9 +35,16 @@ impl Conn {
             stdin,
             lines,
             next_id: 0,
+            capabilities: Vec::new(),
         };
         match conn.recv().await? {
-            Message::Hello { protocol, tmux, .. } if protocol == muxa_protocol::VERSION => {
+            Message::Hello {
+                protocol,
+                tmux,
+                capabilities,
+                ..
+            } if protocol == muxa_protocol::VERSION => {
+                conn.capabilities = capabilities;
                 Ok((conn, tmux))
             }
             Message::Hello { protocol, .. } => Err(format!(
@@ -46,6 +54,10 @@ impl Conn {
             Message::Bye { reason } => Err(format!("bridge exited: {reason}")),
             other => Err(format!("expected hello, got {other:?}")),
         }
+    }
+
+    pub fn supports(&self, capability: &str) -> bool {
+        self.capabilities.iter().any(|c| c == capability)
     }
 
     pub fn id(&mut self) -> u64 {

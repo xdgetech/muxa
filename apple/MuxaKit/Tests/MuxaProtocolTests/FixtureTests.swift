@@ -44,6 +44,38 @@ struct FixtureTests {
         }
     }
 
+    @Test func workerContractRoundTripsAndKeepsSelectionPresence() throws {
+        let requests = try Self.lines("workers/requests.jsonl")
+        #expect(requests.count == 6)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("workers/messages.jsonl")
+        #expect(messages.count == 5)
+        for line in messages { #expect(try canonical(Wire.encode(Wire.decodeMessage(line))) == canonical(line)) }
+        let expected: [WorkerSelection] = [.keep, .keep, .workspaceDefault, .named("Reviewer")]
+        for (line, selection) in zip(requests[1...4], expected) {
+            guard case .restartAgent(_, _, _, let worker, _) = try Wire.decodeRequest(line) else {
+                Issue.record("expected restart"); continue
+            }
+            #expect(worker == selection)
+        }
+        for bad in ["true", "17", "{}", "[]"] {
+            let line = Data("{\"type\":\"restart-agent\",\"id\":1,\"task\":\"t-000001\",\"worker\":\(bad)}".utf8)
+            #expect(throws: (any Error).self) { try Wire.decodeRequest(line) }
+        }
+        #expect(!WorkerAssignment(kind: "future-assignment", name: "Scheduler").isKnown)
+    }
+
+    @Test func restartRecoveryRoundTrips() throws {
+        for name in ["restart-recovery/requests.jsonl", "restart-recovery/messages.jsonl"] {
+            let entries = try Self.lines(name)
+            #expect(!entries.isEmpty)
+            for line in entries {
+                let encoded = name.contains("requests") ? try Wire.encode(Wire.decodeRequest(line)) : try Wire.encode(Wire.decodeMessage(line))
+                #expect(try canonical(encoded) == canonical(line))
+            }
+        }
+    }
+
     @Test func unknownTypesAndFieldsAreIgnored() throws {
         let line = Data(#"{"type":"future-thing","x":1}"#.utf8)
         #expect(try Wire.decodeMessage(line) == .unknown(type: "future-thing"))

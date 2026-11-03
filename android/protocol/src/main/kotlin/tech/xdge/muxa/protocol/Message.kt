@@ -137,6 +137,7 @@ sealed interface Message {
         val workspaces: List<WorkspaceInfo>,
         val entries: List<TaskRecord>,
         val truncated: Boolean = false,
+        val workers: List<WorkerInfo> = emptyList(),
     ) : Message
 
     /** The record a task request wrote, just before its `result`. */

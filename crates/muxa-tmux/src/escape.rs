@@ -28,8 +28,8 @@ pub fn decode_output(s: &[u8]) -> Vec<u8> {
 }
 
 /// Makes `s` one double-quoted tmux command argument. `"`, `\` and `$` are
-/// escaped, and control bytes become `\ooo`, so the value can neither end the
-/// argument or the line nor expand a variable.
+/// escaped; controls and `~` become `\ooo`, preventing line/argument breaks,
+/// variable expansion and tmux's leading-tilde expansion.
 pub fn quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
@@ -39,7 +39,7 @@ pub fn quote(s: &str) -> String {
                 out.push('\\');
                 out.push(c);
             }
-            c if (c as u32) < 0x20 || c == '\u{7f}' => {
+            c if (c as u32) < 0x20 || c == '\u{7f}' || c == '~' => {
                 // Infallible: writing to a String.
                 let _ = write!(out, "\\{:03o}", c as u32);
             }
@@ -74,7 +74,8 @@ mod tests {
     fn quotes_every_special_character() {
         assert_eq!(quote(r#"a"b$c\d"#), r#""a\"b\$c\\d""#);
         assert_eq!(quote("\t\n\r\u{1b}\u{7f}"), r#""\011\012\015\033\177""#);
-        assert_eq!(quote("é😀 ;{}#~"), "\"é😀 ;{}#~\"");
+        assert_eq!(quote("é😀 ;{}#~"), "\"é😀 ;{}#\\176\"");
+        assert_eq!(quote("~/literal"), r#""\176/literal""#);
         assert_eq!(quote(""), "\"\"");
     }
 

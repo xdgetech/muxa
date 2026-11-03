@@ -32,12 +32,14 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
     public var loop: TaskLoop?
     /// A start or restart prompt the host still waits to type (ADR 0019).
     public var pendingPrompt: PendingPrompt?
+    public var worker: String?
+    public var restartOperation: RestartOperation?
 
     public init(
         id: String, rev: UInt64, workspace: String, title: String, goal: String, status: TaskStatus,
         createdAt: UInt64, updatedAt: UInt64, project: String? = nil, repo: String? = nil,
         branch: String? = nil, dir: String? = nil, session: String? = nil, note: String? = nil,
-        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil
+        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil, worker: String? = nil, restartOperation: RestartOperation? = nil
     ) {
         self.id = id
         self.rev = rev
@@ -56,11 +58,13 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         self.runs = runs
         self.loop = loop
         self.pendingPrompt = pendingPrompt
+        self.worker = worker
+        self.restartOperation = restartOperation
     }
 
     private enum Key: String, CodingKey {
         case id, rev, workspace, title, goal, status, createdAt, updatedAt
-        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt
+        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt, worker, restartOperation
     }
 
     public init(from decoder: any Decoder) throws {
@@ -82,6 +86,8 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         runs = try c.decodeIfPresent([AgentRun].self, forKey: .runs) ?? []
         loop = try c.decodeIfPresent(TaskLoop.self, forKey: .loop)
         pendingPrompt = try c.decodeIfPresent(PendingPrompt.self, forKey: .pendingPrompt)
+        worker = try c.decodeIfPresent(String.self, forKey: .worker)
+        restartOperation = try c.decodeIfPresent(RestartOperation.self, forKey: .restartOperation)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -103,6 +109,8 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         if !runs.isEmpty { try c.encode(runs, forKey: .runs) }
         try c.encodeIfPresent(loop, forKey: .loop)
         try c.encodeIfPresent(pendingPrompt, forKey: .pendingPrompt)
+        try c.encodeIfPresent(worker, forKey: .worker)
+        try c.encodeIfPresent(restartOperation, forKey: .restartOperation)
     }
 }
 
@@ -121,10 +129,12 @@ public struct AgentRun: Codable, Equatable, Identifiable, Sendable {
     /// The session's transcript on the host, absolute. A path only.
     public var transcript: String?
     public var reason: RunReason
+    public var assignment: WorkerAssignment?
+    public var outcome: String?
 
     public init(
         id: UInt32, agent: String? = nil, startedAt: UInt64, endedAt: UInt64? = nil,
-        agentSession: String? = nil, transcript: String? = nil, reason: RunReason
+        agentSession: String? = nil, transcript: String? = nil, reason: RunReason, assignment: WorkerAssignment? = nil, outcome: String? = nil
     ) {
         self.id = id
         self.agent = agent
@@ -133,6 +143,8 @@ public struct AgentRun: Codable, Equatable, Identifiable, Sendable {
         self.agentSession = agentSession
         self.transcript = transcript
         self.reason = reason
+        self.assignment = assignment
+        self.outcome = outcome
     }
 }
 
@@ -252,15 +264,17 @@ public struct TaskListing: Codable, Equatable, Sendable {
     public var entries: [TaskRecord]
     /// More records exist than were listed.
     public var truncated: Bool
+    public var workers: [WorkerInfo]
 
-    public init(tasks: UInt64, workspaces: [WorkspaceInfo], entries: [TaskRecord], truncated: Bool = false) {
+    public init(tasks: UInt64, workspaces: [WorkspaceInfo], entries: [TaskRecord], truncated: Bool = false, workers: [WorkerInfo] = []) {
         self.tasks = tasks
         self.workspaces = workspaces
         self.entries = entries
         self.truncated = truncated
+        self.workers = workers
     }
 
-    private enum Key: String, CodingKey { case tasks, workspaces, entries, truncated }
+    private enum Key: String, CodingKey { case tasks, workspaces, entries, truncated, workers }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -268,6 +282,7 @@ public struct TaskListing: Codable, Equatable, Sendable {
         workspaces = try c.decode([WorkspaceInfo].self, forKey: .workspaces)
         entries = try c.decode([TaskRecord].self, forKey: .entries)
         truncated = try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
+        workers = try c.decodeIfPresent([WorkerInfo].self, forKey: .workers) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -276,5 +291,6 @@ public struct TaskListing: Codable, Equatable, Sendable {
         try c.encode(workspaces, forKey: .workspaces)
         try c.encode(entries, forKey: .entries)
         if truncated { try c.encode(true, forKey: .truncated) }
+        if !workers.isEmpty { try c.encode(workers, forKey: .workers) }
     }
 }

@@ -7,16 +7,19 @@ mod view;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{LoopSpec, Role, Session};
+use muxa_protocol::{LoopSpec, RestartRecoveryAction, Role, Session, WorkerSelection};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
        muxa-cli [--bridge CMD] tasks [--json]
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
-                [--project P] [--repo PATH --branch B [--base REF]]
+                [--project P] [--repo PATH --branch B [--base REF]] [--worker NAME]
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task done ID
        muxa-cli [--bridge CMD] task restart ID [--force] [--json]
+                [--worker NAME | --workspace-default]
+       muxa-cli [--bridge CMD] task recover ID [--json]
+                [--operation OP --rev N --action ACTION]
        muxa-cli [--bridge CMD] task loop start ID --check CMD
                 [--max-attempts N] [--check-timeout S] [--reset] [--json]
        muxa-cli [--bridge CMD] task loop stop ID [--json]
@@ -38,6 +41,13 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   task restart ID
                  restarts the task's agent in the same pane, after a handoff
                  in .muxa/HANDOFF.md; --force also while the agent runs
+  --worker NAME  selects a host-defined worker for new/restart; requires workers
+  --workspace-default
+                 clears the worker on restart; omission keeps the assignment
+  task recover ID
+                 inspects an interrupted restart. To resolve it, supply its
+                 displayed --operation and --rev, with --action cancel-prepared,
+                 finish-replacement or leave-unconfirmed. Never retries input
   --check CMD    a Task Loop: the host runs CMD after each of the agent's
                  turns, until it exits 0 (ADR 0019). It must be one of the
                  workspace's checks, and the host needs the muxa daemon
@@ -71,6 +81,12 @@ enum Cmd {
         task: String,
         force: bool,
         json: bool,
+        worker: WorkerSelection,
+    },
+    Recover {
+        task: String,
+        resolution: Option<tasks::Recovery>,
+        json: bool,
     },
     StartLoop {
         task: String,
@@ -88,11 +104,16 @@ enum Cmd {
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
+    parse_with(lexopt::Parser::from_env())
+}
+
+fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     use lexopt::prelude::*;
-    let mut p = lexopt::Parser::from_env();
     let (mut bridge, mut words) = ("muxa-bridge".to_string(), Vec::new());
     let (mut read_only, mut seconds, mut json, mut force) = (false, None, false, false);
     let (mut reset, mut all) = (false, false);
+    let mut workspace_default = false;
+    let (mut operation, mut revision, mut action) = (None, None, None);
     let mut new = tasks::NewTask::default();
     let mut check = tasks::LoopFlags::default();
     while let Some(arg) = p.next()? {
@@ -109,6 +130,19 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("repo") => new.repo = Some(p.value()?.string()?),
             Long("branch") => new.branch = Some(p.value()?.string()?),
             Long("base") => new.base = Some(p.value()?.string()?),
+            Long("worker") => new.worker = Some(p.value()?.string()?),
+            Long("workspace-default") => workspace_default = true,
+            Long("operation") => operation = Some(p.value()?.string()?),
+            Long("rev") => revision = Some(p.value()?.parse()?),
+            Long("action") => {
+                let value = p.value()?.string()?;
+                action = Some(RestartRecoveryAction::from_wire(&value).ok_or_else(|| {
+                    lexopt::Error::Custom(
+                        "--action must be cancel-prepared, finish-replacement or leave-unconfirmed"
+                            .into(),
+                    )
+                })?);
+            }
             Long("check") => check.check = Some(p.value()?.string()?),
             Long("max-attempts") => check.max_attempts = Some(p.value()?.parse()?),
             Long("check-timeout") => check.timeout = Some(p.value()?.parse()?),
@@ -125,6 +159,46 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
         }
+    }
+    if new.worker.is_some() && workspace_default {
+        return Err(lexopt::Error::Custom(
+            "--worker and --workspace-default are mutually exclusive".into(),
+        ));
+    }
+    if new
+        .worker
+        .as_ref()
+        .is_some_and(|name| name.trim().is_empty())
+    {
+        return Err(lexopt::Error::Custom("--worker needs a name".into()));
+    }
+    let is_restart = matches!(words.as_slice(), [w, r, _] if w == "task" && r == "restart");
+    let is_new = matches!(words.as_slice(), [w, n] if w == "task" && n == "new");
+    let is_recover = matches!(words.as_slice(), [w, r, _] if w == "task" && r == "recover");
+    let has_recovery_flags = operation.is_some() || revision.is_some() || action.is_some();
+    if has_recovery_flags && !is_recover {
+        return Err(lexopt::Error::Custom(
+            "--operation, --rev and --action require task recover".into(),
+        ));
+    }
+    let resolution = match (operation, revision, action) {
+        (None, None, None) => None,
+        (Some(operation), Some(rev), Some(action)) if !operation.trim().is_empty() && rev > 0 => {
+            Some(tasks::Recovery {
+                operation,
+                rev,
+                action,
+            })
+        }
+        _ => return Err(lexopt::Error::Custom(
+            "task recover requires a nonempty --operation, positive --rev and --action together"
+                .into(),
+        )),
+    };
+    if (new.worker.is_some() && !is_new && !is_restart) || (workspace_default && !is_restart) {
+        return Err(lexopt::Error::Custom(
+            "--worker requires task new/restart; --workspace-default requires task restart".into(),
+        ));
     }
     let cmd = match words.as_slice() {
         [w] if w == "list" => Cmd::List,
@@ -160,10 +234,21 @@ fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
         },
         [w, s] if w == "task" && s == "stop-loop" && all => Cmd::StopAllLoops { json },
         [w, d, id] if w == "task" && d == "done" => Cmd::Done(id.clone()),
+        [w, r, id] if w == "task" && r == "recover" => Cmd::Recover {
+            task: id.clone(),
+            resolution,
+            json,
+        },
         [w, r, id] if w == "task" && r == "restart" => Cmd::Restart {
             task: id.clone(),
             force,
             json,
+            worker: if workspace_default {
+                WorkerSelection::WorkspaceDefault
+            } else {
+                new.worker
+                    .map_or(WorkerSelection::Keep, WorkerSelection::Named)
+            },
         },
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
@@ -224,7 +309,17 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Tasks { json } => tasks::list(&mut conn, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Done(id) => tasks::done(&mut conn, &id).await,
-        Cmd::Restart { task, force, json } => tasks::restart(conn, &task, force, json).await,
+        Cmd::Recover {
+            task,
+            resolution,
+            json,
+        } => tasks::recover(&mut conn, &task, resolution, json).await,
+        Cmd::Restart {
+            task,
+            force,
+            json,
+            worker,
+        } => tasks::restart(conn, &task, force, json, worker).await,
         Cmd::StartLoop {
             task,
             spec,

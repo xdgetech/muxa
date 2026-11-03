@@ -150,6 +150,8 @@ mod tests {
 
     fn record(id: &str, status: TaskStatus, updated_at: u64) -> TaskRecord {
         TaskRecord {
+            restart_operation: None,
+            worker: None,
             id: id.into(),
             rev: 1,
             workspace: "work".into(),

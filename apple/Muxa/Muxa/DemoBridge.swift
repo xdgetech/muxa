@@ -172,7 +172,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let tasks = lock.withLock { tasks }
             emit(.taskList(TaskListing(tasks: id, workspaces: tasks.workspaces, entries: tasks.records)))
             ok(id)
-        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop):
+        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop, let worker):
+            guard worker == nil else { unsupported(id); return }
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.createTask(
                     id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch, loop: loop)
@@ -182,7 +183,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 do throws(DemoTasks.Refusal) { return .success(try tasks.update(task, rev: rev, status: status)) } catch { return .failure(error) }
             }
             answer(id, outcome)
-        case .restartAgent(let id, let task, let force):
+        case .recoverRestart(let id, _, _, _, _):
+            unsupported(id)
+        case .restartAgent(let id, let task, let force, let worker, let rev):
+            guard worker == .keep, rev == nil else { unsupported(id); return }
             restartAgent(id: id, task: task, force: force)
         case .startLoop(let id, let task, let loop, let reset):
             changeLoop(id) { (tasks: inout DemoTasks) throws(DemoTasks.Refusal) in try tasks.startLoop(task, spec: loop, reset: reset) }
@@ -432,6 +436,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             docs.append((DocInfo(path: DemoTasks.checkFile, kind: .repo, mtime: check.mtime), check.text))
         }
         return docs
+    }
+
+    private func unsupported(_ id: UInt64) {
+        emit(.result(id: id, error: ErrorBody(code: .unsupported, message: "Workers are not implemented in the demo."), sessions: nil))
     }
 
     private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }

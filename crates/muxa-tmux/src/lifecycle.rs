@@ -63,6 +63,51 @@ pub(crate) fn respawn_pane_line(
     Ok(line)
 }
 
+fn respawn_pane_command_line(
+    pane: PaneId,
+    dir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Result<String, Error> {
+    let Some(program) = command.first() else {
+        return Err(Error::Unexpected(
+            "respawn command must not be empty".into(),
+        ));
+    };
+    if program.trim().is_empty() || command.iter().any(|arg| arg.contains('\0')) {
+        return Err(Error::Unexpected(
+            "respawn command is empty or has a NUL byte".into(),
+        ));
+    }
+    let mut line = respawn_pane_line(pane, dir, env)?;
+    line.push_str(" --");
+    for argument in command {
+        line.push(' ');
+        line.push_str(&quote(argument));
+    }
+    Ok(line)
+}
+
+/// Replaces a pane with an explicit command without selecting or resizing it.
+/// One string is a shell command; two or more strings are argv executed directly
+/// by tmux. Empty/NUL commands fail before dispatch. All values travel quoted on
+/// the control client's stdin, including environment values. A later no-command
+/// [`respawn_pane`] repeats this selected command (`scripts/repro/worker-respawn.sh`).
+/// Native argv behavior is locally verified on tmux 3.7c; supported CI versions
+/// must pass the same probe before worker execution is enabled.
+pub async fn respawn_pane_command(
+    client: &Client,
+    pane: PaneId,
+    dir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Result<(), Error> {
+    client
+        .command(&respawn_pane_command_line(pane, dir, env, command)?)
+        .await
+        .map(drop)
+}
+
 /// Replaces the process of `pane` in place (`respawn-pane -k`): the pane
 /// keeps its id, its size and its place in the layout, and nothing is
 /// selected (`scripts/repro/respawn-pane.sh`). With no command given, tmux
@@ -278,6 +323,51 @@ mod tests {
         );
         let bad = [("A=B".to_owned(), "secret".to_owned())];
         assert!(respawn_pane_line(PaneId::new(7), "/d", &bad).is_err());
+    }
+
+    #[test]
+    fn an_explicit_respawn_quotes_shell_commands_and_native_argv() {
+        let env = [("TOKEN".to_owned(), "a\"b $c".to_owned())];
+        assert_eq!(
+            respawn_pane_command_line(
+                PaneId::new(7),
+                "/w/a b",
+                &env,
+                &["exec worker --profile '$x'".into()]
+            )
+            .unwrap(),
+            r##"respawn-pane -k -t %7 -c "/w/a b" -e "TOKEN=a\"b \$c" -- "exec worker --profile '\$x'""##
+        );
+        assert_eq!(
+            respawn_pane_command_line(
+                PaneId::new(7),
+                "/w/a b",
+                &[],
+                &["/bin/worker".into(), "a\"b $c".into(), "日本語".into()]
+            )
+            .unwrap(),
+            r##"respawn-pane -k -t %7 -c "/w/a b" -- "/bin/worker" "a\"b \$c" "日本語""##
+        );
+        for command in [
+            vec![],
+            vec![String::new()],
+            vec!["   ".into()],
+            vec!["worker".into(), "synthetic\0secret".into()],
+        ] {
+            let error = respawn_pane_command_line(PaneId::new(7), "/d", &[], &command)
+                .unwrap_err()
+                .to_string();
+            assert!(!error.contains("synthetic"));
+        }
+        assert!(
+            respawn_pane_command_line(
+                PaneId::new(7),
+                "/d",
+                &[("A=B".into(), "secret".into())],
+                &["worker".into()]
+            )
+            .is_err()
+        );
     }
 
     #[test]

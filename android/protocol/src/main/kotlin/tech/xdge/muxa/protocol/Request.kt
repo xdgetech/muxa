@@ -78,6 +78,7 @@ sealed interface Request {
         val base: String? = null,
         /** Also start a Task Loop (capability `task-loop`, ADR 0019). */
         val loop: LoopSpec? = null,
+        val worker: String? = null,
     ) : Request
 
     /** Set a task record's status. [rev] is the one the client saw; a stale one fails with `conflict`. */
@@ -89,9 +90,15 @@ sealed interface Request {
      * Refused while the agent runs, unless [force]. A `task-saved` comes first.
      */
     @Serializable
-    data class RestartAgent(override val id: Long, val task: String, val force: Boolean = false) : Request
+    data class RestartAgent(
+        override val id: Long, val task: String, val force: Boolean = false,
+        val worker: WorkerSelection = WorkerSelection.Keep, val rev: Long? = null,
+    ) : Request
 
     /** Start a task's Task Loop again (capability `task-loop`, ADR 0019); [reset] counts attempts from zero. A `task-saved` comes first. */
+    @Serializable
+    data class RecoverRestart(override val id: Long, val task: String, val rev: Long, val operation: String, val action: RestartRecoveryAction) : Request
+
     @Serializable
     data class StartLoop(override val id: Long, val task: String, val loop: LoopSpec, val reset: Boolean = false) : Request
 

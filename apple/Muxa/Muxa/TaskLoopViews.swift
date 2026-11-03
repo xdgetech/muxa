@@ -250,7 +250,12 @@ struct NewTaskLoop: View {
             } else {
                 Toggle("Run a check after each turn", isOn: Binding(
                     get: { draft.loop != nil },
-                    set: { draft.loop = $0 ? LoopDraft(checks: checks) : nil }))
+                    set: { enabled in
+                        let defaults = model.session.canUseWorkers
+                            ? model.session.workers.first { $0.name == draft.worker && $0.allows(workspace: draft.workspace) }?.loop : nil
+                        draft.loop = enabled ? LoopDraft(checks: checks, check: defaults?.check,
+                            maxAttempts: (defaults?.maxAttempts).map { Int($0) } ?? LoopDraft.defaultMaxAttempts) : nil
+                    }))
                     .disabled(checks == nil)
                     .accessibilityIdentifier("record-with-loop")
                 if checks == nil {

@@ -41,7 +41,7 @@ pub enum RunReason {
 }
 
 /// What an adapter reported about the agent in the Task's pane.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Seen {
     pub agent: String,
     pub session: Option<String>,
@@ -49,6 +49,12 @@ pub struct Seen {
 }
 
 impl Run {
+    pub fn assignment(&self) -> Option<muxa_protocol::WorkerAssignment> {
+        self.extra
+            .get("assignment")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+
     /// Takes what the adapter saw. A known session id is replaced only by
     /// another one: the agent may have switched sessions (`/clear`).
     pub fn fill(&mut self, seen: &Seen) {

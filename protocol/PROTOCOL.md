@@ -62,9 +62,10 @@ sequenceDiagram
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
 | `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
 | `list-tasks` | `id` | list the task records and workspaces (capability `task-records`); a `task-list` comes before the `result` |
-| `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}` | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
+| `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}`, `worker` (Workers below) | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
 | `update-task` | `id`, `task`, `rev`, `status` | set a task record's status; a `task-saved` comes before the `result` |
-| `restart-agent` | `id`, `task`, optional `force` | restart the task's agent in the same pane, after a handoff (capability `task-handoff`); a `task-saved` comes before the `result` |
+| `restart-agent` | `id`, `task`, optional `force`, `worker`, `rev` (Workers below) | restart the task's agent in the same pane, after a handoff (capability `task-handoff`); a `task-saved` comes before the `result` |
+| `recover-restart` | `id`, `task`, `rev`, `operation`, `action` | explicitly resolve an interrupted restart (capability `task-restart-recovery`, contract below); `task-saved` precedes `result` |
 | `start-loop` | `id`, `task`, `loop {check, maxAttempts?, timeout?}`, optional `reset` | start the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
 | `stop-loop` | `id`, `task` | stop the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
 | `bye` | `id` | the bridge exits |
@@ -93,7 +94,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `image-content` | `image`, `path`, `data` (base64), optional `mtime` |
 | `image-ended` | `image`, `reason` |
 | `task-created` | `task`, `session` |
-| `task-list` | `tasks`, `workspaces[] {name, checks?, repos?}`, `entries[]` (task records), optional `truncated` |
+| `task-list` | `tasks`, `workspaces[] {name, checks?, repos?}`, `entries[]` (task records), optional `truncated`, `workers[]` (Workers below) |
 | `task-saved` | `task`, `record` (a task record) |
 | `tasks-changed` | none. Send `list-tasks` again (capability `tasks-changed`) |
 | `bye` | `reason` |
@@ -229,6 +230,46 @@ A bridge with the `task-handoff` capability records the agents that work on a Ta
    - On success the bridge sends `task-saved {task, record}`, then `result`. `task` is the request id.
    - Once the new agent has finished a turn (`idle` or `done`, since the restart), the bridge types `Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.` When that does not happen within 30 seconds, the record's `note` says so.
    - An unknown task is `bad-request`.
+
+## Workers (contract only; not enabled)
+
+ADR 0022 release W adds the optional `workers` capability within protocol v1. This checkout defines the types/fixtures, but its bridge and demo bridges **do not advertise workers**. They return `unsupported` for create with a named worker, or restart with worker selection or `rev`, before starting/replacing an agent or changing Task files. Legacy requests for default Tasks are unchanged; even a legacy Keep restart is unsupported when its stored Task names a worker, so a downgraded host cannot silently ignore the assignment. Native runtime, lifecycle claims and recovery remain W0/W2 release gates.
+
+Clients MUST check the capability before sending worker selection or restart `rev`; older bridges may ignore unknown fields. A listing alone is not complete support. A future supporting host advertises it only when create, Keep/set/clear restart, revision conflicts and fresh run observation work end to end.
+
+- `task-list` gains optional `workers[] {name, agent, description?, workspaces?, loop?}`. Missing means an empty list. Missing `workspaces` allows every workspace; `[]` allows none. `loop` uses LoopSpec's `{check, maxAttempts?, timeout?}` as creation defaults, subject to the workspace allowlist and `task-loop`. Selecting a worker never creates a loop or replaces an existing check. `agent` is a native program/adapter configuration id, not observed state. Unknown ids have no known launch action. Native args, instruction content, config paths and environment are never included.
+- `create-task` gains optional `worker: string`; absent or null uses Workspace default. Names are host-owned and validated against the Task's workspace. Canonical encoding omits a default selection, as other absent optional fields do.
+- `restart-agent` gains `worker` and `rev`. **Missing worker means Keep current**, explicit `null` means clear to Workspace default, and a string selects that worker. Codecs must preserve this three-way distinction. Worker-aware clients send the displayed `rev` even for Keep. On a supporting host, explicit selection/clearing without `rev` is `bad-request`; a stale revision is `conflict` before side effects. Omitting both fields keeps legacy behavior. No implicit fallback for a removed/disallowed worker.
+- Task records gain optional `worker: string`, the requested assignment. Absence means Workspace default. This label does not prove the native role or its permissions were applied.
+- Runs gain optional `assignment {kind, name?}`. Known forms are `{"kind":"workspace-default"}` and `{"kind":"worker","name":"Reviewer"}`. Missing means historical assignment was unrecorded; do not reconstruct it from current config. Unknown kinds, a named assignment without a nonempty name, or a default assignment with a name have no known meaning and must not become Workspace default. Observed `run.agent` stays separate and comes only from the adapter.
+- Older record readers retain `worker`, `runs[].assignment` and unknown assignment subfields on disk rewrite. In W1, these remain additive record extras and typed accessors do not mutate their original values. Normal unknown-wire-field rules still apply.
+
+The shared `fixtures/workers/requests.jsonl` and `messages.jsonl` pin selection presence, worker metadata, scope defaults, legacy/explicit/unknown run assignments and errors. The hypothetical hello fixture includes workers; it is not a capability declaration by the current implementation. Memory/close-out requests are not part of W1.
+
+## Restart recovery (contract; capability gated)
+
+`task-restart-recovery` is independent of `workers`. These additive protocol-v1 types do not by themselves enable a host implementation. Advertise the capability only after durable restart phases, recovery validation and failure probes work end to end. Hosts without it reject `recover-restart` as `unsupported` before side effects. `protocol/fixtures/restart-recovery/` describes the contract, including a hypothetical capability-bearing hello.
+
+A Task record may have `restartOperation {id, phase, assignment?, actions?}`. This is public recovery metadata; no process command, instruction bytes, staged file content or environment is sent. `assignment` is the requested `WorkerAssignment`, not confirmation of an effective native role. `actions` is a list of strings, absent meaning empty. Unknown phase/action strings remain displayable but do not acquire a known action. An incomplete or unrecognized persisted operation is exposed as `phase: "unknown"` with no permitted action; never treat it as absent or automatically retry ordinary restart. Clients block ordinary restart while a summary is present and offer Terminal when no recovery action is understood.
+
+Clients intersect the host's `actions` with these known phase/action pairs and require the capability before offering mutation:
+
+| Phase | Known actions |
+|---|---|
+| `prepared` | `cancel-prepared` |
+| `dispatching`, `delivering` | `leave-unconfirmed` |
+| `replaced` | `finish-replacement`, `leave-unconfirmed` |
+| any other value | none |
+
+`recover-restart {task, rev, operation, action}` carries the exact displayed Task revision and operation id. `action` is one of the three known strings above; unknown action values are bad-request. A stale revision/operation, live owner, unavailable action or failed identity/file reconciliation conflicts before any recovery write. Do not refetch a new revision and silently retry. On success a `task-saved` record precedes the normal `result`; no new reply type is introduced.
+
+- `cancel-prepared` resolves only pre-dispatch intent without replacing a process.
+- `finish-replacement` finalizes only a durably confirmed replacement and validated staged files. It never respawns or automatically types a prompt.
+- `leave-unconfirmed` acknowledges uncertainty without replacing a process, typing input or resuming a loop. When dispatch outcome is unknown, the reserved historical run records the requested assignment and `outcome: "unconfirmed"`, with no invented observed agent identity. Delivery-only uncertainty retains the already finalized run. A resolved operation receipt is not an active `restartOperation` summary.
+
+`AgentRun.outcome` is an optional string: `unconfirmed` means a process replacement or prompt-delivery outcome was not confirmed. Absence on an older run does not reconstruct historical certainty. Preserve future outcome strings without inventing a meaning. Later adapter observation does not erase an interrupted run's historical outcome.
+
+The CLI `task recover ID` is inspection only; `--json` returns the Task record with its revision and summary. Mutation requires `--operation OP --rev N --action ACTION` together and sends those exact values once. Recovery action receipts and phase validation follow ADR 0024; matching content alone does not establish an idempotent retry after a newer operation.
 
 ## Task Loop
 

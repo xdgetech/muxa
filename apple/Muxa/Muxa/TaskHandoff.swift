@@ -10,6 +10,8 @@ struct RestartAgentButton: View {
     let item: InboxItem
     @State private var asking = false
     @State private var restarting = false
+    @State private var choosingWorker = false
+    @State private var workerChoice = "keep"
     @State private var error: String?
 
     static let message =
@@ -17,9 +19,36 @@ struct RestartAgentButton: View {
 
     var body: some View {
         let running = item.agent?.state == .running
-        Button("Restart agent", systemImage: "arrow.clockwise") { asking = true }
-            .disabled(restarting)
+        Button("Restart agent", systemImage: "arrow.clockwise") {
+            workerChoice = "keep"
+            if model.session.canUseWorkers { choosingWorker = true } else { asking = true }
+        }
+            .disabled(restarting || item.record.restartOperation != nil)
             .accessibilityIdentifier("task-restart")
+            .sheet(isPresented: $choosingWorker) {
+                NavigationStack {
+                    Form {
+                        Text(Self.message)
+                        Picker("Worker", selection: $workerChoice) {
+                            Text("Keep current (\(item.record.worker ?? "Workspace default"))").tag("keep")
+                            Text("Workspace default").tag("default")
+                            ForEach(model.session.workers.filter { $0.allows(workspace: item.record.workspace) }, id: \.name) { worker in
+                                Text(worker.name).tag("worker:" + worker.name)
+                            }
+                        }
+                        .accessibilityIdentifier("restart-worker")
+                        Button(running ? "Stop and restart" : "Restart", role: running ? .destructive : nil) {
+                            choosingWorker = false
+                            restart(force: running)
+                        }
+                        .disabled(workerIssue != nil)
+                        .accessibilityIdentifier(running ? "restart-force" : "restart-confirm")
+                        if let workerIssue { Text(workerIssue).foregroundStyle(Theme.failure) }
+                    }
+                    .navigationTitle("Restart the agent?")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { choosingWorker = false } } }
+                }
+            }
             .alert("Restart the agent?", isPresented: $asking) {
                 if running {
                     Button("Stop and restart", role: .destructive) { restart(force: true) }
@@ -39,13 +68,24 @@ struct RestartAgentButton: View {
             }
     }
 
+    private var selectedWorker: WorkerSelection {
+        workerChoice == "default" ? .workspaceDefault
+            : workerChoice.hasPrefix("worker:") ? .named(String(workerChoice.dropFirst(7))) : .keep
+    }
+
+    private var workerIssue: String? {
+        guard case .named(let name) = selectedWorker else { return nil }
+        return workerProblem(name: name, workspace: item.record.workspace, workers: model.session.workers)
+    }
+
     private func restart(force: Bool) {
-        guard !restarting else { return }
+        guard !restarting, workerIssue == nil else { return }
         restarting = true
         Task {
             defer { restarting = false }
             do {
-                _ = try await model.session.restartAgent(task: item.record.id, force: force)
+                _ = try await model.session.restartAgent(task: item.record.id, force: force,
+                    worker: selectedWorker, rev: item.record.rev)
             } catch {
                 self.error = PaneSession.describe(error)
             }
@@ -65,6 +105,7 @@ struct TaskRunsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(line.title).font(.callout.weight(.medium))
                         Text(line.detail).font(.caption).foregroundStyle(.secondary)
+                        if let assignment = line.assignment { Text(assignment).font(.caption).foregroundStyle(.secondary) }
                         if let session = line.agentSession {
                             HStack {
                                 Text(session).font(.caption.monospaced()).textSelection(.enabled)

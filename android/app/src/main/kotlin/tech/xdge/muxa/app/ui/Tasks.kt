@@ -254,9 +254,11 @@ private fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier)
             }
             record.note?.let { Text(it, color = Theme.failure, modifier = Modifier.testTag("task-note")) }
             TaskActions(model, record, item)
+            RestartRecoverySection(model, record)
             LoopSection(model, record, item)
             Field("Goal", record.goal)
             Field("Workspace", record.workspace)
+            if (model.state.canUseWorkers || record.worker != null) Field("Worker", record.worker ?: "Workspace default")
             record.project?.let { Field("Project", it) }
             record.repo?.let { Field("Repository", it, mono = true) }
             record.branch?.let { Field("Branch", it, mono = true) }
@@ -305,7 +307,7 @@ private fun TaskActions(model: AppModel, record: TaskRecord, item: InboxItem) {
             }
         }
         if (model.canRestartAgents) {
-            OutlinedButton({ model.restartingTask = record.id }, Modifier.testTag("task-restart-agent")) {
+            OutlinedButton({ model.restartingTask = record.id }, Modifier.testTag("task-restart-agent"), enabled = record.restartOperation == null) {
                 Icon(Icons.restartAgent, null)
                 Text("Restart agent", Modifier.padding(start = 6.dp))
             }

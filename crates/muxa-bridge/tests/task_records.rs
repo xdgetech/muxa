@@ -53,6 +53,11 @@ macro_rules! both {
 }
 
 both!(
+    recovery_legacy_delivery_does_not_create_run_history,
+    recovery_prepared_is_cancelled_once_and_old_tokens_conflict,
+    recovery_uncertain_dispatch_and_delivery_never_replace_or_send,
+    recovery_replaced_reconciles_a_partial_pair_and_sends_no_prompt,
+    worker_contract_is_rejected_without_runtime_support,
     another_writer_s_change_is_announced,
     a_task_without_a_repo_gets_its_own_directory_and_session,
     a_fresh_done_gets_the_start_prompt,
@@ -137,6 +142,8 @@ impl Host {
             panic!("{hello:?}")
         };
         assert!(capabilities.contains(&"task-records".to_owned()));
+        assert!(capabilities.contains(&"task-restart-recovery".to_owned()));
+        assert!(!capabilities.contains(&"workers".to_owned()));
         bridge
     }
 }
@@ -1063,4 +1070,528 @@ async fn a_daemon_that_crashed_during_a_prompt_wait_resumes_it() {
     );
     assert_eq!(prompts(&server, &pane), 2);
     host.daemon = Some(daemon);
+}
+
+async fn worker_contract_is_rejected_without_runtime_support(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new(&mode.name("worker-contract"), mode);
+    let mut bridge = host.bridge(&server, &["--task-command", AGENT]).await;
+    let before = server.layout();
+    for request in [
+        json!({"type":"create-task", "workspace":"work", "title":"Review", "goal":"Review", "worker":"Reviewer"}),
+        json!({"type":"restart-agent", "task":"t-000001", "worker":"Reviewer", "rev":1}),
+        json!({"type":"restart-agent", "task":"t-000001", "worker":null, "rev":1}),
+        json!({"type":"restart-agent", "task":"t-000001", "rev":1}),
+    ] {
+        let (saved, result) = send(&mut bridge, request).await;
+        assert!(saved.is_none());
+        assert_eq!(error_code(&result), ErrorCode::Unsupported);
+        assert_eq!(
+            server.layout(),
+            before,
+            "unsupported worker intent replaced a process or changed layout"
+        );
+        assert!(list_tasks(&mut bridge).await.is_empty());
+        assert_eq!(
+            std::fs::read_dir(&host.root).unwrap().count(),
+            0,
+            "unsupported intent created Task files"
+        );
+    }
+    // A downgraded host may read an additive worker field, but must not ignore it on restart.
+    let stored = json!({"version":1, "id":"t-000001", "rev":1, "workspace":"work",
+        "title":"Review", "goal":"Review", "status":"open", "createdAt":1, "updatedAt":1,
+        "dir":host.root, "worker":"Reviewer", "runs":[{"id":1,"startedAt":1,"reason":"start",
+        "assignment":{"kind":"worker","name":"Reviewer"}}]});
+    let record_path = host.dir.join("state/t-000001.json");
+    std::fs::write(&record_path, serde_json::to_vec(&stored).unwrap()).unwrap();
+    let records = list_tasks(&mut bridge).await;
+    assert_eq!(records[0].worker.as_deref(), Some("Reviewer"));
+    assert!(records[0].runs[0].assignment.as_ref().unwrap().is_known());
+    let bytes = std::fs::read(&record_path).unwrap();
+    let (saved, result) = send(
+        &mut bridge,
+        json!({"type":"restart-agent", "task":"t-000001", "force":true}),
+    )
+    .await;
+    assert!(saved.is_none());
+    assert_eq!(error_code(&result), ErrorCode::Unsupported);
+    assert_eq!(std::fs::read(&record_path).unwrap(), bytes);
+    assert_eq!(server.layout(), before);
+    assert_eq!(std::fs::read_dir(&host.root).unwrap().count(), 0);
+}
+
+struct RecoveryFixture {
+    request: Value,
+    dir: PathBuf,
+    record_path: PathBuf,
+    staged: PathBuf,
+    task: Vec<u8>,
+    handoff: Vec<u8>,
+}
+
+fn recovery_fixture(
+    host: &Host,
+    server: &Server,
+    record: &TaskRecord,
+    phase: &str,
+) -> RecoveryFixture {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let identity = |path: &Path| {
+        let m = std::fs::metadata(path).unwrap();
+        json!({"device":m.dev(),"inode":m.ino()})
+    };
+    let hash =
+        |bytes: &[u8]| json!({"sha256":format!("{:x}", Sha256::digest(bytes)),"bytes":bytes.len()});
+    let dir = PathBuf::from(record.dir.as_ref().unwrap());
+    let managed = dir.join(".muxa");
+    let restarts = managed.join("restarts");
+    std::fs::create_dir_all(&restarts).unwrap();
+    std::fs::set_permissions(&restarts, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let operation = format!("fixture-{phase}");
+    let staged = restarts.join(&operation);
+    std::fs::create_dir(&staged).unwrap();
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let old_task = std::fs::read(managed.join("TASK.md")).unwrap();
+    let old_handoff = std::fs::read(managed.join("HANDOFF.md")).ok();
+    let mut task = old_task.clone();
+    task.extend_from_slice(b"\nSynthetic recovered header.\n");
+    let handoff = b"Synthetic recovered handoff.\n".to_vec();
+    std::fs::write(staged.join("TASK.next"), &task).unwrap();
+    std::fs::write(staged.join("HANDOFF.next"), &handoff).unwrap();
+    for name in ["TASK.next", "HANDOFF.next"] {
+        std::fs::set_permissions(staged.join(name), std::fs::Permissions::from_mode(0o600))
+            .unwrap();
+    }
+    let pane = server.pane(&format!("={}:", record.session.as_ref().unwrap()));
+    let pid: u32 = server
+        .tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"])
+        .trim()
+        .parse()
+        .unwrap();
+    let session: u32 = server
+        .tmux(&["display-message", "-p", "-t", &pane, "#{session_id}"])
+        .trim()
+        .trim_start_matches('$')
+        .parse()
+        .unwrap();
+    let started = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "lstart="])
+        .env("LC_ALL", "C")
+        .output()
+        .unwrap();
+    let started = String::from_utf8(started.stdout).unwrap().trim().to_owned();
+    let manifest = json!({"version":1,"operation":operation,"task":identity(&dir),"managed":identity(&managed),
+        "restarts":identity(&restarts),"directory":identity(&staged),"files":[
+        {"name":"TASK.md","old":hash(&old_task),"new":hash(&task),"stage":"TASK.next"},
+        {"name":"HANDOFF.md","old":old_handoff.as_deref().map(hash),"new":hash(&handoff),"stage":"HANDOFF.next"}]});
+    let record_path = host.dir.join("state").join(format!("{}.json", record.id));
+    let mut raw: Value = serde_json::from_slice(&std::fs::read(&record_path).unwrap()).unwrap();
+    raw.as_object_mut().unwrap().remove("pendingPrompt");
+    let current_run = record.runs.last().unwrap().id;
+    let delivery = phase == "delivering";
+    raw["rev"] = json!(raw["rev"].as_u64().unwrap() + 1);
+    raw["restartOperation"] = json!({"version":1,"id":operation,"phase":phase,
+        "sourceRun":current_run,"reservedRun":if delivery {current_run} else {current_run+1},
+        "pane":pane.trim_start_matches('%').parse::<u32>().unwrap(),"sourcePid":if phase == "replaced" {pid.saturating_sub(1)} else {pid},
+        "session":session,"sourceStarted":started,"replacement":if phase=="replaced" {Some(json!({"pid":pid,"started":started}))} else {None},
+        "files":if delivery {None} else {Some(manifest)},"worker":null,"since":1,"seen":null});
+    std::fs::write(&record_path, serde_json::to_vec(&raw).unwrap()).unwrap();
+    let request =
+        json!({"type":"recover-restart","task":record.id,"rev":raw["rev"],"operation":operation});
+    RecoveryFixture {
+        request,
+        dir,
+        record_path,
+        staged,
+        task,
+        handoff,
+    }
+}
+
+async fn recovery_prepared_is_cancelled_once_and_old_tokens_conflict(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("recovery-cancel", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (record, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let record = record.unwrap();
+    let fixture = recovery_fixture(&host, &server, &record, "prepared");
+    let before = server.layout();
+    let bytes = std::fs::read(fixture.dir.join(".muxa/TASK.md")).unwrap();
+    let listed = record_of(&mut bridge, &record.id).await;
+    assert_eq!(
+        listed.restart_operation.unwrap().actions,
+        vec!["cancel-prepared"]
+    );
+    let raw = std::fs::read(&fixture.record_path).unwrap();
+    let mut stale = fixture.request.clone();
+    stale["rev"] = json!(0);
+    stale["action"] = json!("cancel-prepared");
+    let (saved, result) = send(&mut bridge, stale).await;
+    assert!(saved.is_none());
+    assert_eq!(error_code(&result), ErrorCode::Conflict);
+    assert_eq!(std::fs::read(&fixture.record_path).unwrap(), raw);
+    let mut cancel = fixture.request.clone();
+    cancel["action"] = json!("cancel-prepared");
+    let (saved, result) = send(&mut bridge, cancel.clone()).await;
+    ok(&result);
+    let saved = saved.unwrap();
+    assert!(saved.restart_operation.is_none());
+    assert_eq!(saved.runs, record.runs);
+    assert!(!fixture.staged.exists());
+    assert_eq!(
+        std::fs::read(fixture.dir.join(".muxa/TASK.md")).unwrap(),
+        bytes
+    );
+    let (again, result) = send(&mut bridge, cancel.clone()).await;
+    ok(&result);
+    assert_eq!(again.unwrap().rev, saved.rev);
+    let (_, result) = send(
+        &mut bridge,
+        json!({"type":"update-task","task":record.id,"rev":saved.rev,"status":"done"}),
+    )
+    .await;
+    ok(&result);
+    let (_, result) = send(&mut bridge, cancel).await;
+    assert_eq!(error_code(&result), ErrorCode::Conflict);
+    assert_eq!(server.layout(), before);
+}
+
+async fn recovery_uncertain_dispatch_and_delivery_never_replace_or_send(mode: Mode) {
+    for phase in ["dispatching", "delivering"] {
+        let server = Server::start();
+        let mut host = Host::new(&format!("recovery-{phase}"), mode);
+        let mut bridge = host
+            .bridge(
+                &server,
+                &["--task-launcher", "builtin", "--task-command", AGENT],
+            )
+            .await;
+        let (record, result) = create(&mut bridge, json!({})).await;
+        ok(&result);
+        let record = record.unwrap();
+        let fixture = recovery_fixture(&host, &server, &record, phase);
+        let before = server.layout();
+        let bytes = std::fs::read(fixture.dir.join(".muxa/TASK.md")).unwrap();
+        let listed = record_of(&mut bridge, &record.id).await;
+        assert!(listed.pending_prompt.is_none());
+        assert_eq!(
+            listed.restart_operation.unwrap().actions,
+            vec!["leave-unconfirmed"]
+        );
+        let mut request = fixture.request;
+        request["action"] = json!("finish-replacement");
+        let (_, result) = send(&mut bridge, request.clone()).await;
+        assert_eq!(error_code(&result), ErrorCode::Conflict);
+        request["action"] = json!("leave-unconfirmed");
+        let (saved, result) = send(&mut bridge, request.clone()).await;
+        ok(&result);
+        let saved = saved.unwrap();
+        assert!(saved.pending_prompt.is_none());
+        assert!(saved.restart_operation.is_none());
+        assert_eq!(
+            saved.runs.len(),
+            record.runs.len() + usize::from(phase == "dispatching")
+        );
+        assert_eq!(
+            saved.runs.last().unwrap().outcome.as_deref(),
+            Some("unconfirmed")
+        );
+        let (again, result) = send(&mut bridge, request).await;
+        ok(&result);
+        assert_eq!(again.unwrap(), saved);
+        assert_eq!(
+            std::fs::read(fixture.dir.join(".muxa/TASK.md")).unwrap(),
+            bytes
+        );
+        assert_eq!(server.layout(), before);
+    }
+}
+
+async fn recovery_replaced_reconciles_a_partial_pair_and_sends_no_prompt(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("recovery-finish", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (record, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let record = record.unwrap();
+    let fixture = recovery_fixture(&host, &server, &record, "replaced");
+    let before = server.layout();
+    let managed = fixture.dir.join(".muxa");
+    std::fs::rename(fixture.staged.join("TASK.next"), managed.join("TASK.md")).unwrap();
+    std::fs::write(managed.join("HANDOFF.md"), b"external edit").unwrap();
+    let mut request = fixture.request;
+    request["action"] = json!("finish-replacement");
+    let (_, result) = send(&mut bridge, request.clone()).await;
+    assert_eq!(error_code(&result), ErrorCode::Conflict);
+    assert_eq!(
+        std::fs::read(managed.join("HANDOFF.md")).unwrap(),
+        b"external edit"
+    );
+    assert_eq!(
+        record_of(&mut bridge, &record.id).await.runs.len(),
+        record.runs.len()
+    );
+    std::fs::remove_file(managed.join("HANDOFF.md")).unwrap();
+    let (saved, result) = send(&mut bridge, request.clone()).await;
+    ok(&result);
+    let saved = saved.unwrap();
+    assert!(saved.pending_prompt.is_none());
+    assert!(saved.restart_operation.is_none());
+    assert_eq!(saved.runs.len(), record.runs.len() + 1);
+    assert_eq!(
+        std::fs::read(managed.join("TASK.md")).unwrap(),
+        fixture.task
+    );
+    assert_eq!(
+        std::fs::read(managed.join("HANDOFF.md")).unwrap(),
+        fixture.handoff
+    );
+    let (again, result) = send(&mut bridge, request).await;
+    ok(&result);
+    assert_eq!(again.unwrap(), saved);
+    assert_eq!(server.layout(), before);
+}
+
+/// Harness-only dispatch barrier: no production fault-injection path.
+#[tokio::test]
+async fn a_crashed_dispatch_owner_blocks_a_second_restart_and_never_replays() {
+    crashed_dispatch_owner(false, false).await;
+}
+
+#[tokio::test]
+async fn a_crash_after_process_replacement_does_not_retry_or_publish_unconfirmed_files() {
+    crashed_dispatch_owner(true, false).await;
+}
+
+#[tokio::test]
+async fn a_crash_before_prompt_delivery_does_not_automatically_resend() {
+    crashed_dispatch_owner(false, true).await;
+}
+
+#[tokio::test]
+async fn a_crash_after_partial_prompt_delivery_does_not_automatically_resend() {
+    crashed_dispatch_owner(true, true).await;
+}
+
+async fn crashed_dispatch_owner(after_dispatch: bool, delivery: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let server = Server::start();
+    let mut host = Host::new(
+        if after_dispatch {
+            if delivery {
+                "recovery-after-delivery-crash"
+            } else {
+                "recovery-after-dispatch-crash"
+            }
+        } else {
+            if delivery {
+                "recovery-before-delivery-crash"
+            } else {
+                "recovery-dispatch-crash"
+            }
+        },
+        Mode::Bridge,
+    );
+    let proxy = host.dir.join("tmux-proxy.py");
+    let blocked = host.dir.join("dispatch-blocked");
+    let cancel = host.dir.join("cancel-proxy");
+    let code = format!(
+        r##"#!/usr/bin/env python3
+import os, shutil, subprocess, sys, threading, time
+args = sys.argv[1:]
+if '-L' not in args or not args[args.index('-L') + 1].startswith('muxa-test-'):
+    sys.exit(2)
+real = shutil.which('tmux')
+if '-C' not in args:
+    os.execv(real, [real] + args)
+child = subprocess.Popen([real] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+held = threading.Event()
+def feed():
+    for line in sys.stdin.buffer:
+        if line.startswith(b'{prefix}'):
+            if {after}:
+                held.set()
+                child.stdin.write(line)
+                child.stdin.flush()
+            with open({blocked}, 'wb') as marker:
+                marker.write(b'held')
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and not os.path.exists({cancel}):
+                time.sleep(0.01)
+            child.terminate()
+            return
+        try:
+            child.stdin.write(line)
+            child.stdin.flush()
+        except BrokenPipeError:
+            return
+    child.terminate()
+threading.Thread(target=feed, daemon=True).start()
+while True:
+    chunk = os.read(child.stdout.fileno(), 65536)
+    if not chunk:
+        break
+    while held.is_set() and not os.path.exists({cancel}):
+        time.sleep(0.01)
+    if held.is_set():
+        break
+    sys.stdout.buffer.write(chunk)
+    sys.stdout.buffer.flush()
+sys.exit(child.wait())
+"##,
+        prefix = if delivery {
+            "send-keys "
+        } else {
+            "respawn-pane "
+        },
+        after = if after_dispatch { "True" } else { "False" },
+        blocked = serde_json::to_string(&blocked.to_string_lossy()).unwrap(),
+        cancel = serde_json::to_string(&cancel.to_string_lossy()).unwrap()
+    );
+    std::fs::write(&proxy, code).unwrap();
+    std::fs::set_permissions(&proxy, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut first = host
+        .bridge(
+            &server,
+            &[
+                "--task-launcher",
+                "builtin",
+                "--task-command",
+                AGENT,
+                "--tmux",
+                proxy.to_str().unwrap(),
+            ],
+        )
+        .await;
+    let (created, result) = create(&mut first, json!({})).await;
+    ok(&result);
+    let record = created.unwrap();
+    let pane = server.pane(&format!("={}:", record.session.as_ref().unwrap()));
+    // A real current tag permits the normal force-confirmation path.
+    server.tmux(&["set-option", "-p", "-t", &pane, "@muxa_role", "agent"]);
+    let before = server.layout();
+    let task = PathBuf::from(record.dir.as_ref().unwrap()).join(".muxa/TASK.md");
+    let original = std::fs::read(&task).unwrap();
+    if delivery {
+        server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "idle"]);
+    } else {
+        first
+            .send_raw(
+                &json!({"id":777,"type":"restart-agent","task":record.id,"force":true}).to_string(),
+            )
+            .await;
+    }
+    common::wait_until(|| blocked.exists()).await;
+    if after_dispatch && !delivery {
+        common::wait_until(|| server.layout() != before).await;
+    } else if after_dispatch {
+        common::wait_until(|| {
+            server
+                .capture(&pane)
+                .iter()
+                .any(|line| line.contains(PROMPT))
+        })
+        .await;
+    }
+    let screen = server.capture(&pane);
+    let phase = if delivery {
+        "delivering"
+    } else {
+        "dispatching"
+    };
+    let expected = server.layout();
+    let record_path = host.dir.join("state").join(format!("{}.json", record.id));
+    let bytes = std::fs::read(&record_path).unwrap();
+    let durable: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(durable["restartOperation"]["phase"], phase);
+    assert_eq!(std::fs::read(&task).unwrap(), original);
+    assert_eq!(server.layout(), expected);
+    let mut second = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (saved, result) = restart(&mut second, &record.id, true).await;
+    assert!(saved.is_none());
+    assert_eq!(error_code(&result), ErrorCode::Conflict);
+    assert_eq!(std::fs::read(&record_path).unwrap(), bytes);
+    first.child.kill().await.unwrap();
+    first.child.wait().await.unwrap();
+    std::fs::write(&cancel, b"cancel").unwrap();
+    let recovered = record_of(&mut second, &record.id).await;
+    let operation = recovered.restart_operation.unwrap();
+    assert_eq!(operation.phase, phase);
+    assert!(recovered.pending_prompt.is_none());
+    let (saved, result) = send(
+        &mut second,
+        json!({"type":"recover-restart","task":record.id,
+        "rev":recovered.rev,"operation":operation.id,"action":"leave-unconfirmed"}),
+    )
+    .await;
+    ok(&result);
+    let saved = saved.unwrap();
+    assert_eq!(
+        saved.runs.last().unwrap().outcome.as_deref(),
+        Some("unconfirmed")
+    );
+    assert_eq!(server.layout(), expected);
+    assert_eq!(std::fs::read(task).unwrap(), original);
+    if delivery {
+        assert_eq!(saved.runs.len(), record.runs.len());
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        assert_eq!(server.capture(&pane), screen);
+    }
+}
+
+async fn recovery_legacy_delivery_does_not_create_run_history(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("recovery-legacy-delivery", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (created, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let record = created.unwrap();
+    let fixture = recovery_fixture(&host, &server, &record, "delivering");
+    let mut raw: Value =
+        serde_json::from_slice(&std::fs::read(&fixture.record_path).unwrap()).unwrap();
+    raw["runs"] = json!([]);
+    raw["restartOperation"]["sourceRun"] = Value::Null;
+    raw["restartOperation"]["reservedRun"] = json!(0);
+    std::fs::write(&fixture.record_path, serde_json::to_vec(&raw).unwrap()).unwrap();
+    let before = server.layout();
+    let listed = record_of(&mut bridge, &record.id).await;
+    assert_eq!(
+        listed.restart_operation.unwrap().actions,
+        vec!["leave-unconfirmed"]
+    );
+    let mut request = fixture.request;
+    request["action"] = json!("leave-unconfirmed");
+    let (saved, result) = send(&mut bridge, request).await;
+    ok(&result);
+    let saved = saved.unwrap();
+    assert!(saved.runs.is_empty());
+    assert!(saved.pending_prompt.is_none());
+    assert_eq!(
+        saved.note.as_deref(),
+        Some("Prompt delivery was not confirmed. Continue in Terminal.")
+    );
+    assert_eq!(server.layout(), before);
 }

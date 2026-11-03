@@ -40,3 +40,15 @@ Show up to three queue items with need labels, Triage all (count), and New Task.
 | Snooze | Command+S | Ctrl+Shift+S |
 
 Scope shortcuts to the visible screen and suspend pane navigation chords while Inbox owns focus. Approval, denial and follow-up shortcuts remain in Chat. Slice 2's inline actions and desktop summary are proposed in ADR 0023, with no UI implementation yet.
+
+## Next product direction: list-first processing
+
+The developer wants an ordered actionable list with Act, Done, Move down and Later. Proposed ADR 0025 defines host-owned cross-device order and deferral, plus briefings/proposed work from scheduled project Routines. Move down keeps an item visible at the tail; Later has a return time. This is a proposed successor to slice 1, not an implemented change to current local Snooze or accepted queue sorting. All Tasks retains the grouped maintenance view.
+
+### Separate destinations
+
+The proposed UI has three logical destinations: Inbox for actionable ToDos/briefings/proposals, All Tasks for running work and history, and Sessions for manual tmux work. All Tasks may be a link inside Inbox rather than a top-level tab; exact navigation placement remains a UI decision. Sessions defaults to explicitly unassociated sessions, with an All Sessions filter for inspection. Open Terminal on a Task returns to that Task's pane.
+
+Association is the classification boundary. Manually launched AI remains manual; typing by hand inside a Task does not change its classification. Manual approval waits can show a Sessions badge without generating Inbox items. Managed work needing human attention returns to Inbox as a reference to the same Task. Routine output enters Inbox as briefings/proposals, while the collector's execution remains under Routine history. No automatic Task creation or session reclassification is implied.
+
+The domain model is defined in [Inbox, Tasks and Sessions](work-model.md). Session is an execution location that can host manual or managed work; only the default manual-session screen is filtered. Task/run identity survives human versus AI input changes. Recreating a session for an existing no-session Task and adopting manual work into a Task are separate future host operations.

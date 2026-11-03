@@ -24,6 +24,7 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     var changes: [ChangeInfo] = []
     var images: [ImageInfo] = []
     var taskRecords: [TaskRecord] = []
+    var workers: [WorkerInfo] = []
     var workspaces: [WorkspaceInfo] = [WorkspaceInfo(name: "work")]
     /// Tasks whose agent is running: `restart-agent` without force is refused.
     var runningAgents: Set<String> = []
@@ -72,9 +73,9 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             emit(.taskCreated(task: id, session: name))
             emit(.result(id: id, error: nil, sessions: nil))
         case .listTasks(let id):
-            emit(.taskList(TaskListing(tasks: id, workspaces: workspaces, entries: taskRecords)))
+            emit(.taskList(TaskListing(tasks: id, workspaces: workspaces, entries: taskRecords, workers: workers)))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .createTask(let id, let workspace, let title, let goal, _, _, let branch, _, let loop):
+        case .createTask(let id, let workspace, let title, let goal, _, _, let branch, _, let loop, _):
             guard workspaces.contains(where: { $0.name == workspace }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "no such workspace"), sessions: nil))
                 return
@@ -96,7 +97,17 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             taskRecords[i].status = status
             emit(.taskSaved(task: id, record: taskRecords[i]))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .restartAgent(let id, let task, let force):
+        case .recoverRestart(let id, let task, let rev, let operation, _):
+            guard let i = taskRecords.firstIndex(where: { $0.id == task }), taskRecords[i].rev == rev,
+                  taskRecords[i].restartOperation?.id == operation else {
+                emit(.result(id: id, error: ErrorBody(code: .conflict, message: "task changed"), sessions: nil))
+                return
+            }
+            taskRecords[i].rev += 1
+            taskRecords[i].restartOperation = nil
+            emit(.taskSaved(task: id, record: taskRecords[i]))
+            emit(.result(id: id, error: nil, sessions: nil))
+        case .restartAgent(let id, let task, let force, _, _):
             guard let i = taskRecords.firstIndex(where: { $0.id == task }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(task) is not a task"), sessions: nil))
                 return

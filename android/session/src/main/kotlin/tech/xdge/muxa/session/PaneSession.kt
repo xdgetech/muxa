@@ -28,6 +28,8 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorkerSelection
+import tech.xdge.muxa.protocol.RestartRecoveryAction
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.terminal.PaneRenderer
 import tech.xdge.muxa.transport.BridgeChannel
@@ -97,6 +99,8 @@ class PaneSession(
         val canStartTasks get() = "tasks" in capabilities
         val canCloseTasks get() = "close-task" in capabilities
         val canKeepTasks get() = "task-records" in capabilities
+        val canRecoverRestarts get() = "task-restart-recovery" in capabilities
+        val canUseWorkers get() = "workers" in capabilities
         val canRestartAgents get() = "task-handoff" in capabilities
 
         /** The host's bridge reached the muxa daemon, so Tasks can have a Task Loop (ADR 0019). */
@@ -225,12 +229,16 @@ class PaneSession(
      */
     suspend fun createTask(draft: TaskRecordDraft.Create): TaskRecord = withContext(dispatcher) {
         if (draft.loop != null) requireLoops()
+        if (draft.worker != null) {
+            requireWorkers()
+            requireWorkerChoice(draft.worker, draft.workspace)
+        }
         var requestId = 0L
         try {
             request { id ->
                 requestId = id
                 Request.CreateTask(
-                    id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base, draft.loop,
+                    id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base, draft.loop, draft.worker,
                 )
             }
         } catch (e: Failure.Bridge) {
@@ -273,18 +281,24 @@ class PaneSession(
      * that is running. Throws [Failure.Bridge] with the bridge's reason, e.g. a running agent
      * without [force], or no agent pane; a bridge without `task-handoff` is never asked.
      */
-    suspend fun restartAgent(record: TaskRecord, force: Boolean): TaskRecord = withContext(dispatcher) {
+    suspend fun restartAgent(record: TaskRecord, force: Boolean, worker: WorkerSelection = WorkerSelection.Keep): TaskRecord = withContext(dispatcher) {
         if (!_state.value.canRestartAgents) {
             throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, "This host's bridge cannot restart agents. Update muxa-bridge."))
         }
+        if (_state.value.tasks?.record(record.id)?.restartOperation?.blocksRestart == true) {
+            throw Failure.Bridge(ErrorBody(ErrorCode.CONFLICT, "Resolve the interrupted restart before restarting again."))
+        }
+        if (worker != WorkerSelection.Keep) requireWorkers()
+        if (worker is WorkerSelection.Named) requireWorkerChoice(worker.name, record.workspace)
         var requestId = 0L
         try {
             request { id ->
                 requestId = id
-                Request.RestartAgent(id, record.id, force)
+                Request.RestartAgent(id, record.id, force, worker, if (_state.value.canUseWorkers) record.rev else null)
             }
         } catch (e: Failure.Bridge) {
             savedTasks.remove(requestId)?.let { keep(it) }
+            if (e.body.code == ErrorCode.CONFLICT) runCatching { loadTasks() }
             throw e
         }
         val saved = savedTasks.remove(requestId)
@@ -307,6 +321,34 @@ class PaneSession(
     suspend fun stopLoop(record: TaskRecord): TaskRecord = withContext(dispatcher) {
         requireLoops()
         saving("the stopped loop") { id -> Request.StopLoop(id, record.id) }
+    }
+
+    suspend fun recoverRestart(record: TaskRecord, operation: String, action: RestartRecoveryAction): TaskRecord = withContext(dispatcher) {
+        if (!_state.value.canRecoverRestarts) {
+            throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, "This host does not support restart recovery."))
+        }
+        val summary = record.restartOperation
+        val current = _state.value.tasks?.record(record.id)?.restartOperation
+        if (summary?.id != operation || action !in summary.recoveryActions || current?.id != operation ||
+            action !in current.recoveryActions) {
+            throw Failure.Bridge(ErrorBody(ErrorCode.CONFLICT, "Reload the task and review its recovery options again."))
+        }
+        try {
+            saving("the recovered task") { Request.RecoverRestart(it, record.id, record.rev, operation, action) }
+        } catch (e: Failure.Bridge) {
+            runCatching { loadTasks() }
+            throw e
+        }
+    }
+
+    private fun requireWorkerChoice(name: String, workspace: String) {
+        workerProblem(name, workspace, _state.value.tasks?.workers.orEmpty())?.let {
+            throw Failure.Bridge(ErrorBody(ErrorCode.BAD_REQUEST, it))
+        }
+    }
+
+    private fun requireWorkers() {
+        if (!_state.value.canUseWorkers) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, "This host does not support workers."))
     }
 
     private fun requireLoops() {

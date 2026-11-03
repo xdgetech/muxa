@@ -176,6 +176,15 @@ impl Engine {
         found: Option<Found>,
         global: &mut Option<Option<Vec<(String, String)>>>,
     ) {
+        if record.extra.contains_key(crate::records::lifecycle::FIELD)
+            || record.worker().is_some()
+            || record.pending_prompt().is_some()
+        {
+            if let Some(check) = self.live.get_mut(&record.id).and_then(|l| l.check.take()) {
+                check.abort();
+            }
+            return;
+        }
         let task = record.id.clone();
         let check = self.check_state(&task).await;
         let memory = self
@@ -211,15 +220,90 @@ impl Engine {
                 }
             }
             Action::RunCheck { attempt } => {
-                if self.save(record, lp, &s.state).await {
-                    let env = self.env(client, record, global).await;
-                    self.start_check(record, &s.state, attempt, env);
+                let env = self.env(client, record, global).await;
+                let Some(dir) = self.config.state_dir.clone() else {
+                    return;
+                };
+                let (id, rev, state) = (record.id.clone(), record.rev, s.state.clone());
+                let claimed = tokio::task::spawn_blocking(move || {
+                    let store = Store::open(dir)?;
+                    let mut claim = store.claim(&id, rev)?;
+                    if claim
+                        .record()
+                        .extra
+                        .contains_key(crate::records::lifecycle::FIELD)
+                    {
+                        return Err(StoreError::Busy(id));
+                    }
+                    claim.update(|r| {
+                        if let Err(e) = r.set_loop(Some(&state)) {
+                            tracing::warn!(error = %e, "cannot encode loop");
+                        }
+                    })?;
+                    Ok(claim)
+                })
+                .await;
+                if let Ok(Ok(claim)) = claimed {
+                    self.start_check(record, &s.state, attempt, env, claim);
                     tracing::info!(task, attempt, "check started");
                 }
             }
             Action::Type { attempt, then } => {
                 if let Some(f) = found {
+                    let Some(dir) = self.config.state_dir.clone() else {
+                        return;
+                    };
+                    let (id, rev) = (record.id.clone(), record.rev);
+                    let claim =
+                        tokio::task::spawn_blocking(move || Store::open(dir)?.claim(&id, rev))
+                            .await;
+                    let Ok(Ok(mut claim)) = claim else {
+                        return;
+                    };
+                    if claim
+                        .record()
+                        .extra
+                        .contains_key(crate::records::lifecycle::FIELD)
+                    {
+                        return;
+                    }
+                    let process =
+                        match crate::task_records::restart::identity(client, f.session, f.pane)
+                            .await
+                        {
+                            Ok(process) => process,
+                            Err(_) => return,
+                        };
+                    let run = claim.record().open_run().map(|r| r.id);
+                    let operation = match getrandom::u64() {
+                        Ok(n) => format!("delivery-{n:016x}"),
+                        Err(_) => return,
+                    };
                     let at = now();
+                    let op = crate::records::lifecycle::Operation {
+                        version: 1,
+                        id: operation,
+                        phase: crate::records::lifecycle::Phase::Delivering,
+                        source_run: run,
+                        reserved_run: run.unwrap_or(0),
+                        pane: f.pane.number(),
+                        source_pid: process.pid,
+                        worker: claim.record().worker().map(str::to_owned),
+                        session: Some(f.session.number()),
+                        source_started: Some(process.started),
+                        replacement: None,
+                        files: None,
+                        since: at,
+                        seen: None,
+                    };
+                    let claimed = tokio::task::spawn_blocking(move || {
+                        claim.write_operation(Some(op))?;
+                        Ok::<_, crate::records::lifecycle::Error>(claim)
+                    })
+                    .await;
+                    let Ok(Ok(mut claim)) = claimed else {
+                        return;
+                    };
                     match typing::type_prompt(client, f.pane, &typing::fail_prompt(attempt)).await {
                         Ok(()) => {
                             tracing::info!(task, pane = %f.pane, attempt, "fail prompt sent");
@@ -228,8 +312,20 @@ impl Engine {
                                 since: at,
                                 ..*then
                             };
-                            self.save(record, lp, &then).await;
-                            memory = step::typed(at);
+                            let written = tokio::task::spawn_blocking(move || {
+                                claim
+                                    .update(|r| {
+                                        r.extra.remove(crate::records::lifecycle::FIELD);
+                                        if let Err(e) = r.set_loop(Some(&then)) {
+                                            tracing::warn!(error = %e, "cannot encode loop");
+                                        }
+                                    })
+                                    .map(|_| ())
+                            })
+                            .await;
+                            if matches!(written, Ok(Ok(()))) {
+                                memory = step::typed(at);
+                            }
                         }
                         Err(e) => {
                             tracing::warn!(task, pane = %f.pane, error = %e, "cannot type the fail prompt")
@@ -328,6 +424,7 @@ impl Engine {
         lp: &Loop,
         attempt: u32,
         env: Vec<(String, String)>,
+        claim: crate::records::store::ClaimedTask,
     ) {
         let Some(dir) = record.dir.clone() else {
             return;
@@ -340,7 +437,7 @@ impl Engine {
             env,
         };
         let live = self.live.entry(record.id.clone()).or_default();
-        live.check = Some(tokio::spawn(check::run(spec)));
+        live.check = Some(tokio::spawn(check::run_claimed(spec, claim)));
     }
 
     /// Writes `new` over `old`, with what the change means for the status
@@ -481,6 +578,11 @@ pub fn start(
     let workspaces = load(config)?;
     for _ in 0..WRITE_ATTEMPTS {
         let record = store.get(task)?;
+        if record.worker().is_some() {
+            return Err(LoopError::Bad(
+                "workers are not implemented on this host".into(),
+            ));
+        }
         let ws = known(&workspaces, &record.workspace)?;
         spec.check(ws.loop_checks.as_ref())
             .map_err(LoopError::Bad)?;
@@ -492,15 +594,27 @@ pub fn start(
         }
         let previous = record.task_loop().ok().flatten();
         let lp = Loop::start(spec.clone(), previous.as_ref(), reset, now());
-        match store.update(task, record.rev, |r| {
+        let mut claim = match store.claim(task, record.rev) {
+            Ok(claim) => claim,
+            Err(StoreError::Conflict { .. }) => continue,
+            Err(e) => return Err(e.into()),
+        };
+        if claim
+            .record()
+            .extra
+            .contains_key(crate::records::lifecycle::FIELD)
+        {
+            return Err(StoreError::Busy(task.to_owned()).into());
+        }
+        match claim.update(|r| {
             if let Err(e) = r.set_loop(Some(&lp)) {
                 tracing::warn!(task, error = %e, "cannot encode a loop");
             }
         }) {
             Ok(r) => {
                 tracing::info!(task, rev = r.rev, "loop started");
-                refresh_brief(&r);
-                return Ok(r);
+                refresh_brief(r);
+                return Ok(r.clone());
             }
             Err(StoreError::Conflict { .. }) => continue,
             Err(e) => return Err(e.into()),
@@ -532,36 +646,6 @@ pub fn stop(config: &Config, task: &str) -> Result<Record, LoopError> {
                 tracing::info!(task, rev = r.rev, "loop stopped by the user");
                 return Ok(r);
             }
-            Err(StoreError::Conflict { .. }) => continue,
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Err(StoreError::Busy(task.to_owned()).into())
-}
-
-/// After the daemon typed a start or restart prompt at `at`: an active
-/// loop is `armed` from then, with its attempts kept (ADR 0019,
-/// "`restart-agent` and the loop"). Call it after the keys are sent. Blocking.
-pub fn armed_by_prompt(config: &Config, task: &str, at: u64) -> Result<(), LoopError> {
-    let store = open(config)?;
-    for _ in 0..WRITE_ATTEMPTS {
-        let record = store.get(task)?;
-        let Some(lp) = record.task_loop().ok().flatten().filter(Loop::active) else {
-            return Ok(());
-        };
-        let armed = Loop {
-            state: LoopState::Armed,
-            reason: None,
-            armed_at: at,
-            since: at,
-            ..lp
-        };
-        match store.update(task, record.rev, |r| {
-            if let Err(e) = r.set_loop(Some(&armed)) {
-                tracing::warn!(task, error = %e, "cannot encode a loop");
-            }
-        }) {
-            Ok(_) => return Ok(()),
             Err(StoreError::Conflict { .. }) => continue,
             Err(e) => return Err(e.into()),
         }

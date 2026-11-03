@@ -200,6 +200,79 @@ fn commit_in(dir: &Path, file: &str) {
 }
 
 #[tokio::test]
+async fn closing_a_linked_task_respects_restart_claims_and_recovery_barriers() {
+    let server = Server::start();
+    let repo = Repo::new("close-claim");
+    let state = repo.root.join("state");
+    std::fs::create_dir(&state).unwrap();
+    let (mut bridge, _) = Bridge::start(
+        &server,
+        &[
+            "--task-launcher",
+            "builtin",
+            "--task-command",
+            "sleep 600",
+            "--state-dir",
+            state.to_str().unwrap(),
+        ],
+    )
+    .await;
+    let (created, result) = new_task(&mut bridge, &repo.app, "feat/claim").await;
+    assert!(matches!(result, Message::Result { error: None, .. }));
+    let name = created.unwrap();
+    let session = server
+        .tmux(&["list-sessions", "-F", "#{session_id} #{session_name}"])
+        .lines()
+        .find_map(|line| {
+            let (id, candidate) = line.split_once(' ')?;
+            (candidate == name).then(|| id.to_owned())
+        })
+        .unwrap();
+    let worktree = repo.root.join("repos/.worktrees/app-feat-claim");
+    let mut record = json!({
+        "version":1,"id":"t-000001","rev":1,"workspace":"work",
+        "title":"fixture","goal":"Wait","status":"open","createdAt":1,"updatedAt":1,
+        "dir":worktree,"session":name,"runs":[]
+    });
+    let record_path = state.join("t-000001.json");
+    std::fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    let lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(state.join(".t-000001.lock"))
+        .unwrap();
+    rustix::fs::flock(&lock, rustix::fs::FlockOperation::LockExclusive).unwrap();
+    let before = server.layout();
+    for tagged in [true, false] {
+        if tagged {
+            server.tmux(&["set-option", "-t", &session, "@muxa_task", "t-000001"]);
+        } else {
+            server.tmux(&["set-option", "-u", "-t", &session, "@muxa_task"]);
+        }
+        let error = close_task(&mut bridge, &session, "keep").await.unwrap();
+        assert_eq!(error.code, ErrorCode::Conflict);
+        assert_eq!(server.layout(), before);
+    }
+    drop(lock);
+    record["restartOperation"] = json!({"version":99,"phase":"future"});
+    std::fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    assert_eq!(
+        close_task(&mut bridge, &session, "keep")
+            .await
+            .unwrap()
+            .code,
+        ErrorCode::Conflict
+    );
+    assert_eq!(server.layout(), before);
+    record.as_object_mut().unwrap().remove("restartOperation");
+    std::fs::write(&record_path, serde_json::to_vec(&record).unwrap()).unwrap();
+    assert!(close_task(&mut bridge, &session, "keep").await.is_none());
+    assert!(!sessions(&server).contains(&name));
+    assert!(worktree.is_dir());
+}
+
+#[tokio::test]
 async fn the_builtin_launcher_closes_only_what_can_be_lost_safely() {
     let server = Server::start();
     let repo = Repo::new("close");

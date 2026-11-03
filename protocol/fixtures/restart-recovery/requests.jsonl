@@ -1,0 +1,3 @@
+{"type":"recover-restart","id":201,"task":"t-000001","rev":7,"operation":"restart-fixture","action":"cancel-prepared"}
+{"type":"recover-restart","id":202,"task":"t-000001","rev":7,"operation":"restart-fixture","action":"finish-replacement"}
+{"type":"recover-restart","id":203,"task":"t-000001","rev":7,"operation":"restart-fixture","action":"leave-unconfirmed"}

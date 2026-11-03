@@ -54,16 +54,17 @@ public enum Request: Equatable, Sendable {
     /// With `loop`, the host also starts a Task Loop (capability `task-loop`).
     case createTask(
         id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?,
-        branch: String?, base: String?, loop: LoopSpec? = nil)
+        branch: String?, base: String?, loop: LoopSpec? = nil, worker: String? = nil)
     /// Set a task record's status. `rev` is the one the client saw; a stale one
     /// fails with `conflict`. A `task-saved` comes first.
     case updateTask(id: UInt64, task: String, rev: UInt64, status: TaskStatus)
     /// Restart a task's agent in the same pane, after a handoff (capability
     /// `task-handoff`, ADR 0018). Refused while the agent runs, unless `force`.
     /// A `task-saved` comes first.
-    case restartAgent(id: UInt64, task: String, force: Bool)
+    case restartAgent(id: UInt64, task: String, force: Bool, worker: WorkerSelection = .keep, rev: UInt64? = nil)
     /// Start a task's Task Loop again (capability `task-loop`, ADR 0019); `reset`
     /// counts the attempts from zero. A `task-saved` comes first.
+    case recoverRestart(id: UInt64, task: String, rev: UInt64, operation: String, action: RestartRecoveryAction)
     case startLoop(id: UInt64, task: String, loop: LoopSpec, reset: Bool)
     /// Stop a task's Task Loop (capability `task-loop`). A `task-saved` comes first.
     case stopLoop(id: UInt64, task: String)
@@ -77,8 +78,8 @@ public enum Request: Equatable, Sendable {
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
-            .createTask(let id, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
-            .restartAgent(let id, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
+            .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
+            .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _):
             id
         }
@@ -88,8 +89,8 @@ public enum Request: Equatable, Sendable {
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
-        case workspace, title, goal, project, task, rev, status, force, loop, reset
-        case cols, rows
+        case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
+        case cols, rows, operation, action
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -120,7 +121,7 @@ extension Request: Codable {
             try c.encode(mode, forKey: .mode)
         case .listTasks(let id): try c.head("list-tasks", id)
         case .createTask(
-            let id, let workspace, let title, let goal, let project, let repo, let branch, let base, let loop):
+            let id, let workspace, let title, let goal, let project, let repo, let branch, let base, let loop, let worker):
             try c.head("create-task", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(title, forKey: .title)
@@ -130,15 +131,24 @@ extension Request: Codable {
             try c.encodeIfPresent(branch, forKey: .branch)
             try c.encodeIfPresent(base, forKey: .base)
             try c.encodeIfPresent(loop, forKey: .loop)
+            try c.encodeIfPresent(worker, forKey: .worker)
         case .updateTask(let id, let task, let rev, let status):
             try c.head("update-task", id)
             try c.encode(task, forKey: .task)
             try c.encode(rev, forKey: .rev)
             try c.encode(status, forKey: .status)
-        case .restartAgent(let id, let task, let force):
+        case .restartAgent(let id, let task, let force, let worker, let rev):
             try c.head("restart-agent", id)
             try c.encode(task, forKey: .task)
             if force { try c.encode(true, forKey: .force) }
+            if worker != .keep { try c.encode(worker, forKey: .worker) }
+            try c.encodeIfPresent(rev, forKey: .rev)
+        case .recoverRestart(let id, let task, let rev, let operation, let action):
+            try c.head("recover-restart", id)
+            try c.encode(task, forKey: .task)
+            try c.encode(rev, forKey: .rev)
+            try c.encode(operation, forKey: .operation)
+            try c.encode(action, forKey: .action)
         case .startLoop(let id, let task, let loop, let reset):
             try c.head("start-loop", id)
             try c.encode(task, forKey: .task)
@@ -227,7 +237,8 @@ extension Request: Codable {
                 repo: try c.decodeIfPresent(String.self, forKey: .repo),
                 branch: try c.decodeIfPresent(String.self, forKey: .branch),
                 base: try c.decodeIfPresent(String.self, forKey: .base),
-                loop: try c.decodeIfPresent(LoopSpec.self, forKey: .loop))
+                loop: try c.decodeIfPresent(LoopSpec.self, forKey: .loop),
+                worker: try c.decodeIfPresent(String.self, forKey: .worker))
         case "update-task":
             self = .updateTask(
                 id: id, task: try c.decode(String.self, forKey: .task),
@@ -236,7 +247,13 @@ extension Request: Codable {
         case "restart-agent":
             self = .restartAgent(
                 id: id, task: try c.decode(String.self, forKey: .task),
-                force: try c.decodeIfPresent(Bool.self, forKey: .force) ?? false)
+                force: try c.decodeIfPresent(Bool.self, forKey: .force) ?? false,
+                worker: c.contains(.worker) ? try c.decode(WorkerSelection.self, forKey: .worker) : .keep,
+                rev: try c.decodeIfPresent(UInt64.self, forKey: .rev))
+        case "recover-restart":
+            self = .recoverRestart(id: id, task: try c.decode(String.self, forKey: .task),
+                rev: try c.decode(UInt64.self, forKey: .rev), operation: try c.decode(String.self, forKey: .operation),
+                action: try c.decode(RestartRecoveryAction.self, forKey: .action))
         case "start-loop":
             self = .startLoop(
                 id: id, task: try c.decode(String.self, forKey: .task),

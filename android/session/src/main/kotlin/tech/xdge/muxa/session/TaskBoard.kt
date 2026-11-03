@@ -3,6 +3,7 @@ package tech.xdge.muxa.session
 import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.WorkspaceInfo
+import tech.xdge.muxa.protocol.WorkerInfo
 
 /** The host's task records and workspaces, as last listed (capability `task-records`). */
 data class TaskBoard(
@@ -10,6 +11,7 @@ data class TaskBoard(
     val records: List<TaskRecord> = emptyList(),
     /** The bridge left some records out. */
     val truncated: Boolean = false,
+    val workers: List<WorkerInfo> = emptyList(),
 ) {
     fun record(id: String): TaskRecord? = records.firstOrNull { it.id == id }
 
@@ -21,6 +23,6 @@ data class TaskBoard(
     }
 
     companion object {
-        fun of(list: Message.TaskList) = TaskBoard(list.workspaces, list.entries, list.truncated)
+        fun of(list: Message.TaskList) = TaskBoard(list.workspaces, list.entries, list.truncated, list.workers)
     }
 }

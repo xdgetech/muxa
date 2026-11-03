@@ -24,6 +24,7 @@ import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WorkspaceInfo
+import tech.xdge.muxa.protocol.WorkerInfo
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
 import java.util.concurrent.Executors
@@ -49,6 +50,7 @@ open class FakeBridge : BridgeChannel {
     var changes = listOf<ChangeInfo>()
     var images = listOf<ImageInfo>()
     var workspaces = listOf(WorkspaceInfo("work"))
+    var workers = listOf<WorkerInfo>()
     var tasks = listOf<TaskRecord>()
 
     /** False: the daemon went away after `hello`, so loop requests are `unsupported`. */
@@ -104,7 +106,7 @@ open class FakeBridge : BridgeChannel {
                 emit(Message.Result(req.id))
             }
             is Request.ListTasks -> {
-                emit(Message.TaskList(req.id, workspaces, tasks))
+                emit(Message.TaskList(req.id, workspaces, tasks, workers = workers))
                 emit(Message.Result(req.id))
             }
             is Request.CreateTask -> {
@@ -133,6 +135,17 @@ open class FakeBridge : BridgeChannel {
                 tasks = tasks.map { if (it.id == saved.id) saved else it }
                 emit(Message.TaskSaved(req.id, saved))
                 emit(Message.Result(req.id))
+            }
+            is Request.RecoverRestart -> {
+                val record = tasks.firstOrNull { it.id == req.task }
+                if (record?.rev != req.rev || record.restartOperation?.id != req.operation) {
+                    emit(Message.Result(req.id, ErrorBody(ErrorCode.CONFLICT, "task changed")))
+                } else {
+                    val saved = record.copy(rev = record.rev + 1, restartOperation = null)
+                    tasks = tasks.map { if (it.id == saved.id) saved else it }
+                    emit(Message.TaskSaved(req.id, saved))
+                    emit(Message.Result(req.id))
+                }
             }
             is Request.RestartAgent -> {
                 val current = tasks.firstOrNull { it.id == req.task }

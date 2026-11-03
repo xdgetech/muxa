@@ -1,0 +1,6 @@
+{"type":"create-task","id":100,"workspace":"work","title":"Review","goal":"Review the changes.","worker":"Reviewer"}
+{"type":"restart-agent","id":101,"task":"t-000001"}
+{"type":"restart-agent","id":102,"task":"t-000001","rev":7}
+{"type":"restart-agent","id":103,"task":"t-000001","worker":null,"rev":7}
+{"type":"restart-agent","id":104,"task":"t-000001","force":true,"worker":"Reviewer","rev":7}
+{"type":"create-task","id":105,"workspace":"work","title":"Build","goal":"Build it.","loop":{"check":"make check","maxAttempts":3,"timeout":600},"worker":"Implementer"}

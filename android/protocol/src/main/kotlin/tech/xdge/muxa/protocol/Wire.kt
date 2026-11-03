@@ -76,6 +76,7 @@ object Wire {
         kind<Request.CreateTask>("create-task"),
         kind<Request.UpdateTask>("update-task"),
         kind<Request.RestartAgent>("restart-agent"),
+        kind<Request.RecoverRestart>("recover-restart"),
         kind<Request.StartLoop>("start-loop"),
         kind<Request.StopLoop>("stop-loop"),
         kind<Request.Bye>("bye"),

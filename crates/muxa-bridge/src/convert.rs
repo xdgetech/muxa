@@ -58,6 +58,8 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
     let path = |p: Option<std::path::PathBuf>| p.map(|p| p.to_string_lossy().into_owned());
     let pending_prompt = r.pending_prompt().map(pending_prompt);
     let task_loop = loop_of(&r);
+    let worker = r.worker().map(str::to_owned);
+    let restart_operation = crate::task_records::restart::summary(&r).map(Box::new);
     wire::TaskRecord {
         id: r.id,
         rev: r.rev,
@@ -81,6 +83,8 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         runs: r.runs.into_iter().map(agent_run).collect(),
         r#loop: task_loop.map(Box::new),
         pending_prompt,
+        worker,
+        restart_operation,
     }
 }
 
@@ -182,6 +186,12 @@ pub fn loop_spec(s: wire::LoopSpec) -> crate::records::LoopSpec {
 
 fn agent_run(r: crate::records::Run) -> wire::AgentRun {
     use crate::records::RunReason;
+    let assignment = r.assignment();
+    let outcome = r
+        .extra
+        .get("outcome")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
     wire::AgentRun {
         id: r.id,
         agent: r.agent,
@@ -189,6 +199,8 @@ fn agent_run(r: crate::records::Run) -> wire::AgentRun {
         ended_at: r.ended_at,
         agent_session: r.agent_session,
         transcript: r.transcript.map(|p| p.to_string_lossy().into_owned()),
+        assignment,
+        outcome,
         reason: match r.reason {
             RunReason::Start => wire::RunReason::Start,
             RunReason::Restart => wire::RunReason::Restart,

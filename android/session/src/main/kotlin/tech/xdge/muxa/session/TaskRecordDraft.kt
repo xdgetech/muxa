@@ -19,6 +19,7 @@ data class TaskRecordDraft(
     val base: String = "",
     /** Also start a Task Loop; null for none. */
     val loop: LoopDraft? = null,
+    val worker: String? = null,
 ) {
     data class Create(
         val workspace: String,
@@ -29,6 +30,7 @@ data class TaskRecordDraft(
         val branch: String?,
         val base: String?,
         val loop: LoopSpec? = null,
+        val worker: String? = null,
     )
 
     /** What to fix before the Task can be created; null when it can. */
@@ -65,6 +67,7 @@ data class TaskRecordDraft(
                 branch = repo?.let { branch.trim() },
                 base = repo?.let { base.trim().ifEmpty { null } },
                 loop = loop?.spec,
+                worker = worker,
             )
         }
 

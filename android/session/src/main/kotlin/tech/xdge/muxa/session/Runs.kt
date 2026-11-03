@@ -18,6 +18,8 @@ fun runRows(record: TaskRecord, agentReported: Boolean, now: Long): List<RunRow>
     return record.runs.sortedByDescending { it.id }.map { run ->
         val ended = run.endedAt
         val tail = when {
+            run.outcome == "unconfirmed" -> "unconfirmed outcome"
+            run.outcome != null -> "unknown outcome"
             ended != null -> duration(ended - run.startedAt)
             run.id == newest && agentReported -> "still running"
             else -> "end not recorded"

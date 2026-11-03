@@ -296,3 +296,47 @@ fn an_exited_codex_ends_the_chat() {
     let mut source = f.source(|| Ok(Processes::parse("100 1 05:00 -zsh\n")));
     assert!(matches!(source.poll(&pane()), Err(Error::Gone(_))));
 }
+
+#[test]
+fn completion_state_does_not_distinguish_same_second_native_turns() {
+    let complete = |turn: &str, ordinal: u64| {
+        serde_json::json!({
+            "ordinal": ordinal,
+            "type": "event_msg",
+            "payload": {"type": "task_complete", "turn_id": turn, "completed_at": 20}
+        })
+        .to_string()
+    };
+    let first = normalize(&complete("old-turn", 10));
+    let next = normalize(&complete("close-out-turn", 12));
+    assert_eq!(first.turn, next.turn);
+    assert_eq!(first.turn.unwrap().since, Some(20));
+    // A close-out must use an ordered native observation, not this summary alone.
+    assert!(first.log.all().is_empty());
+    assert!(next.log.all().is_empty());
+}
+
+#[test]
+fn abort_and_undated_completion_are_idle_without_completion_time() {
+    for event in ["turn_aborted", "task_complete"] {
+        let line = serde_json::json!({"type":"event_msg", "payload":{"type":event,"turn_id":"synthetic-turn"}}).to_string();
+        let conv = normalize(&line);
+        assert_eq!(
+            conv.turn,
+            Some(Agent {
+                state: AgentState::Idle,
+                since: None
+            })
+        );
+    }
+    let mut conv =
+        normalize(r#"{"type":"event_msg","payload":{"type":"task_complete","completed_at":20}}"#);
+    conv.apply(br#"{"type":"event_msg","payload":{"type":"task_started","started_at":21}}"#);
+    assert_eq!(
+        conv.turn,
+        Some(Agent {
+            state: AgentState::Running,
+            since: Some(21)
+        })
+    );
+}

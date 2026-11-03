@@ -12,7 +12,17 @@ pub const FILE: &str = "daemon.lock";
 
 /// Held while the daemon runs; dropping it releases the lock.
 #[derive(Debug)]
-pub struct Lock(#[allow(dead_code)] File);
+pub struct Lock(File);
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // A concurrent spawn can briefly inherit the open description before
+        // exec. Normal release must not wait for that child's exec.
+        if let Err(error) = flock(&self.0, FlockOperation::Unlock) {
+            tracing::warn!(error = %error, "cannot release daemon lock");
+        }
+    }
+}
 
 /// The lock, or `None` when another process holds it.
 pub fn acquire(dir: &Path) -> io::Result<Option<Lock>> {

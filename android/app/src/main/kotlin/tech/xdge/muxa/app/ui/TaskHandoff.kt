@@ -15,6 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -24,6 +28,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.protocol.TaskRecord
+import tech.xdge.muxa.protocol.WorkerSelection
+import tech.xdge.muxa.session.allows
+import tech.xdge.muxa.session.workerProblem
+import tech.xdge.muxa.session.displayName
 import tech.xdge.muxa.session.InboxItem
 import tech.xdge.muxa.session.inboxItem
 import tech.xdge.muxa.session.restartNeedsForce
@@ -38,17 +46,30 @@ fun RestartAgentDialog(model: AppModel) {
     val id = model.restartingTask ?: return
     val record = model.state.tasks?.record(id) ?: return
     val force = inboxItem(record, model.state.sessions).restartNeedsForce
+    var choice by remember(id) { mutableStateOf<WorkerSelection>(WorkerSelection.Keep) }
+    val workerIssue = workerProblem((choice as? WorkerSelection.Named)?.name, record.workspace, model.state.tasks?.workers.orEmpty())
     AlertDialog(
         onDismissRequest = { model.restartingTask = null },
         title = { Text("Restart the agent?") },
-        text = { Text(RESTART_MESSAGE) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(RESTART_MESSAGE)
+                if (model.state.canUseWorkers) {
+                    WorkerRestartPicker(
+                        model.state.tasks?.workers.orEmpty().filter { it.allows(record.workspace) },
+                        record.worker, choice,
+                    ) { choice = it }
+                    workerIssue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        },
         confirmButton = {
             if (force) {
-                TextButton({ model.restartAgent(record, force = true) }, Modifier.testTag("restart-force")) {
+                TextButton({ model.restartAgent(record, force = true, worker = choice) }, Modifier.testTag("restart-force"), enabled = workerIssue == null) {
                     Text("Stop and restart", color = MaterialTheme.colorScheme.error)
                 }
             } else {
-                TextButton({ model.restartAgent(record, force = false) }, Modifier.testTag("restart-confirm")) { Text("Restart") }
+                TextButton({ model.restartAgent(record, force = false, worker = choice) }, Modifier.testTag("restart-confirm"), enabled = workerIssue == null) { Text("Restart") }
             }
         },
         dismissButton = { TextButton({ model.restartingTask = null }) { Text("Cancel") } },
@@ -77,6 +98,7 @@ fun RunsSection(record: TaskRecord, item: InboxItem) {
             Column(Modifier.testTag("run-${row.run.id}")) {
                 Text(row.title, fontWeight = FontWeight.SemiBold)
                 Text(row.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(row.run.assignment?.displayName ?: "Worker unrecorded", style = MaterialTheme.typography.bodySmall)
                 row.run.agentSession?.let { AgentSessionId(it) }
             }
         }
