@@ -100,14 +100,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "task-inbox", "work:1",
+            "task-loop", "tasks-changed", "viewport", "task-inbox", "work:2",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        // A bridge from before ask sessions and branches named after the title (ADR 0031).
+        if arguments.contains("-work1") { return all.map { $0 == "work:2" ? "work:1" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         // A bridge from before the shared Inbox order and Routines, for the local Snooze's test.
-        if arguments.contains("-no-task-inbox") { return all.filter { $0 != "task-inbox" && $0 != "work:1" } }
+        if arguments.contains("-no-task-inbox") { return all.filter { $0 != "task-inbox" && !$0.hasPrefix("work:") } }
         #endif
         return all
     }
@@ -276,20 +278,51 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
         case .ping(let id), .unwatch(let id), .bytes(let id, _, _):
             ok(id)
-        case .startSession(let id, _, _):
-            // The demo has no `work:2`, so it refuses ask sessions as an older bridge does.
-            unsupported(id, Self.noRequest)
+        case .startSession(let id, let workspace, let repo):
+            startSession(id: id, workspace: workspace, repo: repo)
         case .bye:
             out.finish()
+        }
+    }
+
+    /// The host's `work` level (ADR 0027 §5).
+    private static var workLevel: UInt32 { MuxaProtocol.workLevel(capabilities) }
+
+    /// An ask session: the agent in the repo's main checkout, listed as a manual session (ADR 0031).
+    private func startSession(id: UInt64, workspace: String, repo: String) {
+        guard Self.workLevel >= workAsk else { return unsupported(id, Self.noRequest) }
+        let outcome = lock.withLock { () -> Result<Session, DemoTasks.Refusal> in
+            let dir: String
+            do throws(DemoTasks.Refusal) { dir = try tasks.checkout(repo, in: workspace) } catch { return .failure(error) }
+            let base = dir.split(separator: "/").last.map(String.init) ?? "repo"
+            let k = sessions.filter { $0.name.hasPrefix("ask-\(base)-") }.count + 1
+            let n = 20 + sessions.count
+            let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 80, rows: 24,
+                            command: "claude", path: dir, dead: false, shellForeground: false,
+                            agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
+            followers.insert(pane.id)
+            let session = Session(id: "$\(n)", name: "ask-\(base)-\(k)", repo: base, repoDir: dir, branch: "main", panes: [pane])
+            sessions.append(session)
+            return .success(session)
+        }
+        switch outcome {
+        case .success(let session):
+            emit(.sessionStarted(start: id, session: session.id, name: session.name))
+            ok(id)
+            emit(.sessionsChanged)
+        case .failure(.badRequest(let message)):
+            emit(.result(id: id, error: ErrorBody(code: .badRequest, message: message), sessions: nil))
+        case .failure(.conflict):
+            emit(.result(id: id, error: ErrorBody(code: .conflict, message: "conflict"), sessions: nil))
         }
     }
 
     /// What a bridge says to a request it does not know.
     static let noRequest = "The demo bridge does not support this request."
 
-    /// Routines and stored entries, refused as a bridge without `work:1` refuses them.
+    /// Routines and stored entries, refused as a bridge without `work` level 1 refuses them.
     private func serveWork(_ req: Request) {
-        guard Self.capabilities.contains("work:1") else { return unsupported(req.id, Self.noRequest) }
+        guard Self.workLevel >= workRoutines else { return unsupported(req.id, Self.noRequest) }
         switch req {
         case .listRoutines(let id):
             emit(.routineList(routines: id, entries: lock.withLock { work.routines }))
@@ -407,7 +440,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let record: TaskRecord
             do throws(DemoTasks.Refusal) {
                 record = try tasks.create(workspace: workspace, title: title, goal: goal, project: project, repo: repo,
-                                          branch: branch, loop: loop, launched: launched)
+                                          branch: branch, loop: loop, launched: launched,
+                                          branchFromTitle: Self.workLevel >= workAsk)
             } catch {
                 return .failure(error)
             }

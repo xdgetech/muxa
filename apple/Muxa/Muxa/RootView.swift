@@ -91,6 +91,14 @@ struct RootView: View {
             Text("Close removes the worktree only when the branch is merged. Uncommitted changes are never removed, and the branch is kept.")
         }
         .alert(
+            "Can't Ask",
+            isPresented: Binding(get: { model.askError != nil }, set: { if !$0 { model.askError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.askError ?? "")
+        }
+        .alert(
             "Can't Close the Task",
             isPresented: Binding(get: { model.closeError != nil }, set: { if !$0 { model.closeError = nil } })
         ) {

@@ -69,6 +69,10 @@ final class AppModel {
     var closingTask: Session?
     /// Why the last close failed; nothing was closed then.
     var closeError: String?
+    /// Why an ask session from a repo header did not start.
+    var askError: String?
+    /// An ask session started from the New Task sheet, shown once the sheet has closed.
+    private var askedSession: Session?
     /// Asked for from the session switcher: shown once the switcher has closed.
     private var newTaskAfterSwitcher: (() -> Void)?
     private(set) var docListing: DocListing?
@@ -652,6 +656,11 @@ final class AppModel {
     /// Shows the new task's session, as the old sheet did. A task whose agent
     /// did not start has none: its detail says why.
     func recordSheetClosed() async {
+        if let s = askedSession {
+            askedSession = nil
+            await openAgent(s)
+            return
+        }
         guard let record = createdRecord else {
             refocusPane()
             return
@@ -682,6 +691,46 @@ final class AppModel {
         let name = try await session.newTask(repo: req.repo, branch: req.branch, base: req.base)
         newTask = nil
         if let s = session.sessions.first(where: { $0.name == name }) { await open(s) }
+    }
+
+    // MARK: Ask sessions (ADR 0031)
+
+    var canAsk: Bool { isConnected && session.canAsk }
+
+    /// The workspace an ask in the repo at `dir` runs in; nil when none holds it.
+    func askWorkspace(for dir: String) -> String? {
+        canAsk ? session.workspaces.workspace(of: dir)?.name : nil
+    }
+
+    /// Starts an ask session in `repo` and shows its agent pane once every sheet that
+    /// asked for it has closed. Throws what the host said went wrong.
+    func ask(workspace: String, repo: String) async throws {
+        let started = try await session.startSession(workspace: workspace, repo: repo)
+        guard let s = session.sessions.first(where: { $0.id == started.id }) else { return }
+        if showTasks {
+            openTerminal(s)
+        } else if newRecord != nil {
+            askedSession = s
+            newRecord = nil
+        } else {
+            await openAgent(s)
+        }
+    }
+
+    /// The quick action on a repo header: the error shows as an alert.
+    func ask(about dir: String) async {
+        guard let workspace = askWorkspace(for: dir) else { return }
+        do {
+            try await ask(workspace: workspace, repo: dir)
+        } catch {
+            askError = PaneSession.describe(error)
+        }
+    }
+
+    /// An ask session opens on its pane, not the chat.
+    private func openAgent(_ s: Session) async {
+        await open(s)
+        if agentPane != nil { await show(.agent) }
     }
 
     var canCloseTasks: Bool { isConnected && session.canCloseTasks }

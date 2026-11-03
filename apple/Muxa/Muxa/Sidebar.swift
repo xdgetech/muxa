@@ -101,7 +101,7 @@ struct Sidebar: View {
                             }
                         }
                     } header: {
-                        RepoHeader(repo: group.repo, newTask: newTaskAction(group))
+                        RepoHeader(repo: group.repo, newTask: newTaskAction(group), ask: askAction(group))
                     }
                 }
             }
@@ -132,6 +132,12 @@ struct Sidebar: View {
     private func newTaskAction(_ group: RepoGroup) -> (() -> Void)? {
         guard model.canCreateTasks, group.repo != nil, let dir = group.sessions.first?.repoDir else { return nil }
         return { model.startNewTask(in: dir) }
+    }
+
+    /// An ask session in a repo of a workspace (ADR 0031).
+    private func askAction(_ group: RepoGroup) -> (() -> Void)? {
+        guard group.repo != nil, let dir = group.sessions.first?.repoDir, model.askWorkspace(for: dir) != nil else { return nil }
+        return { Task { await model.ask(about: dir) } }
     }
 
     private func connect(_ host: Host) {
@@ -202,6 +208,8 @@ struct RepoHeader: View {
     let repo: String?
     /// Shown as a button that starts a task in this repo.
     var newTask: (() -> Void)?
+    /// Shown as a button that starts an ask session in this repo.
+    var ask: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -210,11 +218,18 @@ struct RepoHeader: View {
             } else {
                 Label("Other Sessions", systemImage: Icon.session)
             }
-            if let newTask, let repo {
+            if let repo, newTask != nil || ask != nil {
                 Spacer()
-                Button("New Task in \(repo)", systemImage: Icon.add, action: newTask)
-                    .labelStyle(.iconOnly)
-                    .accessibilityIdentifier("new-task-\(repo)")
+                if let ask {
+                    Button("Ask about \(repo)", systemImage: Icon.ask, action: ask)
+                        .labelStyle(.iconOnly)
+                        .accessibilityIdentifier("ask-\(repo)")
+                }
+                if let newTask {
+                    Button("New Task in \(repo)", systemImage: Icon.add, action: newTask)
+                        .labelStyle(.iconOnly)
+                        .accessibilityIdentifier("new-task-\(repo)")
+                }
             }
         }
     }

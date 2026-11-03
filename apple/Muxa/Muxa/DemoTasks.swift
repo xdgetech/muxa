@@ -54,7 +54,9 @@ struct DemoTasks: Sendable {
 
     /// Checks from a list, any check, and no loops at all (ADR 0019).
     private static let testWorkspaces = [
-        WorkspaceInfo(name: "work", checks: .list(["make check", "cargo test --workspace"]), repos: ["/src/app", "/src/docs"]),
+        // Repos under the root show by their relative path, the one outside it with `~` (ADR 0031).
+        WorkspaceInfo(name: "work", root: "/src", checks: .list(["make check", "cargo test --workspace"]),
+                      repos: ["/home/dev/forks/tmux", "/src/app", "/src/docs", "/src/libs/core"]),
         WorkspaceInfo(name: "personal", checks: .any),
         WorkspaceInfo(name: "notes"),
     ]
@@ -190,11 +192,12 @@ extension DemoTasks {
     /// A new record, or why the bridge refuses it. `launched` is false when the launch fails.
     mutating func create(
         workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?, loop: LoopSpec?,
-        launched: Bool
+        launched: Bool, branchFromTitle: Bool = false
     ) throws(Refusal) -> TaskRecord {
         guard let info = workspaces.first(where: { $0.name == workspace }) else { throw .badRequest("\(workspace) is not a workspace") }
         if let loop, let why = Self.loopRefusal(info, loop) { throw .badRequest(why) }
-        if repo != nil, branch == nil { throw .badRequest("a task with a repo needs a branch") }
+        if repo != nil, branch == nil, !branchFromTitle { throw .badRequest("a task with a repo needs a branch") }
+        let branch = repo == nil ? branch : (branch ?? Self.slug(title))
         created += 1
         let id = String(format: "t-new%03d", created)
         let slug = Self.slug(title)
@@ -245,6 +248,14 @@ extension DemoTasks {
         r.note = nil
         records[i] = r
         return r
+    }
+
+    /// The main checkout of `repo` in `workspace`: absolute, or relative to its root.
+    func checkout(_ repo: String, in workspace: String) throws(Refusal) -> String {
+        guard let info = workspaces.first(where: { $0.name == workspace }) else { throw .badRequest("\(workspace) is not a workspace") }
+        let dir = repo.hasPrefix("/") ? repo : "\(info.root ?? "")/\(repo)"
+        guard info.repos.contains(dir) else { throw .badRequest("\(repo) is not a repo of \(workspace)") }
+        return dir
     }
 
     /// `[a-z0-9-]`, at most 20 characters, like the bridge's slugs but shorter for a session name.

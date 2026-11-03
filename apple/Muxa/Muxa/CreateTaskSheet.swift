@@ -11,6 +11,8 @@ struct CreateTaskSheet: View {
     /// Called with the record the host kept, also when its agent did not start.
     let created: (TaskRecord) -> Void
     @State private var withRepo = false
+    /// The typed repo path is shown even when it matches a listed repo.
+    @State private var otherPath = false
     @State private var creating = false
     @State private var error: String?
     @FocusState private var titleFocused: Bool
@@ -24,61 +26,71 @@ struct CreateTaskSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Picker("Workspace", selection: $draft.workspace) {
-                        ForEach(model.session.workspaces) { w in
-                            Text(w.name).tag(w.name)
-                        }
-                    }
-                    .accessibilityIdentifier("record-workspace")
-                    TextField("Title", text: $draft.title)
-                        .focused($titleFocused)
-                        .accessibilityIdentifier("record-title")
-                    TextField("Project (optional)", text: $draft.project)
-                        .accessibilityIdentifier("record-project")
-                }
-                Section {
-                    TextField("What should the agent do?", text: $draft.goal, axis: .vertical)
-                        .lineLimit(3...8)
-                        .accessibilityIdentifier("record-goal")
-                } header: {
-                    Text("Goal")
-                } footer: {
-                    Text("The agent reads the goal from .muxa/TASK.md in its directory.")
-                }
-                Section {
-                    Toggle("In a repository", isOn: $withRepo)
-                        .accessibilityIdentifier("record-with-repo")
-                    if withRepo {
-                        repoFields
-                    }
-                } footer: {
-                    Text(withRepo
-                         ? "The host creates a worktree on the branch. A new branch starts from the base."
-                         : "The host creates a directory for the task in its workspace.")
-                }
-                if model.session.canUseWorkers {
-                    Section("Worker") {
-                        Picker("Worker", selection: Binding(get: { draft.worker ?? defaultWorker }, set: { draft.worker = $0 })) {
-                            Text("Workspace default").tag(defaultWorker)
-                            ForEach(model.session.workers.filter { $0.allows(workspace: draft.workspace) }, id: \.name) { worker in
-                                Text(worker.name).tag(worker.name)
+            ScrollViewReader { proxy in
+                Form {
+                    Section {
+                        Picker("Workspace", selection: $draft.workspace) {
+                            ForEach(model.session.workspaces) { w in
+                                Text(w.name).tag(w.name)
                             }
                         }
-                        .accessibilityIdentifier("record-worker")
+                        .accessibilityIdentifier("record-workspace")
+                        TextField("Title", text: $draft.title)
+                            .focused($titleFocused)
+                            .accessibilityIdentifier("record-title")
+                        TextField("Project (optional)", text: $draft.project)
+                            .accessibilityIdentifier("record-project")
+                    }
+                    Section {
+                        TextField("What should the agent do?", text: $draft.goal, axis: .vertical)
+                            .lineLimit(3...8)
+                            .accessibilityIdentifier("record-goal")
+                    } header: {
+                        Text("Goal")
+                    } footer: {
+                        Text("The agent reads the goal from .muxa/TASK.md in its directory.")
+                    }
+                    Section {
+                        Toggle("In a repository", isOn: $withRepo)
+                            .accessibilityIdentifier("record-with-repo")
+                        if withRepo {
+                            repoFields
+                        }
+                    } footer: {
+                        Text(withRepo
+                             ? "The host creates a worktree on the branch. A new branch starts from the base."
+                             : "The host creates a directory for the task in its workspace.")
+                    }
+                    if withRepo, model.canAsk {
+                        askSection
+                    }
+                    if model.session.canUseWorkers {
+                        Section("Worker") {
+                            Picker("Worker", selection: Binding(get: { draft.worker ?? defaultWorker }, set: { draft.worker = $0 })) {
+                                Text("Workspace default").tag(defaultWorker)
+                                ForEach(model.session.workers.filter { $0.allows(workspace: draft.workspace) }, id: \.name) { worker in
+                                    Text(worker.name).tag(worker.name)
+                                }
+                            }
+                            .accessibilityIdentifier("record-worker")
+                        }
+                    }
+                    NewTaskLoop(draft: $draft)
+                    if let message = error ?? visibleProblem {
+                        Section {
+                            Label(message, systemImage: Icon.warning)
+                                .foregroundStyle(Theme.failure)
+                                .accessibilityIdentifier("record-error")
+                        }
                     }
                 }
-                NewTaskLoop(draft: $draft)
-                if let message = error ?? visibleProblem {
-                    Section {
-                        Label(message, systemImage: Icon.warning)
-                            .foregroundStyle(Theme.failure)
-                            .accessibilityIdentifier("record-error")
-                    }
+                .accessibilityIdentifier("record-form")
+                // On a phone the keyboard covers the fields the toggle adds; bring them up.
+                .onChange(of: withRepo) { _, on in
+                    guard on else { return }
+                    Task { @MainActor in withAnimation { proxy.scrollTo(Self.repoEnd, anchor: .bottom) } }
                 }
             }
-            .accessibilityIdentifier("record-form")
             .navigationTitle("New Task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -98,49 +110,76 @@ struct CreateTaskSheet: View {
                 }
             }
             .interactiveDismissDisabled(creating)
-            .onAppear { titleFocused = true }
+            .onAppear {
+                draft.branchFromTitle = model.session.canAsk
+                titleFocused = true
+            }
             .onChange(of: draft) { error = nil }
             // Another workspace allows other checks.
             .onChange(of: draft.workspace) {
                 if workerProblem(name: draft.worker, workspace: draft.workspace, workers: model.session.workers) != nil { draft.worker = defaultWorker }
                 if draft.loop != nil { draft.loop = model.checks(of: draft.workspace).map { LoopDraft(checks: $0) } }
+                // Each workspace has its own repos.
+                if !otherPath, !repoChoices.contains(where: { $0.dir == draft.repo }) {
+                    draft.repo = repoChoices.first?.dir ?? ""
+                }
             }
             .onChange(of: withRepo) { _, on in
                 error = nil
-                if on, draft.repo.isEmpty { draft.repo = model.session.sessions.knownRepos.first?.dir ?? "" }
+                if on, draft.repo.isEmpty, !otherPath { draft.repo = repoChoices.first?.dir ?? "" }
             }
         }
     }
 
+    private static let repoEnd = "repo-end"
+
+    /// The selected workspace's repos; an older host offers those it has sessions in.
+    private var repoChoices: [RepoChoice] {
+        model.session.workspaces.repoChoices(in: draft.workspace, known: model.session.sessions.knownRepos)
+    }
+
     @ViewBuilder
     private var repoFields: some View {
-        let repos = model.session.sessions.knownRepos
-        if repos.isEmpty {
-            repoPath
-        } else {
-            Picker("Repository", selection: $draft.repo) {
-                Text("Other path").tag("")
-                ForEach(repos) { repo in
-                    Text(repo.name).tag(repo.dir)
-                }
-            }
-            .accessibilityIdentifier("record-repo-choice")
-            if !repos.contains(where: { $0.dir == draft.repo }) { repoPath }
-        }
-        TextField("feature/name", text: $draft.branch)
+        RepoFields(choices: repoChoices, repo: $draft.repo, otherPath: $otherPath)
+        // A `work` level 2 host names the branch after the title (ADR 0031).
+        TextField(draft.branchFromTitle ? "Named after the title" : "feature/name", text: $draft.branch)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .accessibilityIdentifier("record-branch")
         TextField("Base (default branch)", text: $draft.base)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+            .id(Self.repoEnd)
     }
 
-    private var repoPath: some View {
-        TextField("/path/to/repo", text: $draft.repo)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .accessibilityIdentifier("record-repo")
+    /// Ask instead of Create: no title or goal, no Task, no worktree.
+    private var askSection: some View {
+        Section {
+            Button("Ask about this repo", systemImage: Icon.ask, action: ask)
+                .disabled(askRepo == nil || creating)
+                .accessibilityIdentifier("record-ask")
+        } footer: {
+            Text("Ask runs the workspace's agent in the main checkout. No task, no worktree, no record.")
+        }
+    }
+
+    private var askRepo: String? {
+        let repo = draft.repo.trimmingCharacters(in: .whitespacesAndNewlines)
+        return repo.isEmpty || draft.workspace.isEmpty ? nil : repo
+    }
+
+    private func ask() {
+        guard let repo = askRepo, !creating else { return }
+        creating = true
+        Task {
+            defer { creating = false }
+            do {
+                // The model closes this sheet and opens the session.
+                try await model.ask(workspace: draft.workspace, repo: repo)
+            } catch {
+                self.error = PaneSession.describe(error)
+            }
+        }
     }
 
     /// The draft as sent: without the repo fields while the toggle is off.

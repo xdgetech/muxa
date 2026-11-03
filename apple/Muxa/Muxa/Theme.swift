@@ -61,4 +61,5 @@ enum Icon {
     static let proposal = "lightbulb"
     static let moveDown = "arrow.down.to.line"
     static let later = "clock"
+    static let ask = "questionmark.bubble"
 }
