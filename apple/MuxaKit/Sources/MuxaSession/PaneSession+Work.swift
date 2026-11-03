@@ -1,8 +1,40 @@
 import Foundation
 import MuxaProtocol
 
-/// Routines and stored Inbox entries (ADR 0026), behind the host's `work` level 1.
+/// The Inbox: a Task's Move down and Later (`task-inbox`, ADR 0027 §4), and Routines and
+/// stored entries behind the host's `work` level 1 (ADR 0026).
 extension PaneSession {
+    /// Whether the host keeps Move down and Later on the Task record (ADR 0027 §4).
+    public var canPlaceTasks: Bool { capabilities.contains("task-inbox") }
+
+    /// Shown when the host keeps no Inbox order; the app keeps its local Snooze then.
+    public static let placeUnsupported = "This host keeps no Inbox order. Update muxa on the host."
+
+    /// Move down, Later or both, or `InboxChange()` to put the Task back in its place.
+    /// A conflict lists again, as `updateTask` does.
+    public func place(_ record: TaskRecord, _ change: InboxChange) async throws -> TaskRecord {
+        guard canPlaceTasks else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.placeUnsupported))
+        }
+        var requestId: UInt64 = 0
+        do {
+            try await request { id in
+                requestId = id
+                return .updateInbox(id: id, task: record.id, rev: record.rev, inbox: change)
+            }
+        } catch Failure.bridge(let body) where body.code == .conflict {
+            savedTasks[requestId] = nil
+            await loadTasks()
+            throw Failure.bridge(ErrorBody(code: .conflict, message: Self.taskConflict))
+        } catch {
+            savedTasks[requestId] = nil
+            throw error
+        }
+        let saved = savedTasks.removeValue(forKey: requestId)
+        await loadTasks()
+        return saved ?? record
+    }
+
     /// The host's `work` level; 0 when it has none (ADR 0027 §5).
     public var workLevel: UInt32 { MuxaProtocol.workLevel(capabilities) }
 

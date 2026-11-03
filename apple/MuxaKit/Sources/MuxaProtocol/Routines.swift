@@ -101,7 +101,7 @@ public struct RoutineFailure: Codable, Equatable, Sendable {
 }
 
 /// A stored Inbox entry: a Routine's briefing or proposal.
-public struct InboxEntry: Codable, Equatable, Sendable {
+public struct InboxEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var workspace: String
     public var routine: String
