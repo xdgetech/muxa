@@ -205,11 +205,9 @@ impl ChatTask {
         self.poll().await;
     }
 
-    /// Polls the source on the blocking pool and sends what changed.
-    async fn poll(&mut self) {
-        let Some(pane) = self.active.as_ref().map(|active| active.pane) else {
-            return;
-        };
+    /// Proves the pane's identity again and follows a replacement. False
+    /// when the chat ended.
+    async fn confirm(&mut self, pane: PaneId) -> bool {
         let (info, binding) = match checked_pane_info(
             &self.client,
             pane,
@@ -219,15 +217,31 @@ impl ChatTask {
         .await
         {
             Ok(info) => info,
-            Err(error) => return self.end(error.message).await,
-        };
-        if let Some(active) = self.active.as_mut() {
-            if let Err(error) = active
-                .refresh(info, binding, Arc::clone(&self.registry))
-                .await
-            {
-                return self.end(error.message).await;
+            Err(error) => {
+                self.end(error.message).await;
+                return false;
             }
+        };
+        let Some(active) = self.active.as_mut() else {
+            return false;
+        };
+        if let Err(error) = active
+            .refresh(info, binding, Arc::clone(&self.registry))
+            .await
+        {
+            self.end(error.message).await;
+            return false;
+        }
+        true
+    }
+
+    /// Polls the source on the blocking pool and sends what changed.
+    async fn poll(&mut self) {
+        let Some(pane) = self.active.as_ref().map(|active| active.pane) else {
+            return;
+        };
+        if !self.confirm(pane).await {
+            return;
         }
         let Some(active) = self.active.as_mut() else {
             return;
@@ -256,9 +270,18 @@ impl ChatTask {
                 return self.end(e.to_string()).await;
             }
         };
+        // Entries written after the identity changed, during the read, must
+        // not reach the client: prove it again before sending.
+        if !self.confirm(pane).await {
+            return;
+        }
         let Some(active) = self.active.as_mut() else {
             return;
         };
+        if active.source.is_some() {
+            // A replacement opened meanwhile; its first poll resends everything.
+            return;
+        }
         active.source = Some(source);
         let changed = status != active.status || prompt != active.prompt;
         active.status = status;
