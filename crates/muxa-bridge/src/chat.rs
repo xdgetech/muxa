@@ -11,10 +11,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::agents::{ChatEvent, ChatSource, PaneInfo, Registry};
 use crate::convert::{self, error_body};
+use crate::task_records::observation::ChatBinding;
 
 const TICK: Duration = Duration::from_millis(500);
-/// How often, in ticks, the pane itself is checked: still there, still the agent.
-const PANE_EVERY: u32 = 4;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub enum Command {
@@ -34,6 +33,7 @@ pub struct ChatTask {
     out: mpsc::Sender<Message>,
     rx: mpsc::Receiver<Command>,
     registry: Arc<Registry>,
+    records: Arc<crate::task_records::Config>,
     active: Option<Active>,
 }
 
@@ -41,6 +41,7 @@ struct Active {
     chat: u64,
     pane: PaneId,
     info: PaneInfo,
+    binding: Option<ChatBinding>,
     agent: &'static str,
     /// Out on the blocking pool while a poll runs.
     source: Option<Box<dyn ChatSource>>,
@@ -49,7 +50,44 @@ struct Active {
     prompt: Option<ChatPrompt>,
     /// A message was dropped: send everything again as a reset.
     resync: bool,
-    ticks: u32,
+}
+
+impl Active {
+    async fn refresh(
+        &mut self,
+        info: PaneInfo,
+        binding: Option<ChatBinding>,
+        registry: Arc<Registry>,
+    ) -> Result<(), ErrorBody> {
+        let replaced = self.info.pid != info.pid
+            || self.info.session != info.session
+            || self.binding != binding;
+        self.info = info;
+        self.binding = binding;
+        if !replaced {
+            return Ok(());
+        }
+        // A retained transcript is not evidence about the replacement process.
+        self.source = None;
+        self.status = None;
+        self.prompt = None;
+        let probe = self.info.clone();
+        let opened = tokio::task::spawn_blocking(move || registry.open(&probe))
+            .await
+            .map_err(|_| error_body(ErrorCode::Internal, "cannot reopen the agent conversation"))?
+            .map_err(|_| error_body(ErrorCode::Internal, "cannot reopen the agent conversation"))?;
+        let Some((agent, source)) = opened else {
+            return Err(error_body(
+                ErrorCode::Unsupported,
+                "the replacement agent is not yet known",
+            ));
+        };
+        check_agent(self.binding.as_ref(), agent)?;
+        self.agent = agent;
+        self.source = Some(source);
+        self.resync = true;
+        Ok(())
+    }
 }
 
 impl ChatTask {
@@ -58,12 +96,14 @@ impl ChatTask {
         out: mpsc::Sender<Message>,
         rx: mpsc::Receiver<Command>,
         registry: Arc<Registry>,
+        records: Arc<crate::task_records::Config>,
     ) -> Self {
         Self {
             client,
             out,
             rx,
             registry,
+            records,
             active: None,
         }
     }
@@ -121,7 +161,13 @@ impl ChatTask {
     }
 
     async fn start(&mut self, chat: u64, pane: PaneId) -> Result<(), ErrorBody> {
-        let info = pane_info(&self.client, pane).await?;
+        let (info, binding) = checked_pane_info(
+            &self.client,
+            pane,
+            Arc::clone(&self.records),
+            Arc::clone(&self.registry),
+        )
+        .await?;
         let registry = Arc::clone(&self.registry);
         let probe = info.clone();
         let opened = tokio::task::spawn_blocking(move || registry.open(&probe))
@@ -129,17 +175,18 @@ impl ChatTask {
             .map_err(|e| error_body(ErrorCode::Internal, e.to_string()))?;
         match opened {
             Ok(Some((agent, source))) => {
+                check_agent(binding.as_ref(), agent)?;
                 self.active = Some(Active {
                     chat,
                     pane,
                     info,
+                    binding,
                     agent,
                     source: Some(source),
                     seq: 0,
                     status: None,
                     prompt: None,
                     resync: false,
-                    ticks: 0,
                 });
                 Ok(())
             }
@@ -155,27 +202,33 @@ impl ChatTask {
     }
 
     async fn tick(&mut self) {
-        let Some(active) = self.active.as_mut() else {
-            return;
-        };
-        active.ticks += 1;
-        if active.ticks % PANE_EVERY == 0 {
-            let pane = active.pane;
-            let client = Arc::clone(&self.client);
-            match pane_info(&client, pane).await {
-                Ok(info) => {
-                    if let Some(a) = self.active.as_mut() {
-                        a.info = info;
-                    }
-                }
-                Err(e) => return self.end(e.message).await,
-            }
-        }
         self.poll().await;
     }
 
     /// Polls the source on the blocking pool and sends what changed.
     async fn poll(&mut self) {
+        let Some(pane) = self.active.as_ref().map(|active| active.pane) else {
+            return;
+        };
+        let (info, binding) = match checked_pane_info(
+            &self.client,
+            pane,
+            Arc::clone(&self.records),
+            Arc::clone(&self.registry),
+        )
+        .await
+        {
+            Ok(info) => info,
+            Err(error) => return self.end(error.message).await,
+        };
+        if let Some(active) = self.active.as_mut() {
+            if let Err(error) = active
+                .refresh(info, binding, Arc::clone(&self.registry))
+                .await
+            {
+                return self.end(error.message).await;
+            }
+        }
         let Some(active) = self.active.as_mut() else {
             return;
         };
@@ -239,6 +292,46 @@ impl ChatTask {
     }
 }
 
+/// A managed restart must prove identity again before opening or polling a source.
+async fn checked_pane_info(
+    client: &Client,
+    pane: PaneId,
+    records: Arc<crate::task_records::Config>,
+    registry: Arc<Registry>,
+) -> Result<(PaneInfo, Option<ChatBinding>), ErrorBody> {
+    let mut sessions = tokio::time::timeout(COMMAND_TIMEOUT, muxa_tmux::list_sessions(client))
+        .await
+        .map_err(|_| error_body(ErrorCode::Tmux, "tmux did not answer in time"))?
+        .map_err(|error| convert::error(&error))?;
+    tokio::task::spawn_blocking(move || {
+        let binding = crate::task_records::observation::chat_binding(
+            &mut sessions,
+            pane,
+            &records,
+            &registry,
+        )
+        .map_err(|_| {
+            error_body(
+                ErrorCode::Unsupported,
+                "the restarted agent conversation is not yet confirmed; continue in Terminal",
+            )
+        })?;
+        sessions
+            .iter()
+            .find_map(|session| {
+                session
+                    .panes
+                    .iter()
+                    .find(|candidate| candidate.id == pane)
+                    .map(|candidate| crate::sessions::info(&session.name, candidate))
+            })
+            .ok_or_else(|| convert::error(&muxa_tmux::Error::NoPane(pane)))
+            .map(|info| (info, binding))
+    })
+    .await
+    .map_err(|_| error_body(ErrorCode::Internal, "cannot check the agent conversation"))?
+}
+
 pub(crate) async fn pane_info(client: &Client, pane: PaneId) -> Result<PaneInfo, ErrorBody> {
     let found = tokio::time::timeout(COMMAND_TIMEOUT, muxa_tmux::pane(client, pane))
         .await
@@ -251,6 +344,16 @@ pub(crate) async fn pane_info(client: &Client, pane: PaneId) -> Result<PaneInfo,
         path: p.path,
         shell_foreground: p.shell_foreground,
     })
+}
+
+fn check_agent(binding: Option<&ChatBinding>, agent: &str) -> Result<(), ErrorBody> {
+    if binding.is_some_and(|binding| binding.seen.agent != agent) {
+        return Err(error_body(
+            ErrorCode::Unsupported,
+            "the restarted agent conversation changed; continue in Terminal",
+        ));
+    }
+    Ok(())
 }
 
 fn info_pane(active: &Option<Active>) -> String {
@@ -329,6 +432,7 @@ mod tests {
                 path: "/".into(),
                 shell_foreground: false,
             },
+            binding: None,
             agent: "fake",
             source: None,
             seq: 0,
@@ -338,7 +442,6 @@ mod tests {
             }),
             prompt: None,
             resync: false,
-            ticks: 0,
         }
     }
 
@@ -456,5 +559,74 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    struct ProcessAdapter(&'static str, u32);
+
+    impl AgentAdapter for ProcessAdapter {
+        fn id(&self) -> &'static str {
+            self.0
+        }
+
+        fn open(
+            &self,
+            pane: &PaneInfo,
+            _: &Processes,
+        ) -> Result<Option<Box<dyn ChatSource>>, Error> {
+            Ok(
+                (pane.pid == self.1)
+                    .then(|| Box::new(ProcessSource(self.0)) as Box<dyn ChatSource>),
+            )
+        }
+    }
+
+    struct ProcessSource(&'static str);
+
+    impl ChatSource for ProcessSource {
+        fn poll(&mut self, _: &PaneInfo) -> Result<Vec<ChatEvent>, Error> {
+            Ok(vec![])
+        }
+        fn entries(&self) -> Vec<ChatEntry> {
+            vec![entry(self.0)]
+        }
+        fn status(&self) -> Option<Agent> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn a_replacement_reopens_chat_without_reusing_old_entries_or_readiness() {
+        let registry = Arc::new(Registry::new(vec![
+            Box::new(ProcessAdapter("a", 1)),
+            Box::new(ProcessAdapter("b", 2)),
+            Box::new(ProcessAdapter("a", 3)),
+        ]));
+        let mut a = active();
+        a.source = Some(Box::new(ProcessSource("old")));
+        a.seq = 10;
+        for (pid, agent) in [(2, "b"), (3, "a")] {
+            let mut info = a.info.clone();
+            info.pid = pid;
+            a.refresh(info, None, Arc::clone(&registry)).await.unwrap();
+            assert!(a.status.is_none());
+            assert!(a.prompt.is_none());
+            assert!(a.resync);
+            let entries = a.source.as_ref().unwrap().entries();
+            let messages = batch(&mut a, Some(entries), vec![], true);
+            assert_eq!(
+                summary(&messages),
+                [(a.seq, true, vec![agent.into()], Some(agent.into()))]
+            );
+        }
+        assert_eq!(a.seq, 12, "the existing subscription keeps its sequence");
+        let mut info = a.info.clone();
+        info.pid = 4;
+        assert!(a.refresh(info, None, registry).await.is_err());
+        assert!(
+            a.source.is_none(),
+            "unknown replacement cannot poll the old transcript"
+        );
+        assert!(a.status.is_none());
+        assert!(a.prompt.is_none());
     }
 }

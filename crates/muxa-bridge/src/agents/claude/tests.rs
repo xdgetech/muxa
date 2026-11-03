@@ -247,6 +247,7 @@ fn every_config_dir_is_searched_with_the_same_rules() {
         "the transcript is read where the session file is"
     );
     let adapter = ClaudeAdapter::new(dirs.clone());
+    assert!(adapter.find(&pane(), &procs()).unwrap().process_bound);
     let mut source = adapter.open(&pane(), &procs()).unwrap().unwrap();
     let events = source.poll(&pane()).unwrap();
     assert!(

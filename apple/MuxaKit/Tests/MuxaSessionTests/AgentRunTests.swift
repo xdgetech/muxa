@@ -40,6 +40,21 @@ struct AgentRunTests {
         #expect(RunLine.duration(3600 * 30 + 300) == "30 h 5 min")
     }
 
+    @Test func anUnobservedReplacementNeedsForceWithoutBeingShownAsRunning() {
+        let initial = [Self.runs[0]]
+        #expect(!item(runs: initial, state: nil).restartNeedsForce)
+        #expect(item(runs: initial, state: .running).restartNeedsForce)
+        #expect(!item(runs: initial, state: .waiting).restartNeedsForce)
+        let unknown = item(runs: Array(Self.runs.reversed()), state: nil)
+        #expect(unknown.restartNeedsForce)
+        #expect(unknown.agent == nil)
+        #expect(unknown.group == .noAgent)
+        #expect(!item(runs: Self.runs, state: .idle).restartNeedsForce)
+        #expect(!item(runs: Self.runs, state: .waiting).restartNeedsForce)
+        let newerStart = Self.runs + [AgentRun(id: 3, startedAt: 5000, reason: .start)]
+        #expect(!item(runs: newerStart, state: nil).restartNeedsForce)
+    }
+
     @Test func onlyARestartLeavesAHandoff() {
         #expect(item(runs: Self.runs, state: nil).hasHandoff)
         #expect(!item(runs: [Self.runs[0]], state: nil).hasHandoff)
@@ -84,6 +99,19 @@ struct RestartAgentTests {
         #expect(session.taskRecords.first?.runs.count == 1)
         let saved = try await session.restartAgent(task: "t-000001", force: true)
         #expect(saved.runs.count == 2)
+    }
+
+    @Test func anUnobservedReplacementCanBeExplicitlyStoppedAndRestarted() async throws {
+        let (session, bridge) = try await connected()
+        let first = try await session.restartAgent(task: "t-000001", force: false)
+        let item = InboxItem(record: first, sessions: [])
+        #expect(item.restartNeedsForce)
+        #expect(item.agent == nil)
+        let saved = try await session.restartAgent(task: first.id, force: item.restartNeedsForce)
+        #expect(saved.runs.count == 3)
+        #expect(bridge.received.contains {
+            if case .restartAgent(_, "t-000001", true, .keep, nil) = $0 { true } else { false }
+        })
     }
 
     @Test func anOlderBridgeIsNeverAskedToRestart() async throws {

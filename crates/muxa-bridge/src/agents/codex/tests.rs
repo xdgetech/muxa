@@ -175,6 +175,10 @@ fn finds_the_newest_rollout_in_the_panes_directory() {
 
     let adapter = CodexAdapter::new(vec![f.dir.clone()]);
     let found = adapter.find(&pane(), &procs()).unwrap();
+    assert!(
+        !found.process_bound,
+        "cwd and time do not prove process ownership"
+    );
     assert_eq!(found.status.map(|a| a.state), Some(AgentState::Idle));
     let shell = Processes::parse("100 1 05:00 -zsh\n");
     assert!(

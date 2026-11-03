@@ -50,8 +50,63 @@ fn context(r: &Record) -> String {
 }
 
 /// The part the bridge owns, up to the marker.
+#[cfg(test)]
 fn header(r: &Record) -> String {
-    format!("{}\n{}{HOW_TO}\n", context(r), check(r))
+    header_with_section(r, &worker_section(r, None))
+}
+
+fn header_with_section(r: &Record, worker: &str) -> String {
+    format!("{}\n{}{worker}{HOW_TO}\n", context(r), check(r))
+}
+
+fn worker_section(r: &Record, instructions: Option<&str>) -> String {
+    let Some(name) = r.worker() else {
+        return String::new();
+    };
+    let mut body = format!("## Worker\n\n{name}\n\n");
+    if let Some(text) = instructions {
+        body.push_str(text);
+        if !text.ends_with('\n') {
+            body.push('\n');
+        }
+        body.push('\n');
+    }
+    // Length framing keeps instruction text containing Markdown/HTML markers intact.
+    format!(
+        "<!-- muxa:worker {} -->\n{body}<!-- muxa:worker-end -->\n\n",
+        body.len()
+    )
+}
+
+fn worker_frame<'a>(r: &Record, existing: &'a str) -> Option<(usize, usize, &'a str)> {
+    let prefix = "<!-- muxa:worker ";
+    let offset = managed_offset(r, existing);
+    let start = existing[offset..].find(&format!("\n{prefix}"))? + offset + 1;
+    if first_notes(existing, offset).is_some_and(|notes| start >= notes) {
+        return None;
+    }
+    let body_start = existing[start..].find(" -->\n")? + start + " -->\n".len();
+    let length = existing[start + prefix.len()..body_start - " -->\n".len()]
+        .parse::<usize>()
+        .ok()?;
+    let body_end = body_start.checked_add(length)?;
+    let body = existing.get(body_start..body_end)?;
+    let suffix = "<!-- muxa:worker-end -->\n\n";
+    existing
+        .get(body_end..)?
+        .starts_with(suffix)
+        .then_some((start, body_end + suffix.len(), body))
+}
+
+fn retained_worker<'a>(r: &Record, existing: &'a str) -> Option<&'a str> {
+    let name = r.worker()?;
+    let (start, end, body) = worker_frame(r, existing)?;
+    if !body.starts_with(&format!("## Worker\n\n{name}\n\n"))
+        || end > marker_at(r, existing).unwrap_or(existing.len())
+    {
+        return None;
+    }
+    existing.get(start..end)
 }
 
 /// The loop's check, so the agent can run it itself (ADR 0019). Empty
@@ -75,7 +130,15 @@ fn check(r: &Record) -> String {
 
 /// A new `TASK.md`.
 pub fn render(r: &Record) -> String {
-    format!("{}{MARKER}\n\n{NOTES}", header(r))
+    render_with_worker(r, None)
+}
+
+/// Writes the validated instruction snapshot for this new run.
+pub fn render_with_worker(r: &Record, instructions: Option<&str>) -> String {
+    format!(
+        "{}{MARKER}\n\n{NOTES}",
+        header_with_section(r, &worker_section(r, instructions))
+    )
 }
 
 /// `TASK.md` rewritten from `existing`: a new header, and the agent's part
@@ -83,27 +146,72 @@ pub fn render(r: &Record) -> String {
 /// is dropped: unless it is exactly what ADR 0015 wrote, it follows under
 /// "Earlier notes".
 pub fn merge(r: &Record, existing: Option<&str>) -> String {
+    let worker = existing
+        .and_then(|old| retained_worker(r, old))
+        .map(str::to_owned)
+        .unwrap_or_else(|| worker_section(r, None));
+    merge_header(r, existing, &header_with_section(r, &worker))
+}
+
+/// Replaces the worker snapshot only at a validated start/restart boundary.
+pub fn merge_with_worker(r: &Record, existing: Option<&str>, instructions: Option<&str>) -> String {
+    merge_header(
+        r,
+        existing,
+        &header_with_section(r, &worker_section(r, instructions)),
+    )
+}
+
+fn merge_header(r: &Record, existing: Option<&str>, header: &str) -> String {
+    let fresh = || format!("{header}{MARKER}\n\n{NOTES}");
     let Some(old) = existing.filter(|t| !t.trim().is_empty()) else {
-        return render(r);
+        return fresh();
     };
-    if let Some(at) = marker_at(old) {
-        return format!("{}{}", header(r), &old[at..]);
+    if let Some(at) = marker_at(r, old) {
+        return format!("{header}{}", &old[at..]);
     }
     if old == context(r) {
-        return render(r);
+        return fresh();
     }
     let lead = if old.ends_with('\n') { "" } else { "\n" };
-    format!("{}\n{EARLIER}{old}{lead}", render(r))
+    format!("{}\n{EARLIER}{old}{lead}", fresh())
 }
 
 /// The byte offset of the marker line.
-fn marker_at(text: &str) -> Option<usize> {
-    if text.starts_with(MARKER_START) {
-        return Some(0);
+fn managed_offset(r: &Record, text: &str) -> usize {
+    let context = context(r);
+    if text.starts_with(&context) {
+        context.len()
+    } else {
+        0
     }
-    text.match_indices(&format!("\n{MARKER_START}"))
-        .next()
-        .map(|(i, _)| i + 1)
+}
+
+fn first_notes(text: &str, offset: usize) -> Option<usize> {
+    text.match_indices(MARKER_START)
+        .map(|(at, _)| at)
+        .find(|at| *at >= offset && (*at == 0 || text.as_bytes()[*at - 1] == b'\n'))
+}
+
+fn marker_at(r: &Record, text: &str) -> Option<usize> {
+    let offset = managed_offset(r, text);
+    let worker = worker_frame(r, text);
+    let candidate = text[offset..]
+        .find("\n<!-- muxa:worker ")
+        .map(|at| at + offset + 1);
+    if candidate.is_some_and(|at| at < first_notes(text, offset).unwrap_or(text.len()))
+        && worker.is_none()
+    {
+        // A damaged managed section is preserved as earlier notes, never discarded.
+        return None;
+    }
+    text.match_indices(MARKER_START)
+        .map(|(at, _)| at)
+        .find(|at| {
+            *at >= offset
+                && (*at == 0 || text.as_bytes()[*at - 1] == b'\n')
+                && !worker.is_some_and(|(start, end, _)| *at >= start && *at < end)
+        })
 }
 
 /// Writes a new `<dir>/.muxa/TASK.md` for a new Task. In a repo, `.muxa/` is
@@ -113,6 +221,18 @@ pub fn create(dir: &Path, record: &Record, in_repo: bool) -> Result<PathBuf, Str
         exclude(dir)?;
     }
     write_file(dir, FILE, &render(record))
+}
+
+pub fn create_with_worker(
+    dir: &Path,
+    record: &Record,
+    in_repo: bool,
+    instructions: Option<&str>,
+) -> Result<PathBuf, String> {
+    if in_repo {
+        exclude(dir)?;
+    }
+    write_file(dir, FILE, &render_with_worker(record, instructions))
 }
 
 /// Rewrites the header of `<dir>/.muxa/TASK.md` and keeps the agent's notes.
@@ -256,5 +376,69 @@ mod check_tests {
         let new = merge(&with_check("make check"), Some(&old));
         assert!(new.contains("## Check"));
         assert!(new.ends_with(&format!("{MARKER}\n\nmine\n")));
+    }
+    #[test]
+    fn worker_snapshots_survive_loop_refresh_and_notes_are_byte_exact() {
+        let mut r = record();
+        r.extra
+            .insert("worker".into(), serde_json::json!("Reviewer"));
+        r.goal =
+            "Keep these as data:\n<!-- muxa:worker invalid -->\n<!-- muxa:notes goal -->\n".into();
+        let instructions = "日本語 instructions\n<!-- muxa:worker-end -->\n<!-- muxa:notes fixture -->\n## How to use this file\n";
+        let text = render_with_worker(&r, Some(instructions));
+        let at = marker_at(&r, &text).unwrap();
+        let notes = "<!-- muxa:notes - owned by agent -->\n\n私の notes\n";
+        let text = format!("{}{notes}", &text[..at]);
+        let spec = LoopSpec {
+            check: "make check".into(),
+            max_attempts: None,
+            timeout: None,
+        };
+        r.set_loop(Some(&Loop::start(spec, None, false, 1)))
+            .unwrap();
+        let refreshed = merge(&r, Some(&text));
+        assert!(refreshed.contains(instructions));
+        assert!(refreshed.contains("## Check"));
+        assert!(refreshed.ends_with(notes));
+        let edited = merge_with_worker(&r, Some(&refreshed), Some("new instructions"));
+        assert!(edited.contains("new instructions"));
+        assert!(!edited.contains(instructions));
+        assert!(edited.ends_with(notes));
+        r.extra.remove("worker");
+        let cleared = merge_with_worker(&r, Some(&edited), None);
+        assert!(!cleared.contains("## Worker"));
+        assert!(!cleared.contains("new instructions"));
+        assert!(cleared.ends_with(notes));
+    }
+
+    #[test]
+    fn another_workers_snapshot_is_never_reused() {
+        let mut r = record();
+        r.extra.insert("worker".into(), serde_json::json!("First"));
+        let old = render_with_worker(&r, Some("old private instructions"));
+        r.extra.insert("worker".into(), serde_json::json!("Second"));
+        let new = merge(&r, Some(&old));
+        assert!(!new.contains("old private instructions"));
+        assert!(new.contains("## Worker\n\nSecond"));
+    }
+    #[test]
+    fn a_damaged_worker_frame_preserves_all_old_content() {
+        let mut r = record();
+        r.extra
+            .insert("worker".into(), serde_json::json!("Reviewer"));
+        let old = render_with_worker(
+            &r,
+            Some("private instructions\n<!-- muxa:notes embedded -->\n"),
+        );
+        let old = old.replacen("<!-- muxa:worker ", "<!-- muxa:worker invalid", 1);
+        let refreshed = merge(&r, Some(&old));
+        assert!(refreshed.ends_with(&old));
+    }
+    #[test]
+    fn worker_looking_text_in_agent_notes_is_untouched() {
+        let r = record();
+        let notes = format!("{MARKER}\n\n<!-- muxa:worker invalid -->\n## Worker\nnotes\n");
+        let old = format!("{}{notes}", header(&r));
+        assert_eq!(merge(&r, Some(&old)), old);
     }
 }

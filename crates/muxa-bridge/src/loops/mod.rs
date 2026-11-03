@@ -162,6 +162,7 @@ impl Engine {
         tokio::task::spawn_blocking(move || {
             link(&mut sessions, &config);
             crate::sessions::fill_agents(&mut sessions, &agents);
+            crate::task_records::observation::refresh(&mut sessions, &config, &agents);
             sessions
         })
         .await
@@ -177,7 +178,7 @@ impl Engine {
         global: &mut Option<Option<Vec<(String, String)>>>,
     ) {
         if record.extra.contains_key(crate::records::lifecycle::FIELD)
-            || record.worker().is_some()
+            || (record.worker().is_some() && !record.worker_run_bound())
             || record.pending_prompt().is_some()
         {
             if let Some(check) = self.live.get_mut(&record.id).and_then(|l| l.check.take()) {
@@ -274,6 +275,29 @@ impl Engine {
                             Ok(process) => process,
                             Err(_) => return,
                         };
+                    if let Some(run) = claim.record().open_run() {
+                        match run.restart_observation() {
+                            Ok(None) => {}
+                            Ok(Some(baseline)) => {
+                                if baseline.replacement != process {
+                                    return;
+                                }
+                                let Some(current) = self.sessions(client).await else {
+                                    return;
+                                };
+                                let Some(observed) = find(&current, &record.id) else {
+                                    return;
+                                };
+                                if observed.session != f.session
+                                    || observed.pane != f.pane
+                                    || observed.agent != f.agent
+                                {
+                                    return;
+                                }
+                            }
+                            Err(_) => return,
+                        }
+                    }
                     let run = claim.record().open_run().map(|r| r.id);
                     let operation = match getrandom::u64() {
                         Ok(n) => format!("delivery-{n:016x}"),
@@ -578,7 +602,7 @@ pub fn start(
     let workspaces = load(config)?;
     for _ in 0..WRITE_ATTEMPTS {
         let record = store.get(task)?;
-        if record.worker().is_some() {
+        if record.worker().is_some() && !record.worker_run_bound() {
             return Err(LoopError::Bad(
                 "workers are not implemented on this host".into(),
             ));

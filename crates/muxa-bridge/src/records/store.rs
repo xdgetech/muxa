@@ -155,6 +155,11 @@ impl Store {
             runs: Vec::new(),
             extra: serde_json::Map::new(),
         };
+        if let Some(worker) = new.worker {
+            record
+                .extra
+                .insert("worker".into(), serde_json::json!(worker));
+        }
         check(&record)?;
         for _ in 0..ID_ATTEMPTS {
             record.id = new_id()?;

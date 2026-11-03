@@ -134,6 +134,34 @@ class HandoffTest {
     }
 
     @Test
+    fun anUnobservedReplacementNeedsForceWithoutBeingShownAsRunning() {
+        val replacement = record("t-1", runs = runs.reversed())
+        val unknown = inboxItem(replacement, emptyList())
+        assertTrue(unknown.restartNeedsForce)
+        assertEquals(null, unknown.agent)
+        assertEquals(InboxGroup.NO_AGENT, unknown.group)
+        val pane = Pane("%1", "@1", 0, Role.AGENT, 80, 24, "claude", "/w", false, false, Agent(AgentState.IDLE, 1))
+        assertFalse(inboxItem(replacement, listOf(Session("$1", "s", taskId = "t-1", panes = listOf(pane)))).restartNeedsForce)
+        val newerStart = replacement.copy(runs = runs + AgentRun(3, null, 5_000, reason = RunReason.START))
+        assertFalse(inboxItem(newerStart, emptyList()).restartNeedsForce)
+    }
+
+    @Test
+    fun anUnobservedReplacementCanBeExplicitlyStoppedAndRestarted() = runBlocking {
+        val bridge = FakeBridge().apply {
+            capabilities = listOf("task-records", "task-handoff")
+            tasks = listOf(record("t-1", runs = runs))
+        }
+        val session = connected(bridge)
+        val listed = session.state.value.tasks!!.records.single()
+        val item = inboxItem(listed, emptyList())
+        assertTrue(item.restartNeedsForce)
+        val saved = session.restartAgent(listed, force = item.restartNeedsForce)
+        assertEquals(3, saved.runs.size)
+        assertEquals(true, (bridge.received.last() as? Request.RestartAgent)?.force)
+    }
+
+    @Test
     fun onlyARunningAgentNeedsForce() {
         fun item(state: AgentState?, shellForeground: Boolean = false): InboxItem {
             val pane = Pane("%1", "@1", 0, Role.AGENT, 80, 24, "claude", "/w", false, shellForeground, state?.let { Agent(it, 1) })

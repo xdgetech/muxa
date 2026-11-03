@@ -10,6 +10,7 @@ use muxa_protocol::CloseMode;
 use muxa_tmux::{Client, SessionId};
 
 use crate::records::AgentSettings;
+use crate::records::workers::{LaunchCommand, ResolvedWorker};
 
 use super::{
     Closing, LAUNCH_TIMEOUT, Launch, Launched, TaskError, TaskLauncher, TaskRequest, TaskSession,
@@ -20,11 +21,23 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct Builtin {
     command: String,
+    explicit: Option<LaunchCommand>,
 }
 
 impl Builtin {
     pub fn new(command: String) -> Self {
-        Self { command }
+        Self {
+            command,
+            explicit: None,
+        }
+    }
+
+    /// Native argv stays distinct until muxa-tmux quotes it for control mode.
+    pub fn with_worker(worker: &ResolvedWorker) -> Self {
+        Self {
+            command: String::new(),
+            explicit: Some(worker.command.clone()),
+        }
     }
 
     /// A detached session `name` in `dir` running the agent, with the
@@ -44,8 +57,23 @@ impl Builtin {
             // Keys only: values may be tokens.
             tracing::info!(keys = ?a.keys(), custom_command = a.command.is_some(), "agent environment");
         }
-        let (session, pane) =
-            muxa_tmux::new_session(client, name, &dir.to_string_lossy(), env, command).await?;
+        let (session, pane) = match &self.explicit {
+            Some(explicit) => {
+                let command = match explicit {
+                    LaunchCommand::Shell(command) => vec![command.clone()],
+                    LaunchCommand::Native { program, args } => {
+                        std::iter::once((*program).to_owned())
+                            .chain(args.iter().cloned())
+                            .collect()
+                    }
+                };
+                muxa_tmux::new_session_command(client, name, &dir.to_string_lossy(), env, &command)
+                    .await?
+            }
+            None => {
+                muxa_tmux::new_session(client, name, &dir.to_string_lossy(), env, command).await?
+            }
+        };
         muxa_tmux::set_pane_option(client, pane, "@muxa_role", "agent").await?;
         Ok(session)
     }
@@ -90,6 +118,11 @@ impl TaskLauncher for Builtin {
                 .await
                 .map_err(|_| TaskError::Failed("creating the worktree took too long".into()))??;
             if let Some(s) = session_for_worktree(client, &work.path).await? {
+                if self.explicit.is_some() {
+                    return Err(TaskError::Failed(
+                        "a worker needs a new agent session; the worktree already has one".into(),
+                    ));
+                }
                 return Ok(Launched {
                     id: s.id,
                     name: s.name,

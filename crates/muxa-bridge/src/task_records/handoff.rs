@@ -79,6 +79,11 @@ pub struct AgentPane {
     pub session: SessionId,
     pub pane: PaneId,
     pub status: Option<AgentStatus>,
+    pub pid: u32,
+    pub shell_foreground: bool,
+    /// Kept separate from tags, which survive process replacement.
+    pub adapter_status: Option<AgentStatus>,
+    pub adapter_process_bound: bool,
     /// What an adapter reports about the agent there.
     pub seen: Option<Seen>,
 }
@@ -117,13 +122,29 @@ pub async fn send_prompt(
         pending,
     } = wait;
     let prompt = Prompt::of(pending);
+    let record = {
+        let (config, task) = (Arc::clone(&config), task.clone());
+        blocking(move || {
+            config
+                .store()?
+                .get(&task)
+                .map_err(|e| super::store_error(&e))
+        })
+        .await
+    };
+    let Ok(record) = record else { return };
     let left = (pending.since + PROMPT_WAIT).saturating_sub(crate::records::now());
     let deadline = tokio::time::Instant::now() + Duration::from_secs(left);
-    let mut seen = None;
-    loop {
+    let seen = loop {
+        let mut seen = None;
         let found = agent_pane(&client, &agents, &config, which.clone()).await;
-        if let Some(found) = found {
-            seen = found.seen.or(seen);
+        if let Some(found) = found.and_then(|found| bound_observation(&record, pending, found)) {
+            if record
+                .open_run()
+                .is_some_and(|run| !run.extra.contains_key(crate::records::observation::FIELD))
+            {
+                seen = found.seen.clone();
+            }
             if prompt.ready(found.status, pending.since)
                 && person_quiet(&client, found.session, &task).await
             {
@@ -135,17 +156,36 @@ pub async fn send_prompt(
                     Err(e) => {
                         tracing::debug!(task, error = %e.message, "prompt claim unavailable");
                     }
-                    Ok(Some(mut claim)) => {
-                        let process = match super::restart::identity(
-                            &client,
-                            found.session,
-                            found.pane,
-                        )
-                        .await
-                        {
-                            Ok(process) => process,
-                            Err(_) => return,
+                    Ok(Some(mut claim)) => 'delivery: {
+                        seen = None;
+                        // Read again under the lifecycle claim: the process may have
+                        // changed while we waited for readiness or another writer.
+                        let Some(current) = agent_pane(&client, &agents, &config, which.clone())
+                            .await
+                            .and_then(|found| bound_observation(claim.record(), pending, found))
+                        else {
+                            break 'delivery;
                         };
+                        if current.session != found.session
+                            || current.pane != found.pane
+                            || current.pid != found.pid
+                            || !prompt.ready(current.status, pending.since)
+                        {
+                            break 'delivery;
+                        }
+                        let process =
+                            match super::restart::identity(&client, current.session, current.pane)
+                                .await
+                            {
+                                Ok(process) => process,
+                                Err(_) => break 'delivery,
+                            };
+                        if process.pid != current.pid
+                            || !bound_process(claim.record(), pending, &process)
+                        {
+                            break 'delivery;
+                        }
+                        seen = current.seen;
                         let at = crate::records::now();
                         let operation = match getrandom::u64() {
                             Ok(n) => format!("delivery-{n:016x}"),
@@ -203,12 +243,28 @@ pub async fn send_prompt(
             }
         }
         if tokio::time::Instant::now() >= deadline {
-            break;
+            break seen;
         }
         tokio::time::sleep(PROMPT_POLL).await;
-    }
+    };
     tracing::info!(task, "agent not idle; prompt not sent");
     end_wait(&config, task, pending, seen, Some(prompt.not_sent)).await;
+}
+
+/// Only locally prepared named runs can use the internal sender while the wire gate is closed.
+pub(super) fn supports_prompt(record: &Record, pending: PendingPrompt) -> bool {
+    if record.extra.contains_key(crate::records::lifecycle::FIELD) {
+        return false;
+    }
+    let Some(run) = record.open_run().filter(|run| run.id == pending.run) else {
+        return false;
+    };
+    let matching_kind = matches!(
+        (pending.kind, run.reason),
+        (PromptKind::Start, crate::records::RunReason::Start)
+            | (PromptKind::Restart, crate::records::RunReason::Restart)
+    );
+    matching_kind && (record.worker().is_none() || record.worker_run_bound())
 }
 
 async fn claim_pending(
@@ -224,18 +280,21 @@ async fn claim_pending(
             .claim(&task, rev)
             .map_err(|e| super::store_error(&e))?;
         let r = claim.record();
-        if r.worker().is_some() {
-            return Err(super::error_body(
-                muxa_protocol::ErrorCode::Unsupported,
-                "workers are not implemented on this host",
-            ));
-        }
         if r.extra.contains_key(crate::records::lifecycle::FIELD) {
             return Err(super::store_error(&StoreError::Busy(task)));
         }
-        Ok((r.pending_prompt() == Some(pending)
-            && r.open_run().map(|run| run.id) == Some(pending.run))
-        .then_some(claim))
+        if r.pending_prompt() != Some(pending)
+            || r.open_run().map(|run| run.id) != Some(pending.run)
+        {
+            return Ok(None);
+        }
+        if !supports_prompt(r, pending) {
+            return Err(super::error_body(
+                muxa_protocol::ErrorCode::Unsupported,
+                "worker continuation requires a bound run and assignment",
+            ));
+        }
+        Ok(Some(claim))
     })
     .await
 }
@@ -296,9 +355,10 @@ pub async fn end_wait(
     note: Option<&'static str>,
 ) {
     write(config, task, move |r| {
-        if r.pending_prompt() == Some(pending) {
-            r.set_pending_prompt(None);
+        if r.pending_prompt() != Some(pending) {
+            return;
         }
+        r.set_pending_prompt(None);
         if let Some(note) = note {
             r.note = Some(note.to_owned());
         }
@@ -353,23 +413,86 @@ pub async fn agent_pane(
             .iter()
             .find(|p| p.role == Role::Agent && !p.dead)?;
         let procs = Processes::list().ok()?;
-        let seen = agents
-            .identify(&crate::sessions::info(&session.name, pane), &procs)
-            .map(|(agent, found)| Seen {
-                agent: agent.to_owned(),
-                session: found.session.as_ref().map(|s| s.id.clone()),
-                transcript: found.session.and_then(|s| s.transcript),
-            });
+        let found = agents.identify(&crate::sessions::info(&session.name, pane), &procs);
+        let adapter_process_bound = found.as_ref().is_some_and(|(_, found)| found.process_bound);
+        let adapter_status = found
+            .as_ref()
+            .and_then(|(_, found)| found.status.as_ref())
+            .map(crate::convert::agent_status);
+        let seen = found.map(|(agent, found)| Seen {
+            agent: agent.to_owned(),
+            session: found.session.as_ref().map(|s| s.id.clone()),
+            transcript: found.session.and_then(|s| s.transcript),
+        });
         Some(AgentPane {
             session: session.id,
             pane: pane.id,
             status: pane.agent,
+            pid: pane.pid,
+            shell_foreground: pane.shell_foreground,
+            adapter_status,
+            adapter_process_bound,
             seen,
         })
     })
     .await
     .ok()
     .flatten()
+}
+
+fn bound_observation(
+    record: &Record,
+    pending: PendingPrompt,
+    found: AgentPane,
+) -> Option<AgentPane> {
+    record.open_run().filter(|run| run.id == pending.run)?;
+    bound_run_observation(record, found)
+}
+
+/// A follow-up restart and a sender must use the current run's evidence alike.
+pub(super) fn bound_run_observation(record: &Record, mut found: AgentPane) -> Option<AgentPane> {
+    let Some(run) = record.open_run() else {
+        return record.worker().is_none().then_some(found);
+    };
+    if record.worker().is_some() && !record.worker_run_bound() {
+        return None;
+    }
+    if run
+        .extra
+        .get("outcome")
+        .is_some_and(|value| value == "unconfirmed")
+    {
+        return None;
+    }
+    if let Some(baseline) = run.restart_observation().ok()? {
+        if !baseline.accepts(
+            found.session.number(),
+            found.pane.number(),
+            found.pid,
+            found.shell_foreground,
+            found.adapter_process_bound,
+            found.seen.as_ref(),
+        ) {
+            return None;
+        }
+        found.status = Some(found.adapter_status?);
+    }
+    Some(found)
+}
+
+fn bound_process(
+    record: &Record,
+    pending: PendingPrompt,
+    process: &crate::records::lifecycle::ProcessIdentity,
+) -> bool {
+    let Some(run) = record.open_run().filter(|run| run.id == pending.run) else {
+        return false;
+    };
+    match run.restart_observation() {
+        Ok(None) => true,
+        Ok(Some(baseline)) => baseline.replacement == *process,
+        Err(_) => false,
+    }
 }
 
 /// Applies `change` to the current record, retrying when another bridge
@@ -406,12 +529,283 @@ pub async fn write(
 mod tests {
     use super::*;
 
+    #[test]
+    fn named_prompt_resumption_requires_matching_assignment_and_valid_binding() {
+        let mut record: Record = serde_json::from_value(serde_json::json!({
+            "version":1,"id":"t-000001","rev":1,"workspace":"work","title":"fixture",
+            "goal":"","status":"open","createdAt":100,"updatedAt":100,"worker":"Reviewer"
+        }))
+        .unwrap();
+        let run = record.start_run(crate::records::RunReason::Start, 100);
+        let pending = PendingPrompt {
+            kind: PromptKind::Start,
+            since: 100,
+            run,
+        };
+        assert!(
+            !supports_prompt(&record, pending),
+            "legacy named runs stay gated"
+        );
+        let current = record.run_mut(run).unwrap();
+        crate::records::observation::bind_start(
+            current,
+            "start-t-000001",
+            1,
+            2,
+            crate::records::lifecycle::ProcessIdentity {
+                pid: 200,
+                started: "fixture-start".into(),
+            },
+        );
+        for assignment in [
+            serde_json::json!({"kind":"worker","name":"Other"}),
+            serde_json::json!({"kind":"workspace-default"}),
+            serde_json::json!({"kind":"future","name":"Reviewer"}),
+        ] {
+            record
+                .run_mut(run)
+                .unwrap()
+                .extra
+                .insert("assignment".into(), assignment);
+            assert!(!supports_prompt(&record, pending));
+        }
+        record.run_mut(run).unwrap().extra.insert(
+            "assignment".into(),
+            serde_json::json!({"kind":"worker","name":"Reviewer"}),
+        );
+        assert!(supports_prompt(&record, pending));
+        assert!(!supports_prompt(
+            &record,
+            PendingPrompt {
+                kind: PromptKind::Restart,
+                ..pending
+            }
+        ));
+        record
+            .run_mut(run)
+            .unwrap()
+            .extra
+            .insert("outcome".into(), serde_json::json!("unconfirmed"));
+        assert!(!supports_prompt(&record, pending));
+        record.run_mut(run).unwrap().extra.remove("outcome");
+        assert!(!supports_prompt(
+            &record,
+            PendingPrompt {
+                run: run + 1,
+                ..pending
+            }
+        ));
+        record.extra.insert(
+            crate::records::lifecycle::FIELD.into(),
+            serde_json::json!({"version":99}),
+        );
+        assert!(
+            !supports_prompt(&record, pending),
+            "claimed delivery never resumes automatically"
+        );
+        record.extra.remove(crate::records::lifecycle::FIELD);
+        record
+            .run_mut(run)
+            .unwrap()
+            .extra
+            .get_mut(crate::records::observation::FIELD)
+            .unwrap()["version"] = serde_json::json!(99);
+        assert!(!supports_prompt(&record, pending));
+        record
+            .run_mut(run)
+            .unwrap()
+            .extra
+            .remove(crate::records::observation::FIELD);
+        assert!(!supports_prompt(&record, pending));
+    }
+
+    #[test]
+    fn restart_readiness_requires_new_adapter_evidence_even_in_the_same_second() {
+        use crate::records::lifecycle::ProcessIdentity;
+        use crate::records::observation::{Baseline, FIELD};
+
+        let mut record: Record = serde_json::from_value(serde_json::json!({
+            "version":1,"id":"t-000001","rev":1,"workspace":"work","title":"fixture",
+            "goal":"","status":"open","createdAt":100,"updatedAt":100
+        }))
+        .unwrap();
+        let run = record.start_run(crate::records::RunReason::Restart, 100);
+        let pending = PendingPrompt {
+            kind: PromptKind::Restart,
+            since: 100,
+            run,
+        };
+        let old = Seen {
+            agent: "fixture".into(),
+            session: Some("old".into()),
+            transcript: Some("/fixture/old.jsonl".into()),
+        };
+        let process = ProcessIdentity {
+            pid: 200,
+            started: "same-second-start".into(),
+        };
+        let baseline = Baseline {
+            version: 1,
+            operation: "restart-fixture".into(),
+            session: 1,
+            pane: 2,
+            replacement: process.clone(),
+            source: Some(old.clone()),
+        };
+        record
+            .run_mut(run)
+            .unwrap()
+            .extra
+            .insert(FIELD.into(), serde_json::to_value(baseline).unwrap());
+        let mut found = AgentPane {
+            session: SessionId::new(1),
+            pane: PaneId::new(2),
+            pid: 200,
+            shell_foreground: false,
+            status: idle(Some(100)),
+            adapter_status: None,
+            adapter_process_bound: true,
+            seen: Some(old),
+        };
+        assert!(bound_observation(&record, pending, found.clone()).is_none());
+
+        found.seen = Some(Seen {
+            agent: "fixture".into(),
+            session: Some("new".into()),
+            transcript: Some("/fixture/new.jsonl".into()),
+        });
+        assert!(
+            bound_observation(&record, pending, found.clone()).is_none(),
+            "a retained idle tag cannot prove readiness"
+        );
+        found.adapter_status = status(AgentState::Waiting, Some(100));
+        assert!(
+            !Prompt::of(pending).ready(
+                bound_observation(&record, pending, found.clone())
+                    .unwrap()
+                    .status,
+                100
+            )
+        );
+        found.adapter_status = idle(Some(100));
+        assert!(
+            Prompt::of(pending).ready(
+                bound_observation(&record, pending, found.clone())
+                    .unwrap()
+                    .status,
+                100
+            )
+        );
+        found.adapter_status = status(AgentState::Running, Some(100));
+        assert_eq!(
+            bound_run_observation(&record, found.clone())
+                .unwrap()
+                .status,
+            found.adapter_status,
+            "follow-up restart must see Running despite a retained Idle tag"
+        );
+        found.adapter_process_bound = false;
+        assert!(
+            bound_run_observation(&record, found.clone()).is_none(),
+            "a timestamp-only match cannot authorize restart or input"
+        );
+        found.adapter_process_bound = true;
+        assert!(bound_process(&record, pending, &process));
+        assert!(!bound_process(
+            &record,
+            pending,
+            &ProcessIdentity {
+                pid: 200,
+                started: "different-start".into()
+            }
+        ));
+        record
+            .run_mut(run)
+            .unwrap()
+            .extra
+            .insert(FIELD.into(), serde_json::json!({"version":99}));
+        assert!(bound_observation(&record, pending, found.clone()).is_none());
+        assert!(!bound_process(&record, pending, &process));
+        record.run_mut(run).unwrap().extra.remove(FIELD);
+        found.seen = None;
+        found.adapter_status = None;
+        assert_eq!(
+            bound_observation(&record, pending, found.clone())
+                .unwrap()
+                .status,
+            found.status,
+            "legacy hook-only waits retain their behavior"
+        );
+        record
+            .run_mut(run)
+            .unwrap()
+            .extra
+            .insert("outcome".into(), serde_json::json!("unconfirmed"));
+        assert!(
+            bound_run_observation(&record, found).is_none(),
+            "explicitly unconfirmed history cannot use the legacy fallback"
+        );
+    }
+
     struct Fixture(std::path::PathBuf);
 
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[tokio::test]
+    async fn an_ended_wait_cannot_fill_a_new_runs_history_or_timeout_note() {
+        let dir = Fixture(
+            std::env::temp_dir().join(format!("muxa-ended-wait-{:08x}", getrandom::u32().unwrap())),
+        );
+        let store = crate::records::Store::open(&dir.0).unwrap();
+        let record = store
+            .create(crate::records::NewRecord {
+                workspace: "work".into(),
+                title: "fixture".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let old = PendingPrompt {
+            kind: PromptKind::Restart,
+            since: 100,
+            run: 1,
+        };
+        let current = PendingPrompt {
+            kind: PromptKind::Restart,
+            since: 101,
+            run: 2,
+        };
+        store
+            .update(&record.id, record.rev, |r| {
+                r.start_run(crate::records::RunReason::Restart, 100);
+                r.start_run(crate::records::RunReason::Restart, 101);
+                r.set_pending_prompt(Some(current));
+            })
+            .unwrap();
+        let config = Config {
+            state_dir: Some(dir.0.clone()),
+            workspaces: None,
+            home: None,
+        };
+        end_wait(
+            &config,
+            record.id.clone(),
+            old,
+            Some(Seen {
+                agent: "old".into(),
+                session: Some("old-session".into()),
+                transcript: None,
+            }),
+            Some("obsolete timeout"),
+        )
+        .await;
+        let result = store.get(&record.id).unwrap();
+        assert_eq!(result.pending_prompt(), Some(current));
+        assert!(result.note.is_none());
+        assert!(result.runs.iter().all(|run| run.agent.is_none()));
     }
 
     #[tokio::test]

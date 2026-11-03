@@ -2,7 +2,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use muxa_protocol::{ErrorBody, ErrorCode, RestartRecoveryAction};
+use muxa_protocol::{ErrorBody, ErrorCode, RestartRecoveryAction, WorkerSelection};
 use muxa_tmux::{AgentState, PaneId, SessionId};
 
 use super::create::Env;
@@ -11,29 +11,50 @@ use super::{blocking, brief, facts, store_error};
 use crate::convert::error_body;
 use crate::records::lifecycle::{FIELD, Operation, Phase, ProcessIdentity};
 use crate::records::store::ClaimedTask;
+use crate::records::workers::{LaunchCommand, ResolvedWorker, WorkerChoice};
 use crate::records::{
-    AgentSettings, PendingPrompt, PromptKind, Record, RunReason, Seen, now, restart_files,
+    PendingPrompt, PromptKind, Record, RunReason, Seen, Workspaces, now, restart_files,
 };
 
 pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, ErrorBody> {
     let config = Arc::clone(&env.records);
     let id = task.clone();
-    let mut claim = blocking(move || {
-        let store = config.store()?;
-        let record = store.get(&id).map_err(|e| store_error(&e))?;
-        store.claim(&id, record.rev).map_err(|e| store_error(&e))
-    })
-    .await?;
-    let record = claim.record().clone();
-    if record.extra.contains_key(FIELD) {
-        return Err(conflict("task restart requires recovery"));
-    }
+    let record = blocking(move || config.store()?.get(&id).map_err(|e| store_error(&e))).await?;
+    // The wire gate remains closed until native-worker acceptance passes.
     if record.worker().is_some() {
         return Err(error_body(
             ErrorCode::Unsupported,
             "workers are not implemented on this host",
         ));
     }
+    restart_record(env, record, force, WorkerSelection::Keep, None).await
+}
+
+pub(super) async fn restart_record(
+    env: &Env,
+    record: Record,
+    force: bool,
+    choice: WorkerSelection,
+    rev: Option<u64>,
+) -> Result<Record, ErrorBody> {
+    let config = Arc::clone(&env.records);
+    let snapshot = record.clone();
+    let fallback = env.tasks.command.clone();
+    let resolved = blocking(move || {
+        let workspaces = config.load_workspaces()?;
+        resolve(&workspaces, &snapshot, &choice, rev, &fallback)
+    })
+    .await?;
+    let config = Arc::clone(&env.records);
+    let (task, expected) = (record.id.clone(), record.rev);
+    let id = task.clone();
+    let mut claim = blocking(move || {
+        config
+            .store()?
+            .claim(&id, expected)
+            .map_err(|e| store_error(&e))
+    })
+    .await?;
     let dir = record
         .dir
         .clone()
@@ -46,14 +67,18 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
     )
     .await
     .ok_or_else(|| failed("no session runs this task with an agent pane"))?;
+    let found = observation_for_restart(&record, found, force)?;
     check_running(&found, force)?;
     let source = identity(&env.client, found.session, found.pane).await?;
-    let agent = workspace_agent(env, &record.workspace).await?;
-    let command = agent
-        .as_ref()
-        .and_then(|a| a.command.clone())
-        .unwrap_or_else(|| env.tasks.command.clone());
-    let vars = agent.as_ref().map(|a| a.env.clone()).unwrap_or_default();
+    let vars = resolved.environment.env.clone();
+    let command = match &resolved.command {
+        LaunchCommand::Shell(command) => vec![command.clone()],
+        LaunchCommand::Native { program, args } => {
+            let mut command = vec![(*program).to_owned()];
+            command.extend(args.iter().cloned());
+            command
+        }
+    };
     let operation = format!(
         "restart-{:016x}",
         getrandom::u64().map_err(|_| failed("cannot allocate restart id"))?
@@ -64,7 +89,7 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
     let session = found.session.number();
     let pane = found.pane.number();
     let (next_claim, mut op) = blocking(move || {
-        let files = prepare_files(&record, &dir, &op_id, seen.clone(), since)?;
+        let files = prepare_files(&record, &dir, &op_id, seen.clone(), since, &resolved)?;
         let reserved_run = record
             .runs
             .last()
@@ -78,7 +103,7 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
             reserved_run,
             pane,
             source_pid: source.pid,
-            worker: None,
+            worker: resolved.worker,
             session: Some(session),
             source_started: Some(source.started),
             replacement: None,
@@ -102,7 +127,8 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
         &env.records,
         Linked::Task(task.clone()),
     )
-    .await;
+    .await
+    .and_then(|found| observation_for_restart(claim.record(), found, force).ok());
     let ready = current_found
         .as_ref()
         .is_some_and(|p| p.pane == found.pane && check_running(p, force).is_ok());
@@ -141,7 +167,7 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
         found.pane,
         &dir.to_string_lossy(),
         &vars,
-        &[command],
+        &command,
     )
     .await
     .is_err()
@@ -186,6 +212,25 @@ pub async fn restart(env: &Env, task: String, force: bool) -> Result<Record, Err
     Ok(saved)
 }
 
+fn observation_for_restart(
+    record: &Record,
+    mut found: AgentPane,
+    force: bool,
+) -> Result<AgentPane, ErrorBody> {
+    if let Some(observed) = handoff::bound_run_observation(record, found.clone()) {
+        return Ok(observed);
+    }
+    if !force {
+        return Err(error_body(
+            ErrorCode::BadRequest,
+            "the replacement agent is not confirmed; restart with force to stop it",
+        ));
+    }
+    found.status = None;
+    found.seen = None;
+    Ok(found)
+}
+
 fn check_running(found: &AgentPane, force: bool) -> Result<(), ErrorBody> {
     if !force && found.status.is_some_and(|s| s.state == AgentState::Running) {
         Err(error_body(
@@ -212,22 +257,23 @@ pub(crate) async fn identity(
         .map(|p| p.pid)
         .filter(|p| *p != 0)
         .ok_or_else(|| conflict("task process changed"))?;
-    blocking(move || {
-        let out = std::process::Command::new("ps")
-            .args(["-p", &pid.to_string(), "-o", "lstart="])
-            .env("LC_ALL", "C")
-            .stdin(std::process::Stdio::null())
-            .output()
-            .map_err(|_| conflict("cannot verify process start identity"))?;
-        let started = String::from_utf8(out.stdout)
-            .map_err(|_| conflict("cannot verify process start identity"))?;
-        let started = started.trim().to_owned();
-        if !out.status.success() || started.is_empty() {
-            return Err(conflict("task process exited"));
-        }
-        Ok(ProcessIdentity { pid, started })
-    })
-    .await
+    blocking(move || process_identity(pid)).await
+}
+
+pub(crate) fn process_identity(pid: u32) -> Result<ProcessIdentity, ErrorBody> {
+    let out = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "lstart="])
+        .env("LC_ALL", "C")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|_| conflict("cannot verify process start identity"))?;
+    let started = String::from_utf8(out.stdout)
+        .map_err(|_| conflict("cannot verify process start identity"))?;
+    let started = started.trim().to_owned();
+    if !out.status.success() || started.is_empty() {
+        return Err(conflict("task process exited"));
+    }
+    Ok(ProcessIdentity { pid, started })
 }
 
 fn prepare_files(
@@ -236,6 +282,7 @@ fn prepare_files(
     operation: &str,
     seen: Option<Seen>,
     at: u64,
+    resolved: &ResolvedWorker,
 ) -> Result<restart_files::Manifest, ErrorBody> {
     let old_task = restart_files::read_current(dir, "TASK.md").map_err(file_error)?;
     let old_handoff = restart_files::read_current(dir, facts::FILE).map_err(file_error)?;
@@ -259,7 +306,9 @@ fn prepare_files(
         &work,
         at,
     );
-    let task = brief::merge(record, existing);
+    let mut assigned = record.clone();
+    set_worker(&mut assigned, &resolved.worker);
+    let task = brief::merge_with_worker(&assigned, existing, resolved.instructions.as_deref());
     restart_files::stage_from(
         dir,
         operation,
@@ -318,6 +367,7 @@ fn finalize(
                 current
                     .extra
                     .insert("assignment".into(), assignment(&op.worker));
+                crate::records::observation::bind_restart(current, &op);
             }
             set_worker(r, &op.worker);
             r.extra.remove(FIELD);
@@ -570,16 +620,34 @@ fn assignment(worker: &Option<String>) -> serde_json::Value {
         None => serde_json::json!({"kind":"workspace-default"}),
     }
 }
-async fn workspace_agent(env: &Env, name: &str) -> Result<Option<AgentSettings>, ErrorBody> {
-    let config = Arc::clone(&env.records);
-    let name = name.to_owned();
-    blocking(move || {
-        Ok(config
-            .load_workspaces()?
-            .get(&name)
-            .and_then(|w| w.agent.clone()))
-    })
-    .await
+/// Validate one immutable configuration snapshot before claiming or staging anything.
+fn resolve(
+    workspaces: &Workspaces,
+    record: &Record,
+    choice: &WorkerSelection,
+    rev: Option<u64>,
+    fallback: &str,
+) -> Result<ResolvedWorker, ErrorBody> {
+    if rev.is_some_and(|rev| rev != record.rev) {
+        return Err(conflict("task changed; refresh before restarting"));
+    }
+    if !choice.is_keep() && rev.is_none() {
+        return Err(error_body(
+            ErrorCode::BadRequest,
+            "worker selection requires a revision",
+        ));
+    }
+    if record.extra.contains_key(FIELD) {
+        return Err(conflict("task restart requires recovery"));
+    }
+    let choice = match choice {
+        WorkerSelection::Keep => WorkerChoice::Keep,
+        WorkerSelection::WorkspaceDefault => WorkerChoice::WorkspaceDefault,
+        WorkerSelection::Named(name) => WorkerChoice::Named(name),
+    };
+    workspaces
+        .resolve_worker(&record.workspace, choice, record.worker(), fallback)
+        .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))
 }
 fn lifecycle_error(_: crate::records::lifecycle::Error) -> ErrorBody {
     conflict("task restart requires recovery")
@@ -603,4 +671,152 @@ fn uncertain(operation: &str) -> ErrorBody {
     failed(format!(
         "restart outcome is uncertain; inspect operation {operation}"
     ))
+}
+
+#[cfg(test)]
+mod worker_tests {
+    use super::*;
+    use crate::records::{NewRecord, Store};
+    use std::fs;
+    use std::path::PathBuf;
+
+    struct Fixture(PathBuf);
+
+    impl Fixture {
+        fn new() -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "muxa-restart-selection-{:08x}",
+                getrandom::u32().unwrap()
+            ));
+            fs::create_dir(&dir).unwrap();
+            Self(dir.canonicalize().unwrap())
+        }
+
+        fn record(&self) -> Record {
+            Store::open(self.0.join("records"))
+                .unwrap()
+                .create(NewRecord {
+                    workspace: "work".into(),
+                    title: "Review".into(),
+                    goal: "A synthetic goal".into(),
+                    ..Default::default()
+                })
+                .unwrap()
+        }
+
+        fn config(&self, role: &str) -> Workspaces {
+            Workspaces::parse(
+                &format!(
+                    "[[workspace]]\nname = 'work'\nroot = '{}'\n[workspace.agent]\ncommand = 'workspace-agent'\nenv = {{ SYNTHETIC = 'workspace-value' }}\n[[worker]]\nname = 'Reviewer'\nagent = 'claude-code'\nargs = ['--agent', '{role}']\ninstructions = '{}'\n",
+                    self.0.display(),
+                    self.0.join("instructions.md").display(),
+                ),
+                Path::new("workspaces.toml"),
+                None,
+            )
+            .unwrap()
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn restart_selection_checks_revision_and_instructions_before_staging() {
+        let fixture = Fixture::new();
+        let record = fixture.record();
+        let config = fixture.config("reviewer");
+        let choice = WorkerSelection::Named("Reviewer".into());
+        assert_eq!(
+            resolve(&config, &record, &choice, Some(record.rev + 1), "fallback")
+                .unwrap_err()
+                .code,
+            ErrorCode::Conflict
+        );
+        assert_eq!(
+            resolve(&config, &record, &choice, None, "fallback")
+                .unwrap_err()
+                .code,
+            ErrorCode::BadRequest
+        );
+        for bytes in [vec![0xff], vec![b'x'; 16 * 1024 + 1], b"a\0b".to_vec()] {
+            fs::write(fixture.0.join("instructions.md"), bytes).unwrap();
+            assert!(resolve(&config, &record, &choice, Some(record.rev), "fallback").is_err());
+            assert!(!fixture.0.join(".muxa").exists());
+        }
+        assert_eq!(
+            Store::open(fixture.0.join("records"))
+                .unwrap()
+                .get(&record.id)
+                .unwrap(),
+            record
+        );
+    }
+
+    #[test]
+    fn restart_stages_a_single_selection_snapshot_and_keeps_live_notes() {
+        let fixture = Fixture::new();
+        let mut record = fixture.record();
+        record.dir = Some(fixture.0.clone());
+        let original = brief::render(&record).replace("Nothing yet.", "Keep these notes.");
+        fs::create_dir(fixture.0.join(".muxa")).unwrap();
+        fs::write(fixture.0.join(".muxa/TASK.md"), &original).unwrap();
+        fs::write(
+            fixture.0.join("instructions.md"),
+            "Original worker instructions.",
+        )
+        .unwrap();
+        let config = fixture.config("reviewer");
+        let choice = WorkerSelection::Named("Reviewer".into());
+        let selected = resolve(&config, &record, &choice, Some(record.rev), "fallback").unwrap();
+        fs::write(fixture.0.join("instructions.md"), "Next operation only.").unwrap();
+        let manifest =
+            prepare_files(&record, &fixture.0, "selection-test", None, 7, &selected).unwrap();
+        assert_eq!(
+            fs::read_to_string(fixture.0.join(".muxa/TASK.md")).unwrap(),
+            original
+        );
+        restart_files::reconcile(&fixture.0, &manifest).unwrap();
+        let task = fs::read_to_string(fixture.0.join(".muxa/TASK.md")).unwrap();
+        assert!(task.contains("Reviewer"));
+        assert!(task.contains("Original worker instructions."));
+        assert!(!task.contains("Next operation only."));
+        assert!(task.ends_with(original.split_once("<!-- muxa:notes").unwrap().1));
+        set_worker(&mut record, &selected.worker);
+        let edited = resolve(
+            &fixture.config("edited-reviewer"),
+            &record,
+            &WorkerSelection::Keep,
+            None,
+            "fallback",
+        )
+        .unwrap();
+        assert_ne!(selected.command, edited.command);
+        assert_eq!(edited.instructions.as_deref(), Some("Next operation only."));
+        let cleared = resolve(
+            &config,
+            &record,
+            &WorkerSelection::WorkspaceDefault,
+            Some(record.rev),
+            "fallback",
+        )
+        .unwrap();
+        assert_eq!(
+            cleared.command,
+            LaunchCommand::Shell("workspace-agent".into())
+        );
+        assert_eq!(
+            cleared.environment.env("SYNTHETIC"),
+            Some("workspace-value")
+        );
+        let manifest = prepare_files(&record, &fixture.0, "clear-test", None, 8, &cleared).unwrap();
+        restart_files::reconcile(&fixture.0, &manifest).unwrap();
+        let task = fs::read_to_string(fixture.0.join(".muxa/TASK.md")).unwrap();
+        assert!(!task.contains("Original worker instructions."));
+        assert!(!task.contains("Reviewer"));
+        assert!(task.contains("Keep these notes."));
+    }
 }

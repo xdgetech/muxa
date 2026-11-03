@@ -9,8 +9,11 @@ use muxa_tmux::Client;
 use super::{Config, Pending, blocking, brief, handoff, store_error};
 use crate::agents::Registry;
 use crate::convert::{error_body, task_error};
+use crate::records::lifecycle::ProcessIdentity;
+use crate::records::store::ClaimedTask;
+use crate::records::workers::{ResolvedWorker, WorkerChoice};
 use crate::records::{NewRecord, PendingPrompt, PromptKind, Record, RunReason, Status, Workspace};
-use crate::tasks::{self, Launched, TaskRequest, builtin};
+use crate::tasks::{self, Launched, TaskLauncher, TaskRequest, builtin};
 
 /// The session option that links a session to its record.
 const TAG: &str = "@muxa_task";
@@ -29,6 +32,7 @@ pub struct Env {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewTask {
     pub workspace: String,
+    pub worker: Option<String>,
     pub title: String,
     pub goal: String,
     pub project: Option<String>,
@@ -69,7 +73,7 @@ enum Target {
 /// error. A failed launch keeps the record with a note (`task-failed`); a
 /// wrong request keeps none (`bad-request`).
 pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBody>) {
-    let target = match check(env, &new).await {
+    let (target, resolved) = match check(env, &new).await {
         Ok(t) => t,
         Err(e) => return (None, Some(e)),
     };
@@ -82,6 +86,7 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
     };
     let fields = NewRecord {
         workspace: new.workspace,
+        worker: resolved.worker.clone(),
         title: new.title,
         goal: new.goal,
         project: new.project,
@@ -96,17 +101,33 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
             Err(e) => return (None, Some(e)),
         };
     tracing::info!(task = %record.id, "task recorded");
-    match start(env, &record, &target).await {
-        Ok(launched) => linked(env, record, launched).await,
+    if record.worker().is_some() {
+        return create_worker(env, record, &target, &resolved).await;
+    }
+    match start(env, &record, &target, &resolved).await {
+        Ok(started) => linked(env, record, started.launched).await,
         Err(failure) => failed(env, record, failure).await,
     }
 }
 
 /// Checks the request at the boundary; nothing is written yet.
-async fn check(env: &Env, new: &NewTask) -> Result<Target, ErrorBody> {
+async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), ErrorBody> {
     let bad = |m: String| error_body(ErrorCode::BadRequest, m);
     let config = Arc::clone(&env.records);
-    let workspaces = blocking(move || config.load_workspaces()).await?;
+    let workspace_name = new.workspace.clone();
+    let selected = new.worker.clone();
+    let fallback = env.tasks.command.clone();
+    let (workspaces, resolved) = blocking(move || {
+        let workspaces = config.load_workspaces()?;
+        let choice = selected
+            .as_deref()
+            .map_or(WorkerChoice::WorkspaceDefault, WorkerChoice::Named);
+        let resolved = workspaces
+            .resolve_worker(&workspace_name, choice, None, &fallback)
+            .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))?;
+        Ok((workspaces, resolved))
+    })
+    .await?;
     let workspace = workspaces.get(&new.workspace).cloned().ok_or_else(|| {
         bad(format!(
             "no workspace named {:?}; list-tasks shows the host's workspaces",
@@ -114,7 +135,7 @@ async fn check(env: &Env, new: &NewTask) -> Result<Target, ErrorBody> {
         ))
     })?;
     let (repo, branch) = match (&new.repo, &new.branch) {
-        (None, None) if new.base.is_none() => return Ok(Target::Dir(workspace)),
+        (None, None) if new.base.is_none() => return Ok((Target::Dir(workspace), resolved)),
         (None, _) => return Err(bad("branch and base need a repo".into())),
         (Some(_), None) => return Err(bad("a task with a repo needs a branch".into())),
         (Some(r), Some(b)) => (r, b),
@@ -134,13 +155,31 @@ async fn check(env: &Env, new: &NewTask) -> Result<Target, ErrorBody> {
             listing[0].name
         )));
     }
-    req.agent = workspace.agent.clone();
+    req.agent = if resolved.worker.is_some() {
+        Some(resolved.environment.clone())
+    } else {
+        workspace.agent.clone()
+    };
+    if resolved.worker.is_some() {
+        if let Some(path) = builtin::existing_worktree(&main, branch)
+            .await
+            .map_err(|e| task_error(&e))?
+        {
+            if tasks::session_for_worktree(&env.client, &path)
+                .await
+                .map_err(|e| task_error(&e))?
+                .is_some()
+            {
+                return Err(bad("a worker needs a new agent session; open the existing task or use another branch".into()));
+            }
+        }
+    }
     if let Some(other) = branch_task(env, &req).await? {
         return Err(bad(format!(
             "{branch} already runs task {other}. Open that task, or use another branch."
         )));
     }
-    Ok(Target::Repo(req))
+    Ok((Target::Repo(req), resolved))
 }
 
 /// The open task that the branch's session already runs, if any.
@@ -175,8 +214,18 @@ async fn open_task(env: &Env, id: String) -> Option<String> {
     .flatten()
 }
 
+struct Started {
+    launched: Launched,
+    initial: Option<(muxa_tmux::PaneId, ProcessIdentity)>,
+}
+
 /// Launches the agent, tags its session and writes `TASK.md`.
-async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, Failure> {
+async fn start(
+    env: &Env,
+    record: &Record,
+    target: &Target,
+    resolved: &ResolvedWorker,
+) -> Result<Started, Failure> {
     let client = &*env.client;
     let launched = match target {
         Target::Repo(req) => {
@@ -184,7 +233,11 @@ async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, 
                 record: Some(record.id.clone()),
                 ..req.clone()
             };
-            let launcher = tasks::pick_for(&env.tasks, client, &req).await;
+            let launcher: Box<dyn TaskLauncher> = if resolved.worker.is_some() {
+                Box::new(builtin::Builtin::with_worker(resolved))
+            } else {
+                tasks::pick_for(&env.tasks, client, &req).await
+            };
             let result = launcher.launch(client, &req).await;
             if let Err(e) = &result {
                 tracing::warn!(task = %record.id, launcher = launcher.id(), error = %e, "task launch failed");
@@ -195,13 +248,25 @@ async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, 
             let dir = workspace
                 .task_dir(&record.title, &record.id)
                 .map_err(Failure::before)?;
-            let launcher = builtin::Builtin::new(env.tasks.command.clone());
-            launcher
-                .launch_in_dir(client, &dir, workspace.agent.as_ref())
-                .await
+            if resolved.worker.is_some() {
+                builtin::Builtin::with_worker(resolved)
+                    .launch_in_dir(client, &dir, Some(&resolved.environment)).await
+            } else {
+                builtin::Builtin::new(env.tasks.command.clone())
+                    .launch_in_dir(client, &dir, workspace.agent.as_ref()).await
+            }
         }
     }
     .map_err(Failure::before)?;
+    let initial = if resolved.worker.is_some() {
+        Some(
+            startup_identity(env, &launched)
+                .await
+                .map_err(|error| Failure::after(&launched, error.message))?,
+        )
+    } else {
+        None
+    };
     let tagged = tag_of(env, &launched)
         .await
         .map_err(|e| Failure::after(&launched, e))?;
@@ -218,13 +283,19 @@ async fn start(env: &Env, record: &Record, target: &Target) -> Result<Launched, 
         .await
         .map_err(|e| Failure::after(&launched, e))?;
     let (dir, saved, in_repo) = (launched.dir.clone(), record.clone(), record.repo.is_some());
+    let instructions = resolved.instructions.clone();
     blocking(move || {
-        brief::create(&dir, &saved, in_repo).map_err(|m| error_body(ErrorCode::Internal, m))
+        let result = if saved.worker().is_some() {
+            brief::create_with_worker(&dir, &saved, in_repo, instructions.as_deref())
+        } else {
+            brief::create(&dir, &saved, in_repo)
+        };
+        result.map_err(|m| error_body(ErrorCode::Internal, m))
     })
     .await
     .map_err(|e| Failure::after(&launched, e.message))?;
     tracing::info!(task = %record.id, session = %launched.id, dir = %launched.dir.display(), "task linked");
-    Ok(launched)
+    Ok(Started { launched, initial })
 }
 
 /// The `@muxa_task` the launched session carries already.
@@ -254,6 +325,12 @@ async fn linked(
                 r.session = Some(name);
                 let now = crate::records::now();
                 let run = r.start_run(RunReason::Start, now);
+                if let Some(current) = r.run_mut(run) {
+                    current.extra.insert(
+                        "assignment".into(),
+                        serde_json::json!({"kind":"workspace-default"}),
+                    );
+                }
                 r.set_pending_prompt(Some(PendingPrompt {
                     kind: PromptKind::Start,
                     since: now,
@@ -267,6 +344,11 @@ async fn linked(
         Ok(r) => r,
         Err(e) => return (Some(record), Some(e)),
     };
+    spawn_prompt(env, &record, launched.id);
+    (Some(record), None)
+}
+
+fn spawn_prompt(env: &Env, record: &Record, session: muxa_tmux::SessionId) {
     if let Some(pending) = record.pending_prompt() {
         env.pending.spawn(handoff::send_prompt(
             Arc::clone(&env.client),
@@ -274,12 +356,160 @@ async fn linked(
             Arc::clone(&env.records),
             handoff::Wait {
                 task: record.id.clone(),
-                which: handoff::Linked::Session(launched.id),
+                which: handoff::Linked::Session(session),
                 pending,
             },
         ));
     }
-    (Some(record), None)
+}
+
+/// Hold the lifecycle claim from the first external effect through the startup
+/// record. Failure bookkeeping uses this guard rather than reacquiring it.
+async fn create_worker(
+    env: &Env,
+    record: Record,
+    target: &Target,
+    resolved: &ResolvedWorker,
+) -> (Option<Record>, Option<ErrorBody>) {
+    let config = Arc::clone(&env.records);
+    let (id, rev) = (record.id.clone(), record.rev);
+    let claim = blocking(move || {
+        config
+            .store()?
+            .claim(&id, rev)
+            .map_err(|error| store_error(&error))
+    })
+    .await;
+    let claim = match claim {
+        Ok(claim) => claim,
+        Err(error) => return (Some(record), Some(error)),
+    };
+    let started = match start(env, &record, target, resolved).await {
+        Ok(started) => started,
+        Err(failure) => return failed_worker(claim, failure).await,
+    };
+    let Some((pane, initial)) = started.initial else {
+        return failed_worker(
+            claim,
+            Failure::after(&started.launched, "worker startup identity is missing"),
+        )
+        .await;
+    };
+    let current = super::restart::identity(&env.client, started.launched.id, pane).await;
+    if !current.is_ok_and(|process| process == initial) {
+        return failed_worker(
+            claim,
+            Failure::after(
+                &started.launched,
+                "the worker process changed before startup was recorded",
+            ),
+        )
+        .await;
+    }
+    let original = claim.record().clone();
+    let (dir, name, session) = (
+        started.launched.dir.clone(),
+        started.launched.name.clone(),
+        started.launched.id,
+    );
+    let operation = format!("start-{}", original.id);
+    let saved = blocking(move || {
+        let mut claim = claim;
+        claim
+            .update(|record| {
+                record.dir = Some(dir);
+                record.session = Some(name);
+                let now = crate::records::now();
+                let run = record.start_run(RunReason::Start, now);
+                let assignment = serde_json::json!({"kind":"worker", "name":record.worker()});
+                if let Some(current) = record.run_mut(run) {
+                    current.extra.insert("assignment".into(), assignment);
+                    crate::records::observation::bind_start(
+                        current,
+                        &operation,
+                        session.number(),
+                        pane.number(),
+                        initial,
+                    );
+                }
+                record.set_pending_prompt(Some(PendingPrompt {
+                    kind: PromptKind::Start,
+                    since: now,
+                    run,
+                }));
+            })
+            .map_err(|error| store_error(&error))?;
+        Ok(claim.record().clone())
+    })
+    .await;
+    match saved {
+        Ok(record) => {
+            spawn_prompt(env, &record, session);
+            (Some(record), None)
+        }
+        Err(error) => (Some(original), Some(error)),
+    }
+}
+
+async fn startup_identity(
+    env: &Env,
+    launched: &Launched,
+) -> Result<(muxa_tmux::PaneId, ProcessIdentity), ErrorBody> {
+    let sessions = muxa_tmux::list_sessions(&env.client)
+        .await
+        .map_err(|error| {
+            error_body(
+                ErrorCode::TaskFailed,
+                format!("cannot verify the started worker: {error}"),
+            )
+        })?;
+    let pane = sessions
+        .iter()
+        .find(|session| session.id == launched.id)
+        .and_then(|session| {
+            session
+                .panes
+                .iter()
+                .find(|pane| pane.role == muxa_tmux::Role::Agent && !pane.dead)
+        })
+        .ok_or_else(|| {
+            error_body(
+                ErrorCode::TaskFailed,
+                "the started worker process is missing",
+            )
+        })?;
+    let process = super::restart::identity(&env.client, launched.id, pane.id).await?;
+    if process.pid != pane.pid {
+        return Err(error_body(
+            ErrorCode::Conflict,
+            "the worker process changed during launch",
+        ));
+    }
+    Ok((pane.id, process))
+}
+
+async fn failed_worker(
+    mut claim: ClaimedTask,
+    failure: Failure,
+) -> (Option<Record>, Option<ErrorBody>) {
+    let original = claim.record().clone();
+    let error = error_body(ErrorCode::TaskFailed, failure.why.clone());
+    let note = format!("The task did not start: {}", failure.why);
+    let launched = failure.launched;
+    let saved = blocking(move || {
+        claim
+            .update(|record| {
+                record.note = Some(note);
+                if let Some(launched) = launched {
+                    record.dir = Some(launched.dir);
+                    record.session = Some(launched.name);
+                }
+            })
+            .map_err(|error| store_error(&error))?;
+        Ok(claim.record().clone())
+    })
+    .await;
+    (Some(saved.unwrap_or(original)), Some(error))
 }
 
 /// Keeps the record with why the task did not start. It names a session
@@ -318,3 +548,6 @@ async fn failed(
         Some(error_body(ErrorCode::TaskFailed, failure.why)),
     )
 }
+
+#[cfg(all(test, feature = "tmux-integration"))]
+mod worker_tests;

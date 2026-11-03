@@ -38,6 +38,53 @@ pub(crate) fn new_session_line(
     Ok(line)
 }
 
+fn new_session_command_line(
+    name: &str,
+    dir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Result<String, Error> {
+    let Some(program) = command.first() else {
+        return Err(Error::Unexpected(
+            "new-session command must not be empty".into(),
+        ));
+    };
+    if program.trim().is_empty() || command.iter().any(|arg| arg.contains('\0')) {
+        return Err(Error::Unexpected(
+            "new-session command is empty or has a NUL byte".into(),
+        ));
+    }
+    let mut line = format!(
+        "new-session -d -P -F {} -s {} -c {}",
+        quote("#{session_id} #{pane_id}"),
+        quote(name),
+        quote(dir),
+    );
+    push_env(&mut line, env)?;
+    line.push_str(" --");
+    for argument in command {
+        line.push(' ');
+        line.push_str(&quote(argument));
+    }
+    Ok(line)
+}
+
+/// Starts a detached session with an explicit shell command or direct argv.
+/// One entry runs through the shell; multiple entries are executed directly.
+/// See `scripts/repro/worker-respawn.sh` for the byte-preservation probe.
+pub async fn new_session_command(
+    client: &Client,
+    name: &str,
+    dir: &str,
+    env: &[(String, String)],
+    command: &[String],
+) -> Result<(SessionId, PaneId), Error> {
+    let reply = client
+        .command(&new_session_command_line(name, dir, env, command)?)
+        .await?;
+    session_and_pane(&reply.lines)
+}
+
 /// Appends ` -e "KEY=VALUE"` for each pair.
 fn push_env(line: &mut String, env: &[(String, String)]) -> Result<(), Error> {
     for (key, value) in env {
@@ -160,8 +207,11 @@ pub async fn new_session(
     let reply = client
         .command(&new_session_line(name, dir, env, command)?)
         .await?;
-    let line = reply
-        .lines
+    session_and_pane(&reply.lines)
+}
+
+fn session_and_pane(lines: &[Vec<u8>]) -> Result<(SessionId, PaneId), Error> {
+    let line = lines
         .first()
         .map(|l| String::from_utf8_lossy(l).into_owned())
         .ok_or_else(|| Error::Unexpected("new-session printed no pane".into()))?;

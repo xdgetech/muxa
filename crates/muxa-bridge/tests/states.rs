@@ -70,9 +70,21 @@ async fn a_tagged_state_change_is_announced_once() {
         state_of(&mut bridge, &pane).await,
         Some(AgentState::Waiting)
     );
-    // The time alone moving is not a change.
+    // A fresh report updates its displayed age even with the same state name.
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state_at", "123"]);
+    assert!(
+        changed(&mut bridge).await,
+        "the fresh report was not announced"
+    );
     server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state_at", "123"]);
     assert!(!changed(&mut bridge).await);
+
+    // Respawn retains those tags, but it is a different agent execution.
+    server.tmux(&["respawn-pane", "-k", "-t", &pane, "sleep 600"]);
+    assert!(
+        changed(&mut bridge).await,
+        "the replacement was not announced"
+    );
 }
 
 struct Dir(PathBuf);

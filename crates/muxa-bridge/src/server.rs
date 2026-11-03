@@ -151,6 +151,7 @@ where
             out.clone(),
             chat_rx,
             Arc::clone(&config.agents),
+            Arc::clone(&config.records),
         )
         .run(),
     );
@@ -177,6 +178,7 @@ where
         Arc::clone(&client),
         out.clone(),
         Arc::clone(&config.agents),
+        Arc::clone(&config.records),
     ));
     let (req_tx, req_rx) = mpsc::channel(64);
     let reader = tokio::spawn(read_requests(input, req_tx, out.clone()));
@@ -362,7 +364,7 @@ impl Worker {
                         let records = Arc::clone(&self.records);
                         let sessions = tokio::task::spawn_blocking(move || {
                             crate::sessions::enrich(&mut sessions, &agents);
-                            task_records::link(&mut sessions, &records);
+                            task_records::observation::refresh(&mut sessions, &records, &agents);
                             sessions
                         })
                         .await;

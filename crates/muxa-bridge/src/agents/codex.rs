@@ -76,7 +76,11 @@ impl AgentAdapter for CodexAdapter {
                 transcript: Some(path),
             })
         });
-        Some(Found { status, session })
+        Some(Found {
+            process_bound: false,
+            status,
+            session,
+        })
     }
 }
 

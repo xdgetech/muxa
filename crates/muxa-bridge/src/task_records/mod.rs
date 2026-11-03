@@ -7,6 +7,7 @@ pub(crate) mod brief;
 mod create;
 mod facts;
 mod handoff;
+pub(crate) mod observation;
 pub mod remote;
 pub(crate) mod restart;
 
@@ -195,6 +196,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             worker: _,
         } => {
             let new = NewTask {
+                worker: None,
                 workspace,
                 title,
                 goal,
@@ -276,8 +278,10 @@ pub async fn resume_prompts(cx: &Context) {
         Ok(config
             .records_if_any()
             .into_iter()
-            .filter(|r| r.worker().is_none())
-            .filter_map(|r| Some((r.id.clone(), r.pending_prompt()?)))
+            .filter_map(|r| {
+                let pending = r.pending_prompt()?;
+                handoff::supports_prompt(&r, pending).then_some((r.id.clone(), pending))
+            })
             .collect::<Vec<_>>())
     })
     .await

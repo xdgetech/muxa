@@ -20,6 +20,7 @@ impl AgentAdapter for Stub {
 
     fn find(&self, pane: &PaneInfo, _: &Processes) -> Option<Found> {
         self.0.contains(&pane.pane.as_str()).then_some(Found {
+            process_bound: false,
             status: Some(muxa_protocol::Agent {
                 state: muxa_protocol::AgentState::Waiting,
                 since: Some(7),

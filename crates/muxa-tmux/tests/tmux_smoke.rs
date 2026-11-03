@@ -769,3 +769,112 @@ async fn worker_respawn_retains_old_hook_tags() {
         "old-fixture-session"
     );
 }
+
+/// Worker creation must preserve native arguments without shell interpretation.
+#[tokio::test]
+async fn worker_new_session_preserves_native_arguments_and_existing_layout() {
+    use muxa_tmux::new_session_command;
+    let server = Server::start();
+    let original = server.first_pane();
+    let shape =
+        || {
+            server.tmux(&[
+        "display-message", "-p", "-t", &original.to_string(),
+        "#{session_id} #{window_id} #{pane_id} #{pane_width}x#{pane_height} #{window_layout}",
+    ])
+        };
+    let before = shape();
+    let dir = std::env::temp_dir().join(format!(
+        "muxa-worker-create-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::SeqCst)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = Cleanup(dir.clone());
+    let script = dir.join("worker.sh");
+    let output = dir.join("argv");
+    let environment = dir.join("env");
+    std::fs::write(&script, "out=$1\nvars=$2\nshift 2\nprintf '%s\\000' \"$@\" > \"$out\"\nprintf '%s' \"$MUXA_CREATE_ENV\" > \"$vars\"\nexec sleep 600\n").unwrap();
+    let args = [
+        "~",
+        "$HOME",
+        "semi;colon",
+        "a'b",
+        "a\"b",
+        "\\path",
+        "日本語",
+        "#{literal}",
+        "",
+    ];
+    let command: Vec<String> = [
+        "/bin/sh".into(),
+        script.to_string_lossy().into_owned(),
+        output.to_string_lossy().into_owned(),
+        environment.to_string_lossy().into_owned(),
+    ]
+    .into_iter()
+    .chain(args.iter().map(|arg| (*arg).to_owned()))
+    .collect();
+    let (client, _notes) = Client::attach(&server.options(), None).unwrap();
+    for invalid in [
+        vec![],
+        vec![String::new()],
+        vec!["/bin/sh".into(), "bad\0argument".into()],
+    ] {
+        assert!(
+            new_session_command(&client, "invalid", &dir.to_string_lossy(), &[], &invalid)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            server.tmux(&["list-sessions", "-F", "#{session_name}"]),
+            "work"
+        );
+    }
+    let value = "synthetic ' \" $ \\ 日本語";
+    let (session, pane) = new_session_command(
+        &client,
+        "worker-native",
+        &dir.to_string_lossy(),
+        &[("MUXA_CREATE_ENV".into(), value.into())],
+        &command,
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !environment.exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let expected: Vec<u8> = args
+        .into_iter()
+        .flat_map(|arg| arg.bytes().chain([0]))
+        .collect();
+    assert_eq!(std::fs::read(&output).unwrap(), expected);
+    assert_eq!(std::fs::read(&environment).unwrap(), value.as_bytes());
+    assert_eq!(shape(), before);
+    let found = list_sessions(&client).await.unwrap();
+    assert!(
+        found
+            .iter()
+            .any(|s| s.id == session && s.panes.iter().any(|p| p.id == pane))
+    );
+    assert_eq!(
+        server.tmux(&[
+            "display-message",
+            "-p",
+            "-t",
+            &pane.to_string(),
+            "#{pane_current_path}"
+        ]),
+        dir.canonicalize().unwrap().to_string_lossy()
+    );
+}

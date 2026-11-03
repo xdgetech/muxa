@@ -264,6 +264,61 @@ fn recovery_inspection_does_not_mutate_and_unknown_phase_has_no_action() {
 }
 
 #[test]
+fn recovery_stays_available_without_workers_and_preserves_unknown_assignment_kind() {
+    let bridge = Bridge::new();
+    fs::write(
+        bridge.0.join("bridge.py"),
+        BRIDGE.replace(
+            "'assignment':{'kind':'worker','name':'Reviewer'}",
+            "'assignment':{'kind':'future-assignment','name':'Future'}",
+        ),
+    )
+    .unwrap();
+    let output = bridge.run_recovery(
+        false,
+        true,
+        false,
+        &["task", "recover", "t-000001", "--json"],
+    );
+    assert!(output.status.success(), "{output:?}");
+    let record: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        record["restartOperation"]["assignment"],
+        json!({"kind":"future-assignment","name":"Future"})
+    );
+    assert_eq!(bridge.requests(), [json!({"type":"list-tasks","id":1})]);
+    let output = bridge.run_recovery(false, true, false, &["task", "recover", "t-000001"]);
+    assert!(output.status.success(), "{output:?}");
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("requested/unconfirmed"));
+    assert!(text.contains("actions: finish-replacement, leave-unconfirmed"));
+    assert!(!text.contains("future-action"));
+    assert_eq!(bridge.requests(), [json!({"type":"list-tasks","id":1})]);
+    let output = bridge.run_recovery(
+        false,
+        true,
+        false,
+        &[
+            "task",
+            "recover",
+            "t-000001",
+            "--operation",
+            "restart-fixture",
+            "--rev",
+            "7",
+            "--action",
+            "leave-unconfirmed",
+        ],
+    );
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        bridge.requests(),
+        [json!({"type":"recover-restart","id":1,
+        "task":"t-000001","operation":"restart-fixture","rev":7,"action":"leave-unconfirmed"})]
+    );
+}
+
+#[test]
 fn explicit_recovery_sends_the_displayed_identity_without_substitution_or_retry() {
     for action in ["cancel-prepared", "finish-replacement", "leave-unconfirmed"] {
         let bridge = Bridge::new();

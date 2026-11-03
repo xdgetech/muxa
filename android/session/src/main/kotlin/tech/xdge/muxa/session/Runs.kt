@@ -50,6 +50,10 @@ fun duration(seconds: Long): String {
 /** The bridge writes `.muxa/HANDOFF.md` only when it restarts the agent (ADR 0018). */
 val TaskRecord.hasHandoff: Boolean get() = runs.any { it.reason == RunReason.RESTART }
 
-/** A restart of a running agent stops its work, so it needs `force` and says so (ADR 0018). */
+/** An unobserved replacement may still be working, so stopping it also needs confirmation. */
 val InboxItem.restartNeedsForce: Boolean
-    get() = agentPane?.let { pane -> agent?.shown(pane.shellForeground) } == AgentState.RUNNING
+    get() {
+        val state = agentPane?.let { pane -> agent?.shown(pane.shellForeground) }
+        return state == AgentState.RUNNING ||
+            (state == null && record.runs.maxByOrNull { it.id }?.reason == RunReason.RESTART)
+    }

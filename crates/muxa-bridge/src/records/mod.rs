@@ -5,6 +5,7 @@
 pub mod agent_env;
 pub mod lifecycle;
 pub mod loops;
+pub mod observation;
 pub mod prompts;
 pub mod restart_files;
 pub mod runs;
@@ -96,6 +97,7 @@ pub struct NewRecord {
     pub dir: Option<PathBuf>,
     pub session: Option<String>,
     pub note: Option<String>,
+    pub worker: Option<String>,
 }
 
 /// `t-` and 6 lowercase hex digits. Ids become file names, so nothing else passes.

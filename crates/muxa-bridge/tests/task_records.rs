@@ -53,6 +53,9 @@ macro_rules! both {
 }
 
 both!(
+    a_restarted_hook_only_agent_does_not_reuse_retained_idle_tags,
+    recovery_unknown_operations_block_mutation_without_losing_data,
+    recovery_rejects_tampered_and_symlinked_stages,
     recovery_legacy_delivery_does_not_create_run_history,
     recovery_prepared_is_cancelled_once_and_old_tokens_conflict,
     recovery_uncertain_dispatch_and_delivery_never_replace_or_send,
@@ -645,8 +648,8 @@ fn fake_claude(dir: &Path) -> PathBuf {
 env > "$CLAUDE_CONFIG_DIR.env"
 mkdir -p "$CLAUDE_CONFIG_DIR/sessions"
 session="$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}')"
-printf '{"pid":%s,"sessionId":"0b8c3c0e-1111-4a2b-9c3d-000000000016","cwd":"%s","kind":"interactive","status":"idle","tmux":"%s:@0.%s"}\n' \
-  "$$" "$PWD" "$session" "$TMUX_PANE" > "$CLAUDE_CONFIG_DIR/sessions/$$.json"
+printf '{"pid":%s,"sessionId":"0b8c3c0e-1111-4a2b-9c3d-%012d","cwd":"%s","kind":"interactive","status":"idle","tmux":"%s:@0.%s"}\n' \
+  "$$" "$$" "$PWD" "$session" "$TMUX_PANE" > "$CLAUDE_CONFIG_DIR/sessions/$$.json"
 exec sleep 600
 "#,
     )
@@ -797,8 +800,10 @@ async fn a_repo_task_gets_its_workspace_env_even_with_tmux_agents(mode: Mode) {
 }
 
 const RESTART_PROMPT: &str = "Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.";
-/// The session id `fake_claude` writes.
-const FAKE_SESSION: &str = "0b8c3c0e-1111-4a2b-9c3d-000000000016";
+/// Each fake native execution gets its own session, as a fresh real agent does.
+fn fake_session(pid: &str) -> String {
+    format!("0b8c3c0e-1111-4a2b-9c3d-{:0>12}", pid.trim())
+}
 
 async fn restart(bridge: &mut Bridge, task: &str, force: bool) -> (Option<TaskRecord>, Message) {
     send(
@@ -857,6 +862,8 @@ async fn a_restart_keeps_the_pane_hands_off_and_records_runs(mode: Mode) {
     assert_eq!(r.runs[0].reason, RunReason::Start);
     let pane = server.pane(&format!("={}:", r.session.clone().unwrap()));
     agent_env(&config).await;
+    let first_pid = server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"]);
+    let first_session = fake_session(&first_pid);
     // The prompt path fills in the run from the adapter.
     common::wait_until(|| prompts(&server, &pane) > 0).await;
     let mut listed = record_of(&mut bridge, &r.id).await;
@@ -868,7 +875,10 @@ async fn a_restart_keeps_the_pane_hands_off_and_records_runs(mode: Mode) {
         listed = record_of(&mut bridge, &r.id).await;
     }
     assert_eq!(listed.runs[0].agent.as_deref(), Some("claude-code"));
-    assert_eq!(listed.runs[0].agent_session.as_deref(), Some(FAKE_SESSION));
+    assert_eq!(
+        listed.runs[0].agent_session.as_deref(),
+        Some(first_session.as_str())
+    );
 
     // The agent's notes, and a transcript the adapter can point to.
     let dir = PathBuf::from(r.dir.clone().unwrap());
@@ -877,20 +887,22 @@ async fn a_restart_keeps_the_pane_hands_off_and_records_runs(mode: Mode) {
     let notes_at = text.find("<!-- muxa:notes").expect("marker");
     let notes = format!("{}\n- Fixed the form.\n", &text[notes_at..]);
     std::fs::write(&brief, format!("{}{notes}", &text[..notes_at])).unwrap();
-    let transcript = config.join(format!("projects/x/{FAKE_SESSION}.jsonl"));
+    let transcript = config.join(format!("projects/x/{first_session}.jsonl"));
     std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
     std::fs::write(&transcript, "{}\n").unwrap();
     std::fs::remove_file(config.with_extension("env")).unwrap();
     let before = shape(&server);
     let pid = server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"]);
 
+    // Retained tags describe the previous process, even in the same second.
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "waiting"]);
     let (saved, result) = restart(&mut bridge, &r.id, false).await;
     ok(&result);
     let saved = saved.expect("task-saved");
     assert_eq!(saved.runs.len(), 2);
     let (first, second) = (&saved.runs[0], &saved.runs[1]);
     assert!(first.ended_at.is_some());
-    assert_eq!(first.agent_session.as_deref(), Some(FAKE_SESSION));
+    assert_eq!(first.agent_session.as_deref(), Some(first_session.as_str()));
     assert_eq!(
         first.transcript.as_deref(),
         Some(transcript.to_str().unwrap())
@@ -924,6 +936,104 @@ async fn a_restart_keeps_the_pane_hands_off_and_records_runs(mode: Mode) {
             .count()
     };
     common::wait_until(|| restarted() == 1).await;
+    let new_session =
+        fake_session(&server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"]));
+    assert_ne!(new_session, first_session);
+    for _ in 0..20 {
+        let current = record_of(&mut bridge, &r.id).await;
+        if current.runs[1].agent_session.as_deref() == Some(new_session.as_str()) {
+            assert_ne!(current.runs[1].agent_session, current.runs[0].agent_session);
+            assert_eq!(pane_state(&mut bridge, &pane).await, Some(AgentState::Idle));
+            let pid = server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"]);
+            let native_file = config.join(format!("sessions/{pid}.json"));
+            let mut native: Value =
+                serde_json::from_slice(&std::fs::read(&native_file).unwrap()).unwrap();
+            native["status"] = json!("busy");
+            std::fs::write(&native_file, serde_json::to_vec(&native).unwrap()).unwrap();
+            server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "idle"]);
+            let (saved, result) = restart(&mut bridge, &r.id, false).await;
+            assert!(saved.is_none());
+            assert_eq!(error_code(&result), ErrorCode::BadRequest);
+            assert_eq!(
+                server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_pid}"]),
+                pid
+            );
+            assert_eq!(
+                pane_state(&mut bridge, &pane).await,
+                Some(AgentState::Running)
+            );
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("replacement session was not recorded");
+}
+
+async fn a_restarted_hook_only_agent_does_not_reuse_retained_idle_tags(mode: Mode) {
+    let server = Server::start();
+    let manual = server.pane("=work:");
+    let mut host = Host::new("restart-stale-hook", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (record, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let record = record.unwrap();
+    let pane = server.pane(&format!("={}:", record.session.as_ref().unwrap()));
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .to_string();
+    for target in [&pane, &manual] {
+        server.tmux(&["set-option", "-p", "-t", target, "@muxa_role", "agent"]);
+        server.tmux(&["set-option", "-p", "-t", target, "@agent_state", "idle"]);
+        server.tmux(&["set-option", "-p", "-t", target, "@agent_state_at", &at]);
+    }
+    common::wait_until(|| prompts(&server, &pane) == 1).await;
+    for _ in 0..30 {
+        let raw = record_file(&host, &record.id);
+        if raw["pendingPrompt"].is_null() && raw["restartOperation"].is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let raw = record_file(&host, &record.id);
+    assert!(raw["pendingPrompt"].is_null());
+    assert!(raw["restartOperation"].is_null());
+    let (saved, result) = restart(&mut bridge, &record.id, false).await;
+    ok(&result);
+    assert_eq!(saved.unwrap().runs.len(), 2);
+    assert_eq!(pane_state(&mut bridge, &pane).await, None);
+    assert_eq!(
+        pane_state(&mut bridge, &manual).await,
+        Some(AgentState::Idle)
+    );
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    assert!(
+        !server
+            .capture(&pane)
+            .iter()
+            .any(|line| line.contains(RESTART_PROMPT))
+    );
+    let current = record_of(&mut bridge, &record.id).await;
+    assert!(current.pending_prompt.is_some());
+    assert!(current.runs[1].agent.is_none());
+    assert!(current.runs[1].agent_session.is_none());
+    let before = server.layout();
+    let (saved, result) = restart(&mut bridge, &record.id, false).await;
+    assert!(saved.is_none());
+    assert_eq!(error_code(&result), ErrorCode::BadRequest);
+    assert_eq!(server.layout(), before);
+    let (saved, result) = restart(&mut bridge, &record.id, true).await;
+    ok(&result);
+    let saved = saved.unwrap();
+    assert_eq!(saved.runs.len(), 3);
+    assert!(saved.runs[1].agent.is_none());
+    assert!(saved.runs[1].agent_session.is_none());
 }
 
 async fn a_running_agent_is_restarted_only_with_force(mode: Mode) {
@@ -1210,6 +1320,105 @@ fn recovery_fixture(
     }
 }
 
+async fn recovery_unknown_operations_block_mutation_without_losing_data(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("recovery-unknown", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (record, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let record = record.unwrap();
+    let fixture = recovery_fixture(&host, &server, &record, "prepared");
+    let original: Value =
+        serde_json::from_slice(&std::fs::read(&fixture.record_path).unwrap()).unwrap();
+    let before = server.layout();
+    let task = std::fs::read(fixture.dir.join(".muxa/TASK.md")).unwrap();
+    for (field, value) in [
+        ("version", json!(99)),
+        ("phase", json!("future-phase")),
+        ("pane", json!("invalid")),
+    ] {
+        let mut raw = original.clone();
+        raw["restartOperation"][field] = value;
+        let bytes = serde_json::to_vec(&raw).unwrap();
+        std::fs::write(&fixture.record_path, &bytes).unwrap();
+        let listed = record_of(&mut bridge, &record.id).await;
+        let summary = listed.restart_operation.unwrap();
+        assert_eq!(summary.phase, "unknown");
+        assert!(summary.actions.is_empty());
+        assert!(listed.pending_prompt.is_none());
+        for request in [
+            json!({"type":"restart-agent","task":record.id,"force":true}),
+            json!({"type":"update-task","task":record.id,"rev":raw["rev"],"status":"done"}),
+            json!({"type":"recover-restart","task":record.id,"rev":raw["rev"],
+                "operation":fixture.request["operation"],"action":"cancel-prepared"}),
+        ] {
+            let (saved, result) = send(&mut bridge, request).await;
+            assert!(saved.is_none());
+            assert_eq!(error_code(&result), ErrorCode::Conflict);
+            assert_eq!(std::fs::read(&fixture.record_path).unwrap(), bytes);
+        }
+        assert_eq!(server.layout(), before);
+        assert_eq!(
+            std::fs::read(fixture.dir.join(".muxa/TASK.md")).unwrap(),
+            task
+        );
+    }
+}
+
+async fn recovery_rejects_tampered_and_symlinked_stages(mode: Mode) {
+    use std::os::unix::fs::symlink;
+    let server = Server::start();
+    let mut host = Host::new("recovery-stage-tamper", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (record, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let record = record.unwrap();
+    let fixture = recovery_fixture(&host, &server, &record, "replaced");
+    let before = server.layout();
+    let raw = std::fs::read(&fixture.record_path).unwrap();
+    let task_path = fixture.dir.join(".muxa/TASK.md");
+    let task = std::fs::read(&task_path).unwrap();
+    let stage = fixture.staged.join("TASK.next");
+    let outside = host.dir.join("outside-stage");
+    std::fs::write(&outside, &fixture.task).unwrap();
+    let mut request = fixture.request;
+    request["action"] = json!("finish-replacement");
+    for symlinked in [false, true] {
+        if symlinked {
+            std::fs::remove_file(&stage).unwrap();
+            symlink(&outside, &stage).unwrap();
+        } else {
+            std::fs::write(&stage, b"modified staged instructions").unwrap();
+        }
+        let (saved, result) = send(&mut bridge, request.clone()).await;
+        assert!(saved.is_none());
+        assert_eq!(
+            error_code(&result),
+            if symlinked {
+                ErrorCode::TaskFailed
+            } else {
+                ErrorCode::Conflict
+            },
+            "{result:?}"
+        );
+        assert_eq!(std::fs::read(&fixture.record_path).unwrap(), raw);
+        assert_eq!(std::fs::read(&task_path).unwrap(), task);
+        assert!(!fixture.dir.join(".muxa/HANDOFF.md").exists());
+        assert_eq!(std::fs::read(&outside).unwrap(), fixture.task);
+        assert_eq!(server.layout(), before);
+    }
+}
+
 async fn recovery_prepared_is_cancelled_once_and_old_tokens_conflict(mode: Mode) {
     let server = Server::start();
     let mut host = Host::new("recovery-cancel", mode);
@@ -1386,6 +1595,187 @@ async fn a_crash_after_partial_prompt_delivery_does_not_automatically_resend() {
     crashed_dispatch_owner(true, true).await;
 }
 
+#[tokio::test]
+async fn a_crashed_prepared_owner_can_cancel_without_replacement_or_published_files() {
+    crashed_record_boundary(false).await;
+}
+
+#[tokio::test]
+async fn a_crashed_finalized_owner_resumes_only_the_prompt_wait() {
+    crashed_record_boundary(true).await;
+}
+
+/// The wrapper observes a durable record before forwarding the next tmux
+/// command. It never changes a record or adds a production fault hook.
+async fn crashed_record_boundary(finalized: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let server = Server::start();
+    let mut host = Host::new(
+        if finalized {
+            "crash-finalized"
+        } else {
+            "crash-prepared"
+        },
+        Mode::Bridge,
+    );
+    let proxy = host.dir.join("record-boundary-proxy.py");
+    let blocked = host.dir.join("record-blocked");
+    let armed = host.dir.join("record-armed");
+    let cancel = host.dir.join("cancel-proxy");
+    let state = host.dir.join("state");
+    let code = format!(
+        r##"#!/usr/bin/env python3
+import glob, json, os, shutil, subprocess, sys, threading, time
+args = sys.argv[1:]
+if '-L' not in args or not args[args.index('-L') + 1].startswith('muxa-test-'):
+    sys.exit(2)
+real = shutil.which('tmux')
+if '-C' not in args:
+    os.execv(real, [real] + args)
+child = subprocess.Popen([real] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+def boundary():
+    if not os.path.exists({armed}):
+        return False
+    for path in glob.glob({state} + '/*.json'):
+        with open(path) as source:
+            record = json.load(source)
+        if {finalized}:
+            if record.get('pendingPrompt', {{}}).get('kind') == 'restart' and 'restartOperation' not in record:
+                return True
+        elif record.get('restartOperation', {{}}).get('phase') == 'prepared':
+            return True
+    return False
+def feed():
+    for line in sys.stdin.buffer:
+        if boundary():
+            with open({blocked}, 'wb') as marker:
+                marker.write(b'held')
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline and not os.path.exists({cancel}):
+                time.sleep(0.01)
+            child.terminate()
+            return
+        try:
+            child.stdin.write(line)
+            child.stdin.flush()
+        except BrokenPipeError:
+            return
+    child.terminate()
+threading.Thread(target=feed, daemon=True).start()
+while True:
+    chunk = os.read(child.stdout.fileno(), 65536)
+    if not chunk:
+        break
+    sys.stdout.buffer.write(chunk)
+    sys.stdout.buffer.flush()
+sys.exit(child.wait())
+"##,
+        armed = serde_json::to_string(&armed.to_string_lossy()).unwrap(),
+        blocked = serde_json::to_string(&blocked.to_string_lossy()).unwrap(),
+        cancel = serde_json::to_string(&cancel.to_string_lossy()).unwrap(),
+        state = serde_json::to_string(&state.to_string_lossy()).unwrap(),
+        finalized = if finalized { "True" } else { "False" },
+    );
+    std::fs::write(&proxy, code).unwrap();
+    std::fs::set_permissions(&proxy, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut first = host
+        .bridge(
+            &server,
+            &[
+                "--task-launcher",
+                "builtin",
+                "--task-command",
+                AGENT,
+                "--tmux",
+                proxy.to_str().unwrap(),
+            ],
+        )
+        .await;
+    let (record, result) = create(&mut first, json!({})).await;
+    ok(&result);
+    let record = record.unwrap();
+    let pane = server.pane(&format!("={}:", record.session.as_ref().unwrap()));
+    server.tmux(&["set-option", "-p", "-t", &pane, "@muxa_role", "agent"]);
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "waiting"]);
+    let before = server.layout();
+    let task = PathBuf::from(record.dir.as_ref().unwrap()).join(".muxa/TASK.md");
+    let handoff = task.with_file_name("HANDOFF.md");
+    let original = std::fs::read(&task).unwrap();
+    std::fs::write(&armed, b"armed").unwrap();
+    first
+        .send_raw(
+            &json!({"id":777,"type":"restart-agent","task":record.id,"force":true}).to_string(),
+        )
+        .await;
+    common::wait_until(|| blocked.exists()).await;
+    let path = state.join(format!("{}.json", record.id));
+    let bytes = std::fs::read(&path).unwrap();
+    let durable: Value = serde_json::from_slice(&bytes).unwrap();
+    let expected = server.layout();
+    let published_task = std::fs::read(&task).unwrap();
+    let published_handoff = std::fs::read(&handoff).ok();
+    if finalized {
+        assert!(durable.get("restartOperation").is_none());
+        assert_eq!(durable["pendingPrompt"]["kind"], "restart");
+        assert_eq!(
+            durable["runs"].as_array().unwrap().len(),
+            record.runs.len() + 1
+        );
+        assert!(published_handoff.is_some());
+        assert_ne!(expected, before);
+    } else {
+        assert_eq!(durable["restartOperation"]["phase"], "prepared");
+        assert_eq!(published_task, original);
+        assert!(published_handoff.is_none());
+        assert_eq!(expected, before);
+    }
+    let screen = server.capture(&pane);
+    first.child.kill().await.unwrap();
+    first.child.wait().await.unwrap();
+    std::fs::write(&cancel, b"cancel").unwrap();
+    host.mode = Mode::Daemon;
+    let mut second = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let recovered = record_of(&mut second, &record.id).await;
+    if finalized {
+        assert!(recovered.restart_operation.is_none());
+        assert_eq!(recovered.runs.len(), record.runs.len() + 1);
+        assert_eq!(
+            recovered.pending_prompt.unwrap().run,
+            recovered.runs.last().unwrap().id
+        );
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let still_waiting = record_of(&mut second, &record.id).await;
+        assert!(still_waiting.pending_prompt.is_some());
+        assert_eq!(still_waiting.runs, recovered.runs);
+    } else {
+        let operation = recovered.restart_operation.unwrap();
+        assert_eq!(operation.phase, "prepared");
+        assert_eq!(operation.actions, ["cancel-prepared"]);
+        let (saved, result) = send(
+            &mut second,
+            json!({
+                "type":"recover-restart","task":record.id,"rev":recovered.rev,
+                "operation":operation.id,"action":"cancel-prepared",
+            }),
+        )
+        .await;
+        ok(&result);
+        let saved = saved.unwrap();
+        assert_eq!(saved.runs, record.runs);
+        assert!(saved.restart_operation.is_none());
+        assert!(saved.pending_prompt.is_none());
+    }
+    assert_eq!(server.layout(), expected);
+    assert_eq!(server.capture(&pane), screen);
+    assert_eq!(std::fs::read(&task).unwrap(), published_task);
+    assert_eq!(std::fs::read(&handoff).ok(), published_handoff);
+}
+
 async fn crashed_dispatch_owner(after_dispatch: bool, delivery: bool) {
     use std::os::unix::fs::PermissionsExt;
     let server = Server::start();
@@ -1519,6 +1909,13 @@ sys.exit(child.wait())
     assert_eq!(durable["restartOperation"]["phase"], phase);
     assert_eq!(std::fs::read(&task).unwrap(), original);
     assert_eq!(server.layout(), expected);
+    // The losing writer goes through the daemon while the fallback bridge
+    // still owns the same persistent Task lock.
+    let workspaces_path = host.dir.join("workspaces.toml");
+    let mut workspaces = std::fs::read_to_string(&workspaces_path).unwrap();
+    workspaces.push_str("\n[workspace.loop]\nchecks = [\"true\"]\n");
+    std::fs::write(workspaces_path, workspaces).unwrap();
+    host.mode = Mode::Daemon;
     let mut second = host
         .bridge(
             &server,
@@ -1529,6 +1926,21 @@ sys.exit(child.wait())
     assert!(saved.is_none());
     assert_eq!(error_code(&result), ErrorCode::Conflict);
     assert_eq!(std::fs::read(&record_path).unwrap(), bytes);
+    // Every lifecycle writer must honor the live owner, including writers that
+    // do not themselves replace a process.
+    for request in [
+        json!({"type":"update-task","task":record.id,"rev":durable["rev"],"status":"done"}),
+        json!({"type":"start-loop","task":record.id,"loop":{"check":"true"}}),
+        json!({"type":"recover-restart","task":record.id,"rev":durable["rev"],
+            "operation":durable["restartOperation"]["id"],"action":"leave-unconfirmed"}),
+    ] {
+        let (saved, result) = send(&mut second, request).await;
+        assert!(saved.is_none(), "{result:?}");
+        assert_eq!(error_code(&result), ErrorCode::Conflict, "{result:?}");
+        assert_eq!(std::fs::read(&record_path).unwrap(), bytes);
+        assert_eq!(server.layout(), expected);
+        assert_eq!(server.capture(&pane), screen);
+    }
     first.child.kill().await.unwrap();
     first.child.wait().await.unwrap();
     std::fs::write(&cancel, b"cancel").unwrap();

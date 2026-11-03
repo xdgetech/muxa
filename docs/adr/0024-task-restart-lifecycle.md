@@ -90,6 +90,14 @@ Fault hooks belong only in the test harness at these named boundaries. Do not ad
 
 This changes the record writer API and restart/prompt/loop coordination before worker execution can be enabled. It deliberately exposes uncertainty instead of claiming a filesystem/tmux transaction or exactly-once delivery. Storage is durable before external effects, but arbitrary editors and manual tmux operations do not participate. Recovery UI/wire is implemented as independent W2/W3 scope; memory keeps its separate workspace journal and Task → workspace order.
 
+## Fresh observation after replacement
+
+Finalization stores `restartObservation` privately on the new run, in the same record update as its pending prompt: replacement PID/start identity, session/pane, operation id and the earlier adapter session/transcript. It is not a wire field or confirmation of the requested native role. Unknown or malformed observation metadata blocks automatic input.
+
+For these new runs, a retained tmux state/session tag is not readiness. The adapter must associate its reported session with a process currently inside the replacement pane, and the session/transcript must not reuse the source observation. The input sender reacquires the lifecycle claim, observes the adapter again and checks the exact process-start identity before persisting delivery. A later restart applies the same filter before force confirmation or carrying observations into history. An unconfirmed replacement requires explicit force before another restart.
+
+Claude’s session files include a PID checked against the current process tree. Codex currently matches rollout files by cwd and approximate process-start time; it supplies no process-bound evidence for this path. New managed Codex restarts and hook-only custom agents therefore wait without automatic continuation, then show the fixed prompt for manual Terminal input. Manual sessions and baseline-free legacy waits retain their existing behavior. Authenticated native selection and stronger Codex binding remain release gates.
+
 ## Local implementation evidence
 
 `task_records/restart.rs` stages through descriptor-relative `records/restart_files.rs`, validates source PID/start identity immediately before dispatch, and persists uncertainty before writing to tmux. `handoff` and loop senders persist delivering before typing; legacy Tasks with no run use an explicit absent run binding rather than invented run history. Action receipts commit in the same record replacement as their resolution. `ps -p PID -o lstart=` supplies the stable process-start identity; failures remain unconfirmed.

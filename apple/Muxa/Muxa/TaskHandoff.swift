@@ -18,7 +18,7 @@ struct RestartAgentButton: View {
         "The current agent process will be stopped. A new agent starts in the same pane and reads TASK.md and HANDOFF.md."
 
     var body: some View {
-        let running = item.agent?.state == .running
+        let needsForce = item.restartNeedsForce
         Button("Restart agent", systemImage: "arrow.clockwise") {
             workerChoice = "keep"
             if model.session.canUseWorkers { choosingWorker = true } else { asking = true }
@@ -37,12 +37,12 @@ struct RestartAgentButton: View {
                             }
                         }
                         .accessibilityIdentifier("restart-worker")
-                        Button(running ? "Stop and restart" : "Restart", role: running ? .destructive : nil) {
+                        Button(needsForce ? "Stop and restart" : "Restart", role: needsForce ? .destructive : nil) {
                             choosingWorker = false
-                            restart(force: running)
+                            restart(force: needsForce)
                         }
                         .disabled(workerIssue != nil)
-                        .accessibilityIdentifier(running ? "restart-force" : "restart-confirm")
+                        .accessibilityIdentifier(needsForce ? "restart-force" : "restart-confirm")
                         if let workerIssue { Text(workerIssue).foregroundStyle(Theme.failure) }
                     }
                     .navigationTitle("Restart the agent?")
@@ -50,7 +50,7 @@ struct RestartAgentButton: View {
                 }
             }
             .alert("Restart the agent?", isPresented: $asking) {
-                if running {
+                if needsForce {
                     Button("Stop and restart", role: .destructive) { restart(force: true) }
                         .accessibilityIdentifier("restart-force")
                 } else {

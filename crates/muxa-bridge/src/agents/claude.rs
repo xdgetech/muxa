@@ -50,6 +50,7 @@ impl AgentAdapter for ClaudeAdapter {
     fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
         let (dir, session) = find_session(&self.dirs, pane, procs).ok()??;
         Some(Found {
+            process_bound: true,
             status: session.agent().filter(|_| !pane.shell_foreground),
             session: Some(AgentSession {
                 id: session.session_id.clone(),

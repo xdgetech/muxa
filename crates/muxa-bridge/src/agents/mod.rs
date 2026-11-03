@@ -68,6 +68,9 @@ pub trait AgentAdapter: Send + Sync {
 /// An agent an adapter sees in a pane.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
+    /// The session file identifies a live process inside this pane. A cwd/time
+    /// match alone cannot prove which execution owns a transcript.
+    pub process_bound: bool,
     /// As the agent records it; None when it records none, or the pane is back at a shell.
     pub status: Option<Agent>,
     /// The agent's own session, when the adapter knows it (ADR 0018).
@@ -344,6 +347,7 @@ mod tests {
             }
             fn find(&self, pane: &PaneInfo, _: &Processes) -> Option<Found> {
                 (pane.pid == self.1 && !pane.shell_foreground).then_some(Found {
+                    process_bound: false,
                     status: None,
                     session: None,
                 })

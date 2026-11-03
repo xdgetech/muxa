@@ -35,6 +35,13 @@ extension InboxItem {
         }
     }
 
+    /// A replacement with no fresh state may still be working. Stopping it
+    /// requires the same explicit confirmation as an observed running agent.
+    public var restartNeedsForce: Bool {
+        agent?.state == .running
+            || (agent == nil && record.runs.max { $0.id < $1.id }?.reason == .restart)
+    }
+
     /// The bridge writes `.muxa/HANDOFF.md` only when it restarts the agent.
     public var hasHandoff: Bool { record.runs.contains { $0.reason == .restart } }
 }

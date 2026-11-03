@@ -414,30 +414,40 @@ pub fn reconcile(task_dir: &Path, manifest: &Manifest) -> Result<(), Error> {
     let anchors = Anchors::open(task_dir, manifest)?;
     verify(task_dir, manifest)?;
     for index in 0..2 {
-        anchors.check(task_dir, manifest)?;
-        let current = current_hash(&anchors, index)?;
-        if current.as_ref() == Some(&manifest.files[index].new) {
-            continue;
-        }
-        if current != manifest.files[index].old {
-            return Err(Error::Conflict(FILES[index]));
-        }
-        staged_bytes(&anchors, manifest, index)?;
-        anchors.check(task_dir, manifest)?;
-        // Descriptor-relative rename cannot follow a substituted final symlink.
-        rustix::fs::renameat(
-            &anchors.directory,
-            STAGES[index],
-            &anchors.managed,
-            FILES[index],
-        )
-        .map_err(io_error("publish", FILES[index]))?;
-        rustix::fs::fsync(&anchors.managed).map_err(io_error("sync", "managed directory"))?;
-        rustix::fs::fsync(&anchors.directory).map_err(io_error("sync", "operation directory"))?;
-        anchors.check(task_dir, manifest)?;
-        if current_hash(&anchors, index)?.as_ref() != Some(&manifest.files[index].new) {
-            return Err(Error::Conflict(FILES[index]));
-        }
+        publish_entry(&anchors, task_dir, manifest, index)?;
+    }
+    Ok(())
+}
+
+fn publish_entry(
+    anchors: &Anchors,
+    task_dir: &Path,
+    manifest: &Manifest,
+    index: usize,
+) -> Result<(), Error> {
+    anchors.check(task_dir, manifest)?;
+    let current = current_hash(anchors, index)?;
+    if current.as_ref() == Some(&manifest.files[index].new) {
+        return Ok(());
+    }
+    if current != manifest.files[index].old {
+        return Err(Error::Conflict(FILES[index]));
+    }
+    staged_bytes(anchors, manifest, index)?;
+    anchors.check(task_dir, manifest)?;
+    // Descriptor-relative rename cannot follow a substituted final symlink.
+    rustix::fs::renameat(
+        &anchors.directory,
+        STAGES[index],
+        &anchors.managed,
+        FILES[index],
+    )
+    .map_err(io_error("publish", FILES[index]))?;
+    rustix::fs::fsync(&anchors.managed).map_err(io_error("sync", "managed directory"))?;
+    rustix::fs::fsync(&anchors.directory).map_err(io_error("sync", "operation directory"))?;
+    anchors.check(task_dir, manifest)?;
+    if current_hash(anchors, index)?.as_ref() != Some(&manifest.files[index].new) {
+        return Err(Error::Conflict(FILES[index]));
     }
     Ok(())
 }
@@ -563,6 +573,193 @@ mod tests {
             fs::read(fixture.live("HANDOFF.md")).unwrap(),
             b"new handoff\n"
         );
+    }
+
+    /// Only this test entry reads the probe environment. The production bridge
+    /// has no fault hook; this child executes the real single-file publisher.
+    #[test]
+    fn publication_boundary_child() {
+        let Some(task_dir) = std::env::var_os("MUXA_PUBLICATION_PROBE_DIR") else {
+            return;
+        };
+        let task_dir = PathBuf::from(task_dir);
+        let id = std::env::var("MUXA_PUBLICATION_PROBE_TASK").unwrap();
+        let store = crate::records::Store::open(task_dir.join("state")).unwrap();
+        let record = store.get(&id).unwrap();
+        let _claim = store.claim(&id, record.rev).unwrap();
+        let op = record.restart_operation().unwrap().unwrap();
+        assert_eq!(op.phase, crate::records::lifecycle::Phase::Replaced);
+        let manifest = op.files.unwrap();
+        let anchors = Anchors::open(&task_dir, &manifest).unwrap();
+        verify(&task_dir, &manifest).unwrap();
+        if std::env::var("MUXA_PUBLICATION_PROBE_BOUNDARY").unwrap() == "after-task" {
+            publish_entry(&anchors, &task_dir, &manifest, 0).unwrap();
+        }
+        println!("publication-held");
+        std::io::stdout().flush().unwrap();
+        loop {
+            std::thread::park();
+        }
+    }
+
+    #[test]
+    fn killed_publication_owner_preserves_replaced_intent_and_reconciles_or_conflicts() {
+        use crate::records::lifecycle::{Operation, Phase, ProcessIdentity};
+        use crate::records::{NewRecord, Store, StoreError};
+        use std::io::{BufRead, BufReader};
+        use std::process::{Child, Command, Stdio};
+
+        struct Owner(Child);
+        impl Drop for Owner {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        // The process identity is synthetic: this exercises the production
+        // publisher and OS owner death, not a full bridge/native restart.
+        for (published, edited) in [(false, false), (true, false), (true, true)] {
+            let fixture = Fixture::new();
+            fixture.write_old();
+            let manifest = fixture.manifest();
+            let store = Store::open(fixture.0.join("state")).unwrap();
+            let record = store
+                .create(NewRecord {
+                    workspace: "fixture".into(),
+                    title: "publication probe".into(),
+                    dir: Some(fixture.0.clone()),
+                    ..Default::default()
+                })
+                .unwrap();
+            let op = Operation {
+                version: 1,
+                id: "op1".into(),
+                phase: Phase::Replaced,
+                source_run: None,
+                reserved_run: 1,
+                pane: 1,
+                source_pid: 10,
+                worker: None,
+                session: Some(1),
+                source_started: Some("fixture-old".into()),
+                replacement: Some(ProcessIdentity {
+                    pid: 20,
+                    started: "fixture-new".into(),
+                }),
+                files: Some(manifest.clone()),
+                since: 1,
+                seen: None,
+            };
+            let mut claim = store.claim(&record.id, record.rev).unwrap();
+            claim.write_operation(Some(op)).unwrap();
+            let record = claim.record().clone();
+            drop(claim);
+            let record_path = fixture.0.join("state").join(format!("{}.json", record.id));
+            let record_bytes = fs::read(&record_path).unwrap();
+            let mut owner = Owner(
+                Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "records::restart_files::tests::publication_boundary_child",
+                        "--nocapture",
+                    ])
+                    .env("MUXA_PUBLICATION_PROBE_DIR", &fixture.0)
+                    .env("MUXA_PUBLICATION_PROBE_TASK", &record.id)
+                    .env(
+                        "MUXA_PUBLICATION_PROBE_BOUNDARY",
+                        if published {
+                            "after-task"
+                        } else {
+                            "before-task"
+                        },
+                    )
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .unwrap(),
+            );
+            let mut reader = BufReader::new(owner.0.stdout.take().unwrap());
+            let mut line = String::new();
+            loop {
+                line.clear();
+                assert_ne!(
+                    reader.read_line(&mut line).unwrap(),
+                    0,
+                    "publisher exited before barrier"
+                );
+                if line.contains("publication-held") {
+                    break;
+                }
+            }
+            assert!(matches!(
+                store.claim(&record.id, record.rev),
+                Err(StoreError::Busy(_))
+            ));
+            assert_eq!(
+                fs::read(fixture.live("TASK.md")).unwrap(),
+                if published {
+                    b"new task notes\n"
+                } else {
+                    b"old task notes\n"
+                }
+            );
+            assert_eq!(
+                fs::read(fixture.live("HANDOFF.md")).unwrap(),
+                b"old handoff\n"
+            );
+            assert_eq!(fixture.staged("op1", "TASK.next").exists(), !published);
+            assert!(fixture.staged("op1", "HANDOFF.next").exists());
+            let task_inode = fs::metadata(fixture.live("TASK.md")).unwrap().ino();
+            owner.0.kill().unwrap();
+            assert!(!owner.0.wait().unwrap().success());
+            let recovered = Store::open(fixture.0.join("state")).unwrap();
+            let _claim = recovered.claim(&record.id, record.rev).unwrap();
+            assert_eq!(fs::read(&record_path).unwrap(), record_bytes);
+            assert_eq!(
+                recovered
+                    .get(&record.id)
+                    .unwrap()
+                    .restart_operation()
+                    .unwrap()
+                    .unwrap()
+                    .phase,
+                Phase::Replaced
+            );
+            if edited {
+                fs::write(fixture.live("HANDOFF.md"), b"edited after crash\n").unwrap();
+                assert!(matches!(
+                    reconcile(&fixture.0, &manifest),
+                    Err(Error::Conflict("HANDOFF.md"))
+                ));
+                assert_eq!(
+                    fs::read(fixture.live("HANDOFF.md")).unwrap(),
+                    b"edited after crash\n"
+                );
+            } else {
+                reconcile(&fixture.0, &manifest).unwrap();
+                let handoff_inode = fs::metadata(fixture.live("HANDOFF.md")).unwrap().ino();
+                reconcile(&fixture.0, &manifest).unwrap();
+                assert_eq!(
+                    fs::metadata(fixture.live("HANDOFF.md")).unwrap().ino(),
+                    handoff_inode
+                );
+                assert_eq!(
+                    fs::read(fixture.live("HANDOFF.md")).unwrap(),
+                    b"new handoff\n"
+                );
+            }
+            if published {
+                assert_eq!(
+                    fs::metadata(fixture.live("TASK.md")).unwrap().ino(),
+                    task_inode
+                );
+            }
+            assert_eq!(
+                fs::read(fixture.live("TASK.md")).unwrap(),
+                b"new task notes\n"
+            );
+            assert_eq!(fs::read(&record_path).unwrap(), record_bytes);
+        }
     }
 
     #[test]
