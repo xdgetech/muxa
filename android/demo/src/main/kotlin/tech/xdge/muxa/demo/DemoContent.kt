@@ -57,6 +57,9 @@ internal interface DemoContent {
     /** The host's workspaces, and its task records: one in each Inbox group. The iOS demo serves the same records. */
     val workspaces: List<WorkspaceInfo>
     fun tasks(now: Long): List<TaskRecord>
+
+    /** The host's Routines and stored Inbox entries (ADR 0026). */
+    fun work(now: Long): DemoWork
 }
 
 /** A record as the bridge writes one; [rev] 1 unless it was changed since. */
@@ -381,6 +384,8 @@ internal object TestContent : DemoContent {
             TaskStatus.OPEN, now - 7_200, dir = "/notes/tasks/sort-the-meeting-notes-t-notes1",
         ),
     )
+
+    override fun work(now: Long) = DemoWork.tests(now)
 
     /** A frame that shows whether the grid is exact: corners, a ruler and the last row. */
     override fun screen(p: Pane): ByteArray {

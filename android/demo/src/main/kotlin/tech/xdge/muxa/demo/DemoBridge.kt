@@ -21,6 +21,7 @@ import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.DocInfo
 import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.InboxChange
 import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.PROTOCOL_VERSION
 import tech.xdge.muxa.protocol.Pane
@@ -28,6 +29,7 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.TaskInbox
 import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
@@ -42,8 +44,16 @@ import java.util.UUID
  * does (ADR 0020). No SSH, no tmux. With [alerts], an agent elsewhere starts waiting a
  * few seconds in.
  */
-/** [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test. */
-class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskRecords: Boolean = true) : BridgeChannel {
+/**
+ * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
+ * [taskInbox] false plays one from before the shared Inbox order and Routines, for the local Snooze's test.
+ */
+class DemoBridge(
+    set: Content = Content.TESTS,
+    alerts: Boolean = false,
+    taskRecords: Boolean = true,
+    taskInbox: Boolean = true,
+) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
 
@@ -74,7 +84,12 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
     private var waitingOn: Pair<ChatPrompt, ChatEntry>? = null
 
     /** Grows when a task starts. */
-    private var sessions: List<Session> = content.sessions(now())
+    /** Routines and stored Inbox entries (ADR 0026). */
+    private val work = content.work(now())
+    private var sessions: List<Session> = content.sessions(now()) + work.sessions
+    private val capabilities = CAPABILITIES
+        .filter { taskRecords || it != "task-records" }
+        .filter { taskInbox || (it != "task-inbox" && it != WORK_1) }
     private val images = content.images(now())
 
     /** The host's task records; grows when a task is created. */
@@ -90,7 +105,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
                 agentWaits("$4")
             }
         }
-        emit(Message.Hello(PROTOCOL_VERSION, "demo", "demo", if (taskRecords) CAPABILITIES else CAPABILITIES - "task-records"))
+        emit(Message.Hello(PROTOCOL_VERSION, "demo", "demo", capabilities))
     }
 
     override suspend fun send(line: String) {
@@ -166,9 +181,107 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
             is Request.Unimage -> ok(req.id)
             is Request.CloseTask -> closeTask(req.id, req.session, req.mode)
             is Request.Keys -> keys(req)
+            is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
+            is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
+            // The demo has no `work:2`, so it refuses ask sessions as an older bridge does.
+            is Request.StartSession -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
             is Request.Bye -> out.close()
-            else -> ok(req.id)
         }
+    }
+
+    /** Routines and stored entries, refused as a bridge without `work:1` refuses them. */
+    private fun serveWork(req: Request) {
+        if (WORK_1 !in capabilities) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        val now = now()
+        when (req) {
+            is Request.ListRoutines -> {
+                emit(Message.RoutineList(req.id, synchronized(lock) { work.routines }))
+                ok(req.id)
+            }
+            is Request.ListInbox -> {
+                emit(Message.InboxList(req.id, synchronized(lock) { work.shownEntries(now) }))
+                ok(req.id)
+            }
+            is Request.RunRoutine -> runRoutine(req, now)
+            is Request.UpdateInbox -> updateEntry(req, now)
+            else -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        }
+    }
+
+    /** Starts a run with a session whose agent runs, as the daemon does. */
+    private fun runRoutine(req: Request.RunRoutine, now: Long) {
+        val saved = try {
+            synchronized(lock) {
+                val (routine, session) = work.run(req.workspace, req.routine, 20 + sessions.size, now)
+                sessions = sessions + session
+                routine
+            }
+        } catch (e: DemoWork.Refusal) {
+            return fail(req.id, e.code, e.message ?: "")
+        }
+        emit(Message.RoutineSaved(req.id, saved))
+        ok(req.id)
+        emit(Message.SessionsChanged)
+    }
+
+    /** Approve creates one Task, as `create-task` would, and nothing on a second approval; dismiss and later touch no Task. */
+    private fun updateEntry(req: Request.UpdateInbox, now: Long) {
+        val (saved, created) = try {
+            synchronized(lock) {
+                val update = work.update(req.entry, req.action, req.until, now)
+                val entry = update.entry
+                val goal = update.goal
+                if (goal == null || entry.task != null) {
+                    entry to false
+                } else {
+                    val project = work.routines.firstOrNull { it.workspace == entry.workspace && it.name == entry.routine }?.project
+                    val record = approvedTask(entry.workspace, entry.title, goal, project, now)
+                    work.approved(entry.id, record.id) to true
+                }
+            }
+        } catch (e: DemoWork.Refusal) {
+            return fail(req.id, e.code, e.message ?: "")
+        }
+        emit(Message.InboxSaved(req.id, saved))
+        ok(req.id)
+        if (created) emit(Message.SessionsChanged)
+    }
+
+    /** The Task an approval creates, with a running agent in its own session. The caller holds the lock. */
+    private fun approvedTask(workspace: String, title: String, goal: String, project: String?, now: Long): TaskRecord {
+        val id = "t-new%03d".format(++createdCount)
+        val name = slug(title)
+        val dir = "/$workspace/tasks/$name-$id"
+        val record = TaskRecord(
+            id, rev = 1, workspace = workspace, title = title, goal = goal, status = TaskStatus.OPEN,
+            createdAt = now, updatedAt = now, project = project, dir = dir, session = name,
+        )
+        tasks = tasks + record
+        val n = 20 + sessions.size
+        val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", dir, false, false, Agent(AgentState.RUNNING, now))
+        followers += pane.id
+        sessions = sessions + Session("$$n", name, taskId = id, panes = listOf(pane))
+        return record
+    }
+
+    /** Move down and Later as the host stores them (ADR 0027 §4): `order` is the clock in ms. */
+    private fun place(req: Request.UpdateTask, change: InboxChange) {
+        if ("task-inbox" !in capabilities) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        val nowMillis = System.currentTimeMillis()
+        val now = nowMillis / 1_000
+        val until = change.until
+        if (until != null && (until <= now || until > now + 366L * 86_400)) {
+            return fail(req.id, ErrorCode.BAD_REQUEST, "until must be in the future and at most 366 days ahead")
+        }
+        val saved = synchronized(lock) {
+            val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
+            if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
+            val saved = current.copy(rev = current.rev + 1, inbox = TaskInbox(if (change.down) nowMillis else null, until, now))
+            tasks = tasks.map { if (it.id == saved.id) saved else it }
+            saved
+        }
+        emit(Message.TaskSaved(req.id, saved))
+        ok(req.id)
     }
 
     override suspend fun close() {
@@ -394,8 +507,8 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
 
     /** Sets a status, refusing a stale [Request.UpdateTask.rev] as the bridge does. */
     private fun updateTask(req: Request.UpdateTask) {
-        // The demo does not advertise `task-inbox`.
-        val status = req.status ?: return fail(req.id, ErrorCode.UNSUPPORTED, "the demo keeps no Inbox order")
+        req.inbox?.let { return place(req, it) }
+        val status = req.status ?: return fail(req.id, ErrorCode.BAD_REQUEST, "update-task needs a status or an Inbox place")
         val saved = synchronized(lock) {
             val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
             if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
@@ -594,8 +707,14 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
         private val CAPABILITIES =
             listOf(
                 "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-                "task-loop", "tasks-changed", "viewport",
+                "task-loop", "tasks-changed", "viewport", "task-inbox", WORK_1,
             )
+
+        /** Routines and stored Inbox entries (ADR 0026). */
+        private const val WORK_1 = "work:1"
+
+        /** What a bridge says to a request it does not know. */
+        const val NO_REQUEST = "The demo bridge does not support this request."
         private const val UPDATE_DELAY_MILLIS = 2_000L
 
         private fun now() = System.currentTimeMillis() / 1_000
