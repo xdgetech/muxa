@@ -72,6 +72,7 @@ sequenceDiagram
 | `run-routine` | `id`, `workspace`, `routine` | start a run of an enabled Routine now; needs the muxa daemon; a `routine-saved` comes before the `result` |
 | `list-inbox` | `id` | list the stored Inbox entries (capability `work` level 1); an `inbox-list` comes before the `result` |
 | `update-inbox` | `id`, `entry`, `action`, optional `until` | approve, dismiss or defer a stored entry; an `inbox-saved` comes before the `result` |
+| `start-session` | `id`, `workspace`, `repo` | start an ask session: the workspace's agent in the repo's main checkout, with no Task (capability `work` level 2, Ask sessions below); a `session-started` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -98,13 +99,14 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `image-content` | `image`, `path`, `data` (base64), optional `mtime` |
 | `image-ended` | `image`, `reason` |
 | `task-created` | `task`, `session` |
-| `task-list` | `tasks`, `workspaces[] {name, checks?, repos?}`, `entries[]` (task records), optional `truncated`, `workers[]` (Workers below) |
+| `task-list` | `tasks`, `workspaces[] {name, root?, checks?, repos?}`, `entries[]` (task records), optional `truncated`, `workers[]` (Workers below) |
 | `task-saved` | `task`, `record` (a task record) |
 | `tasks-changed` | none. Send `list-tasks` again (capability `tasks-changed`) |
 | `routine-list` | `routines`, `entries[]` (Routines below) |
 | `routine-saved` | `routine`, `entry` (a Routine) |
 | `inbox-list` | `inbox`, `entries[]` (stored Inbox entries, newest first) |
 | `inbox-saved` | `inbox`, `entry` (a stored Inbox entry) |
+| `session-started` | `start`, `session`, `name` |
 | `bye` | `reason` |
 
 Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `conflict`, `tmux`, `internal`.
@@ -194,7 +196,7 @@ A bridge with the `tasks` capability starts tasks: a git worktree on a branch, a
 
 A bridge with the `task-records` capability keeps Tasks: durable records of work, stored on the host (ADR 0015). `new-task` and `close-task` above start and close a session for work. A task record is the Task itself: it has a goal and a status, and it outlives its session.
 
-1. `list-tasks` sends `task-list`, then `result`. `tasks` in the list is the request id. `workspaces` are the host's workspaces, from its config; clients cannot change them. A workspace's optional `checks` is what a Task Loop may run there: `"any"`, or a list of exact commands. Absent means no loops in that workspace. `repos` are the main checkouts the config lists for the workspace, absolute; absent when it lists none. A client uses them to pick the workspace for a new task in a repo. `entries` are the records; `truncated` says the bridge left some out.
+1. `list-tasks` sends `task-list`, then `result`. `tasks` in the list is the request id. `workspaces` are the host's workspaces, from its config; clients cannot change them. A workspace's optional `checks` is what a Task Loop may run there: `"any"`, or a list of exact commands. Absent means no loops in that workspace. `root` is the workspace's folder, absolute; older bridges omit it. `repos` are the workspace's main checkouts, absolute and sorted: the git repos one or two levels under `root` (ADR 0031) and those the config lists; absent when there are none. A client uses them to pick the workspace for a new task in a repo, and may show a repo under `root` by its relative path. `entries` are the records; `truncated` says the bridge left some out.
 2. A task record has:
    - `id`, for example `t-7f3a2c`;
    - `rev`, an integer from 1, one higher after every write;
@@ -207,7 +209,9 @@ A bridge with the `task-records` capability keeps Tasks: durable records of work
    - optional `pendingPrompt {kind, since, run}`: a prompt the host still waits to type into the agent. `kind` is `start` or `restart`, `since` is when the wait began (epoch seconds), and `run` is the `id` of the run it is for. It is cleared when the prompt is typed or given up;
    - optional `inbox {order?, until?, since}`, with the `task-inbox` capability: the Task's place in the Inbox queue. See Inbox queue below.
 3. `create-task {workspace, title, goal, project?, repo?, branch?, base?, loop?}` records a Task and starts an agent for it. `workspace` is a name from `task-list`. `loop` also starts a Task Loop; see Task Loop below.
-   - With `repo`, `branch` is required. The session starts as with `new-task`, and `base` means the same.
+   - `repo` is an absolute path inside a repo. With `work` level 2 it may also be relative to the workspace's `root`, for example `fairpull/fairpull-plan`. It must stay inside `root` after symlinks are resolved, unless it reaches a repo the config lists; a plain name may also name a listed repo by its folder name.
+   - With `repo`, `branch` is required, except with `work` level 2: then the bridge names a new branch after the title, a lowercase ASCII slug of at most 40 characters, with `-2`, `-3`... when that branch or its worktree exists. The session starts as with `new-task`, and `base` means the same.
+   - A repo that a workspace lists, or that is under its `root`, takes Tasks only from that workspace; from another one the request is `bad-request`.
    - Without `repo`, the task gets a directory in its workspace, `<root>/tasks/<slug>-<id>`, and a new session of the same name.
    - When the branch's session already runs another task that is `open` or `review`, the request is `bad-request`.
    - The bridge hands the goal to the agent. The session carries the record's id as `taskId`.
@@ -329,7 +333,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[]}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -375,6 +379,16 @@ The run's agent writes its output to `.muxa/routine/output.json` in the run's di
 - The whole file is at most 256 KiB, a regular file, not a symlink. Unknown fields are refused, so a typo is not lost silently.
 
 The check's reasons are in `.muxa/checks/<attempt>.log`. Logs on the host carry ids, sizes and outcomes, never titles, bodies, links or state.
+
+## Ask sessions
+
+A bridge with `work` level 2 starts ask sessions: the workspace's agent in a repo's main checkout, to ask about its code (ADR 0031). There is no Task, no worktree and no record.
+
+1. `start-session {workspace, repo}`. `repo` is as in `create-task`: absolute, or relative to the workspace's `root`.
+2. The bridge starts a detached session `ask-<repo>-<n>` in the repo's main checkout, on whatever branch it has, with the workspace's agent command and environment. It sends `session-started {start, session, name}`, then `result`. `start` is the request id, `session` the session's id (`$n`), `name` its name.
+3. The session has no `taskId`, so it lists as a manual session. Close it as any session. No attached client moves, and no existing window or pane changes.
+4. An unknown workspace, a repo outside the root, or a repo of another workspace is `bad-request`. A failed start is `task-failed` or `tmux`.
+5. The agent can change files in the main checkout. Nothing enforces read-only.
 
 ## Rendering a pane
 

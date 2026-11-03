@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Proposed. ADR 0031 adds the repos under the root and relative repo names.
 
 ## Context
 
