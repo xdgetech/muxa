@@ -21,9 +21,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,18 +44,17 @@ import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.session.PaneSession
-import tech.xdge.muxa.session.SessionFilter
 import tech.xdge.muxa.session.TaskDraft
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
 import tech.xdge.muxa.session.knownRepos
 
-/** Ctrl+Shift+K: the sessions the filter shows, with their agents' states. Enter opens the first match. */
+/** Ctrl+Shift+K: every session, Task sessions too, with its agent's state. Enter opens the first match. */
 @Composable
 fun SessionSwitcher(model: AppModel, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
-    val matches = model.visibleSessions.filter {
+    val matches = model.paneSessions.filter {
         query.isEmpty() || listOfNotNull(it.name, it.repo, it.branch, model.state.tasks?.records?.firstOrNull { r -> r.id == it.taskId }?.title).any { f -> f.contains(query, ignoreCase = true) }
     }.groupedByRepo()
     fun open(s: Session) {
@@ -82,7 +78,6 @@ fun SessionSwitcher(model: AppModel, onDismiss: () -> Unit) {
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go, autoCorrectEnabled = false),
                     keyboardActions = KeyboardActions(onGo = { matches.firstOrNull()?.sessions?.firstOrNull()?.let(::open) }),
                 )
-                SessionFilterPicker(model, Modifier.padding(top = 8.dp))
                 LazyColumn(Modifier.heightIn(max = 420.dp).padding(top = 8.dp)) {
                     for (group in matches) {
                         item(key = "h-${group.repo}") {
@@ -98,22 +93,6 @@ fun SessionSwitcher(model: AppModel, onDismiss: () -> Unit) {
         },
         dismissButton = { TextButton(onDismiss) { Text("Close") } },
     )
-}
-
-/** Manual sessions, or every session with the Tasks' own (ADR 0025). */
-@Composable
-fun SessionFilterPicker(model: AppModel, modifier: Modifier = Modifier) {
-    val choices = listOf(SessionFilter.MANUAL to "Manual", SessionFilter.ALL to "All Sessions")
-    SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth().testTag("session-filter")) {
-        choices.forEachIndexed { i, (filter, title) ->
-            SegmentedButton(
-                model.sessionFilter == filter, { model.sessionFilter = filter },
-                SegmentedButtonDefaults.itemShape(i, choices.size),
-                Modifier.testTag("session-filter-${filter.name.lowercase()}"),
-                icon = {},
-            ) { Text(title) }
-        }
-    }
 }
 
 @Composable

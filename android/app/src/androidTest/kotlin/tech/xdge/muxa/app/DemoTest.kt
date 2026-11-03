@@ -32,7 +32,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matcher
 import org.junit.After
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -121,23 +120,24 @@ class DemoTest {
         waitForPane("pane %3 132x43")
     }
 
-    /** Sessions lists manual sessions; All Sessions adds the Tasks' sessions and numbers them too. */
+    /** The switcher lists every session, the Tasks' too. The session shortcuts follow the manual list. */
     @Test
-    fun sessionsListsManualSessionsUnlessAllIsChosen() {
+    fun theSwitcherListsTaskSessionsAndShortcutsSkipThem() {
         launch()
         waitForTag("composer")
         shortcut(KeyEvent.KEYCODE_K)
         waitForTag("switcher-search")
-        compose.onNodeWithTag("switch-scratch").assertExists()
-        assertTrue(compose.onAllNodes(hasTestTag("switch-feature-auth")).fetchSemanticsNodes().isEmpty())
-        compose.onNodeWithTag("session-filter-all").performClick()
-        waitForTag("switch-feature-auth")
+        compose.onNodeWithTag("switch-feature-auth").assertExists()
+        // A Task's title finds its session.
+        compose.onNodeWithTag("switcher-search").performTextInput("passkeys")
+        compose.waitUntilDoesNotExist(hasTestTag("switch-fix-login"), TIMEOUT)
+        compose.onNodeWithTag("switch-feature-auth").assertExists()
         compose.onNodeWithText("Close").performClick()
         compose.waitUntilDoesNotExist(hasTestTag("switcher-search"), TIMEOUT)
 
-        // Ctrl+Shift+2 is a Task's session now, in the bar's title.
+        // Ctrl+Shift+2: the second manual session, "tall", not a Task's.
         shortcut(KeyEvent.KEYCODE_2)
-        compose.waitUntilAtLeastOneExists(hasText("fix-login", substring = false), TIMEOUT)
+        waitForPane("pane %4 100x60")
     }
 
     /** A hardware Enter starts a new line in the composer; Ctrl+Enter sends. */
@@ -317,17 +317,15 @@ class DemoTest {
         compose.onNodeWithTag("reader-list").assertExists()
     }
 
-    /** Documents is in the bar on every layout. On the stack, More has no Sessions: the list is one Back away. */
+    /** Documents is in the bar on every layout. More has Sessions on every layout: the list holds manual sessions only. */
     @Test
-    fun documentsIsInTheBarAndTheStackLeavesSessionsOutOfMore() {
+    fun documentsIsInTheBarAndMoreHasSessions() {
         launch()
         waitForTag("composer")
         waitForTag("documents")
         compose.onNodeWithTag("more").performClick()
         compose.waitUntilAtLeastOneExists(hasText("Close Task…"), TIMEOUT)
-        val stack = compose.onAllNodes(hasTestTag("back")).fetchSemanticsNodes().isNotEmpty()
-        val sessions = compose.onAllNodes(hasText("Sessions…")).fetchSemanticsNodes().isNotEmpty()
-        assertEquals(!stack, sessions)
+        compose.onNodeWithTag("menu-sessions").assertExists()
     }
 
     /** With a hardware keyboard, Space pages through the plan that Read Plan opened. */

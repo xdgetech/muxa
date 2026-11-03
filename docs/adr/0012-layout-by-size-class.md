@@ -19,7 +19,7 @@ Accepted. Extends ADR 0004 (fit modes).
   - the pane is pushed over the sidebar when the user connects or opens a session (`preferredCompactColumn`);
   - the bar keeps Back, the title and More. iOS folds bar items that do not fit into a menu of its own, so the title is at most 200 pt wide and shortens in the middle;
   - the Chat / Agent / Shell picker gets a row under the bar, as on Android. Documents is used often, so it is never in a menu: it sits at the end of that row. Android's bar does not fold, so Documents stays in it there;
-  - More leaves out Sessions, because the session list is one Back away;
+  - More leaves out Sessions, because the session list is one Back away. ADR 0027 brings it back: that list now holds manual sessions only;
   - the Reader opens on its list, so the user picks what to read. Read Plan, on the agent's plan, opens the plan itself. A document's list is one Back away, and both have Done.
 - **A fold changes nothing but the layout.** The connection, the pane, its screen and the fit stay. SwiftUI moves the pane view to the new layout; it does not rebuild it. UIKit resigns the key input view during that move, so the view takes the keyboard back when its superviews changed and it is still in a window. A resign that leaves it in place, such as hiding the keyboard, stays.
 - **The fold is tested with a DEBUG hook.** Neither XCTest nor `simctl` folds a simulator. With `-demo -foldable`, a strip on the left edge switches the app between the Duo's outer screen size with compact size classes and the full screen (`FoldTests`, on the iPad mini).

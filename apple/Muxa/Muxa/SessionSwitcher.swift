@@ -2,7 +2,7 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// Cmd+K: the sessions the filter shows, with their agents' states. Return opens the first match.
+/// Cmd+K: every session, Task sessions too, with its agent's state. Return opens the first match.
 struct SessionSwitcher: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -11,7 +11,6 @@ struct SessionSwitcher: View {
     var body: some View {
         NavigationStack {
             List {
-                Section { SessionFilterPicker() }
                 ForEach(matches.groupedByRepo(), id: \.repo) { group in
                     Section {
                         ForEach(group.sessions) { s in
@@ -48,7 +47,7 @@ struct SessionSwitcher: View {
     }
 
     private var matches: [Session] {
-        let all = model.visibleSessions
+        let all = model.paneSessions
         guard !query.isEmpty else { return all }
         return all.filter { session in
             session.name.localizedCaseInsensitiveContains(query)
@@ -61,21 +60,6 @@ struct SessionSwitcher: View {
     private func open(_ s: Session) {
         dismiss()
         Task { await model.open(s) }
-    }
-}
-
-/// Manual sessions, or every session with the Tasks' own (ADR 0025).
-struct SessionFilterPicker: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        @Bindable var model = model
-        Picker("Show", selection: $model.sessionFilter) {
-            Text("Manual").tag(SessionFilter.manual)
-            Text("All Sessions").tag(SessionFilter.all)
-        }
-        .pickerStyle(.segmented)
-        .accessibilityIdentifier("session-filter")
     }
 }
 

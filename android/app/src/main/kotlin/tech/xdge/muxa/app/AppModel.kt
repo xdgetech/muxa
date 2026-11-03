@@ -29,7 +29,6 @@ import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneFit
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.RepoGroup
-import tech.xdge.muxa.session.SessionFilter
 import tech.xdge.muxa.session.TaskDraft
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.alerts
@@ -44,7 +43,7 @@ import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.runningTask
 import tech.xdge.muxa.session.knownRepos
 import tech.xdge.muxa.session.resuming
-import tech.xdge.muxa.session.shown
+import tech.xdge.muxa.session.manual
 import tech.xdge.muxa.transport.BridgeChannel
 import tech.xdge.muxa.transport.HostKey
 import tech.xdge.muxa.transport.KeySetup
@@ -108,9 +107,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     var connectFix by mutableStateOf<ConnectFix?>(null)
         private set
     var showSwitcher by mutableStateOf(false)
-
-    /** The Sessions list shows manual sessions unless the user asks for all (ADR 0025). */
-    var sessionFilter by mutableStateOf(SessionFilter.MANUAL)
 
     /** Bumped when a dialog closes, so the pane takes the keyboard back. */
     var focusRequest by mutableIntStateOf(0)
@@ -503,21 +499,21 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     // Panes
 
     /**
-     * Sessions with a pane to show, grouped by repo like the desktop's session list.
-     * The filter only shapes the list: resuming, Open Terminal and alerts reach any session.
+     * Manual sessions with a pane to show, grouped by repo like the desktop's session list.
+     * Task sessions open from Inbox and Tasks; resuming, the switcher and alerts reach any session.
      */
-    val sessionGroups: List<RepoGroup> get() = paneSessions.shown(sessionFilter).groupedByRepo()
+    val sessionGroups: List<RepoGroup> get() = paneSessions.manual.groupedByRepo()
 
     /** The sessions in the order shown, which the session shortcuts follow. */
     val visibleSessions: List<Session> get() = sessionGroups.flatMap { it.sessions }
 
-    /** Every session with a pane, in tmux's order, whatever the filter. */
-    private val paneSessions: List<Session> get() = state.sessions.filter { it.defaultPane != null }
+    /** Every session with a pane, Task sessions too, in tmux's order. The switcher searches these. */
+    val paneSessions: List<Session> get() = state.sessions.filter { it.defaultPane != null }
 
-    /** The filter hides every session there is. */
-    val sessionsAllFiltered: Boolean get() = visibleSessions.isEmpty() && paneSessions.isNotEmpty()
+    /** Every session runs a Task, so the Sessions list is empty. */
+    val noManualSessions: Boolean get() = visibleSessions.isEmpty() && paneSessions.isNotEmpty()
 
-    /** The first session in repo order, whatever the filter: the pane-first fallback. */
+    /** The first session in repo order, Task sessions too: the pane-first fallback. */
     private val firstSession: Session? get() = paneSessions.groupedByRepo().firstOrNull()?.sessions?.firstOrNull()
 
     val currentSession: Session?

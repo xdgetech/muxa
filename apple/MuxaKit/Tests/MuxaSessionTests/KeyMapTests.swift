@@ -99,7 +99,7 @@ struct RepoGroupTests {
     }
 }
 
-struct SessionFilterTests {
+struct ManualSessionsTests {
     func session(_ name: String, taskId: String?, command: String, agent: AgentState?) -> Session {
         Session(id: "$\(name)", name: name, taskId: taskId, panes: [
             Pane(id: "%\(name)", window: "@1", index: 0, role: agent == nil ? .shell : .agent, cols: 80, rows: 24,
@@ -108,15 +108,14 @@ struct SessionFilterTests {
         ])
     }
 
-    @Test func manualShowsOnlySessionsWithoutATaskAndAllShowsEvery() {
+    @Test func manualKeepsOnlySessionsWithoutATaskInOrder() {
         let sessions = [
             session("task", taskId: "t-1", command: "claude", agent: .waiting),
             session("mine", taskId: nil, command: "zsh", agent: nil),
             session("other", taskId: "t-2", command: "zsh", agent: nil),
             session("blank", taskId: "", command: "vim", agent: nil),
         ]
-        #expect(sessions.shown(by: .manual).map(\.name) == ["mine", "blank"])
-        #expect(sessions.shown(by: .all).map(\.name) == ["task", "mine", "other", "blank"])
+        #expect(sessions.manual.map(\.name) == ["mine", "blank"])
     }
 
     /// An agent started by hand stays manual; a person at a Task's shell keeps the Task.

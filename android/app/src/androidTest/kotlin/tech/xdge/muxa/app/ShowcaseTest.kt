@@ -53,19 +53,17 @@ class ShowcaseTest {
         waitForTag("pane")
         snap("2-agent")
 
-        // A phone's session switcher is its list; a tablet has the keyboard's.
+        // The switcher lists every agent, the Tasks' too. A phone opens it from More; a tablet has the keyboard's.
         if (exists("back")) {
-            click("back")
-            waitForTag("host-Mac mini")
-            // Every agent, the Tasks' too.
-            click("session-filter-all")
+            click("more")
+            click("menu-sessions")
+            waitForTag("switch-stripe-webhooks")
             snap("3-switcher")
-            click("session-stripe-webhooks")
+            click("switch-stripe-webhooks")
             waitForTag("view-Agent")
         } else {
             shortcut(KeyEvent.KEYCODE_K)
             waitForTag("switcher-search")
-            click("session-filter-all")
             snap("3-switcher")
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_ESCAPE)
             compose.waitUntilDoesNotExist(hasTestTag("switcher-search"), TIMEOUT)

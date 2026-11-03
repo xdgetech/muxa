@@ -57,9 +57,9 @@ final class PhoneTests: XCTestCase {
     }
 
     /// Documents is on the screen, not in More. More is in the bar itself, not folded into a
-    /// menu of iOS's, and has no Sessions: the list is one Back away.
+    /// menu of iOS's, and has Sessions: the list holds manual sessions only (ADR 0027).
     @MainActor
-    func testDocumentsIsOnTheScreenAndMoreLeavesOutSessions() throws {
+    func testDocumentsIsOnTheScreenAndMoreHasSessions() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
@@ -71,7 +71,7 @@ final class PhoneTests: XCTestCase {
         XCTAssertTrue(app.navigationBars.buttons["More"].isHittable)
         tapWhenReady(app.buttons["More"])
         XCTAssertTrue(app.buttons["Close Task…"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["Sessions…"].exists)
+        XCTAssertTrue(app.buttons["Sessions…"].exists)
         // The one on the screen, none in the menu.
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Documents'")).count, 1)
     }

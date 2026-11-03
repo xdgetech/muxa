@@ -95,7 +95,7 @@ fun PaneScreen(model: AppModel, onShowList: () -> Unit) = BoxWithConstraints {
                         Icon(Icons.document, if (model.changeCount > 0) "Documents, ${model.changeCount} changed files" else "Documents")
                     }
                 }
-                MoreMenu(model, stack)
+                MoreMenu(model)
             },
             colors = if (dark) {
                 TopAppBarDefaults.topAppBarColors(
@@ -165,7 +165,7 @@ private fun ViewPicker(model: AppModel, dark: Boolean = false) {
 }
 
 @Composable
-private fun MoreMenu(model: AppModel, stack: Boolean) {
+private fun MoreMenu(model: AppModel) {
     var open by remember { mutableStateOf(false) }
     IconButton({ open = true }, Modifier.testTag("more")) { Icon(Icons.more, "More") }
     DropdownMenu(open, { open = false }) {
@@ -183,10 +183,11 @@ private fun MoreMenu(model: AppModel, stack: Boolean) {
             )
         }
         HorizontalDivider()
-        // On the stack, the session list is one Back away.
-        if (!stack) {
-            DropdownMenuItem({ Text("Sessions…") }, { pick { model.showSwitcher = true } }, leadingIcon = { Icon(Icons.session, null) })
-        }
+        // Also on the stack: its list holds manual sessions only (ADR 0027).
+        DropdownMenuItem(
+            { Text("Sessions…") }, { pick { model.showSwitcher = true } },
+            leadingIcon = { Icon(Icons.session, null) }, modifier = Modifier.testTag("menu-sessions"),
+        )
         val context = LocalContext.current
         DropdownMenuItem(
             { Text("Open in New Window") }, { pick { context.openInNewWindow(model) } },

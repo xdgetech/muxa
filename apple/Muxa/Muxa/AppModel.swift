@@ -23,8 +23,6 @@ final class AppModel {
     /// What the user can do about `connectError`, when the app knows.
     private(set) var connectFix: ConnectFix?
     var showSwitcher = false
-    /// The Sessions list shows manual sessions unless the user asks for all (ADR 0025).
-    var sessionFilter: SessionFilter = .manual
     /// Bumped when a sheet closes, so the pane takes the keyboard back.
     private(set) var focusRequest = 0
     /// Bumped when the user asks for the detail: a connection or a session. On a
@@ -307,10 +305,10 @@ final class AppModel {
 
     // MARK: Panes
 
-    /// Sessions with a pane to show, grouped by repo like the desktop's session list.
-    /// The filter only shapes the list: resuming, Open Terminal and alerts reach any session.
+    /// Manual sessions with a pane to show, grouped by repo like the desktop's session list.
+    /// Task sessions open from Inbox and Tasks; resuming, the switcher and alerts reach any session.
     var sessionGroups: [RepoGroup] {
-        paneSessions.shown(by: sessionFilter).groupedByRepo()
+        paneSessions.manual.groupedByRepo()
     }
 
     /// The sessions in the order shown, which Cmd+1…9 and Cmd+Shift+[ ] follow.
@@ -318,15 +316,15 @@ final class AppModel {
         sessionGroups.flatMap(\.sessions)
     }
 
-    /// Every session with a pane, in tmux's order, whatever the filter.
-    private var paneSessions: [Session] {
+    /// Every session with a pane, Task sessions too, in tmux's order. The switcher searches these.
+    var paneSessions: [Session] {
         session.sessions.filter { $0.defaultPane != nil }
     }
 
-    /// The filter hides every session there is.
-    var sessionsAllFiltered: Bool { visibleSessions.isEmpty && !paneSessions.isEmpty }
+    /// Every session runs a Task, so the Sessions list is empty.
+    var noManualSessions: Bool { visibleSessions.isEmpty && !paneSessions.isEmpty }
 
-    /// The first session in repo order, whatever the filter: the pane-first fallback.
+    /// The first session in repo order, Task sessions too: the pane-first fallback.
     private var firstSession: Session? { paneSessions.groupedByRepo().first?.sessions.first }
 
     var currentSession: Session? {

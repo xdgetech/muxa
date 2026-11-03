@@ -28,7 +28,9 @@ Changes the release gate in ADR 0024 and `docs/workers.md`. The implemented case
 
 ### 4. Inbox order is two optional fields on the Task record
 
-Replaces ADR 0025's Q0 and Q2 for Tasks. Move down and Later are optional fields on the Task record (`inbox: {order, until}`), written through `update-task`. The entry id is the Task id. They replace the device-only Snooze of ADR 0023. The only stored Inbox entry is the Routine output (ADR 0026). The Sessions filter of ADR 0025 Q1 stays, as a UI change.
+Replaces ADR 0025's Q0 and Q2 for Tasks. Move down and Later are optional fields on the Task record (`inbox: {order, until}`), written through `update-task`. The entry id is the Task id. They replace the device-only Snooze of ADR 0023. The only stored Inbox entry is the Routine output (ADR 0026). The manual Sessions list of ADR 0025 Q1 stays, as a UI change.
+
+- No All Sessions filter. Sessions lists manual sessions only. Task sessions open from Inbox, All Tasks and a Task's Open Terminal. The switcher searches every session. On a phone, More has Sessions again, because the list no longer holds every session (changes ADR 0012).
 
 ### 5. Smaller surfaces
 

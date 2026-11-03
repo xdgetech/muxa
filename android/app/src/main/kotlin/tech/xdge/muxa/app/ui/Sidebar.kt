@@ -95,12 +95,11 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                 }
             }
             if (model.isConnected) {
-                item(key = "sessions-header") { SectionHeader("Sessions") }
-                item(key = "sessions-filter") { SessionFilterPicker(model, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
-                if (model.sessionsAllFiltered) {
+                if (model.noManualSessions) {
+                    item(key = "sessions-header") { SectionHeader("Sessions") }
                     item(key = "sessions-empty") {
                         Text(
-                            "No manual sessions. Tasks have theirs under All Sessions.",
+                            "No manual sessions. Open a Task's session from Inbox or Tasks.",
                             Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -36,9 +36,9 @@ A Routine run's execution belongs to the Routine's run history. It is not duplic
 
 - Inbox: ordered items needing the user's attention, with Act, Done, Move down and Later as appropriate.
 - Tasks / All Tasks: managed work, including running work, goals, progress, worker selection and history. A Task needing input or review also has an Inbox reference; it remains the same Task.
-- Manual sessions: direct tmux browsing and interaction, defaulting to sessions unassociated with a Task/Routine. The label may be Sessions, Manual or Terminal; final naming/layout is not frozen. An All Sessions filter exposes managed sessions too. Task/Routine detail keeps Open Terminal.
+- Sessions: direct tmux browsing and interaction. It lists manual sessions only: sessions with no Task association. It has no All Sessions filter (ADR 0027). Task sessions open from Inbox, All Tasks and a Task's Open Terminal. The session switcher (Cmd+K, Ctrl+Shift+K) searches every session, Task sessions and Task titles too.
 
-These are navigation destinations, not mutually exclusive copies of domain objects. The manual-session filter is why earlier UI notes describe “Sessions = manual work”; the underlying Session concept includes managed execution as well. Actor changes (human versus AI typing) never change classification.
+These are navigation destinations, not mutually exclusive copies of domain objects. Sessions shows manual sessions only, which is why UI notes describe “Sessions = manual work”; the underlying Session concept includes managed execution as well. Only the Task association classifies a session. Actor changes (human versus AI typing) never change classification.
 
 ## Milestone implications
 

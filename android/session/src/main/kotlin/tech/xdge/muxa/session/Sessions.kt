@@ -64,23 +64,14 @@ fun List<Session>.groupedByRepo(): List<RepoGroup> {
     return groups.map { RepoGroup(it.key, it.value) } + if (untagged.isEmpty()) emptyList() else listOf(RepoGroup(null, untagged))
 }
 
-/** Which sessions the Sessions list shows (ADR 0025). */
-enum class SessionFilter {
-    /** Sessions that run no Task: the user's own tmux work. The default. */
-    MANUAL,
-
-    /** Every session, Task sessions too, for inspection. */
-    ALL,
-}
-
 /** The host associates this session with a Task record. Only `taskId` decides: what runs or types in its panes never does. */
 val Session.runsTask: Boolean get() = !taskId.isNullOrEmpty()
 
-/** The sessions [filter] shows, in the same order. */
-fun List<Session>.shown(filter: SessionFilter): List<Session> = when (filter) {
-    SessionFilter.MANUAL -> filterNot { it.runsTask }
-    SessionFilter.ALL -> this
-}
+/**
+ * The sessions that run no Task, in the same order. The Sessions list shows only these
+ * (ADR 0027); Task sessions open from Inbox and Tasks.
+ */
+val List<Session>.manual: List<Session> get() = filterNot { it.runsTask }
 
 /** A repo the host already has sessions for. [dir] is the main checkout, absolute. */
 data class KnownRepo(val name: String, val dir: String)

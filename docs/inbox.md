@@ -57,7 +57,7 @@ The shared queue code in `muxa-cli`, MuxaKit and the Android `:session` module f
 
 ### Separate destinations
 
-The proposed UI has three logical destinations: Inbox for actionable ToDos/briefings/proposals, All Tasks for running work and history, and Sessions for manual tmux work. All Tasks may be a link inside Inbox rather than a top-level tab; exact navigation placement remains a UI decision. Sessions defaults to explicitly unassociated sessions, with an All Sessions filter for inspection. Open Terminal on a Task returns to that Task's pane.
+The proposed UI has three logical destinations: Inbox for actionable ToDos/briefings/proposals, All Tasks for running work and history, and Sessions for manual tmux work. All Tasks may be a link inside Inbox rather than a top-level tab; exact navigation placement remains a UI decision. Sessions lists only sessions with no Task association; it has no All Sessions filter (ADR 0027). The session switcher searches every session. Open Terminal on a Task returns to that Task's pane.
 
 Association is the classification boundary. Manually launched AI remains manual; typing by hand inside a Task does not change its classification. Manual approval waits can show a Sessions badge without generating Inbox items. Managed work needing human attention returns to Inbox as a reference to the same Task. Routine output enters Inbox as briefings/proposals, while the collector's execution remains under Routine history. No automatic Task creation or session reclassification is implied.
 

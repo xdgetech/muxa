@@ -68,14 +68,11 @@ struct Sidebar: View {
                 }
             }
             if model.isConnected {
-                Section {
-                    SessionFilterPicker()
-                    if model.sessionsAllFiltered {
-                        Text("No manual sessions. Tasks have theirs under All Sessions.")
+                if model.noManualSessions {
+                    Section("Sessions") {
+                        Text("No manual sessions. Open a Task's session from Inbox or Tasks.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                } header: {
-                    Text("Sessions")
                 }
                 let numbers = Dictionary(
                     uniqueKeysWithValues: model.visibleSessions.enumerated().map { ($1.id, $0 + 1) })

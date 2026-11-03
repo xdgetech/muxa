@@ -115,10 +115,8 @@ struct PaneScreen: View {
                     Label("Terminal Size", systemImage: Icon.fit)
                 }
                 .pickerStyle(.menu)
-                // A phone's session list is one Back away.
-                if !phoneLayout {
-                    Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
-                }
+                // Also on a phone: its list holds manual sessions only (ADR 0027).
+                Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
                 if model.canCreateTasks {
                     Button("New Task…", systemImage: Icon.newTask) { model.startNewTask() }
                 }

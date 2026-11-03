@@ -37,7 +37,7 @@ final class DemoTests: XCTestCase {
         pane.typeKey("j", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %2 100x30"))
         // Cmd+1: the first manual session in the sidebar, a bigger pane. Task sessions
-        // are listed under All Sessions only.
+        // are not in the sidebar.
         pane.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(waitFor(pane, containing: "pane %3 132x43"))
         save("portrait-132x43")
@@ -539,11 +539,9 @@ final class DemoTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["chat"].firstMatch.exists)
         XCTAssertFalse(segments.buttons["Chat"].exists)
         XCUIDevice.shared.orientation = .landscapeLeft
-        // All Sessions numbers the Task sessions too: Cmd+1 is the Task's again.
+        // The switcher lists the Task sessions too.
         pane.typeKey("k", modifierFlags: .command)
-        tapWhenReady(app.segmentedControls["session-filter"].buttons["All Sessions"])
-        app.buttons["Close"].tap()
-        pane.typeKey("1", modifierFlags: .command)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label CONTAINS 'feature-auth'")).firstMatch)
         // The pane was last shown as Agent, and opens that way again.
         XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
         segments.buttons["Chat"].tap()
@@ -683,17 +681,11 @@ final class DemoTests: XCTestCase {
         // The sidebar: hosts, and the connected host's sessions.
         showSidebar(app)
         XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
-        // Sessions lists manual sessions; the Tasks' sessions are under All Sessions.
+        // Sessions lists manual sessions only; the Tasks' sessions open from Inbox and Tasks.
         XCTAssertTrue(app.staticTexts["Other Sessions"].exists)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'scratch'")).firstMatch.exists)
         XCTAssertFalse(app.staticTexts["app"].exists)
         XCTAssertFalse(app.staticTexts["docs"].exists)
-        save("sidebar-manual")
-        tapWhenReady(app.segmentedControls["session-filter"].buttons["All Sessions"])
-        // Sessions are grouped by repo, untagged ones last.
-        XCTAssertTrue(app.staticTexts["app"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["docs"].exists)
-        XCTAssertTrue(app.staticTexts["Other Sessions"].exists)
         save("sidebar")
         app.buttons["Add Host"].firstMatch.tap()
         let address = app.textFields["host-address"]

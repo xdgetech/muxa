@@ -62,15 +62,14 @@ class ModelTest {
     private fun session(name: String, taskId: String?, pane: Pane) = Session("$$name", name, taskId = taskId, panes = listOf(pane))
 
     @Test
-    fun manualShowsOnlySessionsWithoutATaskAndAllShowsEvery() {
+    fun manualKeepsOnlySessionsWithoutATaskInOrder() {
         val sessions = listOf(
             session("task", "t-1", pane("%1", Role.AGENT, state = AgentState.WAITING)),
             session("mine", null, pane("%2", Role.SHELL, shell = true)),
             session("other", "t-2", pane("%3", Role.SHELL, shell = true)),
             session("blank", "", pane("%4", Role.UNKNOWN)),
         )
-        assertEquals(listOf("mine", "blank"), sessions.shown(SessionFilter.MANUAL).map { it.name })
-        assertEquals(listOf("task", "mine", "other", "blank"), sessions.shown(SessionFilter.ALL).map { it.name })
+        assertEquals(listOf("mine", "blank"), sessions.manual.map { it.name })
     }
 
     /** An agent started by hand stays manual; a person at a Task's shell keeps the Task. */
