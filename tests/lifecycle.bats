@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 load helper
+bats_require_minimum_version 1.5.0
 
 setup() { setup_server; make_repo; }
 # The sleeps in the process test; a failed run must not leave them behind.
@@ -117,6 +118,13 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ "$status" -ne 0 ]
   grep -q "feature/here is checked out in the main checkout" "$TMPDIR/tmux-agents-$(id -u)/agents.log"
   ! tx has-session -t =feature-here 2>/dev/null
+}
+
+@test "outside tmux, new prints why it failed on stderr once" {
+  git -C "$REPO" switch -q -c feature/here
+  run --separate-stderr new feature/here
+  [ "$status" -ne 0 ]
+  [ "$(printf '%s\n' "$stderr" | grep -c "feature/here is checked out in the main checkout")" -eq 1 ]
 }
 
 @test "new shows why git could not create the worktree" {

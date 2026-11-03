@@ -70,10 +70,12 @@ agents_log_file() { printf '%s/agents.log' "$(agents_run_dir)"; }
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$(agents_log_file)" 2>/dev/null || true; }
 
-# Tell the user on the tmux client, and keep it in the log.
+# Tell the user on the tmux client, and keep it in the log. A caller outside
+# tmux (muxa) gets no client message, so it reads the reason on stderr.
 say() {
   log "$*"
-  t display-message "agents: $*" 2>/dev/null || printf 'agents: %s\n' "$*" >&2
+  t display-message "agents: $*" 2>/dev/null && [ -n "${TMUX:-}" ] && return 0
+  printf 'agents: %s\n' "$*" >&2
 }
 
 die() { say "$*"; exit 1; }
