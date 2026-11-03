@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. The R8 decision is replaced by proposed ADR 0030 (full R8, checked by a release-build SSH test).
 
 ## Context
 

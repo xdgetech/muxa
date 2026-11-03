@@ -152,10 +152,11 @@ Add Japanese under Store listing → Manage translations, with the `ja-JP` texts
 
 ### Release
 
-1. `make check`, then `make bundle-android`. It writes `build/release/muxa.aab`, signed with the upload key.
-2. Production → Create new release. Accept **Play App Signing** with a key Google generates.
-3. Upload `muxa.aab`. Release notes: `changelogs/1.txt` for each language.
-4. Review and roll out.
+1. `make check`, then `make test-android-release`: the minified release build connects over SSH (ADR 0030). It boots an emulator of its own.
+2. `make bundle-android`. It writes `build/release/muxa.aab`, signed with the upload key.
+3. Production → Create new release. Accept **Play App Signing** with a key Google generates.
+4. Upload `muxa.aab`. Release notes: `changelogs/1.txt` for each language.
+5. Review and roll out.
 
 An organization account needs no closed test before production. A personal account opened after November 2023 does: 12 testers for 14 days.
 

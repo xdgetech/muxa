@@ -9,6 +9,10 @@ val uploadKey = listOf("MUXA_UPLOAD_STORE_FILE", "MUXA_UPLOAD_STORE_PASSWORD", "
     .associateWith { providers.gradleProperty(it).orNull }
 val missingUploadKey = uploadKey.filterValues { it.isNullOrEmpty() }.keys
 
+// `make test-android-release` sets this: the instrumented tests then run against the
+// minified release build (src/androidTestRelease), signed with the debug key.
+val releaseTest = providers.gradleProperty("muxa.releaseTest").orNull == "true"
+
 android {
     namespace = "tech.xdge.muxa.app"
     compileSdk = 37
@@ -37,13 +41,20 @@ android {
 
     buildTypes {
         release {
-            // R8 only removes code here, above all a trust-everything TrustManager in
-            // BouncyCastle that Play's security scan rejects (proguard-rules.pro).
+            // Full R8: removes, renames and optimizes (ADR 0029, proguard-rules.pro).
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfigs.findByName("upload")?.let { signingConfig = it }
+            testProguardFiles("proguard-test-rules.pro")
+            if (releaseTest) {
+                // The test APK must share the app's key; never the upload key.
+                signingConfig = signingConfigs.getByName("debug")
+                proguardFile("proguard-release-test.pro")
+            } else {
+                signingConfigs.findByName("upload")?.let { signingConfig = it }
+            }
         }
     }
+    if (releaseTest) testBuildType = "release"
 
     buildFeatures {
         compose = true
@@ -104,6 +115,8 @@ dependencies {
     // Compose's test library brings Espresso 3.5, which calls an InputManager method API 37 removed.
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.window.testing)
+    // The release test drives the app from outside, so R8's renaming cannot break it.
+    androidTestImplementation(libs.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
     // The in-app demo bridge: Try the Demo, and the UI tests.
     implementation(project(":demo"))
@@ -112,6 +125,7 @@ dependencies {
 // An unsigned bundle cannot be uploaded; say what is missing before building one.
 tasks.matching { it.name == "bundleRelease" }.configureEach {
     doFirst {
+        if (releaseTest) throw GradleException("muxa.releaseTest signs with the debug key; build the bundle without it.")
         if (missingUploadKey.isNotEmpty()) {
             throw GradleException("Set ${missingUploadKey.joinToString()} in ~/.gradle/gradle.properties (store/RELEASE.md: the upload key).")
         }

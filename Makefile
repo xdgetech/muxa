@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -88,6 +88,12 @@ test-android-app:
 test-android-tmux:
 	cargo build -p muxa-bridge
 	cd android && MUXA_BRIDGE=$(CURDIR)/target/debug/muxa-bridge $(GRADLEW) :session:test --rerun-tasks
+
+# The minified release build connects over SSH to a throwaway host and shows a pane
+# (ADR 0029). Boots a read-only emulator unless ANDROID_SERIAL names a device.
+test-android-release:
+	cargo build -p muxa-bridge
+	scripts/test-android-release.sh
 
 # The iPad and iPhone app. The Xcode project is generated from apple/Muxa/project.yml (XcodeGen).
 # SwiftTerm has a build plugin; command-line builds skip Xcode's trust prompt for it.

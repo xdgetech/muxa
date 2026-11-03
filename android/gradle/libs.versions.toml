@@ -8,6 +8,7 @@ jediterm = "3.76"
 slf4j = "2.0.20"
 sshj = "0.41.2"
 bouncycastle = "1.86"
+sshd = "2.15.0"
 
 composeBom = "2026.09.00"
 adaptive = "1.3.0"
@@ -20,6 +21,7 @@ markdown = "0.46.0"
 androidxJunit = "1.3.0"
 testRunner = "1.7.0"
 espresso = "3.7.0"
+uiautomator = "2.3.0"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
@@ -43,6 +45,7 @@ core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 markdown-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown" }
 androidx-junit = { module = "androidx.test.ext:junit", version.ref = "androidxJunit" }
 espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
+uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "testRunner" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -53,6 +56,7 @@ sshj = { module = "com.hierynomus:sshj", version.ref = "sshj" }
 bcprov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 bcpkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }
 bcutil = { module = "org.bouncycastle:bcutil-jdk18on", version.ref = "bouncycastle" }
+sshd-core = { module = "org.apache.sshd:sshd-core", version.ref = "sshd" }
 slf4j-nop = { module = "org.slf4j:slf4j-nop", version.ref = "slf4j" }
 
 [plugins]

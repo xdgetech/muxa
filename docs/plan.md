@@ -38,7 +38,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other.
 5. **Phase 4:** workspace memory as a Routine (ADR 0027 section 6). Then, as needed, the Linux daemon and tmux-agents (ADR 0017).
 6. **Phase 5:** workflow graph, then autonomous work.
-7. **Any time:** Android full R8, scrollback, mouse, `pause-after`, watching several panes.
+7. **Any time:** scrollback, mouse, `pause-after`, watching several panes.
 
 - **Inbox visibility and navigation** (ADR 0023, slice 1 accepted; `docs/inbox.md`): identify Task sessions by title, group, reported age and loop; retain List/detail and add Triage navigation, Next and local Snooze. Phones open Triage once per connection for Needs attention only. Existing Chat keeps approvals and composition.
   - P0 done: shared needs and deterministic queue order, CLI `need`, 26 cross-client fixture cases. Verified with `make check`, `make test-apple` and `make test-android`.
@@ -67,7 +67,6 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 - Check the Android app on a real phone and tablet: the 9 sp floor, the key bar, Gboard Japanese input, a hardware keyboard, and two windows in split screen and desktop windows.
 - ADR 0020 and 0021 (window size follows the device, from a device session): the developer accepts or changes them, then checks them on the real server with a real iPad and laptop, and with tmux-agents. tmux-agents skips device sessions from its `muxa-task-records` branch on. The store listings still say the desktop layout never changes.
 - Publish 1.0: the account steps, uploads and console answers in `store/RELEASE.md` (by the developer).
-- Android: full R8 (renaming and optimization) for release builds, with a release-build test that connects over SSH. 1.0 only removes unused code (ADR 0014): BouncyCastle, sshj and JediTerm load classes by name.
 
 ## Requested follow-on design
 
@@ -141,6 +140,7 @@ The server:
 | The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, in the simulator against the in-app demo bridge |
 | The Android client | `make test-android`, `make test-android-tmux`, `make lint-android`; `make test-android-app` on a phone, Pixel Tablet and Pixel Fold emulator, against the in-app demo bridge |
 | The store listings | `make lint-store` (in `make check`); `make screenshots` and `make screenshots-android` check every image's size |
+| Android release build (full R8, ADR 0030) | `make test-android-release`: the minified app connects over SSH to a throwaway host and shows a pane, on an emulator |
 | Try the Demo, in a release build | `TryDemoTests` (iOS) and `TryDemoTest` (Android) on the debug build; the release APK and a Release iOS build by hand |
 | No layout change on a real server | `scripts/layout-snapshot.sh` before and after an attach; the diff is empty |
 
