@@ -53,11 +53,11 @@ ADR 0027 §4 is implemented on the host and in the CLI. A Task record has an opt
 - Later hides the Task until `until` (UTC). Then it returns to its place.
 - A new need surfaces again. When the believed agent state, or a loop that needs the user, began after `since`, the client ignores `order` and `until`.
 
-The shared queue code in `muxa-cli`, MuxaKit and the Android `:session` module follows `protocol/fixtures/inbox/queue.jsonl`. The apps' queue applies the host's fields. The iOS app offers Move down and Later (below); the Android app still offers only the local Snooze.
+The shared queue code in `muxa-cli`, MuxaKit and the Android `:session` module follows `protocol/fixtures/inbox/queue.jsonl`. The apps' queue applies the host's fields. Both apps offer Move down and Later (below).
 
-### The Inbox list (iOS)
+### The Inbox list (iOS and Android)
 
-The iOS app shows Inbox as one ordered list (ADR 0025 "List first"). Triage, Next and Previous are gone there. The list holds, in this order:
+Both apps show Inbox as one ordered list (ADR 0025 "List first"). Triage, Next and Previous are gone there. The list holds, in this order:
 
 1. Task needs without a Move down, in the queue order above.
 2. Routine runs whose agent waits on the user: `running.task` matches a session's `taskId` (ADR 0026 section 3).
@@ -76,6 +76,7 @@ The iOS app shows Inbox as one ordered list (ADR 0025 "List first"). Triage, Nex
 - Stored entries have no Move down on the wire, so their menu has none.
 - A host without `task-inbox` keeps the local Snooze and Show snoozed. A host without `work:1` shows no entries and no Routines.
 - Keys: Command+Up/Down focus a row, Command+O opens it, Command+Shift+Down moves it down, Command+Shift+L asks for Later, Command+L switches to All Tasks, Command+S snoozes on an older host.
+- Android differs in two ways. Its keys are Ctrl+Shift chords, because plain Ctrl belongs to the shell: Ctrl+Shift+Up/Down, O, L and S, and Ctrl+Shift+Alt+Down and Ctrl+Shift+Alt+L for Move down and Later. A swipe right on a row asks for Later and a swipe left moves a Task down, where iOS shows both under one trailing swipe.
 
 All Tasks keeps the grouped list and starts with Routines. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.
 
