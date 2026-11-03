@@ -53,7 +53,31 @@ ADR 0027 §4 is implemented on the host and in the CLI. A Task record has an opt
 - Later hides the Task until `until` (UTC). Then it returns to its place.
 - A new need surfaces again. When the believed agent state, or a loop that needs the user, began after `since`, the client ignores `order` and `until`.
 
-The shared queue code in `muxa-cli`, MuxaKit and the Android `:session` module follows `protocol/fixtures/inbox/queue.jsonl`. The apps' Triage queue applies the host's fields already. Their UI still offers only the local Snooze; replacing it with Move down and Later is the next app change.
+The shared queue code in `muxa-cli`, MuxaKit and the Android `:session` module follows `protocol/fixtures/inbox/queue.jsonl`. The apps' queue applies the host's fields. The iOS app offers Move down and Later (below); the Android app still offers only the local Snooze.
+
+### The Inbox list (iOS)
+
+The iOS app shows Inbox as one ordered list (ADR 0025 "List first"). Triage, Next and Previous are gone there. The list holds, in this order:
+
+1. Task needs without a Move down, in the queue order above.
+2. Routine runs whose agent waits on the user: `running.task` matches a session's `taskId` (ADR 0026 section 3).
+3. Stored briefings and proposals that are open or back from Later, newest first.
+4. Tasks moved down, by `order`. So Move down puts a Task at the end of the whole list.
+
+| Row | Act (tap) | Menu |
+|---|---|---|
+| Task | Task detail | Move down, Later, Mark Done |
+| Briefing | its text and links | Done (dismiss), Later |
+| Proposal | its text, action, target and content | Approve…, Dismiss, Later |
+| Routine run | its terminal | Routine |
+
+- Later offers In 1 hour, Tomorrow 9:00 and Pick a time. The host refuses a time in the past or more than 366 days ahead.
+- Approve shows the action, the target and the content, and asks again. The host creates one Task, also when asked twice; the app opens it.
+- Stored entries have no Move down on the wire, so their menu has none.
+- A host without `task-inbox` keeps the local Snooze and Show snoozed. A host without `work:1` shows no entries and no Routines.
+- Keys: Command+Up/Down focus a row, Command+O opens it, Command+Shift+Down moves it down, Command+Shift+L asks for Later, Command+L switches to All Tasks, Command+S snoozes on an older host.
+
+All Tasks keeps the grouped list and starts with Routines. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.
 
 ### Separate destinations
 
