@@ -32,7 +32,7 @@ What works today:
 
 Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow below.
 
-1. **Phase 0, clean up:** commit the open work, remove merged agent worktrees, merge `plan/workspace-vision` into `main`.
+1. **Phase 0, clean up:** done. The open work is committed and merged agent worktrees are removed. Work continues on `plan/workspace-vision`; it is not merged into `main` yet.
 2. **Phase 1, ship 1.0:** real-device checks, the daemon on a Mac, the developer's decisions on ADR 0015–0021 and 0023, then publish. Agent lane: the supported tmux CI matrix.
 3. **Phase 2, Workers:** simplify the selection contract (ADR 0027 section 1), named create and restart, the pickers, then advertise `workers`. Codex continues restarted runs by hand. Parallel lanes: the Sessions filter (UI only); the Codex session-ownership ADR.
 4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other.
