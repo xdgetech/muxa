@@ -250,8 +250,15 @@ final class TasksTests: XCTestCase {
     @MainActor
     private func reveal(_ app: XCUIApplication, _ element: XCUIElement, up: Bool = false, in id: String? = nil) {
         let list = id.map { app.collectionViews[$0] } ?? app.collectionViews.firstMatch
+        let window = app.windows.firstMatch
         for _ in 0..<4 where !(element.exists && element.isHittable) {
             if up { list.swipeDown() } else { list.swipeUp() }
+            // While the phone keyboard is up, `swipeUp()` on the New Task form does not
+            // scroll it, although the form avoids the keyboard; a finger's drag does.
+            if !up, !(element.exists && element.isHittable) {
+                window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                    .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+            }
         }
     }
 
