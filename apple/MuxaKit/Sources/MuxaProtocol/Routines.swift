@@ -52,6 +52,11 @@ public struct RoutineTrigger: Codable, Equatable, Sendable {
     public var at: String
     /// An IANA name, e.g. `Europe/Berlin`.
     public var timezone: String
+
+    public init(at: String, timezone: String) {
+        self.at = at
+        self.timezone = timezone
+    }
 }
 
 /// The open run of a Routine. Its session carries `taskId` = `task`.
@@ -59,6 +64,12 @@ public struct RoutineRun: Codable, Equatable, Sendable {
     public var occurrence: String
     public var startedAt: UInt64
     public var task: String?
+
+    public init(occurrence: String, startedAt: UInt64, task: String? = nil) {
+        self.occurrence = occurrence
+        self.startedAt = startedAt
+        self.task = task
+    }
 }
 
 public struct RoutineSuccess: Codable, Equatable, Sendable {
@@ -66,6 +77,13 @@ public struct RoutineSuccess: Codable, Equatable, Sendable {
     public var occurrence: String
     public var task: String
     public var published: UInt32
+
+    public init(at: UInt64, occurrence: String, task: String, published: UInt32) {
+        self.at = at
+        self.occurrence = occurrence
+        self.task = task
+        self.published = published
+    }
 }
 
 public struct RoutineFailure: Codable, Equatable, Sendable {
@@ -73,6 +91,13 @@ public struct RoutineFailure: Codable, Equatable, Sendable {
     public var occurrence: String
     public var task: String?
     public var reason: String
+
+    public init(at: UInt64, occurrence: String, task: String? = nil, reason: String) {
+        self.at = at
+        self.occurrence = occurrence
+        self.task = task
+        self.reason = reason
+    }
 }
 
 /// A stored Inbox entry: a Routine's briefing or proposal.
@@ -97,11 +122,38 @@ public struct InboxEntry: Codable, Equatable, Sendable {
     public var proposal: Proposal?
     /// After approval: the Task that performs it.
     public var task: String?
+
+    public init(
+        id: String, workspace: String, routine: String, key: String, kind: String, title: String, body: String,
+        links: [SourceLink]? = nil, createdAt: UInt64, run: String, occurrence: String, disposition: String,
+        until: UInt64? = nil, proposal: Proposal? = nil, task: String? = nil
+    ) {
+        self.id = id
+        self.workspace = workspace
+        self.routine = routine
+        self.key = key
+        self.kind = kind
+        self.title = title
+        self.body = body
+        self.links = links
+        self.createdAt = createdAt
+        self.run = run
+        self.occurrence = occurrence
+        self.disposition = disposition
+        self.until = until
+        self.proposal = proposal
+        self.task = task
+    }
 }
 
 public struct SourceLink: Codable, Equatable, Sendable {
     public var url: String
     public var title: String?
+
+    public init(url: String, title: String? = nil) {
+        self.url = url
+        self.title = title
+    }
 }
 
 public struct Proposal: Codable, Equatable, Sendable {
@@ -110,6 +162,13 @@ public struct Proposal: Codable, Equatable, Sendable {
     public var content: String
     /// `sha256:<hex>`.
     public var hash: String
+
+    public init(action: String, target: String, content: String, hash: String) {
+        self.action = action
+        self.target = target
+        self.content = content
+        self.hash = hash
+    }
 }
 
 public enum InboxAction: String, Codable, Sendable {

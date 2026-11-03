@@ -56,6 +56,12 @@ public final class PaneSession {
     public private(set) var taskError: String?
     /// The grid the pane area shows at the default font, kept across reconnects.
     public private(set) var viewport: PaneViewport?
+    /// The host's Routines, as last listed (`work` level 1, ADR 0026).
+    public internal(set) var routines: [RoutineInfo] = []
+    /// The stored Inbox entries, newest first, as last listed.
+    public internal(set) var inboxEntries: [InboxEntry] = []
+    /// Why the Routines or the stored entries could not be listed; the last lists stay.
+    public internal(set) var workError: String?
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -79,6 +85,12 @@ public final class PaneSession {
     @ObservationIgnored private var savedTasks: [UInt64: TaskRecord] = [:]
     /// Session names from `task-created`, by request id, until the result arrives.
     @ObservationIgnored private var createdTasks: [UInt64: String] = [:]
+    /// `routine-list`, `inbox-list`, `routine-saved` and `inbox-saved`, by request id,
+    /// until the result arrives (`PaneSession+Work.swift`).
+    @ObservationIgnored var routineListings: [UInt64: [RoutineInfo]] = [:]
+    @ObservationIgnored var inboxListings: [UInt64: [InboxEntry]] = [:]
+    @ObservationIgnored var savedRoutines: [UInt64: RoutineInfo] = [:]
+    @ObservationIgnored var savedEntries: [UInt64: InboxEntry] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
     /// Ids of input requests in flight; their results only matter when they fail.
     @ObservationIgnored private var inputs: Set<UInt64> = []
@@ -112,6 +124,9 @@ public final class PaneSession {
             workers = []
             tasksTruncated = false
             taskError = nil
+            routines = []
+            inboxEntries = []
+            workError = nil
         }
         phase = .connecting
         do {
@@ -123,6 +138,7 @@ public final class PaneSession {
             sendViewport()
             try await refresh()
             await loadTasks()
+            await loadWork()
             if let pane = watchedPane { try await watch(pane: pane) }
             if let pane = chat?.pane {
                 chat = nil
@@ -436,6 +452,37 @@ public final class PaneSession {
         return saved ?? record
     }
 
+    /// Whether the host keeps Move down and Later on the Task record (ADR 0027 §4).
+    public var canPlaceTasks: Bool { capabilities.contains("task-inbox") }
+
+    /// Shown when the host keeps no Inbox order; the app keeps its local Snooze then.
+    public static let placeUnsupported = "This host keeps no Inbox order. Update muxa on the host."
+
+    /// Move down, Later or both, or `InboxChange()` to put the Task back in its place.
+    /// A conflict lists again, as `updateTask` does.
+    public func place(_ record: TaskRecord, _ change: InboxChange) async throws -> TaskRecord {
+        guard canPlaceTasks else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.placeUnsupported))
+        }
+        var requestId: UInt64 = 0
+        do {
+            try await request { id in
+                requestId = id
+                return .updateInbox(id: id, task: record.id, rev: record.rev, inbox: change)
+            }
+        } catch Failure.bridge(let body) where body.code == .conflict {
+            savedTasks[requestId] = nil
+            await loadTasks()
+            throw Failure.bridge(ErrorBody(code: .conflict, message: Self.taskConflict))
+        } catch {
+            savedTasks[requestId] = nil
+            throw error
+        }
+        let saved = savedTasks.removeValue(forKey: requestId)
+        await loadTasks()
+        return saved ?? record
+    }
+
     private func requireWorkerChoice(_ name: String, workspace: String) throws {
         if let problem = workerProblem(name: name, workspace: workspace, workers: workers) {
             throw Failure.bridge(ErrorBody(code: .badRequest, message: problem))
@@ -581,7 +628,7 @@ public final class PaneSession {
     }
 
     @discardableResult
-    private func request(_ make: (UInt64) -> Request) async throws -> Message {
+    func request(_ make: (UInt64) -> Request) async throws -> Message {
         guard channel != nil else { throw Failure.notConnected }
         let req = make(takeId())
         // Registered before the line is queued, so the result cannot arrive first.
@@ -724,14 +771,28 @@ public final class PaneSession {
             Task {
                 try? await refresh()
                 await loadTasks()
+                await loadWork()
             }
         case .tasksChanged:
-            Task { await loadTasks() }
+            // A Routine run is a task record too, so its Routine may have changed.
+            Task {
+                await loadTasks()
+                await loadWork()
+            }
+        case .routineList(let id, let entries):
+            routineListings[id] = entries
+        case .routineSaved(let id, let entry):
+            savedRoutines[id] = entry
+            keep(entry)
+        case .inboxList(let id, let entries):
+            inboxListings[id] = entries
+        case .inboxSaved(let id, let entry):
+            savedEntries[id] = entry
+            keep(entry)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded,
-            .routineList, .routineSaved, .inboxList, .inboxSaved, .sessionStarted:
+            .diffContent, .diffEnded, .imageContent, .imageEnded, .sessionStarted:
             break
         }
     }
@@ -764,6 +825,10 @@ public final class PaneSession {
         taskListings = [:]
         savedTasks = [:]
         createdTasks = [:]
+        routineListings = [:]
+        inboxListings = [:]
+        savedRoutines = [:]
+        savedEntries = [:]
         inputs = []
         sentViewport = nil
         viewportTask?.cancel()
