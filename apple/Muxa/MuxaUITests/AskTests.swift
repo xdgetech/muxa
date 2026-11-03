@@ -60,7 +60,11 @@ final class AskTests: XCTestCase {
 
     @MainActor
     private func pickRepo(_ app: XCUIApplication, search: String, name: String, listed: String? = nil) {
-        tapWhenReady(app.descendants(matching: .any)["record-repo-choice"].firstMatch)
+        let choice = app.descendants(matching: .any)["record-repo-choice"].firstMatch
+        // The form scrolls to the new fields first; on a phone the keyboard may still cover them.
+        let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: choice)
+        if XCTWaiter.wait(for: [hittable], timeout: 10) != .completed { reveal(app, choice) }
+        tapWhenReady(choice)
         if let listed { XCTAssertTrue(app.buttons["repo-\(listed)"].waitForExistence(timeout: 5), listed) }
         let field = app.searchFields.firstMatch
         tapWhenReady(field)
