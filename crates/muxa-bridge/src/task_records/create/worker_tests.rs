@@ -6,6 +6,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+/// The bound on waiting for a fixture agent. Generous: a loaded machine
+/// starts processes slowly, and a met condition returns at once.
+const WAIT: Duration = Duration::from_secs(30);
+
 struct Fixture {
     dir: PathBuf,
     options: muxa_tmux::Options,
@@ -24,10 +28,12 @@ impl Fixture {
             socket: Some(format!("muxa-test-worker-create-{id:08x}")),
         };
         let fixture = Self { dir, options };
+        // `env` is written last and renamed into place: the tests wait for
+        // it, then read `argv` and `env` whole.
         // The server itself cannot resolve a real native agent if PATH handling regresses.
         let bin = fixture.dir.join("bin");
         std::fs::create_dir(&bin).unwrap();
-        std::fs::write(bin.join("claude"), "#!/bin/sh\nprintf '%s\\n' \"$$\" >> starts\nprintf '%s\\000' \"$@\" > argv\nprintf '%s' \"$MUXA_FIXTURE_ENV\" > env\nexec /bin/sleep 600\n").unwrap();
+        std::fs::write(bin.join("claude"), "#!/bin/sh\nprintf '%s\\n' \"$$\" >> starts\nprintf '%s\\000' \"$@\" > argv\nprintf '%s' \"$MUXA_FIXTURE_ENV\" > env.tmp\nmv env.tmp env\nexec /bin/sleep 600\n").unwrap();
         std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o700))
             .unwrap();
         let output = fixture
@@ -86,7 +92,7 @@ impl Fixture {
             .panes[0]
             .id;
         let dir = record.dir.as_ref().unwrap();
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(WAIT, async {
             while !dir.join("env").exists() {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
@@ -140,7 +146,7 @@ def feed():
                 held = True
                 with open({blocked}, 'wb') as marker:
                     marker.write(b'held')
-                deadline = time.monotonic() + 10
+                deadline = time.monotonic() + 60
                 while not os.path.exists({release}):
                     if time.monotonic() > deadline:
                         child.terminate()
@@ -245,7 +251,7 @@ async fn worker_create_validates_before_writes_and_records_the_requested_assignm
     assert_eq!(record.worker(), Some("Reviewer"));
     assert_eq!(record.runs[0].worker().as_deref(), Some("Reviewer"));
     let dir = record.dir.as_ref().unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         while !dir.join("env").exists() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -335,7 +341,7 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
     std::fs::write(&config, edited).unwrap();
     std::fs::write(&instruction_file, "Edited worker instructions.").unwrap();
     // Wait for the first fake process before removing its completion markers.
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         while !dir.join("env").exists() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -349,7 +355,7 @@ async fn named_restart_refreshes_command_then_clears_assignment_in_the_same_pane
         .await
         .unwrap();
     env.pending.finish(Duration::ZERO).await;
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         while !dir.join("env").exists() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -504,7 +510,7 @@ async fn concurrent_named_restarts_use_one_claim_and_a_stale_loser_cannot_retry(
         std::fs::read(dir.join(".muxa/HANDOFF.md")).unwrap(),
         files.1
     );
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         while std::fs::read_to_string(dir.join("starts"))
             .unwrap()
             .lines()
@@ -547,7 +553,7 @@ async fn named_restart_rejects_changed_source_before_dispatch() {
             .await
         })
     };
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         while !fixture.dir.join("prepared-blocked").exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -683,7 +689,7 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
     let python = Command::new("which").arg("python3").output().unwrap();
     assert!(python.status.success());
     let python = String::from_utf8(python.stdout).unwrap();
-    std::fs::write(fixture.dir.join("bin/claude"), format!("#!{}\nimport os, pathlib, sys\npathlib.Path('ready').write_text(str(os.getpid()))\nfor line in sys.stdin:\n    with open('input', 'a') as output:\n        output.write(line)\n", python.trim())).unwrap();
+    std::fs::write(fixture.dir.join("bin/claude"), format!("#!{}\nimport os, pathlib, sys\npathlib.Path('ready.tmp').write_text(str(os.getpid()))\nos.replace('ready.tmp', 'ready')\nfor line in sys.stdin:\n    with open('input', 'a') as output:\n        output.write(line)\n", python.trim())).unwrap();
     let native = fixture.dir.join("native");
     std::fs::create_dir_all(native.join("sessions")).unwrap();
     env.agents = Arc::new(Registry::new(vec![Box::new(
@@ -716,7 +722,7 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
     assert!(baseline.operation.starts_with("start-"));
     assert!(baseline.source.is_none());
     let dir = record.dir.as_ref().unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         while !dir.join("ready").exists() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -759,12 +765,12 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
     );
     state["status"] = "idle".into();
     std::fs::write(&state_file, serde_json::to_vec(&state).unwrap()).unwrap();
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         loop {
             let current = env.records.store().unwrap().get(&record.id).unwrap();
             if current.pending_prompt().is_none()
                 && !current.extra.contains_key("restartOperation")
-                && dir.join("input").exists()
+                && std::fs::read_to_string(dir.join("input")).is_ok_and(|s| s.ends_with('\n'))
             {
                 break;
             }
@@ -829,7 +835,7 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
             super::super::resume_prompts(&context).await;
             super::super::resume_prompts(&context).await;
         }
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(WAIT, async {
             while std::fs::read_to_string(dir.join("ready")).unwrap()
                 != replacement.replacement.pid.to_string()
             {
@@ -843,7 +849,7 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
         state["status"] = "idle".into();
         std::fs::write(&state_file, serde_json::to_vec(&state).unwrap()).unwrap();
         expected.push_str("Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.\n");
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(WAIT, async {
             loop {
                 let record = env.records.store().unwrap().get(&record.id).unwrap();
                 if record.pending_prompt().is_none()
@@ -930,7 +936,7 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
     state["status"] = "idle".into();
     std::fs::write(&state_file, serde_json::to_vec(&state).unwrap()).unwrap();
     expected.push_str("Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.\n");
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         loop {
             let record = store.get(&current.id).unwrap();
             if record.pending_prompt().is_none()
@@ -1057,7 +1063,7 @@ def feed():
         if line.startswith(b'set-option ') and b'@muxa_task' in line:
             with open({blocked}, 'wb') as marker:
                 marker.write(b'held')
-            deadline = time.monotonic() + 10
+            deadline = time.monotonic() + 60
             while not os.path.exists({release}):
                 if time.monotonic() > deadline:
                     child.terminate()
@@ -1106,7 +1112,7 @@ sys.exit(child.wait())
             .await
         })
     };
-    tokio::time::timeout(Duration::from_secs(5), async {
+    tokio::time::timeout(WAIT, async {
         while !fixture.dir.join("startup-blocked").exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
