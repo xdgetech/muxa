@@ -20,7 +20,7 @@ import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.protocol.RestartRecoveryAction
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.session.PaneSession
-import tech.xdge.muxa.session.displayName
+import tech.xdge.muxa.session.workerLabel
 import tech.xdge.muxa.session.explanation
 import tech.xdge.muxa.session.recoveryActions
 import tech.xdge.muxa.session.title
@@ -37,7 +37,7 @@ fun RestartRecoverySection(model: AppModel, record: TaskRecord) {
     val scope = rememberCoroutineScope()
     Column(Modifier.testTag("restart-recovery"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Restart needs recovery", style = MaterialTheme.typography.titleSmall)
-        Text("Requested / unconfirmed: ${operation.assignment?.displayName ?: "Assignment unrecorded"}")
+        Text("Requested / unconfirmed: ${workerLabel(operation.worker)}")
         Text("The interrupted operation must be resolved before restarting again.", style = MaterialTheme.typography.bodySmall)
         if (model.state.canRecoverRestarts) {
             for (action in operation.recoveryActions) {

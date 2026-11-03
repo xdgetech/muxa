@@ -11,7 +11,8 @@ struct RestartAgentButton: View {
     @State private var asking = false
     @State private var restarting = false
     @State private var choosingWorker = false
-    @State private var workerChoice = "keep"
+    /// A worker name or `default`; a worker-aware restart always sends one.
+    @State private var workerChoice = defaultWorker
     @State private var error: String?
 
     static let message =
@@ -20,7 +21,7 @@ struct RestartAgentButton: View {
     var body: some View {
         let needsForce = item.restartNeedsForce
         Button("Restart agent", systemImage: "arrow.clockwise") {
-            workerChoice = "keep"
+            workerChoice = item.record.worker ?? defaultWorker
             if model.session.canUseWorkers { choosingWorker = true } else { asking = true }
         }
             .disabled(restarting || item.record.restartOperation != nil)
@@ -30,10 +31,9 @@ struct RestartAgentButton: View {
                     Form {
                         Text(Self.message)
                         Picker("Worker", selection: $workerChoice) {
-                            Text("Keep current (\(item.record.worker ?? "Workspace default"))").tag("keep")
-                            Text("Workspace default").tag("default")
-                            ForEach(model.session.workers.filter { $0.allows(workspace: item.record.workspace) }, id: \.name) { worker in
-                                Text(worker.name).tag("worker:" + worker.name)
+                            Text("Workspace default").tag(defaultWorker)
+                            ForEach(workerNames, id: \.self) { name in
+                                Text(name == item.record.worker ? "\(name) (current)" : name).tag(name)
                             }
                         }
                         .accessibilityIdentifier("restart-worker")
@@ -68,14 +68,19 @@ struct RestartAgentButton: View {
             }
     }
 
-    private var selectedWorker: WorkerSelection {
-        workerChoice == "default" ? .workspaceDefault
-            : workerChoice.hasPrefix("worker:") ? .named(String(workerChoice.dropFirst(7))) : .keep
+    /// Allowed workers, plus the current one when the host no longer allows it,
+    /// so the picker shows it with its problem instead of switching silently.
+    private var workerNames: [String] {
+        var names = model.session.workers.filter { $0.allows(workspace: item.record.workspace) }.map(\.name)
+        if let current = item.record.worker, !names.contains(current) { names.insert(current, at: 0) }
+        return names
     }
 
+    /// Without the capability the request stays legacy: no worker, so Keep.
+    private var selectedWorker: String? { model.session.canUseWorkers ? workerChoice : nil }
+
     private var workerIssue: String? {
-        guard case .named(let name) = selectedWorker else { return nil }
-        return workerProblem(name: name, workspace: item.record.workspace, workers: model.session.workers)
+        workerProblem(name: selectedWorker, workspace: item.record.workspace, workers: model.session.workers)
     }
 
     private func restart(force: Bool) {

@@ -28,7 +28,6 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.protocol.WorkerSelection
 import tech.xdge.muxa.protocol.RestartRecoveryAction
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.terminal.PaneRenderer
@@ -281,15 +280,17 @@ class PaneSession(
      * that is running. Throws [Failure.Bridge] with the bridge's reason, e.g. a running agent
      * without [force], or no agent pane; a bridge without `task-handoff` is never asked.
      */
-    suspend fun restartAgent(record: TaskRecord, force: Boolean, worker: WorkerSelection = WorkerSelection.Keep): TaskRecord = withContext(dispatcher) {
+    suspend fun restartAgent(record: TaskRecord, force: Boolean, worker: String? = null): TaskRecord = withContext(dispatcher) {
         if (!_state.value.canRestartAgents) {
             throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, "This host's bridge cannot restart agents. Update muxa-bridge."))
         }
         if (_state.value.tasks?.record(record.id)?.restartOperation?.blocksRestart == true) {
             throw Failure.Bridge(ErrorBody(ErrorCode.CONFLICT, "Resolve the interrupted restart before restarting again."))
         }
-        if (worker != WorkerSelection.Keep) requireWorkers()
-        if (worker is WorkerSelection.Named) requireWorkerChoice(worker.name, record.workspace)
+        if (worker != null) {
+            requireWorkers()
+            requireWorkerChoice(worker, record.workspace)
+        }
         var requestId = 0L
         try {
             request { id ->

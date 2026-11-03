@@ -18,7 +18,7 @@ struct RestartRecoverySection: View {
     var body: some View {
         if let operation = record.restartOperation {
             Section("Restart needs recovery") {
-                Text("Requested / unconfirmed: \(operation.assignment?.displayName ?? "Assignment unrecorded")")
+                Text("Requested / unconfirmed: \(workerLabel(operation.worker))")
                 Text("The interrupted operation must be resolved before restarting again.")
                     .font(.caption).foregroundStyle(.secondary)
                 if model.session.canRecoverRestarts {

@@ -92,7 +92,8 @@ sealed interface Request {
     @Serializable
     data class RestartAgent(
         override val id: Long, val task: String, val force: Boolean = false,
-        val worker: WorkerSelection = WorkerSelection.Keep, val rev: Long? = null,
+        /** A worker name or `default`; null keeps the current worker. [rev] is checked only when sent. */
+        val worker: String? = null, val rev: Long? = null,
     ) : Request
 
     /** Start a task's Task Loop again (capability `task-loop`, ADR 0019); [reset] counts attempts from zero. A `task-saved` comes first. */

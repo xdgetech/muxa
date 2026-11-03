@@ -33,6 +33,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.protocol.DEFAULT_WORKER
 import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
@@ -66,7 +67,8 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
         creating = true
         scope.launch {
             try {
-                model.create(draft)
+                // A worker-aware request always names a worker; a legacy one omits it.
+                model.create(draft.copy(worker = if (model.state.canUseWorkers) draft.worker ?: DEFAULT_WORKER else null))
             } catch (e: PaneSession.Failure) {
                 error = PaneSession.describe(e)
             } finally {
@@ -143,8 +145,8 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                 )
                 if (model.state.canUseWorkers) {
                     WorkerPicker(
-                        model.state.tasks?.workers.orEmpty().filter { it.allows(draft.workspace) },
-                        draft.worker, "task-worker",
+                        model.state.tasks?.workers.orEmpty().filter { it.allows(draft.workspace) }.map { it.name },
+                        draft.worker ?: DEFAULT_WORKER, "task-worker",
                     ) { edit(draft.copy(worker = it)) }
                 }
                 NewTaskLoop(model, draft.loop, model.checksOf(draft.workspace), defaults = if (model.state.canUseWorkers) model.state.tasks?.workers?.firstOrNull { it.name == draft.worker && it.allows(draft.workspace) }?.loop else null) { edit(draft.copy(loop = it)) }

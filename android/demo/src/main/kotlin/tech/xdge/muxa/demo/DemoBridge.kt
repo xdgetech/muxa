@@ -447,7 +447,7 @@ class DemoBridge(set: Content = Content.TESTS, alerts: Boolean = false, taskReco
      * restart run, and the agent runs again. A running agent needs [Request.RestartAgent.force].
      */
     private fun restartAgent(req: Request.RestartAgent) {
-        if (req.worker != tech.xdge.muxa.protocol.WorkerSelection.Keep || req.rev != null) {
+        if (req.worker != null || req.rev != null) {
             fail(req.id, ErrorCode.UNSUPPORTED, "Workers are not implemented in the demo.")
             return
         }

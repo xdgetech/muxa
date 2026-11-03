@@ -6,14 +6,13 @@ import org.junit.Test
 import tech.xdge.muxa.protocol.*
 
 class WorkerTest {
-    @Test fun scopesAndAssignmentLabelsPreserveUnknowns() {
+    @Test fun scopesAndLabelsDoNotGuessALegacyRunsWorker() {
         assertTrue(WorkerInfo("All", "codex").allows("work"))
         assertFalse(WorkerInfo("None", "codex", workspaces = emptyList()).allows("work"))
         assertTrue(WorkerInfo("One", "codex", workspaces = listOf("work")).allows("work"))
-        assertEquals("Workspace default", WorkerAssignment("workspace-default").displayName)
-        assertEquals("Reviewer", WorkerAssignment("worker", "Reviewer").displayName)
-        assertEquals("Unknown worker assignment", WorkerAssignment("future").displayName)
-        assertEquals("Unknown worker assignment", WorkerAssignment("worker").displayName)
+        assertEquals("Workspace default", workerLabel(DEFAULT_WORKER))
+        assertEquals("Reviewer", workerLabel("Reviewer"))
+        assertEquals("Worker unrecorded", workerLabel(null))
         val workers = listOf(WorkerInfo("Reviewer", "codex"))
         assertEquals(workers, TaskBoard.of(Message.TaskList(1, emptyList(), emptyList(), workers = workers)).workers)
     }
@@ -27,7 +26,7 @@ class WorkerTest {
         val session = PaneSession(oneThread())
         session.connect { bridge.start(); bridge }
         val displayed = record()
-        for (selection in listOf(WorkerSelection.Keep, WorkerSelection.WorkspaceDefault, WorkerSelection.Named("Reviewer"))) {
+        for (selection in listOf(null, DEFAULT_WORKER, "Reviewer")) {
             session.restartAgent(displayed, false, selection)
             val request = bridge.received.filterIsInstance<Request.RestartAgent>().last()
             assertEquals(selection, request.worker)
@@ -56,7 +55,7 @@ class WorkerTest {
         val session = PaneSession(oneThread())
         session.connect { bridge.start(); bridge }
         try {
-            session.restartAgent(record(), false, WorkerSelection.WorkspaceDefault)
+            session.restartAgent(record(), false, DEFAULT_WORKER)
             fail("worker selection must be refused")
         } catch (e: PaneSession.Failure.Bridge) {
             assertEquals(ErrorCode.UNSUPPORTED, e.body.code)
@@ -89,11 +88,12 @@ class WorkerTest {
         bridge.workers = emptyList()
         session.loadTasks()
         try {
-            session.restartAgent(record(), false, WorkerSelection.Named("Reviewer"))
+            session.restartAgent(record(), false, "Reviewer")
             fail("removed worker must not be sent")
         } catch (e: PaneSession.Failure.Bridge) { assertEquals(ErrorCode.BAD_REQUEST, e.body.code) }
         assertTrue(bridge.received.none { it is Request.CreateTask || it is Request.RestartAgent })
         assertNull(workerProblem(null, "other", emptyList()))
+        assertNull(workerProblem(DEFAULT_WORKER, "other", emptyList()))
         assertNotNull(workerProblem("Reviewer", "other", listOf(WorkerInfo("Reviewer", "codex", workspaces = listOf("work")))))
     }
 

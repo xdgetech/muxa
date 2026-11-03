@@ -129,12 +129,13 @@ public struct AgentRun: Codable, Equatable, Identifiable, Sendable {
     /// The session's transcript on the host, absolute. A path only.
     public var transcript: String?
     public var reason: RunReason
-    public var assignment: WorkerAssignment?
+    /// The worker requested for this run, or `default`. Nil on a legacy run: unrecorded.
+    public var worker: String?
     public var outcome: String?
 
     public init(
         id: UInt32, agent: String? = nil, startedAt: UInt64, endedAt: UInt64? = nil,
-        agentSession: String? = nil, transcript: String? = nil, reason: RunReason, assignment: WorkerAssignment? = nil, outcome: String? = nil
+        agentSession: String? = nil, transcript: String? = nil, reason: RunReason, worker: String? = nil, outcome: String? = nil
     ) {
         self.id = id
         self.agent = agent
@@ -143,7 +144,7 @@ public struct AgentRun: Codable, Equatable, Identifiable, Sendable {
         self.agentSession = agentSession
         self.transcript = transcript
         self.reason = reason
-        self.assignment = assignment
+        self.worker = worker
         self.outcome = outcome
     }
 }

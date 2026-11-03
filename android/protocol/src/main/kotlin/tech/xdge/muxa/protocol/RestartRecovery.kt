@@ -16,6 +16,7 @@ enum class RestartRecoveryAction {
 data class RestartOperation(
     val id: String,
     val phase: String,
-    val assignment: WorkerAssignment? = null,
+    /** The requested worker name or `default`, not a confirmed native role. */
+    val worker: String? = null,
     val actions: List<String> = emptyList(),
 )

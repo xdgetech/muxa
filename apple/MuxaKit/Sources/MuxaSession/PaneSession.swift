@@ -455,21 +455,20 @@ public final class PaneSession {
 
     /// Restarts a task's agent in its pane, after a handoff (ADR 0018). Without
     /// `force`, the bridge refuses a running agent. Returns the record with its new run.
-    public func restartAgent(task: String, force: Bool, worker: WorkerSelection = .keep, rev: UInt64? = nil) async throws -> TaskRecord {
+    /// `worker` is a name or `default`; nil keeps the current worker (ADR 0027).
+    public func restartAgent(task: String, force: Bool, worker: String? = nil, rev: UInt64? = nil) async throws -> TaskRecord {
         if taskRecords.first(where: { $0.id == task })?.restartOperation?.blocksRestart == true {
             throw Failure.bridge(ErrorBody(code: .conflict, message: "Resolve the interrupted restart before restarting again."))
         }
-        if worker != .keep { try requireWorkers() }
-        if case .named(let name) = worker {
+        if let worker {
+            try requireWorkers()
             guard let record = taskRecords.first(where: { $0.id == task }) else {
                 throw Failure.bridge(ErrorBody(code: .badRequest, message: "Reload the task before restarting."))
             }
-            try requireWorkerChoice(name, workspace: record.workspace)
+            try requireWorkerChoice(worker, workspace: record.workspace)
         }
+        // The bridge checks a revision only when one is sent.
         let revision = canUseWorkers ? (rev ?? taskRecords.first { $0.id == task }?.rev) : nil
-        if canUseWorkers, revision == nil {
-            throw Failure.bridge(ErrorBody(code: .badRequest, message: "Reload the task before restarting."))
-        }
         guard canRestartAgents else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.restartUnsupported))
         }

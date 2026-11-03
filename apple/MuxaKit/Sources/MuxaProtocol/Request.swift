@@ -61,7 +61,8 @@ public enum Request: Equatable, Sendable {
     /// Restart a task's agent in the same pane, after a handoff (capability
     /// `task-handoff`, ADR 0018). Refused while the agent runs, unless `force`.
     /// A `task-saved` comes first.
-    case restartAgent(id: UInt64, task: String, force: Bool, worker: WorkerSelection = .keep, rev: UInt64? = nil)
+    /// `worker` is a name or `default`; nil keeps the current worker.
+    case restartAgent(id: UInt64, task: String, force: Bool, worker: String? = nil, rev: UInt64? = nil)
     /// Start a task's Task Loop again (capability `task-loop`, ADR 0019); `reset`
     /// counts the attempts from zero. A `task-saved` comes first.
     case recoverRestart(id: UInt64, task: String, rev: UInt64, operation: String, action: RestartRecoveryAction)
@@ -141,7 +142,7 @@ extension Request: Codable {
             try c.head("restart-agent", id)
             try c.encode(task, forKey: .task)
             if force { try c.encode(true, forKey: .force) }
-            if worker != .keep { try c.encode(worker, forKey: .worker) }
+            try c.encodeIfPresent(worker, forKey: .worker)
             try c.encodeIfPresent(rev, forKey: .rev)
         case .recoverRestart(let id, let task, let rev, let operation, let action):
             try c.head("recover-restart", id)
@@ -248,7 +249,7 @@ extension Request: Codable {
             self = .restartAgent(
                 id: id, task: try c.decode(String.self, forKey: .task),
                 force: try c.decodeIfPresent(Bool.self, forKey: .force) ?? false,
-                worker: c.contains(.worker) ? try c.decode(WorkerSelection.self, forKey: .worker) : .keep,
+                worker: try c.decodeIfPresent(String.self, forKey: .worker),
                 rev: try c.decodeIfPresent(UInt64.self, forKey: .rev))
         case "recover-restart":
             self = .recoverRestart(id: id, task: try c.decode(String.self, forKey: .task),

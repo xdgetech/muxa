@@ -16,31 +16,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import tech.xdge.muxa.protocol.WorkerInfo
-import tech.xdge.muxa.protocol.WorkerSelection
+import tech.xdge.muxa.protocol.DEFAULT_WORKER
+import tech.xdge.muxa.session.workerLabel
 
+/** Picks a worker name or `default` (ADR 0027); [current] marks the Task's worker on restart. */
 @Composable
-fun WorkerPicker(workers: List<WorkerInfo>, selected: String?, tag: String, pick: (String?) -> Unit) {
-    WorkerMenu(selected ?: "Workspace default", tag) { close ->
-        DropdownMenuItem({ Text("Workspace default") }, { pick(null); close() })
-        for (worker in workers) {
-            DropdownMenuItem({ Text(worker.name) }, { pick(worker.name); close() })
-        }
-    }
-}
-
-@Composable
-fun WorkerRestartPicker(workers: List<WorkerInfo>, current: String?, selected: WorkerSelection, pick: (WorkerSelection) -> Unit) {
-    val keep = "Keep current (${current ?: "Workspace default"})"
-    val label = when (selected) {
-        WorkerSelection.Keep -> keep
-        WorkerSelection.WorkspaceDefault -> "Workspace default"
-        is WorkerSelection.Named -> selected.name
-    }
-    WorkerMenu(label, "restart-worker") { close ->
-        DropdownMenuItem({ Text(keep) }, { pick(WorkerSelection.Keep); close() })
-        DropdownMenuItem({ Text("Workspace default") }, { pick(WorkerSelection.WorkspaceDefault); close() })
-        for (worker in workers) {
-            DropdownMenuItem({ Text(worker.name) }, { pick(WorkerSelection.Named(worker.name)); close() })
+fun WorkerPicker(workers: List<String>, selected: String, tag: String, current: String? = null, pick: (String) -> Unit) {
+    fun label(name: String) = if (name == current) "${workerLabel(name)} (current)" else workerLabel(name)
+    WorkerMenu(label(selected), tag) { close ->
+        for (name in listOf(DEFAULT_WORKER) + workers) {
+            DropdownMenuItem({ Text(label(name)) }, { pick(name); close() })
         }
     }
 }

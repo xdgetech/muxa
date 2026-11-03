@@ -31,7 +31,7 @@ extension InboxItem {
             return RunLine(
                 id: run.id, title: "Run \(run.id) · \(run.agent ?? "unknown agent")",
                 detail: [RunLine.reason(run.reason), started, tail].joined(separator: " · "),
-                agentSession: run.agentSession, assignment: run.assignment?.displayName ?? "Worker unrecorded")
+                agentSession: run.agentSession, assignment: workerLabel(run.worker))
         }
     }
 

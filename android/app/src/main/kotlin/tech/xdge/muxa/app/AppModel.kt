@@ -16,7 +16,6 @@ import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
-import tech.xdge.muxa.protocol.WorkerSelection
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WorkspaceChecks
@@ -891,7 +890,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     val canRestartAgents: Boolean get() = isConnected && state.canRestartAgents
 
     /** Restarts [record]'s agent; [force] stops one that is running. A failure shows the bridge's reason. */
-    fun restartAgent(record: TaskRecord, force: Boolean, worker: WorkerSelection = WorkerSelection.Keep) = scope.launch {
+    fun restartAgent(record: TaskRecord, force: Boolean, worker: String? = null) = scope.launch {
         restartingTask = null
         try {
             session.restartAgent(record, force, worker)

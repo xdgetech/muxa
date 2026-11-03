@@ -86,7 +86,7 @@ struct RestartAgentTests {
         #expect(saved.runs[1].reason == .restart)
         #expect(session.taskRecords.first == saved)
         #expect(bridge.received.contains {
-            if case .restartAgent(_, "t-000001", false, .keep, nil) = $0 { true } else { false }
+            if case .restartAgent(_, "t-000001", false, nil, nil) = $0 { true } else { false }
         })
     }
 
@@ -110,7 +110,7 @@ struct RestartAgentTests {
         let saved = try await session.restartAgent(task: first.id, force: item.restartNeedsForce)
         #expect(saved.runs.count == 3)
         #expect(bridge.received.contains {
-            if case .restartAgent(_, "t-000001", true, .keep, nil) = $0 { true } else { false }
+            if case .restartAgent(_, "t-000001", true, nil, nil) = $0 { true } else { false }
         })
     }
 

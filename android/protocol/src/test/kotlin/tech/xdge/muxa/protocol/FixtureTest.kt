@@ -49,15 +49,15 @@ class FixtureTest {
     }
 
     @Test
-    fun workerContractRoundTripsAndKeepsSelectionPresence() {
+    fun workerContractRoundTripsAWorkerNameOrNone() {
         val requests = lines("workers/requests.jsonl")
-        assertEquals(6, requests.size)
+        assertEquals(7, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("workers/messages.jsonl")
         assertEquals(5, messages.size)
         messages.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeMessage(it)))) }
-        val expected = listOf(WorkerSelection.Keep, WorkerSelection.Keep, WorkerSelection.WorkspaceDefault, WorkerSelection.Named("Reviewer"))
-        requests.subList(1, 5).zip(expected).forEach { (line, selection) ->
+        val expected = listOf(null, null, DEFAULT_WORKER, "Reviewer")
+        requests.subList(2, 6).zip(expected).forEach { (line, selection) ->
             assertEquals(selection, (Wire.decodeRequest(line) as Request.RestartAgent).worker)
         }
         for (bad in listOf("true", "17", "{}", "[]")) {
@@ -65,7 +65,9 @@ class FixtureTest {
                 Wire.decodeRequest("""{"type":"restart-agent","id":1,"task":"t-000001","worker":$bad}""")
             }
         }
-        assertFalse(WorkerAssignment("future-assignment", "Scheduler").isKnown)
+        // A legacy run has no worker: unrecorded, not the workspace default.
+        val list = Wire.decodeMessage(messages[1]) as Message.TaskList
+        assertEquals(listOf(null, DEFAULT_WORKER, "Reviewer"), list.entries[0].runs.map { it.worker })
     }
 
     @Test

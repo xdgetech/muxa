@@ -19,7 +19,7 @@ struct RecoveryActionTests {
 
     @Test func interruptedRunDoesNotClaimToBeRunning() {
         var record = InboxTests.record("a")
-        record.runs = [AgentRun(id: 1, startedAt: 1, reason: .restart, assignment: .init(kind: "worker", name: "Reviewer"), outcome: "unconfirmed")]
+        record.runs = [AgentRun(id: 1, startedAt: 1, reason: .restart, worker: "Reviewer", outcome: "unconfirmed")]
         let item = InboxItem(record: record, sessions: [InboxTests.session("a", .running)])
         #expect(item.runLines(now: 3).first?.detail.hasSuffix("unconfirmed outcome") == true)
         record.runs[0].outcome = "future"
@@ -33,7 +33,7 @@ struct RecoveryRequestTests {
         let capabilities = ["task-records", "task-handoff"] + (capable ? ["task-restart-recovery"] : [])
         let (session, bridge) = try await RestartAgentTests().connected(capabilities: capabilities)
         bridge.taskRecords[0].restartOperation = RestartOperation(id: "op-1", phase: phase,
-            assignment: WorkerAssignment(kind: "worker", name: "Reviewer"), actions: RestartRecoveryAction.allCases.map(\.rawValue))
+            worker: "Reviewer", actions: RestartRecoveryAction.allCases.map(\.rawValue))
         await session.loadTasks()
         return (session, bridge, session.taskRecords[0])
     }

@@ -186,7 +186,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
         case .restartAgent(let id, let task, let force, let worker, let rev):
-            guard worker == .keep, rev == nil else { unsupported(id); return }
+            guard worker == nil, rev == nil else { unsupported(id); return }
             restartAgent(id: id, task: task, force: force)
         case .startLoop(let id, let task, let loop, let reset):
             changeLoop(id) { (tasks: inout DemoTasks) throws(DemoTasks.Refusal) in try tasks.startLoop(task, spec: loop, reset: reset) }

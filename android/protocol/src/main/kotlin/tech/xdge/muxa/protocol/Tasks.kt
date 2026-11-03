@@ -53,7 +53,8 @@ data class AgentRun(
     /** The session's transcript on the host, absolute. A path only. */
     val transcript: String? = null,
     val reason: RunReason,
-    val assignment: WorkerAssignment? = null,
+    /** The worker requested for this run, or `default`; null on a legacy run means unrecorded. */
+    val worker: String? = null,
     val outcome: String? = null,
 )
 

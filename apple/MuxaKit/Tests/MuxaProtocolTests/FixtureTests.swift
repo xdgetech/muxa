@@ -44,15 +44,15 @@ struct FixtureTests {
         }
     }
 
-    @Test func workerContractRoundTripsAndKeepsSelectionPresence() throws {
+    @Test func workerContractRoundTripsAWorkerNameOrNone() throws {
         let requests = try Self.lines("workers/requests.jsonl")
-        #expect(requests.count == 6)
+        #expect(requests.count == 7)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("workers/messages.jsonl")
         #expect(messages.count == 5)
         for line in messages { #expect(try canonical(Wire.encode(Wire.decodeMessage(line))) == canonical(line)) }
-        let expected: [WorkerSelection] = [.keep, .keep, .workspaceDefault, .named("Reviewer")]
-        for (line, selection) in zip(requests[1...4], expected) {
+        let expected: [String?] = [nil, nil, defaultWorker, "Reviewer"]
+        for (line, selection) in zip(requests[2...5], expected) {
             guard case .restartAgent(_, _, _, let worker, _) = try Wire.decodeRequest(line) else {
                 Issue.record("expected restart"); continue
             }
@@ -62,7 +62,11 @@ struct FixtureTests {
             let line = Data("{\"type\":\"restart-agent\",\"id\":1,\"task\":\"t-000001\",\"worker\":\(bad)}".utf8)
             #expect(throws: (any Error).self) { try Wire.decodeRequest(line) }
         }
-        #expect(!WorkerAssignment(kind: "future-assignment", name: "Scheduler").isKnown)
+        guard case .taskList(let list) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected task-list"); return
+        }
+        // A legacy run has no worker: unrecorded, not the workspace default.
+        #expect(list.entries[0].runs.map(\.worker) == [nil, defaultWorker, "Reviewer"])
     }
 
     @Test func restartRecoveryRoundTrips() throws {

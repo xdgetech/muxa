@@ -60,10 +60,10 @@ struct CreateTaskSheet: View {
                 }
                 if model.session.canUseWorkers {
                     Section("Worker") {
-                        Picker("Worker", selection: $draft.worker) {
-                            Text("Workspace default").tag(String?.none)
+                        Picker("Worker", selection: Binding(get: { draft.worker ?? defaultWorker }, set: { draft.worker = $0 })) {
+                            Text("Workspace default").tag(defaultWorker)
                             ForEach(model.session.workers.filter { $0.allows(workspace: draft.workspace) }, id: \.name) { worker in
-                                Text(worker.name).tag(Optional(worker.name))
+                                Text(worker.name).tag(worker.name)
                             }
                         }
                         .accessibilityIdentifier("record-worker")
@@ -101,7 +101,7 @@ struct CreateTaskSheet: View {
             .onChange(of: draft) { error = nil }
             // Another workspace allows other checks.
             .onChange(of: draft.workspace) {
-                if let name = draft.worker, !model.session.workers.contains(where: { $0.name == name && $0.allows(workspace: draft.workspace) }) { draft.worker = nil }
+                if workerProblem(name: draft.worker, workspace: draft.workspace, workers: model.session.workers) != nil { draft.worker = defaultWorker }
                 if draft.loop != nil { draft.loop = model.checks(of: draft.workspace).map { LoopDraft(checks: $0) } }
             }
             .onChange(of: withRepo) { _, on in
@@ -144,9 +144,10 @@ struct CreateTaskSheet: View {
 
     /// The draft as sent: without the repo fields while the toggle is off.
     private var effective: TaskRecordDraft {
-        guard !withRepo else { return draft }
         var d = draft
-        d.repo = ""
+        if !withRepo { d.repo = "" }
+        // A worker-aware request always names a worker; a legacy one omits it.
+        d.worker = model.session.canUseWorkers ? (d.worker ?? defaultWorker) : nil
         return d
     }
 
