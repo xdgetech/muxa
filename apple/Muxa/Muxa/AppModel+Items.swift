@@ -3,7 +3,7 @@ import MuxaProtocol
 import MuxaSession
 
 /// The Inbox as a list of questions (ADR 0033), on a host with `work` level 3. An
-/// older host keeps the list of `AppModel+Inbox.swift`.
+/// older host has no Inbox; it is told to update muxa-bridge.
 extension AppModel {
     var usesItems: Bool { isConnected && session.canUseItems }
 
@@ -23,10 +23,7 @@ extension AppModel {
     }
 
     /// A phone opens on the Inbox at connect when something waits on the user.
-    var needsUserAtConnect: Bool {
-        if session.canUseItems { return !session.openItems.isEmpty }
-        return inboxQueue.contains { $0.group == .needsAttention }
-    }
+    var needsUserAtConnect: Bool { session.canUseItems && !session.openItems.isEmpty }
 }
 
 extension ItemKind {

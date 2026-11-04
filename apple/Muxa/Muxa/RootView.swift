@@ -43,7 +43,6 @@ struct RootView: View {
         .onChange(of: model.detailRequest) { compactColumn = .detail }
         .onChange(of: model.isConnected) { _, connected in
             if !connected {
-                model.inboxSnoozes = [:]
                 model.showTasks = false
                 model.returnToInbox = false
                 columns = .all

@@ -24,30 +24,21 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
     }
 
-    /// A host without `task-inbox` keeps the device-local Snooze: the Task leaves this
-    /// device's Inbox, and Show snoozed brings it back. It replaces the Triage test,
-    /// because Triage with Next and Previous is gone.
+    /// A host below `work:3` has no Inbox (ADR 0033 §5): the Inbox says to update the
+    /// bridge, and All Tasks still lists its Tasks. It replaces the local Snooze test,
+    /// because the older Inbox list is gone.
     @MainActor
-    func testAnOlderHostKeepsTheLocalSnooze() throws {
+    func testAnOlderHostIsToldToUpdateTheBridge() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-no-task-inbox"]
+        app.launchArguments = ["-demo", "-work2"]
         app.launch()
-        let list = app.descendants(matching: .any)["inbox-list"].firstMatch
-        if !list.waitForExistence(timeout: 3) {
-            showSidebar(app)
-            tapWhenReady(app.buttons["open-tasks"])
-        }
-        XCTAssertTrue(list.waitForExistence(timeout: 5))
-        let row = app.buttons["inbox-row-t-auth01"]
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["inbox-row-e-000000a1"].exists, "an older host has no stored entries")
-        tapWhenReady(app.buttons["inbox-actions-t-auth01"])
-        XCTAssertFalse(app.buttons["Move Down"].exists, "no shared order on this host")
-        tapWhenReady(app.buttons["Snooze"])
-        XCTAssertTrue(row.waitForNonExistence(timeout: 5))
-        tapWhenReady(app.buttons["inbox-show-snoozed"])
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
+        leaveInitialInbox(app)
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        showSidebar(app)
+        tapWhenReady(app.buttons["open-tasks"])
+        XCTAssertTrue(app.descendants(matching: .any)["inbox-needs-bridge"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["inbox-row-t-auth01"].exists, "no Task list in the Inbox")
+        tapWhenReady(app.buttons["inbox-all-tasks"])
         XCTAssertTrue(header(app, "Needs attention").waitForExistence(timeout: 5))
     }
 

@@ -147,3 +147,24 @@ struct InboxItemRow: View {
         .accessibilityValue(item.isUnread ? "Unread" : "")
     }
 }
+
+/// A host below `work` level 3 has no Inbox items, and the app has no other Inbox
+/// (ADR 0033 §5). All Tasks and the Sessions still work there.
+struct InboxNeedsNewerBridge: View {
+    var showAllTasks: () -> Void
+    var showSessions: (() -> Void)?
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Update muxa-bridge", systemImage: "arrow.down.circle")
+        } description: {
+            Text("This host needs a newer muxa-bridge for the Inbox. Update muxa on the host.")
+        } actions: {
+            Button("All Tasks", action: showAllTasks).accessibilityIdentifier("inbox-all-tasks")
+            if let showSessions {
+                Button("Sessions", action: showSessions).accessibilityIdentifier("inbox-sessions")
+            }
+        }
+        .accessibilityIdentifier("inbox-needs-bridge")
+    }
+}

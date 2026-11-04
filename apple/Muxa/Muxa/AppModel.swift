@@ -93,30 +93,12 @@ final class AppModel {
     var triageOpening: String?
     /// The sheet opens on the Routines list.
     var routinesOpening = false
-    /// Device-local Snooze, only for a host without `task-inbox` (ADR 0023).
-    var inboxSnoozes: [String: String] = [:]
-    var returnToInbox = false
-    /// The host keeps Move down and Later, so the local Snooze is off.
-    var canPlaceTasks: Bool { isConnected && session.canPlaceTasks }
-    var canUseRoutines: Bool { isConnected && session.canUseRoutines }
-    var inboxSnoozedCount: Int {
-        guard !session.canPlaceTasks else { return 0 }
-        return session.taskRecords.triageQueue(sessions: session.sessions).filter { inboxSnoozes[$0.id] == $0.attentionKey }.count
-    }
-    /// The Task needs in the host's order, without the ones snoozed on this device.
-    var inboxQueue: [TaskItem] {
-        let queue = session.taskRecords.triageQueue(sessions: session.sessions)
-        return session.canPlaceTasks ? queue : queue.filter { inboxSnoozes[$0.id] != $0.attentionKey }
-    }
-    /// The Inbox list: Task needs, waiting Routine runs, briefings and proposals.
-    var inboxRows: [InboxRow] {
-        MuxaSession.inboxRows(
-            queue: inboxQueue, entries: session.inboxEntries, routines: session.routines, sessions: session.sessions)
-    }
     func showInbox(_ id: String? = nil) {
         triageOpening = id
         showTasks = true
     }
+    var returnToInbox = false
+    var canUseRoutines: Bool { isConnected && session.canUseRoutines }
     func showRoutines() {
         routinesOpening = true
         showTasks = true
@@ -223,7 +205,6 @@ final class AppModel {
         connectError = nil
         connectFix = nil
         connecting = true
-        inboxSnoozes = [:]
         returnToInbox = false
         detailRequest += 1
         let initialRequest = detailRequest
@@ -304,7 +285,6 @@ final class AppModel {
     }
 
     func disconnect() async {
-        inboxSnoozes = [:]
         showTasks = false
         returnToInbox = false
         stayDisconnected = true

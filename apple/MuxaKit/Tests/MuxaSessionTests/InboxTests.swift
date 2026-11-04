@@ -46,25 +46,6 @@ struct InboxTests {
         }
     }
 
-    /// `protocol/fixtures/inbox/queue.jsonl` pins Move down and Later for all three clients.
-    @Test func theQueueMatchesTheSharedFixture() throws {
-        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../../protocol/fixtures/inbox/queue.jsonl").standardized
-        struct Case: Decodable {
-            var name: String
-            var now: UInt64
-            var records: [TaskRecord]
-            var sessions: [Session]
-            var queue: [String]
-        }
-        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
-        #expect(lines.count == 16)
-        for line in lines {
-            let c = try JSONDecoder().decode(Case.self, from: Data(line.utf8))
-            #expect(c.records.triageQueue(sessions: c.sessions, now: c.now).map(\.id) == c.queue, "\(c.name)")
-        }
-    }
-
     @Test func aLoopOfAnUnknownStateFollowsTheAgent() {
         var record = Self.record("a")
         record.loop = TaskLoop(
@@ -106,23 +87,6 @@ struct InboxTests {
         let item = TaskItem(record: Self.record("a"), sessions: [Self.session("a", .waiting, role: .unknown)])
         #expect(item.group == .needsAttention)
         #expect(item.agent?.since == 100)
-    }
-
-    @Test func snoozeIdentityChangesWhenSessionAppearsOrAgentChanges() {
-        let r = Self.record("a")
-        let absent = TaskItem(record: r, sessions: [])
-        let linked = TaskItem(record: r, sessions: [Self.session("a", nil)])
-        let waiting = TaskItem(record: r, sessions: [Self.session("a", .waiting)])
-        #expect(absent.attentionKey != linked.attentionKey)
-        #expect(linked.attentionKey != waiting.attentionKey)
-        #expect(waiting.attentionKey == TaskItem(record: r, sessions: [Self.session("a", .waiting)]).attentionKey)
-    }
-
-    @Test func queueExcludesRunningAndClosedAndBreaksTiesById() {
-        let records = [Self.record("a"), Self.record("b"), Self.record("run"), Self.record("closed", .done)]
-        let queue = records.triageQueue(sessions: [Self.session("run", .running)])
-        #expect(queue.map(\.id) == ["b", "a"])
-        #expect(queue.allSatisfy { $0.need == .noSession })
     }
 
     @Test func groupsComeInOrderNewestFirstAndEmptyOnesAreLeftOut() {

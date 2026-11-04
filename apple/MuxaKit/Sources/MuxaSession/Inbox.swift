@@ -44,28 +44,7 @@ public struct TaskItem: Equatable, Sendable, Identifiable {
         return session == nil ? .noSession : .noAgent
     }
 
-    /// A conservative local snooze identity, never an approval token.
-    public var attentionKey: String {
-        var parts: [String] = [record.id, String(record.rev), session?.id ?? "", agentPane?.id ?? "", need.rawValue]
-        parts.append(agent?.state.rawValue ?? "")
-        parts.append(agent?.since.map { String($0) } ?? "")
-        parts.append(record.loop?.state.raw ?? "")
-        parts.append(record.loop?.reason?.raw ?? "")
-        parts.append(record.loop.map { String($0.since) } ?? "")
-        return parts.joined(separator: "\u{1f}")
-    }
-
     public var id: String { record.id }
-
-    /// The record's Move down and Later (ADR 0027 §4), unless the Task's current
-    /// attention began after they were set: a new need surfaces again.
-    public var place: TaskInbox? {
-        guard let place = record.inbox else { return nil }
-        let paused = record.loop?.needsUser == true ? record.loop?.since : nil
-        let attention = [agent?.since, paused].compactMap { $0 }.max()
-        if let attention, attention > place.since { return nil }
-        return place
-    }
 
     public init(record: TaskRecord, sessions: [Session]) {
         self.record = record
@@ -109,25 +88,6 @@ public struct InboxSection: Equatable, Sendable, Identifiable {
 }
 
 extension Array where Element == TaskRecord {
-    /// Every item with a need, in group order, then the moved-down ones by
-    /// `order`. Later hides an item until its time (`now`, epoch seconds).
-    public func triageQueue(
-        sessions: [Session], now: UInt64 = UInt64(Date().timeIntervalSince1970)
-    ) -> [TaskItem] {
-        let shown = inbox(sessions: sessions).flatMap(\.items).filter { item in
-            item.need != .none && !(item.place?.until.map { $0 > now } ?? false)
-        }
-        // Sorted by position too: equal orders keep the group order.
-        return shown.enumerated().sorted { a, b in
-            switch (a.element.place?.order, b.element.place?.order) {
-            case let (x?, y?) where x != y: x < y
-            case (nil, _?): true
-            case (_?, nil): false
-            default: a.offset < b.offset
-            }
-        }.map(\.element)
-    }
-
     /// The non-empty groups in their fixed order.
     public func inbox(sessions: [Session]) -> [InboxSection] {
         let items = map { TaskItem(record: $0, sessions: sessions) }

@@ -222,19 +222,6 @@ extension DemoTasks {
         return records[i]
     }
 
-    /// Move down and Later as the host stores them (ADR 0027 §4): `order` is the clock in ms.
-    mutating func place(_ id: String, rev: UInt64, _ change: InboxChange) throws(Refusal) -> TaskRecord {
-        guard let i = records.firstIndex(where: { $0.id == id }) else { throw .badRequest("\(id) is not a task") }
-        guard records[i].rev == rev else { throw .conflict }
-        let now = Date().timeIntervalSince1970
-        if let until = change.until, until <= UInt64(now) || until > UInt64(now) + 366 * 86_400 {
-            throw .badRequest("until must be in the future and at most 366 days ahead")
-        }
-        records[i].rev += 1
-        records[i].inbox = TaskInbox(order: change.down ? UInt64(now * 1000) : nil, until: change.until, since: UInt64(now))
-        return records[i]
-    }
-
     /// Ends the open run and adds a restart run. The caller checked the agent pane.
     mutating func restart(_ id: String) throws(Refusal) -> TaskRecord {
         guard let i = records.firstIndex(where: { $0.id == id }) else { throw .badRequest("\(id) is not a task") }

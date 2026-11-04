@@ -4,7 +4,7 @@ import Testing
 
 @testable import MuxaSession
 
-/// A bridge with Routines, stored entries and the Task's Inbox place, as the host answers them.
+/// A bridge with Routines and stored entries, as the host answers them.
 final class WorkBridge: FakeBridge, @unchecked Sendable {
     var routines: [RoutineInfo] = [
         RoutineInfo(workspace: "work", name: "digest", trigger: RoutineTrigger(at: "08:00", timezone: "Europe/Berlin"),
@@ -63,15 +63,6 @@ final class WorkBridge: FakeBridge, @unchecked Sendable {
             default: return refuse(id, .badRequest, "not an entry's action")
             }
             emit(.inboxSaved(inbox: id, entry: entries[i]))
-            emit(.result(id: id, error: nil, sessions: nil))
-        case .updateInbox(let id, let task, let rev, let change):
-            record(req)
-            guard let i = taskRecords.firstIndex(where: { $0.id == task }), taskRecords[i].rev == rev else {
-                return refuse(id, .conflict, "stale")
-            }
-            taskRecords[i].rev += 1
-            taskRecords[i].inbox = TaskInbox(order: change.down ? 5000 : nil, until: change.until, since: 5)
-            emit(.taskSaved(task: id, record: taskRecords[i]))
             emit(.result(id: id, error: nil, sessions: nil))
         default:
             try await super.send(line)
@@ -159,8 +150,6 @@ struct WorkTests {
         let task = try #require(approved.task)
         #expect(session.taskRecords.map(\.id) == [task])
         #expect(session.inboxEntries[0].disposition == "approved")
-        // The approved entry leaves the list.
-        #expect(inboxRows(queue: [], entries: session.inboxEntries, routines: [], sessions: []).map(\.id) == ["e-00000002"])
         // A second approval of the same entry creates nothing.
         _ = try? await session.approve(approved)
         #expect(bridge.taskRecords.count == 1)
@@ -176,58 +165,6 @@ struct WorkTests {
         #expect(bridge.work.contains { if case .updateInboxEntry(_, "e-00000001", .later, 9000, _, _) = $0 { true } else { false } })
         // A closed entry is refused by the host, and the list is read again.
         await #expect(throws: PaneSession.Failure.self) { try await session.dismiss(session.inboxEntries[1]) }
-    }
-
-    @Test func moveDownAndLaterNeedTaskInbox() async throws {
-        let bridge = WorkBridge()
-        bridge.capabilities = ["task-records"]
-        bridge.taskRecords = [InboxTests.record("t-1")]
-        let session = try await connected(bridge)
-        #expect(!session.canPlaceTasks)
-        await #expect(throws: PaneSession.Failure.bridge(ErrorBody(code: .unsupported, message: PaneSession.placeUnsupported))) {
-            try await session.place(session.taskRecords[0], InboxChange(down: true))
-        }
-        #expect(bridge.work.isEmpty)
-    }
-
-    @Test func moveDownSavesThePlaceAndAStaleRevisionConflicts() async throws {
-        let bridge = WorkBridge()
-        bridge.capabilities = ["task-records", "task-inbox"]
-        bridge.taskRecords = [InboxTests.record("t-1")]
-        let session = try await connected(bridge)
-        let stale = session.taskRecords[0]
-        let saved = try await session.place(stale, InboxChange(down: true))
-        #expect(saved.inbox?.order == 5000)
-        #expect(session.taskRecords[0].rev == 2)
-        await #expect(throws: PaneSession.Failure.bridge(ErrorBody(code: .conflict, message: PaneSession.taskConflict))) {
-            try await session.place(stale, InboxChange(until: 9000))
-        }
-    }
-
-    @Test func movedDownTasksComeAfterEntriesAndLaterHides() {
-        let moved = TaskRecord(id: "t-down", rev: 1, workspace: "w", title: "d", goal: "g", status: .review,
-                               createdAt: 1, updatedAt: 9, inbox: TaskInbox(order: 1, since: 200))
-        let later = TaskRecord(id: "t-later", rev: 1, workspace: "w", title: "l", goal: "g", status: .review,
-                               createdAt: 1, updatedAt: 9, inbox: TaskInbox(until: 500, since: 200))
-        let plain = InboxTests.record("t-plain", .review)
-        let sessions = [InboxTests.session("t-down", .idle), InboxTests.session("t-later", .idle),
-                        InboxTests.session("t-plain", .idle), InboxTests.session("t-run", .waiting)]
-        let queue = [moved, later, plain].triageQueue(sessions: sessions, now: 300)
-        let routines = [RoutineInfo(workspace: "w", name: "r", enabled: true,
-                                    running: RoutineRun(occurrence: "now-1", startedAt: 1, task: "t-run"))]
-        let entries = [Self.entry("e-1", kind: "briefing"), Self.entry("e-2", kind: "proposal", disposition: "dismissed"),
-                       Self.entry("e-3", kind: "proposal", disposition: "later", until: 400),
-                       Self.entry("e-4", kind: "briefing", disposition: "later", until: 200)]
-        let rows = inboxRows(queue: queue, entries: entries, routines: routines, sessions: sessions, now: 300)
-        #expect(rows.map(\.id) == ["t-plain", "t-run", "e-1", "e-4", "t-down"])
-    }
-
-    @Test func aRoutineRunWithoutAWaitingAgentIsNoNeed() {
-        let routines = [RoutineInfo(workspace: "w", name: "r", enabled: true,
-                                    running: RoutineRun(occurrence: "now-1", startedAt: 1, task: "t-run"))]
-        #expect(routines.needs(sessions: [InboxTests.session("t-run", .running)]).isEmpty)
-        #expect(routines.needs(sessions: [InboxTests.session("t-run", .waiting, shellForeground: true)]).isEmpty)
-        #expect(routines.needs(sessions: [InboxTests.session("t-run", .waiting)]).map(\.task) == ["t-run"])
     }
 
     @Test func laterTimesAreInTheFuture() throws {

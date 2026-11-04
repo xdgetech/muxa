@@ -7,7 +7,6 @@ enum InboxRoute: Hashable {
     case task(String)
     /// An Inbox item (ADR 0033), pushed on a phone.
     case item(String)
-    case entry(String)
     case routines
     case routine(workspace: String, name: String)
 }
@@ -38,7 +37,7 @@ struct TasksScreen: View {
                 if mode == .inbox, model.usesItems {
                     InboxItemsView(focused: $focused, path: $path) { mode = .tasks }
                 } else if mode == .inbox {
-                    InboxListView(focused: $focused, path: $path)
+                    InboxNeedsNewerBridge(showAllTasks: { mode = .tasks })
                 } else {
                     taskList
                 }
@@ -51,7 +50,6 @@ struct TasksScreen: View {
                 case .item(let id):
                     // An answer returns to the list.
                     InboxItemScreen(id: id) { _ in if path.last == .item(id) { path.removeLast() } }
-                case .entry(let id): InboxEntryDetail(id: id, path: $path)
                 case .routines: RoutinesScreen()
                 case .routine(let workspace, let name): RoutineDetail(workspace: workspace, name: name)
                 }
@@ -98,8 +96,7 @@ struct TasksScreen: View {
             model.triageOpening = nil
             initialized = true
         } else if !initialized {
-            mode = model.inboxRows.isEmpty ? .tasks : .inbox
-            focused = model.triageOpening ?? model.inboxRows.first?.id
+            mode = .inbox
             model.triageOpening = nil
             initialized = true
         }

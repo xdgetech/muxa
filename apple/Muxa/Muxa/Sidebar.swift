@@ -114,12 +114,10 @@ struct Sidebar: View {
         .refreshable { try? await model.session.refresh() }
     }
 
-    /// How many items, or Inbox rows on an older host, wait on the user.
-    private var inboxPreview: Int {
-        model.usesItems ? model.session.openItems.count : model.inboxRows.count
-    }
+    /// How many items wait on the user.
+    private var inboxPreview: Int { model.usesItems ? model.session.openItems.count : 0 }
 
-    /// The first items, or Inbox rows on an older host, as buttons that open them.
+    /// The first items, as buttons that open them.
     @ViewBuilder private var inboxRows: some View {
         if model.usesItems {
             let items = model.session.openItems
@@ -128,17 +126,6 @@ struct Sidebar: View {
                 Button { model.showInbox(item.id) } label: { InboxItemRow(item: item) }
                     .foregroundStyle(.primary)
                     .accessibilityIdentifier("sidebar-item-\(item.id)")
-            }
-        } else {
-            let rows = model.inboxRows
-            if rows.isEmpty { Text("Nothing needs you").foregroundStyle(.secondary) }
-            ForEach(Array(rows.prefix(3))) { row in
-                Button { model.showInbox(row.id) } label: {
-                    VStack(alignment: .leading) {
-                        Text(row.title)
-                        Text(row.subtitle).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
             }
         }
     }

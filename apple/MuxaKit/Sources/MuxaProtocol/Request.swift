@@ -58,9 +58,6 @@ public enum Request: Equatable, Sendable {
     /// Set a task record's status. `rev` is the one the client saw; a stale one
     /// fails with `conflict`. A `task-saved` comes first.
     case updateTask(id: UInt64, task: String, rev: UInt64, status: TaskStatus)
-    /// Move down or Later: `update-task` with `inbox` instead of `status`
-    /// (capability `task-inbox`, ADR 0027 §4). A `task-saved` comes first.
-    case updateInbox(id: UInt64, task: String, rev: UInt64, inbox: InboxChange)
     /// Restart a task's agent in the same pane, after a handoff (capability
     /// `task-handoff`, ADR 0018). Refused while the agent runs, unless `force`.
     /// A `task-saved` comes first.
@@ -95,7 +92,7 @@ public enum Request: Equatable, Sendable {
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
-            .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _), .updateInbox(let id, _, _, _),
+            .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
             .updateInboxEntry(let id, _, _, _, _, _), .startSession(let id, _, _):
@@ -107,7 +104,7 @@ public enum Request: Equatable, Sendable {
 extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
-        case workspace, title, goal, project, task, rev, status, force, loop, reset, worker, inbox
+        case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
         case cols, rows, operation, action
         case routine, entry, until, option
     }
@@ -156,11 +153,6 @@ extension Request: Codable {
             try c.encode(task, forKey: .task)
             try c.encode(rev, forKey: .rev)
             try c.encode(status, forKey: .status)
-        case .updateInbox(let id, let task, let rev, let inbox):
-            try c.head("update-task", id)
-            try c.encode(task, forKey: .task)
-            try c.encode(rev, forKey: .rev)
-            try c.encode(inbox, forKey: .inbox)
         case .restartAgent(let id, let task, let force, let worker, let rev):
             try c.head("restart-agent", id)
             try c.encode(task, forKey: .task)
@@ -280,11 +272,6 @@ extension Request: Codable {
                 base: try c.decodeIfPresent(String.self, forKey: .base),
                 loop: try c.decodeIfPresent(LoopSpec.self, forKey: .loop),
                 worker: try c.decodeIfPresent(String.self, forKey: .worker))
-        case "update-task" where c.contains(.inbox):
-            self = .updateInbox(
-                id: id, task: try c.decode(String.self, forKey: .task),
-                rev: try c.decode(UInt64.self, forKey: .rev),
-                inbox: try c.decode(InboxChange.self, forKey: .inbox))
         case "update-task":
             self = .updateTask(
                 id: id, task: try c.decode(String.self, forKey: .task),

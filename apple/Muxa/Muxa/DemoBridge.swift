@@ -100,18 +100,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "task-inbox", "work:3",
+            "task-loop", "tasks-changed", "viewport", "work:3",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
         if arguments.contains("-work1") { return all.map { $0 == "work:3" ? "work:1" : $0 } }
-        // A bridge from before Inbox items (ADR 0033): the Inbox is built from the Tasks.
+        // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
         if arguments.contains("-work2") { return all.map { $0 == "work:3" ? "work:2" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
-        // A bridge from before the shared Inbox order and Routines, for the local Snooze's test.
-        if arguments.contains("-no-task-inbox") { return all.filter { $0 != "task-inbox" && !$0.hasPrefix("work:") } }
         #endif
         return all
     }
@@ -195,12 +193,6 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 self?.createTask(
                     id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch, loop: loop)
             }
-        case .updateInbox(let id, let task, let rev, let change):
-            guard Self.capabilities.contains("task-inbox") else { return unsupported(id, Self.noRequest) }
-            let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
-                do throws(DemoTasks.Refusal) { return .success(try tasks.place(task, rev: rev, change)) } catch { return .failure(error) }
-            }
-            answer(id, outcome)
         case .listRoutines, .listInbox, .runRoutine, .updateInboxEntry:
             serveWork(req)
         case .updateTask(let id, let task, let rev, let status):
