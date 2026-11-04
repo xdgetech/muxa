@@ -78,7 +78,7 @@ class AskTest {
         compose.waitUntilDoesNotExist(hasTestTag("repo-app"), TIMEOUT)
         compose.onNodeWithTag("repo-libs/core").performClick()
         waitForText("record-repo-choice", "libs/core")
-        compose.onNodeWithTag("task-create").performScrollTo().performClick()
+        compose.onNodeWithTag("task-create").performClick()
         compose.waitUntilDoesNotExist(hasTestTag("task-create"), TIMEOUT)
         compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText("index-the-docs")), TIMEOUT)
     }
@@ -109,7 +109,7 @@ class AskTest {
         launch(work1 = true)
         newRepoTask("Index the docs")
         compose.onNodeWithTag("record-ask").assertDoesNotExist()
-        compose.onNodeWithTag("task-create").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("task-create").assertIsNotEnabled()
         waitForText("task-record-error", "Name the branch.")
     }
 
