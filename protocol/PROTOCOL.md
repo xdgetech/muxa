@@ -385,7 +385,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
 1. `inbox-list` also has `items[]`: every item, a Routine's entries included, in the order to show them. Open items come first, `ask` before the rest, then newest first. Then `later` ones, then at most 100 answered or resolved ones, newest first. `entries` stays for older clients.
 2. An item has:
    - `id`: `i-` and 8 hex digits for a Task's item; a Routine's entry keeps its `e-` id;
-   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, or a stopped loop), `proposal` or `briefing`;
+   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `change-course`), `proposal` or `briefing`;
    - `state`: `open`, `later`, `answered` or `resolved` (the need ended without an answer from the Inbox);
    - `question` (one line), `workspace`, `title` (the Task's or the entry's) and `createdAt`;
    - optional `readAt`, `until` (with `later`), `answeredAt`, and `answer` (with `answered`, the action given);

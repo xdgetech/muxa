@@ -515,10 +515,11 @@ async fn create_worker(
     };
     let started = match start(env, &record, target, resolved).await {
         Ok(started) => started,
-        Err(failure) => return failed_worker(claim, failure).await,
+        Err(failure) => return failed_worker(Arc::clone(&env.records), claim, failure).await,
     };
     let Some((pane, initial)) = started.initial else {
         return failed_worker(
+            Arc::clone(&env.records),
             claim,
             Failure::after(&started.launched, "worker startup identity is missing"),
         )
@@ -527,6 +528,7 @@ async fn create_worker(
     let current = super::restart::identity(&env.client, started.launched.id, pane).await;
     if !current.is_ok_and(|process| process == initial) {
         return failed_worker(
+            Arc::clone(&env.records),
             claim,
             Failure::after(
                 &started.launched,
@@ -619,6 +621,7 @@ async fn startup_identity(
 }
 
 async fn failed_worker(
+    config: Arc<Config>,
     mut claim: ClaimedTask,
     failure: Failure,
 ) -> (Option<Record>, Option<ErrorBody>) {
@@ -629,13 +632,14 @@ async fn failed_worker(
     let saved = blocking(move || {
         claim
             .update(|record| {
-                record.note = Some(note);
+                record.note = Some(note.clone());
                 if let Some(launched) = launched {
                     record.dir = Some(launched.dir);
                     record.session = Some(launched.name);
                 }
             })
             .map_err(|error| store_error(&error))?;
+        crate::items::produce::start_failed(&config, &claim.record().id, None, None, &note);
         Ok(claim.record().clone())
     })
     .await;
@@ -654,16 +658,18 @@ async fn failed(
     let note = format!("The task did not start: {}", failure.why);
     let launched = failure.launched;
     let saved = blocking(move || {
-        config
+        let saved = config
             .store()?
             .update(&id, rev, |r| {
-                r.note = Some(note);
+                r.note = Some(note.clone());
                 if let Some(l) = launched {
                     r.dir = Some(l.dir);
                     r.session = Some(l.name);
                 }
             })
-            .map_err(|e| store_error(&e))
+            .map_err(|e| store_error(&e))?;
+        crate::items::produce::start_failed(&config, &id, None, None, &note);
+        Ok(saved)
     })
     .await;
     let record = match saved {

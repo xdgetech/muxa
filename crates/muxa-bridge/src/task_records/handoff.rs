@@ -135,9 +135,14 @@ pub async fn send_prompt(
     let Ok(record) = record else { return };
     let left = (pending.since + PROMPT_WAIT).saturating_sub(crate::records::now());
     let deadline = tokio::time::Instant::now() + Duration::from_secs(left);
+    // The Task's pane, for the failure item if the prompt is never sent.
+    let mut last_pane: Option<(String, String)> = None;
     let seen = loop {
         let mut seen = None;
         let found = agent_pane(&client, &agents, &config, which.clone()).await;
+        if let Some(f) = &found {
+            last_pane = Some((f.session.to_string(), f.pane.to_string()));
+        }
         if let Some(found) = found.and_then(|found| bound_observation(&record, pending, found)) {
             if record
                 .open_run()
@@ -248,7 +253,14 @@ pub async fn send_prompt(
         tokio::time::sleep(PROMPT_POLL).await;
     };
     tracing::info!(task, "agent not idle; prompt not sent");
-    end_wait(&config, task, pending, seen, Some(prompt.not_sent)).await;
+    end_wait(&config, task.clone(), pending, seen, Some(prompt.not_sent)).await;
+    let (session, pane) = last_pane.unzip();
+    let failed = tokio::task::spawn_blocking(move || {
+        crate::items::produce::start_failed(&config, &task, session, pane, prompt.not_sent);
+    });
+    if let Err(e) = failed.await {
+        tracing::warn!(error = %e, "the start failure's inbox item did not run");
+    }
 }
 
 /// Only locally prepared named runs can use the internal sender while the wire gate is closed.

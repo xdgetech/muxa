@@ -317,3 +317,135 @@ fn attachments_count_the_changes_and_list_docs_and_images() {
         .collect();
     assert_eq!(of_changes(&many, None).docs.len(), MAX_PATHS);
 }
+
+/// A state dir with one open Task record. The dir is removed on drop.
+struct StartFixture {
+    dir: std::path::PathBuf,
+    config: Config,
+    task: String,
+}
+
+impl Drop for StartFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn start_fixture() -> StartFixture {
+    let dir = std::env::temp_dir().join(format!(
+        "muxa-start-failed-{}-{:08x}",
+        std::process::id(),
+        getrandom::u32().unwrap()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let record = crate::records::Store::open(&dir)
+        .unwrap()
+        .create(crate::records::NewRecord {
+            workspace: "w".into(),
+            title: "Fixture".into(),
+            goal: "Fix it.\n".into(),
+            project: None,
+            repo: None,
+            branch: None,
+            dir: None,
+            session: None,
+            note: None,
+            worker: None,
+            extra: serde_json::Map::new(),
+        })
+        .unwrap();
+    StartFixture {
+        config: Config {
+            state_dir: Some(dir.clone()),
+            workspaces: None,
+            home: None,
+        },
+        dir,
+        task: record.id,
+    }
+}
+
+impl StartFixture {
+    fn items(&self) -> Vec<StoredItem> {
+        ItemStore::open(&self.dir)
+            .unwrap()
+            .get(&self.task)
+            .unwrap()
+            .items
+    }
+}
+
+#[test]
+fn a_failed_start_asks_with_a_failure_item() {
+    use muxa_protocol::InboxAction::*;
+    let f = start_fixture();
+    start_failed(
+        &f.config,
+        &f.task,
+        None,
+        None,
+        "The task did not start: no tmux.",
+    );
+    let items = f.items();
+    assert_eq!(items.len(), 1);
+    let item = &items[0].item;
+    assert_eq!(
+        (item.kind, item.state),
+        (ItemKind::Failure, ItemState::Open)
+    );
+    assert_eq!(item.question, "The task did not start: no tmux.");
+    assert_eq!(item.task.as_deref(), Some(f.task.as_str()));
+    // No session: Retry, Reply and Change course could not reach an agent.
+    assert_eq!(item.answers, [Drop, Dismiss, Later]);
+    assert!(items[0].key.starts_with("start:0:"));
+}
+
+#[test]
+fn an_unsent_start_prompt_offers_retry_in_its_session() {
+    use muxa_protocol::InboxAction::*;
+    let f = start_fixture();
+    start_failed(
+        &f.config,
+        &f.task,
+        Some("$3".into()),
+        Some("%7".into()),
+        "The agent did not become idle within 30 seconds.",
+    );
+    let item = &f.items()[0].item;
+    assert_eq!(
+        (item.session.as_deref(), item.pane.as_deref()),
+        (Some("$3"), Some("%7"))
+    );
+    assert_eq!(item.answers, [Retry, Reply, ChangeCourse, Drop, Dismiss, Later]);
+}
+
+#[test]
+fn a_closed_task_or_a_routine_run_gets_no_start_item() {
+    let f = start_fixture();
+    let store = crate::records::Store::open(&f.dir).unwrap();
+    let rev = store.get(&f.task).unwrap().rev;
+    store
+        .update(&f.task, rev, |r| r.status = Status::Dropped)
+        .unwrap();
+    start_failed(&f.config, &f.task, None, None, "The task did not start.");
+    assert!(f.items().is_empty());
+    start_failed(&f.config, "t-ffffff", None, None, "No such task.");
+    assert!(
+        ItemStore::open(&f.dir)
+            .unwrap()
+            .get("t-ffffff")
+            .unwrap()
+            .items
+            .is_empty()
+    );
+}
+
+#[test]
+fn the_agent_running_resolves_a_start_failure() {
+    let f = file(vec![stored(
+        ItemKind::Failure,
+        ItemState::Open,
+        "start:1:5",
+    )]);
+    assert_eq!(change(&Need::Resolve, &f), Change::Resolve);
+}

@@ -188,6 +188,72 @@ fn resolve(items: &mut TaskItems) -> bool {
     }
 }
 
+/// Blocking. A Task whose start failed, or whose start prompt was never typed,
+/// has no agent state to make an item from, so the failure makes it here.
+/// `session` and `pane` (`$n`, `%n`) when the Task has them. Routine runs keep
+/// their own failures (ADR 0026).
+pub(crate) fn start_failed(
+    config: &Config,
+    task: &str,
+    session: Option<String>,
+    pane: Option<String>,
+    why: &str,
+) {
+    let Some(dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
+        return;
+    };
+    let made = (|| -> Result<Option<String>, StateError> {
+        let record = match config.store().ok().and_then(|s| s.get(task).ok()) {
+            Some(r) if watched(&r) => r,
+            _ => return Ok(None),
+        };
+        let mut item = InboxItem {
+            id: new_id()?,
+            kind: ItemKind::Failure,
+            state: ItemState::Open,
+            question: one_line(why, MAX_QUESTION),
+            workspace: record.workspace.clone(),
+            title: record.title.clone(),
+            created_at: now(),
+            read_at: None,
+            until: None,
+            answered_at: None,
+            answer: None,
+            summary: None,
+            task: Some(record.id.clone()),
+            session,
+            pane,
+            prompt: None,
+            attachments: Attachments::default(),
+            routine: None,
+            proposal: None,
+            answers: Vec::new(),
+        };
+        item.answers = super::answers(&item);
+        let id = item.id.clone();
+        // One item per failed start: a run count and the time tell them apart.
+        let key = format!("start:{}:{}", record.runs.len(), item.created_at);
+        let store = ItemStore::open(dir)?;
+        let pushed = store.update::<_, StateError>(task, |t| {
+            if t.items.iter().any(|s| s.key == key) {
+                return Ok(false);
+            }
+            resolve(t);
+            t.items.push(StoredItem {
+                item,
+                key: key.clone(),
+            });
+            Ok(true)
+        })?;
+        Ok(pushed.then_some(id))
+    })();
+    match made {
+        Ok(Some(item)) => tracing::info!(task, item, "inbox item made: the start failed"),
+        Ok(None) => {}
+        Err(e) => tracing::warn!(task, error = %e, "cannot make the start failure's inbox item"),
+    }
+}
+
 /// The one line the item asks.
 pub(crate) fn question(
     need: &Need,

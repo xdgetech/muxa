@@ -48,6 +48,8 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
             None => vec![Dismiss],
         },
         ItemKind::Review => vec![Accept, Reply, Redo, ChangeCourse, KeepOpen],
+        // Retry, Reply and Change course reach the agent: they need its session.
+        ItemKind::Failure if item.session.is_none() => vec![Drop, Dismiss],
         ItemKind::Failure => vec![Retry, Reply, ChangeCourse, Drop, Dismiss],
         // A reading Task changed its main checkout (ADR 0034 §2).
         ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],

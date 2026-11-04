@@ -20,13 +20,14 @@ An Inbox item exists only while someone waits on the user. It is a stored entry,
 |---|---|---|
 | `ask` | a Task's agent waits on a permission, a question or a plan (ADR 0009) | Approve, Reject, or a reply |
 | `review` | a Task's agent finished a turn, or its loop passed (ADR 0019) | Accept, Redo, Change course |
-| `failure` | a Task's agent stopped with an error, or its loop stopped | Retry, Change course, Drop |
+| `failure` | a Task's agent stopped with an error, its loop stopped, or its start failed (the session did not start, or the start prompt was never typed) | Retry, Change course, Drop; without a session only Drop |
 | `proposal` | a Routine proposes an action (ADR 0026) | Approve, Reject |
 | `briefing` | a Routine publishes a briefing | Done |
 
 - Accept marks the Task done. An item with an open PR also offers Keep open, which answers the item and leaves the Task open.
 - Redo and Change course send the user's text to the agent as the next prompt, through the adapter that sends Chat messages (ADR 0005). Redo is feedback on the same goal; Change course replaces the direction. Both need a text.
 - Retry restarts the agent with a handoff (ADR 0018). Drop marks the Task dropped.
+- A failed start has no agent state to make an item from, so the failure makes the item itself. With no session, Retry and Change course could not reach an agent, so the item offers only Drop and Dismiss. The item resolves when the agent runs, as any Task item does.
 - Approve and Reject on an `ask` use the approval contract of ADR 0009, unchanged. Where the adapter cannot answer, the item offers Open Terminal instead.
 - Every item also offers Later (until a time) and Open Terminal when its Task has a pane.
 

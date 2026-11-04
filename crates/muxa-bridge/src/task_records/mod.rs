@@ -58,7 +58,7 @@ impl Config {
     }
 
     /// Opens (and creates) the store. Blocking.
-    fn store(&self) -> Result<Store, ErrorBody> {
+    pub(crate) fn store(&self) -> Result<Store, ErrorBody> {
         let dir = self.state_dir.as_ref().ok_or_else(|| {
             error_body(
                 ErrorCode::Unsupported,
@@ -319,7 +319,14 @@ pub async fn resume_prompts(cx: &Context) {
         let Some(env) = env else {
             tracing::info!(task, age, "a prompt wait ran out while no process waited");
             let note = handoff::Prompt::of(pending).not_sent;
-            handoff::end_wait(&cx.records, task, pending, None, Some(note)).await;
+            handoff::end_wait(&cx.records, task.clone(), pending, None, Some(note)).await;
+            let config = Arc::clone(&cx.records);
+            let failed = tokio::task::spawn_blocking(move || {
+                crate::items::produce::start_failed(&config, &task, None, None, note);
+            });
+            if let Err(e) = failed.await {
+                tracing::warn!(error = %e, "the start failure's inbox item did not run");
+            }
             continue;
         };
         tracing::info!(task, age, "resuming a prompt wait");
