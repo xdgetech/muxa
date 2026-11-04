@@ -106,7 +106,10 @@ impl Step {
 
 /// The agent state, unless it is older than the newest run: a state tag
 /// survives `respawn-pane`.
-fn current(agent: Option<AgentStatus>, run_started_at: Option<u64>) -> Option<AgentStatus> {
+pub(crate) fn current(
+    agent: Option<AgentStatus>,
+    run_started_at: Option<u64>,
+) -> Option<AgentStatus> {
     let s = agent?;
     match (s.since, run_started_at) {
         (Some(since), Some(start)) if since < start => None,

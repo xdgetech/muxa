@@ -6,7 +6,9 @@ mod files;
 mod image_task;
 mod images;
 
+pub(crate) use files::is_doc;
 pub use image_task::ImageTask;
+pub(crate) use images::is_image;
 
 use std::sync::Arc;
 use std::time::Duration;

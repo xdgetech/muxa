@@ -61,6 +61,7 @@ async fn look(
     tokio::task::spawn_blocking(move || {
         sessions::fill_agents(&mut sessions, &agents);
         crate::task_records::observation::refresh(&mut sessions, &records, &agents);
+        crate::items::produce::observe(&sessions, &records, &agents);
         signature(&sessions)
     })
     .await

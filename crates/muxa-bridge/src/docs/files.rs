@@ -121,6 +121,16 @@ pub(super) fn repo_root(path: &Path) -> Option<PathBuf> {
     Some(PathBuf::from(text.trim_end_matches('\n')))
 }
 
+/// The Markdown files a pane lists, as git pathspecs.
+const DOC_PATTERNS: [&str; 2] = ["*.md", "*.markdown"];
+
+/// A path the Markdown listing would take, by its name alone.
+pub(crate) fn is_doc(path: &str) -> bool {
+    DOC_PATTERNS
+        .iter()
+        .any(|p| p.strip_prefix('*').is_some_and(|ext| path.ends_with(ext)))
+}
+
 /// Tracked files, and untracked ones git does not ignore: a plan an agent just
 /// wrote shows up, a secret in an ignored file does not.
 fn repo_files(root: &Path) -> (Vec<String>, bool) {
@@ -134,9 +144,8 @@ fn repo_files(root: &Path) -> (Vec<String>, bool) {
             "--others",
             "--exclude-standard",
             "--",
-            "*.md",
-            "*.markdown",
         ])
+        .args(DOC_PATTERNS)
         .output();
     let Ok(out) = out else {
         return (Vec::new(), false);

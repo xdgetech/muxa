@@ -4,6 +4,7 @@
 //! the LaunchAgent or systemd unit that starts it.
 
 pub mod install;
+mod items;
 mod lock;
 mod log;
 pub mod socket;
@@ -70,6 +71,7 @@ struct Daemon {
     /// The same client `records` gets its tmux from.
     tmux: Arc<tmux::Lazy>,
     loops: tokio::sync::Mutex<loops::Engine>,
+    items: tokio::sync::Mutex<items::Watch>,
 }
 
 impl Daemon {
@@ -85,12 +87,22 @@ impl Daemon {
         self.loops.lock().await.stop_checks().await;
     }
 
-    /// Runs every [`TICK`]. The tmux client stays attached while a loop is active.
+    /// Runs every [`TICK`]. The tmux client stays attached while a loop is
+    /// active, or while an open Task has a session to make Inbox items for.
     async fn tick(&self) {
+        let mut items = self.items.lock().await;
+        let watch = items.due(&self.records.records).await;
         let mut engine = self.loops.lock().await;
-        let client = self.tmux.tick(engine.busy()).await;
+        let client = self.tmux.tick(engine.busy() || watch).await;
         engine.tick(client.as_deref()).await;
         drop(engine);
+        // After the loops, so a loop that just passed or stopped makes its item.
+        if let Some(client) = client.as_deref().filter(|_| watch) {
+            items
+                .look(client, &self.records.records, &self.records.agents)
+                .await;
+        }
+        drop(items);
         crate::routines::tick(&self.records).await;
     }
 }
@@ -175,6 +187,7 @@ fn run(args: args::Args) -> ExitCode {
             pending: Pending::default(),
         },
         loops: tokio::sync::Mutex::new(engine),
+        items: tokio::sync::Mutex::new(items::Watch::default()),
         tmux,
     };
     match runtime.block_on(serve(Arc::new(daemon), &path)) {

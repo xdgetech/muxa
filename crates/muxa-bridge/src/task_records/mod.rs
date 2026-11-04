@@ -66,7 +66,7 @@ impl Config {
     }
 
     /// The records, without creating the store. Blocking.
-    fn records_if_any(&self) -> Vec<Record> {
+    pub(crate) fn records_if_any(&self) -> Vec<Record> {
         let Some(dir) = self.state_dir.as_ref().filter(|d| d.is_dir()) else {
             return Vec::new();
         };

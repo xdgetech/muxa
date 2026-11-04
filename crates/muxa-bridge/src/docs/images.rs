@@ -24,6 +24,15 @@ const PATTERNS: [&str; 6] = [
     ":(icase)*.heic",
 ];
 
+/// A path the image listing would take, by its name alone.
+pub(crate) fn is_image(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    PATTERNS.iter().any(|p| {
+        p.strip_prefix(":(icase)*")
+            .is_some_and(|ext| lower.ends_with(ext))
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
     pub info: ImageInfo,
