@@ -47,7 +47,7 @@ Proposed. The developer chose this shape on 2026-11-04. It extends ADR 0015 (Tas
 - Opening a parked Task offers **Resume**: `restart-agent` on an open Task with no session starts a new session in its `dir`, with a restart run and the restart prompt (ADR 0018).
 - Park and Resume refuse a Task with a named worker, and a reading Task takes no loop, until those are designed.
 - `park_after = "12h"` in a `[[workspace]]` (`m`, `h` or `d`) lets the daemon park a Task whose agent has been idle that long, with no open or later Inbox item, no loop, no prompt wait and no restart. The setting is off by default.
-- Every finished turn makes a `review` item. So a Task parks only after the user answered its last item, for example with Keep open. Open: whether a Task that waits on its review should also park.
+- Every finished turn makes a `review` item. So a Task parks only after the user answered its last item, for example with Keep open. A Task that waits on its review does not park (decided 2026-11-05). The user is likely to reply soon, and a parked Task needs a restart before the reply reaches the agent.
 - Parking frees the agent process. Reading Tasks free the checkout. Together they bound what many Tasks cost.
 
 ### 5. `work:4`
