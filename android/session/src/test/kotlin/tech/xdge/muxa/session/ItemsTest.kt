@@ -202,30 +202,56 @@ class ItemsTest {
     @Test
     fun theButtonsFollowTheKind() {
         val all = { kind: ItemKind, answers: List<InboxAction> -> item("i-1", kind, answers).buttons }
-        val review = all(ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER))
-        assertEquals(listOf(InboxAction.ACCEPT, InboxAction.REDO), review.main)
-        assertEquals(listOf(InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER), review.more)
-        val failure = all(ItemKind.FAILURE, listOf(InboxAction.RETRY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER))
-        assertEquals(listOf(InboxAction.RETRY, InboxAction.CHANGE_COURSE), failure.main)
-        assertEquals(listOf(InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER), failure.more)
+        val review = all(
+            ItemKind.REVIEW,
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
+        )
+        assertEquals(listOf(InboxAction.ACCEPT, InboxAction.REPLY), review.main)
+        assertEquals(listOf(InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER), review.more)
+        val failure = all(
+            ItemKind.FAILURE,
+            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER),
+        )
+        assertEquals(listOf(InboxAction.RETRY, InboxAction.REPLY), failure.main)
+        assertEquals(listOf(InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER), failure.more)
+        val ask = all(ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER))
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY), ask.main)
+        // A host before `reply` (ADR 0033 §4a): Redo still sits under More.
+        val older = all(ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.KEEP_OPEN, InboxAction.LATER))
+        assertEquals(listOf(InboxAction.ACCEPT), older.main)
         assertEquals(listOf(InboxAction.DISMISS), all(ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.LATER)).main)
         // An unknown kind shows what the host offers.
         assertEquals(listOf(InboxAction.DISMISS), all(ItemKind("digest"), listOf(InboxAction.DISMISS, InboxAction.LATER)).main)
     }
 
     @Test
-    fun theMainAnswerNeverNeedsAText() {
-        val ask = item("i-1", ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER), prompt = permission)
-        assertEquals(InboxAction.APPROVE, ask.mainAnswer)
-        val review = item("i-2", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.LATER))
-        assertEquals(InboxAction.ACCEPT, review.mainAnswer)
+    fun theMainAnswerIsTheHostsFirstOrAReply() {
+        val ask = item("i-1", ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER), prompt = permission)
+        assertEquals(InboxAction.APPROVE, ask.mainAnswer())
+        assertEquals(InboxAction.REPLY, ask.mainAnswer("Run terraform plan first."))
+        val review = item("i-2", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.LATER))
+        assertEquals(InboxAction.ACCEPT, review.mainAnswer())
+        assertEquals(InboxAction.ACCEPT, review.mainAnswer("  "))
+        assertEquals(InboxAction.REPLY, review.mainAnswer("Also update the README."))
         val failure = item("i-3", ItemKind.FAILURE, listOf(InboxAction.RETRY, InboxAction.CHANGE_COURSE, InboxAction.LATER))
-        assertEquals(InboxAction.RETRY, failure.mainAnswer)
+        assertEquals(InboxAction.RETRY, failure.mainAnswer())
+        // A host without `reply` keeps its first answer, also with a text.
+        assertEquals(InboxAction.RETRY, failure.mainAnswer("Try again."))
         // A question is answered by its options, so it has none.
         val asked = item("i-4", ItemKind.ASK, listOf(InboxAction.CHOOSE, InboxAction.REJECT, InboxAction.LATER), prompt = question)
-        assertNull(asked.mainAnswer)
+        assertNull(asked.mainAnswer())
         assertEquals(listOf("TOML", "JSON"), asked.choices.map { it.label })
         assertTrue(ask.choices.isEmpty())
+    }
+
+    @Test
+    fun aReplySendsItsTextAsItIs() = runBlocking {
+        val bridge = bridge()
+        val session = connected(bridge)
+        session.answer(session.state.value.inboxItems[0], InboxAction.REPLY, text = "Do not apply.")
+        val sent = bridge.asked.filterIsInstance<Request.UpdateInbox>().last()
+        assertEquals(Request.UpdateInbox(sent.id, "i-00000001", InboxAction.REPLY, text = "Do not apply."), sent)
+        assertTrue(InboxAction.REPLY.needsText)
     }
 
     @Test

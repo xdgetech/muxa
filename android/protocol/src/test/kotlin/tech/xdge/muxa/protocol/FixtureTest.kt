@@ -171,6 +171,33 @@ class FixtureTest {
         assertFalse(redo.text.isNullOrEmpty())
     }
 
+    /** ADR 0033 §4a: `reply` with a text, and the evidence a summary names (files and links). */
+    @Test
+    fun replyContractRoundTrips() {
+        val requests = lines("items/reply-requests.jsonl")
+        assertEquals(3, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val replies = requests.map { Wire.decodeRequest(it) as Request.UpdateInbox }
+        assertEquals(listOf(InboxAction.REPLY), replies.map { it.action }.distinct())
+        assertEquals("Looks good. Also update the README.", replies[0].text)
+        val messages = lines("items/reply-messages.jsonl")
+        assertEquals(2, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        val items = (Wire.decodeMessage(messages[1]) as Message.InboxList).items
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER), items[0].answers)
+        assertEquals(
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
+            items[1].answers,
+        )
+        val failure = items[2].attachments
+        assertEquals(listOf("report.md"), failure.docs)
+        assertEquals(listOf(SourceLink("https://example.com/runs/42")), failure.links)
+    }
+
     @Test
     fun unknownItemKindsStatesAndAnswersStillDecode() {
         val line = """{"type":"inbox-list","inbox":1,"entries":[],"items":[{"id":"i-00000001","kind":"handoff",""" +

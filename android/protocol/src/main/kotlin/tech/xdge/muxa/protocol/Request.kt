@@ -116,8 +116,8 @@ sealed interface Request {
     @Serializable data class ListInbox(override val id: Long) : Request
 
     /**
-     * Answer a stored entry or an Inbox item (its `i-` id). [until] goes with `later`, [text] with `redo` and
-     * `change-course`, [option] with `choose`. An `inbox-saved` comes first.
+     * Answer a stored entry or an Inbox item (its `i-` id). [until] goes with `later`, [text] with `redo`,
+     * `change-course` and `reply`, [option] with `choose`. An `inbox-saved` comes first.
      */
     @Serializable
     data class UpdateInbox(

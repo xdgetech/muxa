@@ -24,17 +24,21 @@ val InboxItem.isUnread: Boolean get() = readAt == null
 /** An agent is blocked on it, or it stopped: what a phone opens on after connecting. */
 val InboxItem.isUrgent: Boolean get() = kind == ItemKind.ASK || kind == ItemKind.FAILURE
 
-/** `redo` and `change-course` send the reply box's text, so they need one. */
-val InboxAction.needsText: Boolean get() = this == InboxAction.REDO || this == InboxAction.CHANGE_COURSE
+/** `reply`, `redo` and `change-course` send the reply box's text, so they need one. */
+val InboxAction.needsText: Boolean
+    get() = this == InboxAction.REPLY || this == InboxAction.REDO || this == InboxAction.CHANGE_COURSE
 
 /** The answers the item screen shows as buttons, and the ones under More. */
 data class ItemButtons(val main: List<InboxAction>, val more: List<InboxAction>)
 
-/** The visible answers per kind (docs/inbox.md, "The item screen"); the rest the host accepts go under More. */
+/**
+ * The visible answers per kind (docs/inbox.md, "The item screen"); the rest the host accepts go
+ * under More. Redo, Change course and Keep open are under More (ADR 0033 §4a).
+ */
 private fun shownFirst(kind: ItemKind): List<InboxAction> = when (kind) {
-    ItemKind.ASK -> listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.DISMISS)
-    ItemKind.REVIEW -> listOf(InboxAction.ACCEPT, InboxAction.REDO)
-    ItemKind.FAILURE -> listOf(InboxAction.RETRY, InboxAction.CHANGE_COURSE)
+    ItemKind.ASK -> listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.DISMISS)
+    ItemKind.REVIEW -> listOf(InboxAction.ACCEPT, InboxAction.REPLY)
+    ItemKind.FAILURE -> listOf(InboxAction.RETRY, InboxAction.REPLY)
     ItemKind.PROPOSAL -> listOf(InboxAction.APPROVE, InboxAction.REJECT)
     ItemKind.BRIEFING -> listOf(InboxAction.DISMISS)
     else -> emptyList()
@@ -56,5 +60,11 @@ val InboxItem.buttons: ItemButtons
 val InboxItem.choices: List<ChatPrompt.Option>
     get() = if (InboxAction.CHOOSE in answers) prompt?.options.orEmpty() else emptyList()
 
-/** What Ctrl+Shift+Enter sends: Approve, Accept, Retry or Done. Never one that needs a text. */
-val InboxItem.mainAnswer: InboxAction? get() = buttons.main.firstOrNull { !it.needsText && it != InboxAction.REJECT }
+/**
+ * What Ctrl+Shift+Enter sends (ADR 0033 §4a): `reply` while the reply box has [text], else the
+ * host's first answer, unless that is `choose`, `later` or one that needs a text.
+ */
+fun InboxItem.mainAnswer(text: String = ""): InboxAction? {
+    if (text.isNotBlank() && InboxAction.REPLY in answers) return InboxAction.REPLY
+    return answers.firstOrNull()?.takeIf { it != InboxAction.CHOOSE && it != InboxAction.LATER && !it.needsText }
+}
