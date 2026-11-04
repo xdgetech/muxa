@@ -90,6 +90,10 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
   2. Done: I1, muxa for tmux (item 2 above). The tree's Inbox section and `prefix + T` with the selected item, its evidence and single-key answers; `tmux/tests/inbox.bats` runs them against `protocol/fixtures/items/`.
   3. I2, the iOS list and item screen; I3, the same on Android.
   4. I4: remove Move down, the Task's `inbox` field, the queue code and fixtures, and the local Snooze.
+- **Reading Tasks and parking** (ADR 0034, proposed): a Task that only reads code runs in the main checkout, with its files in `.muxa/tasks/<id>/` and no worktree. Branch makes the worktree when the work needs one. Park closes an idle Task's session and keeps the Task. Behind `work:4`. In order, after I4:
+  1. R0, host and CLI: `create-task {read: true}`, the unexpected-change item, `branch-task`, `park-task`, `park_after`; `muxa-cli task new --read`, `task branch`, `task park`.
+  2. R1, muxa for tmux: Read in `prefix + N`, Branch and Park in the Task's menu.
+  3. R2, iOS; R3, Android: Read in New Task, Branch and Park in the Task detail, Resume on a parked Task.
 
 Milestones and dependencies are in `docs/workers.md`; the domain definitions are in `docs/work-model.md`.
 
