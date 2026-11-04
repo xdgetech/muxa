@@ -297,7 +297,9 @@ cli_tasks() {
   attach
   tx send-keys -K -c "$C" C-b A
   wait_for 'grep -q "cannot start ask sessions" "$TMPDIR/tmux-agents-$(id -u)/agents.log"'
-  args_are tasks --json
+  # Not args_are: the sidebar's Inbox refresh also calls muxa-cli, in any order.
+  grep -qx "tasks --json" "$TMPDIR/bin/calls"
+  [ -z "$(grep "^ask " "$TMPDIR/bin/calls")" ]
   [ "$(tx display-message -p -c "$C" "#{popup_active}")" != 1 ] || false
 }
 

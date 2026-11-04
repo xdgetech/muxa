@@ -51,7 +51,7 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$output" == *"2  docs/plan.md"* ]]
   [[ "$output" == *"3  docs/chart.png"* ]]
   [[ "$output" == *"4  PR #817  https://github.com/example/app/pull/817"* ]]
-  [[ "$output" == *"a Accept   r Redo   c Change course   p Keep open   l Later   o open session   q close"* ]]
+  [[ "$output" == *"a Accept   r Redo   c Change course   p Keep open   l Later   o open session   space/b scroll   v read all   q close"* ]]
 }
 
 @test "a key answers with the item's own answers, a number opens evidence" {
@@ -131,6 +131,20 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   tx send-keys -K -c "$C" -l "Keep the old export"
   key Enter
   wait_for 'grep -q "^inbox answer i-2c3d4e5f redo --text Keep the old export --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: v shows the whole item in the pager" {
+  fake_cli
+  printf '#!/usr/bin/env bash\ncat >"%s/paged"\n' "$TMPDIR" >"$TMPDIR/bin/pager"
+  chmod +x "$TMPDIR/bin/pager"
+  tx set-environment -g PAGER "$TMPDIR/bin/pager"
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key v
+  wait_for 'grep -q "Moved the GA4 export to daily batches" "$TMPDIR/paged"'
+  wait_for 'grep -q "^inbox read i-2c3d4e5f" "$TMPDIR/bin/calls"'
 }
 
 @test "prefix+T: Enter goes to the item's session" {

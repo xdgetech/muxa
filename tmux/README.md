@@ -160,6 +160,8 @@ apps show, with a goal and a status.
   - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with
     the system opener (a link is also copied to the tmux buffer). For a question,
     `1`–`9` choose its option instead.
+  - `space` and `b` scroll the item a page down and up, `J` and `K` (or
+    `Shift`+arrows) a line. `v` shows the whole item in `$PAGER`.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the

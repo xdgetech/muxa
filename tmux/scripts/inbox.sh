@@ -142,7 +142,7 @@ view() {
       (.prompt.options | to_entries[] | "  \(.key + 1)  \(.value.label)"), ""
      else empty end),
     ([keymap[] | . as $k | "\($k.key) \($i | answer_label($k.act))"] +
-      (if .session then ["o open session"] else [] end) + ["q close"] | join("   "))
+      (if .session then ["o open session"] else [] end) + ["space/b scroll", "v read all", "q close"] | join("   "))
   ' "$2"
 }
 
@@ -190,6 +190,14 @@ item_dir() {
   pane="$(jq -r --arg item "$1" '.items[] | select(.id == $item) | .pane // empty' "$2")"
   [ -n "$pane" ] || return 1
   t display-message -p -t "$pane" '#{pane_current_path}' 2>/dev/null
+}
+
+# The whole item in the pager, for a screen too small for the preview.
+# shellcheck disable=SC2086  # $pager is a command with its flags
+read_item() {
+  local pager="${PAGER:-less -R}"
+  view "$1" "$2" | $pager
+  muxa inbox read "$1" </dev/null >/dev/null 2>&1 &
 }
 
 # Opens evidence <n> of an item: the diff or a doc in the pager, an image or
@@ -253,13 +261,15 @@ ui() {
       --layout reverse --info hidden --pointer '▌' --highlight-line \
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
-      --expect 'enter,ctrl-r,a,r,c,p,x,n,l,o,1,2,3,4,5,6,7,8,9')" || break
+      --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
+      --expect 'enter,ctrl-r,a,r,c,p,x,n,l,o,v,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
     [ -n "$id" ] || continue
     case "$key" in
       ctrl-r) continue ;;
+      v) read_item "$id" "$json" ;;
       enter | o)
         sid="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .session // empty' "$json")"
         if [ -n "$sid" ] && t has-session -t "$sid" 2>/dev/null; then
