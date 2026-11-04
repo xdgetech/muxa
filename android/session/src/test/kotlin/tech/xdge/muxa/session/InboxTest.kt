@@ -1,7 +1,6 @@
 package tech.xdge.muxa.session
 
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -58,42 +57,6 @@ class InboxTest {
             assertEquals(name, case.getValue("need").jsonPrimitive.content, taskItem(record, sessions).need.wire)
             assertEquals(name, names[case.getValue("group").jsonPrimitive.content], taskItem(record, sessions).group)
         }
-    }
-
-    /** `protocol/fixtures/inbox/queue.jsonl` pins Move down and Later for all three clients. */
-    @Test
-    fun theQueueMatchesTheSharedFixture() {
-        val json = Json { ignoreUnknownKeys = true }
-        val lines = File(System.getProperty("muxa.fixtures")).resolve("inbox/queue.jsonl").readLines()
-            .filter { it.isNotEmpty() }
-        assertEquals(16, lines.size)
-        for (line in lines) {
-            val case = json.parseToJsonElement(line).jsonObject
-            val records = json.decodeFromJsonElement(ListSerializer(TaskRecord.serializer()), case.getValue("records"))
-            val sessions = json.decodeFromJsonElement(ListSerializer(Session.serializer()), case.getValue("sessions"))
-            val expected = json.decodeFromJsonElement(ListSerializer(String.serializer()), case.getValue("queue"))
-            val now = case.getValue("now").jsonPrimitive.content.toLong()
-            assertEquals(case.getValue("name").jsonPrimitive.content, expected, triageQueue(records, sessions, now).map { it.record.id })
-        }
-    }
-
-    @Test
-    fun snoozeIdentityChangesWhenSessionAppearsOrAgentChanges() {
-        val r = record("a")
-        val absent = taskItem(r, emptyList())
-        val linked = taskItem(r, listOf(session("a", pane("%1"))))
-        val waiting = taskItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING))))
-        org.junit.Assert.assertNotEquals(absent.attentionKey, linked.attentionKey)
-        org.junit.Assert.assertNotEquals(linked.attentionKey, waiting.attentionKey)
-        assertEquals(waiting.attentionKey, taskItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING)))).attentionKey)
-    }
-
-    @Test
-    fun queueExcludesRunningAndClosedAndBreaksTiesById() {
-        val records = listOf(record("a"), record("b"), record("run"), record("closed").copy(status = TaskStatus.DONE))
-        val queue = triageQueue(records, listOf(session("run", pane("%1", state = AgentState.RUNNING))))
-        assertEquals(listOf("b", "a"), queue.map { it.record.id })
-        assertEquals(listOf(InboxNeed.NO_SESSION, InboxNeed.NO_SESSION), queue.map { it.need })
     }
 
     @Test

@@ -22,8 +22,6 @@ import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
 import tech.xdge.muxa.protocol.InboxAction
-import tech.xdge.muxa.protocol.InboxChange
-import tech.xdge.muxa.protocol.InboxEntry
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.protocol.LoopSpec
 import tech.xdge.muxa.protocol.Message
@@ -104,11 +102,9 @@ class PaneSession(
         val viewport: PaneViewport? = null,
         /** The host's Routines, as last listed (`work` level 1, ADR 0026). */
         val routines: List<RoutineInfo> = emptyList(),
-        /** The stored Inbox entries, newest first, as last listed. */
-        val inboxEntries: List<InboxEntry> = emptyList(),
         /** The Inbox items, in the host's order, as last listed (`work` level 3, ADR 0033). */
         val inboxItems: List<InboxItem> = emptyList(),
-        /** Why the Routines or the stored entries could not be listed; the last lists stay. */
+        /** Why the Routines or the Inbox could not be listed; the last lists stay. */
         val workError: String? = null,
     ) {
         val canChat get() = "chat" in capabilities
@@ -124,9 +120,6 @@ class PaneSession(
 
         /** The host's bridge reached the muxa daemon, so Tasks can have a Task Loop (ADR 0019). */
         val canLoop get() = "task-loop" in capabilities
-
-        /** The host keeps Move down and Later on the Task record (ADR 0027 §4). */
-        val canPlaceTasks get() = "task-inbox" in capabilities
 
         /** The host's `work` level; 0 when it has none (ADR 0027 §5). */
         val workLevel get() = workLevel(capabilities)
@@ -167,7 +160,6 @@ class PaneSession(
     private val routineListings = mutableMapOf<Long, List<RoutineInfo>>()
     private val inboxListings = mutableMapOf<Long, Message.InboxList>()
     private val savedRoutines = mutableMapOf<Long, RoutineInfo>()
-    private val savedEntries = mutableMapOf<Long, InboxEntry>()
     private val savedItems = mutableMapOf<Long, InboxItem>()
     private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
@@ -193,7 +185,7 @@ class PaneSession(
                 it.copy(
                     watchedPane = null, paneGoneReason = null, sessions = emptyList(), chat = null,
                     unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
-                    routines = emptyList(), inboxEntries = emptyList(), inboxItems = emptyList(), workError = null,
+                    routines = emptyList(), inboxItems = emptyList(), workError = null,
                 )
             }
         }
@@ -417,33 +409,9 @@ class PaneSession(
 
     private fun keep(saved: TaskRecord) = _state.update { s -> s.copy(tasks = (s.tasks ?: TaskBoard()).saving(saved)) }
 
-    // Inbox: a Task's Move down and Later (`task-inbox`, ADR 0027 §4), and the Routines and
-    // stored entries behind the host's `work` level 1 (ADR 0026).
+    // Routines (`work` level 1, ADR 0026) and the Inbox items (`work` level 3, ADR 0033).
 
-    /**
-     * Move down, Later or both for [record]. On `conflict` the list is loaded again before the
-     * failure is thrown, as [updateTask] does. A host without `task-inbox` is never asked.
-     */
-    suspend fun place(record: TaskRecord, change: InboxChange): TaskRecord = withContext(dispatcher) {
-        if (!_state.value.canPlaceTasks) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, PLACE_UNSUPPORTED))
-        var requestId = 0L
-        try {
-            request { id ->
-                requestId = id
-                Request.UpdateTask(id, record.id, record.rev, inbox = change)
-            }
-        } catch (e: Failure.Bridge) {
-            savedTasks.remove(requestId)
-            if (e.body.code == ErrorCode.CONFLICT) runCatching { loadTasks() }
-            throw e
-        }
-        val saved = savedTasks.remove(requestId)
-            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the saved task"))
-        keep(saved)
-        saved
-    }
-
-    /** Lists the Routines and the stored entries again. A failure lands in `workError`; the last lists stay. */
+    /** Lists the Routines and the Inbox again. A failure lands in `workError`; the last lists stay. */
     suspend fun loadWork() = withContext(dispatcher) {
         if (!_state.value.canUseRoutines) return@withContext
         try {
@@ -452,8 +420,7 @@ class PaneSession(
             _state.update { s ->
                 s.copy(
                     routines = routines ?: s.routines,
-                    inboxEntries = inbox?.entries ?: s.inboxEntries,
-                    // An older host sends none; its Inbox is the Task needs and the entries.
+                    // A host below `work` level 3 has no Inbox for this app.
                     inboxItems = if (s.canAnswerItems) inbox?.items ?: s.inboxItems else emptyList(),
                     workError = null,
                 )
@@ -487,38 +454,6 @@ class PaneSession(
         saved ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Routine"))
     }
 
-    /** Approves a proposal: the host creates one Task, also when asked twice. Returns the entry with that Task's id, once listed. */
-    suspend fun approve(entry: InboxEntry): InboxEntry = withContext(dispatcher) {
-        val saved = updateEntry(entry, InboxAction.APPROVE, null)
-        runCatching { refresh() }
-        runCatching { loadTasks() }
-        saved
-    }
-
-    /** Dismisses a briefing or a proposal. It never touches a Task. */
-    suspend fun dismiss(entry: InboxEntry): InboxEntry = withContext(dispatcher) { updateEntry(entry, InboxAction.DISMISS, null) }
-
-    /** Hides [entry] until [until], epoch seconds in the future. */
-    suspend fun later(entry: InboxEntry, until: Long): InboxEntry = withContext(dispatcher) { updateEntry(entry, InboxAction.LATER, until) }
-
-    private suspend fun updateEntry(entry: InboxEntry, action: InboxAction, until: Long?): InboxEntry {
-        requireRoutines()
-        var requestId = 0L
-        try {
-            request { id ->
-                requestId = id
-                Request.UpdateInbox(id, entry.id, action, until)
-            }
-        } catch (e: Failure) {
-            savedEntries.remove(requestId)
-            // Another device may have answered it first.
-            loadWork()
-            throw e
-        }
-        return savedEntries.remove(requestId)
-            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Inbox entry"))
-    }
-
     private fun requireRoutines() {
         if (!_state.value.canUseRoutines) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ROUTINES_UNSUPPORTED))
     }
@@ -542,11 +477,6 @@ class PaneSession(
     private fun keep(routine: RoutineInfo) = _state.update { s ->
         val same = { r: RoutineInfo -> r.workspace == routine.workspace && r.name == routine.name }
         s.copy(routines = if (s.routines.any(same)) s.routines.map { if (same(it)) routine else it } else s.routines + routine)
-    }
-
-    private fun keep(entry: InboxEntry) = _state.update { s ->
-        val known = s.inboxEntries.any { it.id == entry.id }
-        s.copy(inboxEntries = if (known) s.inboxEntries.map { if (it.id == entry.id) entry else it } else listOf(entry) + s.inboxEntries)
     }
 
     /** A saved item replaces the listed one in its place; the host's next list orders it. */
@@ -578,12 +508,10 @@ class PaneSession(
             }
         } catch (e: Failure) {
             savedItems.remove(requestId)
-            savedEntries.remove(requestId)
             loadWork()
             if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) throw Failure.ItemChanged()
             throw e
         }
-        savedEntries.remove(requestId)
         val saved = savedItems.remove(requestId)
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Inbox item"))
         // Accept, Drop, Retry and an approved proposal change a Task or start one.
@@ -987,10 +915,6 @@ class PaneSession(
             }
             is Message.InboxList -> inboxListings[message.inbox] = message
             is Message.InboxSaved -> {
-                message.entry?.let {
-                    savedEntries[message.inbox] = it
-                    keep(it)
-                }
                 message.item?.let {
                     savedItems[message.inbox] = it
                     keep(it)
@@ -1048,7 +972,6 @@ class PaneSession(
         routineListings.clear()
         inboxListings.clear()
         savedRoutines.clear()
-        savedEntries.clear()
         savedItems.clear()
         startedSessions.clear()
         inputs.clear()
@@ -1076,9 +999,6 @@ class PaneSession(
 
         /** The answers after which the Task list and the sessions are read again. */
         private val TASK_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP, InboxAction.RETRY, InboxAction.APPROVE)
-
-        /** Shown when the host keeps no Inbox order; the app keeps its local Snooze then. */
-        const val PLACE_UNSUPPORTED = "This host keeps no Inbox order. Update muxa on the host."
 
         /** Shown when an `ask` item's menu changed since it was listed. */
         const val ITEM_CHANGED = "The agent now asks something else. The Inbox shows it as it is now; answer again."

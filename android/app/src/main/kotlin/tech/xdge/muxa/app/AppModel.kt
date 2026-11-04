@@ -37,16 +37,10 @@ import tech.xdge.muxa.session.containing
 import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
-import tech.xdge.muxa.session.attentionKey
-import tech.xdge.muxa.session.TaskItem
-import tech.xdge.muxa.session.InboxRow
 import tech.xdge.muxa.session.isUrgent
 import tech.xdge.muxa.session.waiting
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.app.reader.ReaderItem
-import tech.xdge.muxa.session.inboxRows
-import tech.xdge.muxa.session.triageQueue
-import tech.xdge.muxa.session.InboxGroup
 import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.runningTask
 import tech.xdge.muxa.session.knownRepos
@@ -164,15 +158,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** What the Inbox screen's list shows: the Inbox list, All Tasks, or the Routines. */
     var inboxPage by mutableStateOf(InboxPage.INBOX)
 
-    /** The Inbox row the keys act on, by id. */
-    var inboxFocus by mutableStateOf<String?>(null)
-
-    /** Device-local Snooze, only for a host without `task-inbox` (ADR 0023). */
-    var inboxSnoozes by mutableStateOf<Map<String, String>>(emptyMap())
-
-    /** The stored entry shown in the Inbox screen's detail, by id. */
-    var selectedEntry by mutableStateOf<String?>(null)
-
     /** The Routine shown in the Inbox screen's detail, by `workspace/name`. */
     var selectedRoutine by mutableStateOf<String?>(null)
 
@@ -201,40 +186,20 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** The items that wait for the user, in the host's order. */
     val inboxItems: List<InboxItem> get() = if (usesItems) state.inboxItems.waiting() else emptyList()
 
-    /** The host keeps Move down and Later, so the local Snooze is off. */
-    val canPlaceTasks: Boolean get() = isConnected && state.canPlaceTasks
     val canUseRoutines: Boolean get() = isConnected && state.canUseRoutines
-    private val hostQueue get() = triageQueue(state.tasks?.records.orEmpty(), state.sessions)
-    val inboxSnoozedCount: Int
-        get() = if (state.canPlaceTasks) 0 else hostQueue.count { inboxSnoozes[it.record.id] == it.attentionKey }
-
-    /** The Task needs in the host's order, without the ones snoozed on this device. */
-    val inboxQueue: List<TaskItem>
-        get() = if (state.canPlaceTasks) hostQueue else hostQueue.filter { inboxSnoozes[it.record.id] != it.attentionKey }
-
-    /** The Inbox list: Task needs, waiting Routine runs, briefings and proposals. */
-    val inboxRows: List<InboxRow> get() = inboxRows(inboxQueue, state.inboxEntries, state.routines, state.sessions)
 
     /** An agent waits or failed: a phone opens on the Inbox after connecting (ADR 0023). */
-    private val somethingUrgent: Boolean
-        get() = if (usesItems) inboxItems.any { it.isUrgent } else inboxQueue.any { it.group == InboxGroup.NEEDS_ATTENTION }
+    private val somethingUrgent: Boolean get() = inboxItems.any { it.isUrgent }
 
     /** Opens the Inbox screen on the Inbox list, focused on row [id]; on All Tasks when nothing needs the user. */
     fun showInbox(id: String? = null) {
         clearInboxSelection()
-        if (usesItems) {
-            // An empty Inbox says so, and links to All Tasks.
-            inboxPage = InboxPage.INBOX
-            // [id] is an item's, or a Task's from the session list's Show in Inbox.
-            val target = id?.let { i -> inboxItems.firstOrNull { it.id == i || it.task == i }?.id }
-            itemFocus = target ?: inboxItems.firstOrNull()?.id
-            target?.let { openItem(it) }
-            openTasks()
-            return
-        }
-        val rows = inboxRows
-        inboxPage = if (rows.isEmpty()) InboxPage.TASKS else InboxPage.INBOX
-        inboxFocus = id ?: rows.firstOrNull()?.id
+        // An empty Inbox says so, and links to All Tasks; a host below `work` level 3 says it needs a newer bridge.
+        inboxPage = InboxPage.INBOX
+        // [id] is an item's, or a Task's from the session list's Show in Inbox.
+        val target = id?.let { i -> inboxItems.firstOrNull { it.id == i || it.task == i }?.id }
+        itemFocus = target ?: inboxItems.firstOrNull()?.id
+        target?.let { openItem(it) }
         openTasks()
     }
 
@@ -247,7 +212,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     fun clearInboxSelection() {
         selectedItem = null
         selectedTask = null
-        selectedEntry = null
         selectedRoutine = null
     }
 
@@ -307,7 +271,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
     private var demoTaskRecords = true
-    private var demoTaskInbox = true
     private var demoWorkLevel = WORK_ASK
     private var demoSet = DemoBridge.Content.SHOWCASE
 
@@ -338,7 +301,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** Try the Demo: sample sessions from the in-app bridge. Nothing is saved, and no SSH or key is touched. */
     fun tryDemo() {
         demoTaskRecords = true
-        demoTaskInbox = true
         demoWorkLevel = WORK_ASK
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
@@ -349,11 +311,9 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         set: DemoBridge.Content,
         alerts: Boolean,
         taskRecords: Boolean = true,
-        taskInbox: Boolean = true,
         workLevel: Int = WORK_ASK,
     ) {
         demoTaskRecords = taskRecords
-        demoTaskInbox = taskInbox
         demoWorkLevel = workLevel
         // The store screenshots show the list: a machine's name there, not the demo's.
         val host = if (set == DemoBridge.Content.SHOWCASE) {
@@ -371,7 +331,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             val alerts: Boolean,
             val taskRecords: Boolean,
             val canLeave: Boolean,
-            val taskInbox: Boolean = true,
             val workLevel: Int = WORK_ASK,
         )
     }
@@ -380,7 +339,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     fun windowStart(): WindowStart? {
         val host = currentHost ?: return null
         val demo = if (demo && host.id == demoHostId) {
-            WindowStart.Demo(demoSet, demoAlerts, demoTaskRecords, canLeaveDemo, demoTaskInbox, demoWorkLevel)
+            WindowStart.Demo(demoSet, demoAlerts, demoTaskRecords, canLeaveDemo, demoWorkLevel)
         } else {
             null
         }
@@ -395,7 +354,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             return
         }
         demoTaskRecords = demo.taskRecords
-        demoTaskInbox = demo.taskInbox
         demoWorkLevel = demo.workLevel
         beginDemo(demo.set, demo.alerts, start.host, start.pane)
         canLeaveDemo = demo.canLeave
@@ -484,7 +442,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         connectError = null
         connectFix = null
         connecting = true
-        inboxSnoozes = emptyMap()
         returnToInbox = false
         detailRequest++
         val initialRequest = detailRequest
@@ -511,7 +468,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     }
 
     private suspend fun open(host: Host): BridgeChannel {
-        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords, demoTaskInbox, demoWorkLevel)
+        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords, demoWorkLevel)
         return SshBridge.connect(host.target, keys.loadOrCreate())
     }
 
@@ -568,7 +525,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     }
 
     fun disconnect() = scope.launch {
-        inboxSnoozes = emptyMap()
         showTasks = false
         returnToInbox = false
         stayDisconnected = true

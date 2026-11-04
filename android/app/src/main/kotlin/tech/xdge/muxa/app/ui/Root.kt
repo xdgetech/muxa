@@ -73,7 +73,7 @@ fun Root(model: AppModel) {
     }
     LaunchedEffect(model.detailRequest) { if (model.detailRequest > 0) showList = false }
     LaunchedEffect(model.isConnected) {
-        if (!model.isConnected) { showList = true; model.inboxSnoozes = emptyMap(); model.showTasks = false }
+        if (!model.isConnected) { showList = true; model.showTasks = false }
     }
 
     CompositionLocalProvider(

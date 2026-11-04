@@ -26,10 +26,7 @@ import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.InboxPrompt
 import tech.xdge.muxa.app.answer
-import tech.xdge.muxa.app.approve
-import tech.xdge.muxa.app.later
 import tech.xdge.muxa.protocol.InboxAction
-import tech.xdge.muxa.protocol.InboxEntry
 import tech.xdge.muxa.protocol.Proposal
 import tech.xdge.muxa.session.LaterChoice
 import tech.xdge.muxa.session.laterProblem
@@ -43,9 +40,6 @@ import java.time.ZoneOffset
 @Composable
 fun InboxDialogs(model: AppModel) {
     when (val prompt = model.inboxPrompt) {
-        is InboxPrompt.Later -> LaterDialog(model, { model.later(prompt.row, it) }) { model.inboxPrompt = InboxPrompt.PickTime(prompt.row) }
-        is InboxPrompt.PickTime -> LaterPicker(model) { model.later(prompt.row, it) }
-        is InboxPrompt.Approve -> ApproveDialog(model, prompt.entry)
         is InboxPrompt.ItemLater -> LaterDialog(model, { model.answer(prompt.item, InboxAction.LATER, until = it) }) {
             model.inboxPrompt = InboxPrompt.ItemPickTime(prompt.item)
         }
@@ -125,12 +119,6 @@ private fun LaterPicker(model: AppModel, save: (Long) -> Unit) {
 }
 
 /** The proposal exactly as the Task will get it. Approval creates one Task. */
-@Composable
-private fun ApproveDialog(model: AppModel, entry: InboxEntry) {
-    val p = entry.proposal ?: return
-    ProposalDialog(model, entry.title, entry.workspace, p) { model.approve(entry) }
-}
-
 @Composable
 private fun ProposalDialog(model: AppModel, title: String, workspace: String, p: Proposal, approve: () -> Unit) {
     AlertDialog(

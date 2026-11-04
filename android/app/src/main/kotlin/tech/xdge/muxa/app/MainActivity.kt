@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
                 set,
                 alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false),
                 taskRecords = !intent.getBooleanExtra(EXTRA_NO_TASK_RECORDS, false),
-                taskInbox = !intent.getBooleanExtra(EXTRA_NO_TASK_INBOX, false),
                 // A host from before ask sessions (ADR 0031), or from before Inbox items (ADR 0033).
                 workLevel = when {
                     intent.getBooleanExtra(EXTRA_WORK1, false) -> WORK_ROUTINES
@@ -103,9 +102,7 @@ class MainActivity : ComponentActivity() {
                 item("Open", KeyEvent.KEYCODE_O),
                 item("Main answer", KeyEvent.KEYCODE_ENTER),
                 item("Inbox / All Tasks", KeyEvent.KEYCODE_L),
-                KeyboardShortcutInfo("Move down", KeyEvent.KEYCODE_DPAD_DOWN, moved),
                 KeyboardShortcutInfo("Later", KeyEvent.KEYCODE_L, moved),
-                item("Snooze (older hosts)", KeyEvent.KEYCODE_S),
             ),
         )
     }
@@ -122,13 +119,10 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_NO_SAVED_HOSTS = "no-saved-hosts"
         const val EXTRA_NO_TASK_RECORDS = "no-task-records"
 
-        /** A bridge from before the shared Inbox order and Routines, for the local Snooze's test. */
-        const val EXTRA_NO_TASK_INBOX = "no-task-inbox"
-
         /** A bridge from before ask sessions and branches named after the title. */
         const val EXTRA_WORK1 = "work1"
 
-        /** A bridge from before Inbox items: the Inbox of Task needs and entries. */
+        /** A bridge from before Inbox items: the Inbox says the host needs a newer muxa-bridge. */
         const val EXTRA_WORK2 = "work2"
     }
 }

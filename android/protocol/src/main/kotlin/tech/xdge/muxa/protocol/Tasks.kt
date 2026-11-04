@@ -35,28 +35,6 @@ data class TaskRecord(
     val pendingPrompt: PendingPrompt? = null,
     val worker: String? = null,
     val restartOperation: RestartOperation? = null,
-    /** Move down and Later in the Inbox queue (ADR 0027 §4). */
-    val inbox: TaskInbox? = null,
-)
-
-/** A Task's place in the Inbox queue, shared by every device (ADR 0027 §4). */
-@Serializable
-data class TaskInbox(
-    /** Move down: the host's clock in epoch milliseconds. A larger one is lower in the queue, below every Task without one. */
-    val order: Long? = null,
-    /** Later: out of the queue until this time, in epoch seconds (UTC). */
-    val until: Long? = null,
-    /** Epoch seconds when the host wrote it. Attention that began after it voids [order] and [until]. */
-    val since: Long,
-)
-
-/** What `update-task` asks for the Task's place in the Inbox queue (capability `task-inbox`). It replaces the record's `inbox`; neither field clears it. */
-@Serializable
-data class InboxChange(
-    /** Move down: the host sets `order` to its clock. */
-    val down: Boolean = false,
-    /** Later: epoch seconds, after the host's clock. */
-    val until: Long? = null,
 )
 
 /** One agent that worked on a task, as the bridge started or restarted it (ADR 0018). */

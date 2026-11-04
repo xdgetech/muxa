@@ -61,7 +61,7 @@ class DemoItemsTest {
         val session = connected()
         val saved = session.answer(session.item("e-000000a3"), InboxAction.REJECT)
         assertEquals(InboxAction.DISMISS, saved.answer)
-        assertEquals("dismissed", session.state.value.inboxEntries.first { it.id == "e-000000a3" }.disposition)
+        assertEquals(ItemState.ANSWERED, session.item("e-000000a3").state)
     }
 
     @Test

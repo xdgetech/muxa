@@ -80,7 +80,7 @@ fun TasksScreen(model: AppModel) {
     val phone = LocalPhoneLayout.current
     val layout = LocalWindowLayout.current
     val selected = model.selectedTask?.let { id -> model.state.tasks?.record(id) }
-    val detailOpen = model.selectedItem != null || model.selectedTask != null || model.selectedEntry != null || model.selectedRoutine != null
+    val detailOpen = model.selectedItem != null || model.selectedTask != null || model.selectedRoutine != null
     Dialog(onDismissRequest = model::closeTasks, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         DialogStatusBar()
         // Focused, so the Inbox keys reach it before any control has focus.
@@ -157,24 +157,20 @@ private fun InboxPane(model: AppModel, selected: String?, modifier: Modifier) {
         }
         val content = Modifier.fillMaxWidth().weight(1f)
         when (model.inboxPage) {
-            // An older host keeps the Inbox of Task needs and entries.
-            InboxPage.INBOX -> if (model.usesItems) ItemList(model, content) else InboxList(model, content)
+            InboxPage.INBOX -> ItemList(model, content)
             InboxPage.TASKS -> TaskList(model, selected, content)
             InboxPage.ROUTINES -> RoutineList(model, content)
         }
     }
 }
 
-/** The picked row's detail: an Inbox item, a stored entry, a Routine, or a Task. */
+/** The picked row's detail: an Inbox item, a Routine, or a Task. */
 @Composable
 private fun InboxDetail(model: AppModel, selected: TaskRecord?, modifier: Modifier) {
-    val entry = model.selectedEntry
     val routine = model.selectedRoutine
     when {
         model.selectedItem != null -> ItemDetail(model, model.selectedItem, modifier)
-        model.usesItems && model.inboxPage == InboxPage.INBOX && selected == null && entry == null && routine == null ->
-            ItemDetail(model, null, modifier)
-        entry != null -> InboxEntryDetail(model, entry, modifier)
+        model.inboxPage == InboxPage.INBOX && selected == null && routine == null -> ItemDetail(model, null, modifier)
         routine != null -> RoutineDetail(model, routine, modifier)
         else -> TaskDetail(model, selected, modifier)
     }

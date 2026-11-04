@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -52,7 +53,9 @@ fun ItemList(model: AppModel, modifier: Modifier) {
     // The focused item leaves the list when it is answered, here or on another device.
     LaunchedEffect(ids) { if (model.itemFocus !in ids) model.itemFocus = ids.firstOrNull() }
     LazyColumn(modifier.fillMaxWidth().testTag("inbox-list")) {
-        if (items.isEmpty()) {
+        if (!model.usesItems) {
+            item(key = "old-host") { OlderHost(model) }
+        } else if (items.isEmpty()) {
             item(key = "empty") {
                 Column(Modifier.fillMaxWidth().padding(32.dp).testTag("inbox-empty"), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Nothing needs you", style = MaterialTheme.typography.titleMedium)
@@ -72,6 +75,25 @@ fun ItemList(model: AppModel, modifier: Modifier) {
         }
     }
 }
+
+/** A host below `work` level 3 keeps no Inbox items (ADR 0033): say so, and offer the other lists. */
+@Composable
+private fun OlderHost(model: AppModel) {
+    Column(Modifier.fillMaxWidth().padding(32.dp).testTag("inbox-old-host"), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(OLDER_HOST, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        TextButton(
+            {
+                model.clearInboxSelection()
+                model.inboxPage = InboxPage.TASKS
+            },
+            Modifier.testTag("inbox-all-tasks"),
+        ) { Text("All Tasks") }
+        TextButton(model::closeTasks, Modifier.testTag("inbox-sessions")) { Text("Sessions") }
+    }
+}
+
+/** What the Inbox says on a host below `work` level 3. */
+const val OLDER_HOST = "This host needs a newer muxa-bridge for the Inbox. Update muxa on the host."
 
 /** Either swipe asks for Later, where the host takes it now. */
 @Composable

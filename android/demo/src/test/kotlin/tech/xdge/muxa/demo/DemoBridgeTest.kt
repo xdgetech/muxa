@@ -13,7 +13,7 @@ import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.ChatPrompt
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorCode
-import tech.xdge.muxa.protocol.InboxChange
+import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.LoopReason
 import tech.xdge.muxa.protocol.LoopSpec
 import tech.xdge.muxa.protocol.LoopState
@@ -26,8 +26,7 @@ import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.taskItem
 import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.PaneSession
-import tech.xdge.muxa.session.inboxRows
-import tech.xdge.muxa.session.triageQueue
+import tech.xdge.muxa.session.waiting
 import tech.xdge.muxa.terminal.PaneScreen
 import java.io.ByteArrayInputStream
 import java.util.concurrent.Executors
@@ -61,49 +60,30 @@ class DemoBridgeTest {
     }
 
     @Test
-    fun theInboxListsTasksTheWaitingRunAndEntries() = runBlocking {
+    fun theHostHasRoutinesAndInboxItems() = runBlocking {
         val (session, _) = connected()
         val s = session.state.value
-        assertTrue(s.canPlaceTasks && s.canUseRoutines)
+        assertTrue(s.canUseRoutines && s.canAnswerItems)
         assertEquals(listOf("slack-digest", "linear-triage", "weekly-memory"), s.routines.map { it.name })
-        val rows = inboxRows(triageQueue(s.tasks!!.records, s.sessions), s.inboxEntries, s.routines, s.sessions)
-        assertEquals("t-auth01", rows.first().id)
-        val tail = rows.map { it.id }.dropWhile { !it.startsWith("t-r") }
-        assertEquals(listOf("t-r00002", "e-000000a1", "e-000000a2", "e-000000a3"), tail)
-    }
-
-    @Test
-    fun moveDownPutsATaskLastAndKeepsItsStatus() = runBlocking {
-        val (session, _) = connected()
-        val auth = session.state.value.tasks!!.record("t-auth01")!!
-        val saved = session.place(auth, InboxChange(down = true))
-        assertEquals(auth.status, saved.status)
-        val s = session.state.value
-        val rows = inboxRows(triageQueue(s.tasks!!.records, s.sessions), s.inboxEntries, s.routines, s.sessions)
-        assertEquals("t-auth01", rows.last().id)
-        try {
-            session.place(auth, InboxChange(down = true))
-            fail("a stale rev should fail")
-        } catch (e: PaneSession.Failure.Bridge) {
-            assertEquals(ErrorCode.CONFLICT, e.body.code)
-        }
+        // The Routine's entries are items too (ADR 0033).
+        assertEquals(listOf("e-000000a1", "e-000000a2", "e-000000a3"), s.inboxItems.waiting().filter { it.routine != null }.map { it.id })
     }
 
     @Test
     fun approvingCreatesOneTaskWithTheProposal() = runBlocking {
         val (session, _) = connected()
-        val proposal = session.state.value.inboxEntries.first { it.id == "e-000000a2" }
-        val approved = session.approve(proposal)
-        val task = session.state.value.tasks!!.record(approved.task!!)!!
-        assertTrue(task.goal.contains("muxa-proposal: e-000000a2 sha256:"))
+        val proposal = session.state.value.inboxItems.first { it.id == "e-000000a2" }
+        val approved = session.answer(proposal, InboxAction.APPROVE)
+        assertEquals(InboxAction.APPROVE, approved.answer)
+        val task = session.state.value.tasks!!.records.single { it.goal.contains("muxa-proposal: e-000000a2 sha256:") }
         assertTrue(task.goal.contains(proposal.proposal!!.content))
         assertTrue(session.state.value.sessions.any { it.taskId == task.id })
         // Asked twice, the host still has one Task for it.
         val count = session.state.value.tasks!!.records.size
-        assertEquals(task.id, session.approve(approved).task)
+        session.answer(approved, InboxAction.APPROVE)
         assertEquals(count, session.state.value.tasks!!.records.size)
         try {
-            session.dismiss(approved)
+            session.answer(approved, InboxAction.DISMISS)
             fail("an approved entry is closed")
         } catch (e: PaneSession.Failure.Bridge) {
             assertEquals(ErrorCode.BAD_REQUEST, e.body.code)
@@ -127,12 +107,12 @@ class DemoBridgeTest {
     }
 
     @Test
-    fun anOlderHostHasNoInboxOrderNorRoutines() = runBlocking {
+    fun aHostWithoutWorkHasNoRoutinesNorItems() = runBlocking {
         val session = PaneSession(oneThread())
-        session.connect { DemoBridge(taskInbox = false) }
+        session.connect { DemoBridge(workLevel = 0) }
         val s = session.state.value
-        assertFalse(s.canPlaceTasks || s.canUseRoutines)
-        assertTrue(s.routines.isEmpty() && s.inboxEntries.isEmpty())
+        assertFalse(s.canUseRoutines || s.canAnswerItems)
+        assertTrue(s.routines.isEmpty() && s.inboxItems.isEmpty())
     }
 
     @Test
@@ -141,7 +121,7 @@ class DemoBridgeTest {
         val s = session.state.value
         assertEquals(3, s.routines.size)
         assertTrue(s.routines.all { it.running == null })
-        assertEquals(3, s.inboxEntries.size)
+        assertEquals(3, s.inboxItems.waiting().count { it.routine != null })
     }
 
     @Test

@@ -5,7 +5,6 @@ import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.Pane
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
-import tech.xdge.muxa.protocol.TaskInbox
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 
@@ -46,32 +45,6 @@ val TaskItem.need: InboxNeed
         session == null -> InboxNeed.NO_SESSION
         else -> InboxNeed.NO_AGENT
     }
-
-/**
- * The record's Move down and Later (ADR 0027 §4), unless the Task's current attention began after
- * they were set: a new need surfaces again.
- */
-val TaskItem.place: TaskInbox?
-    get() {
-        val place = record.inbox ?: return null
-        val paused = record.loop?.takeIf { it.needsUser }?.since
-        val attention = listOfNotNull(agent?.since, paused).maxOrNull()
-        return if (attention != null && attention > place.since) null else place
-    }
-
-/**
- * Every item with a need, in group order, then the moved-down ones by `order`. Later hides an item
- * until its time ([now], epoch seconds).
- */
-fun triageQueue(
-    records: List<TaskRecord>,
-    sessions: List<Session>,
-    now: Long = System.currentTimeMillis() / 1000,
-): List<TaskItem> =
-    inbox(records, sessions).flatMap { it.items }
-        .filter { it.need != InboxNeed.NONE && (it.place?.until ?: 0) <= now }
-        // Stable: equal orders keep the group order.
-        .sortedWith(compareBy(nullsFirst()) { it.place?.order })
 
 data class InboxSection(val group: InboxGroup, val items: List<TaskItem>)
 
@@ -115,9 +88,3 @@ fun inbox(records: List<TaskRecord>, sessions: List<Session>): List<InboxSection
         InboxSection(group, items.sortedWith(compareByDescending<TaskItem> { it.record.updatedAt }.thenByDescending { it.record.id }))
     }
 }
-
-/** Conservative local snooze identity; it is not an approval token. */
-val TaskItem.attentionKey: String get() = listOf(
-    record.id, record.rev, session?.id, agentPane?.id, need.wire, agent?.state, agent?.since,
-    record.loop?.state, record.loop?.reason, record.loop?.since,
-).joinToString("\u001f")

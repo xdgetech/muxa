@@ -76,7 +76,6 @@ object Icons {
     val routine = Material.Filled.Update
     val briefing = Material.Filled.Newspaper
     val proposal = Material.Filled.Lightbulb
-    val moveDown = Material.Filled.VerticalAlignBottom
     val later = Material.Filled.Schedule
     val check = Material.Filled.Check
     val run = Material.Filled.PlayArrow

@@ -49,17 +49,6 @@ class FixtureTest {
     }
 
     @Test
-    fun inboxPlaceRoundTrips() {
-        val requests = lines("inbox/requests.jsonl")
-        assertEquals(3, requests.size)
-        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
-        val messages = lines("inbox/messages.jsonl")
-        assertEquals(2, messages.size)
-        messages.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeMessage(it)))) }
-        assertEquals(InboxChange(down = true), (Wire.decodeRequest(requests[0]) as Request.UpdateTask).inbox)
-    }
-
-    @Test
     fun workerContractRoundTripsAWorkerNameOrNone() {
         val requests = lines("workers/requests.jsonl")
         assertEquals(7, requests.size)

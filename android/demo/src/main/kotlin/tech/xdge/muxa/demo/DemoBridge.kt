@@ -21,7 +21,6 @@ import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.DocInfo
 import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
-import tech.xdge.muxa.protocol.InboxChange
 import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.PROTOCOL_VERSION
 import tech.xdge.muxa.protocol.Pane
@@ -29,7 +28,6 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.RunReason
 import tech.xdge.muxa.protocol.Session
-import tech.xdge.muxa.protocol.TaskInbox
 import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
@@ -50,16 +48,15 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [taskInbox] false plays one from before the shared Inbox order and Routines, for the local Snooze's test.
- * [workLevel] is the `work` level it advertises; below [WORK_ASK] it plays a host from before
- * ask sessions and branches named after the title (ADR 0031).
+ * [workLevel] is the `work` level it advertises; below [WORK_ITEMS] it plays a host from before
+ * Inbox items (ADR 0033), below [WORK_ASK] one from before ask sessions and branches named after
+ * the title (ADR 0031), and at 0 one without Routines.
  */
 class DemoBridge(
     set: Content = Content.TESTS,
     alerts: Boolean = false,
     taskRecords: Boolean = true,
-    taskInbox: Boolean = true,
-    workLevel: Int = WORK_ASK,
+    workLevel: Int = WORK_ITEMS,
 ) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
@@ -98,11 +95,9 @@ class DemoBridge(
     private val items = content.items(now())
     private var sessions: List<Session> = content.sessions(now()) + work.sessions
     private val capabilities = CAPABILITIES
-        .filter { taskRecords || it != "task-records" }
-        .filter { taskInbox || it != "task-inbox" } +
-        listOfNotNull("$WORK_CAPABILITY:$workLevel".takeIf { taskInbox && workLevel > 0 })
+        .filter { taskRecords || it != "task-records" } +
+        listOfNotNull("$WORK_CAPABILITY:$workLevel".takeIf { workLevel > 0 })
 
-    /** The level it advertises: none without the shared Inbox order. */
     private val workLevel = tech.xdge.muxa.protocol.workLevel(capabilities)
     private val images = content.images(now())
 
@@ -299,26 +294,6 @@ class DemoBridge(
         followers += pane.id
         sessions = sessions + Session("$$n", name, taskId = id, panes = listOf(pane))
         return record
-    }
-
-    /** Move down and Later as the host stores them (ADR 0027 §4): `order` is the clock in ms. */
-    private fun place(req: Request.UpdateTask, change: InboxChange) {
-        if ("task-inbox" !in capabilities) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
-        val nowMillis = System.currentTimeMillis()
-        val now = nowMillis / 1_000
-        val until = change.until
-        if (until != null && (until <= now || until > now + 366L * 86_400)) {
-            return fail(req.id, ErrorCode.BAD_REQUEST, "until must be in the future and at most 366 days ahead")
-        }
-        val saved = synchronized(lock) {
-            val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
-            if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
-            val saved = current.copy(rev = current.rev + 1, inbox = TaskInbox(if (change.down) nowMillis else null, until, now))
-            tasks = tasks.map { if (it.id == saved.id) saved else it }
-            saved
-        }
-        emit(Message.TaskSaved(req.id, saved))
-        ok(req.id)
     }
 
     override suspend fun close() {
@@ -576,8 +551,7 @@ class DemoBridge(
 
     /** Sets a status, refusing a stale [Request.UpdateTask.rev] as the bridge does. */
     private fun updateTask(req: Request.UpdateTask) {
-        req.inbox?.let { return place(req, it) }
-        val status = req.status ?: return fail(req.id, ErrorCode.BAD_REQUEST, "update-task needs a status or an Inbox place")
+        val status = req.status
         val saved = synchronized(lock) {
             val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
             if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
@@ -776,7 +750,7 @@ class DemoBridge(
         private val CAPABILITIES =
             listOf(
                 "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-                "task-loop", "tasks-changed", "viewport", "task-inbox",
+                "task-loop", "tasks-changed", "viewport",
             )
 
         /** What a bridge says to a request it does not know. */

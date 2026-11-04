@@ -6,9 +6,11 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -85,38 +87,74 @@ class TasksTest {
     }
 
     /**
-     * A host without `task-inbox` keeps the device-local Snooze: the Task leaves this device's
-     * Inbox, and Show snoozed brings it back. It replaces the Triage test, because Triage with
-     * Next and Previous is gone, as on iOS.
+     * A host below `work` level 3 has no Inbox items (ADR 0033): the Inbox says the host needs a
+     * newer muxa-bridge, and All Tasks still lists every group. It replaces the local Snooze's
+     * test, because I4 removed the older Inbox list.
      */
     @Test
-    fun anOlderHostKeepsTheLocalSnooze() {
+    fun anOlderHostAsksForANewerBridge() {
         val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_DEMO, true)
-            .putExtra(MainActivity.EXTRA_NO_TASK_INBOX, true)
+            .putExtra(MainActivity.EXTRA_WORK2, true)
         scenario = ActivityScenario.launch(intent)
         compose.leaveInitialInbox()
         waitForTag("composer")
         compose.onNodeWithTag("more").performClick()
         waitForTag("menu-tasks")
         compose.onNodeWithTag("menu-tasks").performClick()
-        waitForTag("inbox-row-t-auth01")
-        compose.onNodeWithTag("inbox-row-e-000000a1").assertDoesNotExist()
-        compose.onNodeWithTag("inbox-actions-t-auth01").performClick()
-        waitForTag("inbox-snooze")
-        compose.onNodeWithTag("inbox-move-down").assertDoesNotExist()
-        compose.onNodeWithTag("inbox-snooze").performClick()
-        compose.waitUntilDoesNotExist(hasTestTag("inbox-row-t-auth01"), TIMEOUT)
-        compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag("inbox-show-snoozed"))
-        compose.onNodeWithTag("inbox-show-snoozed").performClick()
-        waitForTag("inbox-row-t-auth01")
-        compose.onNodeWithTag("inbox-mode-tasks").performClick()
+        waitForTag("inbox-old-host")
+        compose.waitUntilAtLeastOneExists(hasText("needs a newer muxa-bridge", substring = true), TIMEOUT)
+        compose.onNodeWithTag("inbox-all-tasks").performClick()
         waitForTag("task-list")
         for (group in InboxGroup.entries) {
             compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("inbox-${group.name}"))
             waitForTag("inbox-${group.name}")
         }
+    }
+
+    /** A Routine's detail shows its fields; Run now starts a run, and a disabled one cannot run. */
+    @Test
+    fun aRoutineShowsItsFieldsAndRunsNow() {
+        launch()
+        openTasks()
+        waitForTag("open-routines")
+        compose.onNodeWithTag("open-routines").performClick()
+        waitForTag("routine-work/slack-digest")
+        compose.onNodeWithTag("routine-work/slack-digest").performClick()
+        waitForText("routine-workspace", "work")
+        waitForText("routine-trigger", "08:00 Europe/Berlin")
+        waitForText("routine-enabled", "Yes")
+        waitForText("routine-last-success", "3 new")
+        waitForTag("routine-next-due")
+        waitForText("routine-failure-reason", "output.json")
+        compose.onNodeWithTag("routine-running").assertDoesNotExist()
+        compose.onNodeWithTag("routine-run-now").performScrollTo().performClick()
+        // One run at a time.
+        compose.waitUntil(TIMEOUT) { compose.onAllNodes(hasTestTag("routine-run-now") and isEnabled()).fetchSemanticsNodes().isEmpty() }
+        waitForTag("routine-running")
+        waitForTag("routine-open-terminal")
+
+        if (compose.onAllNodesWithTag("routine-back").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("routine-back").performClick()
+        waitForTag("routine-personal/weekly-memory")
+        compose.onNodeWithTag("routine-personal/weekly-memory").performClick()
+        waitForText("routine-trigger", "Run now only")
+        compose.onNodeWithTag("routine-run-now").performScrollTo().assertIsNotEnabled()
+    }
+
+    /** The running run's Open Terminal shows its session. */
+    @Test
+    fun aRunningRoutineOpensItsTerminal() {
+        launch()
+        openTasks()
+        waitForTag("open-routines")
+        compose.onNodeWithTag("open-routines").performClick()
+        waitForTag("routine-work/linear-triage")
+        compose.onNodeWithTag("routine-work/linear-triage").performClick()
+        waitForTag("routine-open-terminal")
+        compose.onNodeWithTag("routine-open-terminal").performScrollTo().performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %90 100x30"), TIMEOUT)
     }
 
     /** Scrolls the list to the Task first: on a phone the lower groups are off screen. */
