@@ -38,17 +38,18 @@ impl Host {
         Self::with(name, "")
     }
 
-    /// `extra` is added to `workspaces.toml`; `BRIEF` in it is the instructions path.
+    /// `extra` is added to the workspace's `.muxa/routines.toml`.
     fn with(name: &str, extra: &str) -> Host {
         let base =
             std::env::temp_dir().join(format!("muxa-routines-it-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        for d in ["root", "state", "steer"] {
+        for d in ["root/.muxa", "state", "steer"] {
             std::fs::create_dir_all(base.join(d)).unwrap();
         }
         let base = base.canonicalize().unwrap();
+        let muxa = base.join("root/.muxa");
         std::fs::write(
-            base.join("brief.md"),
+            muxa.join("brief.md"),
             format!("Read the sources. {}\n", MARKS[0]),
         )
         .unwrap();
@@ -56,16 +57,21 @@ impl Host {
             base.join("workspaces.toml"),
             format!(
                 "[[workspace]]\nname = \"w\"\nroot = \"{root}\"\n\
-                 [[worker]]\nname = \"Cx\"\nagent = \"codex\"\n\
-                 [[routine]]\nworkspace = \"w\"\nname = \"Brief\"\ninstructions = \"{brief}\"\n\
-                 project = \"Ops\"\nenabled = true\n[routine.output]\nitems = 5\n\
-                 [[routine]]\nworkspace = \"w\"\nname = \"Off\"\ninstructions = \"{brief}\"\n\
-                 at = \"09:00\"\ntimezone = \"UTC\"\nenabled = false\n\
-                 [[routine]]\nworkspace = \"w\"\nname = \"Codex\"\ninstructions = \"{brief}\"\n\
-                 worker = \"Cx\"\nenabled = true\n{extra}",
+                 [workspace.routines]\nenabled = true\n\
+                 [[worker]]\nname = \"Cx\"\nagent = \"codex\"\n",
                 root = base.join("root").display(),
-                brief = base.join("brief.md").display(),
-                extra = extra.replace("BRIEF", &base.join("brief.md").display().to_string()),
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            muxa.join("routines.toml"),
+            format!(
+                "[[routine]]\nname = \"Brief\"\ninstructions = \"brief.md\"\n\
+                 project = \"Ops\"\nenabled = true\n[routine.output]\nitems = 5\n\
+                 [[routine]]\nname = \"Off\"\ninstructions = \"brief.md\"\n\
+                 at = \"09:00\"\ntimezone = \"UTC\"\nenabled = false\n\
+                 [[routine]]\nname = \"Codex\"\ninstructions = \"brief.md\"\n\
+                 worker = \"Cx\"\nenabled = true\n{extra}"
             ),
         )
         .unwrap();
@@ -441,7 +447,7 @@ async fn the_daemon_starts_a_scheduled_run_at_its_time() {
     let h = Host::with(
         "tick",
         &format!(
-            "[[routine]]\nworkspace = \"w\"\nname = \"Tick\"\ninstructions = \"BRIEF\"\n\
+            "[[routine]]\nname = \"Tick\"\ninstructions = \"brief.md\"\n\
              at = \"{trigger}\"\ntimezone = \"UTC\"\nenabled = true\n"
         ),
     );

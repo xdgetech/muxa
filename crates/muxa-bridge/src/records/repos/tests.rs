@@ -24,6 +24,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         agent: None,
         loop_checks: None,
         park_after: None,
+        routines: None,
     }
 }
 

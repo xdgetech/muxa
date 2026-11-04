@@ -34,9 +34,13 @@ data class RoutineInfo(
     val running: RoutineRun? = null,
 )
 
-/** `HH:MM`, 24-hour, local to the IANA [timezone]. */
+/** `HH:MM`, 24-hour, local to the IANA [timezone], on the days of [schedule]: five cron fields (ADR 0035); null from an older host means every day. */
 @Serializable
-data class RoutineTrigger(val at: String, val timezone: String)
+data class RoutineTrigger(val at: String, val timezone: String, val schedule: String? = null)
+
+/** A workspace whose `.muxa/routines.toml` could not be used. It lists no Routines. [reason] names the file and the Routine; a TOML parse error may quote the file. */
+@Serializable
+data class RoutineProblem(val workspace: String, val reason: String)
 
 /** The open run of a Routine. Its session carries `taskId` = [task]. */
 @Serializable

@@ -66,7 +66,7 @@ fun RoutineList(model: AppModel, modifier: Modifier) {
         if (routines.isEmpty() && model.state.workError == null) {
             Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("No Routines", style = MaterialTheme.typography.titleMedium)
-                Text("Add [[routine]] to workspaces.toml on the host.", style = MaterialTheme.typography.bodySmall)
+                Text("Allow Routines in workspaces.toml on the host, then add them to .muxa/routines.toml in the workspace.", style = MaterialTheme.typography.bodySmall)
             }
         }
         LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("routine-list")) {

@@ -16,7 +16,9 @@ pub mod store;
 use std::path::Path;
 use std::sync::Arc;
 
-use muxa_protocol::{ErrorBody, ErrorCode, Message, Request, RoutineInfo, RoutineTrigger};
+use muxa_protocol::{
+    ErrorBody, ErrorCode, Message, Request, RoutineInfo, RoutineProblem, RoutineTrigger,
+};
 
 use crate::convert::error_body;
 use crate::records::Record;
@@ -34,9 +36,10 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             let config = Arc::clone(&cx.records);
             blocking(move || list(&config))
                 .await
-                .map(|entries| Message::RoutineList {
+                .map(|(entries, problems)| Message::RoutineList {
                     routines: id,
                     entries,
+                    problems,
                 })
         }
         Request::RunRoutine {
@@ -136,8 +139,9 @@ fn start_error(e: &StartError) -> ErrorBody {
     error_body(code, e.to_string())
 }
 
-/// Blocking. Every configured Routine with its state, in file order.
-pub fn list(config: &Config) -> Result<Vec<RoutineInfo>, ErrorBody> {
+/// Blocking. Every configured Routine with its state, in file order, and
+/// the workspaces whose routines file is broken.
+pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), ErrorBody> {
     let workspaces = runs::load(config).map_err(|e| start_error(&e))?;
     let store = match config.state_dir.as_ref().filter(|d| d.is_dir()) {
         Some(dir) => Some(RoutineStore::open(dir).map_err(|e| {
@@ -147,7 +151,7 @@ pub fn list(config: &Config) -> Result<Vec<RoutineInfo>, ErrorBody> {
         None => None,
     };
     let at = crate::records::now();
-    Ok(workspaces
+    let entries = workspaces
         .routines()
         .iter()
         .map(|r| {
@@ -157,7 +161,19 @@ pub fn list(config: &Config) -> Result<Vec<RoutineInfo>, ErrorBody> {
                 .unwrap_or_else(|| RoutineState::new(&r.workspace, &r.name));
             info(r, &state, at)
         })
-        .collect())
+        .collect();
+    let problems = workspaces
+        .routine_problems()
+        .iter()
+        .map(|p| {
+            tracing::warn!(workspace = %p.workspace, reason = %p.reason, "routines file unusable");
+            RoutineProblem {
+                workspace: p.workspace.clone(),
+                reason: p.reason.clone(),
+            }
+        })
+        .collect();
+    Ok((entries, problems))
 }
 
 /// The wire form. `nextDue` only for an enabled Routine with a trigger.
@@ -175,6 +191,7 @@ pub fn info(r: &Routine, state: &RoutineState, at: u64) -> RoutineInfo {
         trigger: r.trigger.as_ref().map(|t| RoutineTrigger {
             at: t.at(),
             timezone: t.timezone.clone(),
+            schedule: Some(t.schedule.clone()),
         }),
         enabled: r.enabled,
         worker: r.worker.clone(),

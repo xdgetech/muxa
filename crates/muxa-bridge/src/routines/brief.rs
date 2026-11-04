@@ -47,6 +47,7 @@ mod tests {
             trigger: None,
             worker: None,
             instructions: "/i.md".into(),
+            dir: "/".into(),
             items: 5,
             direct_writes: false,
             project: None,

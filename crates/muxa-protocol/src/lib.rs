@@ -9,8 +9,8 @@ pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_I
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
-    RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK, WORK_CAPABILITY, WORK_READ,
-    WORK_ROUTINES, work_capability, work_level,
+    RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
+    WORK_CAPABILITY, WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
@@ -516,6 +516,9 @@ pub enum Message {
     RoutineList {
         routines: u64,
         entries: Vec<RoutineInfo>,
+        /// Workspaces whose routines file is broken (ADR 0035).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        problems: Vec<RoutineProblem>,
     },
     /// The Routine a `run-routine` started, sent just before its `result`.
     RoutineSaved { routine: u64, entry: RoutineInfo },

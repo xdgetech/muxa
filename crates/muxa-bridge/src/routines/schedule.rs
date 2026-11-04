@@ -11,6 +11,9 @@ use crate::records::routines::Trigger;
 
 /// No gap in the tz database is longer than a day.
 const GAP_MINUTES: u32 = 24 * 60;
+/// Four years and a day: a schedule that parses matches a day within it
+/// (`records::cron`), February 29 included.
+const SEARCH_DAYS: u32 = 4 * 366 + 1;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot compute the routine's time: {0}")]
@@ -45,14 +48,28 @@ pub fn occurrence_on(trigger: &Trigger, date: Date) -> Result<Timestamp, Schedul
     Err(ScheduleError("no valid local time within a day".into()))
 }
 
-/// The latest date whose occurrence is at or before `now`.
+/// The latest scheduled date whose occurrence is at or before `now`.
 pub fn latest_due(trigger: &Trigger, now: Timestamp) -> Result<Date, ScheduleError> {
-    let today = now.to_zoned(trigger.tz.clone()).date();
-    if occurrence_on(trigger, today)? <= now {
-        Ok(today)
-    } else {
-        today.yesterday().map_err(err)
+    let mut date = now.to_zoned(trigger.tz.clone()).date();
+    for _ in 0..SEARCH_DAYS {
+        if trigger.days.matches(date) && occurrence_on(trigger, date)? <= now {
+            return Ok(date);
+        }
+        date = date.yesterday().map_err(err)?;
     }
+    Err(ScheduleError("no scheduled day within four years".into()))
+}
+
+/// The first scheduled date after `date`.
+fn next_day(trigger: &Trigger, date: Date) -> Result<Date, ScheduleError> {
+    let mut date = date;
+    for _ in 0..SEARCH_DAYS {
+        date = date.tomorrow().map_err(err)?;
+        if trigger.days.matches(date) {
+            return Ok(date);
+        }
+    }
+    Err(ScheduleError("no scheduled day within four years".into()))
 }
 
 /// At most one run per tick, for the latest due occurrence only: missed
@@ -87,7 +104,7 @@ pub fn next_due(
         Some(last) => last,
         None => latest_due(trigger, now)?,
     };
-    occurrence_on(trigger, after.tomorrow().map_err(err)?)
+    occurrence_on(trigger, next_day(trigger, after)?)
 }
 
 /// `2026-11-03T09:00`: the date and the configured time, also when a gap moved it.
@@ -105,9 +122,16 @@ mod tests {
     /// 02:00 to the last Sunday of October 03:00. No system tz database needed.
     fn berlin(at: &str) -> Trigger {
         let (h, m) = at.split_once(':').unwrap();
+        berlin_schedule(&format!("{m} {h} * * *"))
+    }
+
+    fn berlin_schedule(schedule: &str) -> Trigger {
+        let parsed = crate::records::cron::parse(schedule).unwrap();
         Trigger {
-            hour: h.parse().unwrap(),
-            minute: m.parse().unwrap(),
+            hour: parsed.hour,
+            minute: parsed.minute,
+            days: parsed.days,
+            schedule: schedule.into(),
             timezone: "Europe/Berlin".into(),
             tz: TimeZone::posix("CET-1CEST,M3.5.0,M10.5.0/3").unwrap(),
         }
@@ -234,5 +258,35 @@ mod tests {
             utc("2026-11-03T08:00:00Z")
         );
         assert_eq!(decide(&t, now, last).unwrap().run, Some(date(2026, 11, 4)));
+    }
+
+    #[test]
+    fn weekdays_skip_the_weekend() {
+        let t = berlin_schedule("0 9 * * 1-5");
+        // Saturday 2026-11-07 noon: the latest due day is Friday.
+        let sat = utc("2026-11-07T11:00:00Z");
+        assert_eq!(latest_due(&t, sat).unwrap(), date(2026, 11, 6));
+        assert_eq!(
+            next_due(&t, sat, Some(date(2026, 11, 6))).unwrap(),
+            utc("2026-11-09T08:00:00Z")
+        );
+        // Monday before 09:00 local: Friday is still the latest.
+        let mon = utc("2026-11-09T07:00:00Z");
+        assert_eq!(latest_due(&t, mon).unwrap(), date(2026, 11, 6));
+        let d = decide(&t, utc("2026-11-09T08:30:00Z"), Some(date(2026, 11, 6))).unwrap();
+        assert_eq!(d.run, Some(date(2026, 11, 9)));
+    }
+
+    #[test]
+    fn a_quarterly_schedule_looks_back_months() {
+        let t = berlin_schedule("45 5 1 1,4,7,10 *");
+        let now = utc("2026-11-04T12:00:00Z");
+        assert_eq!(latest_due(&t, now).unwrap(), date(2026, 10, 1));
+        assert_eq!(
+            next_due(&t, now, Some(date(2026, 10, 1))).unwrap(),
+            utc("2027-01-01T04:45:00Z")
+        );
+        let leap = berlin_schedule("0 9 29 2 *");
+        assert_eq!(latest_due(&leap, now).unwrap(), date(2024, 2, 29));
     }
 }

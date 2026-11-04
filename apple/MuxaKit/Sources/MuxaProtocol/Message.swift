@@ -49,7 +49,7 @@ public enum Message: Equatable, Sendable {
     /// `tasks-changed`).
     case tasksChanged
     /// The Routines for a `list-routines` request, just before its `result`.
-    case routineList(routines: UInt64, entries: [RoutineInfo])
+    case routineList(routines: UInt64, entries: [RoutineInfo], problems: [RoutineProblem] = [])
     /// The Routine a `run-routine` started, just before its `result`.
     case routineSaved(routine: UInt64, entry: RoutineInfo)
     /// The stored Inbox entries for a `list-inbox` request, newest first. Level 3
@@ -117,7 +117,7 @@ extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
-        case routines, routine, entries, entry, inbox, items, item
+        case routines, routine, entries, entry, problems, inbox, items, item
         case start, name
     }
 
@@ -212,7 +212,8 @@ extension Message: Codable {
         case "routine-list":
             self = .routineList(
                 routines: try c.decode(UInt64.self, forKey: .routines),
-                entries: try c.decode([RoutineInfo].self, forKey: .entries))
+                entries: try c.decode([RoutineInfo].self, forKey: .entries),
+                problems: try c.decodeIfPresent([RoutineProblem].self, forKey: .problems) ?? [])
         case "routine-saved":
             self = .routineSaved(
                 routine: try c.decode(UInt64.self, forKey: .routine),
@@ -331,10 +332,11 @@ extension Message: Codable {
             try c.encode(record, forKey: .record)
         case .tasksChanged:
             try c.encode("tasks-changed", forKey: .type)
-        case .routineList(let routines, let entries):
+        case .routineList(let routines, let entries, let problems):
             try c.encode("routine-list", forKey: .type)
             try c.encode(routines, forKey: .routines)
             try c.encode(entries, forKey: .entries)
+            if !problems.isEmpty { try c.encode(problems, forKey: .problems) }
         case .routineSaved(let routine, let entry):
             try c.encode("routine-saved", forKey: .type)
             try c.encode(routine, forKey: .routine)

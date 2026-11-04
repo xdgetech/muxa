@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed by the developer's product direction. It supersedes the Routine part of ADR 0025 ("A project routine collects information on a clock" and slices S0–S3). It also replaces ADR 0025's Q0 entry contract: the stored Inbox entry is defined once, with the Routine output (section 4). Nothing in this ADR is implemented.
+Proposed by the developer's product direction. ADR 0035 moves `[[routine]]` into each workspace's `.muxa/routines.toml` and replaces the daily `at` with a `schedule`. It supersedes the Routine part of ADR 0025 ("A project routine collects information on a clock" and slices S0–S3). It also replaces ADR 0025's Q0 entry contract: the stored Inbox entry is defined once, with the Routine output (section 4). Nothing in this ADR is implemented.
 
 ## Context
 

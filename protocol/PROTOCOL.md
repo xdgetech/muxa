@@ -104,7 +104,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `task-list` | `tasks`, `workspaces[] {name, root?, checks?, repos?}`, `entries[]` (task records), optional `truncated`, `workers[]` (Workers below) |
 | `task-saved` | `task`, `record` (a task record) |
 | `tasks-changed` | none. Send `list-tasks` again (capability `tasks-changed`) |
-| `routine-list` | `routines`, `entries[]` (Routines below) |
+| `routine-list` | `routines`, `entries[]`, optional `problems[]` (Routines below) |
 | `routine-saved` | `routine`, `entry` (a Routine) |
 | `inbox-list` | `inbox`, `entries[]` (stored Inbox entries, newest first) |
 | `inbox-saved` | `inbox`, `entry` (a stored Inbox entry) |
@@ -331,13 +331,15 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), and level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
-1. `list-routines` sends `routine-list {routines, entries[]}`. A Routine has:
+1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
-   - optional `trigger {at, timezone}`: `at` is a local `HH:MM`, `timezone` an IANA name. Absent: it runs only on `run-routine`;
+   - optional `trigger {at, timezone, schedule?}`: `at` is a local `HH:MM`, `timezone` an IANA name, `schedule` the five cron fields that choose the days (ADR 0035), e.g. `0 8 * * 1-5`. A host before ADR 0035 sends no `schedule`: every day. Absent `trigger`: it runs only on `run-routine`;
    - `enabled`. Nothing runs while it is false, also not `run-routine`;
    - optional `worker` (absent: the workspace default agent) and `project` (the label on Tasks its proposals create);
    - optional `nextDue`, epoch seconds;
    - optional `lastSuccess {at, occurrence, task, published}`, `lastFailure {at, occurrence, task?, reason}` and `running {occurrence, startedAt, task?}`. `reason` is one sentence with ids only.
+
+   `problems[] {workspace, reason}` lists workspaces whose `.muxa/routines.toml` could not be used; such a workspace lists no Routines. `reason` names the file and the Routine; a TOML parse error may quote the file. Absent: none.
 2. `run-routine {workspace, routine}` starts a run now. A Routine has at most one open run: a second one is `conflict`. A disabled or unknown Routine is `bad-request`. Without a usable daemon, or with a Codex agent (ADR 0026, Consequences), it is `unsupported`. On success: `routine-saved {routine, entry}`, then `result`.
 3. A run is a task record with `kind: "routine-run"`. `list-tasks` never lists it. Its session carries `taskId`, so a client can open it, and can show a need of the run (an agent waiting on the user) by matching `running.task` with a session's `taskId`.
 4. Each scheduled run has an `occurrence` id: the local date and time, e.g. `2026-11-03T09:00`. A run-now is `now-<epoch seconds>`. After sleep or a restart, at most one missed occurrence runs. A repeated local time (DST) runs once. A local time that does not exist that day runs at the next valid minute.

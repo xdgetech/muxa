@@ -26,7 +26,7 @@ struct RoutinesScreen: View {
         .overlay {
             if model.session.routines.isEmpty, model.session.workError == nil {
                 ContentUnavailableView("No Routines", systemImage: Icon.routine,
-                                       description: Text("Add [[routine]] to workspaces.toml on the host."))
+                                       description: Text("Allow Routines in workspaces.toml on the host, then add them to .muxa/routines.toml in the workspace."))
             }
         }
         .navigationTitle("Routines")

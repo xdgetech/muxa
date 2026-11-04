@@ -1,0 +1,39 @@
+# A workspace's Routines: copy to <root>/.muxa/routines.toml. The workspace
+# needs [workspace.routines] enabled = true in workspaces.toml (ADR 0035).
+# Keep .muxa/ in git to review what agents change here.
+#
+# [[routine]]  an agent run on a schedule that publishes briefings and
+#   proposals to Inbox (ADR 0026). The muxa daemon runs it in a new folder
+#   <root>/routines/<name>-<id>.
+#   name          its id within the workspace
+#   schedule      five cron fields: minute hour day-of-month month
+#                 day-of-week. One minute and one hour: at most one run a
+#                 day. Days take *, n, a-b and lists; Sunday is 0 or 7.
+#                 Day-of-month and day-of-week cannot both be set.
+#   at            or a daily HH:MM instead of schedule
+#   timezone      an IANA time zone; needed with schedule or at. Leave all
+#                 three out for a Routine that runs only on Run now
+#   worker        optional; a [[worker]] from workspaces.toml allowed in this
+#                 workspace. Without it, the workspace default agent runs it.
+#                 Codex cannot run a Routine yet
+#   instructions  a Markdown file, relative to .muxa/, read on every run. A
+#                 condition such as "every second week" goes here: the agent
+#                 checks it and publishes nothing on other days
+#   project       optional; the label on Tasks its proposals create
+#   enabled       required; nothing runs, also not Run now, while false
+#   [routine.output]  optional
+#     items          at most this many items per run, 1 to 50 (default 10).
+#                    Each item is its own Inbox row
+#     direct_writes  the agent may change external systems without a
+#                    proposal (default false; workspaces.toml must allow it)
+
+[[routine]]
+name = "situation"
+schedule = "0 8 * * 1-5"
+timezone = "Asia/Tokyo"
+instructions = "routines/situation.md"
+project = "Ops"
+enabled = false
+
+[routine.output]
+items = 20

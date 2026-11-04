@@ -754,7 +754,7 @@ public final class PaneSession {
                 await loadTasks()
                 await loadWork()
             }
-        case .routineList(let id, let entries):
+        case .routineList(let id, let entries, _):
             routineListings[id] = entries
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry

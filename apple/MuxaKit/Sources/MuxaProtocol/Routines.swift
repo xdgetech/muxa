@@ -52,10 +52,25 @@ public struct RoutineTrigger: Codable, Equatable, Sendable {
     public var at: String
     /// An IANA name, e.g. `Europe/Berlin`.
     public var timezone: String
+    /// The five cron fields (ADR 0035). Nil from an older host: every day.
+    public var schedule: String?
 
-    public init(at: String, timezone: String) {
+    public init(at: String, timezone: String, schedule: String? = nil) {
         self.at = at
         self.timezone = timezone
+        self.schedule = schedule
+    }
+}
+
+/// A workspace whose `.muxa/routines.toml` could not be used. It lists no Routines.
+public struct RoutineProblem: Codable, Equatable, Sendable {
+    public var workspace: String
+    /// Names the file and the Routine. A TOML parse error may quote the file.
+    public var reason: String
+
+    public init(workspace: String, reason: String) {
+        self.workspace = workspace
+        self.reason = reason
     }
 }
 

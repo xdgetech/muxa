@@ -311,14 +311,18 @@ fn the_example_config_loads() {
     ] {
         std::fs::create_dir_all(home.join(dir)).unwrap();
     }
+    std::fs::create_dir_all(home.join("work/company/.muxa")).unwrap();
+    std::fs::write(
+        home.join("work/company/.muxa/routines.toml"),
+        include_str!("../../../../docs/examples/routines.toml"),
+    )
+    .unwrap();
     let text = include_str!("../../../../docs/examples/workspaces.toml");
-    let names: Vec<String> = config(&home, text)
-        .unwrap()
-        .all()
-        .iter()
-        .map(|w| w.name.clone())
-        .collect();
+    let loaded = config(&home, text).unwrap();
+    let names: Vec<String> = loaded.all().iter().map(|w| w.name.clone()).collect();
     assert_eq!(names, ["Company", "Side project", "Personal"]);
+    assert!(loaded.routine_problems().is_empty());
+    assert!(loaded.routine("Company", "situation").is_some());
 }
 
 #[test]
@@ -479,6 +483,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         agent: None,
         loop_checks: None,
         park_after: None,
+        routines: None,
     };
     (dir, ws)
 }

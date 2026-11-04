@@ -443,6 +443,7 @@ mod tests {
             agent: None,
             loop_checks: Some(Checks::Any),
             park_after: None,
+            routines: None,
         };
         assert!(
             ws.may_loop(&record(Some(&repo), Some(&other))).is_ok(),

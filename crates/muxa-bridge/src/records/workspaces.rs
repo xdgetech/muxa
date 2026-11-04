@@ -11,7 +11,7 @@ use serde::Deserialize;
 use super::agent_env::{AgentSettings, RawAgent};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
-use super::routines::{RawRoutine, Routine};
+use super::routines::{self, Routine, RoutineGate, RoutineProblem};
 use super::workers::{RawWorker, Worker};
 
 /// In characters.
@@ -58,6 +58,8 @@ pub struct Workspace {
     pub loop_checks: Option<Checks>,
     /// Seconds an idle Task waits before the daemon parks it; None is off (ADR 0034).
     pub park_after: Option<u64>,
+    /// None: this workspace has no Routines (ADR 0035).
+    pub routines: Option<RoutineGate>,
 }
 
 /// The configured workspaces, in file order.
@@ -66,6 +68,7 @@ pub struct Workspaces {
     list: Vec<Workspace>,
     workers: Vec<Worker>,
     routines: Vec<Routine>,
+    problems: Vec<RoutineProblem>,
 }
 
 #[derive(Deserialize)]
@@ -75,8 +78,9 @@ struct RawConfig {
     workspace: Vec<RawWorkspace>,
     #[serde(default)]
     worker: Vec<RawWorker>,
+    /// Refused: Routines moved to each workspace (ADR 0035).
     #[serde(default)]
-    routine: Vec<RawRoutine>,
+    routine: Vec<toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +94,15 @@ struct RawWorkspace {
     #[serde(rename = "loop")]
     loop_table: Option<RawLoop>,
     park_after: Option<String>,
+    routines: Option<RawGate>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawGate {
+    enabled: bool,
+    #[serde(default)]
+    direct_writes: bool,
 }
 
 #[derive(Deserialize)]
@@ -157,6 +170,14 @@ impl Workspaces {
             path: origin.to_owned(),
             reason,
         };
+        if !raw.routine.is_empty() {
+            return Err(invalid(format!(
+                "[[routine]] moved to <workspace root>/{}/{} (ADR 0035); \
+                 allow it with [workspace.routines] enabled = true",
+                routines::WORKSPACE_DIR,
+                routines::ROUTINES_FILE
+            )));
+        }
         let mut names = HashSet::new();
         let mut list = Vec::with_capacity(raw.workspace.len());
         for w in raw.workspace {
@@ -189,6 +210,9 @@ impl Workspaces {
                 .map(parse_duration)
                 .transpose()
                 .map_err(|r| invalid(format!("workspace {:?}: park_after {r}", w.name)))?;
+            let routines = w.routines.filter(|g| g.enabled).map(|g| RoutineGate {
+                direct_writes: g.direct_writes,
+            });
             list.push(Workspace {
                 name: w.name,
                 root,
@@ -196,6 +220,7 @@ impl Workspaces {
                 agent,
                 loop_checks,
                 park_after,
+                routines,
             });
         }
         let mut worker_names = HashSet::new();
@@ -207,29 +232,33 @@ impl Workspaces {
             }
             workers.push(worker);
         }
-        let mut routines: Vec<Routine> = Vec::with_capacity(raw.routine.len());
-        for raw_routine in raw.routine {
-            let routine = raw_routine.check(home, &list, &workers).map_err(invalid)?;
-            if routines
-                .iter()
-                .any(|r| r.workspace == routine.workspace && r.name == routine.name)
-            {
-                return Err(invalid(format!(
-                    "routine {:?} appears twice in workspace {:?}",
-                    routine.name, routine.workspace
-                )));
+        let mut all_routines = Vec::new();
+        let mut problems = Vec::new();
+        for w in &list {
+            let Some(gate) = w.routines else { continue };
+            match routines::load(w, gate, &workers) {
+                Ok(found) => all_routines.extend(found),
+                Err(reason) => problems.push(RoutineProblem {
+                    workspace: w.name.clone(),
+                    reason,
+                }),
             }
-            routines.push(routine);
         }
         Ok(Self {
             list,
             workers,
-            routines,
+            routines: all_routines,
+            problems,
         })
     }
 
     pub fn routines(&self) -> &[Routine] {
         &self.routines
+    }
+
+    /// Workspaces whose routines file could not be used.
+    pub fn routine_problems(&self) -> &[RoutineProblem] {
+        &self.problems
     }
 
     pub fn routine(&self, workspace: &str, name: &str) -> Option<&Routine> {

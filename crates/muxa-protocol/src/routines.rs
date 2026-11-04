@@ -59,13 +59,24 @@ pub struct RoutineInfo {
     pub running: Option<RoutineRun>,
 }
 
-/// A local wall-clock time every day, in an IANA time zone.
+/// A local wall-clock time on the days of a schedule, in an IANA time zone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineTrigger {
     /// `HH:MM`, 24-hour.
     pub at: String,
     /// e.g. `Europe/Berlin`.
     pub timezone: String,
+    /// The five cron fields (ADR 0035). Absent from an older host: every day.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+}
+
+/// A workspace whose `.muxa/routines.toml` could not be used. It lists no Routines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineProblem {
+    pub workspace: String,
+    /// Names the file and the Routine. A TOML parse error may quote the file.
+    pub reason: String,
 }
 
 /// A Routine run that has not ended. Its record has kind `routine-run`; task

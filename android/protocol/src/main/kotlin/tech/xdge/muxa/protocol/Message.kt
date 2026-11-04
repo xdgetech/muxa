@@ -150,7 +150,12 @@ sealed interface Message {
 
     /** The Routines for a `list-routines` request, just before its `result`. */
     @Serializable
-    data class RoutineList(val routines: Long, val entries: List<RoutineInfo>) : Message
+    data class RoutineList(
+        val routines: Long,
+        val entries: List<RoutineInfo>,
+        /** Workspaces whose routines file is broken (ADR 0035). */
+        val problems: List<RoutineProblem> = emptyList(),
+    ) : Message
 
     /** The Routine a `run-routine` started, just before its `result`. */
     @Serializable

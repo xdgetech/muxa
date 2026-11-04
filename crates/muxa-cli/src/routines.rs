@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     AgentState, Disposition, InboxAction, InboxEntry, InboxEntryKind, Message, Request,
-    RoutineInfo, Session, WORK_ROUTINES, work_level,
+    RoutineInfo, RoutineProblem, Session, WORK_ROUTINES, work_level,
 };
 use serde_json::json;
 
@@ -23,13 +23,16 @@ fn require(conn: &Conn) -> Result<(), String> {
     }
 }
 
-async fn fetch(conn: &mut Conn) -> Result<Vec<RoutineInfo>, String> {
+/// The Routines, and the workspaces whose routines file is broken.
+async fn fetch(conn: &mut Conn) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), String> {
     require(conn)?;
     let messages = conn.call(|id| Request::ListRoutines { id }, WAIT).await?;
     messages
         .into_iter()
         .find_map(|m| match m {
-            Message::RoutineList { entries, .. } => Some(entries),
+            Message::RoutineList {
+                entries, problems, ..
+            } => Some((entries, problems)),
             _ => None,
         })
         .ok_or_else(|| "the bridge sent no routine list".into())
@@ -37,7 +40,11 @@ async fn fetch(conn: &mut Conn) -> Result<Vec<RoutineInfo>, String> {
 
 fn line(r: &RoutineInfo) -> String {
     let trigger = r.trigger.as_ref().map_or("run-now only".to_owned(), |t| {
-        format!("{} {}", t.at, t.timezone)
+        let when = t
+            .schedule
+            .clone()
+            .unwrap_or_else(|| format!("daily {}", t.at));
+        format!("{when} {}", t.timezone)
     });
     let mut out = format!(
         "{}/{}  {trigger}  {}",
@@ -72,15 +79,22 @@ fn line(r: &RoutineInfo) -> String {
 }
 
 pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
-    let routines = fetch(conn).await?;
+    let (routines, problems) = fetch(conn).await?;
     if as_json {
-        println!("{}", json!({ "routines": routines }));
-    } else if routines.is_empty() {
-        println!("no routines; add [[routine]] to workspaces.toml on the host");
-    } else {
-        for r in &routines {
-            println!("{}", line(r));
-        }
+        println!("{}", json!({ "routines": routines, "problems": problems }));
+        return Ok(String::new());
+    }
+    for p in &problems {
+        println!("{}: no routines: {}", p.workspace, p.reason);
+    }
+    if routines.is_empty() && problems.is_empty() {
+        println!(
+            "no routines; allow them with [workspace.routines] in workspaces.toml, \
+             then add [[routine]] to <root>/.muxa/routines.toml"
+        );
+    }
+    for r in &routines {
+        println!("{}", line(r));
     }
     Ok(String::new())
 }
@@ -106,7 +120,7 @@ fn pick<'a>(routines: &'a [RoutineInfo], target: &str) -> Result<&'a RoutineInfo
 }
 
 pub async fn run(conn: &mut Conn, target: &str, as_json: bool) -> Result<String, String> {
-    let routines = fetch(conn).await?;
+    let (routines, _) = fetch(conn).await?;
     let r = pick(&routines, target)?;
     let (workspace, routine) = (r.workspace.clone(), r.name.clone());
     let messages = conn
@@ -182,7 +196,7 @@ fn waiting(routines: &[RoutineInfo], sessions: &[Session]) -> Vec<(String, Strin
 }
 
 pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, String> {
-    let routines = fetch(conn).await?;
+    let (routines, _) = fetch(conn).await?;
     let messages = conn.call(|id| Request::ListInbox { id }, WAIT).await?;
     let (entries, items) = messages
         .into_iter()
