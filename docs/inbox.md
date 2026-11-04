@@ -76,7 +76,8 @@ More also holds Later and Open Terminal. Accept and Drop ask for no confirmation
 
 - The sidebar shows the Inbox section above the session tree: the count and the first open items. `Enter` on one opens it in `prefix + T`.
 - `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
-- Keys: `a` the item's main answer (Approve, Accept, Retry or Done), `r` Reject or Redo, `c` Change course, `p` Keep open, `x` Drop, `n` Dismiss, `l` Later, `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Redo and Change course ask for the text. Only the keys the item takes are listed.
+- Keys: `a` the item's main answer (Allow, Done, Retry or Approve), `s` Send (Deny & send on a permission), `r` Deny, Reject or Redo, `c` Change course, `p` Keep open, `x` Drop, `n` Dismiss, `l` Later, `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Send, Redo and Change course ask for the text. Only the keys the item takes are listed, in the host's order of answers.
+- Labels name the result (ADR 0033 §4a): `accept` is "Done (closes the Task)", `reply` is "Send" ("Deny & send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
 
 ## Tasks and Sessions modes
 

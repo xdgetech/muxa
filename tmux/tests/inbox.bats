@@ -1,13 +1,14 @@
 #!/usr/bin/env bats
 # The Inbox of ADR 0033: the sidebar section and prefix + T. The items are the
-# contract's own fixture, so the plugin reads what muxa sends.
+# contract's own fixture, so the plugin reads what muxa sends: the one whose
+# answers include reply (ADR 0033 §4a).
 load helper
 
 setup() {
   setup_server
   ITEMS="$TMPDIR/inbox.json"
   jq -c 'select(.type == "inbox-list") | {work: 3, items, entries: [], runs: []}' \
-    "$ROOT/../protocol/fixtures/items/messages.jsonl" >"$ITEMS"
+    "$ROOT/../protocol/fixtures/items/reply-messages.jsonl" >"$ITEMS"
 }
 teardown() { kill "${CLIENT_PID:-}" 2>/dev/null || true; teardown_server; }
 
@@ -51,12 +52,23 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$output" == *"2  docs/plan.md"* ]]
   [[ "$output" == *"3  docs/chart.png"* ]]
   [[ "$output" == *"4  PR #817  https://github.com/example/app/pull/817"* ]]
-  [[ "$output" == *"a Accept   r Redo   c Change course   p Keep open   l Later   o open session   space/b scroll   v read all   q close"* ]]
+  [[ "$output" == *"a Done (closes the Task)   s Send   r Redo   c Change course   p Keep open   l Later   o open session   space/b scroll   v read all   q close"* ]]
+}
+
+@test "labels name what an answer does: an ask allows or denies, a proposal approves" {
+  strip() { sed $'s/\x1b\\[[0-9;]*m//g'; }
+  [[ "$(inbox view i-0a1b2c3d "$ITEMS" | strip | tail -n 1)" == "a Allow   r Deny   s Deny & send   l Later"* ]]
+  [[ "$(inbox view i-3d4e5f6a "$ITEMS" | strip | tail -n 1)" == "a Retry   s Send   c Change course   x Drop   n Dismiss   l Later"* ]]
+  [[ "$(inbox view e-1a2b3c4d "$ITEMS" | strip | tail -n 1)" == "a Approve   r Reject   l Later"* ]]
 }
 
 @test "a key answers with the item's own answers, a number opens evidence" {
   [ "$(inbox key i-2c3d4e5f a "$ITEMS")" = accept ]
   [ "$(inbox key i-2c3d4e5f r "$ITEMS")" = redo ]
+  [ "$(inbox key i-2c3d4e5f s "$ITEMS")" = reply ]
+  [ "$(inbox key i-0a1b2c3d s "$ITEMS")" = reply ]
+  [ "$(inbox key i-3d4e5f6a s "$ITEMS")" = reply ]
+  [ "$(inbox key e-1a2b3c4d s "$ITEMS")" = "" ]
   [ "$(inbox key i-2c3d4e5f 2 "$ITEMS")" = open:2 ]
   [ "$(inbox key i-2c3d4e5f x "$ITEMS")" = "" ]
   [ "$(inbox key i-0a1b2c3d a "$ITEMS")" = approve ]
@@ -131,6 +143,30 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   tx send-keys -K -c "$C" -l "Keep the old export"
   key Enter
   wait_for 'grep -q "^inbox answer i-2c3d4e5f redo --text Keep the old export --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: s on a review asks for the text and sends it with reply" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key s
+  tx send-keys -K -c "$C" -l "Also update the README"
+  key Enter
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f reply --text Also update the README --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: s on an ask sends the text with reply" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key s
+  sleep 0.5
+  tx send-keys -K -c "$C" -l "Run plan first"
+  key Enter
+  wait_for 'grep -q "^inbox answer i-0a1b2c3d reply --text Run plan first --json$" "$TMPDIR/bin/calls"'
 }
 
 @test "prefix+T: v shows the whole item in the pager" {

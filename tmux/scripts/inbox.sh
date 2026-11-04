@@ -68,21 +68,26 @@ JQ_DEFS='
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
   def dot: if .readAt then " " else "●" end;
   def shown: select(.state == "open" or .state == "later");
+  # Labels name the result (ADR 0033 §4a). A proposal keeps Approve and Reject.
   def answer_label($a):
-    {"approve": "Approve", "accept": "Accept", "retry": "Retry", "reject": "Reject",
+    (.kind == "ask") as $ask |
+    {"approve": (if $ask then "Allow" else "Approve" end), "accept": "Done (closes the Task)",
+     "retry": "Retry", "reject": (if $ask then "Deny" else "Reject" end),
+     "reply": (if $ask then "Deny & send" else "Send" end),
      "redo": "Redo", "change-course": "Change course", "keep-open": "Keep open",
      "drop": "Drop", "later": "Later",
      "dismiss": (if .kind == "briefing" then "Done" else "Dismiss" end)}[$a] // $a;
-  # [{key, act}]: a is the main answer, the rest have a key each.
+  # [{key, act}] in the order of .answers: a is the main answer, the rest have a key each.
   def keymap: (.answers // []) as $a | [
     (if ($a | length) > 0 and ($a[0] | IN("choose", "later") | not) then {key: "a", act: $a[0]} else empty end),
+    (if $a | index("reply") then {key: "s", act: "reply"} else empty end),
     (if $a | index("reject") then {key: "r", act: "reject"}
      elif $a | index("redo") then {key: "r", act: "redo"} else empty end),
     (if $a | index("change-course") then {key: "c", act: "change-course"} else empty end),
     (if $a | index("keep-open") then {key: "p", act: "keep-open"} else empty end),
     (if $a | index("drop") then {key: "x", act: "drop"} else empty end),
     (if ($a | index("dismiss")) and $a[0] != "dismiss" then {key: "n", act: "dismiss"} else empty end),
-    (if $a | index("later") then {key: "l", act: "later"} else empty end)];
+    (if $a | index("later") then {key: "l", act: "later"} else empty end)] | sort_by(.act as $x | $a | index($x));
   # Numbered evidence: the changes, docs, images and links.
   def evidence: (.attachments // {}) as $t | [
     ($t.changes // empty | {kind: "diff", ref: (.scope // ""),
@@ -159,15 +164,25 @@ key_action() {
 
 pause() { echo "Press Enter."; read -r _; }
 
-# Runs one answer. Asks for the text or the time an action needs.
+# What answer() asks before an action's text.
+text_prompt() {
+  case "$1" in
+    redo) echo "Feedback for the agent's last turn:" ;;
+    change-course) echo "New direction for the agent:" ;;
+    reply) if [ "$2" = ask ]; then echo "Deny, then tell the agent instead:"; else echo "Message for the agent:"; fi ;;
+  esac
+}
+
+# Runs one answer of the item in <json>. Asks for the text or the time an action needs.
 answer() {
-  local id="$1" act="$2" text until err
+  local id="$1" act="$2" json="$3" text until err kind
   set -- inbox answer "$id"
   case "$act" in
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
-    redo | change-course)
+    reply | redo | change-course)
       clear
-      printf '%s\n\n' "$( [ "$act" = redo ] && echo "Feedback for the agent's last turn:" || echo "New direction for the agent:")"
+      kind="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .kind' "$json")"
+      printf '%s\n\n' "$(text_prompt "$act" "$kind")"
       IFS= read -r -e -p '> ' text || return 0
       [ -n "$text" ] || return 0
       set -- "$@" "$act" --text "$text"
@@ -262,7 +277,7 @@ ui() {
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
-      --expect 'enter,ctrl-r,a,r,c,p,x,n,l,o,v,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,s,r,c,p,x,n,l,o,v,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
@@ -285,7 +300,7 @@ ui() {
         case "$act" in
           "") ;;
           open:*) open_evidence "$id" "${act#open:}" "$json" ;;
-          *) answer "$id" "$act" ;;
+          *) answer "$id" "$act" "$json" ;;
         esac
         ;;
     esac
