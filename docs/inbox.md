@@ -74,6 +74,7 @@ More also holds Later and Open Terminal. Done and Drop ask for no confirmation, 
 - The reply box shows only when the item takes a text answer. Send, Redo and Change Course need its text.
 - The main answer is `reply` while the reply box has text (ADR 0033 §4a.3). Otherwise it is the host's first answer, unless that is `choose` or `later`. muxa for tmux uses the same rule. The main answer is the prominent button.
 - iPad keys: Command+T Inbox mode, Command+L Tasks mode, Command+Shift+S Sessions mode, Command+0 shows or hides the sidebar, Command+, Settings. In the Inbox: Command+Up/Down move between items, Return opens an item on a phone, Command+Return sends the main answer, Command+O opens the item's terminal, Command+Shift+L asks for Later.
+- Android: Back from an attachment closes the Reader and returns to the item.
 - Android keys: the same with Ctrl+Shift (Ctrl+Shift+T, L, S, 0, O, Up/Down), Enter opens, Ctrl+Shift+Enter sends the main answer, Ctrl+Shift+Alt+L asks for Later. A swipe in either direction asks for Later.
 - Demo: Try the Demo, the showcase and the test demo play a `work:3` host. UI tests pick the mode with `-mode inbox|tasks|sessions` on iOS and `--es mode inbox|tasks|sessions` on Android.
 
