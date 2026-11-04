@@ -178,3 +178,34 @@ bats tests
 ```
 
 Each test runs its own tmux server, so it never touches your sessions.
+
+## Save and restore repository categories
+
+With tmux-resurrect installed, loading `agents.tmux` registers save/restore
+hooks automatically (Python 3.9 or newer required). Use the usual
+`prefix + Ctrl-s` to save, and `prefix + Ctrl-r` to restore. Reload the plugin
+once after updating, then save once before the next restore.
+
+The snapshot itself includes repository category, main checkout, branch,
+worktree and Task links (`@agent_repo`, `@agent_repo_dir`, `@agent_branch`,
+`@agent_worktree`, `@agent_task`, `@muxa_task`). Metadata follows the saved
+session name to its new tmux id. Existing tags on live sessions win; device
+sessions and transient agent state are excluded. No pane layout or process is
+changed by metadata recovery. Mixed working directories do not affect grouping.
+Existing resurrect hooks still run with their original arguments.
+
+Old snapshots without metadata still restore normally, but cannot recover lost
+categories. Repair those tags once and save again. Selecting an older snapshot
+also selects its own metadata; there is no separate latest-category file.
+If you configure resurrect hooks yourself, do so before loading `agents.tmux`.
+
+For an explicit snapshot (without restoring panes), use:
+
+```sh
+python3 scripts/resurrect.py save /path/to/snapshot
+python3 scripts/resurrect.py restore /path/to/snapshot
+```
+
+`save` appends metadata to an existing resurrect snapshot; `restore` fills
+missing identity tags on matching sessions. Saved data is parsed as JSON,
+never executed as commands.

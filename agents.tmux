@@ -71,6 +71,8 @@ case "$(t show-options -gqv status-right)" in
   *) t set-option -g status-right "#{@agents_status}$(t show-options -gqv status-right)" ;;
 esac
 
+python3 "$S/resurrect.py" install
+
 "$S/status.sh"
 [ "$(opt @agents_sidebar on)" = on ] && "$S/sidebar-toggle.sh" on
 exit 0

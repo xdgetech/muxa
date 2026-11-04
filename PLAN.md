@@ -6,7 +6,9 @@ window, close. It runs on the Mac mini; you reach it from the laptop over
 `ssh` + tmux, and from the phone through Claude Code Remote Control.
 
 Status: phases 1–3 are built and tested (`bats tests`). Phase 4 is next, in
-`xdgetech/orch`.
+`xdgetech/orch`. Repository categories and durable Task links now round-trip
+with tmux-resurrect snapshots; `tests/resurrect.bats` checks name/id remapping,
+mixed pane directories, selected snapshots, existing hooks and device exclusion.
 
 The orchestrator is [`xdgetech/orch`](https://github.com/xdgetech/orch).
 Paths like `dispatch.sh`, `poll.sh` and `scripts/lib/worktree.sh` are in that repo.
