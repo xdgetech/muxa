@@ -1,6 +1,6 @@
-//! Opt-in contract test with a real tmux-agents (ADR 0017):
-//! MUXA_TMUX_AGENTS=<tmux-agents checkout>. tmux-agents owns the worktree and
-//! naming rules; the built-in launcher copies them. This fails when they drift,
+//! Contract test with muxa for tmux (`tmux/`, ADR 0017 and 0032):
+//! `make test-tmux-plugin` sets MUXA_TMUX_AGENTS to it. The plugin owns the
+//! worktree and naming rules; the built-in launcher copies them. This fails when they drift,
 //! and checks that `new.sh --muxa-task` links the session at creation.
 #![cfg(feature = "tmux-integration")]
 
@@ -65,6 +65,9 @@ fn host(name: &str) -> (PathBuf, Vec<String>) {
         dir.join("state").display().to_string(),
         "--workspaces".into(),
         config.display().to_string(),
+        // Without it the bridge forwards records to the developer's daemon.
+        "--daemon-dir".into(),
+        common::daemon::short_dir().display().to_string(),
     ];
     (dir, args)
 }
