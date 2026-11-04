@@ -5,7 +5,8 @@
 # Usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal>
 #        muxa.sh close-task <task id> <done|dropped>
 #        muxa.sh repo-rows <workspace> <default repo> [none] | start-ask <workspace> <repo>
-#        muxa.sh inbox <client> | new <client> <repo> | ask <client> <repo>  (open a popup)
+#        muxa.sh inbox <client> [item] | new <client> <repo> | ask <client> <repo>  (open a popup)
+#        muxa.sh cli <muxa-cli args> | goto <client> <session id>
 #        muxa.sh inbox-ui <client> | form <client> <repo> | ask-ui <client> <json file> <repo>
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -122,9 +123,10 @@ popup() {
   t display-popup -c "$client" -E -w 80% -h 70% -T " $title " "$(printf '%q ' "$@")"
 }
 
+# The Inbox of ADR 0033 (inbox.sh), which falls back to the Task list on an older muxa.
 inbox() {
   muxa_cli >/dev/null || die "muxa is not installed; the Inbox needs muxa-cli on this host"
-  popup "$1" "Inbox" "$S/muxa.sh" inbox-ui "$1"
+  popup "$1" "Inbox" "$S/inbox.sh" ui "$1" "${2:-}"
 }
 
 inbox_ui() {
@@ -384,7 +386,9 @@ case "${1:-}" in
   rows) rows ;;
   create) shift; create "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
   close-task) close_task "${2:?task id}" "${3:?done or dropped}" ;;
-  inbox) inbox "${2:?client}" ;;
+  inbox) inbox "${2:?client}" "${3:-}" ;;
+  cli) shift; run_muxa "$@" ;;
+  goto) go "${2:?client}" "${3:?session id}" ;;
   inbox-ui) inbox_ui "${2:?client}" ;;
   new) new "${2:?client}" "${3:-}" ;;
   form) form "${2:?client}" "${3:-}" ;;
@@ -392,5 +396,5 @@ case "${1:-}" in
   start-ask) start_ask "${2:?workspace}" "${3:?repo}" ;;
   ask) ask_key "${2:?client}" "${3:-}" ;;
   ask-ui) ask_ui "${2:?client}" "${3:?json file}" "${4:-}" ;;
-  *) echo "usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> | close-task <task id> <done|dropped> | repo-rows <workspace> <repo> [none] | start-ask <workspace> <repo> | inbox <client> | new <client> <repo> | ask <client> <repo>" >&2; exit 2 ;;
+  *) echo "usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> | close-task <task id> <done|dropped> | repo-rows <workspace> <repo> [none] | start-ask <workspace> <repo> | inbox <client> [item] | cli <args> | goto <client> <session id> | new <client> <repo> | ask <client> <repo>" >&2; exit 2 ;;
 esac

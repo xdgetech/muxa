@@ -393,5 +393,6 @@ cli_tasks() {
   sleep 0.5
   tx send-keys -K -c "$C" d
   wait_for '! tx has-session -t =feature-menu 2>/dev/null'
-  wait_for '[ "$(cat "$TMPDIR/bin/calls" 2>/dev/null)" = "task done t-0000e3 --json" ]'
+  # The sidebar also polls the Inbox, so look for the call among the others.
+  wait_for 'grep -qx "task done t-0000e3 --json" "$TMPDIR/bin/calls" 2>/dev/null'
 }

@@ -35,6 +35,9 @@ go() {
   local s idx p old
   old="$(t display-message -p '#{?@agents_sidebar_pane,#{window_id},}')"
   case "$target" in
+    i:* | I:)
+      "$S/muxa.sh" inbox "$(t display-message -p '#{client_name}')" "${target#[iI]:}"
+      return 0 ;;
     s:*) s="${target#s:}"; t switch-client -t "=$s" || return 1 ;;
     w:*) s="$(session_of "$target")"; idx="${target##*:}"
          t select-window -t "=$s:$idx" && t switch-client -t "=$s" || return 1 ;;

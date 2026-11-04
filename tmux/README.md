@@ -114,6 +114,8 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_sidebar` | `on` | |
 | `@agents_sidebar_width` | `28` | |
 | `@agents_min_width` | `100` | narrower clients (a phone) get no tree |
+| `@agents_inbox_rows` | `3` | Inbox items the tree shows above the sessions |
+| `@agents_inbox_refresh` | `5` | seconds between two `muxa-cli inbox --json` calls for the tree |
 | `@agents_split` | `50` | terminal pane width, % of a new task window. Showing, hiding or resizing the tree keeps the current split |
 | `@agents_check_gh` | `on` | ask `gh` whether the PR is merged before `x` |
 | `@agents_icon_waiting` / `_error` / `_running` / `_idle` / `_done` | `🙋` / `❌` / `⚡` / `💤` / `🏁` | agent states, in the tree and the status bar |
@@ -149,11 +151,23 @@ apps show, with a goal and a status.
   as the form does, runs `muxa-cli ask REPO --workspace W --json`, and moves
   this client to the new session. Without muxa, or with a muxa too old to
   start ask sessions, it shows a message and does nothing.
-- `prefix + T` shows the Inbox: Needs attention, Ready for review, Running,
-  No agent and Closed, with muxa's own grouping. Newer muxa versions also provide each Task's need, such as waiting for your answer or a loop needing attention; the popup displays that label without answering any menu. `Enter` moves this client to
-  the task's session. `ctrl-d` marks the Task done and `ctrl-x` drops it, after
-  a y/n question; the session keeps running. `Enter` on a Task without a session
-  offers the same. `ctrl-r` reloads, `Esc` closes.
+- `prefix + T` shows the Inbox (ADR 0033): one row per question an agent or a
+  Routine has for you, with the selected item below the list: its question, the
+  agent's last message, its numbered evidence and its keys.
+  - `j`/`k` move. `a` gives the item's main answer: Approve, Accept, Retry or Done.
+  - `r` Reject or Redo, `c` Change course, `p` Keep open, `x` Drop, `n` Dismiss,
+    `l` Later. Redo and Change course ask for the text, Later for the time.
+  - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with
+    the system opener (a link is also copied to the tmux buffer). For a question,
+    `1`–`9` choose its option instead.
+  - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
+  - Only the keys an item takes are listed under it. With a muxa older than
+    `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
+    task's session, `ctrl-d` marks it done and `ctrl-x` drops it.
+- The tree starts with the Inbox section: the count and the first open items
+  (`@agents_inbox_rows`). `Enter` on a row opens that item in `prefix + T`.
+  The section reads a cache that one sidebar refreshes through `muxa-cli inbox
+  --json` every `@agents_inbox_refresh` seconds.
 - Without muxa-cli, or without a muxa workspace (`~/.config/muxa/workspaces.toml`),
   `prefix + N` makes a plain task as before.
 

@@ -101,6 +101,8 @@ fn inbox_lists_items_at_work_level_3() {
     let out = bridge.run(&["inbox", "--json"]);
     let value: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(value["items"].as_array().unwrap().len(), 1);
+    // A desktop tool tells an empty Inbox from a host without items.
+    assert_eq!(value["work"], 3);
     assert_eq!(value["entries"][0]["id"], "e-1a2b3c4d");
     assert_eq!(value["runs"], json!([]));
 }

@@ -211,7 +211,7 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
             .collect();
         println!(
             "{}",
-            json!({"items": items, "entries": entries, "runs": runs})
+            json!({"work": work_level(conn.capabilities()), "items": items, "entries": entries, "runs": runs})
         );
         return Ok(String::new());
     }

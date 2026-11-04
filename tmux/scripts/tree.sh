@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016  # awk programs: $ is awk's, not the shell's
 # Prints the sidebar tree, one row per line: <target> TAB <display>.
-# Targets: r:<repo>, s:<session>, w:<session>:<window index>.
+# Targets: I: (the Inbox), i:<item>, r:<repo>, s:<session>, w:<session>:<window index>.
 # Sessions are grouped by @agent_repo and labelled with AGENTS_JUMP_KEYS for action.sh jump.
 # Details of a row are in detail.sh.
 # Usage: tree.sh [sidebar pane]   (its session gets a ▎ bar and lists its windows)
@@ -10,6 +10,9 @@ set -u
 
 own=""
 [ -n "${1:-}" ] && own="$(t display-message -p -t "$1" "#{session_name}${TAB}#{window_index}" 2>/dev/null)"
+
+# The Inbox section first (ADR 0033): targets I: and i:<item id>.
+"$AGENTS_SCRIPTS/inbox.sh" rows 2>/dev/null
 
 {
   t list-sessions -f "$AGENTS_VISIBLE" -F "S${TAB}#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_pr}${TAB}#{@agent_pr_state}${TAB}#{session_windows}"

@@ -65,9 +65,9 @@ More also holds Later and Open Terminal. Accept and Drop ask for no confirmation
 
 ### tmux
 
-- The sidebar shows the Inbox section above the session tree: the count and the first items.
-- `prefix + T` shows the whole list in a popup. `Enter` opens an item: its question, summary and attachment names.
-- In an item: `a` Approve or Accept, `r` Reject or Redo, `c` Change course, `x` Drop, `l` Later, `o` open the session, `d` open the diff in a pager, `1`–`9` open an attachment. Redo and Change course ask for the text.
+- The sidebar shows the Inbox section above the session tree: the count and the first open items. `Enter` on one opens it in `prefix + T`.
+- `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
+- Keys: `a` the item's main answer (Approve, Accept, Retry or Done), `r` Reject or Redo, `c` Change course, `p` Keep open, `x` Drop, `n` Dismiss, `l` Later, `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. Redo and Change course ask for the text. Only the keys the item takes are listed.
 
 ## Current behavior (until ADR 0033 ships)
 

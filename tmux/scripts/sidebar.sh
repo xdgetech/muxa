@@ -21,7 +21,12 @@ t set-option -p -t "$pane" @agents_sock "$sock"
   while sleep "$(opt @agents_refresh_fallback 10)"; do "$S/refresh.sh" "$pane"; done
 ) &
 ticker=$!
-trap 'kill "$ticker" 2>/dev/null; rm -f "$sock" "$rows"' EXIT
+# The Inbox cache: every sidebar's loop asks, inbox.sh refreshes it once per interval.
+(
+  while :; do "$S/inbox.sh" cache; sleep "$(opt @agents_inbox_refresh 5)"; done
+) &
+inbox=$!
+trap 'kill "$ticker" "$inbox" 2>/dev/null; rm -f "$sock" "$rows"' EXIT
 
 # 1-9 go to the numbered task, like prefix + j then the number. Letters stay tree keys.
 jumps=""

@@ -75,6 +75,7 @@ repo_lines() {
 }
 
 case "$target" in
+  i:* | I:) "$AGENTS_SCRIPTS/inbox.sh" detail "$target"; exit 0 ;;
   s:*) s="${target#s:}"
        headline "$(state_of -s -t "=$s:")" "$s"
        session_lines "$s" ;;

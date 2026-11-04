@@ -52,7 +52,7 @@ An item is unread until a device opens it. Opening an item never answers it.
 
 - **List:** like a mail list. Each row is the question, then the source and the age. A dot marks unread. Newest first, except that `ask` items come first, because an agent is blocked on them. The only gesture is a swipe for Later.
 - **Item screen:** the question, the summary, the attachments as chips, a reply box and two or three answer buttons. An attachment opens in the Reader and returns to the item. An answer removes the item from the list.
-- **tmux:** the sidebar's Inbox section and `prefix + T` show the same list. `Enter` opens an item in a popup. Single keys answer: `a` Approve or Accept, `r` Reject or Redo, `c` Change course, `x` Drop, `l` Later, `o` open the session. Diffs and docs open in a pager or the IDE.
+- **tmux:** the sidebar's Inbox section and `prefix + T` show the same list. `Enter` opens an item in a popup. Single keys answer: `a` the main answer, `r` Reject or Redo, `c` Change course, `x` Drop, `l` Later, `o` open the session. Diffs and docs open in a pager.
 
 ### 5. What is removed
 
