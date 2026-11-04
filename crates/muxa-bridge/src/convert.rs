@@ -60,13 +60,6 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
     let task_loop = loop_of(&r);
     let worker = r.worker().map(str::to_owned);
     let restart_operation = crate::task_records::restart::summary(&r).map(Box::new);
-    let inbox = r.inbox().map(|p| {
-        Box::new(wire::TaskInbox {
-            order: p.order,
-            until: p.until,
-            since: p.since,
-        })
-    });
     wire::TaskRecord {
         id: r.id,
         rev: r.rev,
@@ -92,7 +85,6 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         pending_prompt,
         worker,
         restart_operation,
-        inbox,
     }
 }
 

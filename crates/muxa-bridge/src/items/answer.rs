@@ -20,6 +20,8 @@ use crate::task_records::{Context, reply, restart, set_status};
 
 /// The most bytes a `redo` or `change-course` text has.
 pub const MAX_TEXT: usize = 4096;
+/// The latest Later the host accepts, in seconds from now.
+pub const MAX_LATER: u64 = 366 * 24 * 60 * 60;
 
 pub struct Answer {
     pub item: String,
@@ -115,11 +117,17 @@ fn not_allowed(item: &InboxItem, action: InboxAction, allowed: &[InboxAction]) -
     ))
 }
 
-/// As Task Later (ADR 0027 §4): after now, at most a year ahead.
+/// After now (`at`, epoch seconds), at most `MAX_LATER` ahead.
 fn later(until: Option<u64>, at: u64) -> Result<u64, ErrorBody> {
     let until = until.ok_or_else(|| bad("later needs until, in epoch seconds"))?;
-    crate::records::inbox::place(false, Some(until), at.saturating_mul(1000))
-        .map_err(|e| bad(format!("later: {e}")))?;
+    if until <= at {
+        return Err(bad(format!("later: until {until} is not after now ({at})")));
+    }
+    if until - at > MAX_LATER {
+        return Err(bad(format!(
+            "later: until {until} is more than a year ahead"
+        )));
+    }
     Ok(until)
 }
 

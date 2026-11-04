@@ -11,9 +11,7 @@ mod when;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{
-    InboxAction, InboxChange, LoopSpec, RestartRecoveryAction, Role, Session, TaskStatus,
-};
+use muxa_protocol::{InboxAction, LoopSpec, RestartRecoveryAction, Role, Session, TaskStatus};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
@@ -23,8 +21,6 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task (done | drop) ID [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
-       muxa-cli [--bridge CMD] task (down | requeue) ID [--json]
-       muxa-cli [--bridge CMD] task later ID --until TIME [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
        muxa-cli [--bridge CMD] task recover ID [--json]
                 [--operation OP --rev N --action ACTION]
@@ -62,14 +58,6 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   task done ID   marks a task record done
   task drop ID   marks a task record dropped: given up, not finished.
                  Neither closes the task's session
-  task down ID   moves the task to the end of the Inbox queue (Move down).
-                 Its status does not change. Needs task-inbox
-  task later ID --until TIME
-                 hides the task from the Inbox queue until TIME (Later):
-                 2026-11-04T09:00Z (UTC), +30m, +2h, +1d or epoch seconds
-  task requeue ID
-                 clears Move down and Later. A new need of the agent or the
-                 loop also clears them
   task restart ID
                  restarts the task's agent in the same pane, after a handoff
                  in .muxa/HANDOFF.md; --force also while the agent runs
@@ -104,7 +92,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  creates one Task that performs the proposal; approving
                  again returns the same Task
   inbox dismiss ENTRY, inbox later ENTRY --until TIME
-                 closes the entry, or hides it until TIME, as task later
+                 closes the entry, or hides it until TIME:
+                 2026-11-04T09:00Z (UTC), +30m, +2h, +1d or epoch seconds
                  With work level 3, inbox lists Inbox items instead: id,
                  kind, state, age, title and question; --all also lists
                  answered and resolved items
@@ -138,11 +127,6 @@ enum Cmd {
     Close {
         task: String,
         status: TaskStatus,
-        json: bool,
-    },
-    Place {
-        task: String,
-        change: InboxChange,
         json: bool,
     },
     Restart {
@@ -289,11 +273,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "--text and --option require inbox answer".into(),
         ));
     }
-    let is_later =
-        matches!(words.as_slice(), [w, l, _] if (w == "task" || w == "inbox") && l == "later");
+    let is_later = matches!(words.as_slice(), [w, l, _] if w == "inbox" && l == "later");
     if until.is_some() && !is_later && !is_answer || is_later && until.is_none() {
         return Err(lexopt::Error::Custom(
-            "task later and inbox later need --until, and only they take it".into(),
+            "inbox later needs --until, and only it takes it".into(),
         ));
     }
     if new.worker.is_some() && !is_new && !is_restart {
@@ -347,31 +330,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         [w, d, id] if w == "task" && d == "drop" => Cmd::Close {
             task: id.clone(),
             status: TaskStatus::Dropped,
-            json,
-        },
-        [w, d, id] if w == "task" && d == "down" => Cmd::Place {
-            task: id.clone(),
-            change: InboxChange {
-                down: true,
-                until: None,
-            },
-            json,
-        },
-        [w, r, id] if w == "task" && r == "requeue" => Cmd::Place {
-            task: id.clone(),
-            change: InboxChange::default(),
-            json,
-        },
-        [w, l, id] if w == "task" && l == "later" => Cmd::Place {
-            task: id.clone(),
-            change: InboxChange {
-                down: false,
-                until: until
-                    .as_deref()
-                    .map(|t| when::parse(t, when::now()))
-                    .transpose()
-                    .map_err(|e| lexopt::Error::Custom(e.into()))?,
-            },
             json,
         },
         [w] if w == "routines" => Cmd::Routines { json },
@@ -501,7 +459,6 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         } => ask::ask(&mut conn, &repo, workspace, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Close { task, status, json } => tasks::close(&mut conn, &task, status, json).await,
-        Cmd::Place { task, change, json } => tasks::place(&mut conn, &task, change, json).await,
         Cmd::Recover {
             task,
             resolution,
@@ -596,14 +553,6 @@ fn resolve(sessions: &[Session], target: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
-    fn place(args: &[&str]) -> Result<InboxChange, String> {
-        match parse_with(lexopt::Parser::from_args(args.iter().copied())) {
-            Ok(Some((_, Cmd::Place { change, .. }))) => Ok(change),
-            Ok(_) => Err("another command".into()),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-
     fn answer(args: &[&str]) -> Result<items::Answer, String> {
         match parse_with(lexopt::Parser::from_args(args.iter().copied())) {
             Ok(Some((_, Cmd::Answer { answer, .. }))) => Ok(answer),
@@ -639,28 +588,18 @@ mod tests {
         }
     }
 
+    /// ADR 0033 removed Move down and Later on the Task.
     #[test]
-    fn down_later_and_requeue_ask_for_a_place() {
-        assert_eq!(
-            place(&["task", "down", "t-1"]),
-            Ok(InboxChange {
-                down: true,
-                until: None
-            })
-        );
-        assert_eq!(
-            place(&["task", "later", "t-1", "--until", "1767340800"]),
-            Ok(InboxChange {
-                down: false,
-                until: Some(1_767_340_800)
-            })
-        );
-        assert_eq!(
-            place(&["task", "requeue", "t-1"]),
-            Ok(InboxChange::default())
-        );
-        assert!(place(&["task", "later", "t-1"]).is_err());
-        assert!(place(&["task", "down", "t-1", "--until", "+1h"]).is_err());
-        assert!(place(&["task", "later", "t-1", "--until", "soon"]).is_err());
+    fn down_later_and_requeue_are_gone() {
+        for gone in [
+            &["task", "down", "t-1"][..],
+            &["task", "later", "t-1", "--until", "+1h"],
+            &["task", "requeue", "t-1"],
+        ] {
+            assert!(
+                parse_with(lexopt::Parser::from_args(gone.iter().copied())).is_err(),
+                "{gone:?}"
+            );
+        }
     }
 }

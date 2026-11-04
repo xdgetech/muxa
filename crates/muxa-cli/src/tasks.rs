@@ -1,18 +1,17 @@
-//! `tasks`, `task new`, `task done`, `task restart`, the Task Loop and the
-//! Inbox queue: task records (`task-records`, ADR 0015; `task-handoff`, ADR
-//! 0018; `task-loop`, ADR 0019; `task-inbox`, ADR 0027 §4).
+//! `tasks`, `task new`, `task done`, `task restart` and the Task Loop: task
+//! records (`task-records`, ADR 0015; `task-handoff`, ADR 0018; `task-loop`,
+//! ADR 0019).
 
 use std::time::Duration;
 
 use muxa_protocol::{
-    InboxChange, LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop,
-    TaskRecord, TaskStatus, WORK_ASK, WorkerInfo, WorkspaceInfo, work_level,
+    LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop, TaskRecord, TaskStatus,
+    WORK_ASK, WorkerInfo, WorkspaceInfo, work_level,
 };
 use serde_json::json;
 
 use crate::conn::Conn;
 use crate::inbox;
-use crate::when;
 
 /// A launch makes a worktree and starts an agent; the bridge allows 60 s.
 const LAUNCH_WAIT: Duration = Duration::from_secs(90);
@@ -170,10 +169,6 @@ impl NewTask {
 pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
     let (workspaces, records, truncated, workers) = fetch(conn).await?;
     let sessions = conn.list().await?;
-    let queue: Vec<&str> = inbox::queue(&records, &sessions, when::now())
-        .iter()
-        .map(|i| i.record.id.as_str())
-        .collect();
     if as_json {
         let tasks: Vec<_> = inbox::items(&records, &sessions)
             .iter()
@@ -188,7 +183,6 @@ pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
             "capabilities": conn.capabilities(),
             "truncated": truncated,
             "tasks": tasks,
-            "queue": queue,
         });
         if conn.supports("workers") {
             out["workers"] = json!(workers);
@@ -217,7 +211,6 @@ pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
     for r in &records {
         println!("{}", line(r));
     }
-    println!("queue: {}", queue.join(", "));
     if truncated {
         println!("(more tasks exist than the bridge listed)");
     }
@@ -281,41 +274,7 @@ pub async fn close(
                 id,
                 task: task.to_owned(),
                 rev,
-                status: Some(status),
-                inbox: None,
-            },
-            WAIT,
-        )
-        .await?;
-    let record = saved(&messages).ok_or("the bridge saved no task")?;
-    print_record(conn, record, as_json).await
-}
-
-/// `task down`, `task later` and `task requeue`: the Task's place in the
-/// Inbox queue, shared by every device. Its status does not change.
-pub async fn place(
-    conn: &mut Conn,
-    task: &str,
-    change: InboxChange,
-    as_json: bool,
-) -> Result<String, String> {
-    if !conn.supports("task-inbox") {
-        return Err("unsupported: this host does not advertise task-inbox".into());
-    }
-    let (_, records, _, _) = fetch(conn).await?;
-    let rev = records
-        .iter()
-        .find(|r| r.id == task)
-        .map(|r| r.rev)
-        .ok_or_else(|| format!("no task {task}"))?;
-    let messages = conn
-        .call(
-            |id| Request::UpdateTask {
-                id,
-                task: task.to_owned(),
-                rev,
-                status: None,
-                inbox: Some(change),
+                status,
             },
             WAIT,
         )
@@ -535,14 +494,6 @@ fn line(r: &TaskRecord) -> String {
     if let Some(l) = &r.r#loop {
         out.push_str(&format!("  {}", loop_text(l)));
     }
-    if let Some(p) = &r.inbox {
-        if p.order.is_some() {
-            out.push_str("  moved down");
-        }
-        if let Some(until) = p.until {
-            out.push_str(&format!("  later until {}", when::format(until)));
-        }
-    }
     if let Some(note) = &r.note {
         out.push_str(&format!("  ({note})"));
     }
@@ -646,7 +597,6 @@ mod tests {
             runs: Vec::new(),
             r#loop: None,
             pending_prompt: None,
-            inbox: None,
         };
         assert_eq!(
             line(&r),
@@ -670,19 +620,6 @@ mod tests {
         assert_eq!(
             line(&looped),
             "t-7f3a2c  review  work  Fix login  [fix-login-t-7f3a2c]  loop stopped (limit) 3/3"
-        );
-        let deferred = TaskRecord {
-            inbox: Some(Box::new(muxa_protocol::TaskInbox {
-                order: Some(1_767_300_400_123),
-                until: Some(1_767_340_800),
-                since: 1_767_300_400,
-            })),
-            ..looped
-        };
-        assert!(
-            line(&deferred).ends_with("3/3  moved down  later until 2026-01-02T08:00Z"),
-            "{}",
-            line(&deferred)
         );
     }
 

@@ -3,8 +3,7 @@
 //! `Inbox.swift` and `Inbox.kt`: every state comes from an adapter.
 
 use muxa_protocol::{
-    Agent, AgentState, LoopReason, LoopState, Pane, Role, Session, TaskInbox, TaskRecord,
-    TaskStatus,
+    Agent, AgentState, LoopReason, LoopState, Pane, Role, Session, TaskRecord, TaskStatus,
 };
 use serde_json::{Value, json};
 
@@ -130,41 +129,6 @@ pub fn items<'a>(records: &'a [TaskRecord], sessions: &'a [Session]) -> Vec<Item
     all
 }
 
-/// The record's Move down and Later (ADR 0027 §4), unless the Task's current
-/// attention began after they were set: a new need surfaces again.
-pub fn place<'a>(item: &Item<'a>) -> Option<&'a TaskInbox> {
-    let place = item.record.inbox.as_deref()?;
-    let agent = item.agent.and_then(|a| a.since);
-    let paused = item
-        .record
-        .r#loop
-        .as_ref()
-        .filter(|_| loop_needs_user(item.record))
-        .map(|l| l.since);
-    match agent.max(paused) {
-        Some(since) if since > place.since => None,
-        _ => Some(place),
-    }
-}
-
-/// The actionable queue at `now` (epoch seconds): every item with a need, in
-/// group order, then the moved-down ones by `order`. Later hides an item
-/// until its time.
-pub fn queue<'a>(records: &'a [TaskRecord], sessions: &'a [Session], now: u64) -> Vec<Item<'a>> {
-    let mut queue: Vec<Item> = items(records, sessions)
-        .into_iter()
-        .filter(|i| i.need != Need::None)
-        .filter(|i| {
-            !place(i)
-                .and_then(|p| p.until)
-                .is_some_and(|until| until > now)
-        })
-        .collect();
-    // Stable: equal orders keep the group order.
-    queue.sort_by_key(|i| place(i).and_then(|p| p.order));
-    queue
-}
-
 pub fn to_json(item: &Item) -> Value {
     let mut out = json!({
         "group": item.group.wire(),
@@ -205,7 +169,6 @@ mod tests {
             runs: Vec::new(),
             r#loop: None,
             pending_prompt: None,
-            inbox: None,
         }
     }
 
@@ -376,31 +339,5 @@ mod tests {
             n += 1;
         }
         assert_eq!(n, 28);
-    }
-
-    /// `protocol/fixtures/inbox/queue.jsonl` pins Move down and Later for all three clients.
-    #[test]
-    fn the_queue_matches_the_shared_fixture() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../protocol/fixtures/inbox/queue.jsonl"
-        );
-        let text = std::fs::read_to_string(path).expect("the queue fixture");
-        let mut n = 0;
-        for line in text.lines().filter(|l| !l.trim().is_empty()) {
-            let case: Value = serde_json::from_str(line).expect("a fixture line");
-            let records: Vec<TaskRecord> =
-                serde_json::from_value(case["records"].clone()).expect("records");
-            let sessions: Vec<Session> =
-                serde_json::from_value(case["sessions"].clone()).expect("sessions");
-            let now = case["now"].as_u64().expect("now");
-            let ids: Vec<&str> = queue(&records, &sessions, now)
-                .iter()
-                .map(|i| i.record.id.as_str())
-                .collect();
-            assert_eq!(json!(ids), case["queue"], "{}", case["name"]);
-            n += 1;
-        }
-        assert_eq!(n, 16);
     }
 }

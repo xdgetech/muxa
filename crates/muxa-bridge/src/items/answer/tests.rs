@@ -216,11 +216,7 @@ async fn later_needs_a_time_ahead_and_a_passed_later_is_open() {
         until,
         ..answer("i-00000001", InboxAction::Later)
     };
-    for until in [
-        None,
-        Some(1),
-        Some(now() + crate::records::inbox::MAX_LATER + 60),
-    ] {
+    for until in [None, Some(1), Some(now() + super::MAX_LATER + 60)] {
         let e = update(&f.cx, later(until)).await.unwrap_err();
         assert_eq!(e.code, ErrorCode::BadRequest, "{until:?}");
     }

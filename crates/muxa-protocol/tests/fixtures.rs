@@ -35,19 +35,36 @@ fn messages_round_trip() {
 }
 
 #[test]
-fn inbox_fixtures_round_trip() {
-    assert_eq!(round_trip::<Request>("inbox/requests.jsonl"), 3);
-    assert_eq!(round_trip::<Message>("inbox/messages.jsonl"), 2);
-    // A status change from an older client still reads as one.
+fn update_task_needs_a_status() {
     let old: Request = serde_json::from_str(
         r#"{"type":"update-task","id":1,"task":"t-000001","rev":2,"status":"done"}"#,
     )
     .unwrap();
-    let Request::UpdateTask { status, inbox, .. } = old else {
+    let Request::UpdateTask { status, .. } = old else {
         panic!()
     };
-    assert_eq!(status, Some(muxa_protocol::TaskStatus::Done));
-    assert_eq!(inbox, None);
+    assert_eq!(status, muxa_protocol::TaskStatus::Done);
+    // ADR 0033 removed Move down and Later: an older app's queue request is refused.
+    for line in [
+        r#"{"type":"update-task","id":1,"task":"t-000001","rev":2,"inbox":{"down":true}}"#,
+        r#"{"type":"update-task","id":1,"task":"t-000001","rev":2}"#,
+    ] {
+        assert!(serde_json::from_str::<Request>(line).is_err(), "{line}");
+    }
+}
+
+#[test]
+fn an_old_record_with_an_inbox_place_still_reads() {
+    let line = r#"{"type":"task-saved","task":1,"record":{"id":"t-7f3a2c","rev":5,"workspace":"app","title":"Fix it","goal":"Fix it.","status":"open","createdAt":1767300000,"updatedAt":1767300400,"inbox":{"order":1767300400123,"since":1767300400}}}"#;
+    let Message::TaskSaved { record, .. } = serde_json::from_str(line).unwrap() else {
+        panic!()
+    };
+    assert!(
+        serde_json::to_value(&record)
+            .unwrap()
+            .get("inbox")
+            .is_none()
+    );
 }
 
 #[test]
