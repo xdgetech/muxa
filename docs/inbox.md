@@ -1,8 +1,8 @@
 # Inbox UI specification
 
-The target is ADR 0033: the Inbox is a list of questions. Until its slices ship, the apps behave as in "Current behavior" below.
+ADR 0033: the Inbox is a list of questions. The host, the CLI, muxa for tmux and both apps show it when the host has `work:3`. Against an older host, the apps keep "Current behavior" below.
 
-## Target (ADR 0033)
+## The Inbox (ADR 0033)
 
 ### The list
 
@@ -59,17 +59,23 @@ More also holds Later and Open Terminal. Accept and Drop ask for no confirmation
 
 ### Phone and tablet
 
-- Phone: the list, then the item as a pushed screen. The answer buttons stay above the keyboard.
-- Tablet: the list beside the item. Answering opens the next item.
-- Keys: Command+Up/Down (Ctrl+Shift on Android) move between items, Return opens, Command+Return sends the main answer.
+- Phone: the list, then the item as a pushed screen. The answer buttons stay above the keyboard. An answer returns to the list. At connect, a phone opens on the Inbox when an item is open.
+- Tablet: the list beside the item. Answering opens the next item. On iPad the Inbox is a page-size sheet, and the layout follows the window's size class, not the sheet's.
+- The reply box shows only when the item takes Redo or Change course. The wire has no free-text answer for an `ask`.
+- The summary is plain text.
+- The sidebar shows the first 3 items and the count.
+- iOS keys: Command+Up/Down move between items, Return opens an item (phone only, because a tablet already shows it), Command+Return sends the main answer.
+- Android keys: Ctrl+Shift+Up/Down move between items, Enter opens, Ctrl+Shift+Enter sends the main answer, Ctrl+Shift+O opens the session, Ctrl+Shift+Alt+L asks for Later. A swipe in either direction asks for Later.
+- The main answer is the host's first answer, unless that is `choose` or `later`. muxa for tmux uses the same rule.
+- Demo: the in-app demo bridge plays a `work:3` host. `-work2` on iOS and `--ez work2 true` on Android play an older host. Try the Demo and the showcase still play `work:2`.
 
 ### tmux
 
 - The sidebar shows the Inbox section above the session tree: the count and the first open items. `Enter` on one opens it in `prefix + T`.
 - `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
-- Keys: `a` the item's main answer (Approve, Accept, Retry or Done), `r` Reject or Redo, `c` Change course, `p` Keep open, `x` Drop, `n` Dismiss, `l` Later, `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. Redo and Change course ask for the text. Only the keys the item takes are listed.
+- Keys: `a` the item's main answer (Approve, Accept, Retry or Done), `r` Reject or Redo, `c` Change course, `p` Keep open, `x` Drop, `n` Dismiss, `l` Later, `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Redo and Change course ask for the text. Only the keys the item takes are listed.
 
-## Current behavior (until ADR 0033 ships)
+## Current behavior (hosts older than `work:3`)
 
 ADR 0023 defines the shared rules. Slice 1 provides navigation; direct actions remain in the existing Chat and Task detail screens.
 

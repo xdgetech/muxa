@@ -13,13 +13,18 @@ Proposed. The developer chose this shape on 2026-11-04. It extends ADR 0015 (Tas
 
 ## Decision
 
-### 1. A reading Task runs in the main checkout
+### 1. A reading Task works in its own folder and reads the repo
 
 - `create-task` takes `read: true` with a `repo` and no `branch`. The record keeps `repo`, has no `branch`, and has `read: true`.
-- The session starts in the repo's **main checkout**, on whatever branch it has, like an ask session. It is tagged `@muxa_task` as any Task, and always uses the built-in launcher.
-- Its files live in `<main checkout>/.muxa/tasks/<task id>/`: `TASK.md`, and later `HANDOFF.md`. `.muxa/` is already in git's exclude file (ADR 0015). So several reading Tasks share one checkout without conflicts, and the agent writes only inside its own folder.
-- The record's `dir` is the main checkout. Sessions are linked by `@muxa_task`. The fallback by directory (ADR 0015) skips reading Tasks, because several of them share the directory.
-- `TASK.md` tells the agent that this Task reads and must not change the repo, and that it should ask for a branch when a change is needed. The bridge does not enforce this, for the reason in ADR 0031 (Alternatives).
+- The Task gets its own folder, `<workspace root>/tasks/<slug>-<id>/`, the same folder a repo-less Task gets (ADR 0015). The agent starts there, through the built-in launcher. The record's `dir` is this folder.
+- The folder holds `TASK.md`, later `HANDOFF.md`, and what the Task produces: a design, a report, a plan. It stays after the Task closes. Its documents and images are the evidence of the Task's `review` item (ADR 0033).
+- The repo is a reference. `TASK.md` names the path of its main checkout, tells the agent to read the repo's `AGENTS.md` or `CLAUDE.md` first, to run git with `git -C <path>`, and not to change the repo. It also tells the agent to ask for a branch when a change is needed.
+- For Claude Code, the bridge writes `<folder>/.claude/settings.local.json`:
+  - `permissions.additionalDirectories` lists the main checkout, so reads there do not ask.
+  - `permissions.deny` lists `Edit` and `Write` on it, so the agent cannot change it.
+  - The setting names and the rule syntax must be checked against Claude Code's documentation and a real run in R0.
+- Other agents get only `TASK.md`. The bridge does not enforce read-only for them, for the reason in ADR 0031 (Alternatives).
+- Several reading Tasks of one repo share its main checkout and never write there. No worktree is made.
 
 ### 2. The bridge notices changes it did not expect
 
@@ -30,7 +35,7 @@ Proposed. The developer chose this shape on 2026-11-04. It extends ADR 0015 (Tas
 
 - `branch-task {task, branch?}` turns a reading Task into a repo Task:
   1. Under the Task lock (ADR 0024), the bridge makes the worktree with the same rules as a new Task, with the branch name from the title (ADR 0031 §3).
-  2. It moves `.muxa/tasks/<id>/` to `<worktree>/.muxa/`.
+  2. It copies `TASK.md` to `<worktree>/.muxa/`. The Task's folder stays, with what it produced. `TASK.md` names the folder, so the agent can read its earlier work.
   3. It writes `HANDOFF.md`, then restarts the agent in the worktree (ADR 0018). The record gets `branch` and `dir`, and loses `read`.
 - The conversation is not resumed. Claude Code and Codex store sessions by working directory, so the new agent starts from `TASK.md` and `HANDOFF.md`. That is the existing restart path.
 - Changes already in the main checkout stay there. The bridge never moves them, because it cannot tell which changes belong to the Task.
@@ -48,12 +53,15 @@ The bridge advertises `work:4` for `read`, `branch-task` and `park-task`. A clie
 
 ## Consequences
 
+- A document-only Task, such as a design or a write-up with no repo, is a repo-less Task as before. A reading Task is the same folder with a repo to read.
+- The agent's working directory is not the repo. Its code tools need the repo's path. The repo's `CLAUDE.md` is read because `TASK.md` asks for it, not automatically.
 - A reading Task reads the main checkout as it is. When the user switches its branch, the Task reads other code. For research this is acceptable. A review of one branch should use `gh pr diff` or `git show`, or Branch.
 - Nothing stops the agent from changing the main checkout. §2 makes such a change visible instead.
 - Branch costs one restart. The agent loses its conversation and keeps its notes.
-- The Changes view of a reading Task shows nothing, because the main checkout's changes are not the Task's.
+- The Changes view of a reading Task shows nothing, because the main checkout's changes are not the Task's. Its output is in its folder.
 - Alternatives not taken:
-  - A read-only agent mode, such as Claude Code's `--permission-mode plan`: it also blocks writing `TASK.md`, and other agents have no such mode.
-  - Running in the Task directory with the repo added as an extra directory (`--add-dir`): the agent then misses the repo's `CLAUDE.md` and runs git outside the repo. The flag is also agent-specific.
+  - A read-only agent mode, such as Claude Code's `--permission-mode plan`: it also blocks writing `TASK.md` and the Task's output, and other agents have no such mode.
+  - Running in the main checkout with the files in `<main checkout>/.muxa/tasks/<id>/`: the repo's `CLAUDE.md` and git work as usual, but the output hides in an excluded folder of the repo, and nothing stops the agent from changing the checkout.
+  - The `--add-dir` flag instead of the settings file: the bridge would have to change the workspace's agent command, which may be any shell command.
   - A detached worktree per reading Task (`git worktree add --detach`): it still costs a checkout, which is what this ADR saves.
   - Resuming the conversation after Branch: it needs the old working directory, which Branch leaves.
