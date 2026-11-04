@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # awk programs: $ is awk's, not the shell's
 # Prints the sidebar footer: details of the row under the cursor, then the key hints.
 # Session or window: state and its age, branch, worktree, PR, window count.
 # Repo: its path and how many sessions are in each state.

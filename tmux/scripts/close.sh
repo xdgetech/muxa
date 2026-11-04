@@ -20,7 +20,7 @@ wt="$(target_opt "=$s:" @agent_worktree)"
 main="$(target_opt "=$s:" @agent_repo_dir)"
 pr_state="$(target_opt "=$s:" @agent_pr_state)"
 
-# Merged = PR merged (orchestrator or gh), or the branch adds nothing to its base.
+# Merged = PR merged (@agent_pr_state or gh), or the branch adds nothing to its base.
 merged() {
   local br state base
   [ "$pr_state" = merged ] && return 0

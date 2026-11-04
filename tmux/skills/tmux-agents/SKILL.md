@@ -1,6 +1,6 @@
 ---
 name: tmux-agents
-description: Create, list, or close tmux-agents tasks (a git worktree plus a tmux session with an AI pane) on this machine. Use when asked to start a new task or branch in its own session, to list the running tasks, or to close one, for example "new task for lisk-app on feature/foo" or "close the forward-port task".
+description: Create, list, or close tmux-agents tasks (a git worktree plus a tmux session with an AI pane) on this machine. Use when asked to start a new task or branch in its own session, to list the running tasks, or to close one, for example "new task for web-app on feature/foo" or "close the fix-retry task".
 ---
 
 # tmux-agents
@@ -23,7 +23,7 @@ The scripts act on the tmux server of this machine, so run them from a shell ins
 ```
 
 - Always pass `--no-switch`. Without it, the user's attached client jumps to the new task.
-- `<repo dir>` is any path inside the repo, for example `~/Projects/lisk/lisk-app`.
+- `<repo dir>` is any path inside the repo, for example `~/src/web-app`.
   If the user names only the repo, find it under `~/Projects`. Ask when more than one matches.
 - `--base` sets the ref a new branch starts from. Omit it to use the repo's default branch.
 - On success it prints the session name. Report it, and the agent's name:

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # awk programs: $ is awk's, not the shell's
 # Writes session counts per state into the global option @agents_status,
 # which status-right shows as #{@agents_status}.
 set -u

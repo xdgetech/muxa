@@ -36,7 +36,7 @@ existing_worktree() {
     /^branch / { if ($2 == b && p != m) { print p; exit } }'
 }
 
-# Same location and naming as the orchestrator's wt_path: <repos dir>/.worktrees/<repo>-<branch>.
+# <repos dir>/.worktrees/<repo>-<branch>. muxa's built-in launcher copies this rule (ADR 0007).
 default_worktree() {
   local found root path
   found="$(existing_worktree)"
@@ -61,7 +61,7 @@ in_main_checkout() {
   [ -z "$(existing_worktree)" ] && [ "$(git -C "$main" branch --show-current 2>/dev/null)" = "$branch" ]
 }
 
-# @agents_worktree_cmd lets the orchestrator own worktree creation: it gets
+# @agents_worktree_cmd lets another tool own worktree creation: it gets
 # <main repo> <branch> <base> and prints the worktree path on its last line.
 cmd="$(opt @agents_worktree_cmd '')"
 err="$(agents_run_dir)/new-$$.err"

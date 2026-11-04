@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # awk programs: $ is awk's, not the shell's
 # Prints the sidebar tree, one row per line: <target> TAB <display>.
 # Targets: r:<repo>, s:<session>, w:<session>:<window index>.
 # Sessions are grouped by @agent_repo and labelled with AGENTS_JUMP_KEYS for action.sh jump.

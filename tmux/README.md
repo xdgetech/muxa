@@ -1,21 +1,22 @@
-# tmux-agents
+# muxa for tmux
 
-A tmux plugin for running many AI coding sessions at once. A tree on the left
-shows every task session and its live agent state. Each task is one session in
+muxa's client inside tmux, formerly tmux-agents: a tmux plugin for running many
+AI coding sessions at once. A tree on the left shows every task session and its
+live agent state. Each task is one session in
 its own git worktree, with the AI pane on the left and a terminal on the right.
 
 ```
 ┌─ tree ───────────────┬─ AI session ─────────┬─ terminal ─────────┐
-│ 📂 lisk-sdk          │                      │                    │
-│ ▎1 ⚡ AGT-123         │  claude              │  git, gh, tests    │
+│ 📂 web-app           │                      │                    │
+│ ▎1 ⚡ add-api         │  claude              │  git, gh, tests    │
 │ ▎    ⚡ 0 main        │                      │                    │
 │ ▎       1 tests      │                      │                    │
-│  2 🙋 AGT-130 #1834  │                      │                    │
+│  2 🙋 fix-ssh #1834  │                      │                    │
 │  3 💤 fix-retry ✅   │                      │                    │
 │──────────────────────│                      │                    │
-│ ⚡ AGT-123 · working │                      │                    │
-│ ⎇ feat/login         │                      │                    │
-│ 📁 lisk-sdk-feat-log │                      │                    │
+│ ⚡ add-api · working │                      │                    │
+│ ⎇ feat/add-api       │                      │                    │
+│ 📁 web-app-feat-add- │                      │                    │
 │ n new c win o ide x  │                      │                    │
 └──────────────────────┴──────────────────────┴────────────────────┘
 🙋 needs you  ❌ error  ⚡ working  🏁 finished, not seen yet  💤 idle  ✅ PR merged
@@ -37,24 +38,21 @@ notify. Claude Code can also notify on its own: if you get two, set its
 `preferredNotifChannel` to `notifications_disabled`, or `@agents_notify` to `off`.
 Skipping the pane you look at needs `set -g focus-events on`.
 
-The design and the remaining phases are in [PLAN.md](PLAN.md).
-
 ## Install
 
 Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 
-1. Add to `~/.tmux.conf`, then press `prefix + I`:
+1. Add to `~/.tmux.conf`, then reload it. `<muxa>` is your muxa checkout:
 
    ```tmux
-   set -g @plugin 'xdgetech/tmux-agents'
+   run-shell '<muxa>/tmux/agents.tmux'
    ```
 
-   The repo is private, so TPM clones it with your git credentials.
 2. Report Claude Code state to tmux. This adds one hook command to
    `~/.claude/settings.json` and writes a backup next to it:
 
    ```sh
-   ~/.tmux/plugins/tmux-agents/scripts/install-claude-hooks.sh
+   <muxa>/tmux/scripts/install-claude-hooks.sh
    ```
 
    Undo with `--uninstall`.
@@ -62,13 +60,13 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
    A Claude background job runs outside tmux. Its state goes to the one Claude
    pane in the job's directory. With two such panes, it shows nowhere.
 3. Optional, Codex: in `~/.codex/config.toml` set
-   `notify = ["<plugin dir>/hooks/codex-notify.sh"]`. Codex reports only the end
+   `notify = ["<muxa>/tmux/hooks/codex-notify.sh"]`. Codex reports only the end
    of a turn, so a Codex pane shows `○` and nothing else.
 4. Optional, Claude skill: lets a Claude session create, list and close tasks,
    also over Remote Control. Link it on the machine that runs tmux:
 
    ```sh
-   ln -s ~/.tmux/plugins/tmux-agents/skills/tmux-agents ~/.claude/skills/tmux-agents
+   ln -s <muxa>/tmux/skills/tmux-agents ~/.claude/skills/tmux-agents
    ```
 
 ## Keys
@@ -130,8 +128,7 @@ instead (OSC 52; your terminal must allow it).
 
 ## muxa
 
-With [muxa](https://github.com/xdgetech/muxa) on the host, `muxa-cli` and
-`muxa-bridge`, a task is a muxa task record: the same Task its iPad and phone
+With `muxa-cli` and `muxa-bridge` installed on the host, a task is a muxa task record: the same Task its iPad and phone
 apps show, with a goal and a status.
 
 - `prefix + N` opens a form in a popup: workspace, repo, branch, title and goal.
@@ -156,11 +153,11 @@ apps show, with a goal and a status.
   `prefix + N` makes a plain task as before.
 
 The records stay in muxa. This plugin never writes them; it calls
-`muxa-cli ... --json`, documented in muxa's `docs/agents.md` ("Desktop tools").
+`muxa-cli ... --json`, documented in `docs/agents.md` ("Desktop tools") and ADR 0017.
 
 ## For other tools
 
-Other tools, such as [muxa](https://github.com/xdgetech/muxa), read and start
+Other tools, such as `muxa-bridge`, read and start
 tasks through the names below. They stay stable; a change to one is a breaking change.
 
 - `@agents_scripts`: global option, the directory of these scripts. Set on every load.
@@ -186,7 +183,7 @@ tasks through the names below. They stay stable; a change to one is a breaking c
 ## Test
 
 ```sh
-bats tests
+make test-tmux-plugin    # from the muxa root
 ```
 
 Each test runs its own tmux server, so it never touches your sessions.

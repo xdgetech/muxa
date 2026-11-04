@@ -15,7 +15,7 @@ cmd_set() {
   local pane="$1" state="$2" sid="${3:-}" cur cur_state cur_sid
   case "$state" in running|waiting|idle|done|error|'') ;; *) usage ;; esac
   # Finished while you watch: you have seen it.
-  [ "$state" = done ] && is_watched "$pane" && state=idle
+  [ "$state" = "done" ] && is_watched "$pane" && state=idle
 
   # A pane that no longer exists is not an error: the agent outlived it.
   cur="$(t display-message -p -t "$pane" "#{@agent_state}${TAB}#{@agent_session_id}" 2>/dev/null)" || return 0
@@ -43,7 +43,7 @@ cmd_seen() {
   for w in $(watched_windows); do
     t list-panes -t "$w" -F "#{pane_id}${TAB}#{@agent_state}" 2>/dev/null |
       while IFS="$TAB" read -r pane st; do
-        [ "$st" = done ] && cmd_set "$pane" idle
+        [ "$st" = "done" ] && cmd_set "$pane" idle
       done
   done
   return 0

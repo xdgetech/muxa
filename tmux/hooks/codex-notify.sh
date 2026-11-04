@@ -8,4 +8,4 @@ command -v jq >/dev/null || exit 0
 for json; do :; done   # the payload is the last argument
 type="$(printf '%s' "${json:-}" | jq -r '.type // empty' 2>/dev/null)"
 [ "$type" = agent-turn-complete ] || exit 0
-exec "$(dirname "$0")/../scripts/state.sh" set "$TMUX_PANE" done
+exec "$(dirname "$0")/../scripts/state.sh" set "$TMUX_PANE" "done"

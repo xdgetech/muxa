@@ -35,7 +35,7 @@ stop_processes() {
   local pids i
   pids="$(pids_in)"
   [ -n "$pids" ] || return 0
-  log "stopping in $dir: $(echo $pids)"
+  log "stopping in $dir: ${pids//$'\n'/ }"
   # shellcheck disable=SC2086  # one pid per word
   kill -TERM $pids 2>/dev/null
   for i in $(seq $((GRACE * 10))); do
@@ -43,7 +43,7 @@ stop_processes() {
     [ -n "$pids" ] || return 0
     sleep 0.1
   done
-  log "killing in $dir: $(echo $pids)"
+  log "killing in $dir: ${pids//$'\n'/ }"
   # shellcheck disable=SC2086
   kill -KILL $pids 2>/dev/null
   return 0

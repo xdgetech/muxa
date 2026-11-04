@@ -1,7 +1,7 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-tmux-plugin test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
-SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
+SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
 
 # xcodebuild and the swift-testing macros need Xcode, not the Command Line Tools.
@@ -34,6 +34,12 @@ test-tmux:
 
 test-harness:
 	bats tests/harness
+
+# muxa for tmux (tmux/; tmux >= 3.4, fzf, jq): its bats tests, each on its own
+# tmux server, and the contract test of new.sh against the built-in launcher.
+test-tmux-plugin:
+	bats tmux/tests
+	MUXA_TMUX_AGENTS=$(CURDIR)/tmux cargo test -p muxa-bridge --features tmux-integration --test tmux_agents
 
 # MuxaKit on macOS. Needs Xcode's toolchain (swift-testing); see DEVELOPER_DIR above.
 test-apple:

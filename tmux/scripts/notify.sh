@@ -12,7 +12,7 @@ new="${2:-}"
 case "$new" in
   waiting) event=waiting body="needs your input" ;;
   error) event=error body="failed" ;;
-  done) event=done body="finished" ;;
+  done) event="done" body="finished" ;;
   *) exit 0 ;;
 esac
 case " $(opt @agents_notify_events 'waiting done error') " in *" $event "*) ;; *) exit 0 ;; esac
@@ -36,4 +36,5 @@ fi
 [ -w "$tty" ] || { log "notify: cannot write to $tty for $session"; exit 0; }
 t set-option -p -t "$pane" allow-passthrough all
 clean() { printf '%s' "$1" | tr -d '\000-\037;'; }
+# shellcheck disable=SC1003  # \\ ends the escape sequence (ST)
 printf '\033Ptmux;\033\033]777;notify;%s;%s\a\033\\' "$(clean "$session")" "$(clean "$body")" >"$tty"

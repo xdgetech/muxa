@@ -27,8 +27,7 @@ load_plugin() { "$ROOT/agents.tmux"; }
 
 # Retry a condition for up to ~5 s.
 wait_for() {
-  local i
-  for i in $(seq 50); do
+  for _ in $(seq 50); do
     eval "$1" && return 0
     sleep 0.1
   done
