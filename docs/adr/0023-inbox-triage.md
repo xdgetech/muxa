@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for slice 1. Slice 2 remains proposed. UI specification: `docs/inbox.md`.
+Accepted for slice 1. Slice 2 remains proposed. UI specification: `docs/inbox.md`. ADR 0033 (proposed) replaces what is left of it in the Inbox: need labels, groups and the local Snooze.
 
 ## Context
 

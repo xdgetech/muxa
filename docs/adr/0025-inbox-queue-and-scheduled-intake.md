@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed following the developer's product direction. No queue schema, scheduler, Slack connection or scheduled job is implemented by this ADR. It proposes changes to ADR 0023's primary UI and local-only deferral; the accepted slice 1 remains the current behavior until a shared contract is implemented. ADR 0026 supersedes the Routine section and slices S0–S3; the Inbox queue (Q0–Q2) stays here. ADR 0027 replaces Q0 and the Task part of Q2 with two optional fields on the Task record.
+Proposed following the developer's product direction. No queue schema, scheduler, Slack connection or scheduled job is implemented by this ADR. It proposes changes to ADR 0023's primary UI and local-only deferral; the accepted slice 1 remains the current behavior until a shared contract is implemented. ADR 0026 supersedes the Routine section and slices S0–S3; the Inbox queue (Q0–Q2) stays here. ADR 0027 replaces Q0 and the Task part of Q2 with two optional fields on the Task record. ADR 0033 (proposed) replaces "List first, with explicit disposition": the Inbox becomes a list of questions, and Move down goes away. The manual Sessions list stays.
 
 ## Context
 
