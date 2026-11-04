@@ -71,7 +71,7 @@ To turn the loop on, install the daemon, and allow checks for a workspace with `
 
 Routines (ADR 0026): a `[[routine]]` in `workspaces.toml` runs an agent on a trigger, for example every morning at 8:00, in the muxa daemon. The agent reads its sources with its own tools and publishes briefings and proposals to Inbox. In the apps, **Routines** in the sidebar (or at the top of All Tasks) lists them; a Routine's detail shows its trigger, whether it is enabled, its last success and failure, its next run, a running run with Open Terminal, and **Run now**. Without the daemon, Run now says what to run on the host. From a terminal: `muxa-cli routines`, `routine run NAME` and `inbox`.
 
-On the desktop, tmux-agents is muxa's client inside tmux (ADR 0017). With `muxa-cli` and `muxa-bridge` on the host, its `prefix + N` creates a muxa Task, and `prefix + T` shows the same Inbox in a popup. `Enter` there moves your terminal to the Task's session. Your tmux keys and layout stay as they are.
+On the desktop, muxa for tmux (`tmux/`, formerly tmux-agents) is muxa's client inside tmux (ADR 0017, 0032). Load it with `run-shell '<muxa>/tmux/agents.tmux'` in `~/.tmux.conf`. With `muxa-cli` and `muxa-bridge` on the host, its `prefix + N` creates a muxa Task, `prefix + A` starts an ask session in a repo, and `prefix + T` shows the same Inbox in a popup. `Enter` there moves your terminal to the Task's session. Your tmux keys and layout stay as they are.
 
 Closing a task: **Close Task…** in a session's menu (sidebar) or in the pane's **…** menu. Close removes the worktree when its branch is merged; you can also keep it, or remove it anyway. A worktree with uncommitted changes is never removed, and the branch is always kept.
 

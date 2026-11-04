@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Proposed. The section "The repos stay separate" is replaced by ADR 0032: the plugin now lives in `tmux/` as muxa for tmux.
 
 ## Context
 

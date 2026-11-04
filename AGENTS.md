@@ -22,6 +22,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `apple/MuxaKit` | Swift package: protocol, transport (SSH), `PaneSession`, and the UIKit pane views (`MuxaUI`). |
 | `apple/Muxa` | the iPad and iPhone app (SwiftUI). The layout follows size classes, not the device (ADR 0012). `Muxa/Reader/` renders documents offline (vendored JS: `scripts/vendor-reader.sh`). `project.yml` generates the Xcode project. **Try the Demo** (every build) runs the in-app demo bridge on its showcase data; the UI tests launch with `-demo` for its test fixtures, `-showcase` for the showcase, and `-foldable` to fold and unfold it like an iPhone Duo (DEBUG). |
 | `android/` | the Android client (Kotlin, Gradle; ADR 0013). `:protocol`, `:terminal` (the pane screen on JediTerm), `:transport` (sshj) and `:session` (`PaneSession`) are plain JVM modules with JVM tests; `:demo` is the in-app demo bridge; `:app` is the Compose UI; `:testhost` is the throwaway SSH host of the release-build test. The Reader uses `apple/Muxa/Muxa/Reader` as its assets. **Try the Demo** works in every build; debug builds start it on the test fixtures with `adb shell am start -n tech.xdge.muxa/tech.xdge.muxa.app.MainActivity --ez demo true` (add `--ez showcase true` for the showcase). |
+| `tmux/` | muxa for tmux, formerly tmux-agents (ADR 0017, 0032): the tmux plugin with the task tree, `prefix + N` New Task, `prefix + T` Inbox and `prefix + A` Ask, through `muxa-cli --json`. Bash and bats; loaded with `run-shell '<muxa>/tmux/agents.tmux'`. Its README's "For other tools" is the contract the bridge relies on. |
 | `store/` | the store listings (fastlane `deliver` and `supply` layout, English and Japanese), Play's icon and feature graphic, and `RELEASE.md`: every console answer, the price and the release steps. `docs/privacy.md` is the privacy policy. |
 | `scripts/` | harness: sandbox, layout snapshot, repro scripts, the agent guard hook. |
 | `tests/harness/` | bats tests for the harness itself. |
@@ -53,7 +54,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `TEST_RUNNER_MUXA_SCREENSHOT_DIR=<dir> make test-app` | also keeps the UI test's portrait and landscape screenshots. |
 | `MUXA_STREAM_RUNS=200 make test-tmux` | more random cut points for the snapshot/stream stress test (default 50). |
 | `MUXA_TEST_PLUGIN=<plugin.tmux> make test-tmux` | also checks that a real layout plugin keeps its layout. |
-| `MUXA_TMUX_AGENTS=<tmux-agents checkout> make test-tmux` | also checks that the built-in launcher follows tmux-agents' worktree and naming rules, and `new.sh --muxa-task` (ADR 0017). |
+| `make test-tmux-plugin` | muxa for tmux: its bats tests, and the contract test that the built-in launcher follows `tmux/scripts/new.sh`'s worktree and naming rules and `--muxa-task` (ADR 0017). Needs tmux >= 3.4, fzf and jq. |
 | `MUXA_RECORD_SCENARIOS=1 cargo test -p muxa-bridge --features tmux-integration --test stream` | re-records `protocol/fixtures/scenarios/`. |
 | `make sandbox` / `make sandbox-down` | an isolated tmux server (`-L muxa-sandbox`) with two agent + shell sessions. |
 | `scripts/layout-snapshot.sh record -L <socket>` | record a layout; `diff before after` proves nothing changed. |
