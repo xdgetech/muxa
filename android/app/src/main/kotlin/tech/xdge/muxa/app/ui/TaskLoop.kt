@@ -40,7 +40,7 @@ import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.protocol.LoopSpec
-import tech.xdge.muxa.session.InboxItem
+import tech.xdge.muxa.session.TaskItem
 import tech.xdge.muxa.session.LOOP_NEEDS_DAEMON
 import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.isActive
@@ -59,7 +59,7 @@ import tech.xdge.muxa.session.loopStateTitle
 /** The Task's loop as its record says, and the buttons that start or stop it. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun LoopSection(model: AppModel, record: TaskRecord, item: InboxItem) {
+fun LoopSection(model: AppModel, record: TaskRecord, item: TaskItem) {
     val loop = record.loop
     val checks = model.checksOf(record.workspace)
     Column(Modifier.testTag("task-loop"), verticalArrangement = Arrangement.spacedBy(6.dp)) {

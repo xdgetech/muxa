@@ -32,7 +32,9 @@ import tech.xdge.muxa.protocol.TaskStatus
 
 /**
  * The Inbox list against the demo's Task places, stored entries and Routines (ADR 0025
- * "List first", ADR 0026, ADR 0027 §4). Ported from the iOS `InboxListTests`.
+ * "List first", ADR 0026, ADR 0027 §4). Ported from the iOS `InboxListTests`. It plays a host
+ * at `work` level 2: a host with Inbox items shows the list of questions instead (ItemListTest),
+ * and an older host must keep this one.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -50,7 +52,10 @@ class InboxListTest {
     /** Opens the demo on the Inbox list: a phone opens there by itself, a tablet through More. */
     private fun launchOnInbox() {
         val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        scenario = ActivityScenario.launch(Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true))
+        val intent = Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_DEMO, true)
+            .putExtra(MainActivity.EXTRA_WORK2, true)
+        scenario = ActivityScenario.launch(intent)
         compose.waitUntil(TIMEOUT) { exists("inbox-list") || exists("composer") }
         if (!exists("inbox-list")) {
             click("more")

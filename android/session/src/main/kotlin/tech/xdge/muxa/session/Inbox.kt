@@ -27,7 +27,7 @@ enum class InboxNeed(val wire: String) {
  * One Task with what runs it now. [agentPane] and [agent] are null when no adapter
  * reports a state that can be believed (invariant 6).
  */
-data class InboxItem(
+data class TaskItem(
     val record: TaskRecord,
     val group: InboxGroup,
     val session: Session? = null,
@@ -35,7 +35,7 @@ data class InboxItem(
     val agent: Agent? = null,
 )
 
-val InboxItem.need: InboxNeed
+val TaskItem.need: InboxNeed
     get() = when {
         group == InboxGroup.CLOSED -> InboxNeed.NONE
         agent?.state == AgentState.WAITING -> InboxNeed.ANSWER
@@ -51,7 +51,7 @@ val InboxItem.need: InboxNeed
  * The record's Move down and Later (ADR 0027 §4), unless the Task's current attention began after
  * they were set: a new need surfaces again.
  */
-val InboxItem.place: TaskInbox?
+val TaskItem.place: TaskInbox?
     get() {
         val place = record.inbox ?: return null
         val paused = record.loop?.takeIf { it.needsUser }?.since
@@ -67,13 +67,13 @@ fun triageQueue(
     records: List<TaskRecord>,
     sessions: List<Session>,
     now: Long = System.currentTimeMillis() / 1000,
-): List<InboxItem> =
+): List<TaskItem> =
     inbox(records, sessions).flatMap { it.items }
         .filter { it.need != InboxNeed.NONE && (it.place?.until ?: 0) <= now }
         // Stable: equal orders keep the group order.
         .sortedWith(compareBy(nullsFirst()) { it.place?.order })
 
-data class InboxSection(val group: InboxGroup, val items: List<InboxItem>)
+data class InboxSection(val group: InboxGroup, val items: List<TaskItem>)
 
 val TaskStatus.isClosed: Boolean get() = this == TaskStatus.DONE || this == TaskStatus.DROPPED
 
@@ -85,18 +85,18 @@ val Session.agentPane: Pane?
     get() = visiblePanes.firstOrNull { it.role == Role.AGENT } ?: visiblePanes.firstOrNull { it.agent != null }
 
 /** Where [record] belongs, from its status, its Task Loop and its session's agent state (ADR 0015, 0019). */
-fun inboxItem(record: TaskRecord, sessions: List<Session>): InboxItem {
-    if (record.status.isClosed) return InboxItem(record, InboxGroup.CLOSED, sessions.runningTask(record))
+fun taskItem(record: TaskRecord, sessions: List<Session>): TaskItem {
+    if (record.status.isClosed) return TaskItem(record, InboxGroup.CLOSED, sessions.runningTask(record))
     val item = agentItem(record, sessions)
     return if (record.loop?.needsUser == true) item.copy(group = InboxGroup.NEEDS_ATTENTION) else item
 }
 
-private fun agentItem(record: TaskRecord, sessions: List<Session>): InboxItem {
-    val session = sessions.runningTask(record) ?: return InboxItem(record, InboxGroup.NO_AGENT)
+private fun agentItem(record: TaskRecord, sessions: List<Session>): TaskItem {
+    val session = sessions.runningTask(record) ?: return TaskItem(record, InboxGroup.NO_AGENT)
     val pane = session.agentPane
     val agent = pane?.agent
     val state = agent?.shown(pane.shellForeground)
-        ?: return InboxItem(record, InboxGroup.NO_AGENT, session, pane)
+        ?: return TaskItem(record, InboxGroup.NO_AGENT, session, pane)
     val group = when (state) {
         // An error is the adapter's word too, and it needs the user.
         AgentState.WAITING, AgentState.ERROR -> InboxGroup.NEEDS_ATTENTION
@@ -104,20 +104,20 @@ private fun agentItem(record: TaskRecord, sessions: List<Session>): InboxItem {
         // A Task already in review, or with a status this app does not know, has no better group.
         AgentState.IDLE, AgentState.DONE -> InboxGroup.READY_FOR_REVIEW
     }
-    return InboxItem(record, group, session, pane, agent)
+    return TaskItem(record, group, session, pane, agent)
 }
 
 /** The non-empty groups in [InboxGroup] order; newest change first within a group. */
 fun inbox(records: List<TaskRecord>, sessions: List<Session>): List<InboxSection> {
-    val byGroup = records.map { inboxItem(it, sessions) }.groupBy { it.group }
+    val byGroup = records.map { taskItem(it, sessions) }.groupBy { it.group }
     return InboxGroup.entries.mapNotNull { group ->
         val items = byGroup[group] ?: return@mapNotNull null
-        InboxSection(group, items.sortedWith(compareByDescending<InboxItem> { it.record.updatedAt }.thenByDescending { it.record.id }))
+        InboxSection(group, items.sortedWith(compareByDescending<TaskItem> { it.record.updatedAt }.thenByDescending { it.record.id }))
     }
 }
 
 /** Conservative local snooze identity; it is not an approval token. */
-val InboxItem.attentionKey: String get() = listOf(
+val TaskItem.attentionKey: String get() = listOf(
     record.id, record.rev, session?.id, agentPane?.id, need.wire, agent?.state, agent?.since,
     record.loop?.state, record.loop?.reason, record.loop?.since,
 ).joinToString("\u001f")

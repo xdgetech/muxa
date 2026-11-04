@@ -35,6 +35,7 @@ import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_CAPABILITY
+import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.transport.BridgeChannel
@@ -92,6 +93,9 @@ class DemoBridge(
     /** Grows when a task starts. */
     /** Routines and stored Inbox entries (ADR 0026). */
     private val work = content.work(now())
+
+    /** The Tasks' Inbox items (ADR 0033). */
+    private val items = content.items(now())
     private var sessions: List<Session> = content.sessions(now()) + work.sessions
     private val capabilities = CAPABILITIES
         .filter { taskRecords || it != "task-records" }
@@ -208,11 +212,15 @@ class DemoBridge(
                 ok(req.id)
             }
             is Request.ListInbox -> {
-                emit(Message.InboxList(req.id, synchronized(lock) { work.shownEntries(now) }))
+                val list = synchronized(lock) {
+                    val entries = work.shownEntries(now)
+                    Message.InboxList(req.id, entries, if (workLevel >= WORK_ITEMS) items.list(entries, now) else emptyList())
+                }
+                emit(list)
                 ok(req.id)
             }
             is Request.RunRoutine -> runRoutine(req, now)
-            is Request.UpdateInbox -> updateEntry(req, now)
+            is Request.UpdateInbox -> if (workLevel >= WORK_ITEMS && synchronized(lock) { items.has(req.entry) }) answerItem(req, now) else updateEntry(req, now)
             else -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
         }
     }
@@ -251,9 +259,29 @@ class DemoBridge(
         } catch (e: DemoWork.Refusal) {
             return fail(req.id, e.code, e.message ?: "")
         }
-        emit(Message.InboxSaved(req.id, saved))
+        val item = if (workLevel >= WORK_ITEMS) DemoItems.fromEntry(saved) else null
+        emit(Message.InboxSaved(req.id, saved, item))
         ok(req.id)
         if (created) emit(Message.SessionsChanged)
+    }
+
+    /** A Task's item: Accept and Drop set the Task's status; the other answers touch no Task here. */
+    private fun answerItem(req: Request.UpdateInbox, now: Long) {
+        val saved = try {
+            synchronized(lock) {
+                val answer = items.answer(req.entry, req.action, req.text, req.option, req.until, now)
+                val status = answer.status
+                if (status != null) {
+                    tasks = tasks.map { if (it.id == answer.item.task) it.copy(rev = it.rev + 1, status = status, updatedAt = now) else it }
+                }
+                answer
+            }
+        } catch (e: DemoWork.Refusal) {
+            return fail(req.id, e.code, e.message ?: "")
+        }
+        emit(Message.InboxSaved(req.id, item = saved.item))
+        ok(req.id)
+        if (saved.status != null) emit(Message.TasksChanged)
     }
 
     /** The Task an approval creates, with a running agent in its own session. The caller holds the lock. */

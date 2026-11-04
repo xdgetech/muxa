@@ -65,7 +65,10 @@ class TasksTest {
         waitForTag("tasks-done")
     }
 
-    /** The Inbox list replaced Triage (ADR 0025): a phone opens on it at connect. */
+    /**
+     * A phone opens on the Inbox at connect while an agent waits. The demo's host has Inbox
+     * items (ADR 0033), so the waiting agent is its `ask` item, not the Task's row.
+     */
     @Test
     fun phoneStartsInTheInboxWhenAttentionIsWaiting() {
         launch(leaveInbox = false)
@@ -73,7 +76,7 @@ class TasksTest {
         compose.waitUntil(TIMEOUT) { model.isConnected && !model.connecting }
         if (model.phoneInbox) {
             waitForTag("inbox-list")
-            waitForTag("inbox-row-t-auth01")
+            waitForTag("item-row-i-0000a001")
             compose.onNodeWithTag("tasks-done").performClick()
             waitForTag("composer")
         } else {

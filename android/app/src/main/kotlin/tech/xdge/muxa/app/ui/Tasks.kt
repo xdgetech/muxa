@@ -66,9 +66,9 @@ import tech.xdge.muxa.app.shortcut
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import tech.xdge.muxa.session.InboxNeed
 import tech.xdge.muxa.session.need
-import tech.xdge.muxa.session.InboxItem
+import tech.xdge.muxa.session.TaskItem
 import tech.xdge.muxa.session.hasHandoff
-import tech.xdge.muxa.session.inboxItem
+import tech.xdge.muxa.session.taskItem
 
 /**
  * The Inbox screen: the Inbox list, All Tasks by Inbox group, and the Routines, with the
@@ -80,7 +80,7 @@ fun TasksScreen(model: AppModel) {
     val phone = LocalPhoneLayout.current
     val layout = LocalWindowLayout.current
     val selected = model.selectedTask?.let { id -> model.state.tasks?.record(id) }
-    val detailOpen = model.selectedTask != null || model.selectedEntry != null || model.selectedRoutine != null
+    val detailOpen = model.selectedItem != null || model.selectedTask != null || model.selectedEntry != null || model.selectedRoutine != null
     Dialog(onDismissRequest = model::closeTasks, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         DialogStatusBar()
         // Focused, so the Inbox keys reach it before any control has focus.
@@ -157,19 +157,23 @@ private fun InboxPane(model: AppModel, selected: String?, modifier: Modifier) {
         }
         val content = Modifier.fillMaxWidth().weight(1f)
         when (model.inboxPage) {
-            InboxPage.INBOX -> InboxList(model, content)
+            // An older host keeps the Inbox of Task needs and entries.
+            InboxPage.INBOX -> if (model.usesItems) ItemList(model, content) else InboxList(model, content)
             InboxPage.TASKS -> TaskList(model, selected, content)
             InboxPage.ROUTINES -> RoutineList(model, content)
         }
     }
 }
 
-/** The picked row's detail: a stored entry, a Routine, or a Task. */
+/** The picked row's detail: an Inbox item, a stored entry, a Routine, or a Task. */
 @Composable
 private fun InboxDetail(model: AppModel, selected: TaskRecord?, modifier: Modifier) {
     val entry = model.selectedEntry
     val routine = model.selectedRoutine
     when {
+        model.selectedItem != null -> ItemDetail(model, model.selectedItem, modifier)
+        model.usesItems && model.inboxPage == InboxPage.INBOX && selected == null && entry == null && routine == null ->
+            ItemDetail(model, null, modifier)
         entry != null -> InboxEntryDetail(model, entry, modifier)
         routine != null -> RoutineDetail(model, routine, modifier)
         else -> TaskDetail(model, selected, modifier)
@@ -229,7 +233,7 @@ private fun RoutinesRow(model: AppModel) {
 }
 
 @Composable
-private fun TaskRow(item: InboxItem, current: Boolean, open: () -> Unit) {
+private fun TaskRow(item: TaskItem, current: Boolean, open: () -> Unit) {
     val r = item.record
     Row(
         Modifier.fillMaxWidth()
@@ -259,7 +263,7 @@ private fun TaskRow(item: InboxItem, current: Boolean, open: () -> Unit) {
 
 /** The agent's state with its age, only when an adapter reports one; else "No agent". */
 @Composable
-private fun AgentLine(item: InboxItem) {
+private fun AgentLine(item: TaskItem) {
     val pane = item.agentPane
     if (item.agent != null && pane != null) {
         AgentBadge(pane)
@@ -297,7 +301,7 @@ private fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Pick a Task.") }
             return@Column
         }
-        val item = inboxItem(record, model.state.sessions)
+        val item = taskItem(record, model.state.sessions)
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).testTag("task-detail"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -330,7 +334,7 @@ private fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier)
 /** Where to go from a Task: its session's pane, its Chat, the Reader, or a restarted agent. None without a session. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun TaskActions(model: AppModel, record: TaskRecord, item: InboxItem) {
+private fun TaskActions(model: AppModel, record: TaskRecord, item: TaskItem) {
     val session = item.session ?: return
     val agent = item.agentPane ?: session.panes.firstOrNull { it.isAgentSide }
     val canChat = agent != null && model.state.canChat && agent.id !in model.state.unsupportedChats
@@ -415,7 +419,7 @@ val InboxNeed.title: String get() = when (this) {
 }
 
 @Composable
-fun TaskSessionBadge(item: InboxItem) {
+fun TaskSessionBadge(item: TaskItem) {
     Column(horizontalAlignment = Alignment.End) {
         Text(item.group.title, style = MaterialTheme.typography.labelSmall)
         val since = if (item.need == InboxNeed.LOOP) item.record.loop?.since else item.agent?.since

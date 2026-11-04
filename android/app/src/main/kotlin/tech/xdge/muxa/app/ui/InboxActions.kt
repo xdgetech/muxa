@@ -25,9 +25,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.InboxPrompt
+import tech.xdge.muxa.app.answer
 import tech.xdge.muxa.app.approve
 import tech.xdge.muxa.app.later
+import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxEntry
+import tech.xdge.muxa.protocol.Proposal
 import tech.xdge.muxa.session.LaterChoice
 import tech.xdge.muxa.session.laterProblem
 import java.time.Instant
@@ -40,9 +43,16 @@ import java.time.ZoneOffset
 @Composable
 fun InboxDialogs(model: AppModel) {
     when (val prompt = model.inboxPrompt) {
-        is InboxPrompt.Later -> LaterDialog(model, prompt)
-        is InboxPrompt.PickTime -> LaterPicker(model, prompt)
+        is InboxPrompt.Later -> LaterDialog(model, { model.later(prompt.row, it) }) { model.inboxPrompt = InboxPrompt.PickTime(prompt.row) }
+        is InboxPrompt.PickTime -> LaterPicker(model) { model.later(prompt.row, it) }
         is InboxPrompt.Approve -> ApproveDialog(model, prompt.entry)
+        is InboxPrompt.ItemLater -> LaterDialog(model, { model.answer(prompt.item, InboxAction.LATER, until = it) }) {
+            model.inboxPrompt = InboxPrompt.ItemPickTime(prompt.item)
+        }
+        is InboxPrompt.ItemPickTime -> LaterPicker(model) { model.answer(prompt.item, InboxAction.LATER, until = it) }
+        is InboxPrompt.ApproveItem -> prompt.item.proposal?.let { p ->
+            ProposalDialog(model, prompt.item.title, prompt.item.workspace, p) { model.answer(prompt.item, InboxAction.APPROVE) }
+        }
         null -> {}
     }
     model.inboxError?.let { error ->
@@ -55,8 +65,9 @@ fun InboxDialogs(model: AppModel) {
     }
 }
 
+/** [later] gets the chosen time, in epoch seconds; [pick] asks for a time by hand. */
 @Composable
-private fun LaterDialog(model: AppModel, prompt: InboxPrompt.Later) {
+private fun LaterDialog(model: AppModel, later: (Long) -> Unit, pick: () -> Unit) {
     AlertDialog(
         onDismissRequest = { model.inboxPrompt = null },
         title = { Text("Show Again") },
@@ -64,11 +75,11 @@ private fun LaterDialog(model: AppModel, prompt: InboxPrompt.Later) {
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
                 for (choice in LaterChoice.entries) {
-                    TextButton({ model.later(prompt.row, choice.until()) }, Modifier.testTag("later-${choice.name.lowercase()}")) {
+                    TextButton({ later(choice.until()) }, Modifier.testTag("later-${choice.name.lowercase()}")) {
                         Text(choice.title)
                     }
                 }
-                TextButton({ model.inboxPrompt = InboxPrompt.PickTime(prompt.row) }, Modifier.testTag("later-pick")) { Text("Pick a Time…") }
+                TextButton(pick, Modifier.testTag("later-pick")) { Text("Pick a Time…") }
                 TextButton({ model.inboxPrompt = null }) { Text("Cancel") }
             }
         },
@@ -78,7 +89,7 @@ private fun LaterDialog(model: AppModel, prompt: InboxPrompt.Later) {
 /** Later at a time the user picks: the day, then the time, in this device's time zone. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LaterPicker(model: AppModel, prompt: InboxPrompt.PickTime) {
+private fun LaterPicker(model: AppModel, save: (Long) -> Unit) {
     val zone = ZoneId.systemDefault()
     val today = LocalDate.now(zone)
     // The picker's days are UTC midnights.
@@ -99,7 +110,7 @@ private fun LaterPicker(model: AppModel, prompt: InboxPrompt.PickTime) {
     DatePickerDialog(
         onDismissRequest = { model.inboxPrompt = null },
         confirmButton = {
-            TextButton({ until?.let { model.later(prompt.row, it) } }, Modifier.testTag("later-save"), enabled = until != null && laterProblem(until) == null) {
+            TextButton({ until?.let(save) }, Modifier.testTag("later-save"), enabled = until != null && laterProblem(until) == null) {
                 Text("Save")
             }
         },
@@ -117,9 +128,14 @@ private fun LaterPicker(model: AppModel, prompt: InboxPrompt.PickTime) {
 @Composable
 private fun ApproveDialog(model: AppModel, entry: InboxEntry) {
     val p = entry.proposal ?: return
+    ProposalDialog(model, entry.title, entry.workspace, p) { model.approve(entry) }
+}
+
+@Composable
+private fun ProposalDialog(model: AppModel, title: String, workspace: String, p: Proposal, approve: () -> Unit) {
     AlertDialog(
         onDismissRequest = { model.inboxPrompt = null },
-        title = { Text(entry.title) },
+        title = { Text(title) },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Labeled("Action") { Text(p.action, Modifier.testTag("approve-action")) }
@@ -128,14 +144,14 @@ private fun ApproveDialog(model: AppModel, entry: InboxEntry) {
                     SelectionContainer { Text(p.content, Modifier.testTag("approve-content"), fontFamily = FontFamily.Monospace) }
                 }
                 Text(
-                    "Approve creates one Task in ${entry.workspace} that performs this action with this content, unchanged. " +
+                    "Approve creates one Task in $workspace that performs this action with this content, unchanged. " +
                         "The agent's own tools decide what it can do; muxa does not check the result.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { TextButton({ model.approve(entry) }, Modifier.testTag("approve-confirm")) { Text("Approve") } },
+        confirmButton = { TextButton(approve, Modifier.testTag("approve-confirm")) { Text("Approve") } },
         dismissButton = { TextButton({ model.inboxPrompt = null }) { Text("Cancel") } },
     )
 }

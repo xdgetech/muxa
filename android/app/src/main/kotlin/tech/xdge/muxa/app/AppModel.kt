@@ -38,8 +38,12 @@ import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
 import tech.xdge.muxa.session.attentionKey
-import tech.xdge.muxa.session.InboxItem
+import tech.xdge.muxa.session.TaskItem
 import tech.xdge.muxa.session.InboxRow
+import tech.xdge.muxa.session.isUrgent
+import tech.xdge.muxa.session.waiting
+import tech.xdge.muxa.protocol.InboxItem
+import tech.xdge.muxa.app.reader.ReaderItem
 import tech.xdge.muxa.session.inboxRows
 import tech.xdge.muxa.session.triageQueue
 import tech.xdge.muxa.session.InboxGroup
@@ -179,6 +183,24 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     var inboxError by mutableStateOf<String?>(null)
     private var returnToInbox = false
 
+    /** The Inbox item shown in the item screen, by id (ADR 0033). Kept through a fold or a resize. */
+    var selectedItem by mutableStateOf<String?>(null)
+
+    /** The Inbox item the keys act on, by id. */
+    var itemFocus by mutableStateOf<String?>(null)
+
+    /** The reply box's text, per item, so a fold or the Reader keeps a draft. */
+    var itemReplies by mutableStateOf<Map<String, String>>(emptyMap())
+
+    /** The item whose answer is on its way; its buttons wait. */
+    var answeringItem by mutableStateOf<String?>(null)
+
+    /** The host keeps the Inbox as a list of questions, so the Inbox screen shows its items. */
+    val usesItems: Boolean get() = isConnected && state.canAnswerItems
+
+    /** The items that wait for the user, in the host's order. */
+    val inboxItems: List<InboxItem> get() = if (usesItems) state.inboxItems.waiting() else emptyList()
+
     /** The host keeps Move down and Later, so the local Snooze is off. */
     val canPlaceTasks: Boolean get() = isConnected && state.canPlaceTasks
     val canUseRoutines: Boolean get() = isConnected && state.canUseRoutines
@@ -187,15 +209,29 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         get() = if (state.canPlaceTasks) 0 else hostQueue.count { inboxSnoozes[it.record.id] == it.attentionKey }
 
     /** The Task needs in the host's order, without the ones snoozed on this device. */
-    val inboxQueue: List<InboxItem>
+    val inboxQueue: List<TaskItem>
         get() = if (state.canPlaceTasks) hostQueue else hostQueue.filter { inboxSnoozes[it.record.id] != it.attentionKey }
 
     /** The Inbox list: Task needs, waiting Routine runs, briefings and proposals. */
     val inboxRows: List<InboxRow> get() = inboxRows(inboxQueue, state.inboxEntries, state.routines, state.sessions)
 
+    /** An agent waits or failed: a phone opens on the Inbox after connecting (ADR 0023). */
+    private val somethingUrgent: Boolean
+        get() = if (usesItems) inboxItems.any { it.isUrgent } else inboxQueue.any { it.group == InboxGroup.NEEDS_ATTENTION }
+
     /** Opens the Inbox screen on the Inbox list, focused on row [id]; on All Tasks when nothing needs the user. */
     fun showInbox(id: String? = null) {
         clearInboxSelection()
+        if (usesItems) {
+            // An empty Inbox says so, and links to All Tasks.
+            inboxPage = InboxPage.INBOX
+            // [id] is an item's, or a Task's from the session list's Show in Inbox.
+            val target = id?.let { i -> inboxItems.firstOrNull { it.id == i || it.task == i }?.id }
+            itemFocus = target ?: inboxItems.firstOrNull()?.id
+            target?.let { openItem(it) }
+            openTasks()
+            return
+        }
         val rows = inboxRows
         inboxPage = if (rows.isEmpty()) InboxPage.TASKS else InboxPage.INBOX
         inboxFocus = id ?: rows.firstOrNull()?.id
@@ -209,6 +245,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     }
 
     fun clearInboxSelection() {
+        selectedItem = null
         selectedTask = null
         selectedEntry = null
         selectedRoutine = null
@@ -409,6 +446,8 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         clearInboxSelection()
         inboxPrompt = null
         inboxError = null
+        itemReplies = emptyMap()
+        answeringItem = null
         newTaskRecord = null
         taskError = null
         askError = null
@@ -453,7 +492,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             session.connect(samePanes = sameHost) { open(host) }
             if (pane != null && state.sessions.any { s -> s.panes.any { it.id == pane } }) {
                 watch(pane)
-            } else if (phoneInbox && initialRequest == detailRequest && canShowTasks && inboxQueue.any { it.group == InboxGroup.NEEDS_ATTENTION }) {
+            } else if (phoneInbox && initialRequest == detailRequest && canShowTasks && somethingUrgent) {
                 showInbox()
             } else openDefaultPane()
         } catch (e: TransportError.HostKeyMismatch) {
@@ -714,6 +753,30 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     // Reader
 
     val canReadDocs: Boolean get() = state.canReadDocs && currentPane != null
+
+    /** What the Reader opens on, once: an Inbox item's doc, diff or image. */
+    var readerTarget: ReaderItem? = null
+
+    /**
+     * Leaves the Inbox screen for the Reader of [item]'s pane, at [tab] or at [target]. Closing
+     * the Reader returns to the Inbox screen, on the same item.
+     */
+    fun readItem(item: InboxItem, tab: ReaderTab, target: ReaderItem? = null) = scope.launch {
+        val pane = item.pane ?: return@launch
+        if (state.sessions.none { s -> s.panes.any { it.id == pane } }) {
+            inboxError = "The pane of this question is gone. Open All Tasks to find its Task."
+            return@launch
+        }
+        returnToInbox = showTasks
+        showTasks = false
+        detailRequest++
+        watch(pane)
+        if (!canReadDocs) return@launch
+        readerTab = if (tab in readerTabs) tab else ReaderTab.DOCS
+        readerTarget = target
+        readerOpensPlan = target != null
+        showReader = true
+    }
 
     /** Whether the Reader was asked for the plan or a Task's brief. A phone opens it on its list otherwise. */
     var readerOpensPlan = false

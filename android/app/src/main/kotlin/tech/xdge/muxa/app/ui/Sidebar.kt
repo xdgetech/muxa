@@ -44,6 +44,7 @@ import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.session.Host
 import tech.xdge.muxa.session.InboxGroup
+import tech.xdge.muxa.session.isUrgent
 import tech.xdge.muxa.session.RepoGroup
 import tech.xdge.muxa.session.defaultPane
 
@@ -76,16 +77,26 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
             }
             // Above the hosts, so a phone shows it on its first screen.
             if (model.canShowTasks) {
-                val rows = model.inboxRows
                 item(key = "tasks-header") { SectionHeader("Inbox") }
-                if (rows.isEmpty()) item(key = "inbox-empty") { Text("Nothing needs you", Modifier.padding(horizontal = 16.dp)) }
-                items(rows.take(3), key = { "inbox-${it.id}" }) { row ->
-                    Column(Modifier.fillMaxWidth().clickable { model.showInbox(row.id) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text(row.title)
-                        Text(row.subtitle, style = MaterialTheme.typography.bodySmall)
+                val count = if (model.usesItems) {
+                    val items = model.inboxItems
+                    if (items.isEmpty()) item(key = "inbox-empty") { Text("Nothing needs you", Modifier.padding(horizontal = 16.dp)) }
+                    items(items.take(3), key = { "inbox-${it.id}" }) { item ->
+                        ItemRow(item, focused = false, tag = "sidebar-item-${item.id}") { model.showInbox(item.id) }
                     }
+                    items.size
+                } else {
+                    val rows = model.inboxRows
+                    if (rows.isEmpty()) item(key = "inbox-empty") { Text("Nothing needs you", Modifier.padding(horizontal = 16.dp)) }
+                    items(rows.take(3), key = { "inbox-${it.id}" }) { row ->
+                        Column(Modifier.fillMaxWidth().clickable { model.showInbox(row.id) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Text(row.title)
+                            Text(row.subtitle, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    rows.size
                 }
-                item(key = "tasks") { TasksRow(model, rows.size) }
+                item(key = "tasks") { TasksRow(model, count) }
                 if (model.canUseRoutines) item(key = "routines") { SidebarAction("Routines", Icons.routine, "sidebar-routines", model::showRoutines) }
                 item(key = "tasks-new") { NewTaskRow(model) }
             }
@@ -138,7 +149,11 @@ private fun askAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
 /** Opens the Inbox screen; says how many rows wait and how many Tasks need attention. */
 @Composable
 private fun TasksRow(model: AppModel, rows: Int) {
-    val waiting = model.inboxQueue.count { it.group == InboxGroup.NEEDS_ATTENTION }
+    val waiting = if (model.usesItems) {
+        model.inboxItems.count { it.isUrgent }
+    } else {
+        model.inboxQueue.count { it.group == InboxGroup.NEEDS_ATTENTION }
+    }
     Row(
         Modifier.fillMaxWidth().clickable { model.showInbox() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("open-tasks"),
         verticalAlignment = Alignment.CenterVertically,

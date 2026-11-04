@@ -32,8 +32,8 @@ import tech.xdge.muxa.protocol.DEFAULT_WORKER
 import tech.xdge.muxa.session.allows
 import tech.xdge.muxa.session.workerProblem
 import tech.xdge.muxa.session.workerLabel
-import tech.xdge.muxa.session.InboxItem
-import tech.xdge.muxa.session.inboxItem
+import tech.xdge.muxa.session.TaskItem
+import tech.xdge.muxa.session.taskItem
 import tech.xdge.muxa.session.restartNeedsForce
 import tech.xdge.muxa.session.runRows
 
@@ -45,7 +45,7 @@ import tech.xdge.muxa.session.runRows
 fun RestartAgentDialog(model: AppModel) {
     val id = model.restartingTask ?: return
     val record = model.state.tasks?.record(id) ?: return
-    val force = inboxItem(record, model.state.sessions).restartNeedsForce
+    val force = taskItem(record, model.state.sessions).restartNeedsForce
     var choice by remember(id) { mutableStateOf(record.worker ?: DEFAULT_WORKER) }
     // Without the capability the request stays legacy: no worker, so Keep.
     val worker = choice.takeIf { model.state.canUseWorkers }
@@ -91,7 +91,7 @@ fun RestartErrorDialog(model: AppModel) {
 
 /** The agents that worked on the Task, newest first, from its record's runs. */
 @Composable
-fun RunsSection(record: TaskRecord, item: InboxItem) {
+fun RunsSection(record: TaskRecord, item: TaskItem) {
     if (record.runs.isEmpty()) return
     val rows = runRows(record, agentReported = item.agent != null, now = System.currentTimeMillis() / 1000)
     Column(Modifier.testTag("task-runs"), verticalArrangement = Arrangement.spacedBy(8.dp)) {

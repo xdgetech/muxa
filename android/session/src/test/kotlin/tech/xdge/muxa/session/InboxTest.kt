@@ -34,7 +34,7 @@ class InboxTest {
     private fun session(taskId: String?, vararg panes: Pane) =
         Session(id = "$" + (taskId ?: "x"), name = "s-$taskId", taskId = taskId, panes = panes.toList())
 
-    private fun group(record: TaskRecord, vararg sessions: Session) = inboxItem(record, sessions.toList()).group
+    private fun group(record: TaskRecord, vararg sessions: Session) = taskItem(record, sessions.toList()).group
 
     /** `protocol/fixtures/inbox` pins the rule shared with `muxa-cli` and `Inbox.swift`. */
     @Test
@@ -55,8 +55,8 @@ class InboxTest {
             val record = json.decodeFromJsonElement(TaskRecord.serializer(), case.getValue("record"))
             val sessions = json.decodeFromJsonElement(ListSerializer(Session.serializer()), case.getValue("sessions"))
             val name = case.getValue("name").jsonPrimitive.content
-            assertEquals(name, case.getValue("need").jsonPrimitive.content, inboxItem(record, sessions).need.wire)
-            assertEquals(name, names[case.getValue("group").jsonPrimitive.content], inboxItem(record, sessions).group)
+            assertEquals(name, case.getValue("need").jsonPrimitive.content, taskItem(record, sessions).need.wire)
+            assertEquals(name, names[case.getValue("group").jsonPrimitive.content], taskItem(record, sessions).group)
         }
     }
 
@@ -80,12 +80,12 @@ class InboxTest {
     @Test
     fun snoozeIdentityChangesWhenSessionAppearsOrAgentChanges() {
         val r = record("a")
-        val absent = inboxItem(r, emptyList())
-        val linked = inboxItem(r, listOf(session("a", pane("%1"))))
-        val waiting = inboxItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING))))
+        val absent = taskItem(r, emptyList())
+        val linked = taskItem(r, listOf(session("a", pane("%1"))))
+        val waiting = taskItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING))))
         org.junit.Assert.assertNotEquals(absent.attentionKey, linked.attentionKey)
         org.junit.Assert.assertNotEquals(linked.attentionKey, waiting.attentionKey)
-        assertEquals(waiting.attentionKey, inboxItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING)))).attentionKey)
+        assertEquals(waiting.attentionKey, taskItem(r, listOf(session("a", pane("%1", state = AgentState.WAITING)))).attentionKey)
     }
 
     @Test
@@ -126,7 +126,7 @@ class InboxTest {
             InboxGroup.NO_AGENT,
             group(r, session("t-1", pane("%1", state = AgentState.RUNNING, shellForeground = true))),
         )
-        val item = inboxItem(r, listOf(session("t-1", pane("%1", state = AgentState.RUNNING, shellForeground = true))))
+        val item = taskItem(r, listOf(session("t-1", pane("%1", state = AgentState.RUNNING, shellForeground = true))))
         assertNull(item.agent)
     }
 
@@ -147,7 +147,7 @@ class InboxTest {
     @Test
     fun theTaggedAgentPaneSpeaksForTheSession() {
         val s = session("t-1", pane("%2", Role.SHELL, AgentState.WAITING), pane("%1", state = AgentState.RUNNING))
-        val item = inboxItem(record("t-1"), listOf(s))
+        val item = taskItem(record("t-1"), listOf(s))
         assertEquals("%1", item.agentPane?.id)
         assertEquals(InboxGroup.RUNNING, item.group)
     }

@@ -23,7 +23,7 @@ import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.InboxGroup
 import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.TaskRecordDraft
-import tech.xdge.muxa.session.inboxItem
+import tech.xdge.muxa.session.taskItem
 import tech.xdge.muxa.session.inbox
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.inboxRows
@@ -160,7 +160,7 @@ class DemoBridgeTest {
         val draft = TaskRecordDraft(workspace = "personal", title = "Plan the trip!", goal = "Book it").request!!
         val saved = session.createTask(draft)
         assertEquals("t-new001", saved.id)
-        assertEquals(InboxGroup.RUNNING, inboxItem(saved, session.state.value.sessions).group)
+        assertEquals(InboxGroup.RUNNING, taskItem(saved, session.state.value.sessions).group)
         assertEquals("plan-the-trip", session.state.value.sessions.first { it.taskId == saved.id }.name)
     }
 
@@ -175,7 +175,7 @@ class DemoBridgeTest {
             assertTrue(e.record.note!!.contains("already exists"))
         }
         val kept = session.state.value.tasks!!.records.last()
-        assertEquals(InboxGroup.NO_AGENT, inboxItem(kept, session.state.value.sessions).group)
+        assertEquals(InboxGroup.NO_AGENT, taskItem(kept, session.state.value.sessions).group)
     }
 
     @Test
@@ -183,7 +183,7 @@ class DemoBridgeTest {
         val (session, _) = connected()
         val seen = session.state.value.tasks!!.record("t-login1")!!
         val done = session.updateTask(seen, TaskStatus.DONE)
-        assertEquals(InboxGroup.CLOSED, inboxItem(done, session.state.value.sessions).group)
+        assertEquals(InboxGroup.CLOSED, taskItem(done, session.state.value.sessions).group)
         try {
             session.updateTask(seen, TaskStatus.REVIEW)
             fail("a stale rev should fail")
@@ -267,7 +267,7 @@ class DemoBridgeTest {
         assertEquals(listOf(RunReason.START, RunReason.RESTART), saved.runs.map { it.reason })
         assertEquals(saved.runs[1].startedAt, saved.runs[0].endedAt)
         assertEquals(null, saved.runs[1].endedAt)
-        waitUntil { inboxItem(saved, session.state.value.sessions).group == InboxGroup.RUNNING }
+        waitUntil { taskItem(saved, session.state.value.sessions).group == InboxGroup.RUNNING }
         // Running now: a second restart needs force.
         try {
             session.restartAgent(saved, force = false)

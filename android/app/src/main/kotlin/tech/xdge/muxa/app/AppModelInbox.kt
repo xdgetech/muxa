@@ -3,10 +3,11 @@ package tech.xdge.muxa.app
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.InboxChange
 import tech.xdge.muxa.protocol.InboxEntry
+import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.protocol.RoutineInfo
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.session.InboxItem
+import tech.xdge.muxa.session.TaskItem
 import tech.xdge.muxa.session.InboxRow
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.attentionKey
@@ -26,6 +27,14 @@ sealed interface InboxPrompt {
 
     /** The proposal's action, target and content, before approval. */
     data class Approve(val entry: InboxEntry) : InboxPrompt
+
+    /** The Later choices for an Inbox item (ADR 0033). */
+    data class ItemLater(val item: InboxItem) : InboxPrompt
+
+    data class ItemPickTime(val item: InboxItem) : InboxPrompt
+
+    /** A proposal item's action, target and content, before approval. */
+    data class ApproveItem(val item: InboxItem) : InboxPrompt
 }
 
 // The Inbox list's actions (ADR 0025 "List first", ADR 0027 §4). Every one is written on
@@ -108,7 +117,7 @@ fun AppModel.approve(entry: InboxEntry) {
 }
 
 /** The local Snooze of a host without `task-inbox`. */
-fun AppModel.snooze(item: InboxItem) {
+fun AppModel.snooze(item: TaskItem) {
     inboxSnoozes = inboxSnoozes + (item.record.id to item.attentionKey)
 }
 

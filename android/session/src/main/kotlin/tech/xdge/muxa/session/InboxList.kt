@@ -17,7 +17,7 @@ data class RoutineNeed(val routine: RoutineInfo, val task: String, val session: 
 sealed interface InboxRow {
     val id: String
 
-    data class Task(val item: InboxItem) : InboxRow {
+    data class Task(val item: TaskItem) : InboxRow {
         override val id get() = item.record.id
     }
 
@@ -63,7 +63,7 @@ fun List<RoutineInfo>.needs(sessions: List<Session>): List<RoutineNeed> = mapNot
  * already without hidden Tasks. [now] is epoch seconds.
  */
 fun inboxRows(
-    queue: List<InboxItem>,
+    queue: List<TaskItem>,
     entries: List<InboxEntry>,
     routines: List<RoutineInfo>,
     sessions: List<Session>,

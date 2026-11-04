@@ -51,7 +51,7 @@ fun duration(seconds: Long): String {
 val TaskRecord.hasHandoff: Boolean get() = runs.any { it.reason == RunReason.RESTART }
 
 /** An unobserved replacement may still be working, so stopping it also needs confirmation. */
-val InboxItem.restartNeedsForce: Boolean
+val TaskItem.restartNeedsForce: Boolean
     get() {
         val state = agentPane?.let { pane -> agent?.shown(pane.shellForeground) }
         return state == AgentState.RUNNING ||

@@ -136,14 +136,14 @@ class HandoffTest {
     @Test
     fun anUnobservedReplacementNeedsForceWithoutBeingShownAsRunning() {
         val replacement = record("t-1", runs = runs.reversed())
-        val unknown = inboxItem(replacement, emptyList())
+        val unknown = taskItem(replacement, emptyList())
         assertTrue(unknown.restartNeedsForce)
         assertEquals(null, unknown.agent)
         assertEquals(InboxGroup.NO_AGENT, unknown.group)
         val pane = Pane("%1", "@1", 0, Role.AGENT, 80, 24, "claude", "/w", false, false, Agent(AgentState.IDLE, 1))
-        assertFalse(inboxItem(replacement, listOf(Session("$1", "s", taskId = "t-1", panes = listOf(pane)))).restartNeedsForce)
+        assertFalse(taskItem(replacement, listOf(Session("$1", "s", taskId = "t-1", panes = listOf(pane)))).restartNeedsForce)
         val newerStart = replacement.copy(runs = runs + AgentRun(3, null, 5_000, reason = RunReason.START))
-        assertFalse(inboxItem(newerStart, emptyList()).restartNeedsForce)
+        assertFalse(taskItem(newerStart, emptyList()).restartNeedsForce)
     }
 
     @Test
@@ -154,7 +154,7 @@ class HandoffTest {
         }
         val session = connected(bridge)
         val listed = session.state.value.tasks!!.records.single()
-        val item = inboxItem(listed, emptyList())
+        val item = taskItem(listed, emptyList())
         assertTrue(item.restartNeedsForce)
         val saved = session.restartAgent(listed, force = item.restartNeedsForce)
         assertEquals(3, saved.runs.size)
@@ -163,9 +163,9 @@ class HandoffTest {
 
     @Test
     fun onlyARunningAgentNeedsForce() {
-        fun item(state: AgentState?, shellForeground: Boolean = false): InboxItem {
+        fun item(state: AgentState?, shellForeground: Boolean = false): TaskItem {
             val pane = Pane("%1", "@1", 0, Role.AGENT, 80, 24, "claude", "/w", false, shellForeground, state?.let { Agent(it, 1) })
-            return inboxItem(record("t-1"), listOf(Session("$1", "s", taskId = "t-1", panes = listOf(pane))))
+            return taskItem(record("t-1"), listOf(Session("$1", "s", taskId = "t-1", panes = listOf(pane))))
         }
         assertTrue(item(AgentState.RUNNING).restartNeedsForce)
         assertFalse(item(AgentState.WAITING).restartNeedsForce)

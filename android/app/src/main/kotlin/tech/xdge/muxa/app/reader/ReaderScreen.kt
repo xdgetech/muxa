@@ -88,8 +88,14 @@ fun ReaderScreen(model: AppModel) {
 
     LaunchedEffect(Unit) {
         model.loadDocs().join()
-        // Beside the list, the preferred document fills the empty detail.
-        if (!phone || model.readerOpensPlan) selection = model.preferredDoc?.let { ReaderItem.Doc(it) }
+        // An Inbox item's evidence opens first. Beside the list, the preferred document fills the empty detail.
+        val target = model.readerTarget
+        model.readerTarget = null
+        if (target != null) {
+            selection = target
+        } else if (!phone || model.readerOpensPlan) {
+            selection = model.preferredDoc?.let { ReaderItem.Doc(it) }
+        }
         if (selection == null) showList = true
         // The latest run's screenshots are one tap away.
         model.imageListing?.entries?.firstOrNull()?.let { expanded = expanded + ImageFolder.ancestors(it.path) }

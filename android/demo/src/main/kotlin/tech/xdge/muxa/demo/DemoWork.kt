@@ -68,7 +68,8 @@ internal class DemoWork(
                 if (p == null || entry.kind != "proposal") throw Refusal(ErrorCode.BAD_REQUEST, "a briefing has nothing to approve")
                 return Update(entry, "${p.action}\nTarget: ${p.target}\n\n${p.content}\n\nmuxa-proposal: ${entry.id} ${p.hash}")
             }
-            InboxAction.DISMISS -> entry.copy(disposition = "dismissed", until = null)
+            // Reject is an item's word for dismissing a proposal (ADR 0033).
+            InboxAction.DISMISS, InboxAction.REJECT -> entry.copy(disposition = "dismissed", until = null)
             InboxAction.LATER -> {
                 if (until == null || until <= now || until > now + LATER_LIMIT) {
                     throw Refusal(ErrorCode.BAD_REQUEST, "until must be in the future and at most 366 days ahead")

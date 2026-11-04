@@ -54,8 +54,9 @@ class AskTest {
         compose.onNodeWithTag("more").performClick()
         waitForTag("menu-tasks")
         compose.onNodeWithTag("menu-tasks").performClick()
-        waitForTag("inbox-list-mode")
-        compose.onNodeWithTag("inbox-list-mode").performClick()
+        // The Triage/List control is gone; All Tasks is the list page, as TasksTest opens it.
+        waitForTag("inbox-mode-tasks")
+        compose.onNodeWithTag("inbox-mode-tasks").performClick()
         waitForTag("new-task-record")
         compose.onNodeWithTag("new-task-record").performClick()
         waitForTag("task-title")
