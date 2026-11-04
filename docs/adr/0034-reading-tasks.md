@@ -21,15 +21,16 @@ Proposed. The developer chose this shape on 2026-11-04. It extends ADR 0015 (Tas
 - The repo is a reference. `TASK.md` names the path of its main checkout, tells the agent to read the repo's `AGENTS.md` or `CLAUDE.md` first, to run git with `git -C <path>`, and not to change the repo. It also tells the agent to ask for a branch when a change is needed.
 - For Claude Code, the bridge writes `<folder>/.claude/settings.local.json`:
   - `permissions.additionalDirectories` lists the main checkout, so reads there do not ask.
-  - `permissions.deny` lists `Edit` and `Write` on it, so the agent cannot change it.
-  - The setting names and the rule syntax must be checked against Claude Code's documentation and a real run in R0.
+  - `permissions.deny` lists `Edit(//<main checkout>/**)`. An `Edit` rule covers every built-in tool that edits a file, Write included; a `Write(path)` rule never matches. The leading `//` makes the path absolute.
+  - Checked against https://code.claude.com/docs/en/permissions and a real run of Claude Code 2.1.318: reads in the checkout work, Write and Edit there are denied, and writes in the folder work.
+  - Claude Code reads `settings.local.json` from the git repository root. When the workspace root is inside a git repo, the folder's file is not read, and the Task is read-only only by `TASK.md`.
 - Other agents get only `TASK.md`. The bridge does not enforce read-only for them, for the reason in ADR 0031 (Alternatives).
 - Several reading Tasks of one repo share its main checkout and never write there. No worktree is made.
 
 ### 2. The bridge notices changes it did not expect
 
 - When a reading Task's agent finishes a turn, the bridge compares `git status --porcelain` of the main checkout with the status it read when the turn started.
-- New changes make a `proposal` Inbox item (ADR 0033): "changed the main checkout". The changed files are its attachment. The answers are **Branch** (§3) and **Keep**. The bridge never reverts files.
+- New changes turn that turn's item into a `proposal` (ADR 0033): "The agent changed the main checkout". It replaces the turn's `review` item, so a Task keeps one open item. The changed files are in its summary and their count in `attachments.changes`. Clients open evidence through the Task's pane, which is in the folder, so the item has no diff to open. The answers are **Branch** (§3), **Keep** and Later. The bridge never reverts files.
 
 ### 3. Branch: a worktree when the work needs one
 
@@ -43,13 +44,15 @@ Proposed. The developer chose this shape on 2026-11-04. It extends ADR 0015 (Tas
 ### 4. Park an idle Task
 
 - `park-task {task}` closes the Task's session and keeps its record, `TASK.md` and worktree. `HANDOFF.md` is written first. A parked Task is `open` with no session (ADR 0015).
-- Opening a parked Task offers **Resume**, which is the restart path of ADR 0018 in the Task's `dir`.
-- `[workspace] park_after = "12h"` lets the daemon park a Task whose agent has been idle that long, with no open Inbox item. The setting is off by default.
+- Opening a parked Task offers **Resume**: `restart-agent` on an open Task with no session starts a new session in its `dir`, with a restart run and the restart prompt (ADR 0018).
+- Park and Resume refuse a Task with a named worker, and a reading Task takes no loop, until those are designed.
+- `park_after = "12h"` in a `[[workspace]]` (`m`, `h` or `d`) lets the daemon park a Task whose agent has been idle that long, with no open or later Inbox item, no loop, no prompt wait and no restart. The setting is off by default.
+- Every finished turn makes a `review` item. So a Task parks only after the user answered its last item, for example with Keep open. Open: whether a Task that waits on its review should also park.
 - Parking frees the agent process. Reading Tasks free the checkout. Together they bound what many Tasks cost.
 
 ### 5. `work:4`
 
-The bridge advertises `work:4` for `read`, `branch-task` and `park-task`. A client sends them only to a level 4 host. The daemon serves `branch-task` and `park-task` as record requests, like `restart-agent`.
+The bridge advertises `work:4` for `read`, `branch-task`, `park-task` and the answers `branch` and `keep`. Clients that do not know an answer leave it out. A client sends them only to a level 4 host. The daemon serves `branch-task` and `park-task` as record requests, like `restart-agent`.
 
 ## Consequences
 
