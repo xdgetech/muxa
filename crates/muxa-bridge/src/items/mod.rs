@@ -230,8 +230,12 @@ mod tests {
             answers(&item(ItemKind::Review, ItemState::Open, 1)),
             [Accept, Reply, Redo, ChangeCourse, KeepOpen, Later]
         );
+        // An agent's failure has its session; a failed start may not.
+        let mut failure = item(ItemKind::Failure, ItemState::Open, 1);
+        assert_eq!(answers(&failure), [Drop, Dismiss, Later]);
+        failure.session = Some("$1".into());
         assert_eq!(
-            answers(&item(ItemKind::Failure, ItemState::Open, 1)),
+            answers(&failure),
             [Retry, Reply, ChangeCourse, Drop, Dismiss, Later]
         );
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());

@@ -369,6 +369,7 @@ fn a_reply_sends_the_text_as_it_is() {
     );
     let mut failure = review("i-00000002");
     failure.kind = ItemKind::Failure;
+    failure.session = Some("$1".into());
     assert_eq!(with(&failure, text), Ok(Plan::Reply(text.into())));
     for text in [String::new(), "x".repeat(MAX_TEXT + 1)] {
         let e = with(&review("i-00000001"), &text).unwrap_err();
