@@ -38,6 +38,8 @@ enum Plan {
     Later(u64),
     Status(TaskStatus),
     Restart,
+    /// `branch-task` on a reading Task (ADR 0034 §3).
+    Branch,
     /// The option at `option` of the menu the item asked about.
     Pick {
         pane: PaneId,
@@ -98,9 +100,10 @@ fn plan(item: &InboxItem, answer: &Answer, at: u64) -> Result<Plan, ErrorBody> {
         Accept => Plan::Status(TaskStatus::Done),
         Drop => Plan::Status(TaskStatus::Dropped),
         Retry => Plan::Restart,
+        Branch => Plan::Branch,
         Approve | Reject | Choose => pick(item, answer.action, answer.option)?,
         Redo | ChangeCourse => Plan::Reply(reply_text(answer.action, answer.text.as_deref())?),
-        KeepOpen | Dismiss | Read => Plan::Nothing,
+        KeepOpen | Keep | Dismiss | Read => Plan::Nothing,
     })
 }
 
@@ -199,6 +202,12 @@ async fn act(cx: &Context, task: &str, plan: Plan) -> Result<(), ErrorBody> {
         Plan::Restart => {
             let env = cx.env().await?;
             restart(&env, task.to_owned(), false, None, None)
+                .await
+                .map(drop)
+        }
+        Plan::Branch => {
+            let env = cx.env().await?;
+            crate::task_records::branch_task::branch(&env, task.to_owned(), None)
                 .await
                 .map(drop)
         }

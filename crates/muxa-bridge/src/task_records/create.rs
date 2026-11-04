@@ -39,6 +39,8 @@ pub struct NewTask {
     pub repo: Option<String>,
     pub branch: Option<String>,
     pub base: Option<String>,
+    /// A reading Task (ADR 0034): `repo` and no `branch`.
+    pub read: bool,
     /// Set when the daemon starts a Routine run (ADR 0026); never from a client.
     pub routine: Option<crate::routines::record::RunOf>,
 }
@@ -69,6 +71,8 @@ impl Failure {
 enum Target {
     Repo(TaskRequest),
     Dir(Workspace),
+    /// A reading Task: its own folder, and the repo's main checkout to read.
+    Read(Workspace, std::path::PathBuf),
 }
 
 /// The record to send in `task-saved`, if one was kept, and the request's
@@ -84,8 +88,13 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
             Ok(main) => (Some(main), Some(req.branch.clone())),
             Err(e) => return (None, Some(task_error(&e))),
         },
+        Target::Read(_, main) => (Some(main.clone()), None),
         Target::Dir(_) => (None, None),
     };
+    let mut extra = new.routine.as_ref().map(|r| r.fields()).unwrap_or_default();
+    if new.read {
+        extra.extend(crate::records::reading::new_fields());
+    }
     let fields = NewRecord {
         workspace: new.workspace,
         worker: resolved.worker.clone(),
@@ -94,7 +103,7 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
         project: new.project,
         repo,
         branch,
-        extra: new.routine.as_ref().map(|r| r.fields()).unwrap_or_default(),
+        extra,
         ..NewRecord::default()
     };
     let config = Arc::clone(&env.records);
@@ -140,6 +149,11 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
     })?;
     if new.routine.is_some() && (new.repo.is_some() || new.branch.is_some() || new.base.is_some()) {
         return Err(bad("a routine run has no repo".into()));
+    }
+    if new.read {
+        return read_target(new, workspace, &workspaces)
+            .await
+            .map(|t| (t, resolved));
     }
     let repo = match &new.repo {
         None if new.branch.is_none() && new.base.is_none() => {
@@ -189,12 +203,51 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
             }
         }
     }
-    if let Some(other) = branch_task(env, &req).await? {
+    if let Some(other) = branch_task_of(env, &req).await? {
         return Err(bad(format!(
             "{branch} already runs task {other}. Open that task, or use another branch."
         )));
     }
     Ok((Target::Repo(req), resolved))
+}
+
+/// A reading Task's target: a repo of this workspace, and no branch or base.
+async fn read_target(
+    new: &NewTask,
+    workspace: Workspace,
+    workspaces: &crate::records::Workspaces,
+) -> Result<Target, ErrorBody> {
+    let bad = |m: String| error_body(ErrorCode::BadRequest, m);
+    let named_worker = new
+        .worker
+        .as_deref()
+        .is_some_and(|w| w != muxa_protocol::DEFAULT_WORKER);
+    if new.routine.is_some() || named_worker {
+        return Err(bad(
+            "a reading task runs the workspace's agent; leave out worker".into(),
+        ));
+    }
+    let repo = new
+        .repo
+        .as_deref()
+        .ok_or_else(|| bad("a reading task needs a repo".into()))?;
+    if new.branch.is_some() || new.base.is_some() {
+        return Err(bad(
+            "a reading task has no branch or base; branch-task gives it one later".into(),
+        ));
+    }
+    let path = workspace.repo_path(repo).map_err(|e| bad(e.to_string()))?;
+    let main = builtin::main_checkout(&path)
+        .await
+        .map_err(|e| task_error(&e))?;
+    if let Some(owner) = workspaces.owner_elsewhere(&main, &workspace.name) {
+        return Err(bad(format!(
+            "{} belongs to workspace {:?}; start the task there",
+            main.display(),
+            owner.name
+        )));
+    }
+    Ok(Target::Read(workspace, main))
 }
 
 /// A new branch named after the title (ADR 0031). Its base is the repo's
@@ -216,7 +269,10 @@ async fn branch_from_title(repo: &str, title: &str) -> Result<String, ErrorBody>
 }
 
 /// The open task that the branch's session already runs, if any.
-async fn branch_task(env: &Env, req: &TaskRequest) -> Result<Option<String>, ErrorBody> {
+pub(super) async fn branch_task_of(
+    env: &Env,
+    req: &TaskRequest,
+) -> Result<Option<String>, ErrorBody> {
     let main = builtin::main_checkout(&req.repo)
         .await
         .map_err(|e| task_error(&e))?;
@@ -277,6 +333,28 @@ async fn start(
             }
             result
         }
+        Target::Read(workspace, main) => {
+            let dir = workspace
+                .task_dir(&record.title, &record.id)
+                .map_err(Failure::before)?;
+            let claude = super::reading::is_claude_code(&resolved.command);
+            let (at, checkout) = (dir.clone(), main.clone());
+            blocking(move || {
+                std::fs::create_dir_all(&at).map_err(|e| {
+                    error_body(ErrorCode::Internal, format!("cannot create {}: {e}", at.display()))
+                })?;
+                if claude {
+                    super::reading::write_settings(&at, &checkout)
+                        .map_err(|m| error_body(ErrorCode::Internal, m))?;
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|e| Failure::before(e.message))?;
+            builtin::Builtin::new(env.tasks.command.clone())
+                .launch_in_dir(client, &dir, workspace.agent.as_ref())
+                .await
+        }
         Target::Dir(workspace) => {
             let dir = match record.routine_run() {
                 Some(run) => {
@@ -331,7 +409,8 @@ async fn start(
     muxa_tmux::set_session_option(client, launched.id, TAG, &record.id)
         .await
         .map_err(|e| Failure::after(&launched, e))?;
-    let (dir, saved, in_repo) = (launched.dir.clone(), record.clone(), record.repo.is_some());
+    let in_repo = record.repo.is_some() && !record.is_read();
+    let (dir, saved) = (launched.dir.clone(), record.clone());
     let instructions = resolved.instructions.clone();
     blocking(move || {
         let result = if saved.worker().is_some() {
@@ -370,6 +449,9 @@ async fn linked(
         config
             .store()?
             .update(&id, rev, |r| {
+                if r.is_read() {
+                    r.set_folder(&dir);
+                }
                 r.dir = Some(dir);
                 r.session = Some(name);
                 let now = crate::records::now();

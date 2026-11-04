@@ -22,6 +22,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] task (done | drop) ID [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
+       muxa-cli [--bridge CMD] task new --read --workspace W --title T --goal G
+                --repo REPO [--project P] [--json]
+       muxa-cli [--bridge CMD] task branch ID [--branch NAME] [--json]
+       muxa-cli [--bridge CMD] task park ID [--json]
        muxa-cli [--bridge CMD] task recover ID [--json]
                 [--operation OP --rev N --action ACTION]
        muxa-cli [--bridge CMD] task loop start ID --check CMD
@@ -60,7 +64,14 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  Neither closes the task's session
   task restart ID
                  restarts the task's agent in the same pane, after a handoff
-                 in .muxa/HANDOFF.md; --force also while the agent runs
+                 in .muxa/HANDOFF.md; --force also while the agent runs.
+                 A parked task resumes: a new session in its directory
+  --read         task new: a reading task. The agent works in the task's own
+                 folder and reads REPO; no branch and no worktree (ADR 0034)
+  task branch ID gives a reading task a worktree, on --branch NAME or a
+                 branch named after its title, and restarts its agent there
+  task park ID   writes .muxa/HANDOFF.md and closes the task's session; the
+                 task, its TASK.md and its directory stay
   --worker NAME  selects a host-defined worker for new/restart, or `default`
                  for the workspace default agent; requires workers. Without
                  it, restart keeps the current worker
@@ -135,6 +146,15 @@ enum Cmd {
         json: bool,
         worker: Option<String>,
     },
+    Branch {
+        task: String,
+        branch: Option<String>,
+        json: bool,
+    },
+    Park {
+        task: String,
+        json: bool,
+    },
     Recover {
         task: String,
         resolution: Option<tasks::Recovery>,
@@ -206,6 +226,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("branch") => new.branch = Some(p.value()?.string()?),
             Long("base") => new.base = Some(p.value()?.string()?),
             Long("worker") => new.worker = Some(p.value()?.string()?),
+            Long("read") => new.read = true,
             Long("operation") => operation = Some(p.value()?.string()?),
             Long("rev") => revision = Some(p.value()?.parse()?),
             Long("action") => {
@@ -395,6 +416,15 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             json,
             worker: new.worker,
         },
+        [w, b, id] if w == "task" && b == "branch" => Cmd::Branch {
+            task: id.clone(),
+            branch: new.branch,
+            json,
+        },
+        [w, b, id] if w == "task" && b == "park" => Cmd::Park {
+            task: id.clone(),
+            json,
+        },
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
     Ok(Some((bridge, cmd)))
@@ -470,6 +500,8 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             json,
             worker,
         } => tasks::restart(conn, &task, force, json, worker).await,
+        Cmd::Branch { task, branch, json } => tasks::branch(conn, &task, branch, json).await,
+        Cmd::Park { task, json } => tasks::park(&mut conn, &task, json).await,
         Cmd::StartLoop {
             task,
             spec,
@@ -586,6 +618,50 @@ mod tests {
         ] {
             assert!(answer(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn reading_tasks_branch_and_park_parse() {
+        let parse = |args: &[&str]| parse_with(lexopt::Parser::from_args(args.iter().copied()));
+        let new = &[
+            "task",
+            "new",
+            "--read",
+            "--workspace",
+            "w",
+            "--title",
+            "t",
+            "--goal",
+            "g",
+            "--repo",
+            "app",
+        ];
+        assert!(matches!(
+            parse(new),
+            Ok(Some((_, Cmd::NewTask { new, .. }))) if new.read && new.repo.as_deref() == Some("app")
+        ));
+        let mut branched = new.to_vec();
+        branched.extend(["--branch", "x"]);
+        assert!(parse(&branched).is_err(), "a reading task has no branch");
+        assert!(parse(&new[..new.len() - 2]).is_err(), "--read needs --repo");
+        assert!(matches!(
+            parse(&["task", "branch", "t-1", "--branch", "feat/x"]),
+            Ok(Some((_, Cmd::Branch { branch: Some(b), .. }))) if b == "feat/x"
+        ));
+        assert!(matches!(
+            parse(&["task", "branch", "t-1"]),
+            Ok(Some((_, Cmd::Branch { branch: None, .. })))
+        ));
+        assert!(matches!(
+            parse(&["task", "park", "t-1", "--json"]),
+            Ok(Some((_, Cmd::Park { json: true, .. })))
+        ));
+        assert_eq!(
+            answer(&["inbox", "answer", "i-1", "branch"])
+                .unwrap()
+                .action,
+            InboxAction::Branch
+        );
     }
 
     /// ADR 0033 removed Move down and Later on the Task.

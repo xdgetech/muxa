@@ -49,7 +49,8 @@ pub enum Work {
 
 /// Collects the facts about the work in `dir`. Blocking.
 pub fn work(record: &Record, dir: &Path, since: u64) -> Work {
-    if record.repo.is_some() {
+    // A reading Task's `dir` is its folder, not the repo (ADR 0034).
+    if record.repo.is_some() && !record.is_read() {
         return git_facts(dir).map_or(Work::Unknown, Work::Git);
     }
     if !dir.is_dir() {
@@ -151,8 +152,31 @@ pub fn changed_files(dir: &Path, since: u64) -> Changed {
 /// now. `replaced` is what the adapter saw in the pane, shown on its own when
 /// no open run recorded that agent.
 pub fn render(r: &Record, runs: &[Run], replaced: Option<&Seen>, work: &Work, now: u64) -> String {
+    render_on(
+        r,
+        runs,
+        replaced,
+        work,
+        now,
+        "before it restarted the agent of",
+    )
+}
+
+/// `HANDOFF.md` as `park-task` writes it, before it closes the session (ADR 0034 §4).
+pub fn render_parked(r: &Record, work: &Work, now: u64) -> String {
+    render_on(r, &r.runs, None, work, now, "when it parked")
+}
+
+fn render_on(
+    r: &Record,
+    runs: &[Run],
+    replaced: Option<&Seen>,
+    work: &Work,
+    now: u64,
+    occasion: &str,
+) -> String {
     let mut out = format!(
-        "# Handoff: {}\n\nmuxa wrote this file at {} before it restarted the agent of task {}. \
+        "# Handoff: {}\n\nmuxa wrote this file at {} {occasion} task {}. \
          It holds facts muxa checked, not a summary. Your working notes are in .muxa/TASK.md.\n\n\
          ## Task\n\n- Status: {}\n",
         r.title,
@@ -268,6 +292,16 @@ fn git_text(g: &Git) -> String {
         out.push_str(&format!("\nOnly the first {MAX_STATUS} lines are shown.\n"));
     }
     out
+}
+
+/// A branched Task's folder and what changed there since `since` (ADR 0034 §3).
+/// Blocking.
+pub fn folder_text(folder: &Path, since: u64) -> String {
+    format!(
+        "\n## Task folder\n\nBefore it had a branch, this Task worked in {}.\n\n{}",
+        clean(&folder.to_string_lossy()),
+        files_text(&changed_files(folder, since))
+    )
 }
 
 fn files_text(c: &Changed) -> String {

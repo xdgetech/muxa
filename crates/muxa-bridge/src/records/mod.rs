@@ -7,6 +7,7 @@ pub mod lifecycle;
 pub mod loops;
 pub mod observation;
 pub mod prompts;
+pub mod reading;
 pub mod repos;
 pub mod restart_files;
 pub mod routines;

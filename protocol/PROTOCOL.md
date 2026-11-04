@@ -62,9 +62,11 @@ sequenceDiagram
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
 | `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
 | `list-tasks` | `id` | list the task records and workspaces (capability `task-records`); a `task-list` comes before the `result` |
-| `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}`, `worker` (Workers below) | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
+| `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}`, `worker` (Workers below), `read` (Reading Tasks below) | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
 | `update-task` | `id`, `task`, `rev`, `status` | set a task record's status; a `task-saved` comes before the `result` |
 | `restart-agent` | `id`, `task`, optional `force`, `worker`, `rev` (Workers below) | restart the task's agent in the same pane, after a handoff (capability `task-handoff`); a `task-saved` comes before the `result` |
+| `branch-task` | `id`, `task`, optional `branch` | give a reading Task a worktree and restart its agent there (capability `work` level 4, Reading Tasks below); a `task-saved` comes before the `result` |
+| `park-task` | `id`, `task` | write the handoff and close the Task's session; the Task stays (capability `work` level 4); a `task-saved` comes before the `result` |
 | `recover-restart` | `id`, `task`, `rev`, `operation`, `action` | explicitly resolve an interrupted restart (capability `task-restart-recovery`, contract below); `task-saved` precedes `result` |
 | `start-loop` | `id`, `task`, `loop {check, maxAttempts?, timeout?}`, optional `reset` | start the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
 | `stop-loop` | `id`, `task` | stop the task's Task Loop (capability `task-loop`); a `task-saved` comes before the `result` |
@@ -204,6 +206,7 @@ A bridge with the `task-records` capability keeps Tasks: durable records of work
    - `status`: `open`, `review`, `done` or `dropped`, set by the user. One exception: a passing Task Loop moves `open` to `review` (ADR 0019 amends ADR 0015). Nothing else changes the status. Treat an unknown status as one without a known meaning, and still show the record;
    - `createdAt`, `updatedAt` in epoch seconds;
    - optional `project` (free text), `repo` (absolute), `branch`, `dir` (where the agent works, absolute), `session` (the last known session name, for display only) and `note` (from the bridge, for example why the launch failed);
+   - optional `read: true`, with `work` level 4: a reading Task. It has `repo` and no `branch`, and `dir` is its own folder. See Reading Tasks below;
    - optional `runs`, with the `task-handoff` capability: the agents that worked on the task. See Handoff below;
    - optional `loop`: the task's Task Loop. See Task Loop below;
    - optional `pendingPrompt {kind, since, run}`: a prompt the host still waits to type into the agent. `kind` is `start` or `restart`, `since` is when the wait began (epoch seconds), and `run` is the `id` of the run it is for. It is cleared when the prompt is typed or given up;
@@ -316,7 +319,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), and level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[]}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -388,8 +391,26 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `accept`: a `review` marks the Task done. `keep-open` answers it and leaves the Task open.
    - `redo` and `change-course` with `text` (1 to 4096 bytes): send the text to the agent as its next prompt, once the agent is idle. `redo` is feedback on its turn; `change-course` a new direction.
    - `retry`: a `failure` restarts the agent, as `restart-agent`. `drop` marks the Task dropped.
+   - `branch` and `keep`, with `work` level 4: a reading Task's `proposal` about its main checkout (Reading Tasks below). `branch` does `branch-task` with a branch from the title; `keep` answers it and changes nothing.
    - `dismiss` answers the item and does nothing else. `later` needs `until`. `read` sets `readAt` and leaves the item open.
    - An action not in `answers` is `bad-request`. An `ask` whose prompt changed since the item was made is `conflict`: list again. Nothing is sent to the pane then.
+
+## Reading Tasks
+
+A bridge with `work` level 4 has reading Tasks, `branch-task` and `park-task` (ADR 0034). Levels add up: level 4 has everything of level 3. Fixtures: `fixtures/reading/`.
+
+1. `create-task {read: true, repo, ...}` with no `branch`, `base`, `loop` or named `worker` records a reading Task. The record keeps `repo` (the main checkout), has no `branch`, and has `read: true`. Without `repo`, or with any of the others, the request is `bad-request`.
+   - The agent starts in the Task's own folder, `<root>/tasks/<slug>-<id>`, as for a Task without a repo. `dir` is that folder. No worktree is made.
+   - `.muxa/TASK.md` names the main checkout and the rules: read its `AGENTS.md` or `CLAUDE.md` first, run git with `git -C <path>`, change nothing there, and ask for a branch when the work needs a change.
+   - When the workspace's agent command starts Claude Code, the folder also gets `.claude/settings.local.json`: `permissions.additionalDirectories` lists the main checkout, and `permissions.deny` has `Edit(//<main checkout>/**)`. An existing file is kept. Other agents get only `TASK.md`.
+2. When a reading Task's agent ends a turn and the main checkout's `git status --porcelain` has lines it did not have when the turn started, the turn's item is a `proposal` instead of a `review`: question "The agent changed the main checkout", the new status lines in `summary`, and their count in `attachments.changes`. Its answers are `branch`, `keep` and `later`. The bridge never reverts a file.
+3. `branch-task {task, branch?}` turns a reading Task into a repo Task. Without `branch`, the bridge names one after the title, as `create-task` does at level 2.
+   - It makes the worktree as for a new Task, under the Task's lock, and copies `.muxa/TASK.md` into it. The folder stays with what the Task wrote.
+   - The record gets `branch` and `dir` (the worktree) and loses `read`. Then the agent restarts in the worktree as with `restart-agent`: `HANDOFF.md` is written there and also lists what changed in the folder.
+   - A Task that is not a reading Task, a running agent, or a branch another open Task runs is `bad-request`. No session with an agent pane is `task-failed`. A restart that fails after the worktree was made keeps the record's new `branch` and `dir`, with a `note`; `restart-agent` then resumes the Task there.
+4. `park-task {task}` writes `.muxa/HANDOFF.md`, then closes the Task's session, its device sessions first. The record, `TASK.md` and `dir` stay. The open run gets `endedAt`; `session` and `pendingPrompt` are cleared. A parked Task is `open` with no session. A Task with no session, a closed Task or a Task with a named worker is `bad-request`.
+5. `restart-agent` on an open Task with no session resumes it: a new session in its `dir` with the workspace's agent, a run with `reason: restart`, and the restart prompt.
+6. A workspace with `park_after = "12h"` in the host's `workspaces.toml` (`m`, `h` or `d`) lets the host daemon park a Task whose agent has been `idle` or `done` that long in its current run, with no `open` or `later` Inbox item, no active loop, no prompt wait and no restart in progress. Without it, nothing is parked.
 
 ## Ask sessions
 

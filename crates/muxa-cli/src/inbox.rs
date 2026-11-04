@@ -152,6 +152,7 @@ mod tests {
         TaskRecord {
             restart_operation: None,
             worker: None,
+            read: false,
             id: id.into(),
             rev: 1,
             workspace: "work".into(),

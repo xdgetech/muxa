@@ -9,7 +9,7 @@ pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_I
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
-    RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK, WORK_CAPABILITY,
+    RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK, WORK_CAPABILITY, WORK_READ,
     WORK_ROUTINES, work_capability, work_level,
 };
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
@@ -186,6 +186,26 @@ pub enum Request {
         /// A worker name or `default`; absent is the workspace default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worker: Option<String>,
+        /// A reading Task: `repo` and no `branch`; the agent works in the
+        /// Task's own folder and reads the repo (`work` level 4, ADR 0034).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        read: bool,
+    },
+    /// Turn a reading Task into a repo Task: a worktree, then a restart of
+    /// the agent there (`work` level 4, ADR 0034 §3). A `task-saved` comes
+    /// before the `result`.
+    BranchTask {
+        id: u64,
+        task: String,
+        /// Absent: the bridge names one after the title (ADR 0031).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+    },
+    /// Close a Task's session and keep its record, `TASK.md` and directory
+    /// (`work` level 4, ADR 0034 §4). A `task-saved` comes before the `result`.
+    ParkTask {
+        id: u64,
+        task: String,
     },
     /// Set a task record's status. Fails with `conflict` when `rev` is not
     /// the record's current one. A `task-saved` comes before the `result`.
@@ -319,6 +339,8 @@ impl Request {
             | Request::CreateTask { id, .. }
             | Request::UpdateTask { id, .. }
             | Request::RestartAgent { id, .. }
+            | Request::BranchTask { id, .. }
+            | Request::ParkTask { id, .. }
             | Request::RecoverRestart { id, .. }
             | Request::StartLoop { id, .. }
             | Request::StopLoop { id, .. }
@@ -551,6 +573,9 @@ pub struct TaskRecord {
     pub repo: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// A reading Task: it reads `repo` and works in its own folder (ADR 0034).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read: bool,
     /// Where the agent works: the worktree or the task directory, absolute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,

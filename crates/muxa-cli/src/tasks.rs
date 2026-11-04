@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop, TaskRecord, TaskStatus,
-    WORK_ASK, WorkerInfo, WorkspaceInfo, work_level,
+    WORK_ASK, WORK_READ, WorkerInfo, WorkspaceInfo, work_level,
 };
 use serde_json::json;
 
@@ -31,6 +31,8 @@ pub struct NewTask {
     pub base: Option<String>,
     pub worker: Option<String>,
     pub r#loop: Option<LoopSpec>,
+    /// `--read`: a reading Task (ADR 0034).
+    pub read: bool,
 }
 
 pub struct Recovery {
@@ -157,6 +159,16 @@ impl NewTask {
                 format!("task new needs {flag}").into(),
             ));
         }
+        if self.read
+            && (self.repo.is_none()
+                || self.branch.is_some()
+                || self.base.is_some()
+                || self.r#loop.is_some())
+        {
+            return Err(lexopt::Error::Custom(
+                "task new --read needs --repo, and takes no --branch, --base or --check".into(),
+            ));
+        }
         if self.repo.is_none() && (self.branch.is_some() || self.base.is_some()) {
             return Err(lexopt::Error::Custom(
                 "--branch and --base need --repo".into(),
@@ -224,9 +236,11 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
     if new.repo.is_some() && new.branch.is_none() && work_level(conn.capabilities()) < WORK_ASK {
         return Err("this host needs --branch with --repo; update muxa-bridge on the host".into());
     }
+    require_reading(&conn, new.read)?;
     let messages = conn
         .call(
             |id| Request::CreateTask {
+                read: new.read,
                 worker: new.worker,
                 id,
                 workspace: new.workspace,
@@ -331,6 +345,68 @@ pub async fn restart(
     std::io::Write::flush(&mut std::io::stdout()).map_err(|e| e.to_string())?;
     conn.finish(HANDOFF_WAIT).await;
     Ok(String::new())
+}
+
+/// `task branch`: a reading Task gets a worktree, and its agent restarts
+/// there. Like `restart`, it lets the bridge type the prompt before it exits.
+pub async fn branch(
+    mut conn: Conn,
+    task: &str,
+    branch: Option<String>,
+    as_json: bool,
+) -> Result<String, String> {
+    require_reading(&conn, true)?;
+    let messages = conn
+        .call(
+            |id| Request::BranchTask {
+                id,
+                task: task.to_owned(),
+                branch,
+            },
+            LAUNCH_WAIT,
+        )
+        .await?;
+    let record = saved(&messages).ok_or("the bridge saved no task")?;
+    if as_json {
+        let sessions = conn.list().await?;
+        println!("{}", inbox::to_json(&inbox::item(record, &sessions)));
+    } else {
+        println!("{}", line(record));
+        if let Some(dir) = &record.dir {
+            println!("worktree: {dir}");
+        }
+    }
+    std::io::Write::flush(&mut std::io::stdout()).map_err(|e| e.to_string())?;
+    conn.finish(HANDOFF_WAIT).await;
+    Ok(String::new())
+}
+
+/// `task park`: closes the Task's session and keeps the Task. `task restart`
+/// resumes it.
+pub async fn park(conn: &mut Conn, task: &str, as_json: bool) -> Result<String, String> {
+    require_reading(conn, true)?;
+    let messages = conn
+        .call(
+            |id| Request::ParkTask {
+                id,
+                task: task.to_owned(),
+            },
+            WAIT,
+        )
+        .await?;
+    let record = saved(&messages).ok_or("the bridge saved no task")?;
+    print_record(conn, record, as_json).await
+}
+
+/// `--read`, `task branch` and `task park` need `work` level 4.
+fn require_reading(conn: &Conn, wanted: bool) -> Result<(), String> {
+    if wanted && work_level(conn.capabilities()) < WORK_READ {
+        return Err(
+            "unsupported: this host has no reading tasks (work level 4); update muxa-bridge on the host"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 pub async fn start_loop(
@@ -580,6 +656,7 @@ mod tests {
         let r = TaskRecord {
             restart_operation: None,
             worker: None,
+            read: false,
             id: "t-7f3a2c".into(),
             rev: 2,
             workspace: "work".into(),

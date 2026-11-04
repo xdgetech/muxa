@@ -56,6 +56,8 @@ pub struct Workspace {
     pub agent: Option<AgentSettings>,
     /// The checks a loop may run; None means no loops here (ADR 0019).
     pub loop_checks: Option<Checks>,
+    /// Seconds an idle Task waits before the daemon parks it; None is off (ADR 0034).
+    pub park_after: Option<u64>,
 }
 
 /// The configured workspaces, in file order.
@@ -87,6 +89,7 @@ struct RawWorkspace {
     agent: Option<RawAgent>,
     #[serde(rename = "loop")]
     loop_table: Option<RawLoop>,
+    park_after: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -180,12 +183,19 @@ impl Workspaces {
                 .map(RawLoop::check)
                 .transpose()
                 .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
+            let park_after = w
+                .park_after
+                .as_deref()
+                .map(parse_duration)
+                .transpose()
+                .map_err(|r| invalid(format!("workspace {:?}: park_after {r}", w.name)))?;
             list.push(Workspace {
                 name: w.name,
                 root,
                 repos,
                 agent,
                 loop_checks,
+                park_after,
             });
         }
         let mut worker_names = HashSet::new();
@@ -336,6 +346,30 @@ impl Workspace {
 
 /// A title as a directory name: `[a-z0-9-]`, dashes collapsed and trimmed,
 /// at most 40 characters, `task` when nothing is left.
+/// `<n>m`, `<n>h` or `<n>d`, at least one minute, at most 365 days; in seconds.
+pub fn parse_duration(text: &str) -> Result<u64, String> {
+    let bad = || format!("{text:?} is not a duration such as \"30m\", \"12h\" or \"2d\"");
+    let (number, unit) = text.split_at(text.len().saturating_sub(1));
+    let scale = match unit {
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86_400,
+        _ => return Err(bad()),
+    };
+    if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(bad());
+    }
+    let seconds = number
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(scale))
+        .ok_or_else(bad)?;
+    if !(60..=365 * 86_400).contains(&seconds) {
+        return Err(format!("{text:?} must be from 1m to 365d"));
+    }
+    Ok(seconds)
+}
+
 pub fn slug(title: &str) -> String {
     let mut out = String::with_capacity(MAX_SLUG);
     for c in title.chars() {
@@ -382,4 +416,40 @@ fn resolve(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     }
     path.canonicalize()
         .map_err(|e| format!("{}: {e}", path.display()))
+}
+
+#[cfg(test)]
+mod park_tests {
+    use super::*;
+
+    #[test]
+    fn park_after_is_minutes_hours_or_days_and_off_by_default() {
+        assert_eq!(parse_duration("30m"), Ok(1800));
+        assert_eq!(parse_duration("12h"), Ok(43_200));
+        assert_eq!(parse_duration("2d"), Ok(172_800));
+        for bad in [
+            "",
+            "h",
+            "12",
+            "1.5h",
+            "-1h",
+            "0m",
+            "366d",
+            "12 h",
+            "99999999999999999999d",
+        ] {
+            assert!(parse_duration(bad).is_err(), "{bad:?}");
+        }
+        let root = std::env::temp_dir();
+        let root = root.to_string_lossy();
+        let text = |extra: &str| format!("[[workspace]]\nname = \"w\"\nroot = \"{root}\"\n{extra}");
+        let parse = |t: &str| Workspaces::parse(t, Path::new("w.toml"), None);
+        assert_eq!(parse(&text("")).unwrap().all()[0].park_after, None);
+        let set = parse(&text("park_after = \"12h\"\n")).unwrap();
+        assert_eq!(set.all()[0].park_after, Some(43_200));
+        let err = parse(&text("park_after = \"soon\"\n"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("park_after"), "{err}");
+    }
 }

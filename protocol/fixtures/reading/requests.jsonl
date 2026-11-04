@@ -1,0 +1,6 @@
+{"type":"create-task","id":51,"workspace":"lisk","title":"Review the auth design","goal":"Read the auth code and write a review.","repo":"cto-copilot","read":true}
+{"type":"branch-task","id":52,"task":"t-0b1c2d"}
+{"type":"branch-task","id":53,"task":"t-0b1c2d","branch":"fix/auth-timeout"}
+{"type":"park-task","id":54,"task":"t-0b1c2d"}
+{"type":"update-inbox","id":55,"entry":"i-4e5f6a7b","action":"branch"}
+{"type":"update-inbox","id":56,"entry":"i-4e5f6a7b","action":"keep"}

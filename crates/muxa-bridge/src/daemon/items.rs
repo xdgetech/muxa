@@ -31,30 +31,42 @@ impl Watch {
     }
 
     /// Lists the sessions, fills in agent states and makes or resolves items.
-    /// Only reads tmux: nothing is sized or changed (invariant 2).
-    pub async fn look(&mut self, client: &Client, config: &Arc<Config>, agents: &Arc<Registry>) {
+    /// Only reads tmux: nothing is sized or changed (invariant 2). Returns the
+    /// Tasks idle past their workspace's `park_after` (ADR 0034 §4).
+    pub async fn look(
+        &mut self,
+        client: &Client,
+        config: &Arc<Config>,
+        agents: &Arc<Registry>,
+    ) -> Vec<String> {
         let listed = tokio::time::timeout(LIST_TIMEOUT, muxa_tmux::list_sessions(client)).await;
         let mut sessions = match listed {
             Ok(Ok(s)) => s,
             Ok(Err(e)) => {
                 tracing::debug!(error = %e, "cannot list sessions for inbox items");
-                return;
+                return Vec::new();
             }
-            Err(_) => return,
+            Err(_) => return Vec::new(),
         };
         let (config, agents) = (Arc::clone(config), Arc::clone(agents));
         let linked = tokio::task::spawn_blocking(move || {
             crate::sessions::fill_agents(&mut sessions, &agents);
             crate::task_records::observation::refresh(&mut sessions, &config, &agents);
-            crate::items::produce::observe(&sessions, &config, &agents)
+            let linked = crate::items::produce::observe(&sessions, &config, &agents);
+            let idle = crate::task_records::park::due(&sessions, &config, crate::records::now());
+            (linked, idle)
         })
         .await;
         match linked {
-            Ok(linked) => {
+            Ok((linked, idle)) => {
                 self.linked = linked;
                 self.looked_at = Some(Instant::now());
+                idle
             }
-            Err(e) => tracing::warn!(error = %e, "looking for inbox items failed"),
+            Err(e) => {
+                tracing::warn!(error = %e, "looking for inbox items failed");
+                Vec::new()
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 //! Makes and resolves a Task's Inbox items from the states its adapters
 //! supply (ADR 0033 §2). Never from terminal content (invariant 6).
 mod evidence;
+mod reading;
 
 use muxa_protocol::{Attachments, ChatPrompt, InboxItem, ItemKind, ItemState, PromptKind};
 use muxa_tmux::{AgentState, AgentStatus, Pane, Role, Session};
@@ -314,6 +315,10 @@ fn one(
         record.runs.last().map(|r| r.started_at),
         pane.agent,
     );
+    if record.is_read() {
+        let run_start = record.runs.last().map(|r| r.started_at);
+        reading::note_start(store, record, current(pane.agent, run_start))?;
+    }
     let items = store.get(&record.id)?;
     match change(&need, &items) {
         Change::None => Ok(()),
@@ -374,6 +379,17 @@ fn make(
         answers: Vec::new(),
     };
     item.attachments = evidence::attachments(std::path::Path::new(&pane.path));
+    if let (Need::Turn(ended, _), Some(main)) = (need, record.repo.as_deref()) {
+        if record.is_read() {
+            // The turn's item becomes the question about the main checkout (ADR 0034 §2).
+            if let Some(changed) = reading::take(store, record, *ended)? {
+                item.kind = ItemKind::Proposal;
+                item.question = "The agent changed the main checkout".into();
+                item.summary = Some(changed.summary(main));
+                item.attachments = changed.attachments(main);
+            }
+        }
+    }
     item.answers = super::answers(&item);
     let id = item.id.clone();
     let made = store.update::<_, StateError>(&record.id, |t| {

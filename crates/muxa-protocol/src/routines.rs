@@ -11,6 +11,8 @@ pub const WORK_ROUTINES: u32 = 1;
 /// Level 2: repos relative to the workspace root, a branch from the title,
 /// and `start-session` (ADR 0031).
 pub const WORK_ASK: u32 = 2;
+/// Level 4: reading Tasks, `branch-task` and `park-task` (ADR 0034).
+pub const WORK_READ: u32 = 4;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {
@@ -198,6 +200,10 @@ pub enum InboxAction {
     Drop,
     /// Marks the item read. It stays open.
     Read,
+    /// A reading Task's changed-checkout `proposal`: `branch-task` (level 4).
+    Branch,
+    /// A reading Task's changed-checkout `proposal`: leaves the changes as they are.
+    Keep,
 }
 
 #[cfg(test)]

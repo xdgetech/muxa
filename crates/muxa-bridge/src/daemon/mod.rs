@@ -75,6 +75,26 @@ struct Daemon {
 }
 
 impl Daemon {
+    /// Parks the Tasks idle past their workspace's `park_after` (ADR 0034 §4).
+    async fn park(&self, tasks: Vec<String>) {
+        if tasks.is_empty() {
+            return;
+        }
+        let env = match self.records.env().await {
+            Ok(env) => env,
+            Err(e) => {
+                tracing::warn!(error = %e.message, "cannot park idle tasks");
+                return;
+            }
+        };
+        for task in tasks {
+            match crate::task_records::park::park(&env, task.clone()).await {
+                Ok(_) => tracing::info!(task, "idle task parked"),
+                Err(e) => tracing::warn!(task, error = %e.message, "cannot park an idle task"),
+            }
+        }
+    }
+
     /// Called once before the daemon exits for the user's `daemon stop`:
     /// every loop stops with reason `user`, so the next daemon does not resume them.
     async fn on_user_stop(&self) {
@@ -97,12 +117,16 @@ impl Daemon {
         engine.tick(client.as_deref()).await;
         drop(engine);
         // After the loops, so a loop that just passed or stopped makes its item.
-        if let Some(client) = client.as_deref().filter(|_| watch) {
-            items
-                .look(client, &self.records.records, &self.records.agents)
-                .await;
-        }
+        let idle = match client.as_deref().filter(|_| watch) {
+            Some(client) => {
+                items
+                    .look(client, &self.records.records, &self.records.agents)
+                    .await
+            }
+            None => Vec::new(),
+        };
         drop(items);
+        self.park(idle).await;
         crate::routines::tick(&self.records).await;
     }
 }

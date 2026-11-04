@@ -13,6 +13,11 @@
 #        name a repo relative to root: api, clients/portal.
 # repos  optional; more repos, usually outside root. They must exist. A
 #        repo here or under root only starts Tasks in this workspace.
+# park_after  optional; "30m", "12h" or "2d". The muxa daemon parks a Task
+#        whose agent has been idle that long and that has no open Inbox
+#        item: it writes .muxa/HANDOFF.md and closes the Task's session. The
+#        Task, its TASK.md and its directory stay; Resume starts it again
+#        (ADR 0034). Without it, nothing is parked.
 #
 # [workspace.agent]  optional; how this workspace's agents start (ADR 0016).
 #   command  the agent command; else the bridge's --task-command (claude).
@@ -38,6 +43,8 @@
 [[workspace]]
 name = "Company"
 root = "~/work/company"
+# Remove the # sign to park Tasks idle for 12 hours.
+# park_after = "12h"
 
 [workspace.agent]
 env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company" }

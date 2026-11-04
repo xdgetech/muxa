@@ -478,6 +478,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         repos: Vec::new(),
         agent: None,
         loop_checks: None,
+        park_after: None,
     };
     (dir, ws)
 }

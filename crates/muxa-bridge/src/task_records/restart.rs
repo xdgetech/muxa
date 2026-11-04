@@ -28,6 +28,24 @@ pub async fn restart(
     let config = Arc::clone(&env.records);
     let id = task.clone();
     let record = blocking(move || config.store()?.get(&id).map_err(|e| store_error(&e))).await?;
+    // A parked Task has no session: Resume starts one in its `dir` (ADR 0034 §4).
+    let resumable = worker.is_none()
+        && record.worker().is_none()
+        && record.dir.is_some()
+        && matches!(
+            record.status,
+            crate::records::Status::Open | crate::records::Status::Review
+        );
+    if resumable
+        && super::park::linked_session(&env.client, &env.records, &record.id)
+            .await?
+            .is_none()
+    {
+        if rev.is_some_and(|r| r != record.rev) {
+            return Err(conflict("the task changed; list it again"));
+        }
+        return super::park::resume(env, record).await;
+    }
     restart_record(env, record, force, worker, rev).await
 }
 
@@ -300,13 +318,16 @@ fn prepare_files(
         .open_run()
         .map_or(record.created_at, |r| r.started_at);
     let work = facts::work(record, dir, since);
-    let text = facts::render(
+    let mut text = facts::render(
         record,
         earlier,
         seen.as_ref().filter(|_| !had_open),
         &work,
         at,
     );
+    if let Some(folder) = record.earlier_folder() {
+        text.push_str(&facts::folder_text(&folder, since));
+    }
     let mut assigned = record.clone();
     set_worker(&mut assigned, &resolved.worker);
     let task = brief::merge_with_worker(&assigned, existing, resolved.instructions.as_deref());

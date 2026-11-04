@@ -442,6 +442,7 @@ mod tests {
             repos: vec![repo.clone()],
             agent: None,
             loop_checks: Some(Checks::Any),
+            park_after: None,
         };
         assert!(
             ws.may_loop(&record(Some(&repo), Some(&other))).is_ok(),

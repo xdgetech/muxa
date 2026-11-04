@@ -3,11 +3,14 @@
 //! record and its session. The store itself is `records/`, which knows
 //! nothing of tmux or the protocol.
 
+pub(crate) mod branch_task;
 pub(crate) mod brief;
 mod create;
 mod facts;
 mod handoff;
 pub(crate) mod observation;
+pub(crate) mod park;
+mod reading;
 pub mod remote;
 pub(crate) mod reply;
 pub(crate) mod restart;
@@ -152,6 +155,8 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::CreateTask { .. }
             | Request::UpdateTask { .. }
             | Request::RestartAgent { .. }
+            | Request::BranchTask { .. }
+            | Request::ParkTask { .. }
             | Request::RecoverRestart { .. }
             | Request::StartLoop { .. }
             | Request::StopLoop { .. }
@@ -184,7 +189,8 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             base,
             r#loop,
             worker,
-        } => {
+            read,
+        } if !(read && r#loop.is_some()) => {
             let new = NewTask {
                 worker,
                 workspace,
@@ -194,6 +200,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
                 repo,
                 branch,
                 base,
+                read,
                 routine: None,
             };
             let spec = r#loop.map(convert::loop_spec);
@@ -233,6 +240,23 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             Ok(env) => one(restart::recover(&env, task, rev, operation, action)
                 .await
                 .map(|r| task_saved(id, r))),
+            Err(e) => (Vec::new(), Some(e)),
+        },
+        Request::CreateTask { .. } => (
+            Vec::new(),
+            Some(error_body(
+                ErrorCode::BadRequest,
+                "a reading task has no Task Loop; branch it first",
+            )),
+        ),
+        Request::BranchTask { id, task, branch } => match cx.env().await {
+            Ok(env) => one(branch_task::branch(&env, task, branch)
+                .await
+                .map(|r| task_saved(id, r))),
+            Err(e) => (Vec::new(), Some(e)),
+        },
+        Request::ParkTask { id, task } => match cx.env().await {
+            Ok(env) => one(park::park(&env, task).await.map(|r| task_saved(id, r))),
             Err(e) => (Vec::new(), Some(e)),
         },
         Request::RestartAgent {

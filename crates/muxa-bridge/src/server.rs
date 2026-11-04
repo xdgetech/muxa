@@ -105,7 +105,8 @@ where
         capabilities.push("task-handoff".into());
         capabilities.push("task-restart-recovery".into());
         capabilities.push("tasks-changed".into());
-        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_ITEMS));
+        // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034).
+        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_READ));
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {
@@ -667,6 +668,8 @@ impl Worker {
             // A launch or a restart takes seconds; keystrokes must not wait for it.
             req @ (Request::CreateTask { .. }
             | Request::RestartAgent { .. }
+            | Request::BranchTask { .. }
+            | Request::ParkTask { .. }
             | Request::RecoverRestart { .. }
             | Request::UpdateInbox { .. }) => {
                 let (cx, dir, out) = (

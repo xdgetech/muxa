@@ -44,6 +44,8 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         },
         ItemKind::Review => vec![Accept, Redo, ChangeCourse, KeepOpen],
         ItemKind::Failure => vec![Retry, ChangeCourse, Drop, Dismiss],
+        // A reading Task changed its main checkout (ADR 0034 §2).
+        ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],
         ItemKind::Proposal => vec![Approve, Reject],
         ItemKind::Briefing => vec![Dismiss],
     };
@@ -187,6 +189,20 @@ mod tests {
             [Accept, Redo, ChangeCourse, KeepOpen, Later]
         );
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
+    }
+
+    #[test]
+    fn a_task_proposal_takes_branch_and_keep() {
+        use InboxAction::*;
+        let mut changed = item(ItemKind::Proposal, ItemState::Open, 1);
+        changed.task = Some("t-000001".into());
+        assert_eq!(answers(&changed), [Branch, Keep, Later]);
+        changed.routine = Some("Morning".into());
+        assert_eq!(
+            answers(&changed),
+            [Approve, Reject, Later],
+            "a Routine's proposal"
+        );
     }
 
     #[test]

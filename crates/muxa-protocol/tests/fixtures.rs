@@ -272,3 +272,45 @@ fn item_fixtures_round_trip() {
         }
     ));
 }
+
+#[test]
+fn reading_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, ItemKind, WORK_READ, work_level};
+    assert_eq!(round_trip::<Request>("reading/requests.jsonl"), 6);
+    assert_eq!(round_trip::<Message>("reading/messages.jsonl"), 5);
+    let path = format!(
+        "{}/../../protocol/fixtures/reading/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let lines: Vec<Message> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &lines[0] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_READ);
+    let Message::TaskSaved { record, .. } = &lines[1] else {
+        panic!()
+    };
+    assert!(record.read && record.branch.is_none() && record.repo.is_some());
+    let Message::InboxList { items, .. } = &lines[2] else {
+        panic!()
+    };
+    assert_eq!(items[0].kind, ItemKind::Proposal);
+    assert_eq!(
+        items[0].answers,
+        [InboxAction::Branch, InboxAction::Keep, InboxAction::Later]
+    );
+    let Message::TaskSaved { record, .. } = &lines[3] else {
+        panic!()
+    };
+    assert!(!record.read && record.branch.is_some());
+    // An older record has no `read`.
+    let old: muxa_protocol::TaskRecord = serde_json::from_str(
+        r#"{"id":"t-1","rev":1,"workspace":"w","title":"t","goal":"","status":"open","createdAt":0,"updatedAt":0}"#,
+    )
+    .unwrap();
+    assert!(!old.read);
+}

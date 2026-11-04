@@ -55,8 +55,39 @@ fn header(r: &Record) -> String {
     header_with_section(r, &worker_section(r, None))
 }
 
+/// A reading Task's rules, or where a branched one wrote before (ADR 0034).
+/// Empty for any other Task.
+fn reading(r: &Record) -> String {
+    if let Some(folder) = r.earlier_folder() {
+        return format!(
+            "## Task folder\n\n\
+             Before it had a branch, this Task worked in {}. Read what it wrote there.\n\n",
+            folder.display()
+        );
+    }
+    let Some(repo) = r.repo.as_ref().filter(|_| r.is_read()) else {
+        return String::new();
+    };
+    let repo = repo.display();
+    format!(
+        "## Reading the repo\n\n\
+         This Task reads the repo at {repo}. It does not change it.\n\n\
+         - Read {repo}/AGENTS.md or {repo}/CLAUDE.md first.\n\
+         - Run git as `git -C {repo} ...`.\n\
+         - Do not change files in {repo}. Write what this Task produces, such as a design, \
+         a report or a plan, in this folder.\n\
+         - When the work needs a change to the code, stop and ask the user for a branch. \
+         muxa then makes a worktree and starts a new agent there with this file.\n\n"
+    )
+}
+
 fn header_with_section(r: &Record, worker: &str) -> String {
-    format!("{}\n{}{worker}{HOW_TO}\n", context(r), check(r))
+    format!(
+        "{}\n{}{}{worker}{HOW_TO}\n",
+        context(r),
+        reading(r),
+        check(r)
+    )
 }
 
 fn worker_section(r: &Record, instructions: Option<&str>) -> String {
@@ -233,6 +264,17 @@ pub fn create_with_worker(
         exclude(dir)?;
     }
     write_file(dir, FILE, &render_with_worker(record, instructions))
+}
+
+/// Copies `<from>/.muxa/TASK.md` into the worktree `to`, with `.muxa/`
+/// excluded first (ADR 0034 §3). The restart then rewrites its header.
+/// Blocking.
+pub fn copy_into(from: &Path, to: &Path) -> Result<PathBuf, String> {
+    exclude(to)?;
+    let source = from.join(DIR).join(FILE);
+    let text = std::fs::read_to_string(&source)
+        .map_err(|e| format!("cannot read {}: {e}", source.display()))?;
+    write_file(to, FILE, &text)
 }
 
 /// Rewrites the header of `<dir>/.muxa/TASK.md` and keeps the agent's notes.
@@ -434,6 +476,31 @@ mod check_tests {
         let refreshed = merge(&r, Some(&old));
         assert!(refreshed.ends_with(&old));
     }
+    #[test]
+    fn a_reading_task_names_its_repo_and_rules_then_its_folder_after_branch() {
+        let mut r = record();
+        r.repo = Some("/w/app".into());
+        r.extra = crate::records::reading::new_fields();
+        let text = render(&r);
+        assert!(text.contains("- Repo: /w/app\n"));
+        assert!(text.contains("Read /w/app/AGENTS.md or /w/app/CLAUDE.md first."));
+        assert!(text.contains("`git -C /w/app ...`"));
+        assert!(text.contains("ask the user for a branch"));
+        assert!(text.find("## Reading the repo").unwrap() < text.find(MARKER).unwrap());
+        let notes = format!("{MARKER}\n\nmine\n");
+        let old = format!("{}{notes}", header(&r));
+        r.dir = Some("/w/tasks/t-1".into());
+        r.set_folder(std::path::Path::new("/w/tasks/t-1"));
+        r.set_read(false);
+        r.branch = Some("fix-login".into());
+        r.dir = Some("/w/.worktrees/app-fix-login".into());
+        let branched = merge(&r, Some(&old));
+        assert!(!branched.contains("## Reading the repo"));
+        assert!(branched.contains("this Task worked in /w/tasks/t-1"));
+        assert!(branched.contains("- Branch: fix-login\n"));
+        assert!(branched.ends_with(&notes), "the agent's notes stay");
+    }
+
     #[test]
     fn worker_looking_text_in_agent_notes_is_untouched() {
         let r = record();
