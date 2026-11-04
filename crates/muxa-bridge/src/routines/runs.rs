@@ -255,7 +255,8 @@ fn finish_start(
     Ok(state)
 }
 
-/// One daemon tick: closes ended runs, then starts the due ones in the background.
+/// One daemon tick: closes ended runs, starts the due ones in the background,
+/// and clears what published runs left (ADR 0037 §2).
 pub async fn tick(cx: &Context) {
     let config = Arc::clone(&cx.records);
     let due = tokio::task::spawn_blocking(move || scan(&config, now()))
@@ -273,6 +274,7 @@ pub async fn tick(cx: &Context) {
             }
         });
     }
+    super::cleanup::tick(cx).await;
 }
 
 /// Blocking. The due `(workspace, name, date)`s after closing ended runs.

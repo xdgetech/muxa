@@ -225,9 +225,11 @@ fn reply_text(action: InboxAction, text: Option<&str>) -> Result<String, ErrorBo
 
 async fn act(cx: &Context, task: &str, plan: Plan) -> Result<(), ErrorBody> {
     match plan {
-        Plan::Status(status) => set_status(&cx.records, task.to_owned(), status)
-            .await
-            .map(drop),
+        Plan::Status(status) => {
+            set_status(&cx.records, task.to_owned(), status).await?;
+            crate::task_records::close::close_when_ended(cx, task, status);
+            Ok(())
+        }
         Plan::Restart => {
             let env = cx.env().await?;
             restart(&env, task.to_owned(), false, None, None)

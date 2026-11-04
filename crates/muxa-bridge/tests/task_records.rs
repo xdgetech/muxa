@@ -64,6 +64,7 @@ both!(
     old_run_assignments_read_as_worker_names,
     another_writer_s_change_is_announced,
     a_task_without_a_repo_gets_its_own_directory_and_session,
+    a_task_that_ends_closes_its_session_and_keeps_its_folder,
     a_fresh_done_gets_the_start_prompt,
     a_repo_task_runs_in_its_worktree_with_task_md_excluded,
     a_branch_that_runs_an_open_task_is_refused,
@@ -310,6 +311,44 @@ async fn a_task_without_a_repo_gets_its_own_directory_and_session(mode: Mode) {
     assert_eq!(prompts(&server, &pane), 2);
 
     assert_eq!(same_panes(&server, &before), before);
+}
+
+/// The session names on the test server.
+fn session_names(server: &Server) -> Vec<String> {
+    server
+        .tmux(&["list-sessions", "-F", "#{session_name}"])
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// ADR 0037: done (or dropped) closes the Task's session, keeping its folder.
+async fn a_task_that_ends_closes_its_session_and_keeps_its_folder(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("ends", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (saved, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = saved.expect("task-saved");
+    let name = r.session.clone().expect("session");
+    let dir = std::path::PathBuf::from(r.dir.clone().expect("dir"));
+    assert!(session_names(&server).contains(&name));
+
+    let (done, result) = send(
+        &mut bridge,
+        json!({"type": "update-task", "task": r.id, "rev": r.rev, "status": "done"}),
+    )
+    .await;
+    ok(&result);
+    assert_eq!(done.expect("task-saved").status, TaskStatus::Done);
+    common::wait_until(|| !session_names(&server).contains(&name)).await;
+    assert!(dir.join(".muxa/TASK.md").is_file(), "the folder stays");
+    assert_eq!(session_names(&server), ["work"], "other sessions stay");
 }
 
 fn epoch() -> u64 {
@@ -1601,6 +1640,8 @@ async fn recovery_prepared_is_cancelled_once_and_old_tokens_conflict(mode: Mode)
     let (again, result) = send(&mut bridge, cancel.clone()).await;
     ok(&result);
     assert_eq!(again.unwrap().rev, saved.rev);
+    // Cancelling changed no pane.
+    assert_eq!(server.layout(), before);
     let (_, result) = send(
         &mut bridge,
         json!({"type":"update-task","task":record.id,"rev":saved.rev,"status":"done"}),
@@ -1609,7 +1650,10 @@ async fn recovery_prepared_is_cancelled_once_and_old_tokens_conflict(mode: Mode)
     ok(&result);
     let (_, result) = send(&mut bridge, cancel).await;
     assert_eq!(error_code(&result), ErrorCode::Conflict);
-    assert_eq!(server.layout(), before);
+    // Done closes the Task's session and nothing else (ADR 0037).
+    let name = record.session.clone().expect("session");
+    common::wait_until(|| !session_names(&server).contains(&name)).await;
+    assert_eq!(session_names(&server), ["work"]);
 }
 
 async fn recovery_uncertain_dispatch_and_delivery_never_replace_or_send(mode: Mode) {

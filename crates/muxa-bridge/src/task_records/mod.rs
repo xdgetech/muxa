@@ -5,6 +5,7 @@
 
 pub(crate) mod branch_task;
 pub(crate) mod brief;
+pub(crate) mod close;
 mod create;
 mod facts;
 mod handoff;
@@ -177,7 +178,13 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             task,
             rev,
             status,
-        } => one(update(&cx.records, id, task, rev, status).await),
+        } => {
+            let saved = update(&cx.records, id, task.clone(), rev, status).await;
+            if saved.is_ok() {
+                close::close_when_ended(cx, &task, status);
+            }
+            one(saved)
+        }
         Request::CreateTask {
             id,
             workspace,

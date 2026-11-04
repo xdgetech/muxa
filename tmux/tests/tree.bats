@@ -20,6 +20,22 @@ tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
   [ "${lines[4]}" = "s:base	 3    base" ]
 }
 
+@test "muxa Tasks and Routine runs list apart from manual sessions" {
+  mkdir -p "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001" "$BATS_TEST_TMPDIR/w/routines/brief-t-000002"
+  tx new-session -d -s fix -c "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001"
+  tx set-option -t =fix: @muxa_task t-000001
+  tx new-session -d -s brief -c "$BATS_TEST_TMPDIR/w/routines/brief-t-000002"
+  tx set-option -t =brief: @muxa_task t-000002
+  run tree
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "r:}r	📂 routines" ]
+  [ "${lines[1]}" = "s:brief	 1    brief" ]
+  [ "${lines[2]}" = "r:}t	📂 tasks" ]
+  [ "${lines[3]}" = "s:fix	 2    fix" ]
+  [ "${lines[4]}" = "r:~	📂 sessions" ]
+  [ "${lines[5]}" = "s:base	 3    base" ]
+}
+
 @test "a session shows its most urgent state and its PR" {
   tx set-option -t =base: @agent_pr 1834
   tx split-window -t base

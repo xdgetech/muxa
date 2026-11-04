@@ -6,6 +6,7 @@
 
 pub mod brief;
 pub mod check;
+pub mod cleanup;
 pub mod inbox;
 pub mod output;
 pub mod record;

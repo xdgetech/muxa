@@ -285,6 +285,22 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
             .iter()
             .all(|e| e.disposition == Disposition::Open && e.run == run)
     );
+    // ADR 0037: the published run's session closes; its folder stays for now.
+    let tagged = |server: &Server, task: &str| {
+        server
+            .tmux(&["list-sessions", "-F", "#{@muxa_task}"])
+            .lines()
+            .any(|t| t == task)
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while tagged(&server, &run) {
+        assert!(
+            Instant::now() < deadline,
+            "the published run's session stays"
+        );
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    assert!(dir.is_dir(), "the last published run keeps its folder");
 
     // A second run repeats both keys: nothing new, and it got the committed state.
     h.steer("first.json", &output(json!([briefing(), proposal()])));
@@ -292,6 +308,17 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
     let second = ended(&mut conn, &h).await.last_success.expect("a publish");
     assert_ne!(second.task, run);
     assert_eq!(second.published, 0);
+    // The next publish removes the older run's folder.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while dir.is_dir() {
+        assert!(Instant::now() < deadline, "the older run's folder stays");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    let second_dir = PathBuf::from(h.record(&second.task)["dir"].as_str().unwrap());
+    assert!(
+        second_dir.is_dir(),
+        "the newest published run keeps its folder"
+    );
     assert_eq!(inbox(&mut conn).await.len(), 2);
     let seen = std::fs::read_to_string(h.base.join("steer/seen-state-0.json")).unwrap();
     assert!(seen.contains(MARKS[3]), "{seen}");

@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use muxa_protocol::{CloseMode, ErrorBody, ErrorCode, Message, Request};
+use muxa_protocol::{ErrorBody, ErrorCode, Message, Request};
 use muxa_tmux::{Client, Options, PaneId};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::{mpsc, oneshot};
@@ -627,9 +627,10 @@ impl Worker {
                 let records = Arc::clone(&self.records);
                 let out = self.out.clone();
                 tokio::spawn(async move {
-                    let error = close_task(&client, &config, &records, &session, mode)
-                        .await
-                        .err();
+                    let error =
+                        task_records::close::close_task(&client, &config, &records, &session, mode)
+                            .await
+                            .err();
                     let _ = out
                         .send(Message::Result {
                             id: Some(id),
@@ -758,114 +759,6 @@ async fn start_task(
         Err(e) => tracing::warn!(launcher = launcher.id(), error = %e, "task failed"),
     }
     result
-}
-
-async fn close_task(
-    client: &Client,
-    config: &tasks::Config,
-    records: &task_records::Config,
-    session: &str,
-    mode: CloseMode,
-) -> Result<(), ErrorBody> {
-    let task = tasks::find_task(client, session)
-        .await
-        .map_err(|e| convert::task_error(&e))?;
-    let tag = muxa_tmux::list_sessions(client)
-        .await
-        .map_err(|e| convert::error(&e))?
-        .into_iter()
-        .find(|s| s.id == task.id)
-        .and_then(|s| s.task_id);
-    let claim = claim_close(records.clone(), task.worktree.clone(), tag).await?;
-    let launcher = tasks::pick(config, client).await;
-    let result = launcher.close(client, &task, mode).await;
-    drop(claim);
-    match &result {
-        Ok(()) => {
-            tracing::info!(launcher = launcher.id(), session = %task.id, ?mode, "task closed")
-        }
-        Err(e) => {
-            tracing::warn!(launcher = launcher.id(), session = %task.id, error = %e, "closing failed")
-        }
-    }
-    result.map_err(|e| convert::task_error(&e))
-}
-
-/// Session deletion participates in the same Task guard as restart and typing.
-async fn claim_close(
-    config: task_records::Config,
-    worktree: std::path::PathBuf,
-    task: Option<String>,
-) -> Result<Option<crate::records::store::ClaimedTask>, ErrorBody> {
-    tokio::task::spawn_blocking(move || {
-        let fail = |error: crate::records::StoreError| {
-            let code = match error {
-                crate::records::StoreError::Busy(_)
-                | crate::records::StoreError::Conflict { .. } => ErrorCode::Conflict,
-                _ => ErrorCode::Internal,
-            };
-            error_body(code, error.to_string())
-        };
-        let Some(dir) = config.state_dir else {
-            return if task.is_some() {
-                Err(error_body(
-                    ErrorCode::Conflict,
-                    "cannot close a linked Task without its record store",
-                ))
-            } else {
-                Ok(None)
-            };
-        };
-        if task.is_none() && !dir.exists() {
-            return Ok(None);
-        }
-        let store = crate::records::Store::open(dir).map_err(fail)?;
-        let record = if let Some(task) = task {
-            Some(store.get(&task).map_err(fail)?)
-        } else {
-            let mut matching = store.list().map_err(fail)?.into_iter().filter(|r| {
-                r.dir
-                    .as_deref()
-                    .is_some_and(|d| tasks::same_dir(d, &worktree))
-            });
-            let first = matching.next();
-            if matching.next().is_some() {
-                return Err(error_body(
-                    ErrorCode::Conflict,
-                    "several Task records refer to this session",
-                ));
-            }
-            first
-        };
-        let Some(record) = record else {
-            return Ok(None);
-        };
-        let claim = store.claim(&record.id, record.rev).map_err(fail)?;
-        if claim
-            .record()
-            .extra
-            .contains_key(crate::records::lifecycle::FIELD)
-        {
-            return Err(error_body(
-                ErrorCode::Conflict,
-                "the Task restart requires recovery before closing its session",
-            ));
-        }
-        if claim
-            .record()
-            .dir
-            .as_deref()
-            .is_some_and(|d| !tasks::same_dir(d, &worktree))
-        {
-            return Err(error_body(
-                ErrorCode::Conflict,
-                "the Task session directory changed",
-            ));
-        }
-        Ok(Some(claim))
-    })
-    .await
-    .map_err(|_| error_body(ErrorCode::Internal, "the Task close claim stopped"))?
 }
 
 /// Hands a request to a task that sends its own result, and waits until it has,

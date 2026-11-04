@@ -23,6 +23,8 @@ its own git worktree, with the AI pane on the left and a terminal on the right.
 ```
 
 A finished turn shows 🏁 until you look at its window, then 💤.
+Sessions group by repo. muxa Tasks without a repo list under `tasks`, running
+muxa Routines under `routines`, and the rest under `sessions`, last.
 One line per session, labelled `1`–`9` then `a`–`z` for the jump keys. `▎`
 marks the session you are in, and only that session lists its windows. The
 footer shows the row under the cursor: its state and for how long, its branch

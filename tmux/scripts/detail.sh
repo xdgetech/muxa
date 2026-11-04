@@ -59,8 +59,8 @@ EOF
 
 repo_lines() {
   local g="$1"
-  t list-sessions -f "$AGENTS_VISIBLE" -F "#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_repo_dir}" 2>/dev/null |
-    awk -F'\t' -v g="$g" '($2 == "" ? "~" : $2) == g { print $1 "\t" $3 }' |
+  t list-sessions -f "$AGENTS_VISIBLE" -F "#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_repo_dir}${TAB}#{@muxa_task}${TAB}#{session_path}" 2>/dev/null |
+    awk -F'\t' -v g="$g" "$AGENTS_AWK_GROUP"'group($2, $4, $5) == g { print $1 "\t" $3 }' |
     while IFS="$TAB" read -r s dir; do
       printf '%s\t%s\t%s\n' "$s" "$dir" "$(state_of -s -t "=$s:" | cut -d$'\037' -f1)"
     done |
@@ -84,7 +84,7 @@ case "$target" in
        headline "$(state_of -t "=$s:$idx")" "$s:$idx $name"
        session_lines "$s" ;;
   r:*) g="${target#r:}"
-       printf '%s %s%s%s\n' "$(opt @agents_icon_repo '📂')" "$BO" "$([ "$g" = "~" ] && echo sessions || echo "$g")" "$Z"
+       printf '%s %s%s%s\n' "$(opt @agents_icon_repo '📂')" "$BO" "$(awk -v g="$g" "$AGENTS_AWK_GROUP"'BEGIN { print glabel(g) }')" "$Z"
        repo_lines "$g" ;;
 esac
 printf '%s%s%s\n' "$D" "$(opt @agents_footer 'n new c win o ide x close')" "$Z"
