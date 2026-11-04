@@ -69,6 +69,18 @@ pub async fn type_prompt(
     muxa_tmux::send_keys(client, pane, &["Enter".to_owned()]).await
 }
 
+/// Pastes `text`, then Enter. A multi-line text arrives as one prompt
+/// where the agent enabled bracketed paste; typed, each newline would submit.
+pub async fn paste_prompt(
+    client: &Client,
+    pane: PaneId,
+    text: &str,
+) -> Result<(), muxa_tmux::Error> {
+    muxa_tmux::paste(client, pane, text).await?;
+    tokio::time::sleep(KEY_GAP).await;
+    muxa_tmux::send_keys(client, pane, &["Enter".to_owned()]).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

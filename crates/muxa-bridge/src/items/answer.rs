@@ -1,9 +1,25 @@
 //! `update-inbox` on a Task's item (ADR 0033 §1): each answer does what the
 //! Task's own request would, then closes the item.
-use muxa_protocol::{ErrorBody, ErrorCode, InboxAction, InboxItem};
+mod prompt;
+#[cfg(test)]
+mod tests;
 
+use std::sync::Arc;
+
+use muxa_protocol::{
+    ChatPrompt, ErrorBody, ErrorCode, InboxAction, InboxItem, ItemKind, ItemState, TaskStatus,
+};
+use muxa_tmux::PaneId;
+
+use super::store::{ItemStore, TaskItems};
+use super::{answers, shown};
 use crate::convert::error_body;
-use crate::task_records::Context;
+use crate::records::now;
+use crate::routines::store::StateError;
+use crate::task_records::{Context, reply, restart, set_status};
+
+/// The most bytes a `redo` or `change-course` text has.
+pub const MAX_TEXT: usize = 4096;
 
 pub struct Answer {
     pub item: String,
@@ -13,9 +29,281 @@ pub struct Answer {
     pub option: Option<u32>,
 }
 
-pub async fn update(_cx: &Context, _answer: Answer) -> Result<InboxItem, ErrorBody> {
-    Err(error_body(
-        ErrorCode::Unsupported,
-        "Inbox items are not answered yet",
+/// What an accepted answer does before the item closes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Plan {
+    Read,
+    Later(u64),
+    Status(TaskStatus),
+    Restart,
+    /// The option at `option` of the menu the item asked about.
+    Pick {
+        pane: PaneId,
+        asked: ChatPrompt,
+        option: usize,
+    },
+    /// The next prompt for the agent. Never logged (invariant 5).
+    Reply(String),
+    Nothing,
+}
+
+pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody> {
+    let (task, item) = find(cx, &answer.item).await?;
+    let at = now();
+    let plan = plan(&shown(&item, at), &answer, at)?;
+    act(cx, &task, plan.clone()).await?;
+    let saved = close(cx, &task, &answer.item, answer.action, plan).await?;
+    tracing::info!(item = %answer.item, task, action = ?answer.action, "inbox item answered");
+    Ok(saved)
+}
+
+/// The Task that holds the item, and the item as stored.
+async fn find(cx: &Context, id: &str) -> Result<(String, InboxItem), ErrorBody> {
+    let (config, id) = (Arc::clone(&cx.records), id.to_owned());
+    blocking(move || {
+        let unknown = || bad(format!("no Inbox item {id}; list the Inbox again"));
+        let Some(dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
+            return Err(unknown());
+        };
+        let store = ItemStore::open(dir).map_err(|e| state_error(&e))?;
+        let task = store
+            .owner(&id)
+            .map_err(|e| state_error(&e))?
+            .ok_or_else(unknown)?;
+        let items = store.get(&task).map_err(|e| state_error(&e))?;
+        let item = items
+            .items
+            .into_iter()
+            .find(|s| s.item.id == id)
+            .ok_or_else(unknown)?;
+        Ok((task, item.item))
+    })
+    .await
+}
+
+/// Pure. `item` is as shown at `at`: a passed `later` is open.
+fn plan(item: &InboxItem, answer: &Answer, at: u64) -> Result<Plan, ErrorBody> {
+    use InboxAction::*;
+    if answer.action == Read {
+        return Ok(Plan::Read);
+    }
+    let allowed = answers(item);
+    if !allowed.contains(&answer.action) {
+        return Err(not_allowed(item, answer.action, &allowed));
+    }
+    Ok(match answer.action {
+        Later => Plan::Later(later(answer.until, at)?),
+        Accept => Plan::Status(TaskStatus::Done),
+        Drop => Plan::Status(TaskStatus::Dropped),
+        Retry => Plan::Restart,
+        Approve | Reject | Choose => pick(item, answer.action, answer.option)?,
+        Redo | ChangeCourse => Plan::Reply(reply_text(answer.action, answer.text.as_deref())?),
+        KeepOpen | Dismiss | Read => Plan::Nothing,
+    })
+}
+
+fn not_allowed(item: &InboxItem, action: InboxAction, allowed: &[InboxAction]) -> ErrorBody {
+    if allowed.is_empty() {
+        return bad(format!("Inbox item {} is already closed", item.id));
+    }
+    let names: Vec<String> = allowed.iter().map(|a| name(*a)).collect();
+    bad(format!(
+        "{} does not answer Inbox item {} now; it takes {}, or read",
+        name(action),
+        item.id,
+        names.join(", ")
     ))
+}
+
+/// As Task Later (ADR 0027 §4): after now, at most a year ahead.
+fn later(until: Option<u64>, at: u64) -> Result<u64, ErrorBody> {
+    let until = until.ok_or_else(|| bad("later needs until, in epoch seconds"))?;
+    crate::records::inbox::place(false, Some(until), at.saturating_mul(1000))
+        .map_err(|e| bad(format!("later: {e}")))?;
+    Ok(until)
+}
+
+/// The menu option an `ask`'s answer picks.
+fn pick(item: &InboxItem, action: InboxAction, option: Option<u32>) -> Result<Plan, ErrorBody> {
+    if item.kind != ItemKind::Ask {
+        return Err(bad(format!(
+            "{} answers a Routine's proposal through its entry id",
+            name(action)
+        )));
+    }
+    let asked = item
+        .prompt
+        .clone()
+        .ok_or_else(|| bad("the agent's menu is unknown; answer it in the terminal"))?;
+    let pane: PaneId = item
+        .pane
+        .as_deref()
+        .ok_or_else(|| bad("the item has no pane; answer it in the terminal"))?
+        .parse()
+        .map_err(|e| crate::convert::error(&e))?;
+    let index = match action {
+        InboxAction::Approve => asked.options.iter().position(|o| !o.cancel),
+        InboxAction::Reject => asked.options.iter().position(|o| o.cancel),
+        _ => Some(choice(option, asked.options.len())?),
+    };
+    let option =
+        index.ok_or_else(|| bad(format!("the menu has no option for {}", name(action))))?;
+    Ok(Plan::Pick {
+        pane,
+        asked,
+        option,
+    })
+}
+
+fn choice(option: Option<u32>, options: usize) -> Result<usize, ErrorBody> {
+    let n = option.ok_or_else(|| bad("choose needs option, an index into the prompt's options"))?;
+    usize::try_from(n)
+        .ok()
+        .filter(|&i| i < options)
+        .ok_or_else(|| {
+            bad(format!(
+                "option {n} is not one of the prompt's {options} options"
+            ))
+        })
+}
+
+/// The prompt the agent gets, prefixed so it knows what the text is.
+fn reply_text(action: InboxAction, text: Option<&str>) -> Result<String, ErrorBody> {
+    let text = text.unwrap_or_default();
+    if text.is_empty() || text.len() > MAX_TEXT {
+        return Err(bad(format!(
+            "{} needs a text of 1 to {MAX_TEXT} bytes",
+            name(action)
+        )));
+    }
+    let lead = match action {
+        InboxAction::Redo => "Feedback on your last turn. Redo it with this in mind:",
+        _ => "Change of course. New direction:",
+    };
+    Ok(format!("{lead}\n\n{text}"))
+}
+
+async fn act(cx: &Context, task: &str, plan: Plan) -> Result<(), ErrorBody> {
+    match plan {
+        Plan::Status(status) => set_status(&cx.records, task.to_owned(), status)
+            .await
+            .map(drop),
+        Plan::Restart => {
+            let env = cx.env().await?;
+            restart(&env, task.to_owned(), false, None, None)
+                .await
+                .map(drop)
+        }
+        Plan::Pick {
+            pane,
+            asked,
+            option,
+        } => prompt::pick(cx, pane, &asked, option).await,
+        Plan::Reply(text) => reply::send(&cx.env().await?, task, &text).await,
+        Plan::Read | Plan::Later(_) | Plan::Nothing => Ok(()),
+    }
+}
+
+/// Writes the answer under the store's lock and returns the item as shown.
+async fn close(
+    cx: &Context,
+    task: &str,
+    id: &str,
+    action: InboxAction,
+    plan: Plan,
+) -> Result<InboxItem, ErrorBody> {
+    let (config, task, id) = (Arc::clone(&cx.records), task.to_owned(), id.to_owned());
+    blocking(move || {
+        let dir = config
+            .state_dir
+            .as_ref()
+            .ok_or_else(|| error_body(ErrorCode::Internal, "the state directory went away"))?;
+        let store = ItemStore::open(dir).map_err(|e| state_error(&e))?;
+        store
+            .update(&task, |items| apply(items, &id, action, &plan, now()))
+            .map_err(|e| match e {
+                Failed::State(e) => state_error(&e),
+                Failed::Body(e) => e,
+            })
+    })
+    .await
+}
+
+fn apply(
+    items: &mut TaskItems,
+    id: &str,
+    action: InboxAction,
+    plan: &Plan,
+    at: u64,
+) -> Result<InboxItem, Failed> {
+    let stored = items
+        .items
+        .iter_mut()
+        .find(|s| s.item.id == id)
+        .ok_or_else(|| Failed::Body(bad(format!("Inbox item {id} was removed"))))?;
+    let item = &mut stored.item;
+    match plan {
+        Plan::Read => {
+            item.read_at.get_or_insert(at);
+        }
+        Plan::Later(until) => {
+            item.state = ItemState::Later;
+            item.until = Some(*until);
+        }
+        // A second device's answer came first: it stays. A `resolved` one
+        // may be this answer's own effect, so the answer wins.
+        _ if item.state == ItemState::Answered => {}
+        _ => {
+            item.state = ItemState::Answered;
+            item.answer = Some(action);
+            item.answered_at = Some(at);
+            item.until = None;
+        }
+    }
+    item.answers = answers(item);
+    Ok(shown(item, at))
+}
+
+enum Failed {
+    State(StateError),
+    Body(ErrorBody),
+}
+
+impl From<StateError> for Failed {
+    fn from(e: StateError) -> Self {
+        Self::State(e)
+    }
+}
+
+/// The action's wire name, e.g. `change-course`.
+fn name(action: InboxAction) -> String {
+    serde_json::to_value(action)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| format!("{action:?}"))
+}
+
+fn bad(message: impl Into<String>) -> ErrorBody {
+    error_body(ErrorCode::BadRequest, message)
+}
+
+fn state_error(e: &StateError) -> ErrorBody {
+    match e {
+        StateError::Lock(crate::records::StoreError::Busy(_)) => error_body(
+            ErrorCode::Conflict,
+            "the Inbox item is being written; try again",
+        ),
+        e => {
+            tracing::warn!(error = %e, "inbox item store failed");
+            error_body(ErrorCode::Internal, e.to_string())
+        }
+    }
+}
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
+) -> Result<T, ErrorBody> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .unwrap_or_else(|_| Err(error_body(ErrorCode::Internal, "the item store stopped")))
 }

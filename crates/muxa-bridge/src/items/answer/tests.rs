@@ -1,0 +1,339 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use muxa_protocol::{ChatPrompt, PromptKind, PromptOption};
+
+use super::*;
+use crate::agents::Registry;
+use crate::items::store::{StoredItem, tests_item};
+use crate::records::{NewRecord, Status, Store};
+use crate::task_records::{ClientFuture, ClientSource, Config, Pending};
+
+/// No tmux: every request that needs it fails with `tmux`.
+struct NoTmux;
+
+impl ClientSource for NoTmux {
+    fn client(&self) -> ClientFuture<'_> {
+        Box::pin(async { Err(muxa_tmux::Error::Exited("no tmux in this test".into())) })
+    }
+}
+
+struct Fixture {
+    dir: PathBuf,
+    cx: Context,
+    task: String,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// A Task record, and `item` stored as its only item.
+fn fixture(item: InboxItem) -> Fixture {
+    let dir = std::env::temp_dir().join(format!(
+        "muxa-item-answer-{}-{:08x}",
+        std::process::id(),
+        getrandom::u32().unwrap()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let record = Store::open(&dir)
+        .unwrap()
+        .create(NewRecord {
+            workspace: "w".into(),
+            title: "Fixture".into(),
+            goal: "Fix it.\n".into(),
+            project: None,
+            repo: None,
+            branch: None,
+            dir: None,
+            session: None,
+            note: None,
+            worker: None,
+            extra: serde_json::Map::new(),
+        })
+        .unwrap();
+    let task = record.id.clone();
+    ItemStore::open(&dir)
+        .unwrap()
+        .update::<_, StateError>(&task, |t| {
+            let mut item = item;
+            item.task = Some(task.clone());
+            t.items.push(StoredItem {
+                item,
+                key: "review:1".into(),
+            });
+            Ok(())
+        })
+        .unwrap();
+    let cx = Context {
+        tmux: Arc::new(NoTmux),
+        tasks: Arc::new(crate::tasks::Config {
+            launcher: None,
+            command: "true".into(),
+            tmux: "tmux".into(),
+            socket: None,
+        }),
+        records: Arc::new(Config {
+            state_dir: Some(dir.clone()),
+            workspaces: None,
+            home: None,
+        }),
+        agents: Arc::new(Registry::new(Vec::new())),
+        pending: Pending::default(),
+    };
+    Fixture { dir, cx, task }
+}
+
+impl Fixture {
+    fn stored(&self, id: &str) -> InboxItem {
+        let items = ItemStore::open(&self.dir).unwrap().get(&self.task).unwrap();
+        items
+            .items
+            .into_iter()
+            .find(|s| s.item.id == id)
+            .unwrap()
+            .item
+    }
+
+    fn status(&self) -> Status {
+        Store::open(&self.dir)
+            .unwrap()
+            .get(&self.task)
+            .unwrap()
+            .status
+    }
+}
+
+fn answer(item: &str, action: InboxAction) -> Answer {
+    Answer {
+        item: item.into(),
+        action,
+        until: None,
+        text: None,
+        option: None,
+    }
+}
+
+fn review(id: &str) -> InboxItem {
+    tests_item(id, ItemState::Open)
+}
+
+fn menu() -> ChatPrompt {
+    let option = |label: &str, key: &str, cancel| PromptOption {
+        label: label.into(),
+        keys: vec![key.into()],
+        cancel,
+    };
+    ChatPrompt {
+        entry: "toolu_1".into(),
+        kind: PromptKind::Permission,
+        question: None,
+        options: vec![
+            option("No", "Escape", true),
+            option("Yes", "1", false),
+            option("Always", "2", false),
+        ],
+    }
+}
+
+fn ask(id: &str) -> InboxItem {
+    let mut i = tests_item(id, ItemState::Open);
+    i.kind = ItemKind::Ask;
+    i.pane = Some("%3".into());
+    i.prompt = Some(menu());
+    i
+}
+
+#[tokio::test]
+async fn accept_marks_the_task_done_and_answers_the_item() {
+    let f = fixture(review("i-00000001"));
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::Accept))
+        .await
+        .unwrap();
+    assert_eq!(saved.state, ItemState::Answered);
+    assert_eq!(saved.answer, Some(InboxAction::Accept));
+    assert!(saved.answered_at.is_some());
+    assert!(saved.answers.is_empty());
+    assert_eq!(f.stored("i-00000001"), saved);
+    assert_eq!(f.status(), Status::Done);
+}
+
+#[tokio::test]
+async fn an_unknown_item_or_an_answer_it_does_not_take_is_a_bad_request() {
+    let f = fixture(review("i-00000001"));
+    let e = update(&f.cx, answer("i-00000009", InboxAction::Dismiss))
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::BadRequest);
+    let e = update(&f.cx, answer("i-00000001", InboxAction::Retry))
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::BadRequest);
+    assert!(
+        e.message
+            .contains("it takes accept, redo, change-course, keep-open, later, or read"),
+        "{}",
+        e.message
+    );
+    assert_eq!(f.stored("i-00000001").state, ItemState::Open);
+    assert_eq!(f.status(), Status::Open);
+}
+
+#[tokio::test]
+async fn read_is_kept_once_and_the_item_stays_open() {
+    let mut item = review("i-00000001");
+    item.read_at = Some(5);
+    let f = fixture(item);
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::Read))
+        .await
+        .unwrap();
+    assert_eq!((saved.state, saved.read_at), (ItemState::Open, Some(5)));
+    assert!(saved.answers.contains(&InboxAction::Accept));
+}
+
+#[tokio::test]
+async fn later_needs_a_time_ahead_and_a_passed_later_is_open() {
+    let f = fixture(review("i-00000001"));
+    let later = |until| Answer {
+        until,
+        ..answer("i-00000001", InboxAction::Later)
+    };
+    for until in [
+        None,
+        Some(1),
+        Some(now() + crate::records::inbox::MAX_LATER + 60),
+    ] {
+        let e = update(&f.cx, later(until)).await.unwrap_err();
+        assert_eq!(e.code, ErrorCode::BadRequest, "{until:?}");
+    }
+    let until = now() + 3600;
+    let saved = update(&f.cx, later(Some(until))).await.unwrap();
+    assert_eq!((saved.state, saved.until), (ItemState::Later, Some(until)));
+    assert!(!saved.answers.is_empty());
+
+    let mut passed = review("i-00000002");
+    passed.state = ItemState::Later;
+    passed.until = Some(1);
+    let f = fixture(passed);
+    let saved = update(&f.cx, answer("i-00000002", InboxAction::KeepOpen))
+        .await
+        .unwrap();
+    assert_eq!(saved.answer, Some(InboxAction::KeepOpen));
+}
+
+#[tokio::test]
+async fn a_failed_answer_leaves_the_item_open() {
+    // Approve needs tmux to read the menu again, and there is none.
+    let f = fixture(ask("i-00000001"));
+    let e = update(&f.cx, answer("i-00000001", InboxAction::Approve))
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Tmux);
+    let stored = f.stored("i-00000001");
+    assert_eq!((stored.state, stored.answer), (ItemState::Open, None));
+}
+
+#[tokio::test]
+async fn a_closed_item_takes_no_answer_but_read() {
+    let mut item = review("i-00000001");
+    item.state = ItemState::Resolved;
+    let f = fixture(item);
+    let e = update(&f.cx, answer("i-00000001", InboxAction::Accept))
+        .await
+        .unwrap_err();
+    assert!(e.message.contains("already closed"), "{}", e.message);
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::Read))
+        .await
+        .unwrap();
+    assert_eq!(saved.state, ItemState::Resolved);
+    assert!(saved.read_at.is_some());
+}
+
+#[test]
+fn an_ask_picks_the_option_its_answer_names() {
+    let item = ask("i-00000001");
+    let picked = |action, option| match plan(
+        &item,
+        &Answer {
+            option,
+            ..answer("i-00000001", action)
+        },
+        1,
+    ) {
+        Ok(Plan::Pick { option, pane, .. }) => {
+            assert_eq!(pane.to_string(), "%3");
+            Ok(option)
+        }
+        Ok(other) => panic!("{other:?}"),
+        Err(e) => Err(e.code),
+    };
+    assert_eq!(picked(InboxAction::Approve, None), Ok(1));
+    assert_eq!(picked(InboxAction::Reject, None), Ok(0));
+
+    let mut question = ask("i-00000001");
+    question.prompt.as_mut().unwrap().kind = PromptKind::Question;
+    let chosen = |option| {
+        plan(
+            &question,
+            &Answer {
+                option,
+                ..answer("i-00000001", InboxAction::Choose)
+            },
+            1,
+        )
+    };
+    assert!(matches!(chosen(Some(2)), Ok(Plan::Pick { option: 2, .. })));
+    assert_eq!(chosen(Some(3)).unwrap_err().code, ErrorCode::BadRequest);
+    assert_eq!(chosen(None).unwrap_err().code, ErrorCode::BadRequest);
+}
+
+#[test]
+fn keys_go_only_to_the_menu_the_item_asked_about() {
+    let asked = menu();
+    assert_eq!(prompt::keys(&asked, Some(&asked), 1).unwrap(), ["1"]);
+    let mut other = menu();
+    other.entry = "toolu_2".into();
+    for current in [None, Some(&other)] {
+        assert_eq!(
+            prompt::keys(&asked, current, 1).unwrap_err().code,
+            ErrorCode::Conflict
+        );
+    }
+}
+
+#[test]
+fn a_reply_needs_a_text_and_says_what_it_is() {
+    let item = review("i-00000001");
+    let with = |action, text: &str| {
+        plan(
+            &item,
+            &Answer {
+                text: Some(text.into()),
+                ..answer("i-00000001", action)
+            },
+            1,
+        )
+    };
+    assert_eq!(
+        with(InboxAction::Redo, "Use the cache.\nKeep the API."),
+        Ok(Plan::Reply(
+            "Feedback on your last turn. Redo it with this in mind:\n\nUse the cache.\nKeep the API."
+                .into()
+        ))
+    );
+    assert_eq!(
+        with(InboxAction::ChangeCourse, "Drop the cache."),
+        Ok(Plan::Reply(
+            "Change of course. New direction:\n\nDrop the cache.".into()
+        ))
+    );
+    for text in [String::new(), "x".repeat(MAX_TEXT + 1)] {
+        assert_eq!(
+            with(InboxAction::Redo, &text).unwrap_err().code,
+            ErrorCode::BadRequest
+        );
+    }
+    assert!(with(InboxAction::Redo, &"x".repeat(MAX_TEXT)).is_ok());
+}

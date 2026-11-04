@@ -9,6 +9,7 @@ mod facts;
 mod handoff;
 pub(crate) mod observation;
 pub mod remote;
+pub(crate) mod reply;
 pub(crate) mod restart;
 
 pub use brief::{BRIEF, HANDOFF};
@@ -525,17 +526,42 @@ pub async fn update(
 ) -> Result<Message, ErrorBody> {
     let config = config.clone();
     blocking(move || {
-        let record = config
-            .store()?
-            .update(&task, rev, |r| r.status = status_of(status))
-            .map_err(|e| store_error(&e))?;
-        tracing::info!(task = %record.id, rev = record.rev, "task status set");
+        let record = write_status(&config, &task, Some(rev), status)?;
         Ok(Message::TaskSaved {
             task: request,
             record: convert::task_record(record),
         })
     })
     .await
+}
+
+/// Sets a record's status at its current revision: an Inbox answer (ADR 0033).
+pub(crate) async fn set_status(
+    config: &Config,
+    task: String,
+    status: TaskStatus,
+) -> Result<Record, ErrorBody> {
+    let config = config.clone();
+    blocking(move || write_status(&config, &task, None, status)).await
+}
+
+/// Blocking. `rev` None takes the record's current one.
+fn write_status(
+    config: &Config,
+    task: &str,
+    rev: Option<u64>,
+    status: TaskStatus,
+) -> Result<Record, ErrorBody> {
+    let store = config.store()?;
+    let rev = match rev {
+        Some(rev) => rev,
+        None => store.get(task).map_err(|e| store_error(&e))?.rev,
+    };
+    let record = store
+        .update(task, rev, |r| r.status = status_of(status))
+        .map_err(|e| store_error(&e))?;
+    tracing::info!(task = %record.id, rev = record.rev, "task status set");
+    Ok(record)
 }
 
 /// Move down and Later (ADR 0027 §4). The new place replaces the old one;
