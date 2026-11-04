@@ -81,16 +81,23 @@ final class InboxItemTests: XCTestCase {
         save("inbox-items")
     }
 
-    /// A review shows its summary and evidence; Accept removes it, and the Task is in Closed.
+    /// A review shows its summary and evidence; Done removes it, and the Task is in Closed.
     @MainActor
-    func testAcceptRemovesAReview() throws {
+    func testDoneRemovesAReview() throws {
         let app = launchOnInbox()
         open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
         XCTAssertTrue(app.staticTexts["item-summary"].label.contains("PR #42"))
-        XCTAssertTrue(app.buttons["item-evidence-changes"].exists)
-        XCTAssertTrue(app.buttons["item-evidence-doc-docs/design.md"].exists)
-        XCTAssertTrue(app.buttons["item-evidence-image-build/screenshots/en/login.png"].exists)
-        XCTAssertFalse(answer(app, "change-course").exists, "Change course is under More")
+        XCTAssertFalse(app.staticTexts["item-summary"].label.contains("**"), "the summary is Markdown")
+        XCTAssertTrue(app.buttons["item-evidence-changes"].label.contains("3 files"))
+        XCTAssertTrue(app.buttons["item-evidence-doc-docs/design.md"].label.contains("design.md"))
+        XCTAssertTrue(app.buttons["item-evidence-image-build/screenshots/en/login.png"].label.contains("login.png"))
+        XCTAssertTrue(app.links["item-evidence-link"].exists || app.buttons["item-evidence-link"].exists)
+        XCTAssertEqual(answer(app, "accept").label, "Done")
+        XCTAssertTrue(app.staticTexts["item-result-accept"].label.contains("closes the Task"))
+        XCTAssertEqual(answer(app, "reply").label, "Send")
+        for action in ["redo", "change-course", "keep-open"] {
+            XCTAssertFalse(answer(app, action).exists, "\(action) is under More")
+        }
         save("inbox-item-review")
         tapWhenReady(answer(app, "accept"))
         XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
@@ -104,23 +111,55 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(closed.waitForExistence(timeout: 5), "Accept marks the Task done")
     }
 
-    /// Redo needs a reply, and sends it.
+    /// Send needs a reply, and sends it as it is (ADR 0033 §4a.1).
     @MainActor
-    func testRedoNeedsATextAndSendsIt() throws {
+    func testSendRepliesToAReview() throws {
         let app = launchOnInbox()
         open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
-        XCTAssertFalse(answer(app, "redo").isEnabled, "no text yet")
+        XCTAssertFalse(answer(app, "reply").isEnabled, "no text yet")
+        tapWhenReady(app.textFields["item-reply"])
+        app.textFields["item-reply"].typeText("Also update the README.")
+        XCTAssertTrue(answer(app, "reply").isHittable, "the answers stay above the keyboard")
+        XCTAssertTrue(answer(app, "reply").isEnabled)
+        tapWhenReady(answer(app, "reply"))
+        XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
+    }
+
+    /// Redo is under More, needs a reply, and sends it.
+    @MainActor
+    func testRedoIsUnderMoreAndSendsTheReply() throws {
+        let app = launchOnInbox()
+        open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
         tapWhenReady(app.textFields["item-reply"])
         app.textFields["item-reply"].typeText("Keep the old redirect for one week.")
-        XCTAssertTrue(answer(app, "redo").isHittable, "the answers stay above the keyboard")
-        XCTAssertTrue(answer(app, "redo").isEnabled)
+        tapWhenReady(app.buttons["item-more"])
         tapWhenReady(answer(app, "redo"))
         XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
     }
 
-    /// Approve answers an ask, and its agent runs again. A phone returns to the list.
+    /// Deny & Send denies the menu and sends the text to the agent, whose chat shows it.
     @MainActor
-    func testApproveAnswersAnAsk() throws {
+    func testDenyAndSendAnswersAnAsk() throws {
+        let app = launchOnInbox()
+        open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
+        XCTAssertEqual(answer(app, "approve").label, "Allow")
+        XCTAssertEqual(answer(app, "reject").label, "Deny")
+        XCTAssertEqual(answer(app, "reply").label, "Deny & Send")
+        XCTAssertFalse(answer(app, "reply").isEnabled, "no text yet")
+        tapWhenReady(app.textFields["item-reply"])
+        app.textFields["item-reply"].typeText("Deploy to staging first.")
+        tapWhenReady(answer(app, "reply"))
+        XCTAssertTrue(row(app, "i-0000a001").waitForNonExistence(timeout: 5))
+        showMode(app, 1)
+        tapWhenReady(app.buttons["task-t-auth01"])
+        tapWhenReady(app.buttons["task-open-chat"])
+        let sent = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Deploy to staging first.")).firstMatch
+        XCTAssertTrue(sent.waitForExistence(timeout: 10), "the agent got the text")
+    }
+
+    /// Allow answers an ask, and its agent runs again. A phone returns to the list.
+    @MainActor
+    func testAllowAnswersAnAsk() throws {
         let app = launchOnInbox()
         open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
         XCTAssertTrue(answer(app, "reject").exists)
@@ -170,8 +209,8 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(failure.waitForNonExistence(timeout: 5))
     }
 
-    /// A doc opens in the Reader for the item's pane; closing it returns to the item,
-    /// with no sheet to open again.
+    /// A doc in the attachment list opens in the Reader for the item's pane; closing it
+    /// returns to the item, with no sheet to open again.
     @MainActor
     func testEvidenceOpensInTheReaderAndReturns() throws {
         let app = launchOnInbox()
@@ -181,6 +220,17 @@ final class InboxItemTests: XCTestCase {
         tapWhenReady(app.buttons["Done"].firstMatch)
         waitForQuestion(app, "Ready for review: Fix the login redirect")
         XCTAssertFalse(app.descendants(matching: .any)["pane"].firstMatch.exists, "the item, not the pane")
+    }
+
+    /// A file name in the summary that is an attachment opens it in the Reader too.
+    @MainActor
+    func testAFileNameInTheSummaryOpensTheReader() throws {
+        let app = launchOnInbox()
+        open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
+        tapWhenReady(app.links["docs/design.md"])
+        XCTAssertTrue(app.webViews.firstMatch.staticTexts["Design"].waitForExistence(timeout: 10))
+        tapWhenReady(app.buttons["Done"].firstMatch)
+        waitForQuestion(app, "Ready for review: Fix the login redirect")
     }
 
     /// Terminal shows the item's session in the Agent view, and its row stays

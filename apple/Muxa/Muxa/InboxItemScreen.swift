@@ -35,7 +35,7 @@ struct InboxItemScreen: View {
                     Text(source(item)).font(.subheadline).foregroundStyle(.secondary)
                 }
                 if let summary = item.summary, !summary.isEmpty {
-                    Text(summary).textSelection(.enabled).accessibilityIdentifier("item-summary")
+                    ItemSummaryText(item: item, summary: summary)
                 }
                 if let question = item.prompt?.question {
                     Text(question).font(.headline)
@@ -72,7 +72,7 @@ struct InboxItemScreen: View {
             Text(failure ?? "")
         }
         .background {
-            let main = ItemAnswers(item).main
+            let main = ItemAnswers(item, replying: hasReply).main
             Button("Send the Main Answer") { if let main { perform(item, main) } }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(main == nil || sending)
@@ -88,7 +88,7 @@ struct InboxItemScreen: View {
     // MARK: Answers
 
     private func answerBar(_ item: InboxItem) -> some View {
-        let answers = ItemAnswers(item)
+        let answers = ItemAnswers(item, replying: hasReply)
         return VStack(spacing: 8) {
             if item.answers.contains(where: \.needsText) {
                 TextField("Reply…", text: $reply, axis: .vertical)
@@ -119,6 +119,14 @@ struct InboxItemScreen: View {
                 }
             }
             .disabled(sending)
+            ForEach(answers.shown, id: \.self) { action in
+                if let result = action.result {
+                    Text("\(action.title(for: item.kind)) \(result).")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("item-result-\(action.rawValue)")
+                }
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -209,58 +217,6 @@ struct InboxItemScreen: View {
                 failure = PaneSession.describe(error)
             }
         }
-    }
-}
-
-/// The item's evidence as chips. Changes, docs and images open in the Reader for
-/// the item's pane and return to the item; links open in the browser.
-private struct ItemEvidence: View {
-    @Environment(AppModel.self) private var model
-    let item: InboxItem
-
-    var body: some View {
-        let a = item.attachments
-        if !a.isEmpty {
-            let readable = model.canOpenEvidence(item)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    if let c = a.changes {
-                        chip("Changes +\(c.added) −\(c.removed)", Icon.changes, id: "changes") {
-                            model.open(item, as: .changes)
-                        }
-                        .disabled(!readable || !model.session.canShowChanges)
-                    }
-                    ForEach(a.docs, id: \.self) { path in
-                        chip(Self.name(path), Icon.document, id: "doc-\(path)") { model.open(item, as: .doc(path)) }
-                            .disabled(!readable)
-                    }
-                    ForEach(a.images, id: \.self) { path in
-                        chip(Self.name(path), "photo", id: "image-\(path)") { model.open(item, as: .image(path)) }
-                            .disabled(!readable || !model.session.canShowImages)
-                    }
-                    ForEach(a.links, id: \.url) { link in
-                        if let url = URL(string: link.url) {
-                            Link(destination: url) { Label(link.title ?? link.url, systemImage: "link") }
-                                .buttonStyle(.bordered)
-                                .buttonBorderShape(.capsule)
-                                .accessibilityIdentifier("item-evidence-link")
-                        }
-                    }
-                }
-            }
-            .accessibilityIdentifier("item-evidence")
-        }
-    }
-
-    private func chip(_ title: String, _ icon: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Label(title, systemImage: icon) }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
-            .accessibilityIdentifier("item-evidence-\(id)")
-    }
-
-    private static func name(_ path: String) -> String {
-        path.split(separator: "/").last.map(String.init) ?? path
     }
 }
 

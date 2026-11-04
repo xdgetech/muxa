@@ -25,6 +25,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var prompt: String?
     /// What the demo agent waits on, and the tool call it waits on.
     private var waitingOn: (prompt: ChatPrompt, tool: ChatEntry)?
+    /// Texts the Inbox sent to the chat's agent, after its conversation.
+    private var itemTexts: [ChatEntry] = []
     /// Grows when a task starts.
     private var sessions: [Session]
     /// Grows when a task record is created.
@@ -156,7 +158,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
             ok(id)
             lock.withLock { chat = (id, 0, 0) }
-            emitChat(reset: true, entries: content.conversation, status: content.chatStatus)
+            emitChat(reset: true, entries: content.conversation + lock.withLock { itemTexts }, status: content.chatStatus)
         case .unchat(let id):
             lock.withLock { chat = nil }
             ok(id)
@@ -403,6 +405,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .success(let (saved, effect)):
             emit(.inboxSaved(inbox: id, entry: nil, item: saved))
             ok(id)
+            if case .agentRuns(Self.chatPane) = effect, let text { sendToChat(text, from: item) }
             switch effect {
             case .agentRuns: emit(.sessionsChanged)
             case .taskChanged: emit(.tasksChanged)
@@ -411,6 +414,17 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .failure(let refusal):
             emit(.result(id: id, error: refusal.body, sessions: nil))
         }
+    }
+
+    /// The text of Send, Redo or Change course reaches the chat's agent as a prompt,
+    /// so the Chat view shows what the Inbox sent.
+    private func sendToChat(_ text: String, from item: String) {
+        let entry = ChatEntry(id: "u:item-\(item)", kind: .user, text: text)
+        let open = lock.withLock { () -> Bool in
+            itemTexts.append(entry)
+            return chat != nil
+        }
+        if open { emitChat(entries: [entry], status: .running) }
     }
 
     /// A running agent in its own session for a new task record.

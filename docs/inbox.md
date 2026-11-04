@@ -28,34 +28,38 @@ Inbox (3)
 ┌ Ready for review ──────────┐
 │ reduce GA cost · lisk-app  │
 │                            │
-│ "Moved the GA4 export to   │
-│  daily batches. Tests      │
-│  pass. PR #817."           │
+│ Moved the GA4 export to    │
+│ daily batches. Tests pass. │
+│ PR #817.                   │
 │                            │
-│ [Diff +120 −40] [PR #817]  │
-│ [plan.md] [chart.png]      │
+│ Attachments                │
+│ ± Changes  4 files +120 −40│
+│ ▤ plan.md  docs            │
+│ ▧ chart.png  docs          │
+│ ↗ PR #817  github.com      │
 │                            │
 │ ┌ reply… ────────────────┐ │
 │ └────────────────────────┘ │
-│ [ Accept ] [ Redo ]        │
+│ [ Done ] [ Send ]  [More]  │
+│ Done closes the Task.      │
 └────────────────────────────┘
 ```
 
 1. The question and the source.
-2. The summary: the agent's last message for the turn.
-3. Attachments as chips. Each opens in the Reader and returns to the item.
-4. The reply box. Redo and Change course send its text to the agent, so they need one.
-5. The answers for the kind:
+2. The summary: the agent's last message for the turn, as Markdown.
+3. Attachments as a list with file names. Each opens in the Reader and returns to the item; a link opens in the browser.
+4. The reply box. Send, Redo and Change course send its text to the agent, so they need one.
+5. The answers for the kind (ADR 0033 §4a):
 
 | Kind | Buttons |
 |---|---|
-| `ask` | Approve, Reject; a reply answers a question |
-| `review` | Accept, Redo; Change course and Keep open under More |
-| `failure` | Retry, Change course; Drop under More |
+| `ask` | Allow, Deny, Deny & send; a question shows its options |
+| `review` | Done, Send; Redo, Change course and Keep open under More |
+| `failure` | Retry, Send; Change course, Drop and Dismiss under More |
 | `proposal` | Approve, Reject |
 | `briefing` | Done |
 
-More also holds Later and Open Terminal. Accept and Drop ask for no confirmation, because they only set the Task's status; Approve on a proposal still shows the action, target and content first. An answer returns to the list.
+More also holds Later and Open Terminal. Done and Drop ask for no confirmation, because they only set the Task's status; Approve on a proposal still shows the action, target and content first. An answer returns to the list.
 
 ### Phone and tablet (ADR 0035)
 
@@ -63,11 +67,12 @@ More also holds Later and Open Terminal. Accept and Drop ask for no confirmation
 - Tablet: the list is the sidebar and the selected item is the detail. At connect, and on a switch to Inbox mode, the first item is selected (which marks it read). After an answer the next item opens.
 - Phone: the list is the first screen. The item is pushed; an answer returns to the list. Back goes pane → item → list.
 - The item's **Chat** and **Terminal** show its session: Chat opens the Chat view, Terminal the agent's pane. On a phone they push over the item; on a tablet the pane fills the detail and the sidebar collapses. An item never opens the Shell first.
-- Evidence opens in the Reader and returns to the item.
-- At connect, Inbox and Tasks mode stay on their list, also when it is empty ("Nothing needs you"). Sessions mode opens the default pane.
+- The summary is Markdown (ADR 0033 §4a.5). Its `http` and `https` links open in the browser. A link or a file name that matches an attachment opens that attachment in the Reader.
+- The attachments are a list under the summary: Changes with the file and line counts, then each doc and image by file name and folder, then the links by title. Evidence opens in the Reader and returns to the item.
+- Labels name the result (ADR 0033 §4a.2). `accept` is **Done**, with "Done closes the Task." below the buttons. `reply` is **Send**, or **Deny & Send** on an `ask`. On an `ask`, `approve` is **Allow** and `reject` is **Deny**. A proposal keeps **Approve** and **Reject**.- At connect, Inbox and Tasks mode stay on their list, also when it is empty ("Nothing needs you"). Sessions mode opens the default pane.
 - A host below `work:3` gets "This host needs a newer muxa-bridge for the Inbox", with Tasks and Sessions.
-- The reply box shows only when the item takes a text answer. The summary is plain text until slice I6 (§4a of ADR 0033).
-- The main answer is the host's first answer, unless that is `choose` or `later`. muxa for tmux uses the same rule.
+- The reply box shows only when the item takes a text answer. Send, Redo and Change Course need its text.
+- The main answer is `reply` while the reply box has text (ADR 0033 §4a.3). Otherwise it is the host's first answer, unless that is `choose` or `later`. muxa for tmux uses the same rule. The main answer is the prominent button.
 - iPad keys: Command+T Inbox mode, Command+L Tasks mode, Command+Shift+S Sessions mode, Command+0 shows or hides the sidebar, Command+, Settings. In the Inbox: Command+Up/Down move between items, Return opens an item on a phone, Command+Return sends the main answer, Command+O opens the item's terminal, Command+Shift+L asks for Later.
 - Android keys: the same with Ctrl+Shift (Ctrl+Shift+T, L, S, 0, O, Up/Down), Enter opens, Ctrl+Shift+Enter sends the main answer, Ctrl+Shift+Alt+L asks for Later. A swipe in either direction asks for Later.
 - Demo: Try the Demo, the showcase and the test demo play a `work:3` host. UI tests pick the mode with `-mode inbox|tasks|sessions` on iOS and `--es mode inbox|tasks|sessions` on Android.

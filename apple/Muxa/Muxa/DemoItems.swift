@@ -2,7 +2,7 @@ import Foundation
 import MuxaProtocol
 
 /// The demo bridge's Inbox items (`work` level 3, ADR 0033), with the host's checks:
-/// only listed answers, a text for Redo and Change course, and a Later in the future.
+/// only listed answers, a text for Redo, Change course and Send, and a Later in the future.
 /// A Routine's item is its stored entry, so Approve still creates one Task.
 extension DemoWork {
     private static var now: UInt64 { UInt64(Date().timeIntervalSince1970) }
@@ -67,7 +67,7 @@ extension DemoWork {
         }
         let item = taskItems[i]
         guard item.answers.contains(action) else { throw Refusal(.badRequest, "\(action.rawValue) is not an answer of \(id)") }
-        if action == .redo || action == .changeCourse, (text ?? "").isEmpty { throw Refusal(.badRequest, "\(action.rawValue) needs a text") }
+        if [.redo, .changeCourse, .reply].contains(action), (text ?? "").isEmpty { throw Refusal(.badRequest, "\(action.rawValue) needs a text") }
         if action == .choose, Int(option ?? .max) >= (item.prompt?.options.count ?? 0) {
             throw Refusal(.badRequest, "option is not one of the prompt's options")
         }
@@ -103,7 +103,7 @@ extension DemoWork {
             return .taskChanged
         }
         switch action {
-        case .approve, .reject, .choose, .redo, .changeCourse, .retry:
+        case .approve, .reject, .choose, .redo, .changeCourse, .reply, .retry:
             return item.pane.map(ItemEffect.agentRuns) ?? .none
         default:
             return .none
@@ -139,7 +139,7 @@ extension DemoWork {
     /// evidence and a failure. The proposal and the briefing are the entries.
     static let testItems: [InboxItem] = [
         taskItem("i-0000a001", .ask, "Allow Bash: npm run deploy", task: "t-auth01", title: "Add sign-in with passkeys",
-                 ago: 90, session: "$1", pane: "%1", prompt: permission, answers: [.approve, .reject, .later]),
+                 ago: 90, session: "$1", pane: "%1", prompt: permission, answers: [.approve, .reject, .reply, .later]),
         taskItem("i-0000a004", .ask, "Which test runner should the suite use?", task: "t-perf01",
                  title: "Speed up the test suite", ago: 300,
                  prompt: ChatPrompt(entry: "toolu_demo2", kind: .question, question: "Which test runner?", options: [
@@ -150,34 +150,37 @@ extension DemoWork {
                  answers: [.choose, .later]),
         taskItem("i-0000a002", .review, "Ready for review: Fix the login redirect", task: "t-login1",
                  title: "Fix the login redirect", ago: 600, session: "$4", pane: "%5",
-                 summary: "Users now return to the page they came from after sign-in. The tests pass. PR #42.",
+                 summary: "Users now return to the page they came from after sign-in. The flow is in docs/design.md, "
+                     + "and the tests pass. **Ready to merge:** [PR #42](https://github.com/example/app/pull/42).",
                  attachments: Attachments(
                      changes: ChangeCount(files: 3, added: 6, removed: 1), docs: ["docs/design.md"],
                      images: ["build/screenshots/en/login.png"],
                      links: [SourceLink(url: "https://github.com/example/app/pull/42", title: "PR #42")]),
-                 answers: [.accept, .redo, .changeCourse, .keepOpen, .later]),
+                 answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later]),
         taskItem("i-0000a003", .failure, "The agent stopped with an error", task: "t-price1",
                  title: "Draft the pricing page", ago: 1800, read: true,
                  summary: "npm install failed: the lockfile is out of date.",
-                 answers: [.retry, .changeCourse, .drop, .dismiss, .later]),
+                 answers: [.retry, .reply, .changeCourse, .drop, .dismiss, .later]),
     ]
 
     /// Try the Demo's items: an agent asking, and two finished turns.
     static let showcaseItems: [InboxItem] = [
         taskItem("i-5c000001", .ask, "Allow Bash: stripe listen --forward-to localhost:4242", task: "t-a1b2c3",
                  title: "Handle Stripe invoice.paid webhook", ago: 75, session: "$1", pane: "%1", prompt: permission,
-                 answers: [.approve, .reject, .later]),
+                 answers: [.approve, .reject, .reply, .later]),
         taskItem("i-5c000002", .review, "Ready for review: Dark mode for the dashboard", task: "t-0a1b2c",
                  title: "Dark mode for the dashboard", ago: 720, session: "$3", pane: "%5",
-                 summary: "The dashboard follows the system setting now. The charts use the new palette, and the contrast checks pass.",
+                 summary: "The dashboard follows the system setting now. The charts use the new palette, and the "
+                     + "contrast checks pass. The setting is described in `README.md`; see "
+                     + "[PR #318](https://github.com/example/dashboard/pull/318).",
                  attachments: Attachments(
                      changes: ChangeCount(files: 6, added: 212, removed: 48), docs: ["README.md"],
                      links: [SourceLink(url: "https://github.com/example/dashboard/pull/318", title: "PR #318")]),
-                 answers: [.accept, .redo, .changeCourse, .keepOpen, .later]),
+                 answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later]),
         taskItem("i-5c000003", .review, "Ready for review: Faster search index", task: "t-3c4d5e",
                  title: "Faster search index", ago: 1800, session: "$4", pane: "%6", read: true,
                  summary: "The index builds in 41 s instead of 96 s. Search results are unchanged.",
                  attachments: Attachments(changes: ChangeCount(files: 2, added: 37, removed: 12)),
-                 answers: [.accept, .redo, .changeCourse, .keepOpen, .later]),
+                 answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later]),
     ]
 }
