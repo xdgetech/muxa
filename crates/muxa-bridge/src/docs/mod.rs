@@ -3,10 +3,12 @@
 //! for images.
 
 mod files;
+mod folder;
 mod image_task;
 mod images;
 
-pub(crate) use files::is_doc;
+pub(crate) use files::{is_doc, repo_root};
+pub(crate) use folder::{inside, scan};
 pub use image_task::ImageTask;
 pub(crate) use images::is_image;
 
@@ -20,6 +22,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::agents::Registry;
 use crate::chat::pane_info;
 use crate::convert::error_body;
+use crate::task_records::Config;
 use files::{Doc, Listing, ReadError};
 
 const TICK: Duration = Duration::from_secs(1);
@@ -47,6 +50,7 @@ pub struct DocTask {
     out: mpsc::Sender<Message>,
     rx: mpsc::Receiver<Command>,
     agents: Arc<Registry>,
+    records: Arc<Config>,
     open: Option<Open>,
 }
 
@@ -63,12 +67,14 @@ impl DocTask {
         out: mpsc::Sender<Message>,
         rx: mpsc::Receiver<Command>,
         agents: Arc<Registry>,
+        records: Arc<Config>,
     ) -> Self {
         Self {
             client,
             out,
             rx,
             agents,
+            records,
             open: None,
         }
     }
@@ -151,8 +157,8 @@ impl DocTask {
 
     async fn listing(&self, pane: PaneId) -> Result<Listing, ErrorBody> {
         let info = pane_info(&self.client, pane).await?;
-        let agents = Arc::clone(&self.agents);
-        tokio::task::spawn_blocking(move || files::list(&info, &agents))
+        let (agents, records) = (Arc::clone(&self.agents), Arc::clone(&self.records));
+        tokio::task::spawn_blocking(move || files::for_pane(&info, &agents, &records))
             .await
             .map_err(|e| error_body(ErrorCode::Internal, e.to_string()))
     }

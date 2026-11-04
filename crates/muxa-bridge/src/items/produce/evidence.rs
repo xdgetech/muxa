@@ -1,7 +1,8 @@
 //! What an item shows besides its question: the agent's last reply and menu
-//! from its adapter, and the pane's changes. Blocking (files, git). The
-//! reply is stored in the item and never logged (invariant 5).
-use std::path::Path;
+//! from its adapter, the pane's changes, and the files and links the reply
+//! names. Blocking (files, git). The reply is stored in the item and never
+//! logged (invariant 5).
+use std::path::{Component, Path};
 
 use muxa_protocol::{
     Attachments, ChangeCount, ChangeInfo, ChangeStatus, ChatEntry, ChatKind, ChatPrompt,
@@ -93,8 +94,43 @@ pub(super) fn cut(text: &str, max: usize) -> String {
     text[..end].to_owned()
 }
 
+/// Folders whose files are muxa's or the agent's own, never evidence.
+const PRIVATE: [&str; 2] = [".muxa", ".claude"];
+
+/// What a turn that started at `since` (epoch seconds) leaves in the pane's
+/// folder `dir`: in a repo, its changes; outside one, the documents and
+/// images changed since then. Then the files and links `summary` names.
+/// Paths are relative to the repo root, or to `dir` outside a repo, as the
+/// pane's `docs` and `images` list them.
+pub(super) fn attachments(dir: &Path, summary: Option<&str>, since: Option<u64>) -> Attachments {
+    let root = crate::docs::repo_root(dir);
+    let mut out = match &root {
+        Some(_) => changes(dir),
+        None => changed_since(dir, since),
+    };
+    let Some(summary) = summary else {
+        return out;
+    };
+    let base = root.unwrap_or_else(|| dir.to_path_buf());
+    for raw in super::summary::paths(summary) {
+        let Some(path) = named(dir, &base, &raw) else {
+            continue;
+        };
+        let list = if crate::docs::is_image(&path) {
+            &mut out.images
+        } else {
+            &mut out.docs
+        };
+        if list.len() < MAX_PATHS && !list.contains(&path) {
+            list.push(path);
+        }
+    }
+    out.links = super::summary::links(summary);
+    out
+}
+
 /// The pane's changes: uncommitted, else the branch's own.
-pub(super) fn attachments(dir: &Path) -> Attachments {
+fn changes(dir: &Path) -> Attachments {
     let changes = git::list(dir);
     let (entries, scope) = match &changes.branch {
         _ if !changes.entries.is_empty() => (&changes.entries, None),
@@ -102,6 +138,48 @@ pub(super) fn attachments(dir: &Path) -> Attachments {
         _ => return Attachments::default(),
     };
     of_changes(entries, scope)
+}
+
+/// The documents and images under `dir` changed since `since`, newest
+/// first, at most `MAX_PATHS` each. Nothing without a start.
+fn changed_since(dir: &Path, since: Option<u64>) -> Attachments {
+    let Some(since) = since else {
+        return Attachments::default();
+    };
+    let newest = |keep: fn(&str) -> bool| {
+        let mut found = crate::docs::scan(dir, keep, Some(since));
+        found.sort_by(|a, b| b.mtime.cmp(&a.mtime).then_with(|| a.path.cmp(&b.path)));
+        found.into_iter().take(MAX_PATHS).map(|f| f.path).collect()
+    };
+    Attachments {
+        docs: newest(crate::docs::is_doc),
+        images: newest(crate::docs::is_image),
+        ..Attachments::default()
+    }
+}
+
+/// `raw`, a path from the summary, relative to `base` when it names a file
+/// inside the pane's folder `dir`, also after symlinks, and outside `PRIVATE`.
+fn named(dir: &Path, base: &Path, raw: &str) -> Option<String> {
+    let given = Path::new(raw);
+    let rel = if given.is_absolute() {
+        given
+            .strip_prefix(dir.canonicalize().ok()?)
+            .ok()?
+            .to_path_buf()
+    } else {
+        given.to_path_buf()
+    };
+    let real = crate::docs::inside(dir, &rel)?;
+    let path = real.strip_prefix(base.canonicalize().ok()?).ok()?;
+    let private = path.components().any(|c| match c {
+        Component::Normal(n) => PRIVATE.iter().any(|p| n == *p),
+        _ => true,
+    });
+    if private {
+        return None;
+    }
+    path.to_str().map(str::to_owned)
 }
 
 pub(super) fn of_changes(entries: &[ChangeInfo], scope: Option<String>) -> Attachments {
@@ -130,3 +208,7 @@ pub(super) fn of_changes(entries: &[ChangeInfo], scope: Option<String>) -> Attac
         links: Vec::new(),
     }
 }
+
+#[cfg(test)]
+#[path = "evidence_tests.rs"]
+mod tests;

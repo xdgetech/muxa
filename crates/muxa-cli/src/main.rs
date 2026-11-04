@@ -110,9 +110,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  answered and resolved items
   inbox answer ITEM ACTION
                  answers an item. ACTION is approve, reject, choose
-                 (--option N), accept, keep-open, redo or change-course
-                 (--text T), retry, drop, dismiss, later (--until TIME)
-                 or read
+                 (--option N), accept, keep-open, reply, redo or
+                 change-course (--text T), retry, drop, dismiss, later
+                 (--until TIME) or read. reply sends the text as it is;
+                 on an ask it denies the permission first
   inbox read ITEM
                  marks the item read, as inbox answer ITEM read";
 
@@ -598,6 +599,17 @@ mod tests {
         let a = answer(&["inbox", "answer", "i-1", "redo", "--text", "again"]).unwrap();
         assert_eq!(a.action, InboxAction::Redo);
         assert_eq!(a.text.as_deref(), Some("again"));
+        let a = answer(&[
+            "inbox",
+            "answer",
+            "i-1",
+            "reply",
+            "--text",
+            "Use the cache.",
+        ])
+        .unwrap();
+        assert_eq!(a.action, InboxAction::Reply);
+        assert_eq!(a.text.as_deref(), Some("Use the cache."));
         let a = answer(&["inbox", "answer", "i-1", "choose", "--option", "2"]).unwrap();
         assert_eq!(a.option, Some(2));
         let a = answer(&["inbox", "answer", "i-1", "later", "--until", "1767340800"]).unwrap();
@@ -608,6 +620,7 @@ mod tests {
         );
         for bad in [
             &["inbox", "answer", "i-1", "redo"][..],
+            &["inbox", "answer", "i-1", "reply"],
             &["inbox", "answer", "i-1", "choose"],
             &["inbox", "answer", "i-1", "later"],
             &["inbox", "answer", "i-1", "accept", "--text", "x"],

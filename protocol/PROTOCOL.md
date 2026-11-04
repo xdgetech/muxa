@@ -153,6 +153,7 @@ A bridge with the `docs` capability serves the Markdown documents that belong to
 
 1. `docs {pane}` sends `doc-list`, then `result`. `docs` in the list is the request id.
 2. The list holds the pane's agent documents first (`kind: plan`, for example the Claude Code plan of that session, path `plans/<name>`), then the Markdown files of the pane's git repo (`kind: repo`, path relative to the repo): tracked files, and untracked files git does not ignore. At most 2000; `truncated` says there were more. Last come a task's brief, handoff and last check, paths `.muxa/TASK.md`, `.muxa/HANDOFF.md` and `.muxa/CHECK.md` (`kind: repo`), when they exist at the repo root or, outside a repo, in the pane's directory (ADR 0015, 0018, 0019).
+   - Outside a repo, the list also has files of the pane's directory (`kind: repo`, path relative to that directory), by the rule in "Files outside a repo" below.
 3. `doc {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `doc-content` with the whole text, and again whenever the file changes (checked every second). The client drops any whose `doc` is not its latest doc request.
 4. `doc-ended` says the document is no longer readable, for example removed, larger than 2 MiB, or a symlink to outside its directory.
 
@@ -178,6 +179,15 @@ A bridge with the `images` capability serves the image files of a pane's git rep
 2. The list holds PNG, JPEG, GIF, WebP and HEIC files by extension, in any case: tracked files and untracked ones, **including files git ignores**. Only those extensions are listed. Each entry has `path` (relative to the repo), `mtime` and `size` in bytes. Newest first; at most 2000, the newest kept, and `truncated` says there were more.
 3. `image {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `image-content` with the whole file, and again whenever its time or size changes (checked every 2 seconds). The client drops any whose `image` is not its latest image request.
 4. `image-ended` says the image is no longer readable, for example removed, larger than 16 MiB, or a symlink to outside the repo.
+5. Outside a repo, the list holds the pane directory's images by the rule below, path relative to that directory, and has no `root`.
+
+### Files outside a repo
+
+When a pane's directory is in no git repo, `docs` and `images` serve (ADR 0033 §4a):
+
+1. In a Task folder, every Markdown file or image under it. A Task folder is the `dir` of a Task record with no `branch` (a Task without a repo, or a reading Task) whose parent folder is `tasks/`. The bridge scans it without following symlinks, skips every name that starts with a dot (so `.muxa/` and `.claude/` are never listed; `.muxa/TASK.md` and the others are listed as above), and stops at 6 levels, 2000 entries or 250 ms.
+2. In any other directory, only the paths that the Inbox items of that pane (`pane` is its id) attach.
+3. Each file must stay inside the pane's directory after symlinks, when listed and on every read.
 
 ## Tasks
 
@@ -380,9 +390,14 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - optional `summary`: the agent's last message for the turn, or the entry's body, at most 4096 bytes;
    - optional `task`, `session` (`$n`) and `pane` (`%n`). Open the pane's `changes`, `docs` and `images` with `pane` for the attachments;
    - optional `prompt`, with `ask`: the menu, as in Chat's `prompt`;
-   - optional `attachments {changes?, docs[], images[], links[]}`. `changes {files, added, removed, scope?}` counts the pane's uncommitted changes when the item was made; `scope: "branch"` counts the branch's own commits instead, as `diff {scope: "branch"}` shows them. `docs` and `images` are paths among those changes;
+   - optional `attachments {changes?, docs[], images[], links[]}`. `changes {files, added, removed, scope?}` counts the pane's uncommitted changes when the item was made; `scope: "branch"` counts the branch's own commits instead, as `diff {scope: "branch"}` shows them. `docs` and `images` are paths as the pane's `docs` and `images` list them (ADR 0033 §4a), at most 20 of each:
+     - in a repo, the Markdown files and images among those changes;
+     - outside a repo, the ones under the pane's directory changed since the turn started, by modification time, newest first. `.muxa/`, `.claude/` and other dot-folders are skipped;
+     - then, in any Task, the Markdown files and images the summary names, by a relative or an absolute path, that exist inside the pane's directory after symlinks and outside `.muxa/` and `.claude/`. Each path is listed once;
+     - `links`: the summary's `http` and `https` links, each once, at most 10. A GitHub pull request's link has `title` `PR #<n>`;
    - optional `routine` and `proposal`, for a Routine's item;
-   - `answers[]`: the actions the host accepts now, in the order to show them. Empty once answered or resolved. Show an unknown action as nothing.
+   - `answers[]`: the actions the host accepts now, in the order to show them. Empty once answered or resolved. Show an unknown action as nothing. The first one is the main answer. A `review` has `accept, reply, redo, change-course, keep-open, later`; a `failure` `retry, reply, change-course, drop, dismiss, later`; an `ask` about a permission `approve, reject, reply, later`.
+   - Labels are the client's. They name the result (ADR 0033 §4a): `accept` is "Done" (closes the Task) and `reply` "Send". On an `ask`, `approve` is "Allow", `reject` "Deny" and `reply` "Deny & send". A `proposal` keeps "Approve" and "Reject".
 3. A `later` item whose `until` has passed is listed as `open`. A Task has at most one `open` or `later` item; a newer need resolves the older one.
 4. `update-inbox {entry, action, until?, text?, option?}` answers an item; `entry` is its id. On success: `inbox-saved {inbox, item}`, then `result`. For a Routine's entry, `inbox-saved` has `entry` too.
    - `approve`: an `ask` picks the prompt's first option that is not `cancel`; a proposal is approved as above.
@@ -390,6 +405,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `choose` with `option`, an index into the prompt's options: answers a question.
    - `accept`: a `review` marks the Task done. `keep-open` answers it and leaves the Task open.
    - `redo` and `change-course` with `text` (1 to 4096 bytes): send the text to the agent as its next prompt, once the agent is idle. `redo` is feedback on its turn; `change-course` a new direction.
+   - `reply` with `text` (1 to 4096 bytes): a `review` or `failure` sends the text as it is, with no preface, and the Task goes on. An `ask` about a permission first picks the prompt's `cancel` option, waits up to 10 seconds until the adapter no longer reports that menu and reports the agent `idle` or `done`, then sends the text. When the agent does not take the denial in time, the answer is `conflict` and the item stays open; the menu was denied. Old clients drop the unknown `reply`, so no capability is needed. Fixtures: `fixtures/items/reply-*.jsonl`.
    - `retry`: a `failure` restarts the agent, as `restart-agent`. `drop` marks the Task dropped.
    - `branch` and `keep`, with `work` level 4: a reading Task's `proposal` about its main checkout (Reading Tasks below). `branch` does `branch-task` with a branch from the title; `keep` answers it and changes nothing.
    - `dismiss` answers the item and does nothing else. `later` needs `until`. `read` sets `readAt` and leaves the item open.

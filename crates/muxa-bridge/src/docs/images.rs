@@ -9,6 +9,8 @@ use std::process::Command;
 use muxa_protocol::ImageInfo;
 
 use super::files::{self, ReadError};
+use crate::agents::PaneInfo;
+use crate::task_records::Config;
 
 /// Images listed for one pane at most; the newest are kept.
 pub const MAX_IMAGES: usize = 2000;
@@ -58,10 +60,20 @@ impl Listing {
 }
 
 /// The images of the repo `path` is in, newest first.
+#[cfg(test)]
 pub fn list(path: &Path) -> Listing {
-    let Some(root) = files::repo_root(path) else {
-        return Listing::default();
-    };
+    files::repo_root(path).map(in_repo).unwrap_or_default()
+}
+
+/// As `list`; outside a repo, the folder's images `folder::served` allows.
+pub fn for_pane(pane: &PaneInfo, records: &Config) -> Listing {
+    match files::repo_root(Path::new(&pane.path)) {
+        Some(root) => in_repo(root),
+        None => outside_repo(pane, records),
+    }
+}
+
+fn in_repo(root: PathBuf) -> Listing {
     let mut images: Vec<Image> = repo_images(&root)
         .into_iter()
         .filter_map(|rel| {
@@ -79,12 +91,7 @@ pub fn list(path: &Path) -> Listing {
             })
         })
         .collect();
-    images.sort_by(|a, b| {
-        b.info
-            .mtime
-            .cmp(&a.info.mtime)
-            .then_with(|| a.info.path.cmp(&b.info.path))
-    });
+    newest_first(&mut images);
     let truncated = images.len() > MAX_IMAGES;
     images.truncate(MAX_IMAGES);
     Listing {
@@ -92,6 +99,43 @@ pub fn list(path: &Path) -> Listing {
         images,
         truncated,
     }
+}
+
+fn outside_repo(pane: &PaneInfo, records: &Config) -> Listing {
+    let base = PathBuf::from(&pane.path);
+    let mut images: Vec<Image> = super::folder::served(records, pane, is_image)
+        .into_iter()
+        .filter_map(|f| {
+            let file = base.join(&f.path);
+            let size = std::fs::metadata(&file).ok()?.len();
+            Some(Image {
+                info: ImageInfo {
+                    path: f.path,
+                    mtime: f.mtime,
+                    size: Some(size),
+                },
+                file,
+                root: base.clone(),
+            })
+        })
+        .collect();
+    newest_first(&mut images);
+    let truncated = images.len() > MAX_IMAGES;
+    images.truncate(MAX_IMAGES);
+    Listing {
+        root: None,
+        images,
+        truncated,
+    }
+}
+
+fn newest_first(images: &mut [Image]) {
+    images.sort_by(|a, b| {
+        b.info
+            .mtime
+            .cmp(&a.info.mtime)
+            .then_with(|| a.info.path.cmp(&b.info.path))
+    });
 }
 
 /// Tracked and untracked image files, ignored ones included.

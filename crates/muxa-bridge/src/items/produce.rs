@@ -2,6 +2,8 @@
 //! supply (ADR 0033 §2). Never from terminal content (invariant 6).
 mod evidence;
 mod reading;
+mod summary;
+mod turn;
 
 use muxa_protocol::{Attachments, ChatPrompt, InboxItem, ItemKind, ItemState, PromptKind};
 use muxa_tmux::{AgentState, AgentStatus, Pane, Role, Session};
@@ -315,9 +317,11 @@ fn one(
         record.runs.last().map(|r| r.started_at),
         pane.agent,
     );
+    let run_start = record.runs.last().map(|r| r.started_at);
+    let agent = current(pane.agent, run_start);
+    turn::note(store, record, agent)?;
     if record.is_read() {
-        let run_start = record.runs.last().map(|r| r.started_at);
-        reading::note_start(store, record, current(pane.agent, run_start))?;
+        reading::note_start(store, record, agent)?;
     }
     let items = store.get(&record.id)?;
     match change(&need, &items) {
@@ -378,7 +382,19 @@ fn make(
         proposal: None,
         answers: Vec::new(),
     };
-    item.attachments = evidence::attachments(std::path::Path::new(&pane.path));
+    let since = match need {
+        Need::Turn(ended, _) => turn::start(
+            &store.get(&record.id)?,
+            record.runs.last().map(|r| r.started_at),
+            *ended,
+        ),
+        _ => None,
+    };
+    item.attachments = evidence::attachments(
+        std::path::Path::new(&pane.path),
+        item.summary.as_deref(),
+        since,
+    );
     if let (Need::Turn(ended, _), Some(main)) = (need, record.repo.as_deref()) {
         if record.is_read() {
             // The turn's item becomes the question about the main checkout (ADR 0034 §2).

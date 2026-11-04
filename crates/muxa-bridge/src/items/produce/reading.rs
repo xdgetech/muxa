@@ -5,10 +5,11 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use muxa_protocol::Attachments;
-use muxa_tmux::{AgentState, AgentStatus};
+use muxa_tmux::AgentStatus;
 use serde::{Deserialize, Serialize};
 
 use super::evidence::{MAX_SUMMARY, cut, of_changes};
+use super::turn::running_since;
 use crate::changes::git;
 use crate::records::Record;
 use crate::routines::store::StateError;
@@ -112,12 +113,6 @@ pub(super) fn take(
         Ok(())
     })?;
     Ok(new_lines(&start.status, &now).map(|lines| Changed { lines }))
-}
-
-fn running_since(agent: Option<AgentStatus>) -> Option<u64> {
-    agent
-        .filter(|s| s.state == AgentState::Running)
-        .and_then(|s| s.since)
 }
 
 /// Lines in `now` that `before` did not have: a new file, or a new state of one.

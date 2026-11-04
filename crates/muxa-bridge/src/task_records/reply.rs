@@ -1,18 +1,36 @@
 //! Types the user's reply to a finished turn into a Task's agent pane, as its
-//! next prompt (ADR 0033 §1). Only on a turn that ended, never on a menu.
+//! next prompt (ADR 0033 §1). Only on a turn that ended, never on a menu,
+//! or right after the user denied the menu (§4a).
 use std::sync::Arc;
 
 use muxa_protocol::{ErrorBody, ErrorCode};
 use muxa_tmux::{AgentState, AgentStatus};
 
 use super::create::Env;
-use super::handoff::{Linked, agent_pane, bound_run_observation};
+use super::handoff::{AgentPane, Linked, agent_pane, bound_run_observation};
 use super::{blocking, store_error};
 use crate::convert::{self, error_body};
 use crate::loops::typing;
 
 /// Types `text` now, or refuses. Nothing waits for the turn to end.
 pub async fn send(env: &Env, task: &str, text: &str) -> Result<(), ErrorBody> {
+    deliver(env, task, text, |found| ready(found.status)).await
+}
+
+/// As `send`, after the caller denied the agent's menu and saw its adapter
+/// report the menu gone. The pane's state tag can still say `waiting`:
+/// Claude Code runs no hook when a denial interrupts its turn. So only the
+/// adapter's own state counts here.
+pub async fn send_after_deny(env: &Env, task: &str, text: &str) -> Result<(), ErrorBody> {
+    deliver(env, task, text, |found| ready(found.adapter_status)).await
+}
+
+async fn deliver(
+    env: &Env,
+    task: &str,
+    text: &str,
+    ready: impl Fn(&AgentPane) -> Result<(), ErrorBody>,
+) -> Result<(), ErrorBody> {
     let (config, id) = (Arc::clone(&env.records), task.to_owned());
     let record = blocking(move || config.store()?.get(&id).map_err(|e| store_error(&e))).await?;
     if record.extra.contains_key(crate::records::lifecycle::FIELD)
@@ -38,7 +56,7 @@ pub async fn send(env: &Env, task: &str, text: &str) -> Result<(), ErrorBody> {
     let found = bound_run_observation(&record, found).ok_or_else(|| {
         conflict("the agent in the Task's pane is not confirmed yet; reply in the terminal")
     })?;
-    ready(found.status)?;
+    ready(&found)?;
     let quiet = typing::quiet(&env.client, found.session, crate::records::now())
         .await
         .map_err(|e| convert::error(&e))?;

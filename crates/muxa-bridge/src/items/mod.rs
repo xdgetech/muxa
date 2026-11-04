@@ -36,14 +36,19 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
                 }
                 if p.options.iter().any(|o| o.cancel) {
                     a.push(Reject);
+                    // Claude Code takes a denied permission's turn as ended,
+                    // so the text arrives as the next prompt (docs/agents.md).
+                    if p.kind == PromptKind::Permission {
+                        a.push(Reply);
+                    }
                 }
                 a
             }
             // A menu the adapter cannot read is answered in the terminal.
             None => vec![Dismiss],
         },
-        ItemKind::Review => vec![Accept, Redo, ChangeCourse, KeepOpen],
-        ItemKind::Failure => vec![Retry, ChangeCourse, Drop, Dismiss],
+        ItemKind::Review => vec![Accept, Reply, Redo, ChangeCourse, KeepOpen],
+        ItemKind::Failure => vec![Retry, Reply, ChangeCourse, Drop, Dismiss],
         // A reading Task changed its main checkout (ADR 0034 §2).
         ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],
         ItemKind::Proposal => vec![Approve, Reject],
@@ -123,6 +128,37 @@ pub fn list(config: &Config, entries: &[InboxEntry]) -> Result<Vec<InboxItem>, E
     Ok(order(items))
 }
 
+/// Blocking. The docs and images the stored items of pane `pane` (`%n`)
+/// attach, each once: what a pane outside a repo serves besides a Task folder.
+pub fn evidence_paths(config: &Config, pane: &str) -> Vec<String> {
+    let Some(dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
+        return Vec::new();
+    };
+    let files = match ItemStore::open(dir).and_then(|s| s.all()) {
+        Ok(files) => files,
+        Err(e) => {
+            tracing::warn!(error = %e, "cannot read inbox items for a pane's files");
+            return Vec::new();
+        }
+    };
+    let mut paths: Vec<String> = files
+        .iter()
+        .flat_map(|t| &t.items)
+        .filter(|s| s.item.pane.as_deref() == Some(pane))
+        .flat_map(|s| {
+            s.item
+                .attachments
+                .docs
+                .iter()
+                .chain(&s.item.attachments.images)
+        })
+        .cloned()
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 fn order(mut items: Vec<InboxItem>) -> Vec<InboxItem> {
     let rank = |i: &InboxItem| match (i.state, i.kind) {
         (ItemState::Open, ItemKind::Ask) => 0,
@@ -183,10 +219,18 @@ mod tests {
                 },
             ],
         });
-        assert_eq!(answers(&ask), [Approve, Reject, Later]);
+        assert_eq!(answers(&ask), [Approve, Reject, Reply, Later]);
+        if let Some(p) = ask.prompt.as_mut() {
+            p.kind = PromptKind::Plan;
+        }
+        assert_eq!(answers(&ask), [Approve, Reject, Later], "only a permission");
         assert_eq!(
             answers(&item(ItemKind::Review, ItemState::Open, 1)),
-            [Accept, Redo, ChangeCourse, KeepOpen, Later]
+            [Accept, Reply, Redo, ChangeCourse, KeepOpen, Later]
+        );
+        assert_eq!(
+            answers(&item(ItemKind::Failure, ItemState::Open, 1)),
+            [Retry, Reply, ChangeCourse, Drop, Dismiss, Later]
         );
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
     }

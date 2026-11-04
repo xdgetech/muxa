@@ -93,13 +93,14 @@ pub struct Attachments {
     /// The pane's changes when the item was made: uncommitted, else the branch's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changes: Option<ChangeCount>,
-    /// Markdown paths among those changes, as `doc` takes them.
+    /// Markdown paths: among those changes, changed in the turn outside a
+    /// repo, or named by the summary. As `doc` takes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub docs: Vec<String>,
-    /// Image paths among those changes, as `image` takes them.
+    /// Image paths, chosen as `docs` are. As `image` takes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<String>,
-    /// The PR, or a Routine entry's links.
+    /// The summary's `http` and `https` links, or a Routine entry's links.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<SourceLink>,
 }

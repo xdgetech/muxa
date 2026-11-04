@@ -189,7 +189,7 @@ async fn an_unknown_item_or_an_answer_it_does_not_take_is_a_bad_request() {
     assert_eq!(e.code, ErrorCode::BadRequest);
     assert!(
         e.message
-            .contains("it takes accept, redo, change-course, keep-open, later, or read"),
+            .contains("it takes accept, reply, redo, change-course, keep-open, later, or read"),
         "{}",
         e.message
     );
@@ -348,4 +348,91 @@ fn a_reply_needs_a_text_and_says_what_it_is() {
         );
     }
     assert!(with(InboxAction::Redo, &"x".repeat(MAX_TEXT)).is_ok());
+}
+
+#[test]
+fn a_reply_sends_the_text_as_it_is() {
+    let with = |item: &InboxItem, text: &str| {
+        plan(
+            item,
+            &Answer {
+                text: Some(text.into()),
+                ..answer(&item.id, InboxAction::Reply)
+            },
+            1,
+        )
+    };
+    let text = "Use the cache.\nKeep the API.";
+    assert_eq!(
+        with(&review("i-00000001"), text),
+        Ok(Plan::Reply(text.into()))
+    );
+    let mut failure = review("i-00000002");
+    failure.kind = ItemKind::Failure;
+    assert_eq!(with(&failure, text), Ok(Plan::Reply(text.into())));
+    for text in [String::new(), "x".repeat(MAX_TEXT + 1)] {
+        let e = with(&review("i-00000001"), &text).unwrap_err();
+        assert_eq!(e.code, ErrorCode::BadRequest);
+        assert!(e.message.starts_with("reply needs a text"), "{}", e.message);
+    }
+}
+
+#[test]
+fn an_asks_reply_denies_the_menu_then_sends_the_text() {
+    let item = ask("i-00000001");
+    let planned = plan(
+        &item,
+        &Answer {
+            text: Some("Run the tests first.".into()),
+            ..answer("i-00000001", InboxAction::Reply)
+        },
+        1,
+    );
+    let Ok(Plan::DenyAndReply {
+        pane,
+        asked,
+        option,
+        text,
+    }) = planned
+    else {
+        panic!("{planned:?}");
+    };
+    assert_eq!(pane.to_string(), "%3");
+    assert_eq!(asked, menu());
+    assert!(asked.options[option].cancel, "the cancel option");
+    assert_eq!(text, "Run the tests first.");
+
+    let mut question = ask("i-00000002");
+    question.prompt.as_mut().unwrap().kind = PromptKind::Question;
+    let e = plan(
+        &question,
+        &Answer {
+            text: Some("x".into()),
+            ..answer("i-00000002", InboxAction::Reply)
+        },
+        1,
+    )
+    .unwrap_err();
+    assert_eq!(
+        e.code,
+        ErrorCode::BadRequest,
+        "only a permission takes reply"
+    );
+}
+
+#[test]
+fn a_denied_menu_is_taken_once_gone_and_idle() {
+    use muxa_protocol::AgentState::*;
+    let asked = menu();
+    let mut other = menu();
+    other.entry = "toolu_2".into();
+    assert!(prompt::taken(&asked, None, Some(Idle)));
+    assert!(prompt::taken(&asked, Some(&other), Some(Done)));
+    assert!(
+        !prompt::taken(&asked, Some(&asked), Some(Idle)),
+        "still shown"
+    );
+    for state in [None, Some(Waiting), Some(Running), Some(Error)] {
+        assert!(!prompt::taken(&asked, None, state), "{state:?}");
+    }
 }

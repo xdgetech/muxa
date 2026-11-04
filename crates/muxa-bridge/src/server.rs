@@ -164,11 +164,20 @@ where
             out.clone(),
             doc_rx,
             Arc::clone(&config.agents),
+            Arc::clone(&config.records),
         )
         .run(),
     );
     let (image_tx, image_rx) = mpsc::channel(8);
-    let images = tokio::spawn(ImageTask::new(Arc::clone(&client), out.clone(), image_rx).run());
+    let images = tokio::spawn(
+        ImageTask::new(
+            Arc::clone(&client),
+            out.clone(),
+            image_rx,
+            Arc::clone(&config.records),
+        )
+        .run(),
+    );
     let (change_tx, change_rx) = mpsc::channel(8);
     let changes = tokio::spawn(ChangeTask::new(Arc::clone(&client), out.clone(), change_rx).run());
     let task_watch = config

@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use common::daemon::Daemon;
 use common::{Bridge, Server};
+use muxa_protocol::Message;
 use serde_json::{Value, json};
 
 const TASK: &str = "t-00a1b2";
@@ -161,6 +162,97 @@ async fn the_daemon_makes_items_with_no_client_connected() {
     assert!(daemon.log().contains("inbox item made"), "{}", daemon.log());
     // The daemon only reads tmux: no window changed (invariant 2).
     assert_eq!(before, host.server.layout());
+}
+
+/// ADR 0033 §4a: outside git the turn's new document is attached and
+/// served, and `reply` types its text into the pane as it is.
+#[tokio::test]
+async fn a_reply_reaches_the_pane_and_the_turns_document_is_attached() {
+    let host = Host::new("reply", "running", 990);
+    std::fs::write(host.base.join("task/report.md"), "# Report\n").unwrap();
+    let dir = host.state_dir();
+    // No daemon here: answers must not reach the host's own daemon.
+    let no_daemon = host.base.join("no-daemon").display().to_string();
+    let (mut bridge, _) = Bridge::start(
+        &host.server,
+        &["--state-dir", &dir, "--daemon-dir", &no_daemon],
+    )
+    .await;
+    let file = host.base.join(format!("state/items/{TASK}.json"));
+    let deadline = tokio::time::Instant::now() + WAIT;
+    let started = || {
+        std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .is_some_and(|v| v["turnStart"] == 990)
+    };
+    while !started() {
+        assert!(tokio::time::Instant::now() < deadline, "no turn start");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    host.report("done", 1000);
+    let items = host.until("review", |i| !i.is_empty()).await;
+    let item = &items[0];
+    assert_eq!(item["attachments"]["docs"], json!(["report.md"]));
+    assert_eq!(
+        item["answers"],
+        json!([
+            "accept",
+            "reply",
+            "redo",
+            "change-course",
+            "keep-open",
+            "later"
+        ])
+    );
+
+    // The pane's folder is in no repo: the docs list serves the attached file.
+    let result = bridge
+        .request(json!({"type": "docs", "pane": host.pane}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+    let entries = loop {
+        match bridge.event(WAIT).await {
+            Some(Message::DocList { entries, .. }) => break entries,
+            Some(_) => continue,
+            None => panic!("no doc-list"),
+        }
+    };
+    assert!(entries.iter().any(|e| e.path == "report.md"), "{entries:?}");
+
+    let text = "Also update the README";
+    let result = bridge
+        .request(
+            json!({"type": "update-inbox", "entry": item["id"], "action": "reply", "text": text}),
+        )
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !host
+        .server
+        .capture(&host.pane)
+        .iter()
+        .any(|l| l.contains(text))
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the text never reached the pane"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let shown = host.server.capture(&host.pane).join("\n");
+    assert!(!shown.contains("Feedback"), "no preface: {shown}");
+    let items = host.items();
+    assert_eq!(
+        (items[0]["state"].as_str(), items[0]["answer"].as_str()),
+        (Some("answered"), Some("reply"))
+    );
 }
 
 #[tokio::test]

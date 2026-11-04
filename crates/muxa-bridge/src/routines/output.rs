@@ -280,7 +280,7 @@ fn text(field: &str, value: &str, max: usize, may_be_empty: bool, reasons: &mut 
     }
 }
 
-fn valid_url(url: &str) -> bool {
+pub(crate) fn valid_url(url: &str) -> bool {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"));

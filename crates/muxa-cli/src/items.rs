@@ -11,6 +11,8 @@ use crate::conn::Conn;
 const WAIT: Duration = Duration::from_secs(10);
 /// A proposal's approval and a retry launch an agent before they answer.
 const LAUNCH_WAIT: Duration = Duration::from_secs(120);
+/// A reply to an `ask` waits up to 10 s for the agent to take the denial.
+const REPLY_WAIT: Duration = Duration::from_secs(30);
 
 /// An answer as `update-inbox` takes it, validated before any request.
 #[derive(Debug, PartialEq, Eq)]
@@ -29,7 +31,10 @@ pub fn action(name: &str) -> Option<InboxAction> {
 impl Answer {
     pub fn checked(self) -> Result<Self, String> {
         let a = self.action;
-        let wants_text = matches!(a, InboxAction::Redo | InboxAction::ChangeCourse);
+        let wants_text = matches!(
+            a,
+            InboxAction::Reply | InboxAction::Redo | InboxAction::ChangeCourse
+        );
         let rule = |name: &str, given: bool, wanted: bool, needs: &str| match (given, wanted) {
             (false, true) => Err(format!("{needs} needs {name}")),
             (true, false) => Err(format!("{name} is only for {needs}")),
@@ -39,7 +44,7 @@ impl Answer {
             "--text",
             self.text.is_some(),
             wants_text,
-            "redo and change-course",
+            "reply, redo and change-course",
         )?;
         rule(
             "--option",
@@ -139,7 +144,11 @@ pub async fn answer(
                 text,
                 option,
             },
-            if launches { LAUNCH_WAIT } else { WAIT },
+            match action {
+                _ if launches => LAUNCH_WAIT,
+                InboxAction::Reply => REPLY_WAIT,
+                _ => WAIT,
+            },
         )
         .await?;
     let saved = messages
@@ -185,6 +194,8 @@ mod tests {
             ..answer(a)
         };
         assert!(text("change-course").checked().is_ok());
+        assert!(text("reply").checked().is_ok());
+        assert!(answer("reply").checked().is_err());
         assert!(text("accept").checked().is_err());
         assert!(
             Answer {

@@ -204,6 +204,9 @@ pub enum InboxAction {
     Branch,
     /// A reading Task's changed-checkout `proposal`: leaves the changes as they are.
     Keep,
+    /// A `review` or `failure`: sends `text` to the agent as it is. An `ask`
+    /// about a permission: picks the `cancel` option first (ADR 0033 §4a).
+    Reply,
 }
 
 #[cfg(test)]

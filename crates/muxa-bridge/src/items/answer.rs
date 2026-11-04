@@ -18,7 +18,7 @@ use crate::records::now;
 use crate::routines::store::StateError;
 use crate::task_records::{Context, reply, restart, set_status};
 
-/// The most bytes a `redo` or `change-course` text has.
+/// The most bytes a `reply`, `redo` or `change-course` text has.
 pub const MAX_TEXT: usize = 4096;
 /// The latest Later the host accepts, in seconds from now.
 pub const MAX_LATER: u64 = 366 * 24 * 60 * 60;
@@ -48,6 +48,14 @@ enum Plan {
     },
     /// The next prompt for the agent. Never logged (invariant 5).
     Reply(String),
+    /// An `ask`'s `reply`: the menu's cancel option at `option`, then `text`
+    /// once the adapter reports the menu gone.
+    DenyAndReply {
+        pane: PaneId,
+        asked: ChatPrompt,
+        option: usize,
+        text: String,
+    },
     Nothing,
 }
 
@@ -103,6 +111,25 @@ fn plan(item: &InboxItem, answer: &Answer, at: u64) -> Result<Plan, ErrorBody> {
         Branch => Plan::Branch,
         Approve | Reject | Choose => pick(item, answer.action, answer.option)?,
         Redo | ChangeCourse => Plan::Reply(reply_text(answer.action, answer.text.as_deref())?),
+        Reply => {
+            let text = reply_text(Reply, answer.text.as_deref())?;
+            if item.kind != ItemKind::Ask {
+                return Ok(Plan::Reply(text));
+            }
+            match pick(item, Reject, None)? {
+                Plan::Pick {
+                    pane,
+                    asked,
+                    option,
+                } => Plan::DenyAndReply {
+                    pane,
+                    asked,
+                    option,
+                    text,
+                },
+                other => other,
+            }
+        }
         KeepOpen | Keep | Dismiss | Read => Plan::Nothing,
     })
 }
@@ -178,7 +205,8 @@ fn choice(option: Option<u32>, options: usize) -> Result<usize, ErrorBody> {
         })
 }
 
-/// The prompt the agent gets, prefixed so it knows what the text is.
+/// The prompt the agent gets. `redo` and `change-course` are prefixed so it
+/// knows what the text is; `reply` is sent as it is.
 fn reply_text(action: InboxAction, text: Option<&str>) -> Result<String, ErrorBody> {
     let text = text.unwrap_or_default();
     if text.is_empty() || text.len() > MAX_TEXT {
@@ -188,6 +216,7 @@ fn reply_text(action: InboxAction, text: Option<&str>) -> Result<String, ErrorBo
         )));
     }
     let lead = match action {
+        InboxAction::Reply => return Ok(text.to_owned()),
         InboxAction::Redo => "Feedback on your last turn. Redo it with this in mind:",
         _ => "Change of course. New direction:",
     };
@@ -217,6 +246,16 @@ async fn act(cx: &Context, task: &str, plan: Plan) -> Result<(), ErrorBody> {
             option,
         } => prompt::pick(cx, pane, &asked, option).await,
         Plan::Reply(text) => reply::send(&cx.env().await?, task, &text).await,
+        Plan::DenyAndReply {
+            pane,
+            asked,
+            option,
+            text,
+        } => {
+            prompt::pick(cx, pane, &asked, option).await?;
+            prompt::wait_taken(cx, pane, &asked).await?;
+            reply::send_after_deny(&cx.env().await?, task, &text).await
+        }
         Plan::Read | Plan::Later(_) | Plan::Nothing => Ok(()),
     }
 }

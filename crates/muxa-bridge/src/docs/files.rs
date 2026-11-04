@@ -10,7 +10,7 @@ use muxa_protocol::{DocInfo, DocKind};
 
 use crate::agents::{AgentDoc, PaneInfo, Registry};
 use crate::loops::check::REPORT as CHECK;
-use crate::task_records::{BRIEF, HANDOFF};
+use crate::task_records::{BRIEF, Config, HANDOFF};
 
 /// Documents listed for one pane at most.
 pub const MAX_DOCS: usize = 2000;
@@ -35,7 +35,18 @@ pub struct Listing {
 }
 
 /// The agent's documents first (a plan), then the repo's Markdown files in path order.
+#[cfg(test)]
 pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
+    let none = Config {
+        state_dir: None,
+        workspaces: None,
+        home: None,
+    };
+    for_pane(pane, agents, &none)
+}
+
+/// As `list`; outside a repo, also the folder's files `folder::served` allows.
+pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config) -> Listing {
     let mut listing = Listing::default();
     match agents.documents(pane) {
         Ok(docs) => listing.docs.extend(docs.into_iter().map(agent_doc)),
@@ -63,7 +74,27 @@ pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
             }
         }));
     }
+    let outside = root.is_none();
     let base = root.unwrap_or_else(|| PathBuf::from(&pane.path));
+    if outside {
+        let mut found = super::folder::served(records, pane, is_doc);
+        found.sort_by(|a, b| a.path.cmp(&b.path));
+        listing.truncated = found.len() > MAX_DOCS;
+        found.truncate(MAX_DOCS);
+        listing.docs.extend(found.into_iter().map(|f| {
+            let file = base.join(&f.path);
+            Doc {
+                info: DocInfo {
+                    path: f.path,
+                    kind: DocKind::Repo,
+                    title: None,
+                    mtime: f.mtime,
+                },
+                file,
+                root: base.clone(),
+            }
+        }));
+    }
     for path in [BRIEF, HANDOFF, CHECK] {
         if let Some(doc) = task_file(&base, path)
             && listing.find(path).is_err()
@@ -107,7 +138,7 @@ fn agent_doc(d: AgentDoc) -> Doc {
     }
 }
 
-pub(super) fn repo_root(path: &Path) -> Option<PathBuf> {
+pub(crate) fn repo_root(path: &Path) -> Option<PathBuf> {
     let out = Command::new("git")
         .arg("-C")
         .arg(path)
@@ -176,7 +207,7 @@ fn title(path: &Path) -> Option<String> {
         .filter(|t| !t.is_empty())
 }
 
-pub(super) fn mtime(path: &Path) -> Option<u64> {
+pub(crate) fn mtime(path: &Path) -> Option<u64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     Some(modified.duration_since(UNIX_EPOCH).ok()?.as_secs())
 }

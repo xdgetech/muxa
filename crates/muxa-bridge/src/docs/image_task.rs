@@ -1,7 +1,6 @@
 //! `images` and `image`: lists a pane's images, and follows the open one, sending
 //! the whole file again whenever it changes, e.g. when a test run rewrites it.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,6 +12,7 @@ use super::images::{self, Image, Listing};
 use super::{Command, read_error};
 use crate::chat::pane_info;
 use crate::convert::error_body;
+use crate::task_records::Config;
 
 /// Images are larger than documents, so they are checked less often.
 const TICK: Duration = Duration::from_secs(2);
@@ -21,6 +21,7 @@ pub struct ImageTask {
     client: Arc<Client>,
     out: mpsc::Sender<Message>,
     rx: mpsc::Receiver<Command>,
+    records: Arc<Config>,
     open: Option<Open>,
 }
 
@@ -36,11 +37,13 @@ impl ImageTask {
         client: Arc<Client>,
         out: mpsc::Sender<Message>,
         rx: mpsc::Receiver<Command>,
+        records: Arc<Config>,
     ) -> Self {
         Self {
             client,
             out,
             rx,
+            records,
             open: None,
         }
     }
@@ -123,8 +126,8 @@ impl ImageTask {
 
     async fn listing(&self, pane: PaneId) -> Result<Listing, ErrorBody> {
         let info = pane_info(&self.client, pane).await?;
-        let path = PathBuf::from(info.path);
-        tokio::task::spawn_blocking(move || images::list(&path))
+        let records = Arc::clone(&self.records);
+        tokio::task::spawn_blocking(move || images::for_pane(&info, &records))
             .await
             .map_err(|e| error_body(ErrorCode::Internal, e.to_string()))
     }

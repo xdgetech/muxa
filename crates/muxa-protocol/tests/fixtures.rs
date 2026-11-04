@@ -273,6 +273,43 @@ fn item_fixtures_round_trip() {
     ));
 }
 
+/// ADR 0033 §4a. Separate files: the Swift and Kotlin round trips of
+/// `items/` drop the unknown `reply` until their clients know it.
+#[test]
+fn reply_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, ItemKind};
+    assert_eq!(round_trip::<Request>("items/reply-requests.jsonl"), 3);
+    assert_eq!(round_trip::<Message>("items/reply-messages.jsonl"), 2);
+    let path = format!(
+        "{}/../../protocol/fixtures/items/reply-messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let Some(Ok(Message::InboxList { items, .. })) = text.lines().nth(1).map(serde_json::from_str)
+    else {
+        panic!()
+    };
+    use InboxAction::*;
+    let answers = |id: &str| {
+        items
+            .iter()
+            .find(|i| i.id == id)
+            .map(|i| i.answers.clone())
+            .unwrap()
+    };
+    assert_eq!(answers("i-0a1b2c3d"), [Approve, Reject, Reply, Later]);
+    assert_eq!(
+        answers("i-2c3d4e5f"),
+        [Accept, Reply, Redo, ChangeCourse, KeepOpen, Later]
+    );
+    assert_eq!(
+        answers("i-3d4e5f6a"),
+        [Retry, Reply, ChangeCourse, Drop, Dismiss, Later]
+    );
+    let proposal = items.iter().find(|i| i.kind == ItemKind::Proposal).unwrap();
+    assert!(!proposal.answers.contains(&Reply));
+}
+
 #[test]
 fn reading_fixtures_round_trip() {
     use muxa_protocol::{InboxAction, ItemKind, WORK_READ, work_level};
