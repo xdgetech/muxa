@@ -95,7 +95,7 @@ A Routine (ADR 0026, `src/routines/`) is a `[[routine]]` in `workspaces.toml` th
 - **Approval.** `update-inbox approve` creates one Task through `create-task`'s path. Its goal holds the proposal unchanged, its hash, and a last line `muxa-proposal: <entry> <hash>`. A second approval, also after a crash, finds that Task by the line instead of making another.
 - **Logs.** Ids, counts and outcomes only. Never instructions, titles, bodies, links or state.
 
-From a terminal: `muxa-cli routines`, `routine run [WORKSPACE/]NAME`, `inbox`, and `inbox approve|dismiss ENTRY` or `inbox later ENTRY --until 4h`.
+From a terminal: `muxa-cli routines`, `routine run [WORKSPACE/]NAME`, `inbox`, and `inbox approve|dismiss ENTRY` or `inbox later ENTRY --until +4h`. With `work` level 3, `inbox` lists Inbox items, and `inbox answer ITEM ACTION` answers one (Desktop tools below).
 
 ## Desktop tools
 
@@ -112,6 +112,8 @@ muxa-cli --bridge 'muxa-bridge [--socket S]' ask REPO [--workspace W] --json
 - `tasks --json` prints `{"workspaces": [names], "workspaceInfo": [{name, root?, checks?, repos?}], "capabilities": [...], "truncated": bool, "tasks": [item, ...], "queue": [ids]}`. `workspaces` stays a list of names for older desktop clients; `workspaceInfo` adds each workspace's root and repos (ADR 0031), and `capabilities` are the host's, so a client can check for `work:2`. `queue` is the Inbox queue now: the ids of the Tasks that need the user, with Move down and Later applied (`protocol/PROTOCOL.md`, Inbox queue).
 - `task done ID --json` and `task drop ID --json` set the status to `done` or `dropped` and print the Task's item. Neither closes the Task's session.
 - `task down ID --json`, `task later ID --until TIME --json` and `task requeue ID --json` set or clear Move down and Later, and print the Task's item. `TIME` is `2026-11-04T09:00Z` (UTC), `+30m`, `+2h`, `+1d` or epoch seconds. They need the `task-inbox` capability; without it the command fails with `unsupported`.
+- `inbox --json` prints `{"items": [item, ...], "entries": [entry, ...], "runs": [...]}`. `items` are the Inbox items of ADR 0033, with `work` level 3 (`protocol/PROTOCOL.md`, Inbox items); without it `items` is empty. `entries` and `runs` stay for older tools. Without `--all`, only `open` and `later` items and entries are listed. The text form, with level 3, prints one line per item: id, kind, state (`unread` when not read), age, title and question.
+- `inbox answer ITEM ACTION [--text T] [--option N] [--until TIME] --json` sends `update-inbox` and prints the saved item. `ACTION` is the wire name: `approve`, `reject`, `choose`, `accept`, `keep-open`, `redo`, `change-course`, `retry`, `drop`, `dismiss`, `later` or `read`. `redo` and `change-course` need `--text`, `choose` needs `--option`, `later` needs `--until`; each flag is only for its action, else the command exits 2 without a request. `inbox read ITEM` is `inbox answer ITEM read`. It needs `work` level 3.
 - `task new --json` prints one item as soon as the record is saved. It then stays until the bridge has typed the start prompt, or gave up after 30 s. Read the first line; do not wait for the exit.
 - `task restart ID [--force] --json` (ADR 0018) prints the restarted Task's item the same way.
 - With `work` level 2 (ADR 0031), `--repo` may be relative to the workspace root, for example `fairpull/fairpull-plan`, and `--branch` may be left out: the host names a new branch after the title.

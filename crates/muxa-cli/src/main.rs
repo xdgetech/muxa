@@ -3,6 +3,7 @@
 mod ask;
 mod conn;
 mod inbox;
+mod items;
 mod routines;
 mod tasks;
 mod view;
@@ -36,6 +37,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] inbox [--all] [--json]
        muxa-cli [--bridge CMD] inbox (approve | dismiss) ENTRY [--json]
        muxa-cli [--bridge CMD] inbox later ENTRY --until TIME [--json]
+       muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
+                [--until TIME] [--json]
+       muxa-cli [--bridge CMD] inbox read ITEM [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -100,7 +104,17 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  creates one Task that performs the proposal; approving
                  again returns the same Task
   inbox dismiss ENTRY, inbox later ENTRY --until TIME
-                 closes the entry, or hides it until TIME, as task later";
+                 closes the entry, or hides it until TIME, as task later
+                 With work level 3, inbox lists Inbox items instead: id,
+                 kind, state, age, title and question; --all also lists
+                 answered and resolved items
+  inbox answer ITEM ACTION
+                 answers an item. ACTION is approve, reject, choose
+                 (--option N), accept, keep-open, redo or change-course
+                 (--text T), retry, drop, dismiss, later (--until TIME)
+                 or read
+  inbox read ITEM
+                 marks the item read, as inbox answer ITEM read";
 
 enum Cmd {
     List,
@@ -166,6 +180,11 @@ enum Cmd {
         all: bool,
         json: bool,
     },
+    Answer {
+        item: String,
+        answer: items::Answer,
+        json: bool,
+    },
     Act {
         entry: String,
         action: InboxAction,
@@ -187,6 +206,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let mut new = tasks::NewTask::default();
     let mut check = tasks::LoopFlags::default();
     let mut until = None;
+    let (mut text, mut option) = (None, None);
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -219,6 +239,8 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("reset") => reset = true,
             Long("until") => until = Some(p.value()?.string()?),
             Long("all") => all = true,
+            Long("text") => text = Some(p.value()?.string()?),
+            Long("option") => option = Some(p.value()?.parse()?),
             Long("version") => {
                 println!("muxa-cli {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
@@ -261,9 +283,15 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 .into(),
         )),
     };
+    let is_answer = matches!(words.as_slice(), [w, a, _, _] if w == "inbox" && a == "answer");
+    if (text.is_some() || option.is_some()) && !is_answer {
+        return Err(lexopt::Error::Custom(
+            "--text and --option require inbox answer".into(),
+        ));
+    }
     let is_later =
         matches!(words.as_slice(), [w, l, _] if (w == "task" || w == "inbox") && l == "later");
-    if until.is_some() != is_later {
+    if until.is_some() && !is_later && !is_answer || is_later && until.is_none() {
         return Err(lexopt::Error::Custom(
             "task later and inbox later need --until, and only they take it".into(),
         ));
@@ -352,6 +380,34 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             json,
         },
         [w] if w == "inbox" => Cmd::Inbox { all, json },
+        [w, a, item, name] if w == "inbox" && a == "answer" => Cmd::Answer {
+            item: item.clone(),
+            answer: items::Answer {
+                action: items::action(name).ok_or_else(|| {
+                    lexopt::Error::Custom(format!("unknown answer {name:?}\n{USAGE}").into())
+                })?,
+                text,
+                option,
+                until: until
+                    .as_deref()
+                    .map(|t| when::parse(t, when::now()))
+                    .transpose()
+                    .map_err(|e| lexopt::Error::Custom(e.into()))?,
+            }
+            .checked()
+            .map_err(|e| lexopt::Error::Custom(e.into()))?,
+            json,
+        },
+        [w, r, item] if w == "inbox" && r == "read" => Cmd::Answer {
+            item: item.clone(),
+            answer: items::Answer {
+                action: InboxAction::Read,
+                text: None,
+                option: None,
+                until: None,
+            },
+            json,
+        },
         [w, a, entry] if w == "inbox" => {
             let action = match a.as_str() {
                 "approve" => InboxAction::Approve,
@@ -468,6 +524,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Routines { json } => routines::list(&mut conn, json).await,
         Cmd::RunRoutine { target, json } => routines::run(&mut conn, &target, json).await,
         Cmd::Inbox { all, json } => routines::inbox(&mut conn, all, json).await,
+        Cmd::Answer { item, answer, json } => items::answer(conn, &item, answer, json).await,
         Cmd::Act {
             entry,
             action,
@@ -544,6 +601,41 @@ mod tests {
             Ok(Some((_, Cmd::Place { change, .. }))) => Ok(change),
             Ok(_) => Err("another command".into()),
             Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn answer(args: &[&str]) -> Result<items::Answer, String> {
+        match parse_with(lexopt::Parser::from_args(args.iter().copied())) {
+            Ok(Some((_, Cmd::Answer { answer, .. }))) => Ok(answer),
+            Ok(_) => Err("another command".into()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    #[test]
+    fn inbox_answer_takes_each_flag_only_with_its_action() {
+        let a = answer(&["inbox", "answer", "i-1", "redo", "--text", "again"]).unwrap();
+        assert_eq!(a.action, InboxAction::Redo);
+        assert_eq!(a.text.as_deref(), Some("again"));
+        let a = answer(&["inbox", "answer", "i-1", "choose", "--option", "2"]).unwrap();
+        assert_eq!(a.option, Some(2));
+        let a = answer(&["inbox", "answer", "i-1", "later", "--until", "1767340800"]).unwrap();
+        assert_eq!(a.until, Some(1_767_340_800));
+        assert_eq!(
+            answer(&["inbox", "read", "i-1"]).unwrap().action,
+            InboxAction::Read
+        );
+        for bad in [
+            &["inbox", "answer", "i-1", "redo"][..],
+            &["inbox", "answer", "i-1", "choose"],
+            &["inbox", "answer", "i-1", "later"],
+            &["inbox", "answer", "i-1", "accept", "--text", "x"],
+            &["inbox", "answer", "i-1", "approve", "--until", "+1h"],
+            &["inbox", "answer", "i-1", "shrug"],
+            &["inbox", "approve", "e-1", "--text", "x"],
+            &["inbox", "read", "i-1", "--option", "1"],
+        ] {
+            assert!(answer(bad).is_err(), "{bad:?}");
         }
     }
 

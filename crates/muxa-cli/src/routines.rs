@@ -184,16 +184,22 @@ fn waiting(routines: &[RoutineInfo], sessions: &[Session]) -> Vec<(String, Strin
 pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, String> {
     let routines = fetch(conn).await?;
     let messages = conn.call(|id| Request::ListInbox { id }, WAIT).await?;
-    let entries: Vec<InboxEntry> = messages
+    let (entries, items) = messages
         .into_iter()
         .find_map(|m| match m {
-            Message::InboxList { entries, .. } => Some(entries),
+            Message::InboxList { entries, items, .. } => Some((entries, items)),
             _ => None,
         })
-        .ok_or("the bridge sent no inbox list")?
+        .ok_or("the bridge sent no inbox list")?;
+    let entries: Vec<InboxEntry> = entries
         .into_iter()
         .filter(|e| all || matches!(e.disposition, Disposition::Open | Disposition::Later))
         .collect();
+    let items: Vec<_> = items
+        .into_iter()
+        .filter(|i| crate::items::shown(i, all))
+        .collect();
+    let with_items = crate::items::has_items(conn);
     let sessions = conn.list().await?;
     let waits = waiting(&routines, &sessions);
     if as_json {
@@ -203,16 +209,31 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
                 json!({"routine": routine, "task": task, "session": session, "need": "answer"})
             })
             .collect();
-        println!("{}", json!({"entries": entries, "runs": runs}));
+        println!(
+            "{}",
+            json!({"items": items, "entries": entries, "runs": runs})
+        );
         return Ok(String::new());
     }
     for (routine, task, session) in &waits {
         println!("{task}  run of {routine} waits for an answer in session {session}");
     }
-    for e in &entries {
-        println!("{}", entry_line(e));
+    let now = crate::when::now();
+    if with_items {
+        for i in &items {
+            println!("{}", crate::items::line(i, now));
+        }
+    } else {
+        for e in &entries {
+            println!("{}", entry_line(e));
+        }
     }
-    if waits.is_empty() && entries.is_empty() {
+    let listed = if with_items {
+        items.is_empty()
+    } else {
+        entries.is_empty()
+    };
+    if waits.is_empty() && listed {
         println!("nothing in Inbox from Routines");
     }
     Ok(String::new())
