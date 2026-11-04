@@ -150,14 +150,24 @@ struct ItemTests {
     }
 
     @Test func answersFollowTheKindsTable() {
-        let review = ItemAnswers(Self.item("i-1", .review, answers: [.accept, .redo, .changeCourse, .keepOpen, .later]))
-        #expect(review.shown == [.accept, .redo])
-        #expect(review.more == [.changeCourse, .keepOpen, .later])
+        let reviewItem = Self.item("i-1", .review, answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later])
+        let review = ItemAnswers(reviewItem)
+        #expect(review.shown == [.accept, .reply])
+        #expect(review.more == [.redo, .changeCourse, .keepOpen, .later])
         #expect(review.main == .accept)
+        #expect(ItemAnswers(reviewItem, replying: true).main == .reply, "a typed reply is the main answer")
 
-        let failure = ItemAnswers(Self.item("i-2", .failure, answers: [.retry, .changeCourse, .drop, .dismiss, .later]))
-        #expect(failure.shown == [.retry, .changeCourse])
-        #expect(failure.more == [.drop, .dismiss, .later])
+        let failure = ItemAnswers(Self.item("i-2", .failure, answers: [.retry, .reply, .changeCourse, .drop, .dismiss, .later]))
+        #expect(failure.shown == [.retry, .reply])
+        #expect(failure.more == [.changeCourse, .drop, .dismiss, .later])
+
+        let older = Self.item("i-4", .review, answers: [.accept, .redo, .changeCourse, .keepOpen, .later])
+        #expect(ItemAnswers(older).shown == [.accept], "a host without reply")
+        #expect(ItemAnswers(older, replying: true).main == .accept)
+
+        let ask = ItemAnswers(Self.item("i-5", .ask, answers: [.approve, .reject, .reply, .later]))
+        #expect(ask.shown == [.approve, .reject, .reply])
+        #expect(ask.more == [.later])
 
         let question = ItemAnswers(Self.item("i-3", .ask, answers: [.choose, .later]))
         #expect(question.chooses)
@@ -167,7 +177,50 @@ struct ItemTests {
         let briefing = ItemAnswers(Self.item("e-1", .briefing, answers: [.dismiss, .later]))
         #expect(briefing.shown == [.dismiss])
         #expect(InboxAction.dismiss.title(for: .briefing) == "Done")
-        #expect(InboxAction.redo.needsText && !InboxAction.accept.needsText)
+        #expect(InboxAction.redo.needsText && InboxAction.reply.needsText && !InboxAction.accept.needsText)
+    }
+
+    /// ADR 0033 §4a.2: the labels name the result.
+    @Test func labelsNameTheResult() {
+        #expect(InboxAction.accept.title(for: .review) == "Done")
+        #expect(InboxAction.accept.result == "closes the Task")
+        #expect(InboxAction.reply.title(for: .review) == "Send")
+        #expect(InboxAction.reply.title(for: .failure) == "Send")
+        #expect(InboxAction.reply.title(for: .ask) == "Deny & Send")
+        #expect(InboxAction.approve.title(for: .ask) == "Allow")
+        #expect(InboxAction.reject.title(for: .ask) == "Deny")
+        #expect(InboxAction.approve.title(for: .proposal) == "Approve")
+        #expect(InboxAction.reject.title(for: .proposal) == "Reject")
+    }
+
+    @Test func aReplySendsItsText() async throws {
+        let bridge = ItemBridge()
+        bridge.items[0].answers = [.approve, .reject, .reply, .later]
+        let session = try await connected(bridge)
+        try await session.answer(session.openItems[0], .reply, text: "Run terraform plan first.")
+        #expect(bridge.sent.contains {
+            if case .updateInboxEntry(_, "i-00000001", .reply, nil, "Run terraform plan first.", nil) = $0 { true } else { false }
+        })
+    }
+
+    /// The summary's web links and the attachments it names are links (ADR 0033 §4a.5).
+    @Test func theSummaryLinksItsAttachmentsAndTheWeb() {
+        let attachments = Attachments(docs: ["docs/plan.md", "notes/plan.md", "report.md"], images: ["shots/chart.png"])
+        let summary = "Wrote report.md and **chart.png**. See [the PR](https://github.com/example/app/pull/1), "
+            + "https://example.com/runs/42 and /work/app/docs/plan.md. [Local](file:///etc/hosts), plan.md, "
+            + "[design](notes/plan.md)."
+        let text = ItemSummary.attributed(summary, attachments: attachments)
+        let links = text.runs.compactMap { run in
+            run.link.map { (String(text[run.range].characters), SummaryLink($0)) }
+        }
+        #expect(links.map(\.0) == ["report.md", "chart.png", "the PR", "https://example.com/runs/42",
+                                    "/work/app/docs/plan.md", "design"])
+        #expect(links.map(\.1) == [
+            .doc("report.md"), .image("shots/chart.png"), .web(URL(string: "https://github.com/example/app/pull/1")!),
+            .web(URL(string: "https://example.com/runs/42")!), .doc("docs/plan.md"), .doc("notes/plan.md"),
+        ])
+        #expect(!String(text.characters).contains("**"), "Markdown is rendered")
+        #expect(SummaryLink(SummaryLink.doc("a b/c.md").url) == .doc("a b/c.md"))
     }
 
     @Test func theRowShowsTheSourceAndTheAge() {

@@ -237,7 +237,7 @@ fn routine_contract_fixtures_round_trip() {
 #[test]
 fn item_fixtures_round_trip() {
     use muxa_protocol::{InboxAction, ItemKind, ItemState, WORK_ITEMS, work_level};
-    assert_eq!(round_trip::<Request>("items/requests.jsonl"), 13);
+    assert_eq!(round_trip::<Request>("items/requests.jsonl"), 16);
     assert_eq!(round_trip::<Message>("items/messages.jsonl"), 4);
     let path = format!(
         "{}/../../protocol/fixtures/items/messages.jsonl",
@@ -256,7 +256,7 @@ fn item_fixtures_round_trip() {
     let kinds: Vec<ItemKind> = items.iter().map(|i| i.kind).collect();
     use ItemKind::*;
     assert_eq!(kinds, [Ask, Review, Failure, Proposal, Review, Ask]);
-    assert_eq!(items[1].answers[2], InboxAction::ChangeCourse);
+    assert_eq!(items[1].answers[3], InboxAction::ChangeCourse);
     assert_eq!(items[2].state, ItemState::Later);
     // An old client's update-inbox has no text or option.
     let old: Request = serde_json::from_str(
@@ -273,15 +273,28 @@ fn item_fixtures_round_trip() {
     ));
 }
 
-/// ADR 0033 §4a. Separate files: the Swift and Kotlin round trips of
-/// `items/` drop the unknown `reply` until their clients know it.
+/// ADR 0033 §4a: the `reply` answer, in the item fixtures.
 #[test]
 fn reply_fixtures_round_trip() {
     use muxa_protocol::{InboxAction, ItemKind};
-    assert_eq!(round_trip::<Request>("items/reply-requests.jsonl"), 3);
-    assert_eq!(round_trip::<Message>("items/reply-messages.jsonl"), 2);
     let path = format!(
-        "{}/../../protocol/fixtures/items/reply-messages.jsonl",
+        "{}/../../protocol/fixtures/items/requests.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let replies = std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Request>(l).ok())
+        .filter(|r| {
+            matches!(
+                r,
+                Request::UpdateInbox { action: InboxAction::Reply, text: Some(t), .. } if !t.is_empty()
+            )
+        })
+        .count();
+    assert_eq!(replies, 3);
+    let path = format!(
+        "{}/../../protocol/fixtures/items/messages.jsonl",
         env!("CARGO_MANIFEST_DIR")
     );
     let text = std::fs::read_to_string(path).unwrap();

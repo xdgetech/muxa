@@ -1,14 +1,14 @@
 #!/usr/bin/env bats
 # The Inbox of ADR 0033: the sidebar section and prefix + T. The items are the
-# contract's own fixture, so the plugin reads what muxa sends: the one whose
-# answers include reply (ADR 0033 §4a).
+# contract's own fixture, so the plugin reads what muxa sends, reply included
+# (ADR 0033 §4a).
 load helper
 
 setup() {
   setup_server
   ITEMS="$TMPDIR/inbox.json"
   jq -c 'select(.type == "inbox-list") | {work: 3, items, entries: [], runs: []}' \
-    "$ROOT/../protocol/fixtures/items/reply-messages.jsonl" >"$ITEMS"
+    "$ROOT/../protocol/fixtures/items/messages.jsonl" >"$ITEMS"
 }
 teardown() { kill "${CLIENT_PID:-}" 2>/dev/null || true; teardown_server; }
 

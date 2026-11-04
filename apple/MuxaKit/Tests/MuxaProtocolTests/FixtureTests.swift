@@ -122,7 +122,7 @@ struct FixtureTests {
 
     @Test func itemContractRoundTrips() throws {
         let requests = try Self.lines("items/requests.jsonl")
-        #expect(requests.count == 13)
+        #expect(requests.count == 16)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("items/messages.jsonl")
         #expect(messages.count == 4)
@@ -141,7 +141,12 @@ struct FixtureTests {
         #expect(entries.isEmpty)
         #expect(items.map(\.kind) == [.ask, .review, .failure, .proposal, .review, .ask])
         #expect(items.map(\.state) == [.open, .open, .later, .open, .answered, .resolved])
-        #expect(items[1].answers == [.accept, .redo, .changeCourse, .keepOpen, .later])
+        #expect(items[0].answers == [.approve, .reject, .reply, .later])
+        #expect(items[1].answers == [.accept, .reply, .redo, .changeCourse, .keepOpen, .later])
+        #expect(items[2].answers == [.retry, .reply, .changeCourse, .drop, .dismiss, .later])
+        #expect(!items[3].answers.contains(.reply), "a proposal takes no reply")
+        #expect(items[2].attachments.docs == ["report.md"])
+        #expect(items[2].attachments.links.map(\.url) == ["https://example.com/runs/42"])
         #expect(items[1].attachments.changes == ChangeCount(files: 4, added: 120, removed: 40, scope: "branch"))
         #expect(items[4].answer == .accept && items[4].answers.isEmpty)
         guard case .inboxSaved(_, nil, let item?) = try Wire.decodeMessage(messages[2]) else {
@@ -159,6 +164,10 @@ struct FixtureTests {
             Issue.record("expected redo with text"); return
         }
         #expect(!text.isEmpty)
+        let replies = try requests.map(Wire.decodeRequest).filter {
+            if case .updateInboxEntry(_, _, .reply, nil, let text?, nil) = $0 { !text.isEmpty } else { false }
+        }
+        #expect(replies.count == 3)
     }
 
     @Test func unknownItemKindsStatesAndAnswersStillDecode() throws {

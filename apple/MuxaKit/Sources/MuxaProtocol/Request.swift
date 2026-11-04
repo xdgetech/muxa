@@ -76,7 +76,7 @@ public enum Request: Equatable, Sendable {
     /// The stored Inbox entries (capability `work` level 1).
     case listInbox(id: UInt64)
     /// Answer a stored entry or an Inbox item (its `i-` id). `until` goes with
-    /// `later`, `text` with `redo` and `change-course`, `option` with `choose`.
+    /// `later`, `text` with `redo`, `change-course` and `reply`, `option` with `choose`.
     case updateInboxEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil)
     /// An agent session in a repo's main checkout, to ask about its code: no
     /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as

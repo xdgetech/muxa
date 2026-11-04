@@ -132,7 +132,7 @@ class FixtureTest {
     @Test
     fun itemContractRoundTrips() {
         val requests = lines("items/requests.jsonl")
-        assertEquals(13, requests.size)
+        assertEquals(16, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("items/messages.jsonl")
         assertEquals(4, messages.size)
@@ -153,7 +153,7 @@ class FixtureTest {
             list.items.map { it.state },
         )
         assertEquals(
-            listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
             list.items[1].answers,
         )
         assertEquals(ChangeCount(files = 4, added = 120, removed = 40, scope = "branch"), list.items[1].attachments.changes)
@@ -174,24 +174,15 @@ class FixtureTest {
     /** ADR 0033 §4a: `reply` with a text, and the evidence a summary names (files and links). */
     @Test
     fun replyContractRoundTrips() {
-        val requests = lines("items/reply-requests.jsonl")
-        assertEquals(3, requests.size)
-        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
-        val replies = requests.map { Wire.decodeRequest(it) as Request.UpdateInbox }
-        assertEquals(listOf(InboxAction.REPLY), replies.map { it.action }.distinct())
+        val replies = lines("items/requests.jsonl").mapNotNull { Wire.decodeRequest(it) as? Request.UpdateInbox }
+            .filter { it.action == InboxAction.REPLY }
+        assertEquals(3, replies.size)
         assertEquals("Looks good. Also update the README.", replies[0].text)
-        val messages = lines("items/reply-messages.jsonl")
-        assertEquals(2, messages.size)
-        messages.forEach {
-            val message = Wire.decodeMessage(it)
-            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
-            assertEquals(it, tree(it), tree(Wire.encode(message)))
-        }
-        val items = (Wire.decodeMessage(messages[1]) as Message.InboxList).items
+        val items = (Wire.decodeMessage(lines("items/messages.jsonl")[1]) as Message.InboxList).items
         assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER), items[0].answers)
         assertEquals(
-            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
-            items[1].answers,
+            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER),
+            items[2].answers,
         )
         val failure = items[2].attachments
         assertEquals(listOf("report.md"), failure.docs)
