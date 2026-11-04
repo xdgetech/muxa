@@ -21,9 +21,6 @@ extension AppModel {
     func canOpenEvidence(_ item: InboxItem) -> Bool {
         isConnected && session.canReadDocs && itemSession(item) != nil
     }
-
-    /// A phone opens on the Inbox at connect when something waits on the user.
-    var needsUserAtConnect: Bool { session.canUseItems && !session.openItems.isEmpty }
 }
 
 extension ItemKind {

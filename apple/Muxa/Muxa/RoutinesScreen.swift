@@ -13,7 +13,7 @@ struct RoutinesScreen: View {
                 Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure)
             }
             ForEach(model.session.routines, id: \.id) { routine in
-                NavigationLink(value: InboxRoute.routine(workspace: routine.workspace, name: routine.name)) {
+                NavigationLink(value: DetailRoute.routine(workspace: routine.workspace, name: routine.name)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(routine.name).font(.headline)
                         Text("\(routine.workspace) · \(routine.triggerTitle)").font(.caption).foregroundStyle(.secondary)
@@ -66,7 +66,7 @@ struct RoutineDetail: View {
                 if let run = r.running {
                     field("Running", "since \(run.startedAt.shownDate)", "routine-running")
                     if let s = model.runSession(r) {
-                        Button("Open Terminal", systemImage: Icon.agent) { model.openTerminal(s) }
+                        Button("Open Terminal", systemImage: Icon.agent) { Task { await model.open(s, as: .terminal) } }
                             .accessibilityIdentifier("routine-open-terminal")
                     }
                 }

@@ -60,30 +60,43 @@ struct PaneCommands: Commands {
             Button("New Task…") { model.startNewTask() }
                 .keyboardShortcut("n")
                 .disabled(!model.canCreateTasks)
-            Button("Inbox…") { model.showTasks.toggle() }
-                .keyboardShortcut("t")
-                .disabled(!model.canKeepTasks)
             Button("Agent / Terminal") { Task { await model.toggleAgentTerminal() } }
                 .keyboardShortcut("j")
-                .disabled(model.showTasks || model.counterpart == nil)
+                .disabled(!model.showsPane || model.counterpart == nil)
             Button("Pretty / Raw") { model.setPretty(!model.showsPretty) }
                 .keyboardShortcut("r")
-                .disabled(model.showTasks || !model.canShowPretty)
+                .disabled(!model.showsPane || !model.canShowPretty)
             Button("Documents…") { model.openReader() }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(model.showTasks || !model.canReadDocs)
+                .disabled(!model.showsPane || !model.canReadDocs)
             Button("Previous Session") { Task { await model.step(-1) } }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
-                .disabled(model.showTasks)
+                .disabled(!model.isConnected)
             Button("Next Session") { Task { await model.step(1) } }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
-                .disabled(model.showTasks)
+                .disabled(!model.isConnected)
             Divider()
             ForEach(1..<10) { n in
                 Button("Session \(n)") { Task { await model.openSession(number: n) } }
                     .keyboardShortcut(KeyEquivalent(Character("\(n)")))
-                    .disabled(model.showTasks)
+                    .disabled(!model.isConnected)
             }
+        }
+        // The sidebar's modes (ADR 0035 §7). The item's own keys are on its screen.
+        CommandMenu("Go") {
+            Button("Inbox") { model.showMode(.inbox) }
+                .keyboardShortcut("t")
+            Button("Tasks") { model.showMode(.tasks) }
+                .keyboardShortcut("l")
+            Button("Sessions") { model.showMode(.sessions) }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            Button("Show or Hide the Sidebar") { model.toggleSidebar() }
+                .keyboardShortcut("0")
+        }
+        // The system's own Settings item: Cmd+comma belongs to it.
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { model.showSettings = true }
+                .keyboardShortcut(",")
         }
     }
 }

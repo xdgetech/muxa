@@ -1,9 +1,10 @@
+import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// Hosts and sessions in the sidebar, the pane in the detail. The sidebar hides
-/// once a pane is open, so the pane gets the full width. On a phone the two are
-/// a stack, and an open pane is pushed.
+/// The sidebar's mode on the left, what it selects in the detail (ADR 0035). The
+/// sidebar hides once a pane is open, so the pane gets the full width. On a phone
+/// the two are a stack, and the selection is pushed.
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.phoneLayout) private var phoneLayout
@@ -29,25 +30,31 @@ struct RootView: View {
                 .animation(.snappy, value: model.alert)
         }
         .navigationSplitViewStyle(.balanced)
-        .onAppear { model.phoneInbox = phoneLayout }
-        .onChange(of: phoneLayout) { _, value in model.phoneInbox = value }
+        .onAppear { model.phoneLayout = phoneLayout }
+        .onChange(of: phoneLayout) { _, value in model.phoneLayout = value }
         .onChange(of: model.session.sessions) { old, new in
             model.sessionsChanged(from: old, to: new)
         }
-        .onChange(of: model.session.watchedPane) { _, pane in
-            if pane != nil, model.isConnected {
-                columns = .detailOnly
-                compactColumn = .detail
-            }
-        }
+        .onChange(of: model.paneRequest) { columns = .detailOnly }
         .onChange(of: model.detailRequest) { compactColumn = .detail }
+        .onChange(of: model.sidebarRequest) {
+            columns = .all
+            compactColumn = .sidebar
+        }
+        .onChange(of: model.sidebarToggle) {
+            columns = columns == .detailOnly ? .all : .detailOnly
+            if compactColumn == .detail { compactColumn = .sidebar }
+        }
         .onChange(of: model.isConnected) { _, connected in
             if !connected {
-                model.showTasks = false
-                model.returnToInbox = false
+                model.clearDetail()
                 columns = .all
                 compactColumn = .sidebar
             }
+        }
+        .itemLater(Binding(get: { model.laterItem }, set: { model.laterItem = $0 }))
+        .sheet(isPresented: $model.showSettings, onDismiss: model.refocusPane) {
+            SettingsScreen()
         }
         .sheet(item: $editing, onDismiss: model.refocusPane) { draft in
             HostEditor(draft: draft)
@@ -58,9 +65,6 @@ struct RootView: View {
         }
         .sheet(isPresented: $model.showSwitcher, onDismiss: model.switcherClosed) {
             SessionSwitcher()
-        }
-        .sheet(isPresented: $model.showTasks, onDismiss: { Task { await model.tasksClosed() } }) {
-            TasksScreen().inboxSheetSizing(wide: !model.phoneInbox)
         }
         .sheet(
             isPresented: Binding(get: { model.newTask != nil }, set: { if !$0 { model.newTask = nil } }),
@@ -111,15 +115,65 @@ struct RootView: View {
     }
 }
 
-/// The pane when one is open; otherwise what to do next.
+/// What the sidebar selects, or the pane; before a connection, its state.
 struct DetailView: View {
     @Environment(AppModel.self) private var model
     @Binding var editing: HostDraft?
 
     var body: some View {
-        if model.isConnected, model.session.watchedPane != nil {
-            PaneScreen()
-        } else if model.addingKey, let host = model.currentHost {
+        if !model.isConnected {
+            ConnectionState(editing: $editing)
+        } else if model.detail == .pane, model.detailPath.isEmpty {
+            // The pane as it always was: the detail itself, not inside a stack.
+            pane
+        } else {
+            @Bindable var model = model
+            NavigationStack(path: $model.detailPath) {
+                selection
+                    .navigationDestination(for: DetailRoute.self) { route in
+                        switch route {
+                        case .routine(let workspace, let name): RoutineDetail(workspace: workspace, name: name)
+                        case .pane: pane
+                        }
+                    }
+            }
+        }
+    }
+
+    @ViewBuilder private var pane: some View {
+        if model.session.watchedPane != nil {
+            // The pane can be watched before its view exists, e.g. from an item: the new
+            // view asks for the screen again, so it never starts empty.
+            PaneScreen().onAppear { Task { await model.paneAppeared() } }
+        } else {
+            SessionsEmptyDetail()
+        }
+    }
+
+    @ViewBuilder private var selection: some View {
+        switch model.detail {
+        case .item(let id): ItemDetail(id: id)
+        case .task(let id): TaskDetail(id: id)
+        case .routines: RoutinesScreen()
+        case .pane: pane
+        case nil:
+            switch model.mode {
+            case .inbox: InboxEmptyDetail()
+            case .tasks: TasksEmptyDetail()
+            case .sessions: SessionsEmptyDetail()
+            }
+        }
+    }
+}
+
+/// Connecting, adding the key, or why the connection failed with what to do next;
+/// on first launch, how to start.
+struct ConnectionState: View {
+    @Environment(AppModel.self) private var model
+    @Binding var editing: HostDraft?
+
+    var body: some View {
+        if model.addingKey, let host = model.currentHost {
             ProgressView("Adding this device's key to \(host.title)…")
         } else if model.connecting, let host = model.currentHost {
             ProgressView("Connecting to \(host.title)…")
@@ -145,9 +199,6 @@ struct DetailView: View {
                     Button("Edit Host") { editing = HostDraft(host) }
                 }
             }
-        } else if model.isConnected {
-            ContentUnavailableView("No Sessions", systemImage: "rectangle.on.rectangle.slash",
-                                   description: Text("No tmux session on this host has a pane to show."))
         } else if model.hosts.hosts.isEmpty {
             ContentUnavailableView {
                 Label("Add a Host", systemImage: Icon.host)
@@ -161,7 +212,7 @@ struct DetailView: View {
             }
         } else {
             ContentUnavailableView("Not Connected", systemImage: "bolt.horizontal",
-                                   description: Text("Pick a host in the sidebar."))
+                                   description: Text("Connect to a host from the sidebar, or pick one in Settings."))
         }
     }
 
@@ -214,17 +265,6 @@ struct AlertBanner: View {
         case .waiting: Theme.state(.waiting)
         case .done: Theme.state(.done)
         case .failed: Theme.state(.error)
-        }
-    }
-}
-
-extension View {
-    /// A tablet's Inbox shows the list beside the item, so its sheet takes the page size.
-    @ViewBuilder func inboxSheetSizing(wide: Bool) -> some View {
-        if #available(iOS 18.0, *), wide {
-            presentationSizing(.page)
-        } else {
-            self
         }
     }
 }

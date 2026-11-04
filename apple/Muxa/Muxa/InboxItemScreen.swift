@@ -8,8 +8,6 @@ import SwiftUI
 struct InboxItemScreen: View {
     @Environment(AppModel.self) private var model
     let id: String
-    /// Pushed on a phone, it has its own title; beside the list it keeps the Inbox's.
-    var pushed = true
     var answered: (InboxItem) -> Void
     @State private var reply = ""
     @State private var later: InboxItem?
@@ -59,7 +57,7 @@ struct InboxItemScreen: View {
         .scrollDismissesKeyboard(.interactively)
         // In the bottom inset, the reply and the answers stay above the keyboard.
         .safeAreaInset(edge: .bottom) { answerBar(item) }
-        .navigationTitle(pushed ? item.kind.title : "Inbox")
+        .navigationTitle(item.kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .itemLater($later, saved: answered)
         .sheet(item: $approving) { item in
@@ -91,7 +89,6 @@ struct InboxItemScreen: View {
 
     private func answerBar(_ item: InboxItem) -> some View {
         let answers = ItemAnswers(item)
-        let terminal = model.itemSession(item)
         return VStack(spacing: 8) {
             if item.answers.contains(where: \.needsText) {
                 TextField("Reply…", text: $reply, axis: .vertical)
@@ -106,26 +103,19 @@ struct InboxItemScreen: View {
                     VStack(alignment: .leading) { optionButtons(item, options) }
                 }
             }
-            HStack {
-                ForEach(answers.shown, id: \.self) { action in
-                    answerButton(item, action, prominent: action == answers.main)
+            // A phone puts the ways into the session on a row of their own.
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    answerButtons(item, answers)
+                    Spacer(minLength: 0)
+                    sessionButtons(item, answers)
                 }
-                Spacer(minLength: 0)
-                if !answers.more.isEmpty || terminal != nil {
-                    Menu {
-                        ForEach(answers.more, id: \.self) { action in
-                            Button(action.title(for: item.kind)) { perform(item, action) }
-                                .disabled(action.needsText && !hasReply)
-                                .accessibilityIdentifier("item-answer-\(action.rawValue)")
-                        }
-                        if let terminal {
-                            Button("Open Terminal", systemImage: Icon.agent) { model.openTerminal(terminal) }
-                                .accessibilityIdentifier("item-open-terminal")
-                        }
-                    } label: {
-                        Label("More", systemImage: "ellipsis.circle")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack { answerButtons(item, answers) }
+                    HStack {
+                        Spacer(minLength: 0)
+                        sessionButtons(item, answers)
                     }
-                    .accessibilityIdentifier("item-more")
                 }
             }
             .disabled(sending)
@@ -133,6 +123,41 @@ struct InboxItemScreen: View {
         .padding(.horizontal)
         .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private func answerButtons(_ item: InboxItem, _ answers: ItemAnswers) -> some View {
+        ForEach(answers.shown, id: \.self) { action in
+            answerButton(item, action, prominent: action == answers.main)
+        }
+    }
+
+    /// Chat and Terminal show the item's session (ADR 0035 §3): an `ask` is answered
+    /// in Chat, a `failure` read in the terminal. Chat only where the agent has one.
+    @ViewBuilder
+    private func sessionButtons(_ item: InboxItem, _ answers: ItemAnswers) -> some View {
+        if model.itemSession(item) != nil {
+            if model.hasChat(item) {
+                Button("Chat", systemImage: Icon.chat) { model.open(item, as: .chat) }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("item-open-chat")
+            }
+            Button("Terminal", systemImage: Icon.agent) { model.open(item, as: .terminal) }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("item-open-terminal")
+        }
+        if !answers.more.isEmpty {
+            Menu {
+                ForEach(answers.more, id: \.self) { action in
+                    Button(action.title(for: item.kind)) { perform(item, action) }
+                        .disabled(action.needsText && !hasReply)
+                        .accessibilityIdentifier("item-answer-\(action.rawValue)")
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+            .accessibilityIdentifier("item-more")
+        }
     }
 
     @ViewBuilder
@@ -201,16 +226,16 @@ private struct ItemEvidence: View {
                 HStack {
                     if let c = a.changes {
                         chip("Changes +\(c.added) −\(c.removed)", Icon.changes, id: "changes") {
-                            model.openEvidence(item, as: .changes)
+                            model.open(item, as: .changes)
                         }
                         .disabled(!readable || !model.session.canShowChanges)
                     }
                     ForEach(a.docs, id: \.self) { path in
-                        chip(Self.name(path), Icon.document, id: "doc-\(path)") { model.openEvidence(item, as: .doc(path)) }
+                        chip(Self.name(path), Icon.document, id: "doc-\(path)") { model.open(item, as: .doc(path)) }
                             .disabled(!readable)
                     }
                     ForEach(a.images, id: \.self) { path in
-                        chip(Self.name(path), "photo", id: "image-\(path)") { model.openEvidence(item, as: .image(path)) }
+                        chip(Self.name(path), "photo", id: "image-\(path)") { model.open(item, as: .image(path)) }
                             .disabled(!readable || !model.session.canShowImages)
                     }
                     ForEach(a.links, id: \.url) { link in

@@ -25,9 +25,9 @@ final class AppModel {
     var showSwitcher = false
     /// Bumped when a sheet closes, so the pane takes the keyboard back.
     private(set) var focusRequest = 0
-    /// Bumped when the user asks for the detail: a connection or a session. On a
-    /// phone the detail is pushed over the sidebar then.
-    private(set) var detailRequest = 0
+    /// Bumped when the user opens a row or a pane. On a phone the detail is pushed
+    /// over the sidebar then.
+    var detailRequest = 0
     /// The in-app demo bridge instead of SSH: Try the Demo, or the UI tests' launch
     /// argument `-demo` (DEBUG only).
     private(set) var demo = false
@@ -61,8 +61,6 @@ final class AppModel {
     var newRecord: TaskRecordDraft?
     /// Created from that sheet: shown once the sheet has closed.
     private var createdRecord: TaskRecord?
-    /// A task whose detail the Tasks sheet opens at.
-    var tasksOpening: String?
     /// An agent elsewhere that wants attention, shown for a few seconds.
     private(set) var alert: AgentAlert?
     /// The task waiting for the user to pick how to close it.
@@ -85,42 +83,39 @@ final class AppModel {
     var readerTab: ReaderTab = .docs
     /// What the Reader opens at by itself, once: an Inbox item's doc or image.
     var readerOpening: ReaderItem?
-    /// The Inbox sheet: the Inbox list, All Tasks and Routines.
-    var showTasks = false
     /// The window has the phone layout (ADR 0012); `RootView` keeps it current.
-    var phoneInbox = false
-    /// The Inbox row the sheet opens focused on.
-    var triageOpening: String?
-    /// The sheet opens on the Routines list.
-    var routinesOpening = false
-    func showInbox(_ id: String? = nil) {
-        triageOpening = id
-        showTasks = true
-    }
-    var returnToInbox = false
+    var phoneLayout = false
     var canUseRoutines: Bool { isConnected && session.canUseRoutines }
-    func showRoutines() {
-        routinesOpening = true
-        showTasks = true
-    }
-    /// Closes the sheet, then shows `session`'s agent: a Routine run's terminal.
-    func openTerminal(_ s: Session) {
-        afterTasks = (s, .terminal)
-        showTasks = false
-    }
-    func readerClosed() {
-        if returnToInbox, isConnected {
-            returnToInbox = false
-            showTasks = true
-        }
-        refocusPane()
-    }
-    /// Asked for in the Tasks sheet: shown once the sheet has closed.
-    private var afterTasks: (session: Session, opening: TaskOpening)?
+
+    // Navigation (ADR 0035), driven by `AppModel+Navigation.swift`.
+
+    /// What the sidebar shows, remembered on this device. Set it with `setMode`.
+    var mode: SidebarMode
+    /// What the detail column shows: the sidebar's selection, or a pane.
+    var detail: Detail?
+    /// Pushed over `detail` in the detail column: a Routine, and on a phone the pane
+    /// opened from an item or a Task, so Back returns to it.
+    var detailPath: [DetailRoute] = []
+    var showSettings = false
+    /// Bumped to show the sidebar: on a phone, the list.
+    var sidebarRequest = 0
+    /// Bumped by `⌘0`: shows or hides the sidebar.
+    var sidebarToggle = 0
+    /// Bumped when a pane is opened: the sidebar hides, so the pane gets the width.
+    var paneRequest = 0
+    /// Later for an item, asked for by `⌘⇧L`.
+    var laterItem: InboxItem?
+    /// A pane view is about to appear for a pane watched without one (`paneAppeared`).
+    var paneViewPending = false
+    /// The pane last shown in each session, so a Sessions row opens its last view.
+    private var lastPanes: [String: String] = [:]
     /// The document last read in each session, opened again next time.
     private var lastDocs: [String: String] = [:]
 
+    func readerClosed() { refocusPane() }
+
     init() {
+        mode = Self.launchMode()
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-demo") {
@@ -187,8 +182,10 @@ final class AppModel {
         stayDisconnected = false
         rawPanes = []
         lastDocs = [:]
+        lastPanes = [:]
         paneFit = nil
         alert = nil
+        clearDetail()
     }
 
     // MARK: Connection
@@ -205,17 +202,11 @@ final class AppModel {
         connectError = nil
         connectFix = nil
         connecting = true
-        returnToInbox = false
-        detailRequest += 1
-        let initialRequest = detailRequest
+        showSettings = false
         defer { connecting = false }
         do {
             try await session.connect({ try await self.open(host) }, samePanes: sameHost)
-            if phoneInbox, initialRequest == detailRequest, canKeepTasks, needsUserAtConnect {
-                showInbox()
-            } else {
-                await openDefaultPane()
-            }
+            await connected()
         } catch TransportError.hostKeyMismatch(let presented) {
             afterTrust = .connect
             untrustedKey = presented
@@ -285,8 +276,7 @@ final class AppModel {
     }
 
     func disconnect() async {
-        showTasks = false
-        returnToInbox = false
+        clearDetail()
         stayDisconnected = true
         await session.disconnect()
     }
@@ -352,10 +342,25 @@ final class AppModel {
         return currentSession?.counterpart(of: id)
     }
 
+    /// Shows `s` in its last view on this device, else its default pane (ADR 0035 §3).
     func open(_ s: Session) async {
-        guard let pane = s.defaultPane else { return }
-        detailRequest += 1
+        await showLastView(of: s, overSelection: false)
+    }
+
+    /// `s`'s last pane on this device, else its default pane.
+    private func lastView(of s: Session) -> Pane? {
+        let last = lastPanes[s.id].flatMap { id in s.panes.first { $0.id == id } }
+        return last ?? s.defaultPane
+    }
+
+    /// Shows the pane first, then watches it: the pane's view must exist to take
+    /// the screen the watch sends.
+    @discardableResult
+    private func showLastView(of s: Session, overSelection: Bool) async -> Bool {
+        guard let pane = lastView(of: s) else { return false }
+        presentPane(overSelection: overSelection)
         await watch(pane.id)
+        return true
     }
 
     func toggleAgentTerminal() async {
@@ -379,16 +384,19 @@ final class AppModel {
     }
 
     /// The pane last shown on this host, else the first session.
-    private func openDefaultPane() async {
-        guard session.watchedPane == nil else { return }
-        if let id = currentHostID, let last = hosts.lastPanes[id], let pane = session.sessions.resuming(last) {
+    func openDefaultPane() async {
+        if let pane = session.watchedPane {
+            presentPane()
+            await watch(pane)
+        } else if let id = currentHostID, let last = hosts.lastPanes[id], let pane = session.sessions.resuming(last) {
+            presentPane()
             await watch(pane.id)
         } else if let first = firstSession {
             await open(first)
         }
     }
 
-    private func watch(_ pane: String) async {
+    func watch(_ pane: String) async {
         do {
             try await session.watch(pane: pane)
         } catch {
@@ -398,6 +406,7 @@ final class AppModel {
         if let id = currentHostID, let name = currentSession?.name {
             hosts.remember(LastPane(session: name, pane: pane), on: id)
         }
+        if let s = currentSession { lastPanes[s.id] = pane }
         changeListing = nil
         Task { await loadChanges() }
         // The pane stays watched in Pretty, so Raw is instant and pane-gone still arrives.
@@ -635,8 +644,8 @@ final class AppModel {
         newRecord = nil
     }
 
-    /// Shows the new task's session, as the old sheet did. A task whose agent
-    /// did not start has none: its detail says why.
+    /// Shows the new task's session, or in Tasks mode its detail. A task whose agent
+    /// did not start has no session: its detail says why.
     func recordSheetClosed() async {
         if let s = askedSession {
             askedSession = nil
@@ -650,11 +659,11 @@ final class AppModel {
         createdRecord = nil
         let s = session.sessions.first { $0.taskId == record.id }
             ?? record.session.flatMap { name in session.sessions.first { $0.name == name } }
-        if let s {
+        // Tasks mode shows the new Task; elsewhere its session opens, as before (ADR 0035 §1).
+        if let s, mode != .tasks {
             await open(s)
         } else {
-            tasksOpening = record.id
-            showTasks = true
+            select(.task(record.id))
         }
     }
 
@@ -689,9 +698,7 @@ final class AppModel {
     func ask(workspace: String, repo: String) async throws {
         let started = try await session.startSession(workspace: workspace, repo: repo)
         guard let s = session.sessions.first(where: { $0.id == started.id }) else { return }
-        if showTasks {
-            openTerminal(s)
-        } else if newRecord != nil {
+        if newRecord != nil {
             askedSession = s
             newRecord = nil
         } else {
@@ -767,40 +774,39 @@ final class AppModel {
     /// Where the daemon writes the last check's result (ADR 0019).
     static let checkFile = ".muxa/CHECK.md"
 
-    /// Closes the Tasks sheet, then opens the task's session as asked.
-    func open(_ item: TaskItem, as opening: TaskOpening, returnToDetail: Bool = false) {
+    /// Opens a Task's session as asked: its pane over the Task, or the Reader.
+    func open(_ item: TaskItem, as opening: TaskOpening) {
         guard let s = item.session else { return }
-        if opening == .taskFile || opening == .checkFile || opening == .changes || opening == .handoffFile {
-            returnToInbox = true
-            triageOpening = item.id
-            if returnToDetail { tasksOpening = item.id }
-        }
-        afterTasks = (s, opening)
-        showTasks = false
+        Task { await open(s, as: opening) }
     }
 
-    /// Closes the Inbox sheet, then opens the item's evidence in the Reader for the
-    /// item's pane. Closing the Reader returns to the item.
-    func openEvidence(_ item: InboxItem, as opening: TaskOpening) {
+    /// Opens an item's session, or its evidence in the Reader for the item's pane.
+    /// Closing the Reader returns to the item, which stays in the detail.
+    func open(_ item: InboxItem, as opening: TaskOpening) {
         guard let s = itemSession(item) else { return }
-        returnToInbox = true
-        triageOpening = item.id
-        afterTasks = (s, opening)
-        showTasks = false
+        Task { await open(s, as: opening) }
     }
 
-    func tasksClosed() async {
-        guard isConnected else { afterTasks = nil; return }
-        guard let (s, opening) = afterTasks else {
-            await openDefaultPane()
-            refocusPane()
-            return
-        }
-        afterTasks = nil
-        await open(s)
+    /// Chat and Terminal show the pane, over the selection when `overSelection`; the
+    /// rest opens the Reader for the session's pane and leaves the detail as it is.
+    func open(_ s: Session, as opening: TaskOpening, overSelection: Bool = true) async {
+        guard isConnected else { return }
         switch opening {
-        case .chat: await show(.chat)
-        case .terminal: if agentPane != nil { await show(.agent) }
+        case .chat, .terminal:
+            guard await showLastView(of: s, overSelection: overSelection) else { return }
+            if opening == .chat, let agent = agentPane, chatPossible(agent) {
+                await show(.chat)
+            } else if agentPane != nil {
+                await show(.agent)
+            }
+            return
+        default:
+            // The Reader reads the session's pane; the detail stays as it is.
+            guard let pane = lastView(of: s) else { return }
+            if pane.id != session.watchedPane { await watch(pane.id) }
+        }
+        switch opening {
+        case .chat, .terminal: break
         case .taskFile, .handoffFile, .checkFile:
             guard canReadDocs else { return }
             lastDocs[s.id] = switch opening {
@@ -847,10 +853,16 @@ final class AppModel {
         }
     }
 
+    /// The banner opens the session's item when it has one, else its Chat (ADR 0035 §3).
     func openAlert() async {
         guard let shown = alert else { return }
         alert = nil
-        if let s = session.sessions.first(where: { $0.id == shown.session }) { await open(s) }
+        guard let s = session.sessions.first(where: { $0.id == shown.session }) else { return }
+        if let item = session.openItems.first(where: { itemSession($0)?.id == s.id }) {
+            select(.item(item.id))
+        } else {
+            await open(s, as: .chat, overSelection: false)
+        }
     }
 
     func retryChat() async {

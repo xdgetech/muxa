@@ -61,6 +61,7 @@ struct TaskDetail: View {
             .font(.callout)
             TaskRunsSection(item: item)
         }
+        .accessibilityIdentifier("task-detail")
         .navigationTitle(r.title)
         .navigationBarTitleDisplayMode(.inline)
         .loopSheets(starting: $loopStart, error: $loopError)
@@ -109,14 +110,14 @@ struct TaskDetail: View {
                 Button("Terminal", systemImage: Icon.agent) { model.open(item, as: .terminal) }
                     .accessibilityIdentifier("task-open-terminal")
                 if model.session.canReadDocs {
-                    Button("Read TASK.md", systemImage: Icon.document) { model.open(item, as: .taskFile, returnToDetail: true) }
+                    Button("Read TASK.md", systemImage: Icon.document) { model.open(item, as: .taskFile) }
                         .accessibilityIdentifier("task-open-file")
                     if model.session.canRestartAgents, item.hasHandoff {
-                        Button("Read HANDOFF.md", systemImage: Icon.document) { model.open(item, as: .handoffFile, returnToDetail: true) }
+                        Button("Read HANDOFF.md", systemImage: Icon.document) { model.open(item, as: .handoffFile) }
                             .accessibilityIdentifier("task-open-handoff")
                     }
                     if model.session.canShowChanges {
-                        Button("Changes", systemImage: Icon.changes) { model.open(item, as: .changes, returnToDetail: true) }
+                        Button("Changes", systemImage: Icon.changes) { model.open(item, as: .changes) }
                             .accessibilityIdentifier("task-open-changes")
                     }
                 }

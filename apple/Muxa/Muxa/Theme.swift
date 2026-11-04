@@ -60,5 +60,6 @@ enum Icon {
     static let briefing = "newspaper"
     static let proposal = "lightbulb"
     static let later = "clock"
+    static let settings = "gearshape"
     static let ask = "questionmark.bubble"
 }

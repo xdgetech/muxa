@@ -41,7 +41,7 @@ struct LoopSection: View {
             }
             // The daemon writes CHECK.md after each check; the Reader reads it from the task's session.
             if loop?.lastCheck != nil, model.session.canReadDocs, item.session != nil {
-                Button("Open check log", systemImage: Icon.document) { model.open(item, as: .checkFile, returnToDetail: true) }
+                Button("Open check log", systemImage: Icon.document) { model.open(item, as: .checkFile) }
                     .accessibilityIdentifier("loop-open-log")
             }
         }
