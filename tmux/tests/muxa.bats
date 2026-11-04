@@ -27,7 +27,8 @@ answer() {
 new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
 muxa() { "$ROOT/scripts/muxa.sh" "$@"; }
 
-# A muxa-cli that logs its arguments, prints bin/out-<command> (else bin/out),
+# A muxa-cli that logs its arguments (bin/args, and one line per call in
+# bin/calls), prints bin/out-<command> (else bin/out),
 # then sleeps $FAKE_SLEEP like the real one waiting for the start prompt, and
 # writes bin/ended. With FAKE_FAIL it fails instead.
 fake_cli() {
@@ -35,6 +36,7 @@ fake_cli() {
   cat >"$TMPDIR/bin/muxa-cli" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$@" >"$(dirname "$0")/args"
+(shift 2; echo "$*") >>"$(dirname "$0")/calls"
 if [ -n "${FAKE_FAIL:-}" ]; then echo "muxa-cli: $FAKE_FAIL" >&2; exit 1; fi
 out="$(dirname "$0")/out-$3"
 [ -f "$out" ] || out="$(dirname "$0")/out"
@@ -94,14 +96,14 @@ INBOX='{"workspaces":["work"],"truncated":false,"tasks":[
   [ "$status" -ne 0 ]
 }
 
-@test "the Inbox lists tasks in muxa's group order, with each task's session id" {
+@test "the Inbox lists tasks in muxa's group order, with each task's session id, id and title" {
   run bash -c "printf '%s' '$INBOX' | '$ROOT/scripts/muxa.sh' rows | sed \$'s/\x1b\\\\[[0-9;]*m//g'"
   [ "$status" -eq 0 ]
   expected="$(printf '%s\n' \
-    $'$7\tNeeds attention   🙋 Fix login  t-000001  feat-login' \
-    $'$8\tRunning           ⚡ Draft plan  t-000002  draft-plan-t-000002' \
-    $'$9\t                  ⚡ Second  t-000003  second' \
-    $'\tNo agent             Old one  t-000004  no session')"
+    $'$7\tt-000001\tFix login\tNeeds attention   🙋 Fix login  t-000001  feat-login' \
+    $'$8\tt-000002\tDraft plan\tRunning           ⚡ Draft plan  t-000002  draft-plan-t-000002' \
+    $'$9\tt-000003\tSecond\t                  ⚡ Second  t-000003  second' \
+    $'\tt-000004\tOld one\tNo agent             Old one  t-000004  no session')"
   [ "$output" = "$expected" ]
 }
 
@@ -304,4 +306,92 @@ cli_tasks() {
   tx send-keys -K -c "$C" C-b A
   wait_for 'grep -q "ask sessions need muxa" "$TMPDIR/tmux-agents-$(id -u)/agents.log"'
   [ "$(tx list-sessions | wc -l | tr -d ' ')" = 1 ]
+}
+
+@test "close-task marks a Task done or dropped through muxa-cli" {
+  fake_cli '{}'
+  muxa close-task t-000001 done
+  muxa close-task t-000002 dropped
+  [ "$(cat "$TMPDIR/bin/calls")" = "$(printf '%s\n' 'task done t-000001 --json' 'task drop t-000002 --json')" ]
+}
+
+@test "close-task refuses what is not a task id or a status, before muxa-cli" {
+  fake_cli '{}'
+  run muxa close-task --force done
+  [ "$status" -ne 0 ]
+  run muxa close-task t-000001 open
+  [ "$status" -ne 0 ]
+  [ ! -e "$TMPDIR/bin/calls" ]
+}
+
+@test "close-task says why muxa refused" {
+  fake_cli ''
+  FAKE_FAIL="conflict: the task changed" run muxa close-task t-000001 done
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'muxa could not mark t-000001 done: conflict: the task changed'* ]]
+}
+
+@test "prefix+T: ctrl-d then y marks the Task done, ctrl-x then n leaves it" {
+  fake_cli "$INBOX"
+  attach
+  tx send-keys -K -c "$C" C-b T
+  sleep 1.5
+  tx send-keys -K -c "$C" C-x
+  sleep 0.5
+  tx send-keys -K -c "$C" n
+  sleep 1
+  tx send-keys -K -c "$C" C-d
+  sleep 0.5
+  tx send-keys -K -c "$C" y
+  wait_for 'grep -q "^task done t-000001 --json$" "$TMPDIR/bin/calls"'
+  ! grep -q '^task drop' "$TMPDIR/bin/calls"
+}
+
+@test "prefix+T: Enter on a Task with no session offers Drop" {
+  fake_cli "$(printf '%s' "$INBOX" | jq -c '.tasks |= [.[3]]')"
+  attach
+  tx send-keys -K -c "$C" C-b T
+  sleep 1.5
+  tx send-keys -K -c "$C" Enter
+  sleep 0.5
+  tx send-keys -K -c "$C" x
+  wait_for 'grep -q "^task drop t-000004 --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "close.sh --task marks the session's Task once the session is gone" {
+  new feature/closing --muxa-task t-0000e1 >/dev/null
+  fake_cli '{}'
+  "$ROOT/scripts/close.sh" --keep --task dropped feature-closing
+  ! tx has-session -t =feature-closing 2>/dev/null
+  [ "$(cat "$TMPDIR/bin/calls")" = 'task drop t-0000e1 --json' ]
+}
+
+@test "close.sh leaves the Task alone when the session cannot close" {
+  new feature/dirty --muxa-task t-0000e2 >/dev/null
+  touch "$(tx show-options -t =feature-dirty: -qv @agent_worktree)/wip"
+  fake_cli '{}'
+  run "$ROOT/scripts/close.sh" --task done feature-dirty
+  [ "$status" -ne 0 ]
+  tx has-session -t =feature-dirty
+  [ ! -e "$TMPDIR/bin/calls" ]
+}
+
+@test "X in the tree on a Task's session asks, then closes it and marks the Task done" {
+  new feature/menu --muxa-task t-0000e3 >/dev/null
+  fake_cli '{}'
+  attach
+  sb="$(tx list-panes -t base: -F '#{pane_id} #{@agents_sidebar_pane}' | awk '$2 == 1 { print $1 }')"
+  wait_for "tx capture-pane -p -t '$sb' | grep -q feature-menu"
+  tx send-keys -K -c "$C" C-b Tab
+  sleep 0.5
+  for _ in 1 2 3; do
+    tx capture-pane -e -p -t "$sb" | grep -q '48;5;236m.*feature-menu' && break
+    tx send-keys -K -c "$C" k
+    sleep 0.3
+  done
+  tx send-keys -K -c "$C" X
+  sleep 0.5
+  tx send-keys -K -c "$C" d
+  wait_for '! tx has-session -t =feature-menu 2>/dev/null'
+  wait_for '[ "$(cat "$TMPDIR/bin/calls" 2>/dev/null)" = "task done t-0000e3 --json" ]'
 }

@@ -90,6 +90,9 @@ in the task's worktree, `o` IDE, `r` rename, `R` reload.
 merged. `X` closes the session and keeps the worktree. `ctrl-x` removes the
 worktree even when the branch is not merged, but still not when it has
 uncommitted changes. The branch is always kept.
+When the session runs a muxa Task, these keys show a menu instead of the y/n
+question: close and mark the Task done, close and drop it, or close and keep it
+open. The Task changes only once the session is closed.
 Every close also stops what is left running in the worktree: processes whose
 directory is in it, also orphans, and Docker Compose projects started from it
 (`docker compose down`, volumes are kept).
@@ -148,7 +151,9 @@ apps show, with a goal and a status.
   start ask sessions, it shows a message and does nothing.
 - `prefix + T` shows the Inbox: Needs attention, Ready for review, Running,
   No agent and Closed, with muxa's own grouping. Newer muxa versions also provide each Task's need, such as waiting for your answer or a loop needing attention; the popup displays that label without answering any menu. `Enter` moves this client to
-  the task's session. `ctrl-r` reloads, `Esc` closes.
+  the task's session. `ctrl-d` marks the Task done and `ctrl-x` drops it, after
+  a y/n question; the session keeps running. `Enter` on a Task without a session
+  offers the same. `ctrl-r` reloads, `Esc` closes.
 - Without muxa-cli, or without a muxa workspace (`~/.config/muxa/workspaces.toml`),
   `prefix + N` makes a plain task as before.
 

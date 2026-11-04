@@ -93,6 +93,9 @@ for line in sys.stdin:
             if req['worker'] == 'default': saved.pop('worker', None)
             else: saved['worker'] = req['worker']
         send({'type':'task-saved','task':ident,'record':saved})
+    elif kind == 'update-task':
+        send({'type':'task-saved','task':ident,
+              'record':dict(record, rev=8, status=req.get('status', record['status']))})
     send({'type':'result','id':ident, **({'sessions':[]} if kind == 'list' else {})})
 "#;
 
@@ -210,6 +213,23 @@ fn tasks_json_keeps_workspace_names_and_adds_their_details_and_capabilities() {
         listed["capabilities"],
         json!(["task-records", "task-handoff"])
     );
+}
+
+#[test]
+fn done_and_drop_close_the_record_at_its_revision() {
+    for (verb, status) in [("done", "done"), ("drop", "dropped")] {
+        let bridge = Bridge::new();
+        let output = bridge.run(false, false, &["task", verb, "t-000001", "--json"]);
+        assert!(output.status.success(), "{output:?}");
+        let item: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(item["record"]["status"], status);
+        assert_eq!(item["group"], "closed");
+        let requests = bridge.requests();
+        assert_eq!(requests[1]["type"], "update-task");
+        assert_eq!(requests[1]["rev"], 7);
+        assert_eq!(requests[1]["status"], status);
+        assert!(requests[1].get("inbox").is_none());
+    }
 }
 
 #[test]

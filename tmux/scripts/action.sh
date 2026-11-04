@@ -155,6 +155,24 @@ win() {
   t select-window -t "$w" && t switch-client -t "=$s"
 }
 
+# A session that runs a muxa Task also asks what becomes of the Task, so a
+# closed session does not leave it open in the Inbox. <mode> is close.sh's flag.
+close_session() {
+  local mode="$1" what="$2" s run
+  s="$(session_of "$target")" || return 0
+  run="run-shell -b \"'$S/close.sh' $mode"
+  if [ -z "$(target_opt "=$s:" @muxa_task)" ] || ! "$S/muxa.sh" available; then
+    t confirm-before -p "close $s and $what? (y/n)" "$run '$s'\""
+    return
+  fi
+  t display-menu -x C -y C -T "#[align=centre] close $s and $what " \
+    "Close, mark the Task done" d "$run --task done '$s'\"" \
+    "Close, drop the Task" x "$run --task dropped '$s'\"" \
+    "Close, keep the Task open" k "$run '$s'\"" \
+    "" \
+    "Cancel" q ""
+}
+
 case "$verb" in
   new|win|close|keep|force) leave_sidebar ;;
 esac
@@ -172,15 +190,9 @@ case "$verb" in
   win) win ;;
   ide) s="$(session_of "$target")" && "$S/ide.sh" "$s" ;;
   ide-current) "$S/ide.sh" "$(t display-message -p '#{session_name}')" ;;
-  close)
-    s="$(session_of "$target")" || exit 0
-    t confirm-before -p "close $s and remove its worktree? (y/n)" "run-shell -b \"'$S/close.sh' '$s'\"" ;;
-  keep)
-    s="$(session_of "$target")" || exit 0
-    t confirm-before -p "close $s and keep its worktree? (y/n)" "run-shell -b \"'$S/close.sh' --keep '$s'\"" ;;
-  force)
-    s="$(session_of "$target")" || exit 0
-    t confirm-before -p "close $s and remove its worktree, even if unmerged? (y/n)" "run-shell -b \"'$S/close.sh' --force '$s'\"" ;;
+  close) close_session "" "remove its worktree" ;;
+  keep) close_session --keep "keep its worktree" ;;
+  force) close_session --force "remove its worktree, even if unmerged" ;;
   rename)
     s="$(session_of "$target")" || exit 0
     t command-prompt -I "$s" -p "rename:" "rename-session -t '=$s' '%%'" ;;

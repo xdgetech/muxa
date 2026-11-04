@@ -3,6 +3,7 @@
 # new tasks that are muxa task records, the same ones its iPad and phone apps
 # show. muxa owns the records and the Inbox rule; this only renders them.
 # Usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal>
+#        muxa.sh close-task <task id> <done|dropped>
 #        muxa.sh repo-rows <workspace> <default repo> [none] | start-ask <workspace> <repo>
 #        muxa.sh inbox <client> | new <client> <repo> | ask <client> <repo>  (open a popup)
 #        muxa.sh inbox-ui <client> | form <client> <repo> | ask-ui <client> <json file> <repo>
@@ -43,8 +44,9 @@ run_muxa() {
 # The Inbox as muxa-cli prints it: {"workspaces", "truncated", "tasks"}.
 tasks() { run_muxa tasks --json </dev/null; }
 
-# One row per Task, in muxa's order: <session id> TAB <display>. The group's
-# name heads its first row, so every row is a Task. No session: no id.
+# One row per Task, in muxa's order: <session id> TAB <task id> TAB <title>
+# TAB <display>. The group's name heads its first row, so every row is a Task.
+# No session: no session id.
 rows() {
   local w e r i d
   IFS=$'\037' read -r w e r i d <<EOF
@@ -67,7 +69,7 @@ EOF
         group = ($1 == last ? "" : ($1 in title ? title[$1] : $1)); last = $1
         ic = ($3 in icon ? icon[$3] : "  ")
         where = ($2 == "" ? D "no session" Z : $5)
-        printf "%s\t%s%-16s%s  %s %s  %s%s%s  %s%s\n", $2, BO, group, Z, ic, $4, D, $6, Z, where, ($7 in need ? "  " need[$7] : "")
+        printf "%s\t%s\t%s\t%s%-16s%s  %s %s  %s%s%s  %s%s\n", $2, $6, $4, BO, group, Z, ic, $4, D, $6, Z, where, ($7 in need ? "  " need[$7] : "")
       }'
 }
 
@@ -126,19 +128,72 @@ inbox() {
 }
 
 inbox_ui() {
-  local client="$1" json picked sid
+  local client="$1" json picked key row sid task title
   while :; do
     json="$(tasks)" || { echo "muxa could not list the tasks. Press Enter."; read -r _; return 1; }
-    picked="$(printf '%s' "$json" | rows | fzf --ansi --delimiter '\t' --with-nth 2.. --no-sort \
+    picked="$(printf '%s' "$json" | rows | fzf --ansi --delimiter '\t' --with-nth 4.. --no-sort \
       --layout reverse --info hidden --prompt 'task> ' \
-      --header 'Enter go to the task  Esc close  ctrl-r reload' \
-      --expect ctrl-r)" || return 0
-    case "$picked" in ctrl-r*) continue ;; esac
-    sid="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
-    if [ -n "$sid" ]; then go "$client" "$sid"; return; fi
-    echo "That Task has no session. Open its detail in muxa to mark it Done or Dropped."
-    sleep 2
+      --header 'Enter go to the task  ctrl-d Done  ctrl-x Drop  ctrl-r reload  Esc close' \
+      --expect ctrl-r,ctrl-d,ctrl-x)" || return 0
+    key="$(printf '%s\n' "$picked" | sed -n '1p')"
+    row="$(printf '%s\n' "$picked" | sed -n '2p')"
+    sid="$(printf '%s' "$row" | cut -f1)"
+    task="$(printf '%s' "$row" | cut -f2)"
+    title="$(printf '%s' "$row" | cut -f3)"
+    [ -n "$task" ] || continue
+    case "$key" in
+      ctrl-r) continue ;;
+      ctrl-d) confirm_close "$task" "$title" "done" ;;
+      ctrl-x) confirm_close "$task" "$title" dropped ;;
+      *)
+        if [ -n "$sid" ]; then go "$client" "$sid"; return; fi
+        no_session "$task" "$title" ;;
+    esac
   done
+}
+
+# Enter on a Task whose session is gone: close it here, or go back.
+no_session() {
+  local answer
+  printf '"%s" has no session.\nd: mark it Done   x: Drop it   any other key: back ' "$2"
+  IFS= read -r -n 1 answer || return 0
+  echo
+  case "$answer" in
+    d) close_task "$1" "done" || pause ;;
+    x) close_task "$1" dropped || pause ;;
+  esac
+}
+
+confirm_close() {
+  local answer verb="mark \"$2\" Done"
+  [ "$3" = dropped ] && verb="drop \"$2\""
+  printf '%s? Its session keeps running. (y/n) ' "$verb"
+  IFS= read -r -n 1 answer || return 0
+  echo
+  [ "$answer" = y ] || return 0
+  close_task "$1" "$3" || pause
+}
+
+pause() { echo "Press Enter."; read -r _; }
+
+# Marks a Task record done or dropped. muxa keeps the record; the session,
+# if any, is left alone.
+close_task() {
+  local task="$1" status="$2" verb err
+  case "$status" in
+    done) verb="done" ;;
+    dropped) verb=drop ;;
+    *) fail "close-task takes done or dropped, not $status"; return 2 ;;
+  esac
+  case "$task" in
+    t-*) ;;
+    *) fail "not a muxa task id: $task"; return 2 ;;
+  esac
+  if ! err="$(run_muxa task "$verb" "$task" --json 2>&1 >/dev/null)"; then
+    fail "muxa could not mark $task $status: $(printf '%s' "$err" | sed 's/^muxa-cli: //' | tail -n 1)"
+    return 1
+  fi
+  notify_change
 }
 
 new() {
@@ -328,6 +383,7 @@ case "${1:-}" in
   tasks) tasks ;;
   rows) rows ;;
   create) shift; create "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
+  close-task) close_task "${2:?task id}" "${3:?done or dropped}" ;;
   inbox) inbox "${2:?client}" ;;
   inbox-ui) inbox_ui "${2:?client}" ;;
   new) new "${2:?client}" "${3:-}" ;;
@@ -336,5 +392,5 @@ case "${1:-}" in
   start-ask) start_ask "${2:?workspace}" "${3:?repo}" ;;
   ask) ask_key "${2:?client}" "${3:-}" ;;
   ask-ui) ask_ui "${2:?client}" "${3:?json file}" "${4:-}" ;;
-  *) echo "usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> | repo-rows <workspace> <repo> [none] | start-ask <workspace> <repo> | inbox <client> | new <client> <repo> | ask <client> <repo>" >&2; exit 2 ;;
+  *) echo "usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> | close-task <task id> <done|dropped> | repo-rows <workspace> <repo> [none] | start-ask <workspace> <repo> | inbox <client> | new <client> <repo> | ask <client> <repo>" >&2; exit 2 ;;
 esac

@@ -10,7 +10,9 @@ mod when;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{InboxAction, InboxChange, LoopSpec, RestartRecoveryAction, Role, Session};
+use muxa_protocol::{
+    InboxAction, InboxChange, LoopSpec, RestartRecoveryAction, Role, Session, TaskStatus,
+};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
@@ -18,7 +20,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
                 [--project P] [--repo REPO [--branch B] [--base REF]] [--worker NAME]
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
-       muxa-cli [--bridge CMD] task done ID
+       muxa-cli [--bridge CMD] task (done | drop) ID [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
        muxa-cli [--bridge CMD] task (down | requeue) ID [--json]
        muxa-cli [--bridge CMD] task later ID --until TIME [--json]
@@ -54,6 +56,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  Inbox item for task new and task restart (docs/agents.md,
                  Desktop tools)
   task done ID   marks a task record done
+  task drop ID   marks a task record dropped: given up, not finished.
+                 Neither closes the task's session
   task down ID   moves the task to the end of the Inbox queue (Move down).
                  Its status does not change. Needs task-inbox
   task later ID --until TIME
@@ -117,7 +121,11 @@ enum Cmd {
         new: tasks::NewTask,
         json: bool,
     },
-    Done(String),
+    Close {
+        task: String,
+        status: TaskStatus,
+        json: bool,
+    },
     Place {
         task: String,
         change: InboxChange,
@@ -303,7 +311,16 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             json,
         },
         [w, s] if w == "task" && s == "stop-loop" && all => Cmd::StopAllLoops { json },
-        [w, d, id] if w == "task" && d == "done" => Cmd::Done(id.clone()),
+        [w, d, id] if w == "task" && d == "done" => Cmd::Close {
+            task: id.clone(),
+            status: TaskStatus::Done,
+            json,
+        },
+        [w, d, id] if w == "task" && d == "drop" => Cmd::Close {
+            task: id.clone(),
+            status: TaskStatus::Dropped,
+            json,
+        },
         [w, d, id] if w == "task" && d == "down" => Cmd::Place {
             task: id.clone(),
             change: InboxChange {
@@ -427,7 +444,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             json,
         } => ask::ask(&mut conn, &repo, workspace, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
-        Cmd::Done(id) => tasks::done(&mut conn, &id).await,
+        Cmd::Close { task, status, json } => tasks::close(&mut conn, &task, status, json).await,
         Cmd::Place { task, change, json } => tasks::place(&mut conn, &task, change, json).await,
         Cmd::Recover {
             task,

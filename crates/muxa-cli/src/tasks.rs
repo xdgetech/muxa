@@ -260,8 +260,15 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
     Ok(String::new())
 }
 
-/// Reads the record's `rev` first; a `conflict` means it changed meanwhile.
-pub async fn done(conn: &mut Conn, task: &str) -> Result<String, String> {
+/// `task done` and `task drop`: closes the Task's record. Its session, if
+/// any, keeps running (PROTOCOL.md, update-task). Reads the record's `rev`
+/// first; a `conflict` means it changed meanwhile.
+pub async fn close(
+    conn: &mut Conn,
+    task: &str,
+    status: TaskStatus,
+    as_json: bool,
+) -> Result<String, String> {
     let (_, records, _, _) = fetch(conn).await?;
     let rev = records
         .iter()
@@ -274,15 +281,14 @@ pub async fn done(conn: &mut Conn, task: &str) -> Result<String, String> {
                 id,
                 task: task.to_owned(),
                 rev,
-                status: Some(TaskStatus::Done),
+                status: Some(status),
                 inbox: None,
             },
             WAIT,
         )
         .await?;
     let record = saved(&messages).ok_or("the bridge saved no task")?;
-    println!("{}", line(record));
-    Ok(String::new())
+    print_record(conn, record, as_json).await
 }
 
 /// `task down`, `task later` and `task requeue`: the Task's place in the

@@ -3,18 +3,24 @@
 # when nothing can be lost: no uncommitted changes, and the branch is merged.
 # --force skips the merged check. The branch itself is always kept.
 # In every mode it stops the processes and compose projects left in the worktree.
-# Usage: close.sh [--keep|--force] <session>
+# --task marks the session's muxa Task done or dropped once the session is gone.
+# Usage: close.sh [--keep|--force] [--task done|dropped] <session>
 set -u
 . "$(dirname "$0")/lib.sh"
 
-keep=0 force=0
-case "${1:-}" in
-  --keep) keep=1; shift ;;
-  --force) force=1; shift ;;
-esac
+keep=0 force=0 task_status=""
+while [ $# -gt 1 ]; do
+  case "$1" in
+    --keep) keep=1; shift ;;
+    --force) force=1; shift ;;
+    --task) task_status="${2:-}"; shift 2 ;;
+    *) break ;;
+  esac
+done
 s="${1:-}"
-[ -n "$s" ] || die "usage: close.sh [--keep|--force] <session>"
+[ -n "$s" ] || die "usage: close.sh [--keep|--force] [--task done|dropped] <session>"
 t has-session -t "=$s" 2>/dev/null || die "no session $s"
+task="$(target_opt "=$s:" @muxa_task)"
 
 wt="$(target_opt "=$s:" @agent_worktree)"
 main="$(target_opt "=$s:" @agent_repo_dir)"
@@ -61,6 +67,11 @@ t list-windows -a -F "#{session_id}${TAB}#{window_id}${TAB}#{@muxa_device}" 2>/d
   done
 
 t kill-session -t "=$s" || die "could not close $s"
+# The session is gone either way, so a muxa failure is reported, not fatal.
+if [ -n "$task_status" ] && [ -n "$task" ]; then
+  "$AGENTS_SCRIPTS/muxa.sh" close-task "$task" "$task_status" 2>/dev/null \
+    || say "closed $s, but muxa could not mark its Task $task_status. Details: $(agents_log_file)"
+fi
 [ -n "$wt" ] && [ -d "$wt" ] && "$AGENTS_SCRIPTS/stop-worktree.sh" "$wt"
 if [ "$remove_wt" = 1 ]; then
   git -C "${main:-$wt}" worktree remove "$wt" 2>>"$(agents_log_file)" \
