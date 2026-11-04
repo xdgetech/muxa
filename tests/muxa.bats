@@ -3,6 +3,8 @@
 # tasks through muxa-cli. A fake muxa-cli stands in, so muxa need not be installed.
 load helper
 
+TAB=$'\t'
+
 setup() { setup_server; make_repo; }
 teardown() { kill "${CLIENT_PID:-}" 2>/dev/null || true; teardown_server; }
 
@@ -25,15 +27,18 @@ answer() {
 new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
 muxa() { "$ROOT/scripts/muxa.sh" "$@"; }
 
-# A muxa-cli that logs its arguments, prints the item in bin/out, then sleeps
-# $FAKE_SLEEP like the real one waiting for the start prompt, and writes bin/ended. With FAKE_FAIL it fails instead.
+# A muxa-cli that logs its arguments, prints bin/out-<command> (else bin/out),
+# then sleeps $FAKE_SLEEP like the real one waiting for the start prompt, and
+# writes bin/ended. With FAKE_FAIL it fails instead.
 fake_cli() {
   mkdir -p "$TMPDIR/bin"
   cat >"$TMPDIR/bin/muxa-cli" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$@" >"$(dirname "$0")/args"
 if [ -n "${FAKE_FAIL:-}" ]; then echo "muxa-cli: $FAKE_FAIL" >&2; exit 1; fi
-cat "$(dirname "$0")/out"
+out="$(dirname "$0")/out-$3"
+[ -f "$out" ] || out="$(dirname "$0")/out"
+cat "$out"
 sleep "${FAKE_SLEEP:-0}"
 touch "$(dirname "$0")/ended"
 FAKE
@@ -171,4 +176,132 @@ INBOX='{"workspaces":["work"],"truncated":false,"tasks":[
   [[ "$result" != *'future'* ]]
   [ "$(printf '%s\n' "$result" | head -n 1 | cut -f1)" = '$7' ]
   [ "$(printf '%s\n' "$result" | wc -l | tr -d ' ')" = 4 ]
+}
+
+# A work:2 host: workspace objects with a root and the repos under it.
+work2_tasks() {
+  printf '{"workspaces":[{"name":"home","root":"%s/home"},{"name":"work","root":"%s/repos","repos":["%s","%s/repos/group/plan","/opt/tool"]}],"truncated":false,"tasks":[]}' \
+    "$TMPDIR" "$TMPDIR" "$REPO" "$TMPDIR"
+}
+
+args_are() { [ "$(cat "$TMPDIR/bin/args")" = "$(printf '%s\n' --bridge "muxa-bridge --socket $TMUX_AGENTS_SOCKET" "$@")" ]; }
+
+@test "the repo picker shows repos under the root by their relative path" {
+  mkdir -p "$TMPDIR/repos/group/plan" && git -C "$TMPDIR/repos/group/plan" init -q
+  run bash -c "printf '%s' '$(work2_tasks)' | '$ROOT/scripts/muxa.sh' repo-rows work '$TMPDIR/repos/group/plan' none"
+  [ "$status" -eq 0 ]
+  expected="$(printf '%s\n' \
+    "$TMPDIR/repos/group/plan${TAB}group/plan" \
+    "$REPO${TAB}app" \
+    "/opt/tool${TAB}/opt/tool" \
+    "-${TAB}- no repo")"
+  [ "$output" = "$expected" ]
+}
+
+# muxa-cli's own shape: names in workspaces, details in workspaceInfo.
+cli_tasks() {
+  printf '{"workspaces":["home","work"],"workspaceInfo":[{"name":"home","root":"%s/home"},{"name":"work","root":"%s/repos","repos":["%s","%s/repos/group/plan","/opt/tool"]}],"capabilities":["task-records","work:2"],"truncated":false,"tasks":[]}' \
+    "$TMPDIR" "$TMPDIR" "$REPO" "$TMPDIR"
+}
+
+@test "the repo picker reads workspaceInfo as muxa-cli prints it" {
+  mkdir -p "$TMPDIR/repos/group/plan" && git -C "$TMPDIR/repos/group/plan" init -q
+  run bash -c "printf '%s' '$(cli_tasks)' | '$ROOT/scripts/muxa.sh' repo-rows work '$TMPDIR/repos/group/plan' none"
+  [ "$status" -eq 0 ]
+  expected="$(printf '%s\n' \
+    "$TMPDIR/repos/group/plan${TAB}group/plan" \
+    "$REPO${TAB}app" \
+    "/opt/tool${TAB}/opt/tool" \
+    "-${TAB}- no repo")"
+  [ "$output" = "$expected" ]
+}
+
+@test "the repo picker lists the current repo first, also outside the workspace" {
+  other="$TMPDIR/elsewhere/lib"
+  mkdir -p "$other" && git -C "$other" init -q
+  run bash -c "printf '%s' '$(work2_tasks)' | '$ROOT/scripts/muxa.sh' repo-rows work '$other'"
+  [ "${lines[0]}" = "$other${TAB}$other" ]
+  [ "${#lines[@]}" -eq 4 ]
+}
+
+@test "create without a branch lets a work:2 host name it" {
+  fake_cli '{"group":"no-agent","record":{"id":"t-00000c"},"session":{"id":"$6","name":"fix-it"}}'
+  run muxa create work app "" "Fix it" ""
+  [ "$output" = '$6' ]
+  args_are task new --workspace work --title "Fix it" --goal "Fix it" --json --repo app
+}
+
+@test "prefix+N picks a repo from the workspace, and an empty branch passes none on work:2" {
+  new feature/picked >/dev/null
+  sid="$(tx display-message -p -t =feature-picked: '#{session_id}')"
+  fake_cli "$(printf '{"group":"no-agent","record":{"id":"t-0000d2"},"session":{"id":"%s","name":"feature-picked"}}' "$sid")"
+  work2_tasks >"$TMPDIR/bin/out-tasks"
+  attach
+  tx send-keys -K -c "$C" C-b N
+  sleep 1.5
+  answer work            # workspace
+  answer app             # the picker: filters to app
+  answer ""              # branch: named after the title
+  answer "Picked task"   # title
+  answer ""              # goal
+  wait_for '[ "$(tx display-message -p -c "$C" "#{session_name}")" = feature-picked ]'
+  args_are task new --workspace work --title "Picked task" --goal "Picked task" --json --repo "$REPO"
+}
+
+@test "prefix+N refuses an empty branch when muxa cannot name one" {
+  fake_cli '{"workspaces":["work"],"truncated":false,"tasks":[]}'
+  attach
+  tx send-keys -K -c "$C" C-b N
+  sleep 1.5
+  answer "$REPO"         # one workspace: the picker comes first; a typed path
+  answer ""              # branch
+  sleep 1
+  args_are tasks --json
+  [ "$(tx display-message -p -c "$C" "#{session_name}")" = base ]
+}
+
+@test "prefix+A asks muxa for an ask session in the picked repo and goes there" {
+  tx new-session -d -s ask-app-1
+  sid="$(tx display-message -p -t =ask-app-1: '#{session_id}')"
+  fake_cli "$(work2_tasks)"
+  printf '{"session":"%s","name":"ask-app-1","workspace":"work"}\n' "$sid" >"$TMPDIR/bin/out-ask"
+  attach
+  tx send-keys -K -c "$C" C-b A
+  sleep 1.5
+  answer work            # workspace
+  answer plan            # the picker: group/plan
+  wait_for '[ "$(tx display-message -p -c "$C" "#{session_name}")" = ask-app-1 ]'
+  args_are ask "$TMPDIR/repos/group/plan" --workspace work --json
+}
+
+@test "prefix+A defaults to the workspace that holds the current repo" {
+  tx new-session -d -s ask-app-2
+  sid="$(tx display-message -p -t =ask-app-2: '#{session_id}')"
+  fake_cli "$(work2_tasks)"      # home comes first
+  printf '{"session":"%s","name":"ask-app-2","workspace":"work"}\n' "$sid" >"$TMPDIR/bin/out-ask"
+  tx send-keys -t base: "cd '$REPO'" Enter
+  wait_for '[ "$(tx display-message -p -t base: "#{pane_current_path}")" = "$(cd "$REPO" && pwd -P)" ]'
+  attach
+  tx send-keys -K -c "$C" C-b A
+  sleep 1.5
+  answer ""              # workspace: work holds the current repo
+  answer ""              # the picker: the current repo comes first
+  wait_for '[ "$(tx display-message -p -c "$C" "#{session_name}")" = ask-app-2 ]'
+  args_are ask "$REPO" --workspace work --json
+}
+
+@test "prefix+A opens nothing when muxa cannot start ask sessions" {
+  fake_cli '{"workspaces":["work"],"truncated":false,"tasks":[]}'
+  attach
+  tx send-keys -K -c "$C" C-b A
+  wait_for 'grep -q "cannot start ask sessions" "$TMPDIR/tmux-agents-$(id -u)/agents.log"'
+  args_are tasks --json
+  [ "$(tx display-message -p -c "$C" "#{popup_active}")" != 1 ] || false
+}
+
+@test "prefix+A without muxa says so and starts nothing" {
+  attach
+  tx send-keys -K -c "$C" C-b A
+  wait_for 'grep -q "ask sessions need muxa" "$TMPDIR/tmux-agents-$(id -u)/agents.log"'
+  [ "$(tx list-sessions | wc -l | tr -d ' ')" = 1 ]
 }

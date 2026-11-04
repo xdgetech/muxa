@@ -83,6 +83,7 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 | `prefix + j`, then `1`–`9` or `a`–`z` | the task with that label in the tree |
 | `prefix + a` | the task that needs you most: 🙋, then ❌, then 🏁 |
 | `prefix + T` | the muxa Inbox, in a popup (see [muxa](#muxa)) |
+| `prefix + A` | ask about a repo: an agent in its main checkout, with no task (needs muxa) |
 
 In the tree: `j`/`k` move, `Enter` go to the task, `1`–`9` go to that task
 (letters only through `prefix + j`), `Esc` leave, `n` new task, `c` new window
@@ -121,11 +122,11 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_notify` | `on` | desktop notifications |
 | `@agents_notify_events` | `waiting done error` | which changes notify; `done` means a finished turn |
 | `@agents_notify_cmd` | | command that sends the notification instead, gets `<session> <message>` (e.g. `terminal-notifier`, ntfy) |
-| `@agents_key_focus` / `_toggle` / `_new` / `_ide` / `_inbox` | `Tab` / `b` / `N` / `O` / `T` | |
+| `@agents_key_focus` / `_toggle` / `_new` / `_ide` / `_inbox` / `_ask` | `Tab` / `b` / `N` / `O` / `T` / `A` | |
 | `@agents_muxa` | `auto` | `off`: never use muxa, even when it is installed |
 | `@agents_muxa_cli` | `muxa-cli` on `PATH` | muxa's CLI on this host |
 | `@agents_muxa_bridge` | `muxa-bridge` beside it | the bridge command muxa-cli starts, with its flags |
-| `@agents_muxa_workspace` | the first one | the workspace the new-task form suggests |
+| `@agents_muxa_workspace` | the first one | the workspace the new-task form and the ask popup suggest when no workspace holds the current repo |
 
 ## muxa
 
@@ -134,9 +135,20 @@ With [muxa](https://github.com/xdgetech/muxa) on the host, `muxa-cli` and
 apps show, with a goal and a status.
 
 - `prefix + N` opens a form in a popup: workspace, repo, branch, title and goal.
-  Repo `-` starts a task without a repo, in the workspace's own directory.
+  The workspace suggested is the one whose repos hold the current repo.
+  The repo is a list to filter: the current repo first, then the workspace's
+  repos, by their path under the workspace root (`group/app`), else with `~`.
+  `- no repo` starts a task without a repo, in the workspace's own directory.
+  A path that is not listed can be typed. An empty branch lets muxa name one
+  after the title; an older muxa needs the branch. A title is required.
   muxa starts the task through `new.sh`, hands the goal to the agent in
   `.muxa/TASK.md`, and this client moves to the new session.
+- `prefix + A` starts an ask session: muxa's agent in a repo's main checkout,
+  to ask about its code. There is no task and no worktree, and the agent can
+  change files there. The popup asks for the workspace and picks the repo
+  as the form does, runs `muxa-cli ask REPO --workspace W --json`, and moves
+  this client to the new session. Without muxa, or with a muxa too old to
+  start ask sessions, it shows a message and does nothing.
 - `prefix + T` shows the Inbox: Needs attention, Ready for review, Running,
   No agent and Closed, with muxa's own grouping. Newer muxa versions also provide each Task's need, such as waiting for your answer or a loop needing attention; the popup displays that label without answering any menu. `Enter` moves this client to
   the task's session. `ctrl-r` reloads, `Esc` closes.
