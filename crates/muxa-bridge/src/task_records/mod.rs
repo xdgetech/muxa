@@ -561,6 +561,9 @@ fn write_status(
         .update(task, rev, |r| r.status = status_of(status))
         .map_err(|e| store_error(&e))?;
     tracing::info!(task = %record.id, rev = record.rev, "task status set");
+    if matches!(status, TaskStatus::Done | TaskStatus::Dropped) {
+        crate::items::produce::task_closed(config, task);
+    }
     Ok(record)
 }
 

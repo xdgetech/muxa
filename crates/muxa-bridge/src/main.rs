@@ -8,8 +8,6 @@ mod chat;
 mod convert;
 mod daemon;
 mod docs;
-// Slice I0 (ADR 0033) lands in lanes; remove once produce and answer use the store.
-#[allow(dead_code)]
 mod items;
 mod lines;
 mod loops;

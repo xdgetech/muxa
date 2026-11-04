@@ -161,6 +161,22 @@ async fn accept_marks_the_task_done_and_answers_the_item() {
 }
 
 #[tokio::test]
+async fn closing_the_task_elsewhere_resolves_its_open_item() {
+    for status in [
+        muxa_protocol::TaskStatus::Done,
+        muxa_protocol::TaskStatus::Dropped,
+    ] {
+        let f = fixture(review("i-00000001"));
+        crate::task_records::set_status(&f.cx.records, f.task.clone(), status)
+            .await
+            .unwrap();
+        let item = f.stored("i-00000001");
+        assert_eq!(item.state, ItemState::Resolved);
+        assert!(item.answers.is_empty());
+    }
+}
+
+#[tokio::test]
 async fn an_unknown_item_or_an_answer_it_does_not_take_is_a_bad_request() {
     let f = fixture(review("i-00000001"));
     let e = update(&f.cx, answer("i-00000009", InboxAction::Dismiss))

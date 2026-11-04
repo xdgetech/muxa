@@ -157,6 +157,22 @@ fn is_task_kind(kind: ItemKind) -> bool {
     matches!(kind, ItemKind::Ask | ItemKind::Review | ItemKind::Failure)
 }
 
+/// Blocking. A Task that is done or dropped asks nothing more: its open
+/// item resolves. An Inbox answer that closed it writes `answered` after this.
+pub(crate) fn task_closed(config: &Config, task: &str) {
+    let Some(dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
+        return;
+    };
+    let resolved = ItemStore::open(dir).and_then(|s| {
+        s.update::<_, crate::routines::store::StateError>(task, |items| Ok(resolve(items)))
+    });
+    match resolved {
+        Ok(true) => tracing::info!(task, "inbox item resolved: the task is closed"),
+        Ok(false) => {}
+        Err(e) => tracing::warn!(task, error = %e, "cannot resolve the task's inbox item"),
+    }
+}
+
 fn resolve(items: &mut TaskItems) -> bool {
     match items.current_mut() {
         Some(c) if is_task_kind(c.item.kind) => {

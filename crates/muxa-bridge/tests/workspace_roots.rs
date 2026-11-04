@@ -82,7 +82,7 @@ impl Entity {
         let Message::Hello { capabilities, .. } = hello else {
             panic!("{hello:?}")
         };
-        assert_eq!(work_level(&capabilities), WORK_ASK);
+        assert!(work_level(&capabilities) >= WORK_ASK);
         bridge
     }
 }
