@@ -1,6 +1,7 @@
 package tech.xdge.muxa.demo
 
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,6 +55,41 @@ class DemoItemsTest {
         refused { session.answer(review, InboxAction.REDO) }
         refused { session.answer(review, InboxAction.RETRY) }
         assertEquals(ItemState.ANSWERED, session.answer(review, InboxAction.REDO, text = "Keep the old page too.").state)
+    }
+
+    /** ADR 0033 §4a: every Task item offers `reply`; it needs a text, which the agent gets as its next prompt. */
+    @Test
+    fun aReplyNeedsATextAndReachesTheAgent() = runBlocking {
+        val session = connected()
+        for (id in listOf("i-0000a001", "i-0000a002", "i-0000a003")) assertTrue(InboxAction.REPLY in session.item(id).answers)
+        val ask = session.item("i-0000a001")
+        refused { session.answer(ask, InboxAction.REPLY) }
+        session.watch("%1")
+        session.follow("%1")
+        waitUntil { session.state.value.chat?.loaded == true }
+        assertEquals(InboxAction.REPLY, session.answer(ask, InboxAction.REPLY, text = "Keep build; run make clean.").answer)
+        waitUntil { session.state.value.chat?.entries?.lastOrNull()?.text == "Keep build; run make clean." }
+        assertEquals(TaskStatus.OPEN, session.state.value.tasks?.record("t-auth01")?.status)
+    }
+
+    /** The showcase's review names its doc and its PR in the summary, for the Markdown links. */
+    @Test
+    fun theShowcaseReviewLinksItsEvidence() = runBlocking {
+        val session = PaneSession(Executors.newSingleThreadExecutor().asCoroutineDispatcher())
+        session.connect { DemoBridge(DemoBridge.Content.SHOWCASE) }
+        val review = session.item("i-5c000002")
+        assertTrue(review.summary.orEmpty().contains("`README.md`"))
+        assertTrue(review.summary.orEmpty().contains("(https://github.com/example/dashboard/pull/318)"))
+        assertEquals(listOf("README.md"), review.attachments.docs)
+        assertTrue(InboxAction.REPLY in review.answers)
+    }
+
+    private suspend fun waitUntil(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!condition()) {
+            if (System.currentTimeMillis() > deadline) throw AssertionError("condition not met in 5 s")
+            delay(10)
+        }
     }
 
     @Test

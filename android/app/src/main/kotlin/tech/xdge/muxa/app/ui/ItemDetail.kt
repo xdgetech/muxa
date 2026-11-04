@@ -14,9 +14,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,18 +32,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
-import tech.xdge.muxa.app.ReaderTab
 import tech.xdge.muxa.app.item
 import tech.xdge.muxa.app.itemSession
 import tech.xdge.muxa.app.back
 import tech.xdge.muxa.app.itemHasChat
 import tech.xdge.muxa.app.openItemSession
-import tech.xdge.muxa.app.reader.ReaderItem
 import tech.xdge.muxa.app.reply
 import tech.xdge.muxa.app.setReply
 import tech.xdge.muxa.app.answer
@@ -56,6 +51,7 @@ import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.session.buttons
 import tech.xdge.muxa.session.choices
 import tech.xdge.muxa.session.isWaiting
+import tech.xdge.muxa.session.mainAnswer
 import tech.xdge.muxa.session.needsText
 
 /**
@@ -109,14 +105,14 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     item.prompt?.question?.let { Text(it, Modifier.testTag("item-prompt")) }
-    item.summary?.let { SelectionContainer { Text(it, Modifier.testTag("item-summary")) } }
+    item.summary?.let { ItemSummary(model, item, it) }
     item.proposal?.let { p ->
         Text("Proposed action", style = MaterialTheme.typography.titleSmall)
         Field("Action", p.action)
         Field("Target", p.target, mono = true)
         Field("Content", p.content, mono = true)
     }
-    Evidence(model, item)
+    ItemAttachments(model, item)
     if (item.kind == ItemKind.ASK && item.prompt == null) {
         Text(
             "The agent's menu can't be answered here. Open the terminal to answer it.",
@@ -124,34 +120,6 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-}
-
-/** The changes, docs and images open in the Reader of the item's pane; links open in the browser. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun Evidence(model: AppModel, item: InboxItem) {
-    val a = item.attachments
-    val reads = item.pane != null && model.isConnected
-    val uri = LocalUriHandler.current
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        a.changes?.takeIf { reads && model.state.canShowChanges }?.let { c ->
-            Chip("Diff +${c.added} −${c.removed}", Icons.changes, "item-changes") { model.readItem(item, ReaderTab.CHANGES) }
-        }
-        if (reads && model.state.canReadDocs) {
-            for (doc in a.docs) Chip(doc.substringAfterLast('/'), Icons.document, "item-doc-$doc") { model.readItem(item, ReaderTab.DOCS, ReaderItem.Doc(doc)) }
-        }
-        if (reads && model.state.canShowImages) {
-            for (image in a.images) {
-                Chip(image.substringAfterLast('/'), Icons.image, "item-image-$image") { model.readItem(item, ReaderTab.IMAGES, ReaderItem.Image(image)) }
-            }
-        }
-        for (link in a.links) Chip(link.title ?: link.url, Icons.newWindow, "item-link") { runCatching { uri.openUri(link.url) } }
-    }
-}
-
-@Composable
-private fun Chip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tag: String, onClick: () -> Unit) {
-    AssistChip(onClick, { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }, Modifier.testTag(tag), leadingIcon = { Icon(icon, null) })
 }
 
 /** The reply box, a question's options, the main answers and More. */
@@ -178,17 +146,24 @@ private fun AnswerBar(model: AppModel, item: InboxItem) {
                 }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            buttons.main.forEachIndexed { i, action ->
+        val main = item.mainAnswer(text)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.Center) {
+            for (action in buttons.main) {
                 val enabled = !busy && (!action.needsText || text.isNotBlank())
                 val onClick = { model.tap(item, action) }
-                val tag = Modifier.testTag("item-${action.wire}")
-                if (i == 0) {
+                val tag = Modifier.testTag("item-${action.tag}")
+                if (action == main) {
                     Button(onClick, tag, enabled = enabled) { Text(action.title(item)) }
                 } else {
                     OutlinedButton(onClick, tag, enabled = enabled) { Text(action.title(item)) }
                 }
             }
+        }
+        if (InboxAction.ACCEPT in buttons.main) {
+            Text(
+                "Done closes the Task.", Modifier.testTag("item-accept-note"),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             SessionButtons(model, item)
@@ -232,7 +207,7 @@ private fun More(model: AppModel, item: InboxItem, actions: List<InboxAction>, b
                         open = false
                         model.tap(item, action)
                     },
-                    Modifier.testTag("item-more-${action.wire}"),
+                    Modifier.testTag("item-more-${action.tag}"),
                     enabled = !busy && (!action.needsText || text.isNotBlank()),
                 )
             }
@@ -243,10 +218,19 @@ private fun More(model: AppModel, item: InboxItem, actions: List<InboxAction>, b
 /** The action's name on the wire, for test tags. */
 val InboxAction.wire: String get() = InboxAction.serializer().descriptor.getElementName(ordinal)
 
+/** A button's test tag. Send is `send`: `item-reply` is the reply box. */
+private val InboxAction.tag: String get() = if (this == InboxAction.REPLY) "send" else wire
+
+/** Labels name the result (ADR 0033 §4a). A proposal keeps Approve and Reject. */
 fun InboxAction.title(item: InboxItem): String = when (this) {
-    InboxAction.APPROVE -> if (item.kind == ItemKind.PROPOSAL) "Approve…" else "Approve"
-    InboxAction.REJECT -> "Reject"
-    InboxAction.ACCEPT -> "Accept"
+    InboxAction.APPROVE -> when (item.kind) {
+        ItemKind.PROPOSAL -> "Approve…"
+        ItemKind.ASK -> "Allow"
+        else -> "Approve"
+    }
+    InboxAction.REJECT -> if (item.kind == ItemKind.ASK) "Deny" else "Reject"
+    InboxAction.REPLY -> if (item.kind == ItemKind.ASK) "Deny & Send" else "Send"
+    InboxAction.ACCEPT -> "Done"
     InboxAction.REDO -> "Redo"
     InboxAction.CHANGE_COURSE -> "Change Course"
     InboxAction.KEEP_OPEN -> "Keep Open"

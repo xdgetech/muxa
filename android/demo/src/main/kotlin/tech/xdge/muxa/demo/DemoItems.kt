@@ -14,7 +14,7 @@ import tech.xdge.muxa.protocol.TaskStatus
 
 /**
  * The demo bridge's Inbox items (ADR 0033, `work` level 3), with the host's checks: only an
- * action in `answers`, a text for Redo and Change course, a valid option and a Later time.
+ * action in `answers`, a text for Send, Redo and Change course, a valid option and a Later time.
  * A Routine's entries are items too; [DemoWork] keeps them. Not thread safe: the bridge holds its lock.
  */
 internal class DemoItems(private var items: List<InboxItem>) {
@@ -57,7 +57,7 @@ internal class DemoItems(private var items: List<InboxItem>) {
     }
 
     private fun check(action: InboxAction, item: InboxItem, text: String?, option: Int?) {
-        if (action == InboxAction.REDO || action == InboxAction.CHANGE_COURSE) {
+        if (action == InboxAction.REPLY || action == InboxAction.REDO || action == InboxAction.CHANGE_COURSE) {
             val bytes = text?.toByteArray()?.size ?: 0
             if (bytes !in 1..MAX_TEXT) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "$action needs a text of 1 to $MAX_TEXT bytes")
         }
@@ -115,12 +115,13 @@ internal class DemoItems(private var items: List<InboxItem>) {
                         "toolu_demo", ChatPrompt.Kind.PERMISSION,
                         options = listOf(ChatPrompt.Option("Yes", listOf("Enter")), ChatPrompt.Option("No", listOf("Escape"), cancel = true)),
                     ),
-                    answers = listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER),
+                    answers = ASK_ANSWERS,
                 ),
                 showcaseItem(
                     "i-5c000002", ItemKind.REVIEW, "Ready for review: Dark mode for the dashboard", "t-0a1b2c",
                     "Dark mode for the dashboard", now - 720, session = "$3", pane = "%5",
-                    summary = "The dashboard follows the system setting now. The charts use the new palette, and the contrast checks pass.",
+                    summary = "The dashboard follows the system setting now. The charts use the new palette, and the contrast checks " +
+                        "pass. The setting is described in `README.md`; see [PR #318](https://github.com/example/dashboard/pull/318).",
                     attachments = Attachments(
                         changes = ChangeCount(files = 6, added = 212, removed = 48),
                         docs = listOf("README.md"),
@@ -138,8 +139,12 @@ internal class DemoItems(private var items: List<InboxItem>) {
             ),
         )
 
+        /** The host's answers per kind (PROTOCOL.md "Inbox items"), `reply` included (ADR 0033 §4a). */
         private val REVIEW_ANSWERS =
-            listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER)
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER)
+        private val FAILURE_ANSWERS =
+            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER)
+        private val ASK_ANSWERS = listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER)
 
         /** An open item of the showcase's "work" workspace; a read one was opened 30 seconds after it was made. */
         private fun showcaseItem(
@@ -161,25 +166,26 @@ internal class DemoItems(private var items: List<InboxItem>) {
                         "t:wait1", ChatPrompt.Kind.PERMISSION,
                         options = listOf(ChatPrompt.Option("Allow", listOf("1")), ChatPrompt.Option("Deny", listOf("Escape"), cancel = true)),
                     ),
-                    answers = listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER),
+                    answers = ASK_ANSWERS,
                 ),
                 InboxItem(
                     "i-0000a002", ItemKind.REVIEW, ItemState.OPEN, "Ready for review: Fix the login redirect", "work", "Fix the login redirect",
                     createdAt = now - 600, task = "t-login1", session = "$4", pane = "%5",
-                    summary = "After sign-in, users return to the page they came from. The redirect test passes.",
+                    summary = "After sign-in, users return to the page they came from. The redirect test passes. " +
+                        "The flow is in [the design](docs/design.md), and **login.png** shows the page; see https://github.com/example/app/pull/817.",
                     attachments = Attachments(
                         changes = ChangeCount(files = 3, added = 120, removed = 40, scope = "branch"),
                         docs = listOf("docs/design.md"),
                         images = listOf("build/screenshots/en/login.png"),
                         links = listOf(SourceLink("https://github.com/example/app/pull/817", "PR #817")),
                     ),
-                    answers = listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
+                    answers = REVIEW_ANSWERS,
                 ),
                 InboxItem(
                     "i-0000a003", ItemKind.FAILURE, ItemState.OPEN, "The loop stopped: npm run lint failed 3 times", "personal",
                     "Fix the lint warnings", createdAt = now - 300, readAt = now - 200, task = "t-lint01",
                     summary = "3 warnings are left in src/legacy.js.",
-                    answers = listOf(InboxAction.RETRY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER),
+                    answers = FAILURE_ANSWERS,
                 ),
                 InboxItem(
                     "i-0000a004", ItemKind.REVIEW, ItemState.ANSWERED, "Ready for review: Write the release notes", "work",

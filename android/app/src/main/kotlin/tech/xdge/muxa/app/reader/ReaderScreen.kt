@@ -137,7 +137,9 @@ fun ReaderScreen(model: AppModel) {
             }
             if (phone) {
                 if (showList) list(Modifier.fillMaxSize()) else detail(Modifier.fillMaxSize())
-                androidx.activity.compose.BackHandler(!showList) { showList = true }
+                androidx.activity.compose.BackHandler(!showList) {
+                    if (model.readerReturnsToItem) model.closeReader() else showList = true
+                }
             } else {
                 Row(Modifier.fillMaxSize()) {
                     list(Modifier.width(340.dp).fillMaxHeight())

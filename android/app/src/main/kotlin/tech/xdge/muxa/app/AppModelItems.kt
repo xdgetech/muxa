@@ -41,7 +41,7 @@ fun AppModel.setReply(item: InboxItem, text: String) {
 }
 
 /**
- * Sends [action]. Redo and Change course take the reply box's text. An answer returns to the
+ * Sends [action]. Send, Redo and Change course take the reply box's text. An answer returns to the
  * list on a phone; beside the list, the next item opens. An item answered while its pane is
  * shown leaves the list; the pane stays.
  */
@@ -91,10 +91,10 @@ fun AppModel.tap(item: InboxItem, action: InboxAction) {
     }
 }
 
-/** Ctrl+Shift+Enter: the open item's main answer, else the focused one's. */
+/** Ctrl+Shift+Enter: the open item's main answer, else the focused one's. Send while its reply box has text. */
 fun AppModel.sendMainAnswer() {
     val item = selectedItem?.let(::item) ?: focusedItem ?: return
-    val action = item.mainAnswer ?: return
+    val action = item.mainAnswer(reply(item)) ?: return
     tap(item, action)
 }
 

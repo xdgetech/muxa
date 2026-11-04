@@ -8,17 +8,21 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.test.core.app.ActivityScenario
+import androidx.test.uiautomator.UiDevice
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -71,6 +75,14 @@ class ItemListTest {
     private fun waitForText(tag: String, text: String) =
         compose.waitUntilAtLeastOneExists(hasTestTag(tag) and hasText(text, substring = true), TIMEOUT)
 
+    /** The system Back. */
+    private fun pressBack() {
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
+    }
+
+    /** A text of the Markdown summary. */
+    private fun summaryText(text: String) = hasAnyAncestor(hasTestTag("item-summary")) and hasText(text, substring = true)
+
     private val rowTag = SemanticsMatcher("an item row") {
         it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-row-") == true
     }
@@ -93,17 +105,19 @@ class ItemListTest {
         assertEquals(listOf(ASK, FAILURE, REVIEW), model.inboxItems.take(3).map { it.id })
     }
 
-    /** A review shows its summary and evidence; opening it marks it read; Accept removes it and marks the Task done. */
+    /** A review shows its summary and evidence; opening it marks it read; Done removes it and marks the Task done. */
     @Test
     fun acceptingAReviewRemovesItAndMarksTheTaskDone() {
         launchOnInbox()
         click(row(REVIEW))
         waitForText("item-question", "Ready for review: Fix the login redirect")
-        waitForText("item-summary", "redirect test passes")
+        compose.waitUntilAtLeastOneExists(summaryText("redirect test passes"), TIMEOUT)
         waitForText("item-changes", "+120 −40")
-        waitForTag("item-doc-docs/design.md")
+        waitForText("item-doc-docs/design.md", "design.md")
         waitForText("item-link", "PR #817")
         compose.waitUntil(TIMEOUT) { item(REVIEW).readAt != null }
+        waitForText("item-accept", "Done")
+        waitForTag("item-accept-note")
         click("item-accept")
         compose.waitUntil(TIMEOUT) { model.inboxItems.none { it.id == REVIEW } }
         compose.waitUntilDoesNotExist(hasTestTag(row(REVIEW)), TIMEOUT)
@@ -111,18 +125,56 @@ class ItemListTest {
         compose.waitUntil(TIMEOUT) { model.state.tasks?.record("t-login1")?.status == TaskStatus.DONE }
     }
 
-    /** Redo sends the reply's text, and waits for one. */
+    /** Redo sits under More (ADR 0033 §4a), sends the reply's text, and waits for one. */
     @Test
     fun redoNeedsATextAndSendsIt() {
         launchOnInbox()
         click(row(REVIEW))
-        waitForTag("item-redo")
-        compose.onNodeWithTag("item-redo").assertIsNotEnabled()
+        click("item-more")
+        waitForTag("item-more-redo")
+        compose.onNodeWithTag("item-more-redo").assertIsNotEnabled()
+        pressBack()
+        compose.waitUntilDoesNotExist(hasTestTag("item-more-redo"), TIMEOUT)
         compose.onNodeWithTag("item-reply").performTextInput("Keep the old redirect for one release.")
-        compose.onNodeWithTag("item-redo").assertIsEnabled().performClick()
+        click("item-more")
+        waitForTag("item-more-redo")
+        compose.onNodeWithTag("item-more-redo").assertIsEnabled().performClick()
         compose.waitUntil(TIMEOUT) { item(REVIEW).state == ItemState.ANSWERED }
         assertEquals(InboxAction.REDO, item(REVIEW).answer)
         compose.waitUntilDoesNotExist(hasTestTag(row(REVIEW)), TIMEOUT)
+    }
+
+    /** Send on a review sends the reply's text as `reply`; the Task goes on. */
+    @Test
+    fun sendOnAReviewSendsTheReply() {
+        launchOnInbox()
+        click(row(REVIEW))
+        waitForText("item-send", "Send")
+        compose.onNodeWithTag("item-send").assertIsNotEnabled()
+        compose.onNodeWithTag("item-reply").performTextInput("Looks good. Also update the README.")
+        compose.onNodeWithTag("item-send").assertIsEnabled().performClick()
+        compose.waitUntil(TIMEOUT) { item(REVIEW).state == ItemState.ANSWERED }
+        assertEquals(InboxAction.REPLY, item(REVIEW).answer)
+        compose.waitUntilDoesNotExist(hasTestTag(row(REVIEW)), TIMEOUT)
+        assertEquals(TaskStatus.OPEN, model.state.tasks?.record("t-login1")?.status)
+    }
+
+    /**
+     * An ask's labels name the result: Allow, Deny, Deny & Send. With a text Ctrl+Shift+Enter
+     * sends it as `reply` (DemoItemsTest checks that the agent gets the text).
+     */
+    @Test
+    fun denyAndSendOnAnAskSendsTheText() {
+        launchOnInbox()
+        click(row(ASK))
+        waitForText("item-approve", "Allow")
+        waitForText("item-reject", "Deny")
+        waitForText("item-send", "Deny & Send")
+        compose.onNodeWithTag("item-reply").performTextInput("Keep build; run make clean.")
+        key(KeyEvent.KEYCODE_ENTER)
+        compose.waitUntil(TIMEOUT) { item(ASK).state == ItemState.ANSWERED }
+        assertEquals(InboxAction.REPLY, item(ASK).answer)
+        compose.waitUntilDoesNotExist(hasTestTag(row(ASK)), TIMEOUT)
     }
 
     /** An ask's Approve answers it; Reject is beside it. */
@@ -220,6 +272,36 @@ class ItemListTest {
         click("item-chat")
         waitForTag("composer")
         assertEquals(AppModel.PaneView.CHAT, model.paneView)
+    }
+
+    /** An attachment opens the Reader of the item's pane; Back returns to the item, not to the Reader's list. */
+    @Test
+    fun anAttachmentOpensTheReaderAndBackReturnsToTheItem() {
+        launchOnInbox()
+        click(row(REVIEW))
+        val image = "item-image-build/screenshots/en/login.png"
+        compose.onNodeWithTag("item-detail").performScrollToNode(hasTestTag(image))
+        waitForText(image, "login.png")
+        click(image)
+        compose.waitUntil(3_000) { model.showReader }
+        waitForTag("image-view")
+        pressBack()
+        waitForText("item-question", "Ready for review: Fix the login redirect")
+        compose.onNodeWithTag("image-view").assertDoesNotExist()
+        assertFalse(model.paneShown)
+    }
+
+    /** A summary link that names an attachment opens the Reader at it; Back returns to the item. */
+    @Test
+    fun aSummaryLinkToADocOpensTheReader() {
+        launchOnInbox()
+        click(row(REVIEW))
+        compose.waitUntilAtLeastOneExists(summaryText("the design"), TIMEOUT)
+        compose.onNode(summaryText("the design")).performFirstLinkClick { (it.item as? LinkAnnotation.Url)?.url == "docs/design.md" }
+        waitForTag("reader")
+        pressBack()
+        waitForText("item-question", "Ready for review: Fix the login redirect")
+        compose.onNodeWithTag("reader").assertDoesNotExist()
     }
 
     /** Evidence opens the Reader of the item's pane; closing it returns to the item, not the pane. */

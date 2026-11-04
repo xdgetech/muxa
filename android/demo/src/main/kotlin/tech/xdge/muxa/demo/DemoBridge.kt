@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.Agent
 import tech.xdge.muxa.protocol.AgentRun
 import tech.xdge.muxa.protocol.AgentState
+import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.BranchChanges
 import tech.xdge.muxa.protocol.Bytes
 import tech.xdge.muxa.protocol.ChatEntry
@@ -86,6 +87,9 @@ class DemoBridge(
 
     /** What the demo agent waits on, and the tool call it waits on. */
     private var waitingOn: Pair<ChatPrompt, ChatEntry>? = null
+
+    /** The texts Inbox answers sent to the agent of %1, after its conversation. */
+    private var itemPrompts: List<ChatEntry> = emptyList()
 
     /** Grows when a task starts. */
     /** Routines and stored Inbox entries (ADR 0026). */
@@ -277,6 +281,13 @@ class DemoBridge(
         emit(Message.InboxSaved(req.id, item = saved.item))
         ok(req.id)
         if (saved.status != null) emit(Message.TasksChanged)
+        val text = req.text
+        if (text != null && saved.item.pane == CHAT_PANE && saved.item.answer in PROMPT_ACTIONS) {
+            val entry = synchronized(lock) {
+                ChatEntry("u:item${itemPrompts.size}", ChatEntry.Kind.USER, text).also { itemPrompts = itemPrompts + it }
+            }
+            emitChat(listOf(entry), AgentState.IDLE)
+        }
     }
 
     /** The Task an approval creates, with a running agent in its own session. The caller holds the lock. */
@@ -340,7 +351,7 @@ class DemoBridge(
         }
         ok(req.id)
         synchronized(lock) { chat = ChatFollow(req.id) }
-        emitChat(content.conversation, content.chatStatus, reset = true)
+        emitChat(content.conversation + synchronized(lock) { itemPrompts }, content.chatStatus, reset = true)
     }
 
     /** The record the session of [pane] runs. */
@@ -734,6 +745,9 @@ class DemoBridge(
 
     companion object {
         const val CHAT_PANE = "%1"
+
+        /** The Inbox answers whose text goes to the agent as its next prompt. */
+        private val PROMPT_ACTIONS = setOf(InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE)
 
         /** Where the bridge writes a Task's brief for its agent (ADR 0015). */
         const val TASK_DOC = ".muxa/TASK.md"

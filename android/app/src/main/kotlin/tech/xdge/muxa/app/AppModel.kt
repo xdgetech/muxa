@@ -401,6 +401,7 @@ class AppModel(
     private fun resetHostState() {
         rawPanes = emptySet()
         paneFit = null
+        readerReturnsToItem = false
         showReader = false
         selection = null
         paneShown = false
@@ -763,6 +764,7 @@ class AppModel(
         readerTab = if (tab in readerTabs) tab else ReaderTab.DOCS
         readerTarget = target
         readerOpensPlan = target != null
+        readerReturnsToItem = target != null
         showReader = true
     }
 
@@ -770,10 +772,15 @@ class AppModel(
     var readerOpensPlan = false
         private set
 
+    /** The Reader shows an Inbox item's evidence: Back closes it and returns to the item, not to the Reader's list. */
+    var readerReturnsToItem = false
+        private set
+
     fun openReader() {
         if (!canReadDocs) return
         if (readerTab !in readerTabs) readerTab = ReaderTab.DOCS
         readerOpensPlan = false
+        readerReturnsToItem = false
         showReader = true
     }
 
@@ -793,11 +800,13 @@ class AppModel(
         currentSession?.id?.let { lastDocs.remove(it) }
         readerTab = ReaderTab.DOCS
         readerOpensPlan = true
+        readerReturnsToItem = false
         showReader = true
     }
 
     fun closeReader() {
         showReader = false
+        readerReturnsToItem = false
         scope.launch {
             session.closeDocument()
             session.closeDiff()
@@ -1092,6 +1101,7 @@ class AppModel(
         // The brief is the document to open; the Reader opens the one last read here.
         if (tab == ReaderTab.DOCS) lastDocs[s.id] = doc
         readerOpensPlan = tab == ReaderTab.DOCS
+        readerReturnsToItem = false
         showReader = true
     }
 
