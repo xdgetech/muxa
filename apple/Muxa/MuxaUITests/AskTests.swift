@@ -17,9 +17,8 @@ final class AskTests: XCTestCase {
     @MainActor
     private func openNewTask(_ arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"] + arguments
+        app.launchArguments = ["-demo", "-mode", "sessions"] + arguments
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showSidebar(app)
         tapWhenReady(app.buttons["sidebar-new-task"])
@@ -118,6 +117,9 @@ final class AskTests: XCTestCase {
 
         showSidebar(app)
         XCTAssertTrue(app.staticTexts["ask-app-1"].waitForExistence(timeout: 5), "listed under Sessions")
+        // Past Back's animation: a drag before it ends scrolls the header away.
+        let header = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: app.buttons["ask-app"])
+        _ = XCTWaiter.wait(for: [header], timeout: 3)
         reveal(app, app.buttons["ask-app"])
         tapWhenReady(app.buttons["ask-app"])
         XCTAssertTrue(app.navigationBars.descendants(matching: .any)["ask-app-2"].firstMatch.waitForExistence(timeout: 10))

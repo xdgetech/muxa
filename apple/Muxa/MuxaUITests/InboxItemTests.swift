@@ -2,6 +2,8 @@ import XCTest
 
 /// The Inbox as a list of questions (ADR 0033) against the demo's items: an ask with
 /// a permission, a question, a review with evidence, a failure, a proposal and a briefing.
+/// The list is the sidebar's Inbox mode, and the item is the detail (ADR 0035): it
+/// was a sheet over the pane before, so every test opens it from the sidebar now.
 final class InboxItemTests: XCTestCase {
     override class func setUp() {
         super.setUp()
@@ -13,18 +15,13 @@ final class InboxItemTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
-    /// Opens the demo on the Inbox: a phone opens there by itself.
+    /// The demo starts in Inbox mode, and connect stays on the list.
     @MainActor
     private func launchOnInbox() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "inbox"]
         app.launch()
-        let list = app.descendants(matching: .any)["inbox-list"].firstMatch
-        if !list.waitForExistence(timeout: 5) {
-            showSidebar(app)
-            tapWhenReady(app.buttons["open-tasks"])
-        }
-        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        XCTAssertTrue(row(app, "i-0000a001").waitForExistence(timeout: 10))
         return app
     }
 
@@ -42,29 +39,49 @@ final class InboxItemTests: XCTestCase {
             .map { String($0.identifier.dropFirst("item-row-".count)) }
     }
 
-    /// Opens an item: pushed on a phone, beside the list on a tablet.
+    /// Opens an item: pushed on a phone, in the detail on a tablet.
     @MainActor
     private func open(_ app: XCUIApplication, _ id: String, question: String) {
         tapWhenReady(row(app, id))
+        waitForQuestion(app, question, "\(id) is open")
+    }
+
+    @MainActor
+    private func waitForQuestion(_ app: XCUIApplication, _ question: String, _ message: String = "",
+                                 file: StaticString = #filePath, line: UInt = #line) {
         let shown = app.staticTexts["item-question"]
         let exp = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", question), object: shown)
-        XCTAssertEqual(XCTWaiter.wait(for: [exp], timeout: 5), .completed, "\(id) is open")
+        XCTAssertEqual(XCTWaiter.wait(for: [exp], timeout: 5), .completed, message, file: file, line: line)
+    }
+
+    /// Scrolls the sidebar until `element` can be tapped.
+    @MainActor
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement) {
+        for _ in 0..<3 where !element.isHittable { app.collectionViews["sidebar-list"].swipeUp() }
     }
 
     /// Asks come first, then the newest; each row has the question, its source and its age.
+    /// The whole list shows, with no fold; a phone stays on the list at connect.
     @MainActor
     func testTheListShowsItems() throws {
         let app = launchOnInbox()
-        XCTAssertTrue(row(app, "i-0000a001").waitForExistence(timeout: 5))
         XCTAssertEqual(Array(rowIds(app).prefix(3)), ["i-0000a001", "i-0000a004", "i-0000a002"])
         XCTAssertTrue(row(app, "i-0000a001").label.contains("Allow Bash: npm run deploy"), row(app, "i-0000a001").label)
         XCTAssertTrue(row(app, "i-0000a001").label.contains("Add sign-in with passkeys · 1m"), row(app, "i-0000a001").label)
         XCTAssertTrue(row(app, "e-000000a2").exists, "a Routine's proposal is an item too")
-        XCTAssertFalse(app.buttons["inbox-row-t-auth01"].exists, "the Task list is gone on this host")
+        XCTAssertFalse(app.buttons["show-more"].exists, "no fold")
+        XCTAssertFalse(app.descendants(matching: .any)["pane"].firstMatch.exists, "connect stays on the list")
+        if isPhone {
+            XCTAssertFalse(app.staticTexts["item-question"].exists, "a phone opens no item by itself")
+        } else {
+            // A tablet shows the first item beside the list.
+            waitForQuestion(app, "Allow Bash: npm run deploy")
+            XCTAssertTrue(row(app, "i-0000a001").isSelected)
+        }
         save("inbox-items")
     }
 
-    /// A review shows its summary and evidence; Accept removes it.
+    /// A review shows its summary and evidence; Accept removes it, and the Task is in Closed.
     @MainActor
     func testAcceptRemovesAReview() throws {
         let app = launchOnInbox()
@@ -77,9 +94,13 @@ final class InboxItemTests: XCTestCase {
         save("inbox-item-review")
         tapWhenReady(answer(app, "accept"))
         XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
+        if !isPhone {
+            // A tablet shows the item that took its place.
+            waitForQuestion(app, "Release moved to Thursday")
+        }
+        showMode(app, 1)
         let closed = app.descendants(matching: .any)["inbox-Closed"].firstMatch
-        for _ in 0..<3 where !closed.exists { app.collectionViews["all-tasks"].swipeUp() }
+        for _ in 0..<3 where !closed.exists { app.collectionViews["sidebar-list"].swipeUp() }
         XCTAssertTrue(closed.waitForExistence(timeout: 5), "Accept marks the Task done")
     }
 
@@ -97,7 +118,7 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
     }
 
-    /// Approve answers an ask, and its agent runs again.
+    /// Approve answers an ask, and its agent runs again. A phone returns to the list.
     @MainActor
     func testApproveAnswersAnAsk() throws {
         let app = launchOnInbox()
@@ -105,6 +126,7 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(answer(app, "reject").exists)
         tapWhenReady(answer(app, "approve"))
         XCTAssertTrue(row(app, "i-0000a001").waitForNonExistence(timeout: 5))
+        XCTAssertTrue(row(app, "i-0000a004").waitForExistence(timeout: 5))
         XCTAssertEqual(rowIds(app).first, "i-0000a004")
     }
 
@@ -123,7 +145,7 @@ final class InboxItemTests: XCTestCase {
     func testApprovingAProposalShowsItFirst() throws {
         let app = launchOnInbox()
         let proposal = row(app, "e-000000a2")
-        for _ in 0..<3 where !proposal.isHittable { app.collectionViews["inbox-list"].swipeUp() }
+        reveal(app, proposal)
         open(app, "e-000000a2", question: "Close the stale issue ENG-12")
         tapWhenReady(answer(app, "approve"))
         XCTAssertTrue(app.staticTexts["approve-action"].waitForExistence(timeout: 5))
@@ -137,9 +159,9 @@ final class InboxItemTests: XCTestCase {
     func testLaterBySwipe() throws {
         let app = launchOnInbox()
         let failure = row(app, "i-0000a003")
-        for _ in 0..<3 where !failure.isHittable { app.collectionViews["inbox-list"].swipeUp() }
+        reveal(app, failure)
         XCTAssertTrue(failure.isHittable)
-        // A finger's drag: `swipeLeft()` is too short for a row beside the item on a tablet.
+        // A finger's drag: `swipeLeft()` is too short for a sidebar row.
         failure.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: failure.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)))
         // A full swipe runs Later at once; a shorter one shows its button.
@@ -148,7 +170,8 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(failure.waitForNonExistence(timeout: 5))
     }
 
-    /// A doc opens in the Reader for the item's pane; closing it returns to the item.
+    /// A doc opens in the Reader for the item's pane; closing it returns to the item,
+    /// with no sheet to open again.
     @MainActor
     func testEvidenceOpensInTheReaderAndReturns() throws {
         let app = launchOnInbox()
@@ -156,8 +179,96 @@ final class InboxItemTests: XCTestCase {
         tapWhenReady(app.buttons["item-evidence-doc-docs/design.md"])
         XCTAssertTrue(app.webViews.firstMatch.staticTexts["Design"].waitForExistence(timeout: 10))
         tapWhenReady(app.buttons["Done"].firstMatch)
-        let shown = app.staticTexts["item-question"]
-        XCTAssertTrue(shown.waitForExistence(timeout: 10))
-        XCTAssertEqual(shown.label, "Ready for review: Fix the login redirect")
+        waitForQuestion(app, "Ready for review: Fix the login redirect")
+        XCTAssertFalse(app.descendants(matching: .any)["pane"].firstMatch.exists, "the item, not the pane")
+    }
+
+    /// Terminal shows the item's session in the Agent view, and its row stays
+    /// highlighted. On a phone, Back returns to the item (ADR 0035 §3).
+    @MainActor
+    func testTerminalShowsTheAgentAndTheRowStaysHighlighted() throws {
+        let app = launchOnInbox()
+        open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
+        tapWhenReady(app.buttons["item-open-terminal"])
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        XCTAssertTrue(app.segmentedControls["view-mode"].buttons["Agent"].isSelected, "Terminal opens Agent, not Chat")
+        XCTAssertFalse(app.descendants(matching: .any)["composer"].firstMatch.exists)
+        save("inbox-item-terminal")
+        if isPhone {
+            tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch)
+            waitForQuestion(app, "Allow Bash: npm run deploy", "Back returns to the item")
+        } else {
+            showSidebar(app)
+            XCTAssertTrue(row(app, "i-0000a001").waitForExistence(timeout: 5))
+            XCTAssertTrue(row(app, "i-0000a001").isSelected, "the pane's item stays highlighted")
+            // The row shows its item again.
+            tapWhenReady(row(app, "i-0000a001"))
+            waitForQuestion(app, "Allow Bash: npm run deploy")
+        }
+    }
+
+    /// Chat shows the item's session in the Chat view, where an ask is answered.
+    @MainActor
+    func testChatShowsTheConversation() throws {
+        let app = launchOnInbox()
+        open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
+        tapWhenReady(app.buttons["item-open-chat"])
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.segmentedControls["view-mode"].buttons["Chat"].isSelected)
+    }
+
+    /// An item with a session offers Chat and Terminal; one without a session neither.
+    @MainActor
+    func testOnlyAnItemWithASessionOffersItsSession() throws {
+        let app = launchOnInbox()
+        open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
+        XCTAssertTrue(app.buttons["item-open-terminal"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["item-open-chat"].exists)
+        if isPhone { tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch) }
+        open(app, "i-0000a004", question: "Which test runner should the suite use?")
+        XCTAssertFalse(app.buttons["item-open-terminal"].exists, "no session runs it")
+    }
+
+    /// From the pane, Cmd+T, Cmd+L and Cmd+Shift+S pick the modes and show the sidebar;
+    /// the pane stays the detail, since the sidebar never changes what it shows by itself.
+    @MainActor
+    func testKeysPickTheModes() throws {
+        guard !isPhone else { throw XCTSkip("needs the iPad's hardware keyboard") }
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "sessions"]
+        app.launch()
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        // From the agent's terminal, which has the keyboard, as in
+        // `DemoTests.testTypingReachesThePaneAndShortcutsSwitch`.
+        composer.typeKey("r", modifierFlags: .command)
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        XCTAssertTrue(waitForFocus(pane))
+        pane.typeKey("t", modifierFlags: .command)
+        XCTAssertTrue(row(app, "i-0000a001").waitForExistence(timeout: 5), "Inbox mode")
+        XCTAssertTrue(pane.exists, "the pane stays")
+        pane.typeKey("l", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["open-routines"].waitForExistence(timeout: 5), "Tasks mode")
+        pane.typeKey("s", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.staticTexts["Other Sessions"].waitForExistence(timeout: 5), "Sessions mode")
+        pane.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5), "Settings")
+    }
+
+    /// Cmd+O opens the shown item's terminal.
+    @MainActor
+    func testCommandOOpensTheItemsTerminal() throws {
+        guard !isPhone else { throw XCTSkip("needs the iPad's hardware keyboard") }
+        let app = launchOnInbox()
+        open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
+        // A key needs a focused view: the reply box.
+        tapWhenReady(app.textFields["item-reply"])
+        app.textFields["item-reply"].typeKey("o", modifierFlags: .command)
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, containing: "pane %5 100x30"))
     }
 }

@@ -61,9 +61,8 @@ final class PhoneTests: XCTestCase {
     @MainActor
     func testDocumentsIsOnTheScreenAndMoreHasSessions() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         let documents = app.buttons["Documents, 3 changed files"]
         XCTAssertTrue(documents.waitForExistence(timeout: 5))
@@ -80,9 +79,8 @@ final class PhoneTests: XCTestCase {
     @MainActor
     func testTheReaderOpensOnItsListAndReadPlanOnThePlan() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
 
@@ -106,9 +104,8 @@ final class PhoneTests: XCTestCase {
     @MainActor
     private func launchOnAgentTerminal() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showAgentTerminal(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch

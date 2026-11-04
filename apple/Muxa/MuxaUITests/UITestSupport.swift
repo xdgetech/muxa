@@ -2,16 +2,13 @@ import XCTest
 
 /// Helpers shared by the UI tests.
 extension XCTestCase {
-    /// Pane tests explicitly leave the phone's initial Inbox before exercising Chat.
+    /// Picks a sidebar mode (ADR 0035): 0 Inbox, 1 Tasks, 2 Sessions. The Inbox
+    /// segment's label carries its count, so segments are found by place.
     @MainActor
-    func leaveInitialInbox(_ app: XCUIApplication, force: Bool = false) {
-        guard force || app.launchArguments.contains("-demo") else { return }
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            app.navigationBars["Inbox"].exists || app.descendants(matching: .any)["composer"].firstMatch.exists
-                || app.descendants(matching: .any)["pane"].firstMatch.exists
-        }, object: app)
-        _ = XCTWaiter.wait(for: [ready], timeout: 10)
-        if app.navigationBars["Inbox"].exists { tapWhenReady(app.buttons["Close"]) }
+    func showMode(_ app: XCUIApplication, _ index: Int, file: StaticString = #filePath, line: UInt = #line) {
+        let picker = app.segmentedControls["sidebar-mode"]
+        if !(picker.waitForExistence(timeout: 3) && picker.isHittable) { showSidebar(app, file: file, line: line) }
+        tapWhenReady(picker.buttons.element(boundBy: index), file: file, line: line)
     }
 
     /// Set MUXA_SCREENSHOT_DIR (TEST_RUNNER_MUXA_SCREENSHOT_DIR for xcodebuild) to keep screenshots.
@@ -96,7 +93,7 @@ extension XCTestCase {
         XCTAssertTrue(tabs.waitForExistence(timeout: 5), file: file, line: line)
     }
 
-    /// Hosts and sessions: a sidebar button on an iPad, Back on a phone.
+    /// The sidebar: its button on an iPad, Back on a phone.
     @MainActor
     func showSidebar(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let button = isPhone ? app.navigationBars.buttons["BackButton"] : app.buttons["Show Sidebar"]

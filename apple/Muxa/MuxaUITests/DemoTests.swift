@@ -16,9 +16,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testTypingReachesThePaneAndShortcutsSwitch() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
 
         // The agent pane opens in Pretty; Cmd+R shows the terminal.
         let composer = app.descendants(matching: .any)["composer"].firstMatch
@@ -52,9 +51,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testLandscapeFitsWidthAndFollowsTheCursor() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
 
@@ -99,9 +97,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testFreshShellShowsItsTopAfterTheAgent() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
 
@@ -127,9 +124,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testADetachedSessionTakesTheDeviceSize() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
         // Cmd+4: the last session in the sidebar, "device".
@@ -186,9 +182,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testJapaneseInputIsSentWhenCommitted() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         // A tap, not Cmd+R: after a hardware key, iPadOS shows no software keyboard.
         showAgentTerminal(app)
@@ -213,9 +208,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testKeyBarSendsKeysTheKeyboardLacks() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         // A hardware keyboard hides the bar. The iPhone simulator reports the Mac's
@@ -250,9 +244,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testChangesShowTheirDiffs() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Documents, 3 changed files"].waitForExistence(timeout: 5))
@@ -298,9 +291,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testImagesAreATreeAndStepThroughTheirFolder() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         // XCUITest finds no row of a Max phone's landscape sidebar hittable.
         if !isPhone { XCUIDevice.shared.orientation = .landscapeLeft }
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -331,21 +323,22 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
     }
 
-    /// An agent elsewhere that starts waiting shows a banner; tapping it opens
-    /// that session.
+    /// An agent elsewhere that starts waiting shows a banner; tapping it opens that
+    /// session's Inbox item, the thing to decide (ADR 0035 §3).
     @MainActor
     func testAWaitingAgentElsewhereIsAnnounced() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-demo-alerts"]
+        app.launchArguments = ["-demo", "-mode", "sessions", "-demo-alerts"]
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.navigationBars["feature-auth"].waitForExistence(timeout: 10))
         let banner = app.buttons["agent-alert"]
         XCTAssertTrue(banner.waitForExistence(timeout: 10))
         XCTAssertTrue(banner.label.contains("fix-login: needs your input"), banner.label)
         save("agent-alert")
         banner.tap()
-        XCTAssertTrue(app.navigationBars["fix-login"].waitForExistence(timeout: 5))
+        let question = app.staticTexts["item-question"]
+        XCTAssertTrue(question.waitForExistence(timeout: 5))
+        XCTAssertEqual(question.label, "Ready for review: Fix the login redirect")
         XCTAssertTrue(banner.waitForNonExistence(timeout: 5))
     }
 
@@ -354,9 +347,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testClosingTasks() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         // The bar carries the shown session's name.
         let title = { (name: String) in app.navigationBars[name] }
@@ -390,9 +382,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testANewTaskOpensItsSession() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-no-task-records"]
+        app.launchArguments = ["-demo", "-mode", "sessions", "-no-task-records"]
         app.launch()
-        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
 
@@ -420,9 +411,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testApprovalCardAnswersWithTheOptionsKeys() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -458,9 +448,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testHardwareReturnStartsANewLineAndCommandReturnSends() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -484,9 +473,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testPrettyViewSendsPromptsAndSwitchesToRaw() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -542,8 +530,8 @@ final class DemoTests: XCTestCase {
         // The switcher lists the Task sessions too.
         pane.typeKey("k", modifierFlags: .command)
         tapWhenReady(app.buttons.matching(NSPredicate(format: "label CONTAINS 'feature-auth'")).firstMatch)
-        // The pane was last shown as Agent, and opens that way again.
-        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
+        // The session opens in its last view, the Shell, as a Sessions row would (ADR 0035 §3).
+        XCTAssertTrue(waitFor(pane, containing: "pane %2 100x30"))
         segments.buttons["Chat"].tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
         save("pretty-landscape")
@@ -555,9 +543,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testReaderRendersDocumentsAndFollowsChanges() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -624,9 +611,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     private func openLongPlan() -> (XCUIApplication, XCUIElement, XCUIElement) {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -654,9 +640,8 @@ final class DemoTests: XCTestCase {
     @MainActor
     func testFocusReturnsAfterTheSwitcherAndAHostCanBeAdded() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
 
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
@@ -678,16 +663,19 @@ final class DemoTests: XCTestCase {
             XCTAssertTrue(waitFor(pane, containing: "$ back"))
         }
 
-        // The sidebar: hosts, and the connected host's sessions.
+        // The sidebar in Sessions mode: the connected host's sessions. Hosts are in Settings.
         showSidebar(app)
-        XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["status-row"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["host-Demo"].exists, "no hosts in the sidebar")
         // Sessions lists manual sessions only; the Tasks' sessions open from Inbox and Tasks.
         XCTAssertTrue(app.staticTexts["Other Sessions"].exists)
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'scratch'")).firstMatch.exists)
         XCTAssertFalse(app.staticTexts["app"].exists)
         XCTAssertFalse(app.staticTexts["docs"].exists)
         save("sidebar")
-        app.buttons["Add Host"].firstMatch.tap()
+        tapWhenReady(app.buttons["status-row"])
+        XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
+        tapWhenReady(app.buttons["settings-add-host"])
         let address = app.textFields["host-address"]
         XCTAssertTrue(address.waitForExistence(timeout: 5))
         app.textFields["host-name"].tap()
@@ -698,6 +686,9 @@ final class DemoTests: XCTestCase {
         app.typeText("dev")
         save("host-editor")
         app.buttons["Connect"].tap()
+        // Connecting closes Settings; the new host is saved there.
+        XCTAssertTrue(app.buttons["settings-done"].waitForNonExistence(timeout: 5))
+        tapWhenReady(app.buttons["status-row"])
         XCTAssertTrue(app.buttons["host-Build box"].waitForExistence(timeout: 5))
     }
 }

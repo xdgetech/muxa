@@ -12,48 +12,61 @@ final class TasksTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
-    /// The Inbox list replaced Triage (ADR 0025): a phone opens on it at connect.
+    /// At connect, Inbox mode stays on its list (ADR 0035 §6): no pane opens, on a
+    /// phone either. It replaces "a phone opens on the Inbox", which the modes decide now.
     @MainActor
-    func testPhoneStartsInTheInboxWhenAttentionIsWaiting() throws {
+    func testConnectStaysOnTheListInInboxMode() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "inbox"]
         app.launch()
-        guard app.windows.firstMatch.frame.width < 600 else { throw XCTSkip("Phone layout only") }
-        XCTAssertTrue(app.descendants(matching: .any)["inbox-list"].firstMatch.waitForExistence(timeout: 10))
-        tapWhenReady(app.buttons["Close"])
+        XCTAssertTrue(app.buttons["item-row-i-0000a001"].waitForExistence(timeout: 10))
+        sleep(1)
+        XCTAssertFalse(app.descendants(matching: .any)["pane"].firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["composer"].firstMatch.exists)
+    }
+
+    /// Tasks mode stays on its list at connect too.
+    @MainActor
+    func testConnectStaysOnTheListInTasksMode() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "tasks"]
+        app.launch()
+        XCTAssertTrue(app.buttons["task-t-auth01"].waitForExistence(timeout: 10))
+        sleep(1)
+        XCTAssertFalse(app.descendants(matching: .any)["pane"].firstMatch.exists)
+    }
+
+    /// Sessions mode opens the default pane at connect, as before (ADR 0012): pushed on a phone.
+    @MainActor
+    func testSessionsModeOpensThePaneAtConnect() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "sessions"]
+        app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["feature-auth"].exists)
     }
 
     /// A host below `work:3` has no Inbox (ADR 0033 §5): the Inbox says to update the
-    /// bridge, and All Tasks still lists its Tasks. It replaces the local Snooze test,
+    /// bridge, and Tasks still lists its Tasks. It replaces the local Snooze test,
     /// because the older Inbox list is gone.
     @MainActor
     func testAnOlderHostIsToldToUpdateTheBridge() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-work2"]
+        app.launchArguments = ["-demo", "-mode", "inbox", "-work2"]
         app.launch()
-        leaveInitialInbox(app)
-        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
-        showSidebar(app)
-        tapWhenReady(app.buttons["open-tasks"])
-        XCTAssertTrue(app.descendants(matching: .any)["inbox-needs-bridge"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["inbox-row-t-auth01"].exists, "no Task list in the Inbox")
-        tapWhenReady(app.buttons["inbox-all-tasks"])
+        XCTAssertTrue(app.staticTexts["Update muxa-bridge"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["item-row-i-0000a001"].exists, "no items on this host")
+        tapWhenReady(app.buttons["sidebar-inbox-tasks"])
         XCTAssertTrue(header(app, "Needs attention").waitForExistence(timeout: 5))
     }
 
-    /// Opens the demo, then Tasks from the sidebar.
+    /// Opens the demo in Tasks mode: the sidebar lists the Tasks.
     @MainActor
     private func launchOnTasks() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "tasks"]
         app.launch()
-        leaveInitialInbox(app)
-        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
-        showSidebar(app)
-        tapWhenReady(app.buttons["open-tasks"])
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
-        XCTAssertTrue(app.navigationBars["Inbox"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["task-t-auth01"].waitForExistence(timeout: 10))
         return app
     }
 
@@ -66,8 +79,7 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testTheInboxGroupsTasksByWhatTheyNeed() throws {
         let app = launchOnTasks()
-        // The sheet's list: on a phone the sidebar's list lies under the sheet and comes first.
-        let list = app.collectionViews["all-tasks"]
+        let list = app.collectionViews["sidebar-list"]
         // Routines sit above the groups, so the last group can start below the fold.
         for title in ["Needs attention", "Ready for review", "Running", "No agent"] {
             if !header(app, title).waitForExistence(timeout: 2) { list.swipeUp() }
@@ -90,7 +102,7 @@ final class TasksTests: XCTestCase {
         save("task-detail-note")
     }
 
-    /// A task's Terminal closes the sheet and shows its session's agent pane.
+    /// A task's Terminal shows its session's agent pane, and its row stays highlighted.
     @MainActor
     func testATaskOpensItsSessionsPane() throws {
         let app = launchOnTasks()
@@ -99,10 +111,17 @@ final class TasksTests: XCTestCase {
         save("task-detail")
         tapWhenReady(app.buttons["task-open-terminal"])
         let pane = app.descendants(matching: .any)["pane"].firstMatch
-        // The sheet closes before the pane is pushed.
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFor(pane, containing: "pane %5 100x30"))
-        XCTAssertTrue(app.navigationBars["Inbox"].waitForNonExistence(timeout: 5))
+        if isPhone {
+            // Back returns to the Task, then to the list.
+            tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch)
+            XCTAssertTrue(app.buttons["task-open-terminal"].waitForExistence(timeout: 5))
+        } else {
+            showSidebar(app)
+            XCTAssertTrue(app.buttons["task-t-login1"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["task-t-login1"].isSelected, "the pane's Task stays highlighted")
+        }
     }
 
     /// Read TASK.md opens the Reader at the task's goal.
@@ -116,12 +135,12 @@ final class TasksTests: XCTestCase {
         save("task-file")
     }
 
-    /// Opens the New Task sheet from the Tasks screen and fills it.
+    /// Opens the New Task sheet from the sidebar's `+` and fills it.
     @MainActor
     private func createTask(
         _ app: XCUIApplication, title: String, goal: String, branch: String? = nil, withLoop: Bool = false
     ) {
-        tapWhenReady(app.buttons["record-new"])
+        tapWhenReady(app.buttons["sidebar-new-task"])
         fillTask(app, title: title, goal: goal, branch: branch, withLoop: withLoop)
     }
 
@@ -163,7 +182,7 @@ final class TasksTests: XCTestCase {
         tapWhenReady(app.buttons["record-start"])
     }
 
-    /// A new task opens its detail, runs, and its Terminal shows its new session.
+    /// In Tasks mode a new task opens its detail, runs, and its Terminal shows its new session.
     @MainActor
     func testANewTaskStartsAnAgentInItsOwnSession() throws {
         let app = launchOnTasks()
@@ -181,13 +200,12 @@ final class TasksTests: XCTestCase {
     }
 
     /// Cmd+N opens the record-based sheet in the shown session's repo and the workspace
-    /// that lists it. The new task shows in Tasks, and its session opens.
+    /// that lists it. In Sessions mode its session opens, and the new task shows in Tasks.
     @MainActor
     func testCommandNCreatesATaskInTheShownRepo() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         let composer = app.descendants(matching: .any)["composer"].firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
 
@@ -202,24 +220,23 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.navigationBars.descendants(matching: .any)["add-search"].firstMatch
             .waitForExistence(timeout: 10))
         XCTAssertTrue(app.textFields["record-title"].waitForNonExistence(timeout: 5), "the sheet closes")
-        showSidebar(app)
-        tapWhenReady(app.buttons["open-tasks"])
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
+        showMode(app, 1)
         XCTAssertTrue(app.buttons["task-t-new001"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Add search"].exists)
     }
 
-    /// The sidebar's New Task opens the same sheet; on a phone, Tasks is on the first screen.
+    /// The sidebar's `+` is New Task, and its modes are on the first screen (ADR 0035 §5).
     @MainActor
-    func testTheSidebarOffersTasksAndNewTask() throws {
+    func testTheSidebarOffersTheModesAndNewTask() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "sessions"]
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showSidebar(app)
-        XCTAssertTrue(app.buttons["open-tasks"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["open-tasks"].isHittable)
+        let modes = app.segmentedControls["sidebar-mode"]
+        XCTAssertTrue(modes.waitForExistence(timeout: 5))
+        XCTAssertTrue(modes.isHittable)
+        XCTAssertEqual(modes.buttons.count, 3)
         save("sidebar-tasks")
         tapWhenReady(app.buttons["sidebar-new-task"])
         XCTAssertTrue(app.textFields["record-title"].waitForExistence(timeout: 5))
@@ -239,8 +256,8 @@ final class TasksTests: XCTestCase {
 
     /// Scrolls the task detail until `element` can be tapped; a phone shows less of it.
     @MainActor
-    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, up: Bool = false, in id: String? = nil) {
-        let list = id.map { app.collectionViews[$0] } ?? app.collectionViews.firstMatch
+    private func reveal(_ app: XCUIApplication, _ element: XCUIElement, up: Bool = false, in id: String = "task-detail") {
+        let list = app.collectionViews[id]
         let window = app.windows.firstMatch
         for _ in 0..<4 where !(element.exists && element.isHittable) {
             if up { list.swipeDown() } else { list.swipeUp() }
@@ -318,21 +335,21 @@ final class TasksTests: XCTestCase {
         let saved = NSPredicate(format: "value CONTAINS 'Done' OR label CONTAINS 'Done'")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: saved, object: app.buttons["task-status"])],
                                       timeout: 5), .completed)
-        app.navigationBars.buttons.firstMatch.tap()
+        if isPhone { app.navigationBars.buttons["BackButton"].firstMatch.tap() }
         // Running sits just below where Ready for review was.
         XCTAssertTrue(header(app, "Running").waitForExistence(timeout: 5))
         XCTAssertFalse(header(app, "Ready for review").exists, "its only task left the group")
-        reveal(app, header(app, "Closed"))
+        reveal(app, header(app, "Closed"), in: "sidebar-list")
         XCTAssertTrue(header(app, "Closed").waitForExistence(timeout: 5))
         save("record-done")
     }
 
-    /// Scrolls the Inbox to a task, then opens it: on a phone the lower groups are off screen.
+    /// Scrolls Tasks to a task, then opens it: on a phone the lower groups are off screen.
     @MainActor
     private func openTask(_ app: XCUIApplication, _ id: String) {
         let row = app.buttons["task-\(id)"]
-        XCTAssertTrue(app.collectionViews.firstMatch.waitForExistence(timeout: 5))
-        reveal(app, row)
+        XCTAssertTrue(app.collectionViews["sidebar-list"].waitForExistence(timeout: 5))
+        reveal(app, row, in: "sidebar-list")
         tapWhenReady(row)
     }
 
@@ -393,7 +410,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(stop.exists)
         XCTAssertFalse(app.buttons["loop-start"].exists, "an active loop is stopped, not started")
         save("loop-paused")
-        app.navigationBars.buttons.firstMatch.tap()
+        if isPhone { app.navigationBars.buttons["BackButton"].firstMatch.tap() }
         openTask(app, "t-lint01")
         XCTAssertTrue(waitFor(app.staticTexts["loop-reason"], labelOrValue: "Stopped: the check failed 3 times."))
         XCTAssertTrue(waitFor(app.staticTexts["loop-last-check"], labelOrValue: "Attempt 3 · exit 1 · 14 s"))

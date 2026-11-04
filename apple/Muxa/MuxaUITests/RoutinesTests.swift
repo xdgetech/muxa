@@ -2,6 +2,7 @@ import XCTest
 
 /// The Routines list and detail against the demo's Routines (ADR 0026). They moved
 /// here from the older Inbox list's tests, which went with that list (ADR 0033 §5).
+/// Routines are the first row of Tasks mode, and open in the detail (ADR 0035).
 final class RoutinesTests: XCTestCase {
     override class func setUp() {
         super.setUp()
@@ -13,19 +14,14 @@ final class RoutinesTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
-    /// Opens the demo on the Routines list.
+    /// Opens the demo in Tasks mode, then its Routines row.
     @MainActor
     private func launchOnRoutines() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-mode", "tasks"]
         app.launch()
-        let list = app.descendants(matching: .any)["inbox-list"].firstMatch
-        if !list.waitForExistence(timeout: 5) {
-            showSidebar(app)
-            tapWhenReady(app.buttons["open-tasks"])
-        }
-        tapWhenReady(app.segmentedControls["inbox-mode"].buttons["All Tasks"])
         tapWhenReady(app.buttons["open-routines"])
+        XCTAssertTrue(isPhone || app.buttons["open-routines"].isSelected, "the row owns the detail")
         return app
     }
 
@@ -64,7 +60,9 @@ final class RoutinesTests: XCTestCase {
         XCTAssertTrue(field("routine-running").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["routine-open-terminal"].exists)
 
-        app.navigationBars.buttons.firstMatch.tap()
+        // Back to the Routines list in the detail column.
+        let back = app.navigationBars.buttons.matching(identifier: "BackButton").allElementsBoundByIndex.last { $0.isHittable }
+        back?.tap()
         tapWhenReady(app.buttons["routine-personal/weekly-memory"])
         XCTAssertTrue(field("routine-trigger").waitForExistence(timeout: 5))
         XCTAssertTrue(field("routine-trigger").label.contains("Run now only"))

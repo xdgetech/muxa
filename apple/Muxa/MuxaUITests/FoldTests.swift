@@ -17,9 +17,8 @@ final class FoldTests: XCTestCase {
     @MainActor
     func testFoldingKeepsThePaneAndTheKeyboard() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-foldable"]
+        app.launchArguments = ["-demo", "-mode", "sessions", "-foldable"]
         app.launch()
-        leaveInitialInbox(app)
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showAgentTerminal(app)
         let pane = app.descendants(matching: .any)["pane"].firstMatch
@@ -55,5 +54,23 @@ final class FoldTests: XCTestCase {
         XCTAssertTrue(waitForFocus(pane))
         pane.typeText("three")
         XCTAssertTrue(waitFor(pane, containing: "$ onetwothree"))
+    }
+
+    /// The item shown beside the Inbox list stays shown through a fold and an unfold.
+    @MainActor
+    func testFoldingKeepsTheSelectedItem() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "inbox", "-foldable"]
+        app.launch()
+        tapWhenReady(app.buttons["item-row-i-0000a002"])
+        let question = app.staticTexts["item-question"]
+        let review = NSPredicate(format: "label == %@", "Ready for review: Fix the login redirect")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: review, object: question)], timeout: 5), .completed)
+        let fold = app.buttons["demo-fold"]
+        fold.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: review, object: question)], timeout: 5), .completed)
+        fold.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: review, object: question)], timeout: 5), .completed)
+        XCTAssertTrue(app.buttons["item-row-i-0000a002"].waitForExistence(timeout: 5))
     }
 }
