@@ -54,6 +54,23 @@ An item is unread until a device opens it. Opening an item never answers it.
 - **Item screen:** the question, the summary, the attachments as chips, a reply box and two or three answer buttons. An attachment opens in the Reader and returns to the item. An answer removes the item from the list.
 - **tmux:** the sidebar's Inbox section and `prefix + T` show the same list. `Enter` opens an item in a popup. Single keys answer: `a` the main answer, `r` Reject or Redo, `c` Change course, `x` Drop, `l` Later, `o` open the session. Diffs and docs open in a pager.
 
+### 4a. Answers say what they do (added 2026-11-04)
+
+The developer found the first buttons unclear: to reply and let the Task go on, it was not clear whether to press Approve or Reject, or Redo. Documents and images the agent made had no link on a phone or a tablet. So:
+
+1. **Reply.** A new answer `reply {text}` sends the text to the agent as it is, with no "Redo" or "Change course" preface, and the Task goes on. A `review` and a `failure` offer it. An `ask` whose adapter answers permissions offers it too: it picks the prompt's cancel option, then sends the text.
+2. **Labels name the result,** in every client:
+   - `accept` is **Done**, with "closes the Task".
+   - `reply` is **Send**. On an `ask` it is **Deny & send**.
+   - On an `ask`, `approve` is **Allow** and `reject` is **Deny**. A `proposal` keeps Approve and Reject.
+   - Redo, Change course and Keep open move under More.
+3. **The main answer** is `reply` while the reply box has text. Otherwise it is the host's first answer, as before.
+4. **Evidence outside git.** In a Task directory that is not a git repo, the item attaches the documents and images created or changed in the turn, by modification time, at most 20. In any Task, it also attaches files the summary names that exist inside the pane's directory, and the `http` and `https` links in the summary. `.muxa/` and `.claude/` are never attached.
+5. **Links in the apps.** The item screen renders the summary as Markdown. Links open in the browser. A file name that matches an attachment opens in the Reader and returns to the item. Attachments show as a list with file names, not only chips.
+6. **tmux:** `s` sends a reply (it asks for the text), and the key list uses the same labels.
+
+Old clients drop the unknown `reply` answer, as PROTOCOL.md says, so no capability is needed.
+
 ### 5. What is removed
 
 - Move down, and the Task record's `inbox {order, until, since}`. Later moves to the item.
@@ -71,6 +88,8 @@ The wire changes are listed in `protocol/PROTOCOL.md` when slice I0 lands. muxa 
 | I2 | iOS: the list and the item screen |
 | I3 | Android: the same |
 | I4 | remove Move down, the Task's `inbox` field, the queue code and the local Snooze |
+| I5 | host, CLI and muxa for tmux: `reply`, evidence outside git and from the summary, the labels in tmux (§4a) |
+| I6 | iOS and Android: the labels, Send, the Markdown summary with links, the attachment list (§4a) |
 
 ## Consequences
 
