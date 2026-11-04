@@ -1,6 +1,6 @@
 # Inbox UI specification
 
-ADR 0033: the Inbox is a list of questions. The host, the CLI, muxa for tmux and both apps show it when the host has `work:3`. Against an older host, the apps keep "Current behavior" below.
+ADR 0033: the Inbox is a list of questions. The host, the CLI, muxa for tmux and both apps show it when the host has `work:3`. In the apps it is one of the sidebar's three modes (ADR 0035).
 
 ## The Inbox (ADR 0033)
 
@@ -57,17 +57,20 @@ Inbox (3)
 
 More also holds Later and Open Terminal. Accept and Drop ask for no confirmation, because they only set the Task's status; Approve on a proposal still shows the action, target and content first. An answer returns to the list.
 
-### Phone and tablet
+### Phone and tablet (ADR 0035)
 
-- Phone: the list, then the item as a pushed screen. The answer buttons stay above the keyboard. An answer returns to the list. At connect, a phone opens on the Inbox when an item is open.
-- Tablet: the list beside the item. Answering opens the next item. On iPad the Inbox is a page-size sheet, and the layout follows the window's size class, not the sheet's.
-- The reply box shows only when the item takes Redo or Change course. The wire has no free-text answer for an `ask`.
-- The summary is plain text.
-- The sidebar shows the first 3 items and the count.
-- iOS keys: Command+Up/Down move between items, Return opens an item (phone only, because a tablet already shows it), Command+Return sends the main answer.
-- Android keys: Ctrl+Shift+Up/Down move between items, Enter opens, Ctrl+Shift+Enter sends the main answer, Ctrl+Shift+O opens the session, Ctrl+Shift+Alt+L asks for Later. A swipe in either direction asks for Later.
+- The sidebar shows one mode: **Inbox**, **Tasks** or **Sessions**. Inbox mode is the host's full list of items, in the host's order, with no fold. The Inbox count is on the mode control.
+- Tablet: the list is the sidebar and the selected item is the detail. At connect, and on a switch to Inbox mode, the first item is selected (which marks it read). After an answer the next item opens.
+- Phone: the list is the first screen. The item is pushed; an answer returns to the list. Back goes pane → item → list.
+- The item's **Chat** and **Terminal** show its session: Chat opens the Chat view, Terminal the agent's pane. On a phone they push over the item; on a tablet the pane fills the detail and the sidebar collapses. An item never opens the Shell first.
+- Evidence opens in the Reader and returns to the item.
+- At connect, Inbox and Tasks mode stay on their list, also when it is empty ("Nothing needs you"). Sessions mode opens the default pane.
+- A host below `work:3` gets "This host needs a newer muxa-bridge for the Inbox", with Tasks and Sessions.
+- The reply box shows only when the item takes a text answer. The summary is plain text until slice I6 (§4a of ADR 0033).
 - The main answer is the host's first answer, unless that is `choose` or `later`. muxa for tmux uses the same rule.
-- Demo: the in-app demo bridge plays a `work:3` host. `-work2` on iOS and `--ez work2 true` on Android play an older host. Try the Demo and the showcase still play `work:2`.
+- iPad keys: Command+T Inbox mode, Command+L Tasks mode, Command+Shift+S Sessions mode, Command+0 shows or hides the sidebar, Command+, Settings. In the Inbox: Command+Up/Down move between items, Return opens an item on a phone, Command+Return sends the main answer, Command+O opens the item's terminal, Command+Shift+L asks for Later.
+- Android keys: the same with Ctrl+Shift (Ctrl+Shift+T, L, S, 0, O, Up/Down), Enter opens, Ctrl+Shift+Enter sends the main answer, Ctrl+Shift+Alt+L asks for Later. A swipe in either direction asks for Later.
+- Demo: Try the Demo, the showcase and the test demo play a `work:3` host. UI tests pick the mode with `-mode inbox|tasks|sessions` on iOS and `--es mode inbox|tasks|sessions` on Android.
 
 ### tmux
 
@@ -75,91 +78,13 @@ More also holds Later and Open Terminal. Accept and Drop ask for no confirmation
 - `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
 - Keys: `a` the item's main answer (Approve, Accept, Retry or Done), `r` Reject or Redo, `c` Change course, `p` Keep open, `x` Drop, `n` Dismiss, `l` Later, `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Redo and Change course ask for the text. Only the keys the item takes are listed.
 
-## Current behavior (hosts older than `work:3`)
+## Tasks and Sessions modes
 
-ADR 0023 defines the shared rules. Slice 1 provides navigation; direct actions remain in the existing Chat and Task detail screens.
+- Tasks mode lists Routines first, then every Task grouped by what it needs: Needs attention, Ready for review, Running, No agent, Closed (`protocol/fixtures/inbox/groups.jsonl`). The detail is the Task's detail. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.
+- Sessions mode lists only sessions with no Task association, grouped by repo, with each repo's New Task and Ask (ADR 0025, 0031). The session switcher searches every session. A session's detail is its pane with the Chat / Agent / Shell switch; a Sessions row opens the session's last view.
+- Settings holds the hosts (connect, add, edit, delete, reorder, Disconnect), Try the Demo, Leave Demo and the version. A status row under the mode control shows the connection and opens Settings. In the demo it reads "Demo" with Leave Demo.
+- ADR 0033 slice I4 removed the Task's Inbox queue (ADR 0027 §4): Move down, the record's `inbox` field, `task-inbox` and the local Snooze. Later exists only on an Inbox item (`update-inbox` `later`, at most 366 days ahead).
 
-### Session rows
-
-Task sessions show the Task title, Inbox group and reported age on the first line; session name, branch and loop badge below. Closed records show Closed. Missing ages are omitted. Manual sessions keep their existing presentation. Search matches Task title as well as existing session fields.
-
-### Inbox
-
-A Triage/List control retains the existing grouped List and detail. Open Triage when its visible queue is nonempty, otherwise List. Triage shows position, group, Task title, workspace/project, session/branch when present, reported agent state and loop facts. Use “Ready for review” for both idle and done; do not infer that idle means a completed turn.
-
-| Need | Text | Navigation |
-|---|---|---|
-| answer | Waits for your answer | Open Chat when supported, Open Terminal |
-| agent-error | The agent stopped with an error | Open Terminal, Task detail |
-| loop | Loop paused / Loop stopped: reason | Check log when available, Task detail, Open Session |
-| review | Ready for review | Changes when supported, TASK.md, Check log when available, Task detail, Open Session |
-| no-agent | No agent state is available | Open Terminal when a pane exists, Task detail |
-| no-session | No session runs this Task | Task detail |
-
-Only enable links with a supported capability and a known target. With no chat support, an answer card offers Open Terminal. Show secondary loop facts even when the primary need is answer or agent-error. The detail retains existing lifecycle actions, their confirmations and errors.
-
-Phone: bottom bar Open, Snooze, Next. Tablet: card with the same controls, Previous and next two items. Swiping left moves to Next. At the end show “Nothing else needs you”, skipped/snoozed counts, Start over and Show List. Do not wrap automatically. Show snoozed restores local hidden items; List always includes them.
-
-Reader opens over Inbox and returns to the same Task when it still exists. Opening Chat or Terminal uses the existing session navigation; Inbox never starts a chat behind the pane screen. Disconnect clears snoozes and disables stale-target links.
-
-### Sidebar and initial navigation
-
-Show up to three queue items with need labels, Triage all (count), and New Task. If empty, show Nothing needs you and All Tasks (List). Follow ADR 0023's once-per-connection phone routing after both lists arrive; tablet routing remains unchanged.
-
-### Slice 1 keyboard controls
-
-| Action | iPad | Android |
-|---|---|---|
-| Inbox | Command+T | Ctrl+Shift+T |
-| Triage/List | Command+L | Ctrl+Shift+L |
-| Next/Previous | Command+Down/Up | Ctrl+Shift+Down/Up |
-| Open session | Command+O | Ctrl+Shift+O |
-| Snooze | Command+S | Ctrl+Shift+S |
-
-Scope shortcuts to the visible screen and suspend pane navigation chords while Inbox owns focus. Approval, denial and follow-up shortcuts remain in Chat. Slice 2's inline actions and desktop summary are proposed in ADR 0023, with no UI implementation yet.
-
-### Next product direction: list-first processing
-
-The developer wants an ordered actionable list with Act, Done, Move down and Later. Proposed ADR 0025 defines host-owned cross-device order and deferral, plus briefings/proposed work from scheduled project Routines. Move down keeps an item visible at the tail; Later has a return time. This is a proposed successor to slice 1, not an implemented change to current local Snooze or accepted queue sorting. All Tasks retains the grouped maintenance view.
-
-#### Shared Move down and Later (host and CLI)
-
-ADR 0027 §4 is implemented on the host and in the CLI. A Task record has an optional `inbox {order, until, since}`, written by `update-task` (capability `task-inbox`):
-
-- Move down puts the Task at the end of the queue. `order` is the host's clock in milliseconds, so the latest Move down is last. The status does not change.
-- Later hides the Task until `until` (UTC). Then it returns to its place.
-- A new need surfaces again. When the believed agent state, or a loop that needs the user, began after `since`, the client ignores `order` and `until`.
-
-The shared queue code in `muxa-cli`, MuxaKit and the Android `:session` module follows `protocol/fixtures/inbox/queue.jsonl`. The apps' queue applies the host's fields. Both apps offer Move down and Later (below).
-
-#### The Inbox list (iOS and Android)
-
-Both apps show Inbox as one ordered list (ADR 0025 "List first"). Triage, Next and Previous are gone there. The list holds, in this order:
-
-1. Task needs without a Move down, in the queue order above.
-2. Routine runs whose agent waits on the user: `running.task` matches a session's `taskId` (ADR 0026 section 3).
-3. Stored briefings and proposals that are open or back from Later, newest first.
-4. Tasks moved down, by `order`. So Move down puts a Task at the end of the whole list.
-
-| Row | Act (tap) | Menu |
-|---|---|---|
-| Task | Task detail | Move down, Later, Mark Done |
-| Briefing | its text and links | Done (dismiss), Later |
-| Proposal | its text, action, target and content | Approve…, Dismiss, Later |
-| Routine run | its terminal | Routine |
-
-- Later offers In 1 hour, Tomorrow 9:00 and Pick a time. The host refuses a time in the past or more than 366 days ahead.
-- Approve shows the action, the target and the content, and asks again. The host creates one Task, also when asked twice; the app opens it.
-- Stored entries have no Move down on the wire, so their menu has none.
-- A host without `task-inbox` keeps the local Snooze and Show snoozed. A host without `work:1` shows no entries and no Routines.
-- Keys: Command+Up/Down focus a row, Command+O opens it, Command+Shift+Down moves it down, Command+Shift+L asks for Later, Command+L switches to All Tasks, Command+S snoozes on an older host.
-- Android differs in two ways. Its keys are Ctrl+Shift chords, because plain Ctrl belongs to the shell: Ctrl+Shift+Up/Down, O, L and S, and Ctrl+Shift+Alt+Down and Ctrl+Shift+Alt+L for Move down and Later. A swipe right on a row asks for Later and a swipe left moves a Task down, where iOS shows both under one trailing swipe.
-
-All Tasks keeps the grouped list and starts with Routines. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.
-
-#### Separate destinations
-
-The proposed UI has three logical destinations: Inbox for actionable ToDos/briefings/proposals, All Tasks for running work and history, and Sessions for manual tmux work. All Tasks may be a link inside Inbox rather than a top-level tab; exact navigation placement remains a UI decision. Sessions lists only sessions with no Task association; it has no All Sessions filter (ADR 0027). The session switcher searches every session. Open Terminal on a Task returns to that Task's pane.
 
 Association is the classification boundary. Manually launched AI remains manual; typing by hand inside a Task does not change its classification. Manual approval waits can show a Sessions badge without generating Inbox items. Managed work needing human attention returns to Inbox as a reference to the same Task. Routine output enters Inbox as briefings/proposals, while the collector's execution remains under Routine history. No automatic Task creation or session reclassification is implied.
 
