@@ -9,10 +9,10 @@ struct AgentRunTests {
         AgentRun(id: 2, startedAt: 1000 + 42 * 60, reason: .restart),
     ]
 
-    func item(runs: [AgentRun], state: AgentState?) -> MuxaSession.InboxItem {
+    func item(runs: [AgentRun], state: AgentState?) -> TaskItem {
         var record = InboxTests.record("a")
         record.runs = runs
-        return MuxaSession.InboxItem(record: record, sessions: [InboxTests.session("a", state)])
+        return TaskItem(record: record, sessions: [InboxTests.session("a", state)])
     }
 
     @Test func runsAreNewestFirstWithTheirReasonAgeAndDuration() {
@@ -104,7 +104,7 @@ struct RestartAgentTests {
     @Test func anUnobservedReplacementCanBeExplicitlyStoppedAndRestarted() async throws {
         let (session, bridge) = try await connected()
         let first = try await session.restartAgent(task: "t-000001", force: false)
-        let item = MuxaSession.InboxItem(record: first, sessions: [])
+        let item = TaskItem(record: first, sessions: [])
         #expect(item.restartNeedsForce)
         #expect(item.agent == nil)
         let saved = try await session.restartAgent(task: first.id, force: item.restartNeedsForce)

@@ -57,7 +57,12 @@ struct ReaderScreen: View {
             await model.loadDocs()
             // Beside the list, the preferred document fills the empty detail. On a phone
             // it would hide the list, so only the plan, when asked for, opens by itself.
-            if width != .compact || model.readerOpensPlan {
+            if let opening = model.readerOpening {
+                // An Inbox item's evidence opens by itself, also on a phone.
+                model.readerOpening = nil
+                selection = opening
+                column = .detail
+            } else if width != .compact || model.readerOpensPlan {
                 selection = model.preferredDoc.map(ReaderItem.doc)
                 if selection != nil { column = .detail }
             }

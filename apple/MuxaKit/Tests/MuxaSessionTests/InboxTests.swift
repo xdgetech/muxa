@@ -19,7 +19,7 @@ struct InboxTests {
     }
 
     func group(_ record: TaskRecord, _ sessions: [Session]) -> InboxGroup {
-        MuxaSession.InboxItem(record: record, sessions: sessions).group
+        TaskItem(record: record, sessions: sessions).group
     }
 
     /// `protocol/fixtures/inbox` pins the rule shared with `muxa-cli` and `Inbox.kt`.
@@ -41,7 +41,7 @@ struct InboxTests {
         #expect(lines.count == 28)
         for line in lines {
             let c = try JSONDecoder().decode(Case.self, from: Data(line.utf8))
-            #expect(MuxaSession.InboxItem(record: c.record, sessions: c.sessions).need.rawValue == c.need, "\(c.name)")
+            #expect(TaskItem(record: c.record, sessions: c.sessions).need.rawValue == c.need, "\(c.name)")
             #expect(group(c.record, c.sessions) == names[c.group], "\(c.name)")
         }
     }
@@ -91,7 +91,7 @@ struct InboxTests {
         #expect(group(Self.record("a"), []) == .noAgent)
         #expect(group(Self.record("a"), [Self.session("b", .running)]) == .noAgent)
         #expect(group(Self.record("a"), [Self.session("a", nil)]) == .noAgent)
-        let stale = MuxaSession.InboxItem(record: Self.record("a"), sessions: [Self.session("a", .running, shellForeground: true)])
+        let stale = TaskItem(record: Self.record("a"), sessions: [Self.session("a", .running, shellForeground: true)])
         #expect(stale.group == .noAgent)
         #expect(stale.agent == nil)
         #expect(stale.session != nil)
@@ -103,19 +103,19 @@ struct InboxTests {
     }
 
     @Test func anUntaggedPaneWithAStateIsTheAgent() {
-        let item = MuxaSession.InboxItem(record: Self.record("a"), sessions: [Self.session("a", .waiting, role: .unknown)])
+        let item = TaskItem(record: Self.record("a"), sessions: [Self.session("a", .waiting, role: .unknown)])
         #expect(item.group == .needsAttention)
         #expect(item.agent?.since == 100)
     }
 
     @Test func snoozeIdentityChangesWhenSessionAppearsOrAgentChanges() {
         let r = Self.record("a")
-        let absent = MuxaSession.InboxItem(record: r, sessions: [])
-        let linked = MuxaSession.InboxItem(record: r, sessions: [Self.session("a", nil)])
-        let waiting = MuxaSession.InboxItem(record: r, sessions: [Self.session("a", .waiting)])
+        let absent = TaskItem(record: r, sessions: [])
+        let linked = TaskItem(record: r, sessions: [Self.session("a", nil)])
+        let waiting = TaskItem(record: r, sessions: [Self.session("a", .waiting)])
         #expect(absent.attentionKey != linked.attentionKey)
         #expect(linked.attentionKey != waiting.attentionKey)
-        #expect(waiting.attentionKey == MuxaSession.InboxItem(record: r, sessions: [Self.session("a", .waiting)]).attentionKey)
+        #expect(waiting.attentionKey == TaskItem(record: r, sessions: [Self.session("a", .waiting)]).attentionKey)
     }
 
     @Test func queueExcludesRunningAndClosedAndBreaksTiesById() {

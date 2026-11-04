@@ -24,7 +24,7 @@ public enum InboxNeed: String, Sendable {
 }
 
 /// A task record with the session that runs it, if any.
-public struct InboxItem: Equatable, Sendable, Identifiable {
+public struct TaskItem: Equatable, Sendable, Identifiable {
     public var record: TaskRecord
     /// The session whose `taskId` is the record's id.
     public var session: Session?
@@ -103,7 +103,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 /// One group of the Inbox, newest change first.
 public struct InboxSection: Equatable, Sendable, Identifiable {
     public var group: InboxGroup
-    public var items: [InboxItem]
+    public var items: [TaskItem]
 
     public var id: InboxGroup { group }
 }
@@ -113,7 +113,7 @@ extension Array where Element == TaskRecord {
     /// `order`. Later hides an item until its time (`now`, epoch seconds).
     public func triageQueue(
         sessions: [Session], now: UInt64 = UInt64(Date().timeIntervalSince1970)
-    ) -> [InboxItem] {
+    ) -> [TaskItem] {
         let shown = inbox(sessions: sessions).flatMap(\.items).filter { item in
             item.need != .none && !(item.place?.until.map { $0 > now } ?? false)
         }
@@ -130,7 +130,7 @@ extension Array where Element == TaskRecord {
 
     /// The non-empty groups in their fixed order.
     public func inbox(sessions: [Session]) -> [InboxSection] {
-        let items = map { InboxItem(record: $0, sessions: sessions) }
+        let items = map { TaskItem(record: $0, sessions: sessions) }
             .sorted { ($0.record.updatedAt, $0.record.id) > ($1.record.updatedAt, $1.record.id) }
         return InboxGroup.allCases.compactMap { group in
             let members = items.filter { $0.group == group }

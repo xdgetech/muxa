@@ -43,7 +43,7 @@ extension AppModel {
     }
 
     /// The local Snooze of a host without `task-inbox`.
-    func snooze(_ item: MuxaSession.InboxItem) {
+    func snooze(_ item: TaskItem) {
         inboxSnoozes[item.id] = item.attentionKey
     }
 

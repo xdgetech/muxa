@@ -5,6 +5,8 @@ import SwiftUI
 /// Where the Inbox sheet's stack goes.
 enum InboxRoute: Hashable {
     case task(String)
+    /// An Inbox item (ADR 0033), pushed on a phone.
+    case item(String)
     case entry(String)
     case routines
     case routine(workspace: String, name: String)
@@ -33,7 +35,9 @@ struct TasksScreen: View {
                     Text("All Tasks").tag(Mode.tasks)
                 }.pickerStyle(.segmented).padding(.horizontal)
                     .accessibilityIdentifier("inbox-mode")
-                if mode == .inbox {
+                if mode == .inbox, model.usesItems {
+                    InboxItemsView(focused: $focused, path: $path) { mode = .tasks }
+                } else if mode == .inbox {
                     InboxListView(focused: $focused, path: $path)
                 } else {
                     taskList
@@ -44,6 +48,9 @@ struct TasksScreen: View {
             .navigationDestination(for: InboxRoute.self) { route in
                 switch route {
                 case .task(let id): TaskDetail(id: id)
+                case .item(let id):
+                    // An answer returns to the list.
+                    InboxItemScreen(id: id) { _ in if path.last == .item(id) { path.removeLast() } }
                 case .entry(let id): InboxEntryDetail(id: id, path: $path)
                 case .routines: RoutinesScreen()
                 case .routine(let workspace, let name): RoutineDetail(workspace: workspace, name: name)
@@ -82,7 +89,15 @@ struct TasksScreen: View {
 
     /// The Inbox when something needs the user, else All Tasks; or where the app asked.
     private func opened() {
-        if !initialized {
+        if !initialized, model.usesItems {
+            // The empty Inbox says so, and links to All Tasks.
+            mode = .inbox
+            focused = model.triageOpening ?? model.session.openItems.first?.id
+            // Back from the Reader, or from the sidebar: the item is open again.
+            if let id = model.triageOpening, model.phoneInbox, model.item(id) != nil { path = [.item(id)] }
+            model.triageOpening = nil
+            initialized = true
+        } else if !initialized {
             mode = model.inboxRows.isEmpty ? .tasks : .inbox
             focused = model.triageOpening ?? model.inboxRows.first?.id
             model.triageOpening = nil

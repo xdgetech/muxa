@@ -11,7 +11,7 @@ public struct RunLine: Equatable, Sendable, Identifiable {
     public var assignment: String? = nil
 }
 
-extension InboxItem {
+extension TaskItem {
     /// The task's runs, newest first. A run without `endedAt` is said to run only
     /// while an adapter reports the task's agent (invariant 6).
     public func runLines(now: UInt64) -> [RunLine] {

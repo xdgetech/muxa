@@ -121,14 +121,27 @@ struct LaterPicker: View {
 
 /// The proposal exactly as the Task will get it. Approval creates one Task.
 struct ApproveSheet: View {
-    let entry: InboxEntry
+    let title: String
+    let workspace: String
+    let proposal: Proposal?
     let approve: () -> Void
     @Environment(\.dismiss) private var dismiss
+
+    init(entry: InboxEntry, approve: @escaping () -> Void) {
+        self.init(title: entry.title, workspace: entry.workspace, proposal: entry.proposal, approve: approve)
+    }
+
+    init(title: String, workspace: String, proposal: Proposal?, approve: @escaping () -> Void) {
+        self.title = title
+        self.workspace = workspace
+        self.proposal = proposal
+        self.approve = approve
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                if let p = entry.proposal {
+                if let p = proposal {
                     Section("Action") { Text(p.action).accessibilityIdentifier("approve-action") }
                     Section("Target") { Text(p.target).textSelection(.enabled).accessibilityIdentifier("approve-target") }
                     Section {
@@ -137,11 +150,11 @@ struct ApproveSheet: View {
                     } header: {
                         Text("Content")
                     } footer: {
-                        Text("Approve creates one Task in \(entry.workspace) that performs this action with this content, unchanged. The agent's own tools decide what it can do; muxa does not check the result.")
+                        Text("Approve creates one Task in \(workspace) that performs this action with this content, unchanged. The agent's own tools decide what it can do; muxa does not check the result.")
                     }
                 }
             }
-            .navigationTitle(entry.title)
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

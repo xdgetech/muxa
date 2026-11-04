@@ -4,7 +4,7 @@ import SwiftUI
 
 /// A task's title, where it belongs, its agent's state with its age, and its loop.
 struct TaskRow: View {
-    let item: MuxaSession.InboxItem
+    let item: TaskItem
 
     var body: some View {
         HStack {

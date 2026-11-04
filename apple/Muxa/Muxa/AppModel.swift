@@ -83,8 +83,11 @@ final class AppModel {
     private(set) var imageListing: ImageListing?
     /// The Reader's open tab, kept while the app runs.
     var readerTab: ReaderTab = .docs
+    /// What the Reader opens at by itself, once: an Inbox item's doc or image.
+    var readerOpening: ReaderItem?
     /// The Inbox sheet: the Inbox list, All Tasks and Routines.
     var showTasks = false
+    /// The window has the phone layout (ADR 0012); `RootView` keeps it current.
     var phoneInbox = false
     /// The Inbox row the sheet opens focused on.
     var triageOpening: String?
@@ -101,7 +104,7 @@ final class AppModel {
         return session.taskRecords.triageQueue(sessions: session.sessions).filter { inboxSnoozes[$0.id] == $0.attentionKey }.count
     }
     /// The Task needs in the host's order, without the ones snoozed on this device.
-    var inboxQueue: [MuxaSession.InboxItem] {
+    var inboxQueue: [TaskItem] {
         let queue = session.taskRecords.triageQueue(sessions: session.sessions)
         return session.canPlaceTasks ? queue : queue.filter { inboxSnoozes[$0.id] != $0.attentionKey }
     }
@@ -227,8 +230,7 @@ final class AppModel {
         defer { connecting = false }
         do {
             try await session.connect({ try await self.open(host) }, samePanes: sameHost)
-            if phoneInbox, initialRequest == detailRequest, canKeepTasks,
-               inboxQueue.contains(where: { $0.group == .needsAttention }) {
+            if phoneInbox, initialRequest == detailRequest, canKeepTasks, needsUserAtConnect {
                 showInbox()
             } else {
                 await openDefaultPane()
@@ -758,7 +760,7 @@ final class AppModel {
     /// The task records by Inbox group, with the sessions that run them.
     var inbox: [InboxSection] { session.taskRecords.inbox(sessions: session.sessions) }
 
-    func inboxItem(_ id: String) -> MuxaSession.InboxItem? {
+    func inboxItem(_ id: String) -> TaskItem? {
         inbox.lazy.flatMap(\.items).first { $0.id == id }
     }
 
@@ -772,8 +774,10 @@ final class AppModel {
 
     /// What a task opens: its agent as a chat or a terminal, or the Reader at its
     /// TASK.md, its HANDOFF.md, its last check or its changes.
-    enum TaskOpening {
+    enum TaskOpening: Equatable {
         case chat, terminal, taskFile, handoffFile, checkFile, changes
+        /// An Inbox item's evidence: a document or an image of its pane.
+        case doc(String), image(String)
     }
 
     /// Where TASK.md is in a task's directory, as the Reader lists it (ADR 0015).
@@ -784,13 +788,23 @@ final class AppModel {
     static let checkFile = ".muxa/CHECK.md"
 
     /// Closes the Tasks sheet, then opens the task's session as asked.
-    func open(_ item: MuxaSession.InboxItem, as opening: TaskOpening, returnToDetail: Bool = false) {
+    func open(_ item: TaskItem, as opening: TaskOpening, returnToDetail: Bool = false) {
         guard let s = item.session else { return }
         if opening == .taskFile || opening == .checkFile || opening == .changes || opening == .handoffFile {
             returnToInbox = true
             triageOpening = item.id
             if returnToDetail { tasksOpening = item.id }
         }
+        afterTasks = (s, opening)
+        showTasks = false
+    }
+
+    /// Closes the Inbox sheet, then opens the item's evidence in the Reader for the
+    /// item's pane. Closing the Reader returns to the item.
+    func openEvidence(_ item: InboxItem, as opening: TaskOpening) {
+        guard let s = itemSession(item) else { return }
+        returnToInbox = true
+        triageOpening = item.id
         afterTasks = (s, opening)
         showTasks = false
     }
@@ -821,6 +835,18 @@ final class AppModel {
         case .changes:
             guard canReadDocs, session.canShowChanges else { return }
             readerTab = .changes
+            readerOpensPlan = false
+            showReader = true
+        case .doc(let path), .image(let path):
+            guard canReadDocs else { return }
+            if case .image = opening {
+                guard session.canShowImages else { return }
+                readerTab = .images
+                readerOpening = .image(path)
+            } else {
+                readerTab = .docs
+                readerOpening = .doc(path)
+            }
             readerOpensPlan = false
             showReader = true
         }

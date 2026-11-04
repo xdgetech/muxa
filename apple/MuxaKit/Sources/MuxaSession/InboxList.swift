@@ -12,7 +12,7 @@ public struct RoutineNeed: Equatable, Sendable {
 
 /// One row of the Inbox list: a Task need, a stored entry, or a waiting Routine run.
 public enum InboxRow: Equatable, Sendable, Identifiable {
-    case task(InboxItem)
+    case task(TaskItem)
     case entry(InboxEntry)
     case routine(RoutineNeed)
 
@@ -64,7 +64,7 @@ extension Array where Element == RoutineInfo {
 /// the Tasks moved down, so Move down puts a Task at the tail of the whole list.
 /// `queue` is the Task queue (`triageQueue`), already without hidden Tasks.
 public func inboxRows(
-    queue: [InboxItem], entries: [InboxEntry], routines: [RoutineInfo], sessions: [Session],
+    queue: [TaskItem], entries: [InboxEntry], routines: [RoutineInfo], sessions: [Session],
     now: UInt64 = UInt64(Date().timeIntervalSince1970)
 ) -> [InboxRow] {
     let waiting = queue.filter { $0.place?.order == nil }.map(InboxRow.task)

@@ -48,9 +48,13 @@ extension PaneSession {
         guard canUseRoutines else { return }
         do {
             let routines = try await listing { .listRoutines(id: $0) } take: { self.routineListings.removeValue(forKey: $0) }
-            let entries = try await listing { .listInbox(id: $0) } take: { self.inboxListings.removeValue(forKey: $0) }
+            let inbox = try await listing { .listInbox(id: $0) } take: { self.inboxListings.removeValue(forKey: $0) }
             if let routines { self.routines = routines }
-            if let entries { inboxEntries = entries }
+            if let inbox {
+                inboxEntries = inbox.entries
+                // An older host sends no items; its Inbox is built from the Tasks.
+                inboxItems = canUseItems ? inbox.items : []
+            }
             workError = nil
         } catch {
             workError = Self.describe(error)

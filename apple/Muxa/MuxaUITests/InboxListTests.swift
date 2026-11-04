@@ -1,7 +1,9 @@
 import XCTest
 
 /// The Inbox list against the demo's Task places, stored entries and Routines
-/// (ADR 0025 "List first", ADR 0026, ADR 0027 §4).
+/// (ADR 0025 "List first", ADR 0026, ADR 0027 §4). It runs as a host at `work`
+/// level 2 (`-work2`): a host with Inbox items gets the list of `InboxItemTests`,
+/// and an older one keeps this list unchanged.
 final class InboxListTests: XCTestCase {
     override class func setUp() {
         super.setUp()
@@ -17,7 +19,7 @@ final class InboxListTests: XCTestCase {
     @MainActor
     private func launchOnInbox() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo"]
+        app.launchArguments = ["-demo", "-work2"]
         app.launch()
         let list = app.descendants(matching: .any)["inbox-list"].firstMatch
         if !list.waitForExistence(timeout: 5) {

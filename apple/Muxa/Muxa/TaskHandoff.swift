@@ -7,7 +7,7 @@ import UIKit
 /// confirms. A running agent is stopped only when the user asks for exactly that.
 struct RestartAgentButton: View {
     @Environment(AppModel.self) private var model
-    let item: MuxaSession.InboxItem
+    let item: TaskItem
     @State private var asking = false
     @State private var restarting = false
     @State private var choosingWorker = false
@@ -100,7 +100,7 @@ struct RestartAgentButton: View {
 
 /// The agents that worked on a task, newest first, as the bridge recorded them.
 struct TaskRunsSection: View {
-    let item: MuxaSession.InboxItem
+    let item: TaskItem
 
     var body: some View {
         let lines = item.runLines(now: UInt64(Date().timeIntervalSince1970))

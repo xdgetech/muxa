@@ -9,6 +9,10 @@ struct DemoWork: Sendable {
     var entries: [InboxEntry]
     /// The sessions of runs that are open at the start.
     var sessions: [Session]
+    /// A Task's Inbox items (`DemoItems.swift`); a Routine's items are `entries`.
+    var taskItems: [InboxItem]
+    /// When a Routine's item was first opened, by entry id.
+    var entryReads: [String: UInt64] = [:]
 
     struct Refusal: Error {
         var body: ErrorBody
@@ -141,7 +145,8 @@ struct DemoWork: Sendable {
     /// The UI tests' Routines: one with a run that waits on the user, so its need shows in Inbox.
     static let tests = DemoWork(
         routines: routines(running: "t-r00002"), entries: entries,
-        sessions: [runSession(routine: "linear-triage", task: "t-r00002", number: 90, state: .waiting, ago: 120)])
+        sessions: [runSession(routine: "linear-triage", task: "t-r00002", number: 90, state: .waiting, ago: 120)],
+        taskItems: testItems)
 
-    static let showcase = DemoWork(routines: routines(running: nil), entries: entries, sessions: [])
+    static let showcase = DemoWork(routines: routines(running: nil), entries: entries, sessions: [], taskItems: showcaseItems)
 }

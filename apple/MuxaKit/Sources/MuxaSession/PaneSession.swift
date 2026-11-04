@@ -60,6 +60,8 @@ public final class PaneSession {
     public internal(set) var routines: [RoutineInfo] = []
     /// The stored Inbox entries, newest first, as last listed.
     public internal(set) var inboxEntries: [InboxEntry] = []
+    /// The host's Inbox items in the host's order, as last listed (`work` level 3, ADR 0033).
+    public internal(set) var inboxItems: [InboxItem] = []
     /// Why the Routines or the stored entries could not be listed; the last lists stay.
     public internal(set) var workError: String?
 
@@ -88,9 +90,10 @@ public final class PaneSession {
     /// `routine-list`, `inbox-list`, `routine-saved` and `inbox-saved`, by request id,
     /// until the result arrives (`PaneSession+Work.swift`).
     @ObservationIgnored var routineListings: [UInt64: [RoutineInfo]] = [:]
-    @ObservationIgnored var inboxListings: [UInt64: [InboxEntry]] = [:]
+    @ObservationIgnored var inboxListings: [UInt64: (entries: [InboxEntry], items: [InboxItem])] = [:]
     @ObservationIgnored var savedRoutines: [UInt64: RoutineInfo] = [:]
     @ObservationIgnored var savedEntries: [UInt64: InboxEntry] = [:]
+    @ObservationIgnored var savedItems: [UInt64: InboxItem] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
     @ObservationIgnored var startedSessions: [UInt64: StartedSession] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
@@ -128,6 +131,7 @@ public final class PaneSession {
             taskError = nil
             routines = []
             inboxEntries = []
+            inboxItems = []
             workError = nil
         }
         phase = .connecting
@@ -755,14 +759,18 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries, _):
-            inboxListings[id] = entries
-        case .inboxSaved(let id, let entry?, _):
-            savedEntries[id] = entry
-            keep(entry)
-        case .inboxSaved:
-            // A Task's item has no entry; nothing reads items yet.
-            break
+        case .inboxList(let id, let entries, let items):
+            inboxListings[id] = (entries, items)
+        case .inboxSaved(let id, let entry, let item):
+            // A Routine's item comes with its entry; a Task's item has none.
+            if let entry {
+                savedEntries[id] = entry
+                keep(entry)
+            }
+            if let item {
+                savedItems[id] = item
+                keep(item)
+            }
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
@@ -805,6 +813,7 @@ public final class PaneSession {
         inboxListings = [:]
         savedRoutines = [:]
         savedEntries = [:]
+        savedItems = [:]
         startedSessions = [:]
         inputs = []
         sentViewport = nil

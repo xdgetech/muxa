@@ -100,12 +100,14 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "task-inbox", "work:2",
+            "task-loop", "tasks-changed", "viewport", "task-inbox", "work:3",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:2" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:3" ? "work:1" : $0 } }
+        // A bridge from before Inbox items (ADR 0033): the Inbox is built from the Tasks.
+        if arguments.contains("-work2") { return all.map { $0 == "work:3" ? "work:2" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         // A bridge from before the shared Inbox order and Routines, for the local Snooze's test.
@@ -328,7 +330,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             emit(.routineList(routines: id, entries: lock.withLock { work.routines }))
             ok(id)
         case .listInbox(let id):
-            emit(.inboxList(inbox: id, entries: lock.withLock { work.shownEntries }))
+            let (entries, items) = lock.withLock { (work.shownEntries, work.shownItems) }
+            emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? items : []))
             ok(id)
         case .runRoutine(let id, let workspace, let routine):
             let outcome = lock.withLock { () -> Result<RoutineInfo, DemoWork.Refusal> in
@@ -346,8 +349,14 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .updateInboxEntry(let id, let entry, let action, let until, _, _):
-            updateEntry(id: id, entry: entry, action: action, until: until)
+        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option):
+            let isEntry = lock.withLock { work.entries.contains { $0.id == entry } }
+            if Self.workLevel >= workItems, !isEntry || action == .read {
+                answerItem(id: id, item: entry, action: action, until: until, text: text, option: option)
+            } else {
+                // A proposal's Reject dismisses it.
+                updateEntry(id: id, entry: entry, action: action == .reject ? .dismiss : action, until: until)
+            }
         default:
             unsupported(req.id, Self.noRequest)
         }
@@ -374,9 +383,39 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         }
         switch outcome {
         case .success(let (saved, created)):
-            emit(.inboxSaved(inbox: id, entry: saved))
+            let item = Self.workLevel >= workItems ? lock.withLock { work.item(for: saved) } : nil
+            emit(.inboxSaved(inbox: id, entry: saved, item: item))
             ok(id)
             if created { emit(.sessionsChanged) }
+        case .failure(let refusal):
+            emit(.result(id: id, error: refusal.body, sessions: nil))
+        }
+    }
+
+    /// Answers a Task's item, or marks any item read. The agent that takes the answer
+    /// runs again; Accept and Drop set the Task's status.
+    private func answerItem(id: UInt64, item: String, action: InboxAction, until: UInt64?, text: String?, option: UInt32?) {
+        let outcome = lock.withLock { () -> Result<(InboxItem, DemoWork.ItemEffect), DemoWork.Refusal> in
+            do throws(DemoWork.Refusal) {
+                let answered = try work.answer(item, action, until: until, text: text, option: option, tasks: &tasks)
+                if case .agentRuns(let pane) = answered.1 {
+                    for s in sessions.indices {
+                        guard let p = sessions[s].panes.firstIndex(where: { $0.id == pane }) else { continue }
+                        sessions[s].panes[p].agent = Agent(state: .running, since: UInt64(Date().timeIntervalSince1970))
+                    }
+                }
+                return .success(answered)
+            } catch { return .failure(error) }
+        }
+        switch outcome {
+        case .success(let (saved, effect)):
+            emit(.inboxSaved(inbox: id, entry: nil, item: saved))
+            ok(id)
+            switch effect {
+            case .agentRuns: emit(.sessionsChanged)
+            case .taskChanged: emit(.tasksChanged)
+            case .none: break
+            }
         case .failure(let refusal):
             emit(.result(id: id, error: refusal.body, sessions: nil))
         }

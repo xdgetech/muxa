@@ -29,18 +29,10 @@ struct Sidebar: View {
             // Above the hosts, so a phone shows it on its first screen.
             if model.canKeepTasks {
                 Section {
-                    let rows = model.inboxRows
-                    if rows.isEmpty { Text("Nothing needs you").foregroundStyle(.secondary) }
-                    ForEach(Array(rows.prefix(3))) { row in
-                        Button { model.showInbox(row.id) } label: {
-                            VStack(alignment: .leading) {
-                                Text(row.title)
-                                Text(row.subtitle).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
+                    inboxRows
+                    let count = inboxPreview
                     Button { model.showInbox() } label: {
-                        Label(rows.isEmpty ? "All Tasks" : "Inbox (\(rows.count))", systemImage: Icon.tasks)
+                        Label(count == 0 ? "All Tasks" : "Inbox (\(count))", systemImage: Icon.tasks)
                     }
                         .foregroundStyle(.primary)
                         .accessibilityIdentifier("open-tasks")
@@ -120,6 +112,35 @@ struct Sidebar: View {
             }
         }
         .refreshable { try? await model.session.refresh() }
+    }
+
+    /// How many items, or Inbox rows on an older host, wait on the user.
+    private var inboxPreview: Int {
+        model.usesItems ? model.session.openItems.count : model.inboxRows.count
+    }
+
+    /// The first items, or Inbox rows on an older host, as buttons that open them.
+    @ViewBuilder private var inboxRows: some View {
+        if model.usesItems {
+            let items = model.session.openItems
+            if items.isEmpty { Text("Nothing needs you").foregroundStyle(.secondary) }
+            ForEach(Array(items.prefix(3))) { item in
+                Button { model.showInbox(item.id) } label: { InboxItemRow(item: item) }
+                    .foregroundStyle(.primary)
+                    .accessibilityIdentifier("sidebar-item-\(item.id)")
+            }
+        } else {
+            let rows = model.inboxRows
+            if rows.isEmpty { Text("Nothing needs you").foregroundStyle(.secondary) }
+            ForEach(Array(rows.prefix(3))) { row in
+                Button { model.showInbox(row.id) } label: {
+                    VStack(alignment: .leading) {
+                        Text(row.title)
+                        Text(row.subtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
     }
 
     private func state(of host: Host) -> HostRow.State {

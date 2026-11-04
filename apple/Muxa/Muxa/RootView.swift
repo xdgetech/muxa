@@ -61,7 +61,7 @@ struct RootView: View {
             SessionSwitcher()
         }
         .sheet(isPresented: $model.showTasks, onDismiss: { Task { await model.tasksClosed() } }) {
-            TasksScreen()
+            TasksScreen().inboxSheetSizing(wide: !model.phoneInbox)
         }
         .sheet(
             isPresented: Binding(get: { model.newTask != nil }, set: { if !$0 { model.newTask = nil } }),
@@ -215,6 +215,17 @@ struct AlertBanner: View {
         case .waiting: Theme.state(.waiting)
         case .done: Theme.state(.done)
         case .failed: Theme.state(.error)
+        }
+    }
+}
+
+extension View {
+    /// A tablet's Inbox shows the list beside the item, so its sheet takes the page size.
+    @ViewBuilder func inboxSheetSizing(wide: Bool) -> some View {
+        if #available(iOS 18.0, *), wide {
+            presentationSizing(.page)
+        } else {
+            self
         }
     }
 }
