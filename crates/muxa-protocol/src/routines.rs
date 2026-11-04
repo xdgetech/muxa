@@ -168,14 +168,36 @@ pub struct Proposal {
     pub hash: String,
 }
 
+/// An answer in `update-inbox`. Level 1 has `approve`, `dismiss` and
+/// `later`; the rest are Inbox items' answers (level 3, ADR 0033).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum InboxAction {
-    /// A proposal only: creates one Task. Approving again returns the same Task.
+    /// A proposal: creates one Task, also when sent twice. An `ask`: picks the
+    /// prompt's first option that is not `cancel`.
     Approve,
+    /// Answers the item without acting; a briefing's Done.
     Dismiss,
     /// Needs `until`.
     Later,
+    /// An `ask`: picks the prompt's `cancel` option. A proposal: as `dismiss`.
+    Reject,
+    /// An `ask`: picks the prompt's option at index `option`.
+    Choose,
+    /// A `review`: marks the Task done.
+    Accept,
+    /// A `review`: answers the item and leaves the Task open.
+    KeepOpen,
+    /// A `review`: sends `text` to the agent as feedback on its turn.
+    Redo,
+    /// A `review` or `failure`: sends `text` to the agent as a new direction.
+    ChangeCourse,
+    /// A `failure`: restarts the agent with a handoff.
+    Retry,
+    /// A `failure`: marks the Task dropped.
+    Drop,
+    /// Marks the item read. It stays open.
+    Read,
 }
 
 #[cfg(test)]

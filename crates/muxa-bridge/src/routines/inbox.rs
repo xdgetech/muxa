@@ -87,6 +87,15 @@ pub async fn update(
                 Ok(Step::Done(saved))
             }
             InboxAction::Approve => begin_approval(&config, &store, &state, &entry, at),
+            // A proposal's Reject is its Dismiss; a briefing's Done is Dismiss already.
+            InboxAction::Reject if is_proposal(&state, &entry) => {
+                let saved = close(&store, &state, &entry, InboxAction::Dismiss, None, at)?;
+                tracing::info!(entry, action = ?action, "inbox entry updated");
+                Ok(Step::Done(saved))
+            }
+            other => Err(bad(format!(
+                "{other:?} does not answer a Routine's entry; approve, reject, dismiss or later do"
+            ))),
         }
     })
     .await?;
@@ -103,6 +112,13 @@ enum Step {
         entry: InboxEntry,
         project: Option<String>,
     },
+}
+
+fn is_proposal(state: &RoutineState, entry: &str) -> bool {
+    state
+        .entries
+        .iter()
+        .any(|e| e.entry.id == entry && e.entry.kind == InboxEntryKind::Proposal)
 }
 
 /// The Routine state that holds `entry`.

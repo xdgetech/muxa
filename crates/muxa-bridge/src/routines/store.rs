@@ -29,9 +29,9 @@ pub enum StateError {
         path: PathBuf,
         source: io::Error,
     },
-    #[error("routine state {0} is unreadable: {1}")]
+    #[error("state file {0} is unreadable: {1}")]
     Unreadable(String, String),
-    #[error("routine state {0} is larger than 8 MiB")]
+    #[error("state file {0} is too large")]
     TooLarge(String),
     #[error(transparent)]
     Lock(#[from] crate::records::StoreError),
@@ -204,31 +204,9 @@ impl RoutineStore {
     }
 
     fn read(&self, id: &str) -> Result<Option<RoutineState>, StateError> {
-        let path = self.path(id);
-        let file = match File::open(&path) {
-            Ok(f) => f,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(io_error("open", &path)(e)),
+        let Some(state) = read_json::<RoutineState>(&self.path(id), id, MAX_FILE)? else {
+            return Ok(None);
         };
-        let mut bytes = Vec::new();
-        file.take(MAX_FILE + 1)
-            .read_to_end(&mut bytes)
-            .map_err(io_error("read", &path))?;
-        if bytes.len() as u64 > MAX_FILE {
-            return Err(StateError::TooLarge(id.to_owned()));
-        }
-        // serde_json's message can quote content; keep only its position.
-        let state: RoutineState = serde_json::from_slice(&bytes).map_err(|e| {
-            StateError::Unreadable(
-                id.to_owned(),
-                format!(
-                    "{:?} error at line {} column {}",
-                    e.classify(),
-                    e.line(),
-                    e.column()
-                ),
-            )
-        })?;
         if state.version != FORMAT_VERSION {
             return Err(StateError::Unreadable(
                 id.to_owned(),
@@ -239,31 +217,72 @@ impl RoutineStore {
     }
 
     fn write(&self, id: &str, state: &RoutineState) -> Result<(), StateError> {
-        let mut bytes = serde_json::to_vec_pretty(state)
-            .map_err(|e| StateError::Unreadable(id.to_owned(), format!("cannot encode: {e}")))?;
-        bytes.push(b'\n');
-        if bytes.len() as u64 > MAX_FILE {
-            return Err(StateError::TooLarge(id.to_owned()));
-        }
-        let tmp = self
-            .dir
-            .join(format!(".{id}.{:08x}.tmp", getrandom::u32()?));
-        let written = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(FILE_MODE)
-            .open(&tmp)
-            .and_then(|mut f| f.write_all(&bytes).and_then(|()| f.sync_all()));
-        let target = self.path(id);
-        let renamed = written.and_then(|()| fs::rename(&tmp, &target));
-        if let Err(e) = renamed {
-            let _ = fs::remove_file(&tmp);
-            return Err(io_error("write", &target)(e));
-        }
-        File::open(&self.dir)
-            .and_then(|d| d.sync_all())
-            .map_err(io_error("sync", &self.dir))
+        write_json(&self.dir, id, state, MAX_FILE)
     }
+}
+
+/// Reads `<path>`, at most `max` bytes. None when it does not exist. Also
+/// the Inbox item store's (ADR 0033).
+pub(crate) fn read_json<T: serde::de::DeserializeOwned>(
+    path: &Path,
+    id: &str,
+    max: u64,
+) -> Result<Option<T>, StateError> {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_error("open", path)(e)),
+    };
+    let mut bytes = Vec::new();
+    file.take(max + 1)
+        .read_to_end(&mut bytes)
+        .map_err(io_error("read", path))?;
+    if bytes.len() as u64 > max {
+        return Err(StateError::TooLarge(id.to_owned()));
+    }
+    // serde_json's message can quote content; keep only its position.
+    serde_json::from_slice(&bytes).map(Some).map_err(|e| {
+        StateError::Unreadable(
+            id.to_owned(),
+            format!(
+                "{:?} error at line {} column {}",
+                e.classify(),
+                e.line(),
+                e.column()
+            ),
+        )
+    })
+}
+
+/// Writes `<dir>/<id>.json` atomically, mode 0600. Nothing is written past `max` bytes.
+pub(crate) fn write_json<T: Serialize>(
+    dir: &Path,
+    id: &str,
+    value: &T,
+    max: u64,
+) -> Result<(), StateError> {
+    let mut bytes = serde_json::to_vec_pretty(value)
+        .map_err(|e| StateError::Unreadable(id.to_owned(), format!("cannot encode: {e}")))?;
+    bytes.push(b'\n');
+    if bytes.len() as u64 > max {
+        return Err(StateError::TooLarge(id.to_owned()));
+    }
+    let tmp = dir.join(format!(".{id}.{:08x}.tmp", getrandom::u32()?));
+    let written = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(FILE_MODE)
+        .open(&tmp)
+        .and_then(|mut f| f.write_all(&bytes).and_then(|()| f.sync_all()));
+    let target = dir.join(format!("{id}.json"));
+    let renamed = written.and_then(|()| fs::rename(&tmp, &target));
+    if let Err(e) = renamed {
+        let _ = fs::remove_file(&tmp);
+        return Err(io_error("write", &target)(e));
+    }
+    File::open(dir)
+        .and_then(|d| d.sync_all())
+        .map_err(io_error("sync", dir))
 }
 
 #[cfg(test)]

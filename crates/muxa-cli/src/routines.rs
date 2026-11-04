@@ -239,6 +239,8 @@ pub async fn act(
                 entry: entry_id,
                 action,
                 until,
+                text: None,
+                option: None,
             },
             wait,
         )
@@ -246,7 +248,7 @@ pub async fn act(
     let saved = messages
         .into_iter()
         .find_map(|m| match m {
-            Message::InboxSaved { entry, .. } => Some(entry),
+            Message::InboxSaved { entry, .. } => entry.map(|e| *e),
             _ => None,
         })
         .ok_or("the bridge saved no entry")?;

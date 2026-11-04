@@ -298,13 +298,24 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
         .unwrap();
     let approve = json!({"type": "update-inbox", "entry": proposal.id, "action": "approve"});
     let first = conn.request(approve.clone()).await;
-    let Some(Message::InboxSaved { entry, .. }) = first.first() else {
+    let Some(Message::InboxSaved {
+        entry: Some(entry),
+        item: Some(item),
+        ..
+    }) = first.first()
+    else {
         panic!("{first:?}")
     };
     assert_eq!(entry.disposition, Disposition::Approved);
+    // A Routine's entry is also answered as an item (ADR 0033).
+    assert_eq!(item.id, entry.id);
+    assert_eq!(item.task, entry.task);
     let task = entry.task.clone().expect("a Task");
     let second = conn.request(approve).await;
-    let Some(Message::InboxSaved { entry: again, .. }) = second.first() else {
+    let Some(Message::InboxSaved {
+        entry: Some(again), ..
+    }) = second.first()
+    else {
         panic!("{second:?}")
     };
     assert_eq!(again.task.as_deref(), Some(task.as_str()));
@@ -332,14 +343,14 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
         )
         .await;
     assert!(
-        matches!(later.first(), Some(Message::InboxSaved { entry, .. })
+        matches!(later.first(), Some(Message::InboxSaved { entry: Some(entry), .. })
         if entry.disposition == Disposition::Later)
     );
     let dismissed = conn
         .request(json!({"type": "update-inbox", "entry": briefing.id, "action": "dismiss"}))
         .await;
     assert!(
-        matches!(dismissed.first(), Some(Message::InboxSaved { entry, .. })
+        matches!(dismissed.first(), Some(Message::InboxSaved { entry: Some(entry), .. })
         if entry.disposition == Disposition::Dismissed)
     );
 

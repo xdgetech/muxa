@@ -46,18 +46,54 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
         } => run_now(cx, id, &workspace, &routine).await,
         Request::ListInbox { id } => {
             let config = Arc::clone(&cx.records);
-            blocking(move || inbox::list(&config))
-                .await
-                .map(|entries| Message::InboxList { inbox: id, entries })
+            blocking(move || {
+                let entries = inbox::list(&config)?;
+                let items = crate::items::list(&config, &entries)?;
+                Ok((entries, items))
+            })
+            .await
+            .map(|(entries, items)| Message::InboxList {
+                inbox: id,
+                entries,
+                items,
+            })
         }
         Request::UpdateInbox {
             id,
             entry,
             action,
             until,
+            text,
+            option,
+        } if entry.starts_with("i-") => {
+            let answer = crate::items::answer::Answer {
+                item: entry,
+                action,
+                until,
+                text,
+                option,
+            };
+            crate::items::answer::update(cx, answer)
+                .await
+                .map(|item| Message::InboxSaved {
+                    inbox: id,
+                    entry: None,
+                    item: Some(Box::new(item)),
+                })
+        }
+        Request::UpdateInbox {
+            id,
+            entry,
+            action,
+            until,
+            ..
         } => inbox::update(cx, entry, action, until)
             .await
-            .map(|entry| Message::InboxSaved { inbox: id, entry }),
+            .map(|entry| Message::InboxSaved {
+                inbox: id,
+                item: Some(Box::new(crate::items::from_entry(&entry))),
+                entry: Some(Box::new(entry)),
+            }),
         _ => Err(error_body(ErrorCode::Unsupported, "not a routine request")),
     };
     match result {

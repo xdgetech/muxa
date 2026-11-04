@@ -43,7 +43,7 @@ Running work, Tasks with no agent and Tasks with no session make no item. They a
 
 - A one-line question: the agent's request, "Ready for review: <title>", or what failed.
 - A summary: the agent's last message for that turn, at most 4 KB. It is stored in the item, like `TASK.md` is stored on the host. It never reaches logs (invariant 5).
-- Attachments the Reader opens (ADR 0006, 0007, 0010, 0011): the diff of the turn, the Markdown files and images it changed, the PR link, and `TASK.md`.
+- Attachments the Reader opens (ADR 0006, 0007, 0010, 0011): the pane's changes (uncommitted, else the branch's own), the Markdown files and images among them, and the PR link. `TASK.md` stays in the pane's docs.
 - Its source: the Task title, the repo and the age.
 
 An item is unread until a device opens it. Opening an item never answers it.
@@ -77,6 +77,6 @@ The wire changes are listed in `protocol/PROTOCOL.md` when slice I0 lands. muxa 
 - One record serves every question, from a Task or a Routine. The list needs no queue rule.
 - An answered item stays answered, also while its Task stays open. A Task with no session no longer shows up as something to do.
 - The host stores agent summaries, so the state directory holds more conversation text. It stays private to the host, like transcripts.
-- The host needs per-turn facts it does not keep today: the diff of the turn and the files the turn changed.
+- Attachments are the pane's changes, docs and images through the existing endpoints, counted when the item is made. A diff of one turn alone is not kept; it would need per-turn snapshots.
 - Rejected: deriving items from the Task's state on each list. It is less code, but an answered review comes back while the Task is open, which is the confusion this ADR removes.
 - Rejected: keeping Move down. Later and the newest-first order cover it with one action fewer.

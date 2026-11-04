@@ -380,6 +380,34 @@ The run's agent writes its output to `.muxa/routine/output.json` in the run's di
 
 The check's reasons are in `.muxa/checks/<attempt>.log`. Logs on the host carry ids, sizes and outcomes, never titles, bodies, links or state.
 
+## Inbox items
+
+A bridge with `work` level 3 keeps Inbox items: one stored question for the user each (ADR 0033). Fixtures: `fixtures/items/`.
+
+1. `inbox-list` also has `items[]`: every item, a Routine's entries included, in the order to show them. Open items come first, `ask` before the rest, then newest first. Then `later` ones, then at most 100 answered or resolved ones, newest first. `entries` stays for older clients.
+2. An item has:
+   - `id`: `i-` and 8 hex digits for a Task's item; a Routine's entry keeps its `e-` id;
+   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, or a stopped loop), `proposal` or `briefing`;
+   - `state`: `open`, `later`, `answered` or `resolved` (the need ended without an answer from the Inbox);
+   - `question` (one line), `workspace`, `title` (the Task's or the entry's) and `createdAt`;
+   - optional `readAt`, `until` (with `later`), `answeredAt`, and `answer` (with `answered`, the action given);
+   - optional `summary`: the agent's last message for the turn, or the entry's body, at most 4096 bytes;
+   - optional `task`, `session` (`$n`) and `pane` (`%n`). Open the pane's `changes`, `docs` and `images` with `pane` for the attachments;
+   - optional `prompt`, with `ask`: the menu, as in Chat's `prompt`;
+   - optional `attachments {changes?, docs[], images[], links[]}`. `changes {files, added, removed, scope?}` counts the pane's uncommitted changes when the item was made; `scope: "branch"` counts the branch's own commits instead, as `diff {scope: "branch"}` shows them. `docs` and `images` are paths among those changes;
+   - optional `routine` and `proposal`, for a Routine's item;
+   - `answers[]`: the actions the host accepts now, in the order to show them. Empty once answered or resolved. Show an unknown action as nothing.
+3. A `later` item whose `until` has passed is listed as `open`. A Task has at most one `open` or `later` item; a newer need resolves the older one.
+4. `update-inbox {entry, action, until?, text?, option?}` answers an item; `entry` is its id. On success: `inbox-saved {inbox, item}`, then `result`. For a Routine's entry, `inbox-saved` has `entry` too.
+   - `approve`: an `ask` picks the prompt's first option that is not `cancel`; a proposal is approved as above.
+   - `reject`: an `ask` picks the prompt's `cancel` option; a proposal is dismissed.
+   - `choose` with `option`, an index into the prompt's options: answers a question.
+   - `accept`: a `review` marks the Task done. `keep-open` answers it and leaves the Task open.
+   - `redo` and `change-course` with `text` (1 to 4096 bytes): send the text to the agent as its next prompt, once the agent is idle. `redo` is feedback on its turn; `change-course` a new direction.
+   - `retry`: a `failure` restarts the agent, as `restart-agent`. `drop` marks the Task dropped.
+   - `dismiss` answers the item and does nothing else. `later` needs `until`. `read` sets `readAt` and leaves the item open.
+   - An action not in `answers` is `bad-request`. An `ask` whose prompt changed since the item was made is `conflict`: list again. Nothing is sent to the pane then.
+
 ## Ask sessions
 
 A bridge with `work` level 2 starts ask sessions: the workspace's agent in a repo's main checkout, to ask about its code (ADR 0031). There is no Task, no worktree and no record.

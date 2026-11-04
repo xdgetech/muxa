@@ -216,3 +216,42 @@ fn routine_contract_fixtures_round_trip() {
     );
     assert!(entries[0].proposal.is_some() && entries[1].proposal.is_none());
 }
+
+#[test]
+fn item_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, ItemKind, ItemState, WORK_ITEMS, work_level};
+    assert_eq!(round_trip::<Request>("items/requests.jsonl"), 13);
+    assert_eq!(round_trip::<Message>("items/messages.jsonl"), 4);
+    let path = format!(
+        "{}/../../protocol/fixtures/items/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut lines = text.lines();
+    let Ok(Message::Hello { capabilities, .. }) = serde_json::from_str(lines.next().unwrap())
+    else {
+        panic!()
+    };
+    assert_eq!(work_level(&capabilities), WORK_ITEMS);
+    let Ok(Message::InboxList { items, .. }) = serde_json::from_str(lines.next().unwrap()) else {
+        panic!()
+    };
+    let kinds: Vec<ItemKind> = items.iter().map(|i| i.kind).collect();
+    use ItemKind::*;
+    assert_eq!(kinds, [Ask, Review, Failure, Proposal, Review, Ask]);
+    assert_eq!(items[1].answers[2], InboxAction::ChangeCourse);
+    assert_eq!(items[2].state, ItemState::Later);
+    // An old client's update-inbox has no text or option.
+    let old: Request = serde_json::from_str(
+        r#"{"type":"update-inbox","id":1,"entry":"e-00000000","action":"dismiss"}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        old,
+        Request::UpdateInbox {
+            text: None,
+            option: None,
+            ..
+        }
+    ));
+}

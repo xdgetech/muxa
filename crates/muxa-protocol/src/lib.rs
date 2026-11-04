@@ -1,9 +1,11 @@
 //! The muxa client/bridge wire format: one JSON object per line. See
 //! `protocol/PROTOCOL.md`; the shared fixtures in `protocol/fixtures` are the contract.
 
+mod items;
 mod restart_recovery;
 mod routines;
 mod workers;
+pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_ITEMS};
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
@@ -264,12 +266,18 @@ pub enum Request {
     /// comes before the `result`.
     UpdateInbox {
         id: u64,
-        /// e.g. `e-1a2b3c4d`.
+        /// e.g. `e-1a2b3c4d`, or an item's `i-` id.
         entry: String,
         action: InboxAction,
         /// With `later`: epoch seconds.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         until: Option<u64>,
+        /// With `redo` and `change-course`: what to send the agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        /// With `choose`: the index into the prompt's options.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        option: Option<u32>,
     },
     /// Start an agent session in a repo's main checkout, to ask about its
     /// code: no Task, no worktree (capability `work` level 2, ADR 0031). A
@@ -498,9 +506,19 @@ pub enum Message {
     InboxList {
         inbox: u64,
         entries: Vec<InboxEntry>,
+        /// Level 3: every item, Routine entries included, open ones first (ADR 0033).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        items: Vec<InboxItem>,
     },
-    /// The entry an `update-inbox` wrote, sent just before its `result`.
-    InboxSaved { inbox: u64, entry: InboxEntry },
+    /// What an `update-inbox` wrote, sent just before its `result`: the
+    /// Routine entry, the item, or both for a Routine's item.
+    InboxSaved {
+        inbox: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        entry: Option<Box<InboxEntry>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item: Option<Box<InboxItem>>,
+    },
     /// The session a `start-session` made, sent just before its `result`.
     SessionStarted {
         /// The request's id.
