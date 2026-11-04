@@ -53,8 +53,8 @@ class MultiWindowTest {
     @Test
     fun aSecondWindowWatchesItsOwnPane() {
         val app = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        scenario = ActivityScenario.launch(Intent(app, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true))
-        compose.leaveInitialInbox()
+        scenario = ActivityScenario.launch(demoIntent())
+        compose.waitForInitialPane()
         val main = app.model
         compose.waitUntil(TIMEOUT) { main.isConnected && main.state.watchedPane != null }
         val first = main.state.watchedPane
@@ -64,8 +64,13 @@ class MultiWindowTest {
         compose.onNodeWithTag("menu-new-window").performClick()
         compose.waitUntil(TIMEOUT) { app.windows.all.size == 2 && others().isNotEmpty() }
         val second = app.windows.all.last()
-        compose.waitUntil(TIMEOUT) { second.isConnected && second.state.watchedPane == first }
+        compose.waitUntil(TIMEOUT) { second.isConnected && second.state.watchedPane == first && second.paneShown }
         assertNotSame("the windows share a connection", main.session, second.session)
+
+        // Each window keeps its own sidebar mode (ADR 0029, 0035).
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { second.selectMode(SidebarMode.TASKS) }
+        assertEquals(SidebarMode.TASKS, second.mode)
+        assertEquals(SidebarMode.SESSIONS, main.mode)
 
         // The new window moves to another session; the first window stays on its pane.
         val other = second.visibleSessions.first { s -> s.panes.none { it.id == first } }

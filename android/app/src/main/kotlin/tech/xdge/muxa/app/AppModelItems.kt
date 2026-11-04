@@ -15,8 +15,7 @@ fun AppModel.item(id: String): InboxItem? = state.inboxItems.firstOrNull { it.id
 
 /** Opens the item screen on [id], and marks the item read on every device. */
 fun AppModel.openItem(id: String) {
-    clearInboxSelection()
-    selectedItem = id
+    select(Selection.Item(id))
     itemFocus = id
     val item = item(id) ?: return
     scope.launch { session.markRead(item) }
@@ -29,7 +28,7 @@ fun AppModel.stepItems(offset: Int) {
     val index = items.indexOfFirst { it.id == itemFocus }.coerceAtLeast(0)
     val next = items[(index + offset).coerceIn(0, items.lastIndex)].id
     itemFocus = next
-    if (!phoneInbox) openItem(next)
+    if (!phoneLayout) openItem(next)
 }
 
 /** The focused item, else the first. */
@@ -43,7 +42,8 @@ fun AppModel.setReply(item: InboxItem, text: String) {
 
 /**
  * Sends [action]. Redo and Change course take the reply box's text. An answer returns to the
- * list on a phone; beside the list, the next item opens.
+ * list on a phone; beside the list, the next item opens. An item answered while its pane is
+ * shown leaves the list; the pane stays.
  */
 fun AppModel.answer(item: InboxItem, action: InboxAction, option: Int? = null, until: Long? = null) {
     val text = reply(item).trim().takeIf { action.needsText }
@@ -67,12 +67,13 @@ fun AppModel.answer(item: InboxItem, action: InboxAction, option: Int? = null, u
 
 /** The item that took the answered one's place, beside the list; the list on a phone. */
 private fun AppModel.afterAnswer(answered: String, before: List<String>) {
-    if (selectedItem != answered) return
+    if (selectedItem != answered || paneShown) return
     val waiting = inboxItems.map { it.id }.toSet()
     val next = before.dropWhile { it != answered }.drop(1).firstOrNull { it in waiting }
         ?: before.lastOrNull { it in waiting }
-    if (phoneInbox || next == null) {
-        selectedItem = null
+    if (phoneLayout || next == null) {
+        selection = null
+        if (phoneLayout) listShown = true
         itemFocus = next ?: inboxItems.firstOrNull()?.id
     } else {
         openItem(next)
@@ -102,7 +103,15 @@ fun AppModel.itemSession(item: InboxItem) = state.sessions.firstOrNull { s ->
     item.pane != null && s.panes.any { it.id == item.pane }
 } ?: item.task?.let { task -> state.sessions.firstOrNull { it.taskId == task } }
 
-/** Open Terminal: leaves the Inbox for the item's session. */
-fun AppModel.openItemTerminal(item: InboxItem) {
-    itemSession(item)?.let { openTerminal(it) }
+/**
+ * The item's Chat or Terminal: its session's pane over the item, whose row stays highlighted.
+ * Terminal is the agent's terminal; an item never opens Shell first (ADR 0035).
+ */
+fun AppModel.openItemSession(item: InboxItem, view: AppModel.PaneView) {
+    val s = itemSession(item) ?: return
+    selection = Selection.Item(item.id)
+    openPane(s, view)
 }
+
+/** The item has a session whose agent has Chat. */
+fun AppModel.itemHasChat(item: InboxItem): Boolean = itemSession(item)?.let(::canChat) == true

@@ -8,9 +8,6 @@ import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.key
 
-/** What the Inbox screen's list shows. Routines sit under All Tasks. */
-enum class InboxPage { INBOX, TASKS, ROUTINES }
-
 /** What an Inbox action asks the user before it goes to the host. */
 sealed interface InboxPrompt {
     /** The Later choices for an Inbox item (ADR 0033). */

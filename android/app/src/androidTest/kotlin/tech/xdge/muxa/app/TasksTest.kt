@@ -25,12 +25,14 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import tech.xdge.muxa.session.InboxGroup
 
-/** The Tasks screen against the demo bridge's records: one Task in each Inbox group. */
+/** Tasks mode (ADR 0035) against the demo bridge's records: one Task in each group. */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class TasksTest {
@@ -38,11 +40,12 @@ class TasksTest {
     val compose = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
 
-    private fun launch(leaveInbox: Boolean = true) {
-        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        val intent = Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true)
-        scenario = ActivityScenario.launch(intent)
-        if (leaveInbox) compose.leaveInitialInbox()
+    private val model get() = ApplicationProvider.getApplicationContext<MuxaApplication>().model
+
+    /** Sessions mode, which shows the default pane at connect. */
+    private fun launch() {
+        scenario = ActivityScenario.launch(demoIntent())
+        compose.waitForInitialPane()
     }
 
     @After
@@ -56,34 +59,47 @@ class TasksTest {
         it.config.getOrNull(SemanticsProperties.StateDescription)?.contains(text) == true
     }
 
-    /** From the pane, through More: the same way on every layout. */
+    /** The demo in Tasks mode: the sidebar is the Task list, on every layout (ADR 0035). */
     private fun openTasks() {
-        waitForTag("composer")
-        compose.onNodeWithTag("more").performClick()
-        waitForTag("menu-tasks")
-        compose.onNodeWithTag("menu-tasks").performClick()
-        waitForTag("inbox-mode-tasks")
-        compose.onNodeWithTag("inbox-mode-tasks").performClick()
-        waitForTag("tasks-done")
+        scenario = ActivityScenario.launch(demoIntent(SidebarMode.TASKS))
+        waitForTag("task-list")
     }
 
     /**
-     * A phone opens on the Inbox at connect while an agent waits. The demo's host has Inbox
-     * items (ADR 0033), so the waiting agent is its `ask` item, not the Task's row.
+     * Sessions mode shows the default pane at connect, as before ADR 0035. It replaces the
+     * test that a phone opened on the Inbox when an agent waited: the mode decides now, and
+     * ItemListTest checks that Inbox mode stays on its list.
      */
     @Test
-    fun phoneStartsInTheInboxWhenAttentionIsWaiting() {
-        launch(leaveInbox = false)
-        val model = ApplicationProvider.getApplicationContext<MuxaApplication>().model
+    fun sessionsModeShowsThePaneAtConnect() {
+        launch()
+        waitForTag("composer")
+        compose.waitUntil(TIMEOUT) { model.paneShown }
+        compose.waitUntilAtLeastOneExists(hasText("feature-auth"), TIMEOUT)
+    }
+
+    /** Tasks mode stays on its list at connect, also on a phone, and watches no pane. */
+    @Test
+    fun tasksModeStaysOnItsListAtConnect() {
+        openTasks()
         compose.waitUntil(TIMEOUT) { model.isConnected && !model.connecting }
-        if (model.phoneInbox) {
-            waitForTag("inbox-list")
-            waitForTag("item-row-i-0000a001")
-            compose.onNodeWithTag("tasks-done").performClick()
-            waitForTag("composer")
-        } else {
-            waitForTag("composer")
-        }
+        compose.onNodeWithTag("composer").assertDoesNotExist()
+        assertFalse(model.paneShown)
+    }
+
+    /** On a phone the pane returns to the Task it was opened from, and the Task to the list. */
+    @Test
+    fun backReturnsFromThePaneToTheTaskThenTheList() {
+        openTasks()
+        openTask("t-login1")
+        tap("task-open-pane")
+        compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %5 100x30"), TIMEOUT)
+        assertEquals("t-login1", model.paneTask)
+        if (!model.phoneLayout) return
+        compose.onNodeWithTag("back").performClick()
+        waitForTag("task-detail")
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { model.back() }
+        waitForTag("task-list")
     }
 
     /**
@@ -93,19 +109,10 @@ class TasksTest {
      */
     @Test
     fun anOlderHostAsksForANewerBridge() {
-        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        val intent = Intent(context, MainActivity::class.java)
-            .putExtra(MainActivity.EXTRA_DEMO, true)
-            .putExtra(MainActivity.EXTRA_WORK2, true)
-        scenario = ActivityScenario.launch(intent)
-        compose.leaveInitialInbox()
-        waitForTag("composer")
-        compose.onNodeWithTag("more").performClick()
-        waitForTag("menu-tasks")
-        compose.onNodeWithTag("menu-tasks").performClick()
-        waitForTag("inbox-old-host")
+        scenario = ActivityScenario.launch(demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK2, true))
+        waitForTag("inbox-empty")
         compose.waitUntilAtLeastOneExists(hasText("needs a newer muxa-bridge", substring = true), TIMEOUT)
-        compose.onNodeWithTag("inbox-all-tasks").performClick()
+        compose.onNodeWithTag("inbox-empty-tasks").performClick()
         waitForTag("task-list")
         for (group in InboxGroup.entries) {
             compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("inbox-${group.name}"))
@@ -116,7 +123,6 @@ class TasksTest {
     /** A Routine's detail shows its fields; Run now starts a run, and a disabled one cannot run. */
     @Test
     fun aRoutineShowsItsFieldsAndRunsNow() {
-        launch()
         openTasks()
         waitForTag("open-routines")
         compose.onNodeWithTag("open-routines").performClick()
@@ -135,7 +141,7 @@ class TasksTest {
         waitForTag("routine-running")
         waitForTag("routine-open-terminal")
 
-        if (compose.onAllNodesWithTag("routine-back").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("routine-back").performClick()
+        compose.onNodeWithTag("routine-back").performClick()
         waitForTag("routine-personal/weekly-memory")
         compose.onNodeWithTag("routine-personal/weekly-memory").performClick()
         waitForText("routine-trigger", "Run now only")
@@ -145,7 +151,6 @@ class TasksTest {
     /** The running run's Open Terminal shows its session. */
     @Test
     fun aRunningRoutineOpensItsTerminal() {
-        launch()
         openTasks()
         waitForTag("open-routines")
         compose.onNodeWithTag("open-routines").performClick()
@@ -153,7 +158,6 @@ class TasksTest {
         compose.onNodeWithTag("routine-work/linear-triage").performClick()
         waitForTag("routine-open-terminal")
         compose.onNodeWithTag("routine-open-terminal").performScrollTo().performClick()
-        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
         compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %90 100x30"), TIMEOUT)
     }
 
@@ -175,7 +179,6 @@ class TasksTest {
 
     @Test
     fun everyGroupShowsAndATaskOpensItsPane() {
-        launch()
         openTasks()
         // The Routines sit above the groups, so the last group can start below the fold.
         for (group in InboxGroup.entries) {
@@ -186,13 +189,11 @@ class TasksTest {
         openTask("t-login1")
         waitForTag("task-open-pane")
         compose.onNodeWithTag("task-open-pane").performClick()
-        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
         compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %5 100x30"), TIMEOUT)
     }
 
     @Test
     fun aTaskWithoutASessionShowsWhyItsLaunchFailed() {
-        launch()
         openTasks()
         openTask("t-price1")
         waitForTag("task-note")
@@ -201,12 +202,10 @@ class TasksTest {
 
     @Test
     fun theBriefOpensInTheReader() {
-        launch()
         openTasks()
         openTask("t-auth01")
         waitForTag("task-open-brief")
         compose.onNodeWithTag("task-open-brief").performClick()
-        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
         // The Reader opens on the brief itself, on every layout.
         waitForTag("reader")
         compose.waitUntilAtLeastOneExists(hasText("TASK.md"), TIMEOUT)
@@ -215,7 +214,6 @@ class TasksTest {
     /** An idle agent restarts without force: a new run, and the agent runs again. */
     @Test
     fun restartingAnIdleAgentAddsARun() {
-        launch()
         openTasks()
         openTask("t-login1")
         waitForTag("run-1")
@@ -234,7 +232,6 @@ class TasksTest {
     /** A running agent only offers to stop and restart it. */
     @Test
     fun aRunningAgentAsksToStopIt() {
-        launch()
         openTasks()
         openTask("t-docs01")
         waitForTag("task-restart-agent")
@@ -248,12 +245,10 @@ class TasksTest {
 
     @Test
     fun theHandoffOpensInTheReader() {
-        launch()
         openTasks()
         openTask("t-auth01")
         waitForTag("task-open-handoff")
         compose.onNodeWithTag("task-open-handoff").performClick()
-        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
         waitForTag("reader")
         compose.waitUntilAtLeastOneExists(hasText("HANDOFF.md"), TIMEOUT)
     }
@@ -286,39 +281,35 @@ class TasksTest {
         compose.onNodeWithTag("task-branch").performScrollTo().performTextInput("feat/search")
         compose.onNodeWithTag("task-create").performClick()
         compose.waitUntilDoesNotExist(hasTestTag("task-create"), TIMEOUT)
-        // Its session, not the Tasks screen.
+        // Its session, not the Task's detail: the sheet opened over a pane.
         compose.waitUntilAtLeastOneExists(hasText("add-search"), TIMEOUT)
-        compose.onNodeWithTag("tasks-done").assertDoesNotExist()
-        // The new agent's pane may show its terminal, so no composer to wait for.
-        waitForTag("more")
-        compose.onNodeWithTag("more").performClick()
-        waitForTag("menu-tasks")
-        compose.onNodeWithTag("menu-tasks").performClick()
-        waitForTag("inbox-mode-tasks")
-        compose.onNodeWithTag("inbox-mode-tasks").performClick()
+        compose.waitUntil(TIMEOUT) { model.paneShown }
+        compose.onNodeWithTag("task-detail").assertDoesNotExist()
+        compose.pickMode(SidebarMode.TASKS)
+        waitForTag("task-list")
         compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-t-new001"))
         waitForTag("task-t-new001")
     }
 
-    /** The list offers Tasks and New Task above the hosts, so a phone's first screen has them. */
+    /**
+     * The sidebar offers the three modes, the status row and `+` for New Task, so a phone's
+     * first screen has them (ADR 0035). The hosts are in Settings.
+     */
     @Test
-    fun theListOffersTasksAndNewTask() {
+    fun theSidebarOffersTheModesAndNewTask() {
         launch()
         waitForTag("composer")
-        for (tag in listOf("back", "show-list")) {
-            if (compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()) {
-                compose.onNodeWithTag(tag).performClick()
-                break
-            }
-        }
-        waitForTag("open-tasks")
+        compose.showList()
+        for (mode in SidebarMode.entries) waitForTag("sidebar-mode-${mode.tag}")
+        waitForTag("status-row")
+        compose.onNodeWithTag("host-Demo").assertDoesNotExist()
         compose.onNodeWithTag("sidebar-new-task").performClick()
         waitForTag("task-title")
         waitForText("task-workspace", "work")
     }
 
     private fun newTask(title: String) {
-        compose.onNodeWithTag("new-task-record").performClick()
+        compose.onNodeWithTag("sidebar-new-task").performClick()
         waitForTag("task-title")
         compose.onNodeWithTag("task-title").performTextInput(title)
         compose.onNodeWithTag("task-goal").performTextInput("Book the flights and the hotel.")
@@ -327,7 +318,6 @@ class TasksTest {
     /** Create a Task without a repo, see it run, mark it done, and find it under Closed. */
     @Test
     fun aNewTaskRunsAndIsMarkedDone() {
-        launch()
         openTasks()
         newTask("Plan the trip")
         compose.onNodeWithTag("task-create").performClick()
@@ -339,14 +329,12 @@ class TasksTest {
         compose.onNodeWithTag("status-done").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText(InboxGroup.CLOSED.title)), TIMEOUT)
         // It opens its new session's pane.
-        compose.onNodeWithTag("task-open-pane").performClick()
-        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
+        tap("task-open-pane")
         compose.waitUntilAtLeastOneExists(hasText("plan-the-trip"), TIMEOUT)
     }
 
     @Test
     fun aFailedLaunchKeepsTheTaskAndShowsWhy() {
-        launch()
         openTasks()
         newTask("Taken branch")
         compose.onNodeWithTag("task-with-repo").performClick()
@@ -366,7 +354,6 @@ class TasksTest {
     /** Start a stopped loop with the workspace's second listed check, then stop it (ADR 0019). */
     @Test
     fun aLoopStartsWithAListedCheckAndStops() {
-        launch()
         openTasks()
         openTask("t-deps01")
         waitForText("loop-state", "Stopped")
@@ -389,7 +376,6 @@ class TasksTest {
     /** A loop paused for the user, or stopped at its limit, puts the Task in Needs attention. */
     @Test
     fun aPausedLoopNeedsAttention() {
-        launch()
         openTasks()
         // The row merges its texts: its badge is part of it.
         waitForText("task-t-auth01", "Loop paused")
@@ -406,11 +392,9 @@ class TasksTest {
 
     @Test
     fun theCheckLogOpensInTheReader() {
-        launch()
         openTasks()
         openTask("t-auth01")
         tap("loop-open-log")
-        compose.waitUntilDoesNotExist(hasTestTag("tasks-done"), TIMEOUT)
         waitForTag("reader")
         compose.waitUntilAtLeastOneExists(hasText("CHECK.md"), TIMEOUT)
     }
@@ -418,7 +402,6 @@ class TasksTest {
     /** A workspace with listed checks offers its first one; the new Task's loop is armed. */
     @Test
     fun aNewTaskRunsACheckAfterEachTurn() {
-        launch()
         openTasks()
         newTask("Lint the site")
         compose.onNodeWithTag("task-with-loop").performScrollTo().performClick()

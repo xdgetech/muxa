@@ -36,6 +36,10 @@ class MainActivity : ComponentActivity() {
         if (requested == null && windowId != Windows.MAIN) model.scope.launch { model.resume() }
         // Debug builds only, for the UI tests: `adb shell am start ... --ez demo true` starts
         // the demo on the test fixtures, and `--ez no-saved-hosts true` starts as a fresh install.
+        // A debug launch starts in the mode it names, else in Inbox mode, whatever the device remembers.
+        if (BuildConfig.DEBUG && (intent.hasExtra(EXTRA_DEMO) || intent.hasExtra(EXTRA_NO_SAVED_HOSTS))) {
+            model.mode = SidebarMode.of(intent.getStringExtra(EXTRA_MODE)) ?: SidebarMode.INBOX
+        }
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_DEMO, false)) {
             val set = if (intent.getBooleanExtra(EXTRA_SHOWCASE, false)) DemoBridge.Content.SHOWCASE else DemoBridge.Content.TESTS
             model.startDemo(
@@ -59,10 +63,12 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(KEY_WINDOW, windowId)
         outState.putString(KEY_HOST, model.currentHostId)
-        outState.putString(KEY_PANE, model.state.watchedPane)
+        outState.putString(KEY_PANE, model.state.watchedPane.takeIf { model.paneShown })
+        outState.putString(KEY_MODE, model.mode.tag)
     }
 
     private fun restore(saved: Bundle) {
+        SidebarMode.of(saved.getString(KEY_MODE))?.let { model.mode = it }
         val host = model.hostList.hosts.firstOrNull { it.id == saved.getString(KEY_HOST) } ?: return
         model.begin(AppModel.WindowStart(host, saved.getString(KEY_PANE), demo = null))
     }
@@ -113,10 +119,14 @@ class MainActivity : ComponentActivity() {
         private const val KEY_WINDOW = "window"
         private const val KEY_HOST = "host"
         private const val KEY_PANE = "pane"
+        private const val KEY_MODE = "mode"
         const val EXTRA_DEMO = "demo"
         const val EXTRA_DEMO_ALERTS = "demo-alerts"
         const val EXTRA_SHOWCASE = "showcase"
         const val EXTRA_NO_SAVED_HOSTS = "no-saved-hosts"
+
+        /** The sidebar mode a debug launch starts in: `inbox`, `tasks` or `sessions` (ADR 0035). */
+        const val EXTRA_MODE = "mode"
         const val EXTRA_NO_TASK_RECORDS = "no-task-records"
 
         /** A bridge from before ask sessions and branches named after the title. */

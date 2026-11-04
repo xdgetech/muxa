@@ -45,7 +45,11 @@ class ShowcaseTest {
 
     @Test
     fun screenshots() {
-        launch()
+        // The showcase starts on the Inbox (ADR 0035); its first item is the agent's question,
+        // answered in Chat.
+        launch(SidebarMode.INBOX)
+        click("item-row-i-5c000001")
+        click("item-chat")
         waitForTag("waiting")
         snap("1-chat")
 
@@ -104,14 +108,13 @@ class ShowcaseTest {
         snap("7-alert")
     }
 
-    private fun launch(alerts: Boolean = false) {
-        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        val intent = Intent(context, MainActivity::class.java)
-            .putExtra(MainActivity.EXTRA_DEMO, true)
+    /** Sessions mode shows the agent's pane at connect; Inbox mode stays on the list. */
+    private fun launch(mode: SidebarMode = SidebarMode.SESSIONS, alerts: Boolean = false) {
+        val intent = demoIntent(mode)
             .putExtra(MainActivity.EXTRA_SHOWCASE, true)
             .putExtra(MainActivity.EXTRA_DEMO_ALERTS, alerts)
         scenario = ActivityScenario.launch(intent)
-        compose.leaveInitialInbox()
+        if (mode == SidebarMode.SESSIONS) compose.waitForInitialPane()
     }
 
     private fun exists(tag: String) = compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty()

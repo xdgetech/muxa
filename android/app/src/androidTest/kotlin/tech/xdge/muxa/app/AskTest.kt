@@ -30,12 +30,8 @@ class AskTest {
 
     /** [work1] plays a host from before ask sessions. */
     private fun launch(work1: Boolean = false) {
-        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        val intent = Intent(context, MainActivity::class.java)
-            .putExtra(MainActivity.EXTRA_DEMO, true)
-            .putExtra(MainActivity.EXTRA_WORK1, work1)
-        scenario = ActivityScenario.launch(intent)
-        compose.leaveInitialInbox()
+        scenario = ActivityScenario.launch(demoIntent().putExtra(MainActivity.EXTRA_WORK1, work1))
+        compose.waitForInitialPane()
     }
 
     @After
@@ -48,17 +44,12 @@ class AskTest {
     private fun waitForText(tag: String, text: String) =
         compose.waitUntilAtLeastOneExists(hasTestTag(tag) and hasText(text, substring = true), TIMEOUT)
 
-    /** The New Task sheet from the Tasks screen, with a title, a goal and the repo fields shown. */
+    /** The New Task sheet from Tasks mode's `+` (ADR 0035), with a title, a goal and the repo fields shown. */
     private fun newRepoTask(title: String) {
         waitForTag("composer")
-        compose.onNodeWithTag("more").performClick()
-        waitForTag("menu-tasks")
-        compose.onNodeWithTag("menu-tasks").performClick()
-        // The Triage/List control is gone; All Tasks is the list page, as TasksTest opens it.
-        waitForTag("inbox-mode-tasks")
-        compose.onNodeWithTag("inbox-mode-tasks").performClick()
-        waitForTag("new-task-record")
-        compose.onNodeWithTag("new-task-record").performClick()
+        compose.pickMode(SidebarMode.TASKS)
+        waitForTag("task-list")
+        compose.click("sidebar-new-task")
         waitForTag("task-title")
         compose.onNodeWithTag("task-title").performTextInput(title)
         compose.onNodeWithTag("task-goal").performTextInput("Index the docs for search.")
@@ -95,8 +86,8 @@ class AskTest {
         compose.waitUntilDoesNotExist(hasTestTag("record-ask"), TIMEOUT)
         compose.waitUntilAtLeastOneExists(hasText("ask-app-1"), TIMEOUT)
         waitForTag("pane")
-        compose.onNodeWithTag("tasks-done").assertDoesNotExist()
-        showList()
+        // An ask session is a manual session: Sessions mode lists it (ADR 0031, 0035).
+        compose.pickMode(SidebarMode.SESSIONS)
         // Its repo now has a manual session, so its header offers Ask too.
         waitForTag("ask-app")
         compose.onNodeWithTag("ask-app").performClick()
@@ -111,16 +102,6 @@ class AskTest {
         compose.onNodeWithTag("record-ask").assertDoesNotExist()
         compose.onNodeWithTag("task-create").assertIsNotEnabled()
         waitForText("task-record-error", "Name the branch.")
-    }
-
-    /** The list of hosts and sessions: shown beside the pane, or behind Back on a phone. */
-    private fun showList() {
-        for (tag in listOf("back", "show-list")) {
-            if (compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()) {
-                compose.onNodeWithTag(tag).performClick()
-                break
-            }
-        }
     }
 
     private companion object {

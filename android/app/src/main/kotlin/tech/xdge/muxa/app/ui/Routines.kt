@@ -1,5 +1,7 @@
 package tech.xdge.muxa.app.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,10 +23,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -33,7 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
-import tech.xdge.muxa.app.InboxPage
+import tech.xdge.muxa.app.Selection
+import tech.xdge.muxa.app.back
+import tech.xdge.muxa.app.select
+import tech.xdge.muxa.app.showRoutine
 import tech.xdge.muxa.app.routine
 import tech.xdge.muxa.app.runNow
 import tech.xdge.muxa.app.runSession
@@ -53,8 +56,11 @@ fun RoutineList(model: AppModel, modifier: Modifier) {
     val routines = model.state.routines
     Column(modifier) {
         Row(Modifier.fillMaxWidth().padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton({ model.inboxPage = InboxPage.TASKS }, Modifier.testTag("routines-back")) { Icon(Icons.back, "All Tasks") }
-            Text("Routines", style = MaterialTheme.typography.titleMedium)
+            // In the detail column beside Tasks there is nothing to go back to.
+            if (LocalPhoneLayout.current) {
+                IconButton(model::back, Modifier.testTag("routines-back")) { Icon(Icons.back, "Tasks") }
+            }
+            Text("Routines", Modifier.padding(start = if (LocalPhoneLayout.current) 0.dp else 16.dp), style = MaterialTheme.typography.titleMedium)
         }
         model.state.workError?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = Theme.failure) }
         if (routines.isEmpty() && model.state.workError == null) {
@@ -73,10 +79,7 @@ fun RoutineList(model: AppModel, modifier: Modifier) {
 private fun RoutineRow(model: AppModel, routine: RoutineInfo) {
     Column(
         Modifier.fillMaxWidth()
-            .clickable {
-                model.clearInboxSelection()
-                model.selectedRoutine = routine.key
-            }
+            .clickable { model.showRoutine(routine.key) }
             .padding(horizontal = 16.dp, vertical = 10.dp)
             .testTag("routine-${routine.key}"),
     ) {
@@ -95,9 +98,8 @@ fun RoutineDetail(model: AppModel, key: String, modifier: Modifier) {
         TopAppBar(
             title = { Text(r?.name ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = {
-                if (LocalPhoneLayout.current) {
-                    IconButton({ model.selectedRoutine = null }, Modifier.testTag("routine-back")) { Icon(Icons.back, "Routines") }
-                }
+                // A Routine is pushed over the Routines, in the detail column too.
+                IconButton({ model.select(Selection.Routines) }, Modifier.testTag("routine-back")) { Icon(Icons.back, "Routines") }
             },
         )
         if (r == null) {

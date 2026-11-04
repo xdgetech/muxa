@@ -1,54 +1,46 @@
 package tech.xdge.muxa.app.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
-import tech.xdge.muxa.protocol.Session
-import tech.xdge.muxa.session.Host
-import tech.xdge.muxa.session.InboxGroup
-import tech.xdge.muxa.session.isUrgent
-import tech.xdge.muxa.session.RepoGroup
-import tech.xdge.muxa.session.defaultPane
+import tech.xdge.muxa.app.SidebarMode
+import tech.xdge.muxa.app.selectMode
 
-/** Saved hosts, and the connected host's sessions below them. */
+/**
+ * The sidebar shows one mode: Inbox, Tasks or Sessions (ADR 0035). Above it sit New Task,
+ * Settings and one status row for the connection; the hosts themselves live in Settings.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?, modifier: Modifier = Modifier) {
@@ -60,232 +52,126 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                     IconButton(onHide, Modifier.testTag("hide-list")) { Icon(Icons.list, "Hide List") }
                 }
             },
-            actions = { IconButton({ onEdit(HostDraft.new()) }) { Icon(Icons.add, "Add Host") } },
+            actions = {
+                if (model.isConnected && model.canCreateTasks) {
+                    IconButton({ model.startNewTask() }, Modifier.testTag("sidebar-new-task")) { Icon(Icons.add, "New Task") }
+                }
+                IconButton({ model.showSettings = true }, Modifier.testTag("open-settings")) { Icon(Icons.settings, "Settings") }
+            },
         )
-        val numbers = model.visibleSessions.withIndex().associate { it.value.id to it.index + 1 }
-        LazyColumn(Modifier.fillMaxWidth()) {
-            // No empty header on first launch. A phone may start here, so the demo is offered here too.
-            if (model.hostList.hosts.isEmpty()) {
-                item {
-                    DemoRow("Try the Demo", Icons.demo, "Sample sessions on this device, with no host needed.", "try-demo") { model.tryDemo() }
-                }
-            }
-            if (model.canLeaveDemo) {
-                item {
-                    DemoRow("Leave Demo", Icons.leaveDemo, "Hosts added during the demo are not saved.", "leave-demo") { model.leaveDemo() }
-                }
-            }
-            // Above the hosts, so a phone shows it on its first screen.
-            if (model.canShowTasks) {
-                item(key = "tasks-header") { SectionHeader("Inbox") }
-                val items = model.inboxItems
-                if (items.isEmpty()) item(key = "inbox-empty") { Text("Nothing needs you", Modifier.padding(horizontal = 16.dp)) }
-                items(items.take(3), key = { "inbox-${it.id}" }) { item ->
-                    ItemRow(item, focused = false, tag = "sidebar-item-${item.id}") { model.showInbox(item.id) }
-                }
-                val count = items.size
-                item(key = "tasks") { TasksRow(model, count) }
-                if (model.canUseRoutines) item(key = "routines") { SidebarAction("Routines", Icons.routine, "sidebar-routines", model::showRoutines) }
-                item(key = "tasks-new") { NewTaskRow(model) }
-            }
-            if (model.hostList.hosts.isNotEmpty()) {
-                item { SectionHeader("Hosts") }
-                items(model.hostList.hosts, key = { it.id }) { host ->
-                    HostRow(model, host, onEdit)
-                }
-            }
-            if (model.isConnected) {
-                if (model.noManualSessions) {
-                    item(key = "sessions-header") { SectionHeader("Sessions") }
-                    item(key = "sessions-empty") {
-                        Text(
-                            "No manual sessions. Open a Task's session from Inbox or Tasks.",
-                            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                for (group in model.sessionGroups) {
-                    item(key = "repo-${group.repo}") { RepoHeader(group, newTaskAction(model, group), askAction(model, group)) }
-                    items(group.sessions, key = { it.id }) { s ->
-                        SessionRow(model, s, current = s.id == model.currentSession?.id, number = numbers[s.id])
-                    }
-                }
-            }
-            model.storageError?.let { error ->
-                item { Text(error, Modifier.padding(16.dp), color = Theme.failure) }
-            }
+        if (model.isConnected) ModePicker(model)
+        StatusRow(model)
+        val body = Modifier.fillMaxWidth().weight(1f)
+        when {
+            !model.isConnected -> NotConnected(model, onEdit, body)
+            model.mode == SidebarMode.INBOX -> ItemList(model, body)
+            model.mode == SidebarMode.TASKS -> TaskList(model, body)
+            else -> SessionList(model, body)
+        }
+        model.storageError?.let { error -> Text(error, Modifier.padding(16.dp), color = Theme.failure) }
+    }
+}
+
+/** The segmented control under the title. The Inbox segment counts the waiting items. */
+@Composable
+private fun ModePicker(model: AppModel) {
+    val modes = SidebarMode.entries
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("sidebar-mode")) {
+        modes.forEachIndexed { i, mode ->
+            val count = if (mode == SidebarMode.INBOX) model.inboxItems.size else 0
+            SegmentedButton(
+                selected = model.mode == mode,
+                onClick = { model.selectMode(mode) },
+                shape = SegmentedButtonDefaults.itemShape(i, modes.size),
+                modifier = Modifier.testTag("sidebar-mode-${mode.tag}"),
+                icon = {},
+            ) { Text(if (count > 0) "${mode.title} $count" else mode.title, maxLines = 1) }
         }
     }
 }
 
-/** Only a repo the host knows the path of can get a task. */
-private fun newTaskAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
-    val dir = group.sessions.firstOrNull()?.repoDir
-    if (!model.canCreateTasks || group.repo == null || dir == null) return null
-    return { model.startNewTask(dir) }
-}
-
-/** Ask about a repo: only one a workspace holds, on a host with ask sessions (ADR 0031). */
-private fun askAction(model: AppModel, group: RepoGroup): (() -> Unit)? {
-    val dir = group.sessions.firstOrNull()?.repoDir
-    if (group.repo == null || dir == null || model.askWorkspace(dir) == null) return null
-    return { model.askAbout(dir) }
-}
-
-/** Opens the Inbox screen; says how many rows wait and how many Tasks need attention. */
+/**
+ * `● work-mac`: green when connected, a spinner while connecting, grey when off. It opens
+ * Settings. While the demo runs it holds Leave Demo, since a demo user starts on the list.
+ */
 @Composable
-private fun TasksRow(model: AppModel, rows: Int) {
-    val waiting = model.inboxItems.count { it.isUrgent }
+private fun StatusRow(model: AppModel) {
+    val host = model.currentHost ?: model.hostList.hosts.firstOrNull { it.id == model.hostList.lastUsed } ?: return
     Row(
-        Modifier.fillMaxWidth().clickable { model.showInbox() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("open-tasks"),
+        Modifier.fillMaxWidth().clickable { model.showSettings = true }.padding(horizontal = 16.dp, vertical = 4.dp).testTag("status-row"),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(Icons.tasks, null, tint = MaterialTheme.colorScheme.primary)
-        Text(if (rows == 0) "All Tasks" else "Inbox ($rows)", Modifier.padding(start = 12.dp).weight(1f))
-        if (waiting > 0) {
-            Text("$waiting ${InboxGroup.NEEDS_ATTENTION.title.lowercase()}", style = MaterialTheme.typography.labelSmall, color = Theme.attention)
-        }
-        Icon(Icons.chevron, null, Modifier.padding(start = 8.dp).size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** Opens the New Task sheet in the shown session's repo. */
-@Composable
-private fun NewTaskRow(model: AppModel) {
-    Row(
-        Modifier.fillMaxWidth().clickable { model.startNewTask() }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("sidebar-new-task"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.newTask, null, tint = MaterialTheme.colorScheme.primary)
-        Text("New Task", Modifier.padding(start = 12.dp).weight(1f))
-    }
-}
-
-@Composable
-private fun SidebarAction(title: String, icon: ImageVector, tag: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag(tag),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-        Text(title, Modifier.padding(start = 12.dp).weight(1f))
-    }
-}
-
-@Composable
-private fun DemoRow(title: String, icon: ImageVector, note: String, tag: String, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag(tag),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Text(title, Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.primary)
+        val busy = host.id == model.currentHostId && (model.connecting || model.addingKey)
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp)
+        } else {
+            val on = host.id == model.currentHostId && model.isConnected
+            Box(
+                Modifier.size(8.dp).background(if (on) Theme.connected else Color.Gray, CircleShape)
+                    .semantics { contentDescription = if (on) "Connected" else "Not connected" },
+            )
         }
         Text(
-            note,
-            Modifier.padding(horizontal = 16.dp),
-            style = MaterialTheme.typography.bodySmall,
+            host.title,
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
+        if (model.canLeaveDemo) TextButton(model::leaveDemo, Modifier.testTag("leave-demo")) { Text("Leave Demo") }
     }
 }
 
+/** No connection: connect to the last host, or on first launch add one or try the demo. */
 @Composable
-private fun SectionHeader(text: String, trailing: @Composable () -> Unit = {}) {
+private fun NotConnected(model: AppModel, onEdit: (HostDraft) -> Unit, modifier: Modifier) {
+    Column(
+        modifier.padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val hosts = model.hostList
+        if (hosts.hosts.isEmpty()) {
+            Text("Add a Host", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Muxa connects over SSH to the machine where your tmux sessions run.",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+            )
+            Button({ onEdit(HostDraft.new()) }, Modifier.testTag("add-host")) { Text("Add Host") }
+            OutlinedButton(model::tryDemo, Modifier.testTag("try-demo")) { Text("Try the Demo") }
+            return@Column
+        }
+        if (model.connecting || model.addingKey) return@Column
+        val last = model.currentHost ?: hosts.hosts.firstOrNull { it.id == hosts.lastUsed } ?: hosts.hosts.first()
+        Button({ model.connect(last.id) }, Modifier.testTag("connect-last")) { Text("Connect to ${last.title}") }
+        OutlinedButton({ model.showSettings = true }, Modifier.testTag("open-hosts")) { Text("Hosts…") }
+    }
+}
+
+/** A list section's header, with optional buttons at its end. */
+@Composable
+internal fun SectionHeader(text: String, trailing: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         trailing()
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/** A row that opens something, for the lists' first rows (Routines). */
 @Composable
-private fun HostRow(model: AppModel, host: Host, onEdit: (HostDraft) -> Unit) {
-    var menu by remember { mutableStateOf(false) }
-    val current = host.id == model.currentHostId
-    Box {
-        Row(
-            Modifier.fillMaxWidth()
-                .combinedClickable(onClick = { model.connect(host.id) }, onLongClick = { menu = true })
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-                .testTag("host-${host.title}"),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.host, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                Text(host.title)
-                Text(
-                    "${host.target.user}@${host.target.host}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-            when {
-                current && (model.connecting || model.addingKey) -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                current && model.isConnected -> Box(
-                    Modifier.size(8.dp).background(Theme.connected, CircleShape).semantics { contentDescription = "Connected" },
-                )
-            }
-            IconButton({ menu = true }) { Icon(Icons.more, "Host Actions") }
-        }
-        DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text("Edit") }, { menu = false; onEdit(HostDraft.of(host)) }, leadingIcon = { Icon(Icons.edit, null) })
-            DropdownMenuItem(
-                { Text("Delete", color = Theme.failure) },
-                { menu = false; model.hosts.delete(host.id) },
-                leadingIcon = { Icon(Icons.delete, null, tint = Theme.failure) },
-            )
-        }
+internal fun SidebarRow(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tag: String, current: Boolean, trailing: String? = null, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (current) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp).testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        Text(title, Modifier.padding(start = 12.dp).weight(1f))
+        trailing?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Icon(Icons.chevron, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-}
-
-/** A repo's section header; sessions without a repo tag come last. */
-@Composable
-private fun RepoHeader(group: RepoGroup, newTask: (() -> Unit)?, ask: (() -> Unit)?) {
-    SectionHeader(group.repo ?: "Other Sessions") {
-        if (ask != null && group.repo != null) {
-            IconButton(ask, Modifier.testTag("ask-${group.repo}")) { Icon(Icons.ask, "Ask about ${group.repo}") }
-        }
-        if (newTask != null && group.repo != null) {
-            IconButton(newTask, Modifier.testTag("new-task-${group.repo}")) { Icon(Icons.add, "New Task in ${group.repo}") }
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SessionRow(model: AppModel, s: Session, current: Boolean, number: Int?) {
-    var menu by remember { mutableStateOf(false) }
-    val item = model.inbox.flatMap { it.items }.firstOrNull { it.session?.id == s.id }
-    Box {
-        Row(
-            Modifier.fillMaxWidth()
-                .background(if (current) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-                .combinedClickable(onClick = { model.open(s) }, onLongClick = { if (model.canClose(s) || item != null) menu = true })
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-                .testTag("session-${s.name}"),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(item?.record?.title ?: s.name, fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                listOfNotNull(if (item != null) s.name else null, s.branch).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                }
-            }
-            if (item != null) TaskSessionBadge(item) else s.defaultPane?.let { AgentBadge(it) }
-            number?.takeIf { it <= 9 }?.let {
-                Text("^⇧$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        DropdownMenu(menu, { menu = false }) {
-            if (item != null) DropdownMenuItem({ Text("Show in Inbox") }, { menu = false; model.showInbox(item.record.id) })
-            if (model.canClose(s)) DropdownMenuItem({ Text("Close Task…") }, { menu = false; model.closingTask = s }, leadingIcon = { Icon(Icons.closeTask, null) })
-        }
-    }
-    Spacer(Modifier.width(0.dp))
 }

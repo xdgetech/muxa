@@ -6,6 +6,8 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -47,9 +49,8 @@ class FoldTest {
     }
 
     private fun launch() {
-        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        scenario = ActivityScenario.launch(Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true))
-        compose.leaveInitialInbox()
+        scenario = ActivityScenario.launch(demoIntent())
+        compose.waitForInitialPane()
     }
 
     /** Runs [command] to its end: the output is read until the command closes it. */
@@ -134,9 +135,24 @@ class FoldTest {
             val book = FoldingFeature(activity, state = FoldingFeature.State.HALF_OPENED, orientation = FoldingFeature.Orientation.VERTICAL)
             hinges.overrideWindowLayoutInfo(TestWindowLayoutInfo(listOf(book)))
         }
-        // Both sides at once: the hosts on the left of the hinge, the pane on the right.
-        compose.waitUntilAtLeastOneExists(hasTestTag("host-Demo"), TIMEOUT)
+        // Both sides at once: the sidebar on the left of the hinge, the pane on the right.
+        compose.waitUntilAtLeastOneExists(hasTestTag("sidebar-mode-sessions"), TIMEOUT)
         waitForPane("$")
+    }
+
+    /** A fold or a resize keeps the selected Inbox item in the detail, with its reply (ADR 0035). */
+    @Test
+    fun resizingKeepsTheSelectedItem() {
+        scenario = ActivityScenario.launch(demoIntent(SidebarMode.INBOX))
+        compose.click("item-row-i-0000a002")
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-question") and hasText("Fix the login redirect", substring = true), TIMEOUT)
+        compose.onNodeWithTag("item-reply").performTextInput("Keep the old one.")
+        val startsWide = compose.exists("sidebar-mode-inbox")
+        shell(if (startsWide) "wm size 1080x2400" else "wm size 2560x1600")
+        // Beside the list on the wide window, pushed with Back on the narrow one.
+        compose.waitUntil(TIMEOUT) { compose.exists("sidebar-mode-inbox") != startsWide }
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-question") and hasText("Fix the login redirect", substring = true), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-reply") and hasText("Keep the old one."), TIMEOUT)
     }
 
     private companion object {

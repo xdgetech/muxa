@@ -1,6 +1,7 @@
 package tech.xdge.muxa.app.ui
 
-import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,61 +10,45 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.foundation.focusable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.AppModel
-import tech.xdge.muxa.app.InboxPage
+import tech.xdge.muxa.app.Selection
+import tech.xdge.muxa.app.back
+import tech.xdge.muxa.app.paneTask
+import tech.xdge.muxa.app.select
+import tech.xdge.muxa.app.showTask
 import tech.xdge.muxa.app.ReaderTab
 import tech.xdge.muxa.app.isAgentSide
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.app.shortcut
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import tech.xdge.muxa.session.InboxNeed
 import tech.xdge.muxa.session.need
 import tech.xdge.muxa.session.TaskItem
@@ -71,114 +56,12 @@ import tech.xdge.muxa.session.hasHandoff
 import tech.xdge.muxa.session.taskItem
 
 /**
- * The Inbox screen: the Inbox list, All Tasks by Inbox group, and the Routines, with the
- * picked row's detail. Like the Reader it covers the list and the pane; on a phone the
- * detail is pushed over the list, elsewhere it sits beside it.
+ * Tasks mode (ADR 0035): the Routines first, then every Task by group. The row of what the
+ * detail shows is highlighted: the picked Task, or the Task whose pane is shown.
  */
 @Composable
-fun TasksScreen(model: AppModel) {
-    val phone = LocalPhoneLayout.current
-    val layout = LocalWindowLayout.current
-    val selected = model.selectedTask?.let { id -> model.state.tasks?.record(id) }
-    val detailOpen = model.selectedItem != null || model.selectedTask != null || model.selectedRoutine != null
-    Dialog(onDismissRequest = model::closeTasks, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        DialogStatusBar()
-        // Focused, so the Inbox keys reach it before any control has focus.
-        val keys = remember { FocusRequester() }
-        LaunchedEffect(Unit) { keys.requestFocus() }
-        // A dialog is its own window: it needs the tag setting the main window has (Root).
-        Surface(Modifier.fillMaxSize().onPreviewKeyEvent { model.shortcut(it.nativeKeyEvent) }.focusRequester(keys).focusable().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
-            val list = @Composable { modifier: Modifier -> InboxPane(model, selected?.id, modifier) }
-            val detail = @Composable { modifier: Modifier -> InboxDetail(model, selected, modifier) }
-            when {
-                phone -> {
-                    if (!detailOpen) list(Modifier.fillMaxSize()) else detail(Modifier.fillMaxSize())
-                    BackHandler(detailOpen) { model.clearInboxSelection() }
-                    BackHandler(!detailOpen && model.inboxPage == InboxPage.ROUTINES) { model.inboxPage = InboxPage.TASKS }
-                }
-                // Half open like a book: the list left of the hinge, the detail right of it.
-                layout is WindowLayout.Book -> Row(Modifier.fillMaxSize()) {
-                    list(Modifier.width(layout.listWidth.dp).fillMaxHeight())
-                    Spacer(Modifier.width(layout.gap.dp))
-                    detail(Modifier.weight(1f).fillMaxHeight())
-                }
-                else -> Row(Modifier.fillMaxSize()) {
-                    list(Modifier.width(360.dp).fillMaxHeight())
-                    VerticalDivider()
-                    detail(Modifier.weight(1f).fillMaxHeight())
-                }
-            }
-        }
-    }
-    InboxDialogs(model)
-    // After the screen, so these windows open over it.
-    model.taskError?.let { error ->
-        AlertDialog(
-            onDismissRequest = { model.taskError = null },
-            title = { Text("Can't Change the Task") },
-            text = { Text(error, Modifier.testTag("task-error-message")) },
-            confirmButton = { TextButton({ model.taskError = null }) { Text("OK") } },
-        )
-    }
-    RestartAgentDialog(model)
-    RestartErrorDialog(model)
-    StartLoopDialog(model)
-    LoopErrorDialog(model)
-}
-
-/** The list side: the title bar, the Inbox | All Tasks picker, and the page it picks. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun InboxPane(model: AppModel, selected: String?, modifier: Modifier) {
-    Column(modifier) {
-        TopAppBar(
-            title = { Text("Inbox") },
-            navigationIcon = { IconButton(model::closeTasks, Modifier.testTag("tasks-done")) { Icon(Icons.close, "Done") } },
-            actions = {
-                if (model.state.tasks?.workspaces?.isNotEmpty() == true) {
-                    IconButton(model::startNewTaskRecord, Modifier.testTag("new-task-record")) { Icon(Icons.add, "New Task") }
-                }
-            },
-        )
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-            val pages = listOf(InboxPage.INBOX to "Inbox", InboxPage.TASKS to "All Tasks")
-            pages.forEachIndexed { index, (page, title) ->
-                val shown = if (model.inboxPage == InboxPage.ROUTINES) InboxPage.TASKS else model.inboxPage
-                SegmentedButton(
-                    selected = shown == page,
-                    onClick = {
-                        model.inboxPage = page
-                        model.clearInboxSelection()
-                    },
-                    shape = SegmentedButtonDefaults.itemShape(index, pages.size),
-                    modifier = Modifier.testTag("inbox-mode-${page.name.lowercase()}"),
-                ) { Text(title) }
-            }
-        }
-        val content = Modifier.fillMaxWidth().weight(1f)
-        when (model.inboxPage) {
-            InboxPage.INBOX -> ItemList(model, content)
-            InboxPage.TASKS -> TaskList(model, selected, content)
-            InboxPage.ROUTINES -> RoutineList(model, content)
-        }
-    }
-}
-
-/** The picked row's detail: an Inbox item, a Routine, or a Task. */
-@Composable
-private fun InboxDetail(model: AppModel, selected: TaskRecord?, modifier: Modifier) {
-    val routine = model.selectedRoutine
-    when {
-        model.selectedItem != null -> ItemDetail(model, model.selectedItem, modifier)
-        model.inboxPage == InboxPage.INBOX && selected == null && routine == null -> ItemDetail(model, null, modifier)
-        routine != null -> RoutineDetail(model, routine, modifier)
-        else -> TaskDetail(model, selected, modifier)
-    }
-}
-
-/** All Tasks: the Routines first, then every Task by Inbox group. */
-@Composable
-private fun TaskList(model: AppModel, selected: String?, modifier: Modifier) {
+fun TaskList(model: AppModel, modifier: Modifier) {
+    val selected = model.selectedTask ?: model.paneTask
     Column(modifier) {
         val sections = model.inbox
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -194,10 +77,7 @@ private fun TaskList(model: AppModel, selected: String?, modifier: Modifier) {
                         )
                     }
                     items(section.items, key = { it.record.id }) { item ->
-                        TaskRow(item, item.record.id == selected) {
-                            model.clearInboxSelection()
-                            model.selectedTask = item.record.id
-                        }
+                        TaskRow(item, item.record.id == selected) { model.showTask(item.record.id) }
                     }
                 }
                 if (model.state.tasks?.truncated == true) {
@@ -213,19 +93,11 @@ private fun TaskList(model: AppModel, selected: String?, modifier: Modifier) {
     }
 }
 
-/** Opens the Routines, with how many the host has. */
+/** Opens the Routines in the detail, with how many the host has. */
 @Composable
 private fun RoutinesRow(model: AppModel) {
-    Row(
-        Modifier.fillMaxWidth().clickable { model.inboxPage = InboxPage.ROUTINES }.padding(horizontal = 16.dp, vertical = 12.dp)
-            .testTag("open-routines"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.routine, null, tint = MaterialTheme.colorScheme.primary)
-        Text("Routines", Modifier.padding(start = 12.dp).weight(1f))
-        Text("${model.state.routines.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Icon(Icons.chevron, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    val current = model.selection == Selection.Routines || model.selection is Selection.Routine
+    SidebarRow("Routines", Icons.routine, "open-routines", current, "${model.state.routines.size}") { model.select(Selection.Routines) }
 }
 
 @Composable
@@ -282,15 +154,16 @@ fun statusTitle(status: TaskStatus): String = when (status) {
     else -> status.raw
 }
 
+/** A Task's detail, or "Pick a Task." without one. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier) {
+fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier) {
     val phone = LocalPhoneLayout.current
     Column(modifier) {
         TopAppBar(
             title = { Text(record?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = {
-                if (phone) IconButton({ model.selectedTask = null }, Modifier.testTag("task-back")) { Icon(Icons.back, "Tasks") }
+                if (phone && record != null) IconButton(model::back, Modifier.testTag("task-back")) { Icon(Icons.back, "Tasks") }
             },
         )
         if (record == null) {

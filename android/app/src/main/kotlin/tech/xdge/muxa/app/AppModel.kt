@@ -1,9 +1,9 @@
 package tech.xdge.muxa.app
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -37,7 +37,6 @@ import tech.xdge.muxa.session.containing
 import tech.xdge.muxa.session.counterpart
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.groupedByRepo
-import tech.xdge.muxa.session.isUrgent
 import tech.xdge.muxa.session.waiting
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.app.reader.ReaderItem
@@ -58,7 +57,12 @@ import kotlin.time.Duration.Companion.seconds
  * One window's state: its connection and which pane it shows. The saved hosts and the
  * device key are the app's, shared by every window (ADR 0029).
  */
-class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: ClientKeyStore) {
+class AppModel(
+    val scope: CoroutineScope,
+    saved: HostStore,
+    private val keys: ClientKeyStore,
+    private val modes: ModeStore = ModeStore(null),
+) {
     val session = PaneSession(Dispatchers.Main.immediate)
     private var savedHosts = saved
 
@@ -114,9 +118,33 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     var focusRequest by mutableIntStateOf(0)
         private set
 
-    /** Bumped when the user asks for the detail: on a phone it is pushed over the list. */
-    var detailRequest by mutableIntStateOf(0)
-        private set
+    private var modeState by mutableStateOf(modes.mode)
+
+    /** What the sidebar shows (ADR 0035). The device remembers it for the next window. */
+    var mode: SidebarMode
+        get() = modeState
+        set(value) {
+            modeState = value
+            modes.mode = value
+        }
+
+    /** What the detail shows when no pane is shown over it. Kept through a fold or a resize. */
+    var selection by mutableStateOf<Selection?>(null)
+
+    /** The detail shows the watched pane, over [selection] when it has one. */
+    var paneShown by mutableStateOf(false)
+
+    /** The sidebar shows: on a phone the list instead of the detail, elsewhere beside it. */
+    var listShown by mutableStateOf(true)
+
+    /** Settings: the hosts, the demo and the version. */
+    var showSettings by mutableStateOf(false)
+
+    /** The window has the phone's stack, so a selection pushes its screen. Set by the layout. */
+    var phoneLayout = false
+
+    /** The view each session showed last on this device, by session id: a Sessions row opens it again. */
+    private val lastViews = mutableMapOf<String, PaneView>()
 
     /** Agent panes the user switched to Raw. Every other agent pane shows Pretty when it can. */
     var rawPanes by mutableStateOf(emptySet<String>())
@@ -151,25 +179,15 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     var imageListing by mutableStateOf<Message.ImageList?>(null)
         private set
 
-    /** The Tasks screen, over the list and the pane like the Reader. */
-    var showTasks by mutableStateOf(false)
-    var phoneInbox = false
-
-    /** What the Inbox screen's list shows: the Inbox list, All Tasks, or the Routines. */
-    var inboxPage by mutableStateOf(InboxPage.INBOX)
-
-    /** The Routine shown in the Inbox screen's detail, by `workspace/name`. */
-    var selectedRoutine by mutableStateOf<String?>(null)
+    val selectedItem: String? get() = (selection as? Selection.Item)?.id
+    val selectedTask: String? get() = (selection as? Selection.Task)?.id
+    val selectedRoutine: String? get() = (selection as? Selection.Routine)?.key
 
     /** An Inbox action that asks first: Later's times, a picked time, or an approval. */
     var inboxPrompt by mutableStateOf<InboxPrompt?>(null)
 
     /** Why the last Inbox action failed, from the host. */
     var inboxError by mutableStateOf<String?>(null)
-    private var returnToInbox = false
-
-    /** The Inbox item shown in the item screen, by id (ADR 0033). Kept through a fold or a resize. */
-    var selectedItem by mutableStateOf<String?>(null)
 
     /** The Inbox item the keys act on, by id. */
     var itemFocus by mutableStateOf<String?>(null)
@@ -188,42 +206,25 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
 
     val canUseRoutines: Boolean get() = isConnected && state.canUseRoutines
 
-    /** An agent waits or failed: a phone opens on the Inbox after connecting (ADR 0023). */
-    private val somethingUrgent: Boolean get() = inboxItems.any { it.isUrgent }
-
-    /** Opens the Inbox screen on the Inbox list, focused on row [id]; on All Tasks when nothing needs the user. */
+    /** Inbox mode, at item [id] when it waits: an item's, or a Task's from a session's Show in Inbox. */
     fun showInbox(id: String? = null) {
-        clearInboxSelection()
-        // An empty Inbox says so, and links to All Tasks; a host below `work` level 3 says it needs a newer bridge.
-        inboxPage = InboxPage.INBOX
-        // [id] is an item's, or a Task's from the session list's Show in Inbox.
+        showMode(SidebarMode.INBOX)
         val target = id?.let { i -> inboxItems.firstOrNull { it.id == i || it.task == i }?.id }
         itemFocus = target ?: inboxItems.firstOrNull()?.id
         target?.let { openItem(it) }
-        openTasks()
     }
 
+    /** Tasks mode at the Routines. */
     fun showRoutines() {
-        clearInboxSelection()
-        inboxPage = InboxPage.ROUTINES
-        openTasks()
+        showMode(SidebarMode.TASKS)
+        select(Selection.Routines)
     }
 
-    fun clearInboxSelection() {
-        selectedItem = null
-        selectedTask = null
-        selectedRoutine = null
-    }
+    /** [s]'s agent terminal: a Routine run's. */
+    fun openTerminal(s: Session) = scope.launch { openNow(s, PaneView.AGENT) }
 
-    /** Leaves the Inbox screen for [s]'s agent: a Routine run's terminal. */
-    fun openTerminal(s: Session) = scope.launch {
-        showTasks = false
-        openNow(s)
-        if (agentPane != null) show(PaneView.AGENT).join()
-    }
-
-    /** The Task shown in the Tasks screen's detail, by id. */
-    var selectedTask by mutableStateOf<String?>(null)
+    /** [s]'s pane in [view], over the selection: an item's or a Task's Chat or Terminal (ADR 0035). */
+    fun openPane(s: Session, view: PaneView) = scope.launch { openNow(s, view) }
 
     /** The New Task sheet for a task record, from any New Task entry point. */
     var newTaskRecord by mutableStateOf<TaskRecordDraft?>(null)
@@ -300,6 +301,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
 
     /** Try the Demo: sample sessions from the in-app bridge. Nothing is saved, and no SSH or key is touched. */
     fun tryDemo() {
+        showSettings = false
         demoTaskRecords = true
         demoWorkLevel = WORK_ITEMS
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
@@ -343,7 +345,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         } else {
             null
         }
-        return WindowStart(host, state.watchedPane, demo)
+        return WindowStart(host, state.watchedPane.takeIf { paneShown }, demo)
     }
 
     /** A new window: its own connection to [start]'s host, at its pane. */
@@ -400,8 +402,10 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         rawPanes = emptySet()
         paneFit = null
         showReader = false
-        showTasks = false
-        clearInboxSelection()
+        selection = null
+        paneShown = false
+        listShown = true
+        itemFocus = null
         inboxPrompt = null
         inboxError = null
         itemReplies = emptyMap()
@@ -423,6 +427,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         stayDisconnected = false
         currentHostId = null
         lastDocs.clear()
+        lastViews.clear()
     }
 
     // Connection
@@ -442,16 +447,20 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         connectError = null
         connectFix = null
         connecting = true
-        returnToInbox = false
-        detailRequest++
-        val initialRequest = detailRequest
+        if (!sameHost) {
+            selection = null
+            paneShown = false
+            listShown = true
+        }
         try {
             session.connect(samePanes = sameHost) { open(host) }
+            // Inbox and Tasks mode stay on their list; Sessions mode shows the pane (ADR 0035).
             if (pane != null && state.sessions.any { s -> s.panes.any { it.id == pane } }) {
                 watch(pane)
-            } else if (phoneInbox && initialRequest == detailRequest && canShowTasks && somethingUrgent) {
-                showInbox()
-            } else openDefaultPane()
+                showPane()
+            } else if (mode == SidebarMode.SESSIONS) {
+                openDefaultPane()
+            }
         } catch (e: TransportError.HostKeyMismatch) {
             afterTrust = AfterTrust.Connect
             untrustedKey = e.presented
@@ -525,8 +534,9 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     }
 
     fun disconnect() = scope.launch {
-        showTasks = false
-        returnToInbox = false
+        selection = null
+        paneShown = false
+        listShown = true
         stayDisconnected = true
         session.disconnect()
     }
@@ -593,13 +603,25 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
 
     val counterpart: Pane? get() = state.watchedPane?.let { currentSession?.counterpart(it) }
 
+    /** A Sessions row, the switcher or a session key: [s] in the view it showed last (ADR 0035). */
     fun open(s: Session) = scope.launch { openNow(s) }
 
-    private suspend fun openNow(s: Session) {
+    /** Shows [s]'s pane in [view], else in its last view, else Chat, Agent or Shell as it has them. */
+    private suspend fun openNow(s: Session, view: PaneView? = lastViews[s.id]) {
         val pane = s.defaultPane ?: return
-        detailRequest++
         watch(pane.id)
+        if (view != null && view != paneView) showNow(view)
+        showPane()
     }
+
+    /** The detail shows the pane; the list makes room for it (ADR 0012, 0020). */
+    private fun showPane() {
+        paneShown = true
+        listShown = false
+    }
+
+    /** [s] has an agent whose conversation the bridge can follow. */
+    fun canChat(s: Session): Boolean = s.panes.any(::chatPossible)
 
     fun toggleAgentTerminal() = scope.launch { counterpart?.let { watch(it.id) } }
 
@@ -621,7 +643,12 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         if (state.watchedPane != null) return
         val last = currentHostId?.let { hostList.lastPanes[it] }
         val pane = last?.let { state.sessions.resuming(it) }
-        if (pane != null) watch(pane.id) else firstSession?.let { openNow(it) }
+        if (pane != null) {
+            watch(pane.id)
+            showPane()
+        } else {
+            firstSession?.let { openNow(it) }
+        }
     }
 
     private suspend fun watch(pane: String) {
@@ -639,6 +666,11 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         // The pane stays watched in Pretty, so Raw is instant and pane-gone still arrives.
         val current = currentPane
         if (current != null && current.isAgentSide) session.follow(current.id) else session.unfollow()
+        rememberView()
+    }
+
+    private fun rememberView() {
+        currentSession?.id?.let { lastViews[it] = paneView }
     }
 
     // Pretty and Raw
@@ -667,15 +699,17 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             if (shellPane != null) add(PaneView.SHELL)
         }
 
-    fun show(view: PaneView) = scope.launch {
+    fun show(view: PaneView) = scope.launch { showNow(view) }
+
+    private suspend fun showNow(view: PaneView) {
         when (view) {
             PaneView.CHAT, PaneView.AGENT -> {
-                val agent = agentPane ?: return@launch
+                val agent = agentPane ?: return
                 if (agent.id != currentPane?.id) watch(agent.id)
                 setPretty(view == PaneView.CHAT)
             }
             PaneView.SHELL -> {
-                val shell = shellPane ?: return@launch
+                val shell = shellPane ?: return
                 if (shell.id != currentPane?.id) watch(shell.id)
             }
         }
@@ -692,6 +726,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         val pane = currentPane ?: return
         if (!canShowPretty) return
         rawPanes = if (pretty) rawPanes - pane.id else rawPanes + pane.id
+        rememberView()
         refocusPane()
     }
 
@@ -714,8 +749,8 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     var readerTarget: ReaderItem? = null
 
     /**
-     * Leaves the Inbox screen for the Reader of [item]'s pane, at [tab] or at [target]. Closing
-     * the Reader returns to the Inbox screen, on the same item.
+     * The Reader of [item]'s pane, at [tab] or at [target]. The pane is watched but not shown,
+     * so closing the Reader returns to the item (ADR 0035).
      */
     fun readItem(item: InboxItem, tab: ReaderTab, target: ReaderItem? = null) = scope.launch {
         val pane = item.pane ?: return@launch
@@ -723,9 +758,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             inboxError = "The pane of this question is gone. Open All Tasks to find its Task."
             return@launch
         }
-        returnToInbox = showTasks
-        showTasks = false
-        detailRequest++
         watch(pane)
         if (!canReadDocs) return@launch
         readerTab = if (tab in readerTabs) tab else ReaderTab.DOCS
@@ -766,7 +798,6 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
 
     fun closeReader() {
         showReader = false
-        if (returnToInbox && isConnected) { returnToInbox = false; showTasks = true }
         scope.launch {
             session.closeDocument()
             session.closeDiff()
@@ -855,12 +886,14 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     val canCreateTasks: Boolean get() = canShowTasks || canStartTasks
 
     /**
-     * Opens the New Task sheet in [repoDir], else the shown session's repo. A bridge with
-     * task records gets the record-based sheet.
+     * Opens the New Task sheet in [repoDir], else the shown pane's repo. Away from a pane the
+     * record-based sheet starts in the first workspace with no repo; the old sheet, for a bridge
+     * without task records, needs a repo and takes the first one known.
      */
     fun startNewTask(repoDir: String? = null) {
         if (!canCreateTasks) return
-        val dir = repoDir ?: currentSession?.repoDir ?: state.sessions.knownRepos.firstOrNull()?.dir ?: ""
+        val shown = currentSession?.repoDir?.takeIf { paneShown }
+        val dir = repoDir ?: shown ?: (if (canShowTasks) null else state.sessions.knownRepos.firstOrNull()?.dir) ?: ""
         val show: () -> Unit = if (canShowTasks) {
             { showRecordSheet(dir) }
         } else {
@@ -926,31 +959,10 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** The Tasks by Inbox group, from the records and their sessions' agent states. */
     val inbox: List<InboxSection> get() = inbox(state.tasks?.records.orEmpty(), state.sessions)
 
-    fun openTasks() {
-        if (!canShowTasks) return
-        showTasks = true
-        scope.launch {
-            runCatching { session.loadTasks() }
-            session.loadWork()
-        }
-    }
-
-    fun closeTasks() {
-        showTasks = false
-        scope.launch { if (isConnected) openDefaultPane() }
-        refocusPane()
-    }
-
-    /** Opens the New Task sheet in the first workspace, from the Tasks screen. */
-    fun startNewTaskRecord() {
-        val workspace = state.tasks?.workspaces?.firstOrNull()?.name ?: ""
-        newTaskRecord = TaskRecordDraft(workspace = workspace)
-    }
-
     /**
-     * Records the Task and shows it: in the Tasks screen when the sheet was opened there,
-     * else its session, as the old sheet did. A failed launch shows the Task's detail, with
-     * the note that says why. Throws only when nothing was recorded.
+     * Records the Task and shows it: its detail in Tasks mode, else its session. A failed
+     * launch shows the Task's detail, with the note that says why. Throws only when nothing
+     * was recorded.
      */
     suspend fun create(draft: TaskRecordDraft) {
         val req = draft.request ?: return
@@ -961,9 +973,10 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         }
         newTaskRecord = null
         val running = sessionOf(record)
-        if (showTasks || running == null) {
-            selectedTask = record.id
-            openTasks()
+        // From Tasks mode the new Task's detail; elsewhere its session, as the old sheet did.
+        if ((mode == SidebarMode.TASKS && !paneShown) || running == null) {
+            showTask(record.id)
+            refreshWork()
         } else {
             openNow(running)
         }
@@ -985,10 +998,8 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     suspend fun ask(workspace: String, repoDir: String) {
         val started = session.startSession(workspace, repoDir)
         newTaskRecord = null
-        showTasks = false
         val s = state.sessions.firstOrNull { it.id == started.session } ?: return
-        openNow(s)
-        show(PaneView.AGENT).join()
+        openNow(s, PaneView.AGENT)
     }
 
     /** Ask from a repo header: a failure lands in [askError]. */
@@ -1013,12 +1024,10 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** The session that runs [record], when it has one. */
     fun sessionOf(record: TaskRecord): Session? = state.sessions.runningTask(record)
 
-    /** Leaves the Tasks screen for the Task's session, in [view]: the terminal, or its Chat. */
+    /** The Task's session over its detail, in [view]: the terminal, or its Chat. */
     fun openTask(record: TaskRecord, view: PaneView) = scope.launch {
         val s = sessionOf(record) ?: return@launch
-        showTasks = false
-        openNow(s)
-        show(view).join()
+        openNow(s, view)
     }
 
     /** The bridge can restart a Task's agent with a handoff (ADR 0018). */
@@ -1072,14 +1081,12 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     }
 
     /**
-     * Leaves the Tasks screen for the Reader of the Task's session, at its changes or at [doc]:
-     * its brief, its handoff, or its last check.
+     * The Reader of the Task's session, at its changes or at [doc]: its brief, its handoff, or
+     * its last check. Closing it returns to the Task.
      */
     fun readTask(record: TaskRecord, tab: ReaderTab, doc: String = TASK_DOC) = scope.launch {
         val s = sessionOf(record) ?: return@launch
-        returnToInbox = showTasks
-        showTasks = false
-        openNow(s)
+        s.defaultPane?.let { watch(it.id) }
         if (!canReadDocs) return@launch
         readerTab = if (tab in readerTabs) tab else ReaderTab.DOCS
         // The brief is the document to open; the Reader opens the one last read here.
@@ -1100,10 +1107,17 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         }
     }
 
+    /** The banner opens the session's Inbox item when it has one, else its Chat (ADR 0008, 0035). */
     fun openAlert() = scope.launch {
         val shown = alert ?: return@launch
         alert = null
-        state.sessions.firstOrNull { it.id == shown.session }?.let { openNow(it) }
+        val s = state.sessions.firstOrNull { it.id == shown.session } ?: return@launch
+        val item = inboxItems.firstOrNull { (it.task != null && it.task == s.taskId) || it.session == s.id }
+        if (item != null) {
+            openItem(item.id)
+        } else {
+            openNow(s, PaneView.CHAT.takeIf { canChat(s) })
+        }
     }
 
     companion object {

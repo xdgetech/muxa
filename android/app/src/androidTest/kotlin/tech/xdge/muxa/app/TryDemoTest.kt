@@ -44,10 +44,15 @@ class TryDemoTest {
         // The list offers it, and so does the empty detail beside it on a tablet.
         compose.waitUntilAtLeastOneExists(hasTestTag("try-demo"), TIMEOUT)
         compose.onAllNodesWithTag("try-demo").onFirst().performClick()
-        if (context.model.phoneInbox) {
-            compose.waitUntilAtLeastOneExists(hasTestTag("inbox-list"), TIMEOUT)
-            compose.onNodeWithTag("tasks-done").performClick()
-        }
+        // The demo plays a host with Inbox items and starts on the list (ADR 0035), whose
+        // status row holds the way out.
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-row-i-5c000001"), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasTestTag("leave-demo"), TIMEOUT)
+        compose.onNodeWithTag("composer").assertDoesNotExist()
+        // The agent's question is answered in Chat.
+        compose.onNodeWithTag("item-row-i-5c000001").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-chat"), TIMEOUT)
+        compose.onNodeWithTag("item-chat").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("composer"), TIMEOUT)
         // Its agent waits: the waiting row once grew over the messages and the composer on a phone.
         compose.waitUntilAtLeastOneExists(hasTestTag("waiting"), TIMEOUT)
@@ -57,14 +62,13 @@ class TryDemoTest {
         assertTrue("the messages are $messages tall", messages > 120.dp)
         compose.onNodeWithTag("composer").assertIsDisplayed()
 
-        // A phone pushed the pane over the list; a tablet hid the list beside it.
-        val back = if (compose.onAllNodesWithTag("back").fetchSemanticsNodes().isNotEmpty()) "back" else "show-list"
-        compose.onAllNodesWithTag(back).onFirst().performClick()
-        compose.waitUntilAtLeastOneExists(hasTestTag("host-Demo"), TIMEOUT)
+        // A phone pushed the pane over the item; a tablet hid the list beside it.
+        repeat(2) { if (!compose.exists("leave-demo")) compose.showList() }
+        compose.waitUntilAtLeastOneExists(hasTestTag("leave-demo"), TIMEOUT)
         compose.onAllNodesWithTag("leave-demo").onFirst().performClick()
 
         compose.waitUntilAtLeastOneExists(hasTestTag("try-demo"), TIMEOUT)
-        assertFalse(compose.onAllNodesWithTag("host-Demo").fetchSemanticsNodes().isNotEmpty())
+        assertFalse(compose.exists("status-row"))
     }
 
     private companion object {

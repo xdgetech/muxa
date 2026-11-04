@@ -35,7 +35,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
-import tech.xdge.muxa.app.InboxPage
+import tech.xdge.muxa.app.SidebarMode
+import tech.xdge.muxa.app.paneItem
+import tech.xdge.muxa.app.selectMode
 import tech.xdge.muxa.app.InboxPrompt
 import tech.xdge.muxa.app.openItem
 import tech.xdge.muxa.protocol.InboxAction
@@ -43,54 +45,50 @@ import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.session.isUnread
 
 /**
- * The Inbox as a list of questions (ADR 0033), like a mail list: the question, then where it
- * comes from and its age. A dot marks unread. The host's order is kept. A swipe asks for Later.
+ * Inbox mode (ADR 0033, 0035), like a mail list: the question, then where it comes from and
+ * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe asks
+ * for Later. The row of what the detail shows is highlighted, also while its pane is shown.
  */
 @Composable
 fun ItemList(model: AppModel, modifier: Modifier) {
     val items = model.inboxItems
     val ids = items.map { it.id }
+    val highlighted = model.selectedItem ?: model.paneItem?.id ?: model.itemFocus
     // The focused item leaves the list when it is answered, here or on another device.
     LaunchedEffect(ids) { if (model.itemFocus !in ids) model.itemFocus = ids.firstOrNull() }
     LazyColumn(modifier.fillMaxWidth().testTag("inbox-list")) {
         if (!model.usesItems) {
-            item(key = "old-host") { OlderHost(model) }
+            item(key = "old-host") { InboxEmpty(model, OLDER_HOST, "inbox") }
         } else if (items.isEmpty()) {
-            item(key = "empty") {
-                Column(Modifier.fillMaxWidth().padding(32.dp).testTag("inbox-empty"), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Nothing needs you", style = MaterialTheme.typography.titleMedium)
-                    TextButton(
-                        {
-                            model.clearInboxSelection()
-                            model.inboxPage = InboxPage.TASKS
-                        },
-                        Modifier.testTag("inbox-all-tasks"),
-                    ) { Text("All Tasks") }
-                }
-            }
+            item(key = "empty") { InboxEmpty(model, NOTHING, "inbox") }
         }
         items(items, key = { it.id }) { item ->
-            ItemRowView(model, item, item.id == model.selectedItem || (model.selectedItem == null && item.id == model.itemFocus))
+            ItemRowView(model, item, item.id == highlighted)
             HorizontalDivider()
         }
     }
 }
 
-/** A host below `work` level 3 keeps no Inbox items (ADR 0033): say so, and offer the other lists. */
+/**
+ * An Inbox with nothing to show: empty, or a host below `work` level 3 (ADR 0033). It offers
+ * the other modes. [tag] tells the list's copy from the detail's.
+ */
 @Composable
-private fun OlderHost(model: AppModel) {
-    Column(Modifier.fillMaxWidth().padding(32.dp).testTag("inbox-old-host"), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(OLDER_HOST, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
-        TextButton(
-            {
-                model.clearInboxSelection()
-                model.inboxPage = InboxPage.TASKS
-            },
-            Modifier.testTag("inbox-all-tasks"),
-        ) { Text("All Tasks") }
-        TextButton(model::closeTasks, Modifier.testTag("inbox-sessions")) { Text("Sessions") }
+fun InboxEmpty(model: AppModel, text: String, tag: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(32.dp).testTag("$tag-empty"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton({ model.selectMode(SidebarMode.TASKS) }, Modifier.testTag("$tag-empty-tasks")) { Text("Tasks") }
+            TextButton({ model.selectMode(SidebarMode.SESSIONS) }, Modifier.testTag("$tag-empty-sessions")) { Text("Sessions") }
+        }
     }
 }
+
+const val NOTHING = "Nothing needs you"
 
 /** What the Inbox says on a host below `work` level 3. */
 const val OLDER_HOST = "This host needs a newer muxa-bridge for the Inbox. Update muxa on the host."
@@ -144,7 +142,7 @@ fun ItemRow(item: InboxItem, focused: Boolean, tag: String = "item-row-${item.id
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(8.dp).background(if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, CircleShape))
+        Box(Modifier.size(8.dp).background(if (unread) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent, CircleShape))
         Column(Modifier.weight(1f)) {
             Text(
                 item.question,

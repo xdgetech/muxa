@@ -1,5 +1,7 @@
 package tech.xdge.muxa.app.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,10 +30,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -42,7 +42,9 @@ import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.ReaderTab
 import tech.xdge.muxa.app.item
 import tech.xdge.muxa.app.itemSession
-import tech.xdge.muxa.app.openItemTerminal
+import tech.xdge.muxa.app.back
+import tech.xdge.muxa.app.itemHasChat
+import tech.xdge.muxa.app.openItemSession
 import tech.xdge.muxa.app.reader.ReaderItem
 import tech.xdge.muxa.app.reply
 import tech.xdge.muxa.app.setReply
@@ -69,12 +71,14 @@ fun ItemDetail(model: AppModel, id: String?, modifier: Modifier) {
             title = { Text(item?.kindTitle ?: "Inbox", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = {
                 if (LocalPhoneLayout.current && id != null) {
-                    IconButton({ model.selectedItem = null }, Modifier.testTag("item-back")) { Icon(Icons.back, "Inbox") }
+                    IconButton(model::back, Modifier.testTag("item-back")) { Icon(Icons.back, "Inbox") }
                 }
             },
         )
         when {
-            item == null -> Placeholder(if (model.inboxItems.isEmpty()) "Nothing needs you" else "Pick a question.")
+            !model.usesItems -> InboxEmpty(model, OLDER_HOST, "item")
+            item == null && model.inboxItems.isEmpty() -> InboxEmpty(model, NOTHING, "item")
+            item == null -> Placeholder("Pick a question.")
             !item.isWaiting(System.currentTimeMillis() / 1000) -> Placeholder("This question is answered.")
             else -> {
                 Column(
@@ -185,16 +189,38 @@ private fun AnswerBar(model: AppModel, item: InboxItem) {
                     OutlinedButton(onClick, tag, enabled = enabled) { Text(action.title(item)) }
                 }
             }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            SessionButtons(model, item)
             Box(Modifier.weight(1f))
             More(model, item, buttons.more, busy, text)
         }
     }
 }
 
+/**
+ * Chat and Terminal: the item's session over the item (ADR 0035). Chat answers an `ask`
+ * there; Terminal is the agent's terminal, where a `failure` is read. Chat shows only when
+ * the agent has it.
+ */
+@Composable
+private fun SessionButtons(model: AppModel, item: InboxItem) {
+    if (model.itemSession(item) == null) return
+    if (model.itemHasChat(item)) {
+        OutlinedButton({ model.openItemSession(item, AppModel.PaneView.CHAT) }, Modifier.testTag("item-chat")) {
+            Icon(Icons.chat, null)
+            Text("Chat", Modifier.padding(start = 6.dp))
+        }
+    }
+    OutlinedButton({ model.openItemSession(item, AppModel.PaneView.AGENT) }, Modifier.testTag("item-terminal")) {
+        Icon(Icons.agent, null)
+        Text("Terminal", Modifier.padding(start = 6.dp))
+    }
+}
+
 @Composable
 private fun More(model: AppModel, item: InboxItem, actions: List<InboxAction>, busy: Boolean, text: String) {
-    val terminal = model.itemSession(item)
-    if (actions.isEmpty() && terminal == null) return
+    if (actions.isEmpty()) return
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton({ open = true }, Modifier.testTag("item-more")) { Icon(Icons.more, "More") }
@@ -208,16 +234,6 @@ private fun More(model: AppModel, item: InboxItem, actions: List<InboxAction>, b
                     },
                     Modifier.testTag("item-more-${action.wire}"),
                     enabled = !busy && (!action.needsText || text.isNotBlank()),
-                )
-            }
-            if (terminal != null) {
-                DropdownMenuItem(
-                    { Text("Open Terminal") },
-                    {
-                        open = false
-                        model.openItemTerminal(item)
-                    },
-                    Modifier.testTag("item-more-terminal"),
                 )
             }
         }

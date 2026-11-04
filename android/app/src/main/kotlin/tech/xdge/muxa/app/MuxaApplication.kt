@@ -38,7 +38,8 @@ class MuxaApplication : Application() {
         // Every window shares the saved hosts and the device key, never a connection.
         val hosts = HostStore(File(filesDir, "hosts.json"))
         val keys = ClientKeyStore(this)
-        windows = Windows { AppModel(MainScope(), hosts, keys) }
+        val modes = ModeStore(this)
+        windows = Windows { AppModel(MainScope(), hosts, keys, modes) }
         ProcessLifecycleOwner.get().lifecycle.addObserver(Foreground())
     }
 

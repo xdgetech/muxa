@@ -1,5 +1,7 @@
 package tech.xdge.muxa.app.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -30,11 +32,9 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -42,6 +42,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.app.Selection
+import tech.xdge.muxa.app.SidebarMode
+import tech.xdge.muxa.app.back
+import tech.xdge.muxa.app.canGoBack
+import tech.xdge.muxa.app.layoutChanged
+import tech.xdge.muxa.app.openItem
 import tech.xdge.muxa.app.shortcut
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.semantics.semantics
@@ -54,26 +60,25 @@ import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.PaneSession
 
 /**
- * Hosts and sessions in the list, the pane in the detail. On a tablet the list hides
- * once a pane is open, so the pane gets the full width. On a phone the two are a
- * stack, and an open pane is pushed (ADR 0012, 0013).
+ * The sidebar shows one mode; the detail shows what it selects: an Inbox item, a Task, the
+ * Routines, or a session's pane (ADR 0035). On a tablet the sidebar hides while a pane is
+ * shown, so the pane gets the full width. On a phone the two are a stack: a selection is
+ * pushed, and Back returns where the user came from (ADR 0012, 0013).
  */
 @Composable
 fun Root(model: AppModel) {
     val layout = currentWindowLayout()
     val phone = layout == WindowLayout.Phone
-    model.phoneInbox = phone
     val paneKeys = remember { PaneKeys() }
-    var showList by remember { mutableStateOf(true) }
     var editing by remember { mutableStateOf<HostDraft?>(null) }
-    val paneOpen = model.isConnected && model.state.watchedPane != null
+    val paneOpen = model.isConnected && model.paneShown && model.state.watchedPane != null
 
-    LaunchedEffect(model.state.watchedPane, model.isConnected) {
-        if (paneOpen) showList = false
-    }
-    LaunchedEffect(model.detailRequest) { if (model.detailRequest > 0) showList = false }
-    LaunchedEffect(model.isConnected) {
-        if (!model.isConnected) { showList = true; model.showTasks = false }
+    LaunchedEffect(phone) { model.layoutChanged(phone) }
+    LaunchedEffect(model.isConnected) { if (!model.isConnected) model.listShown = true }
+    // Beside the list the first item is selected, as the next one is after an answer.
+    val first = model.inboxItems.firstOrNull()?.id
+    LaunchedEffect(phone, model.mode, model.selection, model.paneShown, first) {
+        if (!phone && model.mode == SidebarMode.INBOX && model.selection == null && !model.paneShown && first != null) model.openItem(first)
     }
 
     CompositionLocalProvider(
@@ -90,21 +95,21 @@ fun Root(model: AppModel) {
             val list = @Composable { modifier: Modifier ->
                 // In the book posture the list always shows: nothing to hide.
                 val canHide = paneOpen && layout !is WindowLayout.Book
-                Sidebar(model, onEdit = { editing = it }, onHide = { showList = false }.takeIf { canHide }, modifier = modifier)
+                Sidebar(model, onEdit = { editing = it }, onHide = { model.listShown = false }.takeIf { canHide }, modifier = modifier)
             }
             // Moved, not rebuilt, when a fold or a resize changes the layout: the pane view
             // keeps its screen and the keyboard, as SwiftUI moves it on iOS.
             val detail = remember {
                 movableContentOf { modifier: Modifier ->
                     Box(modifier) {
-                        Detail(model, onEdit = { editing = it }, onShowList = { showList = true })
+                        Detail(model, onEdit = { editing = it })
                         AlertOverlay(model)
                     }
                 }
             }
             val split = @Composable { modifier: Modifier ->
                 Row(modifier) {
-                    AnimatedVisibility(showList) {
+                    AnimatedVisibility(model.listShown) {
                         Row {
                             list(Modifier.width(320.dp).fillMaxHeight())
                             VerticalDivider()
@@ -116,11 +121,11 @@ fun Root(model: AppModel) {
             when (layout) {
                 WindowLayout.Phone -> {
                     // A stack: the list, or the detail pushed over it.
-                    if (showList) list(Modifier.fillMaxSize()) else detail(Modifier.fillMaxSize())
-                    BackHandler(enabled = !showList) { showList = true }
+                    if (model.listShown) list(Modifier.fillMaxSize()) else detail(Modifier.fillMaxSize())
+                    BackHandler(enabled = model.canGoBack) { model.back() }
                 }
                 WindowLayout.Tablet -> split(Modifier.fillMaxSize())
-                // Half open like a book: the list on one side of the hinge, the pane on the other.
+                // Half open like a book: the list on one side of the hinge, the detail on the other.
                 is WindowLayout.Book -> Row(Modifier.fillMaxSize()) {
                     list(Modifier.width(layout.listWidth.dp).fillMaxHeight())
                     Spacer(Modifier.width(layout.gap.dp))
@@ -131,12 +136,14 @@ fun Root(model: AppModel) {
                     split(Modifier.height(layout.topHeight.dp).fillMaxWidth())
                     Spacer(Modifier.height(layout.gap.dp))
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-                        paneKeys.view?.takeIf { !model.showsPretty }?.let { view -> KeyBarRow(paneKeys.bar) { view.tap(it) } }
+                        paneKeys.view?.takeIf { paneOpen && !model.showsPretty }?.let { view -> KeyBarRow(paneKeys.bar) { view.tap(it) } }
                     }
                 }
             }
         }
 
+        // Before the host editor, so the editor opens over Settings.
+        if (model.showSettings) SettingsScreen(model, onEdit = { editing = it })
         editing?.let { draft -> HostEditor(model, draft, onDismiss = { editing = null; model.refocusPane() }) }
         model.untrustedKey?.let { key -> TrustHostDialog(model, key) }
         if (model.showSwitcher) {
@@ -163,20 +170,40 @@ fun Root(model: AppModel) {
                 confirmButton = { TextButton({ model.askError = null; model.refocusPane() }) { Text("OK") } },
             )
         }
-        if (model.showTasks) TasksScreen(model)
+        TaskDialogs(model)
         if (model.showReader) ReaderScreen(model)
-        // After the Tasks screen, so the sheet opens over it too.
+        // After the Reader, so the sheet opens over it too.
         model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }
     }
 }
 
-/** The pane when one is open; otherwise what to do next. */
+/** The Inbox's and the Tasks' questions and failures, over whatever shows. */
 @Composable
-private fun Detail(model: AppModel, onEdit: (HostDraft) -> Unit, onShowList: () -> Unit) {
+private fun TaskDialogs(model: AppModel) {
+    InboxDialogs(model)
+    model.taskError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { model.taskError = null },
+            title = { Text("Can't Change the Task") },
+            text = { Text(error, Modifier.testTag("task-error-message")) },
+            confirmButton = { TextButton({ model.taskError = null }) { Text("OK") } },
+        )
+    }
+    RestartAgentDialog(model)
+    RestartErrorDialog(model)
+    StartLoopDialog(model)
+    LoopErrorDialog(model)
+}
+
+/** The shown pane; else what the selection or the mode shows; else what to do next. */
+@Composable
+private fun Detail(model: AppModel, onEdit: (HostDraft) -> Unit) {
     val host = model.currentHost
     val reason = (model.state.phase as? PaneSession.Phase.Disconnected)?.reason?.takeIf { it != "disconnected" }
+    val phone = LocalPhoneLayout.current
+    val onShowList = { if (phone) model.back() else model.listShown = true }
     when {
-        model.isConnected && model.state.watchedPane != null -> PaneScreen(model, onShowList)
+        model.isConnected && model.paneShown && model.state.watchedPane != null -> PaneScreen(model, onShowList)
         model.addingKey && host != null -> Progress("Adding this device's key to ${host.title}…")
         model.connecting && host != null -> Progress("Connecting to ${host.title}…")
         (model.connectError ?: reason) != null && host != null -> Unavailable(
@@ -201,7 +228,7 @@ private fun Detail(model: AppModel, onEdit: (HostDraft) -> Unit, onShowList: () 
                 }
             }
         }
-        model.isConnected -> Unavailable("No Sessions", "No tmux session on this host has a pane to show.", onShowList)
+        model.isConnected -> ModeDetail(model, onShowList)
         model.hostList.hosts.isEmpty() -> Unavailable(
             "Add a Host",
             "Muxa connects over SSH to the Mac or Linux machine where your tmux sessions run. Install muxa-bridge there first.",
@@ -212,7 +239,28 @@ private fun Detail(model: AppModel, onEdit: (HostDraft) -> Unit, onShowList: () 
             OutlinedButton({ model.tryDemo() }, Modifier.testTag("try-demo")) { Text("Try the Demo") }
             TextButton({ uri.openUri(HOST_SETUP) }) { Text("How to Set Up the Host") }
         }
-        else -> Unavailable("Not Connected", "Pick a host in the list.", onShowList)
+        else -> Unavailable("Not Connected", "Connect to a host from the list, or pick one in Settings.", onShowList)
+    }
+}
+
+/** The selection's screen, else the mode's own: the first item, "Pick a Task.", or a hint. */
+@Composable
+private fun ModeDetail(model: AppModel, onShowList: () -> Unit) {
+    val full = Modifier.fillMaxSize()
+    when (val selection = model.selection) {
+        is Selection.Item -> ItemDetail(model, selection.id, full)
+        is Selection.Task -> TaskDetail(model, model.state.tasks?.record(selection.id), full)
+        Selection.Routines -> RoutineList(model, full)
+        is Selection.Routine -> RoutineDetail(model, selection.key, full)
+        null -> when (model.mode) {
+            SidebarMode.INBOX -> ItemDetail(model, null, full)
+            SidebarMode.TASKS -> TaskDetail(model, null, full)
+            SidebarMode.SESSIONS -> if (model.paneSessions.isEmpty()) {
+                Unavailable("No Sessions", "No tmux session on this host has a pane to show.", onShowList)
+            } else {
+                Unavailable("Sessions", "Pick a session in the list.", onShowList)
+            }
+        }
     }
 }
 
@@ -238,7 +286,7 @@ private fun Unavailable(title: String, text: String, onShowList: () -> Unit, act
         Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
         Text(text, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
         actions()
-        if (phone) TextButton(onShowList) { Text("Hosts") }
+        if (phone) TextButton(onShowList) { Text("List") }
     }
 }
 

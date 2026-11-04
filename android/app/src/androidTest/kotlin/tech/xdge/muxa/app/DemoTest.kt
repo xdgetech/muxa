@@ -47,13 +47,12 @@ class DemoTest {
     private var scenario: ActivityScenario<MainActivity>? = null
 
     private fun launch(alerts: Boolean = false, taskRecords: Boolean = true) {
-        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        val intent = Intent(context, MainActivity::class.java)
-            .putExtra(MainActivity.EXTRA_DEMO, true)
+        // Sessions mode shows the default pane at connect (ADR 0035).
+        val intent = demoIntent()
             .putExtra(MainActivity.EXTRA_DEMO_ALERTS, alerts)
             .putExtra(MainActivity.EXTRA_NO_TASK_RECORDS, !taskRecords)
         scenario = ActivityScenario.launch(intent)
-        compose.leaveInitialInbox()
+        compose.waitForInitialPane()
     }
 
     @After
@@ -260,15 +259,16 @@ class DemoTest {
         compose.waitUntilAtLeastOneExists(hasText("1 of 2"), TIMEOUT)
     }
 
+    /** The banner opens the Task's Inbox item, the thing to decide (ADR 0008, 0035). */
     @Test
     fun aWaitingAgentElsewhereIsAnnounced() {
         launch(alerts = true)
         waitForTag("agent-alert")
         compose.onNodeWithText("fix-login: needs your input", substring = true).assertExists()
         compose.onNodeWithTag("agent-alert").performClick()
-        // The bar's title, not the banner's own text, which also names the session.
         compose.waitUntilDoesNotExist(hasTestTag("agent-alert"), TIMEOUT)
-        compose.waitUntilAtLeastOneExists(hasText("fix-login", substring = false), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-question") and hasText("Ready for review: Fix the login redirect"), TIMEOUT)
+        compose.onNodeWithTag("composer").assertDoesNotExist()
     }
 
     /** On a bridge without task records, Ctrl+Shift+N opens the old sheet: a failure stays in it. */

@@ -24,6 +24,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
@@ -32,7 +33,7 @@ import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.ItemState
 import tech.xdge.muxa.protocol.TaskStatus
 
-/** The Inbox as a list of questions (ADR 0033), against the demo's items at `work` level 3. */
+/** Inbox mode (ADR 0033, 0035), against the demo's items at `work` level 3. */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class ItemListTest {
@@ -46,16 +47,14 @@ class ItemListTest {
         scenario?.close()
     }
 
-    /** Opens the demo on the Inbox: a phone opens there by itself, a tablet through More. */
+    /** Opens the demo in Inbox mode: the sidebar is the list, on every layout (ADR 0035). */
     private fun launchOnInbox() {
-        val context = ApplicationProvider.getApplicationContext<MuxaApplication>()
-        scenario = ActivityScenario.launch(Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_DEMO, true))
-        compose.waitUntil(TIMEOUT) { exists("inbox-list") || exists("composer") }
-        if (!exists("inbox-list")) {
-            click("more")
-            click("menu-tasks")
-        }
+        scenario = ActivityScenario.launch(demoIntent(SidebarMode.INBOX))
         waitForTag(row(ASK))
+    }
+
+    private fun paneShows(text: String) = SemanticsMatcher("pane shows \"$text\"") {
+        it.config.getOrNull(SemanticsProperties.StateDescription)?.contains(text) == true
     }
 
     private fun exists(tag: String) = compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
@@ -174,6 +173,97 @@ class ItemListTest {
         waitForTag("item-retry")
         key(KeyEvent.KEYCODE_ENTER)
         compose.waitUntil(TIMEOUT) { item(FAILURE).answer == InboxAction.RETRY }
+    }
+
+    /**
+     * At connect Inbox mode stays on its list, with no pane: a phone shows the list itself, a
+     * tablet the first item beside it (ADR 0035).
+     */
+    @Test
+    fun inboxModeStaysOnTheListAtConnect() {
+        launchOnInbox()
+        compose.waitUntil(TIMEOUT) { model.isConnected && !model.connecting }
+        waitForTag("inbox-list")
+        assertFalse(model.paneShown)
+        compose.onNodeWithTag("composer").assertDoesNotExist()
+        if (!model.phoneLayout) compose.waitUntil(TIMEOUT) { model.selectedItem == ASK }
+        waitForTag("status-row")
+    }
+
+    /** Terminal shows the agent's terminal over the item; its row stays highlighted, and Back returns to it. */
+    @Test
+    fun terminalOpensTheAgentPaneAndReturnsToTheItem() {
+        launchOnInbox()
+        click(row(ASK))
+        click("item-terminal")
+        compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %1 100x30"), TIMEOUT)
+        compose.onNodeWithTag("composer").assertDoesNotExist()
+        assertEquals(AppModel.PaneView.AGENT, model.paneView)
+        assertEquals(ASK, model.paneItem?.id)
+        if (model.phoneLayout) {
+            click("back")
+            waitForText("item-question", "Allow Bash: rm -rf build")
+            click("item-back")
+            waitForTag("inbox-list")
+        } else {
+            click("show-list")
+            waitForTag(row(ASK))
+            assertEquals(ASK, model.selectedItem)
+        }
+    }
+
+    /** Chat answers an `ask` in the agent's conversation. */
+    @Test
+    fun chatOpensTheAgentsChat() {
+        launchOnInbox()
+        click(row(ASK))
+        click("item-chat")
+        waitForTag("composer")
+        assertEquals(AppModel.PaneView.CHAT, model.paneView)
+    }
+
+    /** Evidence opens the Reader of the item's pane; closing it returns to the item, not the pane. */
+    @Test
+    fun evidenceOpensTheReaderAndReturnsToTheItem() {
+        launchOnInbox()
+        click(row(REVIEW))
+        click("item-doc-docs/design.md")
+        waitForTag("reader")
+        click(if (exists("reader-done")) "reader-done" else "reader-close")
+        waitForText("item-question", "Ready for review: Fix the login redirect")
+        assertFalse(model.paneShown)
+    }
+
+    /** Ctrl+Shift+O opens the focused item's terminal. */
+    @Test
+    fun ctrlShiftOOpensTheItemsTerminal() {
+        launchOnInbox()
+        compose.waitUntil(TIMEOUT) { model.itemFocus == ASK }
+        key(KeyEvent.KEYCODE_O)
+        compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %1 100x30"), TIMEOUT)
+    }
+
+    /** Ctrl+Shift+L, S and T pick Tasks, Sessions and Inbox; Ctrl+Shift+0 shows or hides the sidebar beside the pane. */
+    @Test
+    fun keysPickTheModes() {
+        launchOnInbox()
+        key(KeyEvent.KEYCODE_L)
+        waitForTag("task-list")
+        assertEquals(SidebarMode.TASKS, model.mode)
+        key(KeyEvent.KEYCODE_S)
+        waitForTag("session-list")
+        key(KeyEvent.KEYCODE_T)
+        waitForTag("inbox-list")
+        assertEquals(SidebarMode.INBOX, model.mode)
+        if (!model.phoneLayout) {
+            click(row(ASK))
+            click("item-terminal")
+            compose.waitUntil(TIMEOUT) { !model.listShown }
+            key(KeyEvent.KEYCODE_0)
+            waitForTag("inbox-list")
+            key(KeyEvent.KEYCODE_0)
+            compose.waitUntilDoesNotExist(hasTestTag("inbox-list"), TIMEOUT)
+        }
     }
 
     private fun key(code: Int, chord: Boolean = true) {

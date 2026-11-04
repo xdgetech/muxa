@@ -10,6 +10,9 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.AddBox
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -35,7 +38,6 @@ import androidx.compose.material.icons.filled.DisabledByDefault
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
@@ -79,4 +81,7 @@ object Icons {
     val later = Material.Filled.Schedule
     val check = Material.Filled.Check
     val run = Material.Filled.PlayArrow
+    val settings = Material.Filled.Settings
+    val moveUp = Material.Filled.ArrowUpward
+    val moveDown = Material.Filled.ArrowDownward
 }
