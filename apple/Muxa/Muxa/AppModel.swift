@@ -101,7 +101,7 @@ final class AppModel {
         return session.taskRecords.triageQueue(sessions: session.sessions).filter { inboxSnoozes[$0.id] == $0.attentionKey }.count
     }
     /// The Task needs in the host's order, without the ones snoozed on this device.
-    var inboxQueue: [InboxItem] {
+    var inboxQueue: [MuxaSession.InboxItem] {
         let queue = session.taskRecords.triageQueue(sessions: session.sessions)
         return session.canPlaceTasks ? queue : queue.filter { inboxSnoozes[$0.id] != $0.attentionKey }
     }
@@ -758,7 +758,7 @@ final class AppModel {
     /// The task records by Inbox group, with the sessions that run them.
     var inbox: [InboxSection] { session.taskRecords.inbox(sessions: session.sessions) }
 
-    func inboxItem(_ id: String) -> InboxItem? {
+    func inboxItem(_ id: String) -> MuxaSession.InboxItem? {
         inbox.lazy.flatMap(\.items).first { $0.id == id }
     }
 
@@ -784,7 +784,7 @@ final class AppModel {
     static let checkFile = ".muxa/CHECK.md"
 
     /// Closes the Tasks sheet, then opens the task's session as asked.
-    func open(_ item: InboxItem, as opening: TaskOpening, returnToDetail: Bool = false) {
+    func open(_ item: MuxaSession.InboxItem, as opening: TaskOpening, returnToDetail: Bool = false) {
         guard let s = item.session else { return }
         if opening == .taskFile || opening == .checkFile || opening == .changes || opening == .handoffFile {
             returnToInbox = true

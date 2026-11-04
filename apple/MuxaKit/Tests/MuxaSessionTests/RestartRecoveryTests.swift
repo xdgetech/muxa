@@ -20,10 +20,10 @@ struct RecoveryActionTests {
     @Test func interruptedRunDoesNotClaimToBeRunning() {
         var record = InboxTests.record("a")
         record.runs = [AgentRun(id: 1, startedAt: 1, reason: .restart, worker: "Reviewer", outcome: "unconfirmed")]
-        let item = InboxItem(record: record, sessions: [InboxTests.session("a", .running)])
+        let item = MuxaSession.InboxItem(record: record, sessions: [InboxTests.session("a", .running)])
         #expect(item.runLines(now: 3).first?.detail.hasSuffix("unconfirmed outcome") == true)
         record.runs[0].outcome = "future"
-        #expect(InboxItem(record: record, sessions: []).runLines(now: 3).first?.detail.hasSuffix("unknown outcome") == true)
+        #expect(MuxaSession.InboxItem(record: record, sessions: []).runLines(now: 3).first?.detail.hasSuffix("unknown outcome") == true)
     }
 }
 

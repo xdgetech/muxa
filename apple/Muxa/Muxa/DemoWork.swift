@@ -66,6 +66,8 @@ struct DemoWork: Sendable {
             }
             entries[i].disposition = "later"
             entries[i].until = until
+        default:
+            throw Refusal(.badRequest, "\(action.rawValue) is not an entry's action")
         }
         return (entries[i], nil)
     }

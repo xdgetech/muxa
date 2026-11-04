@@ -8,7 +8,7 @@ import SwiftUI
 /// The task's loop as its record says, and the buttons that start or stop it.
 struct LoopSection: View {
     @Environment(AppModel.self) private var model
-    let item: InboxItem
+    let item: MuxaSession.InboxItem
     @Binding var starting: LoopStart?
     @Binding var error: String?
     @State private var stopping = false

@@ -80,9 +80,19 @@ data class SourceLink(val url: String, val title: String? = null)
 @Serializable
 data class Proposal(val action: String, val target: String, val content: String, val hash: String)
 
+/** An answer in `update-inbox`. Level 1 has `approve`, `dismiss` and `later`; the rest are Inbox items' answers (level 3, ADR 0033). */
 @Serializable
 enum class InboxAction {
     @SerialName("approve") APPROVE,
     @SerialName("dismiss") DISMISS,
     @SerialName("later") LATER,
+    @SerialName("reject") REJECT,
+    @SerialName("choose") CHOOSE,
+    @SerialName("accept") ACCEPT,
+    @SerialName("keep-open") KEEP_OPEN,
+    @SerialName("redo") REDO,
+    @SerialName("change-course") CHANGE_COURSE,
+    @SerialName("retry") RETRY,
+    @SerialName("drop") DROP,
+    @SerialName("read") READ,
 }

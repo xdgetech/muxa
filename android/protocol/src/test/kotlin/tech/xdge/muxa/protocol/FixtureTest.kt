@@ -137,6 +137,62 @@ class FixtureTest {
         val inbox = Wire.decodeMessage(messages[3]) as Message.InboxList
         assertEquals(listOf("open", "later"), inbox.entries.map { it.disposition })
         assertEquals(InboxAction.LATER, (Wire.decodeRequest(requests[5]) as Request.UpdateInbox).action)
+        assertEquals(emptyList<InboxItem>(), inbox.items)
+    }
+
+    @Test
+    fun itemContractRoundTrips() {
+        val requests = lines("items/requests.jsonl")
+        assertEquals(13, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("items/messages.jsonl")
+        assertEquals(4, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        assertEquals(WORK_ITEMS, workLevel((Wire.decodeMessage(messages[0]) as Message.Hello).capabilities))
+        val list = Wire.decodeMessage(messages[1]) as Message.InboxList
+        assertEquals(emptyList<InboxEntry>(), list.entries)
+        assertEquals(
+            listOf(ItemKind.ASK, ItemKind.REVIEW, ItemKind.FAILURE, ItemKind.PROPOSAL, ItemKind.REVIEW, ItemKind.ASK),
+            list.items.map { it.kind },
+        )
+        assertEquals(
+            listOf(ItemState.OPEN, ItemState.OPEN, ItemState.LATER, ItemState.OPEN, ItemState.ANSWERED, ItemState.RESOLVED),
+            list.items.map { it.state },
+        )
+        assertEquals(
+            listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
+            list.items[1].answers,
+        )
+        assertEquals(ChangeCount(files = 4, added = 120, removed = 40, scope = "branch"), list.items[1].attachments.changes)
+        assertEquals(InboxAction.ACCEPT, list.items[4].answer)
+        assertEquals(emptyList<InboxAction>(), list.items[4].answers)
+        val itemOnly = Wire.decodeMessage(messages[2]) as Message.InboxSaved
+        assertEquals(null, itemOnly.entry)
+        assertEquals(ItemState.ANSWERED, itemOnly.item?.state)
+        val both = Wire.decodeMessage(messages[3]) as Message.InboxSaved
+        assertEquals(both.entry?.id, both.item?.id)
+        val choose = Wire.decodeRequest(requests[3]) as Request.UpdateInbox
+        assertEquals(InboxAction.CHOOSE to 1, choose.action to choose.option)
+        val redo = Wire.decodeRequest(requests[6]) as Request.UpdateInbox
+        assertEquals(InboxAction.REDO, redo.action)
+        assertFalse(redo.text.isNullOrEmpty())
+    }
+
+    @Test
+    fun unknownItemKindsStatesAndAnswersStillDecode() {
+        val line = """{"type":"inbox-list","inbox":1,"entries":[],"items":[{"id":"i-00000001","kind":"handoff",""" +
+            """"state":"snoozed","question":"q","workspace":"w","title":"t","createdAt":1,"answer":"escalate",""" +
+            """"answers":["accept","escalate","later"]}]}"""
+        val item = (Wire.decodeMessage(line) as Message.InboxList).items.single()
+        assertEquals(ItemKind("handoff"), item.kind)
+        assertEquals(ItemState("snoozed"), item.state)
+        assertEquals(null, item.answer)
+        assertEquals(listOf(InboxAction.ACCEPT, InboxAction.LATER), item.answers)
+        assertEquals(Attachments(), item.attachments)
     }
 
     @Test

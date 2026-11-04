@@ -755,11 +755,14 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries):
+        case .inboxList(let id, let entries, _):
             inboxListings[id] = entries
-        case .inboxSaved(let id, let entry):
+        case .inboxSaved(let id, let entry?, _):
             savedEntries[id] = entry
             keep(entry)
+        case .inboxSaved:
+            // A Task's item has no entry; nothing reads items yet.
+            break
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):

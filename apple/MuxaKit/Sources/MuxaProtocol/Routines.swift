@@ -171,6 +171,13 @@ public struct Proposal: Codable, Equatable, Sendable {
     }
 }
 
+/// An answer in `update-inbox`. Level 1 has `approve`, `dismiss` and `later`;
+/// the rest are Inbox items' answers (level 3, ADR 0033).
 public enum InboxAction: String, Codable, Sendable {
     case approve, dismiss, later
+    case reject, choose, accept
+    case keepOpen = "keep-open"
+    case redo
+    case changeCourse = "change-course"
+    case retry, drop, read
 }

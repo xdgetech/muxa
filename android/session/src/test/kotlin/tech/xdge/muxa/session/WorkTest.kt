@@ -97,6 +97,7 @@ private class WorkBridge : FakeBridge() {
             }
             InboxAction.DISMISS -> current.copy(disposition = "dismissed")
             InboxAction.LATER -> current.copy(disposition = "later", until = req.until)
+            else -> return refuse(req.id, ErrorCode.BAD_REQUEST, "not an entry's action")
         }
         entries = entries.map { if (it.id == saved.id) saved else it }
         emit(Message.InboxSaved(req.id, saved))

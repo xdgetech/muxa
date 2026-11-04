@@ -917,9 +917,10 @@ class PaneSession(
                 keep(message.entry)
             }
             is Message.InboxList -> inboxListings[message.inbox] = message.entries
-            is Message.InboxSaved -> {
-                savedEntries[message.inbox] = message.entry
-                keep(message.entry)
+            // A Task's item has no entry; nothing reads items yet.
+            is Message.InboxSaved -> message.entry?.let {
+                savedEntries[message.inbox] = it
+                keep(it)
             }
             is Message.SessionStarted -> startedSessions[message.start] = message
             is Message.Unknown -> {}

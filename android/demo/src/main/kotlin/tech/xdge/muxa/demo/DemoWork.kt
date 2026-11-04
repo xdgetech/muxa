@@ -75,6 +75,7 @@ internal class DemoWork(
                 }
                 entry.copy(disposition = "later", until = until)
             }
+            else -> throw Refusal(ErrorCode.BAD_REQUEST, "$action is not an entry's action")
         }
         entries = entries.map { if (it.id == id) saved else it }
         return Update(saved, null)

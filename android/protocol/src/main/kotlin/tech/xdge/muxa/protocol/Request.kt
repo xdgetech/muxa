@@ -120,9 +120,19 @@ sealed interface Request {
     /** The stored Inbox entries (capability `work` level 1); an `inbox-list` comes first. */
     @Serializable data class ListInbox(override val id: Long) : Request
 
-    /** Approve, dismiss or defer a stored entry; [until] goes with `later`. An `inbox-saved` comes first. */
+    /**
+     * Answer a stored entry or an Inbox item (its `i-` id). [until] goes with `later`, [text] with `redo` and
+     * `change-course`, [option] with `choose`. An `inbox-saved` comes first.
+     */
     @Serializable
-    data class UpdateInbox(override val id: Long, val entry: String, val action: InboxAction, val until: Long? = null) : Request
+    data class UpdateInbox(
+        override val id: Long,
+        val entry: String,
+        val action: InboxAction,
+        val until: Long? = null,
+        val text: String? = null,
+        val option: Int? = null,
+    ) : Request
 
     /**
      * An agent session in a repo's main checkout, to ask about its code: no Task, no

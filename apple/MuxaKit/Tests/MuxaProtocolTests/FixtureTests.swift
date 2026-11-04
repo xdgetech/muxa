@@ -125,11 +125,64 @@ struct FixtureTests {
         #expect(workLevel(capabilities) == workRoutines)
         #expect(workLevel(["work:2", "work:x", "workers"]) == 2)
         #expect(workLevel(["task-records"]) == 0)
-        guard case .inboxList(_, let entries) = try Wire.decodeMessage(messages[3]) else {
+        guard case .inboxList(_, let entries, let items) = try Wire.decodeMessage(messages[3]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(entries.map(\.disposition) == ["open", "later"])
         #expect(entries[0].proposal?.hash.hasPrefix("sha256:") == true)
+        #expect(items.isEmpty)
+    }
+
+    @Test func itemContractRoundTrips() throws {
+        let requests = try Self.lines("items/requests.jsonl")
+        #expect(requests.count == 13)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("items/messages.jsonl")
+        #expect(messages.count == 4)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workItems)
+        guard case .inboxList(_, let entries, let items) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(entries.isEmpty)
+        #expect(items.map(\.kind) == [.ask, .review, .failure, .proposal, .review, .ask])
+        #expect(items.map(\.state) == [.open, .open, .later, .open, .answered, .resolved])
+        #expect(items[1].answers == [.accept, .redo, .changeCourse, .keepOpen, .later])
+        #expect(items[1].attachments.changes == ChangeCount(files: 4, added: 120, removed: 40, scope: "branch"))
+        #expect(items[4].answer == .accept && items[4].answers.isEmpty)
+        guard case .inboxSaved(_, nil, let item?) = try Wire.decodeMessage(messages[2]) else {
+            Issue.record("expected inbox-saved with an item only"); return
+        }
+        #expect(item.state == .answered)
+        guard case .inboxSaved(_, let entry?, let both?) = try Wire.decodeMessage(messages[3]) else {
+            Issue.record("expected inbox-saved with an entry and an item"); return
+        }
+        #expect(entry.id == both.id)
+        guard case .updateInboxEntry(_, _, .choose, nil, nil, 1?) = try Wire.decodeRequest(requests[3]) else {
+            Issue.record("expected choose with option 1"); return
+        }
+        guard case .updateInboxEntry(_, _, .redo, nil, let text?, nil) = try Wire.decodeRequest(requests[6]) else {
+            Issue.record("expected redo with text"); return
+        }
+        #expect(!text.isEmpty)
+    }
+
+    @Test func unknownItemKindsStatesAndAnswersStillDecode() throws {
+        let json = #"{"id":"i-00000001","kind":"handoff","state":"snoozed","question":"q","workspace":"w","title":"t","#
+            + #""createdAt":1,"answer":"escalate","answers":["accept","escalate","later"]}"#
+        let item = try JSONDecoder().decode(InboxItem.self, from: Data(json.utf8))
+        #expect(item.kind == .other("handoff"))
+        #expect(item.state == .other("snoozed"))
+        #expect(item.answer == nil)
+        #expect(item.answers == [.accept, .later])
+        #expect(item.attachments.isEmpty)
     }
 
     @Test func restartRecoveryRoundTrips() throws {

@@ -346,7 +346,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .updateInboxEntry(let id, let entry, let action, let until):
+        case .updateInboxEntry(let id, let entry, let action, let until, _, _):
             updateEntry(id: id, entry: entry, action: action, until: until)
         default:
             unsupported(req.id, Self.noRequest)

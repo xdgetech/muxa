@@ -78,8 +78,9 @@ public enum Request: Equatable, Sendable {
     case runRoutine(id: UInt64, workspace: String, routine: String)
     /// The stored Inbox entries (capability `work` level 1).
     case listInbox(id: UInt64)
-    /// Approve, dismiss or defer a stored entry; `until` goes with `later`.
-    case updateInboxEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?)
+    /// Answer a stored entry or an Inbox item (its `i-` id). `until` goes with
+    /// `later`, `text` with `redo` and `change-course`, `option` with `choose`.
+    case updateInboxEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil)
     /// An agent session in a repo's main checkout, to ask about its code: no
     /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as
     /// `createTask`'s. A `session-started` comes first.
@@ -97,7 +98,7 @@ public enum Request: Equatable, Sendable {
             .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _), .updateInbox(let id, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
-            .updateInboxEntry(let id, _, _, _), .startSession(let id, _, _):
+            .updateInboxEntry(let id, _, _, _, _, _), .startSession(let id, _, _):
             id
         }
     }
@@ -108,7 +109,7 @@ extension Request: Codable {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker, inbox
         case cols, rows, operation, action
-        case routine, entry, until
+        case routine, entry, until, option
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -190,11 +191,13 @@ extension Request: Codable {
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(repo, forKey: .repo)
-        case .updateInboxEntry(let id, let entry, let action, let until):
+        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option):
             try c.head("update-inbox", id)
             try c.encode(entry, forKey: .entry)
             try c.encode(action, forKey: .action)
             try c.encodeIfPresent(until, forKey: .until)
+            try c.encodeIfPresent(text, forKey: .text)
+            try c.encodeIfPresent(option, forKey: .option)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -317,7 +320,9 @@ extension Request: Codable {
             self = .updateInboxEntry(
                 id: id, entry: try c.decode(String.self, forKey: .entry),
                 action: try c.decode(InboxAction.self, forKey: .action),
-                until: try c.decodeIfPresent(UInt64.self, forKey: .until))
+                until: try c.decodeIfPresent(UInt64.self, forKey: .until),
+                text: try c.decodeIfPresent(String.self, forKey: .text),
+                option: try c.decodeIfPresent(UInt32.self, forKey: .option))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

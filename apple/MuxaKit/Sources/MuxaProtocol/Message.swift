@@ -52,10 +52,12 @@ public enum Message: Equatable, Sendable {
     case routineList(routines: UInt64, entries: [RoutineInfo])
     /// The Routine a `run-routine` started, just before its `result`.
     case routineSaved(routine: UInt64, entry: RoutineInfo)
-    /// The stored Inbox entries for a `list-inbox` request, newest first.
-    case inboxList(inbox: UInt64, entries: [InboxEntry])
-    /// The entry an `update-inbox` wrote, just before its `result`.
-    case inboxSaved(inbox: UInt64, entry: InboxEntry)
+    /// The stored Inbox entries for a `list-inbox` request, newest first. Level 3
+    /// also sends `items`: every item, Routine entries included, in the order to show them.
+    case inboxList(inbox: UInt64, entries: [InboxEntry], items: [InboxItem] = [])
+    /// What an `update-inbox` wrote, just before its `result`: the Routine entry,
+    /// the item, or both for a Routine's item.
+    case inboxSaved(inbox: UInt64, entry: InboxEntry?, item: InboxItem? = nil)
     /// The session a `start-session` made, just before its `result`. `start`
     /// is the request id, `session` the `$n` id.
     case sessionStarted(start: UInt64, session: String, name: String)
@@ -115,7 +117,7 @@ extension Message: Codable {
     private enum Key: String, CodingKey {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
-        case routines, routine, entries, entry, inbox
+        case routines, routine, entries, entry, inbox, items, item
         case start, name
     }
 
@@ -218,11 +220,13 @@ extension Message: Codable {
         case "inbox-list":
             self = .inboxList(
                 inbox: try c.decode(UInt64.self, forKey: .inbox),
-                entries: try c.decode([InboxEntry].self, forKey: .entries))
+                entries: try c.decode([InboxEntry].self, forKey: .entries),
+                items: try c.decodeIfPresent([InboxItem].self, forKey: .items) ?? [])
         case "inbox-saved":
             self = .inboxSaved(
                 inbox: try c.decode(UInt64.self, forKey: .inbox),
-                entry: try c.decode(InboxEntry.self, forKey: .entry))
+                entry: try c.decodeIfPresent(InboxEntry.self, forKey: .entry),
+                item: try c.decodeIfPresent(InboxItem.self, forKey: .item))
         case "session-started":
             self = .sessionStarted(
                 start: try c.decode(UInt64.self, forKey: .start),
@@ -335,14 +339,16 @@ extension Message: Codable {
             try c.encode("routine-saved", forKey: .type)
             try c.encode(routine, forKey: .routine)
             try c.encode(entry, forKey: .entry)
-        case .inboxList(let inbox, let entries):
+        case .inboxList(let inbox, let entries, let items):
             try c.encode("inbox-list", forKey: .type)
             try c.encode(inbox, forKey: .inbox)
             try c.encode(entries, forKey: .entries)
-        case .inboxSaved(let inbox, let entry):
+            if !items.isEmpty { try c.encode(items, forKey: .items) }
+        case .inboxSaved(let inbox, let entry, let item):
             try c.encode("inbox-saved", forKey: .type)
             try c.encode(inbox, forKey: .inbox)
-            try c.encode(entry, forKey: .entry)
+            try c.encodeIfPresent(entry, forKey: .entry)
+            try c.encodeIfPresent(item, forKey: .item)
         case .sessionStarted(let start, let session, let name):
             try c.encode("session-started", forKey: .type)
             try c.encode(start, forKey: .start)

@@ -20,7 +20,7 @@ struct TaskDetail: View {
         }
     }
 
-    private func form(_ item: InboxItem) -> some View {
+    private func form(_ item: MuxaSession.InboxItem) -> some View {
         let r = item.record
         return Form {
             if let note = r.note {
@@ -99,7 +99,7 @@ struct TaskDetail: View {
     }
 
     @ViewBuilder
-    private func open(_ item: InboxItem) -> some View {
+    private func open(_ item: MuxaSession.InboxItem) -> some View {
         if item.session != nil {
             Section {
                 if item.agentPane != nil, model.session.canChat {

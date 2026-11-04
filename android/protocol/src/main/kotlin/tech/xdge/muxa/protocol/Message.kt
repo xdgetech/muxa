@@ -156,13 +156,16 @@ sealed interface Message {
     @Serializable
     data class RoutineSaved(val routine: Long, val entry: RoutineInfo) : Message
 
-    /** The stored Inbox entries for a `list-inbox` request, newest first. */
+    /**
+     * The stored Inbox entries for a `list-inbox` request, newest first. Level 3 also sends [items]: every item,
+     * Routine entries included, in the order to show them.
+     */
     @Serializable
-    data class InboxList(val inbox: Long, val entries: List<InboxEntry>) : Message
+    data class InboxList(val inbox: Long, val entries: List<InboxEntry>, val items: List<InboxItem> = emptyList()) : Message
 
-    /** The entry an `update-inbox` wrote, just before its `result`. */
+    /** What an `update-inbox` wrote, just before its `result`: the Routine entry, the item, or both for a Routine's item. */
     @Serializable
-    data class InboxSaved(val inbox: Long, val entry: InboxEntry) : Message
+    data class InboxSaved(val inbox: Long, val entry: InboxEntry? = null, val item: InboxItem? = null) : Message
 
     /** The session a `start-session` made, just before its `result`. [start] is the request id, [session] the `$n` id. */
     @Serializable
