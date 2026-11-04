@@ -101,6 +101,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
   1. Done: R0, host and CLI, behind `work:4`: `create-task {read}`, the Task folder with `TASK.md` rules and Claude Code's `.claude/settings.local.json` (checked against the docs and a real run), the changed-checkout `proposal` with Branch and Keep, `branch-task`, `park-task`, Resume through `restart-agent`, `[[workspace]] park_after`, and `muxa-cli task new --read`, `task branch`, `task park`. Verified with `make check`, `make test-tmux` (`tests/reading.rs`) and `make repro`. A Task that waits on its review does not park (decided 2026-11-05).
   2. R1, muxa for tmux: Read in `prefix + N`, Branch and Park in the Task's menu.
   3. R2, iOS; R3, Android: Read in New Task, Branch and Park in the Task detail, Resume on a parked Task.
+- **Close an ask session from the apps** (later): an ask session runs in the repo's main checkout, for example on `main` or `develop`, and has no worktree. `close-task` refuses it, so only muxa for tmux (`x`) closes it. Next: let `close-task` close a session with no worktree, and show Close Session in both apps.
 
 Milestones and dependencies are in `docs/workers.md`; the domain definitions are in `docs/work-model.md`.
 
