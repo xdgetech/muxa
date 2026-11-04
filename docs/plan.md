@@ -80,6 +80,12 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
   - Done in the iOS app (S3): stored entries in the Inbox list with approve, dismiss and Later; a Routine run waiting on the user as an Inbox row; the Routines list and detail with Run now. Verified with MuxaKit tests and UI tests against the demo bridge.
   - Done in the Android app (S3): the same, with a swipe right for Later and a swipe left for Move down. Verified with the `:session` JVM tests (`WorkTest`), the demo bridge tests and `InboxListTest` against the demo bridge.
   - Next: one real source with a real login; Codex after ADR 0028.
+- **muxa for tmux catches up with the apps** (ADR 0017, 0032): today `prefix + T` only lists Tasks and goes to a session, and closing a session from the tree leaves its Task `open` with no session. The plugin keeps calling `muxa-cli --json` and never writes records. In order:
+  1. Close Tasks: `muxa-cli task drop ID` and `--json` on `task done`; `d` Done and `D` Drop in `prefix + T`, after a confirmation; `x`/`X` in the tree ask whether to mark the session's Task Done or Dropped.
+  2. The Inbox section in the sidebar, above the session tree: the `queue` from `tasks --json` and the stored entries from `inbox --json`, with `Enter` to act, `d` Done, `m` Move down, `l` Later, and approve or dismiss of an entry in a popup. Task sessions stay in the tree, so the jump keys keep working; this is where tmux differs from the apps' manual-only Sessions (ADR 0025). The sidebar reloads when the records change, not only on the 10 s fallback.
+  3. `prefix + T` becomes the ordered Inbox, like the apps' list.
+  4. A Task detail popup: status, runs, `TASK.md` and `HANDOFF.md`, Restart agent, Start and Stop loop.
+  5. A Routines popup: the list, the last runs and Run now.
 
 Milestones and dependencies are in `docs/workers.md`; the domain definitions are in `docs/work-model.md`.
 
