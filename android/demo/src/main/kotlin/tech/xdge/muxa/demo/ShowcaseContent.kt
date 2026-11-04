@@ -257,6 +257,8 @@ internal object ShowcaseContent : DemoContent {
 
     override fun work(now: Long) = DemoWork.showcase(now)
 
+    override fun items(now: Long) = DemoItems.showcase(now)
+
     override fun tasks(now: Long) = listOf(
         demoTask(
             "t-a1b2c3", "work", "Handle Stripe invoice.paid webhook",

@@ -102,6 +102,55 @@ internal class DemoItems(private var items: List<InboxItem>) {
             )
         }
 
+        /**
+         * Try the Demo's and the store screenshots' items: an agent asking, and two finished turns.
+         * The text matches the iOS showcase (`DemoItems.showcaseItems`) byte for byte.
+         */
+        fun showcase(now: Long) = DemoItems(
+            listOf(
+                showcaseItem(
+                    "i-5c000001", ItemKind.ASK, "Allow Bash: stripe listen --forward-to localhost:4242", "t-a1b2c3",
+                    "Handle Stripe invoice.paid webhook", now - 75, session = "$1", pane = "%1",
+                    prompt = ChatPrompt(
+                        "toolu_demo", ChatPrompt.Kind.PERMISSION,
+                        options = listOf(ChatPrompt.Option("Yes", listOf("Enter")), ChatPrompt.Option("No", listOf("Escape"), cancel = true)),
+                    ),
+                    answers = listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER),
+                ),
+                showcaseItem(
+                    "i-5c000002", ItemKind.REVIEW, "Ready for review: Dark mode for the dashboard", "t-0a1b2c",
+                    "Dark mode for the dashboard", now - 720, session = "$3", pane = "%5",
+                    summary = "The dashboard follows the system setting now. The charts use the new palette, and the contrast checks pass.",
+                    attachments = Attachments(
+                        changes = ChangeCount(files = 6, added = 212, removed = 48),
+                        docs = listOf("README.md"),
+                        links = listOf(SourceLink("https://github.com/example/dashboard/pull/318", "PR #318")),
+                    ),
+                    answers = REVIEW_ANSWERS,
+                ),
+                showcaseItem(
+                    "i-5c000003", ItemKind.REVIEW, "Ready for review: Faster search index", "t-3c4d5e",
+                    "Faster search index", now - 1_800, session = "$4", pane = "%6", read = true,
+                    summary = "The index builds in 41 s instead of 96 s. Search results are unchanged.",
+                    attachments = Attachments(changes = ChangeCount(files = 2, added = 37, removed = 12)),
+                    answers = REVIEW_ANSWERS,
+                ),
+            ),
+        )
+
+        private val REVIEW_ANSWERS =
+            listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER)
+
+        /** An open item of the showcase's "work" workspace; a read one was opened 30 seconds after it was made. */
+        private fun showcaseItem(
+            id: String, kind: ItemKind, question: String, task: String, title: String, createdAt: Long,
+            session: String, pane: String, read: Boolean = false, summary: String? = null, prompt: ChatPrompt? = null,
+            attachments: Attachments = Attachments(), answers: List<InboxAction>,
+        ) = InboxItem(
+            id, kind, ItemState.OPEN, question, "work", title, createdAt, readAt = if (read) createdAt + 30 else null,
+            task = task, session = session, pane = pane, summary = summary, prompt = prompt, attachments = attachments, answers = answers,
+        )
+
         /** The UI tests' items: an ask with a permission prompt, a review with evidence, a failure, and one answered. */
         fun tests(now: Long) = DemoItems(
             listOf(

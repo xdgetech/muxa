@@ -124,6 +124,16 @@ class DemoBridgeTest {
         assertEquals(3, s.inboxItems.waiting().count { it.routine != null })
     }
 
+    /** Try the Demo opens on the Inbox (ADR 0035): the ask first, then newest, as the iOS showcase. */
+    @Test
+    fun theShowcaseInboxHasTheAskAndTwoReviews() = runBlocking {
+        val (session, _) = connected(DemoBridge.Content.SHOWCASE)
+        assertEquals(
+            listOf("i-5c000001", "e-000000a1", "i-5c000002", "e-000000a2", "e-000000a3", "i-5c000003"),
+            session.state.value.inboxItems.waiting().map { it.id },
+        )
+    }
+
     @Test
     fun theTasksFillEveryInboxGroup() = runBlocking {
         for (set in DemoBridge.Content.entries) {

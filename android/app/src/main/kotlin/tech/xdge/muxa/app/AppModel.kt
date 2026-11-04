@@ -18,7 +18,7 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.protocol.WORK_ASK
+import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
@@ -271,7 +271,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
     private var demoTaskRecords = true
-    private var demoWorkLevel = WORK_ASK
+    private var demoWorkLevel = WORK_ITEMS
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -301,7 +301,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
     /** Try the Demo: sample sessions from the in-app bridge. Nothing is saved, and no SSH or key is touched. */
     fun tryDemo() {
         demoTaskRecords = true
-        demoWorkLevel = WORK_ASK
+        demoWorkLevel = WORK_ITEMS
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
@@ -311,7 +311,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
         set: DemoBridge.Content,
         alerts: Boolean,
         taskRecords: Boolean = true,
-        workLevel: Int = WORK_ASK,
+        workLevel: Int = WORK_ITEMS,
     ) {
         demoTaskRecords = taskRecords
         demoWorkLevel = workLevel
@@ -331,7 +331,7 @@ class AppModel(val scope: CoroutineScope, saved: HostStore, private val keys: Cl
             val alerts: Boolean,
             val taskRecords: Boolean,
             val canLeave: Boolean,
-            val workLevel: Int = WORK_ASK,
+            val workLevel: Int = WORK_ITEMS,
         )
     }
 
