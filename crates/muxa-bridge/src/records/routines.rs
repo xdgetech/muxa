@@ -1,5 +1,5 @@
 //! `[[routine]]` in a workspace's `.muxa/routines.toml` (ADR 0026 section 1,
-//! ADR 0035): what runs, when, as which worker, and what it may publish.
+//! ADR 0036): what runs, when, as which worker, and what it may publish.
 //! Parsing only; `routines/` runs them.
 use std::fmt;
 use std::fs::File;
@@ -16,7 +16,7 @@ pub const DEFAULT_ITEMS: u32 = 10;
 pub const MAX_ITEMS: u32 = 50;
 /// The instructions leave room in the run's goal for muxa's output section. Bytes.
 pub const MAX_INSTRUCTIONS: usize = 12 * 1024;
-/// The folder under a workspace root that holds its Routines (ADR 0035).
+/// The folder under a workspace root that holds its Routines (ADR 0036).
 pub const WORKSPACE_DIR: &str = ".muxa";
 pub const ROUTINES_FILE: &str = "routines.toml";
 /// Bytes. Far above any real file; an agent can write this file.
@@ -125,7 +125,7 @@ pub enum InstructionsError {
 
 /// The Routines of `workspace`, from `<root>/.muxa/routines.toml`. A missing
 /// folder or file means none. Any error is the whole file's: an agent may
-/// have written it, so it must not fail the host's config (ADR 0035 section 2).
+/// have written it, so it must not fail the host's config (ADR 0036 section 2).
 pub(super) fn load(
     workspace: &Workspace,
     gate: RoutineGate,

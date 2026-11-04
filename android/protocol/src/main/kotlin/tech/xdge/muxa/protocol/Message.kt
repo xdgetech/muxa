@@ -153,7 +153,7 @@ sealed interface Message {
     data class RoutineList(
         val routines: Long,
         val entries: List<RoutineInfo>,
-        /** Workspaces whose routines file is broken (ADR 0035). */
+        /** Workspaces whose routines file is broken (ADR 0036). */
         val problems: List<RoutineProblem> = emptyList(),
     ) : Message
 

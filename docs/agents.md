@@ -87,7 +87,7 @@ The daemon (`muxa-bridge daemon run`, `crates/muxa-bridge/src/daemon/`, ADR 0019
 
 ## Routines
 
-A Routine (ADR 0026, `src/routines/`) is a `[[routine]]` in a workspace's `<root>/.muxa/routines.toml` that the daemon runs on its schedule, or on `run-routine`. The host allows a workspace's Routines, and their direct writes, with `[workspace.routines]` in `workspaces.toml` (ADR 0035). A broken workspace file hides only that workspace's Routines; `routine-list` reports it in `problems`. Each run is a task record of kind `routine-run`: the same create path, session tag, runs, delivery claims and Loop engine as a Task. `list-tasks` skips it.
+A Routine (ADR 0026, `src/routines/`) is a `[[routine]]` in a workspace's `<root>/.muxa/routines.toml` that the daemon runs on its schedule, or on `run-routine`. The host allows a workspace's Routines, and their direct writes, with `[workspace.routines]` in `workspaces.toml` (ADR 0036). A broken workspace file hides only that workspace's Routines; `routine-list` reports it in `problems`. Each run is a task record of kind `routine-run`: the same create path, session tag, runs, delivery claims and Loop engine as a Task. `list-tasks` skips it.
 
 - **Where it runs.** A new directory `<root>/routines/<name>-<id>` in the Routine's workspace, in a session tagged `@muxa_task`, so it is not a manual session. Its `.muxa/TASK.md` holds the Routine's instructions and a fixed Output section.
 - **How the agent writes output.** It writes `.muxa/routine/output.json` (the schema is in `protocol/PROTOCOL.md`, "Routine output"), then ends its turn. The state the last successful run committed is in `.muxa/routine/state.json`. The folder is the run's private stage; nothing outside the run reads it before the check.

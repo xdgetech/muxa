@@ -333,7 +333,7 @@ A Routine runs an agent on a trigger and publishes briefings and proposals to In
 
 1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
-   - optional `trigger {at, timezone, schedule?}`: `at` is a local `HH:MM`, `timezone` an IANA name, `schedule` the five cron fields that choose the days (ADR 0035), e.g. `0 8 * * 1-5`. A host before ADR 0035 sends no `schedule`: every day. Absent `trigger`: it runs only on `run-routine`;
+   - optional `trigger {at, timezone, schedule?}`: `at` is a local `HH:MM`, `timezone` an IANA name, `schedule` the five cron fields that choose the days (ADR 0036), e.g. `0 8 * * 1-5`. A host before ADR 0036 sends no `schedule`: every day. Absent `trigger`: it runs only on `run-routine`;
    - `enabled`. Nothing runs while it is false, also not `run-routine`;
    - optional `worker` (absent: the workspace default agent) and `project` (the label on Tasks its proposals create);
    - optional `nextDue`, epoch seconds;

@@ -58,7 +58,7 @@ pub struct Workspace {
     pub loop_checks: Option<Checks>,
     /// Seconds an idle Task waits before the daemon parks it; None is off (ADR 0034).
     pub park_after: Option<u64>,
-    /// None: this workspace has no Routines (ADR 0035).
+    /// None: this workspace has no Routines (ADR 0036).
     pub routines: Option<RoutineGate>,
 }
 
@@ -78,7 +78,7 @@ struct RawConfig {
     workspace: Vec<RawWorkspace>,
     #[serde(default)]
     worker: Vec<RawWorker>,
-    /// Refused: Routines moved to each workspace (ADR 0035).
+    /// Refused: Routines moved to each workspace (ADR 0036).
     #[serde(default)]
     routine: Vec<toml::Value>,
 }
@@ -172,7 +172,7 @@ impl Workspaces {
         };
         if !raw.routine.is_empty() {
             return Err(invalid(format!(
-                "[[routine]] moved to <workspace root>/{}/{} (ADR 0035); \
+                "[[routine]] moved to <workspace root>/{}/{} (ADR 0036); \
                  allow it with [workspace.routines] enabled = true",
                 routines::WORKSPACE_DIR,
                 routines::ROUTINES_FILE

@@ -1,4 +1,4 @@
-//! A Routine's `schedule` (ADR 0035 section 3): five cron fields with one
+//! A Routine's `schedule` (ADR 0036 section 3): five cron fields with one
 //! time a day. Parsing and day matching only; `routines/schedule.rs` turns
 //! a matching day into an instant.
 use jiff::civil::Date;

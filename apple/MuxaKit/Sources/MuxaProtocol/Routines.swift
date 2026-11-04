@@ -52,7 +52,7 @@ public struct RoutineTrigger: Codable, Equatable, Sendable {
     public var at: String
     /// An IANA name, e.g. `Europe/Berlin`.
     public var timezone: String
-    /// The five cron fields (ADR 0035). Nil from an older host: every day.
+    /// The five cron fields (ADR 0036). Nil from an older host: every day.
     public var schedule: String?
 
     public init(at: String, timezone: String, schedule: String? = nil) {

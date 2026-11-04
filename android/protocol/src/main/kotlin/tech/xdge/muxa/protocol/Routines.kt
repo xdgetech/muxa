@@ -34,7 +34,7 @@ data class RoutineInfo(
     val running: RoutineRun? = null,
 )
 
-/** `HH:MM`, 24-hour, local to the IANA [timezone], on the days of [schedule]: five cron fields (ADR 0035); null from an older host means every day. */
+/** `HH:MM`, 24-hour, local to the IANA [timezone], on the days of [schedule]: five cron fields (ADR 0036); null from an older host means every day. */
 @Serializable
 data class RoutineTrigger(val at: String, val timezone: String, val schedule: String? = null)
 

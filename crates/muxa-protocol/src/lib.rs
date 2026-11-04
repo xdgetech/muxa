@@ -516,7 +516,7 @@ pub enum Message {
     RoutineList {
         routines: u64,
         entries: Vec<RoutineInfo>,
-        /// Workspaces whose routines file is broken (ADR 0035).
+        /// Workspaces whose routines file is broken (ADR 0036).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         problems: Vec<RoutineProblem>,
     },

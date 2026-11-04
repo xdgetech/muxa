@@ -66,7 +66,7 @@ pub struct RoutineTrigger {
     pub at: String,
     /// e.g. `Europe/Berlin`.
     pub timezone: String,
-    /// The five cron fields (ADR 0035). Absent from an older host: every day.
+    /// The five cron fields (ADR 0036). Absent from an older host: every day.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<String>,
 }

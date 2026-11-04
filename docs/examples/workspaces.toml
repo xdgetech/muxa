@@ -38,7 +38,7 @@
 #            Or "any": any command a client sends, at most 4096 bytes.
 #
 # [workspace.routines]  optional; lets this workspace run Routines (ADR 0026,
-#   0035). The Routines themselves are in <root>/.muxa/routines.toml (see
+#   0036). The Routines themselves are in <root>/.muxa/routines.toml (see
 #   docs/examples/routines.toml). Agents can write under root, so this file
 #   decides what they may do.
 #   enabled        required; false or no table: no Routines here

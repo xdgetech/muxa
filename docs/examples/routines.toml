@@ -1,5 +1,5 @@
 # A workspace's Routines: copy to <root>/.muxa/routines.toml. The workspace
-# needs [workspace.routines] enabled = true in workspaces.toml (ADR 0035).
+# needs [workspace.routines] enabled = true in workspaces.toml (ADR 0036).
 # Keep .muxa/ in git to review what agents change here.
 #
 # [[routine]]  an agent run on a schedule that publishes briefings and
