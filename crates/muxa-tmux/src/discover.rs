@@ -76,13 +76,15 @@ pub struct Session {
     pub task: Option<String>,
     /// The task record this session runs (`@muxa_task`, ADR 0015).
     pub task_id: Option<String>,
+    /// The workspace of an ask session (`@muxa_ask`, ADR 0031).
+    pub ask: Option<String>,
     pub panes: Vec<Pane>,
 }
 
 const SEP: char = '\u{1f}';
 
 /// The list-panes format, one entry per field, joined by \x1f.
-const FIELDS: [&str; 25] = [
+const FIELDS: [&str; 26] = [
     "session_id",
     "session_name",
     "window_id",
@@ -110,6 +112,7 @@ const FIELDS: [&str; 25] = [
     "pane_pid",
     // A device session (ADR 0021): the same panes again; skipped.
     "@muxa_device",
+    "@muxa_ask",
 ];
 
 fn format(fields: &[&str]) -> String {
@@ -220,6 +223,7 @@ pub(crate) fn parse_sessions(lines: &[Vec<u8>]) -> Vec<Session> {
                     worktree: row.opt("@agent_worktree"),
                     task: row.opt("@agent_task"),
                     task_id: row.opt("@muxa_task"),
+                    ask: row.opt("@muxa_ask"),
                     panes: Vec::new(),
                 });
                 tags.push(Vec::new());
@@ -300,6 +304,7 @@ mod tests {
                 ("@agent_repo_dir", "/src/app"),
                 ("@agent_branch", "feat/x"),
                 ("@muxa_task", "t-7f3a2c"),
+                ("@muxa_ask", "lisk"),
             ]),
             row(&[
                 ("session_id", "$1"),
@@ -320,6 +325,8 @@ mod tests {
         assert_eq!(sessions[0].name, "feat");
         assert_eq!(sessions[0].repo.as_deref(), Some("app"));
         assert_eq!(sessions[0].repo_dir.as_deref(), Some("/src/app"));
+        assert_eq!(sessions[0].ask.as_deref(), Some("lisk"));
+        assert_eq!(sessions[1].ask, None);
         assert_eq!(sessions[0].panes.len(), 2);
         assert_eq!(
             (sessions[0].panes[0].cols, sessions[0].panes[0].rows),

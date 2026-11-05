@@ -1,9 +1,12 @@
 //! `ask`: an agent session in a repo's main checkout, to ask about its code
 //! (ADR 0031). No Task and no worktree; it lists as a manual session.
+//! `ask close` closes one (ADR 0039).
 
 use std::time::Duration;
 
-use muxa_protocol::{Message, Request, WORK_ASK, WorkspaceInfo, work_level};
+use muxa_protocol::{
+    CloseMode, Message, Request, Session, WORK_ASK, WORK_CLOSE_ASK, WorkspaceInfo, work_level,
+};
 use serde_json::json;
 
 use crate::conn::Conn;
@@ -51,6 +54,45 @@ pub async fn ask(
         println!("{session}");
     }
     Ok(String::new())
+}
+
+/// Closes the ask session `target`, an id or a name, through `close-task`.
+/// The bridge checks `@muxa_ask` again; this finds the id and a clear error.
+pub async fn close(conn: &mut Conn, target: &str, as_json: bool) -> Result<String, String> {
+    if work_level(conn.capabilities()) < WORK_CLOSE_ASK {
+        return Err("this host cannot close ask sessions; update muxa-bridge on the host".into());
+    }
+    let session = find(&conn.list().await?, target)?;
+    conn.call(
+        |id| Request::CloseTask {
+            id,
+            session: session.id.clone(),
+            mode: CloseMode::Keep,
+        },
+        WAIT,
+    )
+    .await?;
+    if as_json {
+        println!("{}", json!({"session": session.id, "name": session.name}));
+    } else {
+        println!("{}", session.id);
+    }
+    Ok(String::new())
+}
+
+/// The ask session whose id or name is `target`.
+fn find(sessions: &[Session], target: &str) -> Result<Session, String> {
+    let found = sessions
+        .iter()
+        .find(|s| s.id == target || s.name == target)
+        .ok_or_else(|| format!("no session {target:?}"))?;
+    if found.ask.is_none() {
+        return Err(format!(
+            "{} is not an ask session; close it in tmux",
+            found.name
+        ));
+    }
+    Ok(found.clone())
 }
 
 async fn workspaces(conn: &mut Conn) -> Result<Vec<WorkspaceInfo>, String> {
@@ -102,6 +144,37 @@ mod tests {
             checks: None,
             repos: repos.iter().map(|r| r.to_string()).collect(),
         }
+    }
+
+    fn session(id: &str, name: &str, ask: Option<&str>) -> Session {
+        Session {
+            id: id.into(),
+            name: name.into(),
+            repo: None,
+            repo_dir: None,
+            branch: None,
+            worktree: None,
+            task: None,
+            task_id: None,
+            ask: ask.map(str::to_owned),
+            panes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn only_an_ask_session_is_found_to_close() {
+        let all = [
+            session("$1", "work", None),
+            session("$4", "ask-app-1", Some("lisk")),
+        ];
+        assert_eq!(find(&all, "$4").unwrap().id, "$4");
+        assert_eq!(find(&all, "ask-app-1").unwrap().id, "$4");
+        assert!(
+            find(&all, "work")
+                .unwrap_err()
+                .contains("not an ask session")
+        );
+        assert!(find(&all, "$9").is_err());
     }
 
     #[test]

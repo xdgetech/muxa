@@ -38,6 +38,7 @@ fn session(n: u32, worktree: Option<&str>, path: &str, task_id: Option<&str>) ->
         worktree: worktree.map(str::to_owned),
         task: None,
         task_id: task_id.map(str::to_owned),
+        ask: None,
         panes: vec![Pane {
             id: PaneId::new(n),
             window: WindowId::new(n),

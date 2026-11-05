@@ -13,6 +13,9 @@ pub const WORK_ROUTINES: u32 = 1;
 pub const WORK_ASK: u32 = 2;
 /// Level 4: reading Tasks, `branch-task` and `park-task` (ADR 0034).
 pub const WORK_READ: u32 = 4;
+/// Level 5: `close-task` also closes an ask session, and a session carries
+/// `ask` (ADR 0039).
+pub const WORK_CLOSE_ASK: u32 = 5;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {

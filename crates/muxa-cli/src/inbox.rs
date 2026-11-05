@@ -202,6 +202,7 @@ mod tests {
             worktree: None,
             task: None,
             task_id: Some(task.into()),
+            ask: None,
             panes,
         }
     }

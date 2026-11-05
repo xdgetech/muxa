@@ -1,4 +1,5 @@
 //! Closing a Task's session: on `close-task`, and when the Task ends (ADR 0037).
+//! `close-task` also closes an ask session (ADR 0039).
 
 use muxa_protocol::{CloseMode, ErrorBody, ErrorCode, TaskStatus};
 use muxa_tmux::Client;
@@ -14,12 +15,22 @@ pub(crate) async fn close_task(
     session: &str,
     mode: CloseMode,
 ) -> Result<(), ErrorBody> {
+    let listed = muxa_tmux::list_sessions(client)
+        .await
+        .map_err(|e| convert::error(&e))?;
+    let id = session.parse::<muxa_tmux::SessionId>().ok();
+    if let Some(ask) = listed
+        .iter()
+        .find(|s| Some(s.id) == id && tasks::ask::is_ask(s))
+    {
+        return tasks::ask::close(client, ask)
+            .await
+            .map_err(|e| convert::task_error(&e));
+    }
     let task = tasks::find_task(client, session)
         .await
         .map_err(|e| convert::task_error(&e))?;
-    let tag = muxa_tmux::list_sessions(client)
-        .await
-        .map_err(|e| convert::error(&e))?
+    let tag = listed
         .into_iter()
         .find(|s| s.id == task.id)
         .and_then(|s| s.task_id);

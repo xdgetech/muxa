@@ -98,7 +98,10 @@ pub async fn find_task(client: &Client, id: &str) -> Result<TaskSession, TaskErr
         .find(|s| s.id == id)
         .ok_or_else(|| TaskError::Invalid(format!("session {id} does not exist")))?;
     let worktree = s.worktree.ok_or_else(|| {
-        TaskError::Invalid(format!("{} is not a task: it has no worktree", s.name))
+        TaskError::Invalid(format!(
+            "{} is not a task: it has no worktree, and it is not an ask session",
+            s.name
+        ))
     })?;
     Ok(TaskSession {
         id,
@@ -106,6 +109,27 @@ pub async fn find_task(client: &Client, id: &str) -> Result<TaskSession, TaskErr
         worktree: worktree.into(),
         repo_dir: s.repo_dir.map(PathBuf::from),
     })
+}
+
+/// Kills `session` and its device sessions. The clients on it, this
+/// bridge's own among them, go to another session first: tmux would detach them.
+pub(crate) async fn end_session(
+    client: &Client,
+    session: SessionId,
+    name: &str,
+) -> Result<(), TaskError> {
+    let other = muxa_tmux::last_other_session(client, session)
+        .await?
+        .ok_or_else(|| {
+            TaskError::Failed(format!(
+                "{name} is the only session; closing it would stop tmux"
+            ))
+        })?;
+    for c in muxa_tmux::clients_of(client, session).await? {
+        muxa_tmux::switch_client(client, &c, other).await?;
+    }
+    muxa_tmux::kill_session(client, session).await?;
+    Ok(())
 }
 
 /// The session whose `@agent_worktree` is `worktree`. Never by name (invariant 3).

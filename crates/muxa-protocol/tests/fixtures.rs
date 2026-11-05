@@ -197,6 +197,36 @@ fn workspace_fixtures_round_trip() {
 }
 
 #[test]
+fn ask_close_fixtures_round_trip() {
+    use muxa_protocol::{WORK_CLOSE_ASK, work_level};
+    assert_eq!(round_trip::<Request>("ask-close/requests.jsonl"), 2);
+    assert_eq!(round_trip::<Message>("ask-close/messages.jsonl"), 4);
+    let path = format!(
+        "{}/../../protocol/fixtures/ask-close/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let lines: Vec<Message> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &lines[0] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_CLOSE_ASK);
+    let Message::Result {
+        sessions: Some(sessions),
+        ..
+    } = &lines[1]
+    else {
+        panic!()
+    };
+    assert_eq!(sessions[0].ask, None);
+    assert_eq!(sessions[1].ask.as_deref(), Some("lisk"));
+    assert_eq!(sessions[1].worktree, None);
+}
+
+#[test]
 fn routine_contract_fixtures_round_trip() {
     use muxa_protocol::{Disposition, InboxAction, work_level};
     assert_eq!(round_trip::<Request>("routines/requests.jsonl"), 6);

@@ -60,7 +60,7 @@ sequenceDiagram
 | `image` | `id`, `pane`, `path` | show a listed image and follow it; replaces the open image |
 | `unimage` | `id` | stop `image-content` |
 | `new-task` | `id`, `repo`, `branch`, optional `base` | start a task (capability `tasks`); a `task-created` comes before the `result` |
-| `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`) |
+| `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`), or an ask session (`work` level 5, Ask sessions below) |
 | `list-tasks` | `id` | list the task records and workspaces (capability `task-records`); a `task-list` comes before the `result` |
 | `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}`, `worker` (Workers below), `read` (Reading Tasks below) | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
 | `update-task` | `id`, `task`, `rev`, `status` | set a task record's status; a `task-saved` comes before the `result` |
@@ -115,7 +115,7 @@ Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-l
 
 ### Sessions
 
-A session has `id`, `name`, optional `repo`, `repoDir` (the repo's main checkout, absolute), `branch`, `worktree`, `task` (tmux-agents' task name, `@agent_task`), `taskId` (the task record the session runs, from the session option `@muxa_task`; see Task records), and `panes`. A pane has:
+A session has `id`, `name`, optional `repo`, `repoDir` (the repo's main checkout, absolute), `branch`, `worktree`, `task` (tmux-agents' task name, `@agent_task`), `taskId` (the task record the session runs, from the session option `@muxa_task`; see Task records), `ask` (the workspace of an ask session, from the session option `@muxa_ask`; see Ask sessions), and `panes`. A pane has:
 - `id`, `window`, `index`, `cols`, `rows`;
 - `command`: the foreground process;
 - `path`, `dead`;
@@ -197,7 +197,7 @@ A bridge with the `tasks` capability starts tasks: a git worktree on a branch, a
 2. On success the bridge sends `task-created {task, session}`, then `result`. `task` is the request id. `session` is the session's name; list again to find its panes. A branch that already has a session gets that session, not a second one.
 3. A wrong `repo`, `branch` or `base` is `bad-request`. A failed launch is `task-failed`; the message says why. A launch can take several seconds, and other requests are answered meanwhile.
 4. The new session is detached. No attached client moves, and no existing window or pane changes.
-5. `close-task {session, mode}` closes a task: a session with a `worktree`. `session` is its id. Other sessions are `bad-request`. `mode` says what happens to the worktree:
+5. `close-task {session, mode}` closes a task: a session with a `worktree`. `session` is its id. With `work` level 5 it also closes an ask session (Ask sessions below). Other sessions are `bad-request`. `mode` says what happens to the worktree:
    - `close`: removed when the branch is merged; otherwise the request fails and nothing changes.
    - `keep`: kept.
    - `force`: removed even when the branch is not merged.
@@ -329,7 +329,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), and level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), and level 5 closing ask sessions with `close-task` (ADR 0039). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -436,9 +436,10 @@ A bridge with `work` level 2 starts ask sessions: the workspace's agent in a rep
 
 1. `start-session {workspace, repo}`. `repo` is as in `create-task`: absolute, or relative to the workspace's `root`.
 2. The bridge starts a detached session `ask-<repo>-<n>` in the repo's main checkout, on whatever branch it has, with the workspace's agent command and environment. It sends `session-started {start, session, name}`, then `result`. `start` is the request id, `session` the session's id (`$n`), `name` its name.
-3. The session has no `taskId`, so it lists as a manual session. Close it as any session. No attached client moves, and no existing window or pane changes.
+3. The session has no `taskId`, so it lists as a manual session. It has `ask`, the workspace's name. No attached client moves, and no existing window or pane changes.
 4. An unknown workspace, a repo outside the root, or a repo of another workspace is `bad-request`. A failed start is `task-failed` or `tmux`.
 5. The agent can change files in the main checkout. Nothing enforces read-only.
+6. With `work` level 5, `close-task {session, mode}` closes an ask session (ADR 0039). `session` is its id. Only a session with `ask` and no `worktree` or `taskId` closes this way; any other session without a `worktree` is `bad-request`. Its device sessions close first, and the clients attached to it move to the most recently used other session, as for a task. `mode` changes nothing: the main checkout and its files stay as they are. A client shows Close Session only on a session with `ask`, and only with level 5. An older host sends no `ask`.
 
 ## Rendering a pane
 

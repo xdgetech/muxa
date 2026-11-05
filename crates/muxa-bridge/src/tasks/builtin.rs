@@ -173,20 +173,7 @@ impl TaskLauncher for Builtin {
             if remove {
                 check_removable(task, mode).await?;
             }
-            // The clients on it, this bridge's own among them, go to another
-            // session first: tmux would detach them.
-            let other = muxa_tmux::last_other_session(client, task.id)
-                .await?
-                .ok_or_else(|| {
-                    TaskError::Failed(format!(
-                        "{} is the only session; closing it would stop tmux",
-                        task.name
-                    ))
-                })?;
-            for c in muxa_tmux::clients_of(client, task.id).await? {
-                muxa_tmux::switch_client(client, &c, other).await?;
-            }
-            muxa_tmux::kill_session(client, task.id).await?;
+            super::end_session(client, task.id, &task.name).await?;
             if remove {
                 remove_worktree(task).await?;
             }

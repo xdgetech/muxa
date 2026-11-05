@@ -1,0 +1,4 @@
+{"type":"hello","protocol":1,"bridge":"0.1.0","tmux":"3.5a","capabilities":["close-task","task-records","work:5"]}
+{"type":"result","id":51,"sessions":[{"id":"$1","name":"work","panes":[{"id":"%1","window":"@1","index":0,"role":"shell","cols":120,"rows":40,"command":"zsh","path":"/work","dead":false,"shellForeground":true}]},{"id":"$7","name":"ask-cto-copilot-1","repo":"cto-copilot","repoDir":"/work/lisk/cto-copilot","branch":"main","ask":"lisk","panes":[{"id":"%9","window":"@7","index":0,"role":"agent","cols":120,"rows":40,"command":"claude","path":"/work/lisk/cto-copilot","dead":false,"shellForeground":false,"agent":{"state":"idle","since":1762160400}}]}]}
+{"type":"result","id":52}
+{"type":"result","id":53,"error":{"code":"bad-request","message":"work is not a task: it has no worktree, and it is not an ask session"}}

@@ -10,7 +10,7 @@ pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
-    WORK_CAPABILITY, WORK_READ, WORK_ROUTINES, work_capability, work_level,
+    WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
@@ -145,7 +145,8 @@ pub enum Request {
     },
     /// Close a task's session: one with a worktree. Needs the `close-task`
     /// capability. The worktree is removed only as `mode` allows, and never
-    /// with uncommitted changes; the branch is kept.
+    /// with uncommitted changes; the branch is kept. With `work` level 5, also
+    /// an ask session; `mode` then changes nothing (ADR 0039).
     CloseTask {
         id: u64,
         /// `$n`
@@ -1034,6 +1035,9 @@ pub struct Session {
     /// The task record this session runs (`@muxa_task`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
+    /// The workspace of an ask session (`@muxa_ask`, ADR 0031, 0039).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<String>,
     pub panes: Vec<Pane>,
 }
 

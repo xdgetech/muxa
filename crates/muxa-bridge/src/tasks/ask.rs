@@ -1,6 +1,6 @@
 //! Ask sessions (ADR 0031): the workspace's agent in a repo's main checkout,
 //! to ask about its code. No Task, no worktree and no record, so the session
-//! lists as a manual one. Closing it is closing any session.
+//! lists as a manual one. `close-task` closes it and leaves the checkout (ADR 0039).
 
 use std::path::Path;
 
@@ -10,7 +10,7 @@ use crate::records::Workspaces;
 use crate::records::workspaces::slug;
 
 use super::builtin::{Builtin, main_checkout};
-use super::{Launched, TaskError, session_name};
+use super::{Launched, TaskError, end_session, session_name};
 
 /// Marks the session as an ask session; the value is its workspace. It is
 /// never `@muxa_task` or `@muxa_device`.
@@ -78,4 +78,24 @@ pub async fn start(
         name,
         dir: main,
     })
+}
+
+/// Whether `close-task` may close `session` as an ask session: it has
+/// [`TAG`], and no worktree or Task that a launcher or a record owns.
+pub fn is_ask(session: &muxa_tmux::Session) -> bool {
+    session.ask.is_some() && session.worktree.is_none() && session.task_id.is_none()
+}
+
+/// Closes an ask session. Its device sessions go first and its clients move
+/// to another session. The main checkout and its files are never touched.
+pub async fn close(client: &Client, session: &muxa_tmux::Session) -> Result<(), TaskError> {
+    if !is_ask(session) {
+        return Err(TaskError::Invalid(format!(
+            "{} is not an ask session",
+            session.name
+        )));
+    }
+    end_session(client, session.id, &session.name).await?;
+    tracing::info!(session = %session.id, "ask session closed");
+    Ok(())
 }

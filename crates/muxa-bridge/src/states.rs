@@ -92,6 +92,7 @@ mod tests {
             worktree: None,
             task: None,
             task_id: None,
+            ask: None,
             panes: vec![Pane {
                 id: PaneId::new(1),
                 window: WindowId::new(1),

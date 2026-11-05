@@ -83,7 +83,8 @@ impl Host {
         let Message::Hello { capabilities, .. } = hello else {
             panic!("{hello:?}")
         };
-        assert_eq!(work_level(&capabilities), WORK_READ);
+        // Levels add up: the bridge's level 5 (ADR 0039) has reading Tasks.
+        assert!(work_level(&capabilities) >= WORK_READ);
         bridge
     }
 }

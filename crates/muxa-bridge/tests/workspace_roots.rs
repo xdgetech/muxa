@@ -355,3 +355,107 @@ async fn an_ask_session_runs_in_the_main_checkout_as_a_manual_session() {
         "the user's session keeps its current window and pane"
     );
 }
+
+fn session_ids(server: &Server) -> Vec<String> {
+    server
+        .tmux(&["list-sessions", "-F", "#{session_id}"])
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The sessions of the clients that are not control clients: the desktop's.
+fn desktop_sessions(server: &Server) -> Vec<String> {
+    server
+        .tmux(&["list-clients", "-F", "#{client_flags} #{session_id}"])
+        .lines()
+        .filter(|l| !l.contains("control-mode"))
+        .filter_map(|l| l.rsplit(' ').next().map(str::to_owned))
+        .collect()
+}
+
+async fn close(bridge: &mut Bridge, session: &str, mode: &str) -> Message {
+    let req = json!({"type": "close-task", "session": session, "mode": mode});
+    send(bridge, req).await.1
+}
+
+/// ADR 0039: `close-task` closes an ask session, its device session first,
+/// and moves the desktop off it. The main checkout keeps every file. A user
+/// session with no worktree and no `@muxa_ask` is refused.
+#[tokio::test]
+async fn close_task_closes_an_ask_session_and_refuses_a_user_session() {
+    let server = Server::start();
+    let mut entity = Entity::new("close-ask");
+    let mut bridge = entity.bridge(&server, false).await;
+    let app = entity.root.join("app");
+    std::fs::write(app.join("notes.txt"), "uncommitted").unwrap();
+    let head = git(&app, &["rev-parse", "HEAD"]);
+    let work = server.tmux(&["display-message", "-p", "-t", "=work:", "#{session_id}"]);
+
+    let (started, result) = ask(&mut bridge, json!({"repo": "app"})).await;
+    ok(&result);
+    let (_, session, name) = started.expect("session-started");
+    let Message::Result {
+        sessions: Some(listed),
+        ..
+    } = bridge.request(json!({"type": "list"})).await
+    else {
+        panic!("no sessions")
+    };
+    let listed = listed.iter().find(|s| s.name == name).expect("listed");
+    assert_eq!(listed.ask.as_deref(), Some("lisk"));
+
+    // The desktop shows the ask session, and the device watches it: a device
+    // session holds its window.
+    let desktop = common::desktop::Desktop::attach(&server, &session, 120, 40);
+    common::wait_until(|| desktop_sessions(&server) == [session.clone()]).await;
+    let pane = server.pane(&format!("{session}:"));
+    bridge
+        .request(json!({"type": "viewport", "cols": 100, "rows": 30}))
+        .await;
+    bridge.request(json!({"type": "watch", "pane": pane})).await;
+    common::wait_until(|| session_ids(&server).len() == 3).await;
+
+    // A user session without a worktree is not the bridge's to close.
+    let plain = server.tmux(&[
+        "new-session",
+        "-d",
+        "-P",
+        "-F",
+        "#{session_id}",
+        "-s",
+        "plain",
+        "sh",
+    ]);
+    let before = server.layout();
+    for mode in ["keep", "close", "force"] {
+        let result = close(&mut bridge, &plain, mode).await;
+        assert_eq!(error_code(&result), ErrorCode::BadRequest, "{mode}");
+    }
+    assert_eq!(server.layout(), before);
+
+    // `force` removes nothing: an ask session has no worktree.
+    ok(&close(&mut bridge, &session, "force").await);
+    let mut left = session_ids(&server);
+    left.sort();
+    let mut expected = vec![work.clone(), plain.clone()];
+    expected.sort();
+    assert_eq!(left, expected, "no ask or device session is left");
+    assert_eq!(desktop_sessions(&server).len(), 1);
+    assert_ne!(
+        desktop_sessions(&server),
+        [session.clone()],
+        "the desktop moved"
+    );
+    assert_eq!(
+        std::fs::read_to_string(app.join("notes.txt")).unwrap(),
+        "uncommitted"
+    );
+    assert_eq!(git(&app, &["rev-parse", "HEAD"]), head);
+    assert!(!entity.root.join(".worktrees").exists());
+
+    // Closed already: the id names no session.
+    let result = close(&mut bridge, &session, "keep").await;
+    assert_eq!(error_code(&result), ErrorCode::BadRequest);
+    desktop.close();
+}

@@ -18,6 +18,7 @@ fn session(s: tmux::Session) -> wire::Session {
         worktree: s.worktree,
         task: s.task,
         task_id: s.task_id,
+        ask: s.ask,
         panes: s.panes.into_iter().map(pane).collect(),
     }
 }

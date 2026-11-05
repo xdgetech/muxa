@@ -21,6 +21,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task (done | drop) ID [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
+       muxa-cli [--bridge CMD] ask close SESSION [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
        muxa-cli [--bridge CMD] task new --read --workspace W --title T --goal G
                 --repo REPO [--project P] [--json]
@@ -56,6 +57,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   ask REPO       starts the workspace's agent in the repo's main checkout, to
                  ask about its code: no task and no worktree. Prints the
                  session id. Without --workspace, the one that has REPO
+  ask close SESSION
+                 closes an ask session, by id ($3) or name. Its agent stops;
+                 the main checkout and its files stay as they are
   --json         one line of JSON for other tools: the Inbox for tasks, one
                  Inbox item for task new and task restart (docs/agents.md,
                  Desktop tools)
@@ -125,6 +129,10 @@ enum Cmd {
         seconds: Option<u64>,
     },
     Tasks {
+        json: bool,
+    },
+    CloseAsk {
+        session: String,
         json: bool,
     },
     Ask {
@@ -314,6 +322,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             seconds,
         },
         [w] if w == "tasks" => Cmd::Tasks { json },
+        [w, c, session] if w == "ask" && c == "close" => Cmd::CloseAsk {
+            session: session.clone(),
+            json,
+        },
         [w, repo] if w == "ask" => Cmd::Ask {
             repo: repo.clone(),
             workspace: Some(new.workspace).filter(|w| !w.trim().is_empty()),
@@ -488,6 +500,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             workspace,
             json,
         } => ask::ask(&mut conn, &repo, workspace, json).await,
+        Cmd::CloseAsk { session, json } => ask::close(&mut conn, &session, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Close { task, status, json } => tasks::close(&mut conn, &task, status, json).await,
         Cmd::Recover {
@@ -675,6 +688,19 @@ mod tests {
                 .action,
             InboxAction::Branch
         );
+    }
+
+    #[test]
+    fn ask_close_takes_a_session_and_ask_still_takes_a_repo() {
+        let parse = |args: &[&str]| parse_with(lexopt::Parser::from_args(args.iter().copied()));
+        assert!(matches!(
+            parse(&["ask", "close", "$3", "--json"]),
+            Ok(Some((_, Cmd::CloseAsk { session, json: true }))) if session == "$3"
+        ));
+        assert!(matches!(
+            parse(&["ask", "close"]),
+            Ok(Some((_, Cmd::Ask { repo, .. }))) if repo == "close"
+        ));
     }
 
     /// ADR 0033 removed Move down and Later on the Task.

@@ -105,8 +105,11 @@ where
         capabilities.push("task-handoff".into());
         capabilities.push("task-restart-recovery".into());
         capabilities.push("tasks-changed".into());
-        // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034).
-        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_READ));
+        // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034),
+        // 5 closes ask sessions (ADR 0039).
+        capabilities.push(muxa_protocol::work_capability(
+            muxa_protocol::WORK_CLOSE_ASK,
+        ));
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {
