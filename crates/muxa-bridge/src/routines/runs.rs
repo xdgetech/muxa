@@ -402,6 +402,9 @@ fn reconcile(
     }
 }
 
+const NOT_STARTED: &str = "The start prompt was not typed: the agent did not become idle \
+                           within 30 seconds. Open the run's session to see why.";
+
 /// Why the run's record says it ended, or None while it may still publish.
 fn ended(r: &crate::records::Record) -> Option<String> {
     match r.status {
@@ -410,6 +413,7 @@ fn ended(r: &crate::records::Record) -> Option<String> {
         Status::Open | Status::Review => {}
     }
     match r.task_loop() {
+        Ok(Some(lp)) if lp.never_started() => Some(NOT_STARTED.into()),
         Ok(Some(lp)) if lp.state == LoopState::Stopped => Some(format!(
             "The output check stopped: {}.",
             lp.reason.map_or("unknown".to_owned(), String::from)

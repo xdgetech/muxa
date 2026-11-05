@@ -253,10 +253,23 @@ pub async fn send_prompt(
         tokio::time::sleep(PROMPT_POLL).await;
     };
     tracing::info!(task, "agent not idle; prompt not sent");
-    end_wait(&config, task.clone(), pending, seen, Some(prompt.not_sent)).await;
-    let (session, pane) = last_pane.unzip();
+    give_up(config, task, pending, seen, last_pane, prompt.not_sent).await;
+}
+
+/// The prompt was not typed in time: the wait ends with `note`, and the
+/// Task's failure item says so. `pane` is the Task's (`$n`, `%n`) when known.
+pub async fn give_up(
+    config: Arc<Config>,
+    task: String,
+    pending: PendingPrompt,
+    seen: Option<Seen>,
+    pane: Option<(String, String)>,
+    note: &'static str,
+) {
+    end_wait(&config, task.clone(), pending, seen, note).await;
+    let (session, pane) = pane.unzip();
     let failed = tokio::task::spawn_blocking(move || {
-        crate::items::produce::start_failed(&config, &task, session, pane, prompt.not_sent);
+        crate::items::produce::start_failed(&config, &task, session, pane, note);
     });
     if let Err(e) = failed.await {
         tracing::warn!(error = %e, "the start failure's inbox item did not run");
@@ -358,27 +371,41 @@ async fn finish_claimed_wait(
     result.is_ok()
 }
 
-/// Clears the wait, if it is still this one, with the run's facts and a note.
-pub async fn end_wait(
+/// Ends the wait that gave up, if it is still this one, with the run's facts and a note.
+async fn end_wait(
     config: &Config,
     task: String,
     pending: PendingPrompt,
     seen: Option<Seen>,
-    note: Option<&'static str>,
+    note: &'static str,
 ) {
     write(config, task, move |r| {
-        if r.pending_prompt() != Some(pending) {
-            return;
-        }
-        r.set_pending_prompt(None);
-        if let Some(note) = note {
-            r.note = Some(note.to_owned());
-        }
-        if let (Some(seen), Some(run)) = (&seen, r.run_mut(pending.run)) {
-            run.fill(seen);
-        }
+        not_sent(r, pending, seen.as_ref(), note, crate::records::now());
     })
     .await;
+}
+
+/// An active loop stops with `not-sent`. Left armed, it would check the
+/// agent's first finished turn, which no prompt asked for, and type a fail
+/// prompt as the agent's first instruction.
+fn not_sent(r: &mut Record, pending: PendingPrompt, seen: Option<&Seen>, note: &str, now: u64) {
+    if r.pending_prompt() != Some(pending) {
+        return;
+    }
+    r.set_pending_prompt(None);
+    r.note = Some(note.to_owned());
+    if let (Some(seen), Some(run)) = (seen, r.run_mut(pending.run)) {
+        run.fill(seen);
+    }
+    match r.task_loop() {
+        Ok(Some(lp)) if lp.active() => {
+            if let Err(e) = r.set_loop(Some(&lp.stopped(crate::records::Reason::NotSent, now))) {
+                tracing::warn!(task = %r.id, error = %e, "cannot stop the loop of a prompt not sent");
+            }
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!(task = %r.id, error = %e, "unreadable loop; left as it is"),
+    }
 }
 
 /// No person typed on the session in the last seconds (ADR 0019). In doubt, wait.
@@ -800,13 +827,73 @@ mod tests {
                 session: Some("old-session".into()),
                 transcript: None,
             }),
-            Some("obsolete timeout"),
+            "obsolete timeout",
         )
         .await;
         let result = store.get(&record.id).unwrap();
         assert_eq!(result.pending_prompt(), Some(current));
         assert!(result.note.is_none());
         assert!(result.runs.iter().all(|run| run.agent.is_none()));
+    }
+
+    #[test]
+    fn a_prompt_not_sent_stops_the_loop_it_would_have_started() {
+        use crate::records::{LoopSpec, LoopState, Reason};
+        let mut record: Record = serde_json::from_value(serde_json::json!({
+            "version":1,"id":"t-000001","rev":1,"workspace":"work","title":"fixture",
+            "goal":"","status":"open","createdAt":100,"updatedAt":100
+        }))
+        .unwrap();
+        let run = record.start_run(crate::records::RunReason::Start, 100);
+        let pending = PendingPrompt {
+            kind: PromptKind::Start,
+            since: 100,
+            run,
+        };
+        let spec = LoopSpec {
+            check: "true".into(),
+            max_attempts: Some(3),
+            timeout: Some(60),
+        };
+        let armed = crate::records::Loop::start(spec, None, false, 100);
+        record.set_loop(Some(&armed)).unwrap();
+        record.set_pending_prompt(Some(pending));
+
+        let mut other = record.clone();
+        not_sent(
+            &mut other,
+            PendingPrompt {
+                run: run + 1,
+                ..pending
+            },
+            None,
+            "obsolete",
+            130,
+        );
+        assert_eq!(other, record, "another wait's give-up changes nothing");
+
+        not_sent(&mut record, pending, None, START.not_sent, 130);
+        assert!(record.pending_prompt().is_none());
+        assert_eq!(record.note.as_deref(), Some(START.not_sent));
+        let lp = record.task_loop().unwrap().unwrap();
+        assert_eq!(
+            (lp.state.clone(), lp.reason.clone(), lp.since),
+            (LoopState::Stopped, Some(Reason::NotSent), 130)
+        );
+        assert!(lp.never_started());
+
+        let passed = crate::records::Loop {
+            state: LoopState::Passed,
+            ..armed
+        };
+        record.set_loop(Some(&passed)).unwrap();
+        record.set_pending_prompt(Some(pending));
+        not_sent(&mut record, pending, None, START.not_sent, 140);
+        assert_eq!(
+            record.task_loop().unwrap(),
+            Some(passed),
+            "an ended loop stays"
+        );
     }
 
     #[tokio::test]

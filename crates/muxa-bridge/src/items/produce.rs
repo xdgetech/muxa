@@ -111,8 +111,12 @@ fn agent_need(agent: Option<AgentStatus>) -> Need {
 }
 
 /// An ended loop's result. A stop the user caused, directly or by moving the
-/// Task, asks nothing.
+/// Task, asks nothing. Nor does a loop whose start prompt was never typed:
+/// the start's failure item already asks.
 fn loop_need(lp: &Loop) -> Option<(u64, Need)> {
+    if lp.never_started() {
+        return None;
+    }
     match (&lp.state, &lp.reason) {
         (LoopState::Passed, _) => Some((lp.since, Need::Passed(lp.since))),
         (LoopState::Stopped, Some(Reason::User | Reason::Status)) => None,

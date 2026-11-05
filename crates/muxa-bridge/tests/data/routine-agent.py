@@ -6,6 +6,8 @@ Each line typed into its pane is one turn. It sets @agent_state and
 STEER_DIR/turns.log. Files in STEER_DIR steer it:
   first.json  copied to .muxa/routine/output.json on the start prompt
   fixed.json  copied there on the fail prompt
+  hold        present: it starts on a dialog (state running) until answered
+              appears, as Claude does in a folder it does not trust
 It also copies .muxa/routine/state.json, when present, to
 STEER_DIR/seen-state-<n>.json, so a test sees what the run received.
 """
@@ -42,6 +44,10 @@ def copy(name):
 
 def main():
     tmux("set-option", "-p", "-t", PANE, "@muxa_role", "agent")
+    if os.path.exists(os.path.join(STEER, "hold")):
+        state("running")
+        while not os.path.exists(os.path.join(STEER, "answered")):
+            time.sleep(0.2)
     state("done")
     print("routine agent ready", flush=True)
     for line in sys.stdin:

@@ -152,6 +152,30 @@ fn a_loop_the_user_stopped_asks_nothing_of_its_own() {
 }
 
 #[test]
+fn a_loop_whose_start_prompt_was_never_typed_leaves_the_start_failure_item() {
+    let lp = a_loop(LoopState::Stopped, Some(Reason::NotSent), T0 + 20);
+    assert_eq!(
+        need(Status::Open, Some(&lp), None, None),
+        Need::Nothing,
+        "the start's failure item asks already"
+    );
+    let failed_prompt = Loop {
+        last_check: Some(crate::records::LastCheck {
+            attempt: 1,
+            exit: Some(1),
+            seconds: 1,
+            at: T0 + 10,
+        }),
+        ..lp
+    };
+    assert_eq!(
+        need(Status::Open, Some(&failed_prompt), None, None),
+        Need::Stopped(T0 + 20, Reason::NotSent),
+        "a fail prompt not typed is the loop's own failure"
+    );
+}
+
+#[test]
 fn a_stored_key_never_makes_a_second_item() {
     let need = Need::Turn(T0, AgentState::Idle);
     assert_eq!(

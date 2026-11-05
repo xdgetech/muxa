@@ -202,6 +202,14 @@ impl Loop {
         }
     }
 
+    /// Stopped with `not-sent` before any check ran: the start prompt was
+    /// never typed (`handoff::give_up`), and the start's failure says so.
+    pub fn never_started(&self) -> bool {
+        self.state == LoopState::Stopped
+            && self.reason == Some(Reason::NotSent)
+            && self.last_check.is_none()
+    }
+
     /// Ended for `reason`. An ended loop stays as it is.
     pub fn stopped(&self, reason: Reason, now: u64) -> Loop {
         if !self.active() {

@@ -495,3 +495,20 @@ fn an_ended_loop_does_nothing() {
         assert_eq!((s.state, s.action), (lp, Action::None));
     }
 }
+
+#[test]
+fn a_loop_whose_start_prompt_was_never_typed_ignores_the_agents_first_turn() {
+    // The handoff gave up: the agent sat on a dialog. Hours later it is idle.
+    let lp = armed().stopped(Reason::NotSent, T0 + 30);
+    assert!(lp.never_started());
+    let late = T0 + 7_200;
+    let s = run(
+        &lp,
+        &[
+            obs(late, agent(AgentState::Idle, Some(late))),
+            obs(late + SETTLE + 1, agent(AgentState::Idle, Some(late))),
+        ],
+    );
+    assert_eq!(s.action, Action::None, "no check, so no fail prompt");
+    assert_eq!(s.state, lp);
+}

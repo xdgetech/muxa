@@ -43,7 +43,7 @@ A run is stored as a record with `kind: routine-run`, its Routine and its occurr
 
 "A Routine run is not a Task" is a statement about the product. Task lists and the derived Inbox skip this kind. The Routine's detail shows its running and past runs, and opens their sessions.
 
-The Loop's check for a Routine run is muxa's validation of the run's output (section 4). A failed check types a fixed prompt, as in a Task Loop. An agent waiting on the user shows a need in Inbox for that run.
+The Loop's check for a Routine run is muxa's validation of the run's output (section 4). A failed check types a fixed prompt, as in a Task Loop. An agent waiting on the user shows a need in Inbox for that run. When the start prompt is never typed, the check stops with `not-sent` (ADR 0019) and the run fails: no fail prompt reaches an agent that never got its task.
 
 ### 4. Output goes through a staged, validated publish
 

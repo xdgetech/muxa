@@ -121,6 +121,7 @@ Proposed. It partly supersedes:
 - A daemon that starts finds every `pendingPrompt`:
   - younger than 30 s: it resumes the wait;
   - older: it clears the field, and writes the "not sent" note of ADR 0015.
+- A wait that gives up also stops an active loop with reason `not-sent`. Left armed, the loop would check the agent's first finished turn, which no prompt asked for, and type a fail prompt as the agent's first instruction. The start's failure item (ADR 0033) is the Inbox item; the stopped loop makes no second one.
 - A fallback bridge writes the same field, and waits in its own `Pending`, as today. A daemon that starts later picks up a wait that the bridge left behind.
 - Why not keep the waits in the bridge: they would end with the bridge, and the 100 s limit of `Pending::finish` would stay. The record is already the one place that survives every process.
 
@@ -199,7 +200,7 @@ The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end
 | `timeout` | A check ran longer than `timeout`. |
 | `error` | The agent's state is `error`. |
 | `no-agent` | No linked session, no live agent pane, or `shellForeground: true`. |
-| `not-sent` | A prompt could not be typed within 30 seconds. |
+| `not-sent` | A prompt could not be typed within 30 seconds: the fail prompt, or the start or restart prompt the loop waited for. |
 | `stalled` | The loop is `armed`, and for more than 60 seconds the agent shows a finished turn older than `armedAt`. The typed prompt did not reach it. |
 | `status` | The user set the Task's status to anything but `open`. |
 | `user` | `stop-loop`, `daemon stop` or `daemon uninstall`. |

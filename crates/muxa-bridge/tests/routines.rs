@@ -402,6 +402,55 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
     daemon.shutdown().await;
 }
 
+/// An agent that sits on a dialog gets no start prompt: the handoff gives up
+/// after 30 s. The run fails then, and when the user answers the dialog the
+/// agent's first finished turn gets no fail prompt.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_whose_start_prompt_was_not_typed_fails_without_a_fail_prompt() {
+    let server = Server::start();
+    let h = Host::new("not-sent");
+    h.steer("hold", &json!(true));
+    let flags = h.flags();
+    let flags: Vec<&str> = flags.iter().map(String::as_str).collect();
+    let mut daemon = Daemon::start(&server, &flags).await;
+    let mut conn = daemon.connect().await;
+
+    let run = run_now(&mut conn)
+        .await
+        .running
+        .and_then(|r| r.task)
+        .expect("the run's record");
+    let failure = ended(&mut conn, &h)
+        .await
+        .last_failure
+        .expect("a failed run");
+    assert_eq!(failure.task.as_deref(), Some(run.as_str()));
+    assert!(
+        failure.reason.contains("start prompt was not typed"),
+        "{}",
+        failure.reason
+    );
+    let record = h.record(&run);
+    assert_eq!(record["status"], "dropped", "{record}");
+    assert_eq!(record["loop"]["state"], "stopped", "{record}");
+    assert_eq!(record["loop"]["reason"], "not-sent", "{record}");
+    let tagged = server
+        .tmux(&["list-sessions", "-F", "#{@muxa_task}"])
+        .lines()
+        .any(|t| t == run);
+    assert!(tagged, "a failed run keeps its session");
+
+    h.steer("answered", &json!(true));
+    // Longer than the loop's settle time and a few daemon ticks.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline {
+        assert!(h.turns().is_empty(), "nothing is typed: {:?}", h.turns());
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert_eq!(h.record(&run)["loop"]["reason"], "not-sent");
+    daemon.shutdown().await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn without_a_daemon_a_bridge_lists_routines_but_runs_none() {
     let server = Server::start();
