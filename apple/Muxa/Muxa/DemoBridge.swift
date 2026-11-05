@@ -94,6 +94,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         followers = content.followers
         tasks = content.tasks
         work = content.work
+        work.offersAskAgent = Self.workLevel >= workAskAgent
         alertsPending = alerts
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: Self.capabilities))
@@ -102,16 +103,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "work:5",
+            "task-loop", "tasks-changed", "viewport", "work:6",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:5" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:6" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:5" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:6" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:5" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:6" ? "work:3" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -316,6 +317,36 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         }
     }
 
+    /// Ask Agent (ADR 0041): the workspace's one Ask session at its root, started on the
+    /// first request. The item stays open.
+    private func askAgent(id: UInt64, item: String, text: String?) {
+        guard Self.workLevel >= workAskAgent else { return unsupported(id, Self.noRequest) }
+        let found = lock.withLock { () -> (InboxItem, Session, Bool)? in
+            guard let shown = work.shownItems.first(where: { $0.id == item && $0.state == .open }) else { return nil }
+            let name = "ask-\(shown.workspace)"
+            if let s = sessions.first(where: { $0.name == name }) { return (shown, s, false) }
+            let root = tasks.workspaces.first { $0.name == shown.workspace }?.root ?? "/"
+            let n = 20 + sessions.count
+            let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 80, rows: 24,
+                            command: "claude", path: root, dead: false, shellForeground: false,
+                            agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
+            followers.insert(pane.id)
+            let session = Session(id: "$\(n)", name: name, ask: shown.workspace, panes: [pane])
+            sessions.append(session)
+            return (shown, session, true)
+        }
+        guard let (shown, session, started) = found else {
+            return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(item) is not an open item"), sessions: nil))
+        }
+        guard let text, !text.isEmpty else {
+            return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "ask-agent needs a text"), sessions: nil))
+        }
+        emit(.sessionStarted(start: id, session: session.id, name: session.name))
+        emit(.inboxSaved(inbox: id, entry: nil, item: shown))
+        ok(id)
+        if started { emit(.sessionsChanged) }
+    }
+
     /// What a bridge says to a request it does not know.
     static let noRequest = "The demo bridge does not support this request."
 
@@ -346,13 +377,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option):
+        case .updateInboxEntry(let id, let entry, .askAgent, _, let text, _):
+            askAgent(id: id, item: entry, text: text)
+        // `until` is ignored: Later moves an item down (ADR 0040).
+        case .updateInboxEntry(let id, let entry, let action, _, let text, let option):
             let isEntry = lock.withLock { work.entries.contains { $0.id == entry } }
             if Self.workLevel >= workItems, !isEntry || action == .read {
-                answerItem(id: id, item: entry, action: action, until: until, text: text, option: option)
+                answerItem(id: id, item: entry, action: action, text: text, option: option)
             } else {
                 // A proposal's Reject dismisses it.
-                updateEntry(id: id, entry: entry, action: action == .reject ? .dismiss : action, until: until)
+                updateEntry(id: id, entry: entry, action: action == .reject ? .dismiss : action)
             }
         default:
             unsupported(req.id, Self.noRequest)
@@ -361,10 +395,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     /// Approve creates one Task, as `create-task` would, and opens no session for a
     /// second approval; dismiss and later touch no Task.
-    private func updateEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?) {
+    private func updateEntry(id: UInt64, entry: String, action: InboxAction) {
         let outcome = lock.withLock { () -> Result<(InboxEntry, created: Bool), DemoWork.Refusal> in
             do throws(DemoWork.Refusal) {
-                let (saved, goal) = try work.update(entry, action: action, until: until)
+                let (saved, goal) = try work.update(entry, action: action)
                 guard let goal, saved.task == nil else { return .success((saved, false)) }
                 let routine = work.routines.first { $0.workspace == saved.workspace && $0.name == saved.routine }
                 let record: TaskRecord
@@ -391,10 +425,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     /// Answers a Task's item, or marks any item read. The agent that takes the answer
     /// runs again; Accept and Drop set the Task's status.
-    private func answerItem(id: UInt64, item: String, action: InboxAction, until: UInt64?, text: String?, option: UInt32?) {
+    private func answerItem(id: UInt64, item: String, action: InboxAction, text: String?, option: UInt32?) {
         let outcome = lock.withLock { () -> Result<(InboxItem, DemoWork.ItemEffect), DemoWork.Refusal> in
             do throws(DemoWork.Refusal) {
-                let answered = try work.answer(item, action, until: until, text: text, option: option, tasks: &tasks)
+                let answered = try work.answer(item, action, text: text, option: option, tasks: &tasks)
                 if case .agentRuns(let pane) = answered.1 {
                     for s in sessions.indices {
                         guard let p = sessions[s].panes.firstIndex(where: { $0.id == pane }) else { continue }

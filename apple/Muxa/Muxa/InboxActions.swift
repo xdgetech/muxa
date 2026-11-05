@@ -2,36 +2,6 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// Later at a time the user picks.
-struct LaterPicker: View {
-    let save: (UInt64) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var date = Date().addingTimeInterval(3 * 3600)
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                DatePicker("Show again", selection: $date, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                    .datePickerStyle(.graphical)
-                    .accessibilityIdentifier("later-date")
-                if let problem = laterProblem(date) {
-                    Text(problem).foregroundStyle(Theme.failure)
-                }
-            }
-            .navigationTitle("Later")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save(UInt64(date.timeIntervalSince1970)) }
-                        .disabled(laterProblem(date) != nil)
-                        .accessibilityIdentifier("later-save")
-                }
-            }
-        }
-    }
-}
-
 /// The proposal exactly as the Task will get it. Approval creates one Task.
 struct ApproveSheet: View {
     let title: String

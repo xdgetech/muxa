@@ -98,10 +98,11 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(app.buttons["item-evidence-doc-docs/design.md"].label.contains("design.md"))
         XCTAssertTrue(app.buttons["item-evidence-image-build/screenshots/en/login.png"].label.contains("login.png"))
         XCTAssertTrue(app.links["item-evidence-link"].exists || app.buttons["item-evidence-link"].exists)
-        XCTAssertEqual(answer(app, "accept").label, "Done")
-        XCTAssertTrue(app.staticTexts["item-result-accept"].label.contains("closes the Task"))
+        XCTAssertEqual(answer(app, "accept").label, "Complete Task")
         XCTAssertEqual(answer(app, "reply").label, "Send")
-        for action in ["redo", "change-course", "keep-open"] {
+        XCTAssertEqual(answer(app, "keep-open").label, "Done", "✓ closes only the item")
+        XCTAssertTrue(answer(app, "later").exists, "Later is never under More")
+        for action in ["redo", "change-course"] {
             XCTAssertFalse(answer(app, action).exists, "\(action) is under More")
         }
         save("inbox-item-review")
@@ -199,20 +200,31 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(proposal.waitForNonExistence(timeout: 5))
     }
 
-    /// A swipe asks for Later, and the item leaves the list.
+    /// A swipe is Later: the item moves to the bottom of the list at once and stays
+    /// in it (ADR 0040).
     @MainActor
-    func testLaterBySwipe() throws {
+    func testLaterBySwipeMovesTheItemDown() throws {
         let app = launchOnInbox()
-        let failure = row(app, "i-0000a003")
-        reveal(app, failure)
-        XCTAssertTrue(failure.isHittable)
+        XCTAssertTrue(row(app, "i-0000a001").waitForExistence(timeout: 10))
+        let first = row(app, "i-0000a001")
+        let id = first.identifier
+        XCTAssertNotEqual(lastRowId(app), id)
         // A finger's drag: `swipeLeft()` is too short for a sidebar row.
-        failure.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
-            .press(forDuration: 0.05, thenDragTo: failure.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)))
-        // A full swipe runs Later at once; a shorter one shows its button.
-        if !app.buttons["In 1 hour"].waitForExistence(timeout: 2) { tapWhenReady(app.buttons["Later"]) }
-        tapWhenReady(app.buttons["In 1 hour"])
-        XCTAssertTrue(failure.waitForNonExistence(timeout: 5))
+        first.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: first.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)))
+        // A full swipe runs Later at once; a shorter one shows its button. The item
+        // screen has a Later of its own, for the next item.
+        let button = app.collectionViews["sidebar-list"].buttons["Later"]
+        if button.waitForExistence(timeout: 2), button.isHittable { button.tap() }
+        let moved = expectation(for: NSPredicate { _, _ in self.lastRowId(app) == id }, evaluatedWith: nil)
+        wait(for: [moved], timeout: 5)
+        XCTAssertTrue(app.buttons[id].exists, "Later hides nothing")
+    }
+
+    /// The lowest item row on screen. The query's order is not the list's.
+    private func lastRowId(_ app: XCUIApplication) -> String? {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'item-row-'")).allElementsBoundByIndex
+            .max { $0.frame.minY < $1.frame.minY }?.identifier
     }
 
     /// A doc in the attachment list opens in the Reader for the item's pane; closing it
@@ -273,6 +285,26 @@ final class InboxItemTests: XCTestCase {
         tapWhenReady(app.buttons["item-open-chat"])
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.segmentedControls["view-mode"].buttons["Chat"].isSelected)
+    }
+
+    /// Ask Agent sends a briefing with a text to the workspace's Ask session, opens
+    /// that session, and leaves the item in the list (ADR 0041).
+    @MainActor
+    func testAskAgentOpensTheWorkspacesAskSessionAndKeepsTheItem() throws {
+        let app = launchOnInbox()
+        open(app, "e-000000a1", question: "Release moved to Thursday")
+        XCTAssertFalse(answer(app, "ask-agent").isEnabled, "no text yet")
+        tapWhenReady(app.textFields["item-reply"])
+        app.textFields["item-reply"].typeText("Put this in Notion.")
+        tapWhenReady(answer(app, "ask-agent"))
+        // A phone pushes the pane under the session's name; a tablet shows its view switch.
+        let pane = isPhone ? app.navigationBars["ask-work"] : app.segmentedControls["view-mode"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10), "the Ask session's pane")
+        if !isPhone {
+            // The pane collapsed the sidebar; Inbox mode shows the list again.
+            app.typeKey("t", modifierFlags: .command)
+            XCTAssertTrue(row(app, "e-000000a1").waitForExistence(timeout: 5), "the item stays open")
+        }
     }
 
     /// An item with a session offers Chat and Terminal; one without a session neither.

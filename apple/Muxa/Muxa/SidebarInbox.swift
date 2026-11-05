@@ -30,7 +30,7 @@ struct SidebarInbox: View {
                     .accessibilityIdentifier("item-row-\(item.id)")
                     .swipeActions(edge: .trailing) {
                         if item.answers.contains(.later) {
-                            Button("Later", systemImage: Icon.later) { model.laterItem = item }.tint(.indigo)
+                            Button("Later", systemImage: Icon.later) { model.later(item) }.tint(.indigo)
                         }
                     }
             }
@@ -79,7 +79,7 @@ struct InboxItemRow: View {
 }
 
 /// The item in the detail column, with its keys: Cmd+Up/Down move between items,
-/// Cmd+O opens its terminal, Cmd+Shift+L asks for Later.
+/// Cmd+O opens its terminal, Cmd+Shift+L moves it down.
 struct ItemDetail: View {
     @Environment(AppModel.self) private var model
     let id: String
@@ -96,7 +96,7 @@ struct ItemDetail: View {
                         Button("Open the Item's Terminal") { model.open(item, as: .terminal) }
                             .keyboardShortcut("o")
                             .disabled(model.itemSession(item) == nil)
-                        Button("Later") { model.laterItem = item }
+                        Button("Later") { model.later(item) }
                             .keyboardShortcut("l", modifiers: [.command, .shift])
                             .disabled(!item.answers.contains(.later))
                     }

@@ -10,7 +10,6 @@ struct InboxItemScreen: View {
     let id: String
     var answered: (InboxItem) -> Void
     @State private var reply = ""
-    @State private var later: InboxItem?
     @State private var approving: InboxItem?
     @State private var sending = false
     @State private var failure: String?
@@ -59,7 +58,6 @@ struct InboxItemScreen: View {
         .safeAreaInset(edge: .bottom) { answerBar(item) }
         .navigationTitle(item.kind.title)
         .navigationBarTitleDisplayMode(.inline)
-        .itemLater($later, saved: answered)
         .sheet(item: $approving) { item in
             ApproveSheet(title: item.title, workspace: item.workspace, proposal: item.proposal) {
                 approving = nil
@@ -91,7 +89,8 @@ struct InboxItemScreen: View {
         let answers = ItemAnswers(item, replying: hasReply)
         return VStack(spacing: 8) {
             if item.answers.contains(where: \.needsText) {
-                TextField("Reply…", text: $reply, axis: .vertical)
+                TextField(item.answers.contains(where: { $0.needsText && $0 != .askAgent }) ? "Reply…" : "Ask the workspace's agent…",
+                          text: $reply, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
                     .focused($replying)
@@ -108,51 +107,29 @@ struct InboxItemScreen: View {
                 HStack {
                     answerButtons(item, answers)
                     Spacer(minLength: 0)
-                    sessionButtons(item, answers)
+                    sessionButtons(item)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     HStack { answerButtons(item, answers) }
                     HStack {
                         Spacer(minLength: 0)
-                        sessionButtons(item, answers)
+                        sessionButtons(item)
                     }
                 }
             }
             .disabled(sending)
-            ForEach(answers.shown, id: \.self) { action in
-                if let result = action.result {
-                    Text("\(action.title(for: item.kind)) \(result).")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("item-result-\(action.rawValue)")
-                }
-            }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
         .background(.bar)
     }
 
+    /// The text buttons, More when two or more are hidden, then ✓ and Later as icons
+    /// (ADR 0040).
     @ViewBuilder
     private func answerButtons(_ item: InboxItem, _ answers: ItemAnswers) -> some View {
         ForEach(answers.shown, id: \.self) { action in
             answerButton(item, action, prominent: action == answers.main)
-        }
-    }
-
-    /// Chat and Terminal show the item's session (ADR 0035 §3): an `ask` is answered
-    /// in Chat, a `failure` read in the terminal. Chat only where the agent has one.
-    @ViewBuilder
-    private func sessionButtons(_ item: InboxItem, _ answers: ItemAnswers) -> some View {
-        if model.itemSession(item) != nil {
-            if model.hasChat(item) {
-                Button("Chat", systemImage: Icon.chat) { model.open(item, as: .chat) }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("item-open-chat")
-            }
-            Button("Terminal", systemImage: Icon.agent) { model.open(item, as: .terminal) }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("item-open-terminal")
         }
         if !answers.more.isEmpty {
             Menu {
@@ -165,6 +142,28 @@ struct InboxItemScreen: View {
                 Label("More", systemImage: "ellipsis.circle")
             }
             .accessibilityIdentifier("item-more")
+        }
+        if let done = answers.done {
+            iconButton(item, done, systemImage: Icon.done, prominent: done == answers.main)
+        }
+        if answers.later {
+            iconButton(item, .later, systemImage: Icon.later, prominent: false)
+        }
+    }
+
+    /// Chat and Terminal show the item's session (ADR 0035 §3): an `ask` is answered
+    /// in Chat, a `failure` read in the terminal. Chat only where the agent has one.
+    @ViewBuilder
+    private func sessionButtons(_ item: InboxItem) -> some View {
+        if model.itemSession(item) != nil {
+            if model.hasChat(item) {
+                Button("Chat", systemImage: Icon.chat) { model.open(item, as: .chat) }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("item-open-chat")
+            }
+            Button("Terminal", systemImage: Icon.agent) { model.open(item, as: .terminal) }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("item-open-terminal")
         }
     }
 
@@ -181,9 +180,19 @@ struct InboxItemScreen: View {
 
     @ViewBuilder
     private func answerButton(_ item: InboxItem, _ action: InboxAction, prominent: Bool) -> some View {
-        let button = Button(action.title(for: item.kind)) { perform(item, action) }
+        styled(Button(action.title(for: item.kind)) { perform(item, action) }, prominent: prominent)
             .disabled(action.needsText && !hasReply)
             .accessibilityIdentifier("item-answer-\(action.rawValue)")
+    }
+
+    private func iconButton(_ item: InboxItem, _ action: InboxAction, systemImage: String, prominent: Bool) -> some View {
+        styled(Button(action.title(for: item.kind), systemImage: systemImage) { perform(item, action) }, prominent: prominent)
+            .labelStyle(.iconOnly)
+            .accessibilityIdentifier("item-answer-\(action.rawValue)")
+    }
+
+    @ViewBuilder
+    private func styled(_ button: some View, prominent: Bool) -> some View {
         if prominent {
             button.buttonStyle(.borderedProminent)
         } else {
@@ -193,10 +202,9 @@ struct InboxItemScreen: View {
 
     private var hasReply: Bool { !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    /// Later asks for a time, and Approve on a proposal shows what the Task will get.
+    /// Approve on a proposal shows what the Task will get first.
     private func perform(_ item: InboxItem, _ action: InboxAction) {
         switch action {
-        case .later: later = item
         case .approve where item.kind == .proposal: approving = item
         case _ where action.needsText && !hasReply: replying = true
         default: send(item, action)
@@ -209,6 +217,13 @@ struct InboxItemScreen: View {
         Task {
             defer { sending = false }
             do {
+                // Ask Agent leaves the item open: its session's Chat shows instead.
+                if action == .askAgent, let text {
+                    try await model.askAgent(item, text: text)
+                    reply = ""
+                    replying = false
+                    return
+                }
                 let saved = try await model.session.answer(item, action, text: text, option: option)
                 reply = ""
                 replying = false
@@ -217,59 +232,5 @@ struct InboxItemScreen: View {
                 failure = PaneSession.describe(error)
             }
         }
-    }
-}
-
-/// Later for an item: in 1 hour, tomorrow 9:00, or a time the user picks.
-private struct ItemLaterModifier: ViewModifier {
-    @Environment(AppModel.self) private var model
-    @Binding var item: InboxItem?
-    var saved: (InboxItem) -> Void
-    @State private var picking: InboxItem?
-    @State private var failure: String?
-
-    func body(content: Content) -> some View {
-        content
-            .confirmationDialog(
-                "Show Again",
-                isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } }),
-                titleVisibility: .visible,
-                presenting: item
-            ) { item in
-                ForEach(LaterChoice.allCases, id: \.title) { choice in
-                    Button(choice.title) { save(item, until: choice.until()) }
-                }
-                Button("Pick a Time…") { DispatchQueue.main.async { picking = item } }
-                Button("Cancel", role: .cancel) {}
-            } message: { _ in
-                Text("It leaves the Inbox until then, on every device.")
-            }
-            .sheet(item: $picking) { item in
-                LaterPicker { until in
-                    picking = nil
-                    save(item, until: until)
-                }
-            }
-            .alert("Can't Update the Inbox", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(failure ?? "")
-            }
-    }
-
-    private func save(_ item: InboxItem, until: UInt64) {
-        Task {
-            do {
-                saved(try await model.session.answer(item, .later, until: until))
-            } catch {
-                failure = PaneSession.describe(error)
-            }
-        }
-    }
-}
-
-extension View {
-    func itemLater(_ item: Binding<InboxItem?>, saved: @escaping (InboxItem) -> Void = { _ in }) -> some View {
-        modifier(ItemLaterModifier(item: item, saved: saved))
     }
 }

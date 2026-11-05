@@ -9,6 +9,8 @@ public let workRoutines: UInt32 = 1
 public let workAsk: UInt32 = 2
 /// Level 5: `close-task` also closes an ask session, which carries `ask` (ADR 0039).
 public let workCloseAsk: UInt32 = 5
+/// Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041).
+public let workAskAgent: UInt32 = 6
 
 /// The highest `work` level in `capabilities`; 0 when the host has none.
 public func workLevel(_ capabilities: [String]) -> UInt32 {
@@ -199,4 +201,6 @@ public enum InboxAction: String, Codable, Sendable {
     case retry, drop, read
     /// Sends the text as it is; on an `ask` it denies the menu first (ADR 0033 §4a).
     case reply
+    /// Sends the item and the text to the workspace's Ask session; the item stays open (ADR 0041).
+    case askAgent = "ask-agent"
 }

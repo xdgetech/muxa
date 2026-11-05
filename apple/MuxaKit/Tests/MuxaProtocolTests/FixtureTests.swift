@@ -143,10 +143,10 @@ struct FixtureTests {
 
     @Test func itemContractRoundTrips() throws {
         let requests = try Self.lines("items/requests.jsonl")
-        #expect(requests.count == 16)
+        #expect(requests.count == 17)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("items/messages.jsonl")
-        #expect(messages.count == 4)
+        #expect(messages.count == 5)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }

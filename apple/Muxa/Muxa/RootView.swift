@@ -52,7 +52,11 @@ struct RootView: View {
                 compactColumn = .sidebar
             }
         }
-        .itemLater(Binding(get: { model.laterItem }, set: { model.laterItem = $0 }))
+        .alert("Can't Update the Inbox", isPresented: Binding(get: { model.laterFailure != nil }, set: { if !$0 { model.laterFailure = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.laterFailure ?? "")
+        }
         .sheet(isPresented: $model.showSettings, onDismiss: model.refocusPane) {
             SettingsScreen()
         }

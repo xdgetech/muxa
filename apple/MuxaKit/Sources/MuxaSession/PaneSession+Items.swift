@@ -11,13 +11,15 @@ extension PaneSession {
     /// Shown when the host keeps no Inbox items.
     public static let itemsUnsupported = "This host keeps no Inbox items. Update muxa on the host."
     /// Shown when the agent's menu changed since the item was made. Nothing reached the pane.
+    /// Shown when the host cannot send an item to the workspace's agent.
+    public static let askAgentUnsupported = "This host cannot send an item to the workspace's agent. Update muxa on the host."
     public static let itemConflict = "The agent now asks something else. The Inbox shows its latest question. Try again."
 
     /// Answers `item` and returns it as the host saved it. A refusal lists the Inbox
     /// again, because another device or the terminal may have answered first.
     @discardableResult
     public func answer(
-        _ item: InboxItem, _ action: InboxAction, text: String? = nil, option: UInt32? = nil, until: UInt64? = nil
+        _ item: InboxItem, _ action: InboxAction, text: String? = nil, option: UInt32? = nil
     ) async throws -> InboxItem {
         guard canUseItems else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.itemsUnsupported))
@@ -26,7 +28,7 @@ extension PaneSession {
         do {
             try await request { id in
                 requestId = id
-                return .updateInboxEntry(id: id, entry: item.id, action: action, until: until, text: text, option: option)
+                return .updateInboxEntry(id: id, entry: item.id, action: action, until: nil, text: text, option: option)
             }
         } catch Failure.bridge(let body) where body.code == .conflict {
             savedItems[requestId] = nil
@@ -40,9 +42,40 @@ extension PaneSession {
         guard let saved = savedItems.removeValue(forKey: requestId) else {
             throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the Inbox item."))
         }
+        switch action {
+        case .read: break
+        // The host moved the item down (ADR 0040): its order is the list's.
+        case .later: await loadWork()
         // Accept, Drop, Retry and an approved proposal change a Task.
-        if action != .read, action != .later { await loadTasks() }
+        default: await loadTasks()
+        }
         return saved
+    }
+
+    /// Sends `item` and `text` to the workspace's Ask session (ADR 0041), which the
+    /// host starts when none is open, and lists sessions again so the list has it.
+    /// The item stays open. Returns the session.
+    public func askAgent(_ item: InboxItem, text: String) async throws -> StartedSession {
+        guard canUseItems, item.answers.contains(.askAgent) else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.askAgentUnsupported))
+        }
+        var requestId: UInt64 = 0
+        do {
+            try await request { id in
+                requestId = id
+                return .updateInboxEntry(id: id, entry: item.id, action: .askAgent, until: nil, text: text, option: nil)
+            }
+        } catch {
+            savedItems[requestId] = nil
+            startedSessions[requestId] = nil
+            throw error
+        }
+        savedItems[requestId] = nil
+        guard let started = startedSessions.removeValue(forKey: requestId) else {
+            throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not name the Ask session."))
+        }
+        try await refresh()
+        return started
     }
 
     /// Marks `item` read once a device opens it. Read is a hint, not an answer:

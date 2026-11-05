@@ -13,6 +13,10 @@ struct DemoWork: Sendable {
     var taskItems: [InboxItem]
     /// When a Routine's item was first opened, by entry id.
     var entryReads: [String: UInt64] = [:]
+    /// When Later moved each entry down (ADR 0040).
+    var entryLaters: [String: UInt64] = [:]
+    /// The host has `ask-agent` (`work` level 6, ADR 0041).
+    var offersAskAgent = true
 
     struct Refusal: Error {
         var body: ErrorBody
@@ -45,10 +49,16 @@ struct DemoWork: Sendable {
         return (routines[i], session)
     }
 
+    /// Later moves an item below the others, in the order they were moved: two in one
+    /// second still keep their order.
+    var nextLaterAt: UInt64 {
+        max(Self.now, (Array(entryLaters.values) + taskItems.compactMap(\.laterAt)).max().map { $0 + 1 } ?? 0)
+    }
+
     /// Dismiss and Later change the entry. Approve of an open proposal returns the goal
     /// of the Task to create; `approved(_:task:)` then records it. Approving again
     /// returns the entry unchanged.
-    mutating func update(_ id: String, action: InboxAction, until: UInt64?) throws(Refusal) -> (InboxEntry, goal: String?) {
+    mutating func update(_ id: String, action: InboxAction) throws(Refusal) -> (InboxEntry, goal: String?) {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { throw Refusal(.badRequest, "\(id) is not an entry") }
         let entry = shownEntries[i]
         if action == .approve, entry.disposition == "approved" { return (entry, nil) }
@@ -65,11 +75,7 @@ struct DemoWork: Sendable {
             entries[i].disposition = "dismissed"
             entries[i].until = nil
         case .later:
-            guard let until, until > Self.now, until <= Self.now + 366 * 86_400 else {
-                throw Refusal(.badRequest, "until must be in the future and at most 366 days ahead")
-            }
-            entries[i].disposition = "later"
-            entries[i].until = until
+            entryLaters[id] = nextLaterAt
         default:
             throw Refusal(.badRequest, "\(action.rawValue) is not an entry's action")
         }

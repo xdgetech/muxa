@@ -29,6 +29,22 @@ final class ItemBridge: FakeBridge, @unchecked Sendable {
         case .updateInboxEntry(let id, let entry, let action, _, let text, _):
             record(req)
             guard let i = items.firstIndex(where: { $0.id == entry }) else { return refuse(id, .badRequest, "no such item") }
+            if action == .askAgent, items[i].answers.contains(.askAgent) {
+                guard !(text ?? "").isEmpty else { return refuse(id, .badRequest, "a text is needed") }
+                emit(.sessionStarted(start: id, session: "$9", name: "ask-w"))
+                emit(.inboxSaved(inbox: id, entry: nil, item: items[i]))
+                emit(.result(id: id, error: nil, sessions: nil))
+                return
+            }
+            if action == .later, items[i].answers.contains(.later) {
+                var moved = items.remove(at: i)
+                moved.laterAt = 60
+                let closed = items.firstIndex { $0.state != .open } ?? items.endIndex
+                items.insert(moved, at: closed)
+                emit(.inboxSaved(inbox: id, entry: nil, item: moved))
+                emit(.result(id: id, error: nil, sessions: nil))
+                return
+            }
             if action == .read {
                 if refusesRead { return refuse(id, .badRequest, "Read does not answer a Routine's entry") }
                 items[i].readAt = 50
@@ -141,6 +157,28 @@ struct ItemTests {
         #expect(reads.count == 1)
     }
 
+    @Test func laterMovesTheItemDownInTheHostsOrder() async throws {
+        let bridge = ItemBridge()
+        let session = try await connected(bridge)
+        let saved = try await session.answer(session.openItems[0], .later)
+        #expect(saved.laterAt == 60 && saved.state == .open)
+        #expect(session.openItems.map(\.id) == ["i-00000002", "i-00000001"], "listed again, moved down, not hidden")
+    }
+
+    @Test func askAgentNamesTheSessionAndLeavesTheItemOpen() async throws {
+        let bridge = ItemBridge()
+        bridge.items[1].answers.insert(.askAgent, at: bridge.items[1].answers.count - 1)
+        let session = try await connected(bridge)
+        let started = try await session.askAgent(session.openItems[1], text: "Put this in Notion.")
+        #expect(started == StartedSession(id: "$9", name: "ask-w"))
+        #expect(session.openItems.map(\.id) == ["i-00000001", "i-00000002"], "the item stays open")
+        #expect(bridge.sent.contains {
+            if case .updateInboxEntry(_, "i-00000002", .askAgent, nil, "Put this in Notion.", nil) = $0 { true } else { false }
+        })
+        // A host without Ask Agent lists no such answer: nothing is sent.
+        await #expect(throws: PaneSession.Failure.self) { try await session.askAgent(session.openItems[0], text: "x") }
+    }
+
     @Test func aRefusedReadIsNoErrorAndKeepsTheDot() async throws {
         let bridge = ItemBridge()
         bridge.refusesRead = true
@@ -165,13 +203,15 @@ struct ItemTests {
         let reviewItem = Self.item("i-1", .review, answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later])
         let review = ItemAnswers(reviewItem)
         #expect(review.shown == [.accept, .reply])
-        #expect(review.more == [.redo, .changeCourse, .keepOpen, .later])
+        #expect(review.more == [.redo, .changeCourse])
+        #expect(review.done == .keepOpen && review.later)
         #expect(review.main == .accept)
         #expect(ItemAnswers(reviewItem, replying: true).main == .reply, "a typed reply is the main answer")
 
         let failure = ItemAnswers(Self.item("i-2", .failure, answers: [.retry, .reply, .changeCourse, .drop, .dismiss, .later]))
         #expect(failure.shown == [.retry, .reply])
-        #expect(failure.more == [.changeCourse, .drop, .dismiss, .later])
+        #expect(failure.more == [.changeCourse, .drop])
+        #expect(failure.done == .dismiss)
 
         let older = Self.item("i-4", .review, answers: [.accept, .redo, .changeCourse, .keepOpen, .later])
         #expect(ItemAnswers(older).shown == [.accept], "a host without reply")
@@ -179,7 +219,7 @@ struct ItemTests {
 
         let ask = ItemAnswers(Self.item("i-5", .ask, answers: [.approve, .reject, .reply, .later]))
         #expect(ask.shown == [.approve, .reject, .reply])
-        #expect(ask.more == [.later])
+        #expect(ask.more.isEmpty && ask.done == nil && ask.later, "Later alone is no More")
 
         let question = ItemAnswers(Self.item("i-3", .ask, answers: [.choose, .later]))
         #expect(question.chooses)
@@ -187,15 +227,29 @@ struct ItemTests {
         #expect(question.main == nil)
 
         let briefing = ItemAnswers(Self.item("e-1", .briefing, answers: [.dismiss, .later]))
-        #expect(briefing.shown == [.dismiss])
-        #expect(InboxAction.dismiss.title(for: .briefing) == "Done")
+        #expect(briefing.shown.isEmpty && briefing.more.isEmpty)
+        #expect(briefing.done == .dismiss && briefing.main == .dismiss)
+
+        // ADR 0041: Ask Agent is a briefing's text button, and its main answer while typing.
+        let asking = Self.item("e-2", .briefing, answers: [.dismiss, .askAgent, .later])
+        #expect(ItemAnswers(asking).shown == [.askAgent] && ItemAnswers(asking).main == .dismiss)
+        #expect(ItemAnswers(asking, replying: true).main == .askAgent)
+        let reviewAsks = ItemAnswers(Self.item("i-7", .review, answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .askAgent, .later]))
+        #expect(reviewAsks.more == [.redo, .changeCourse, .askAgent])
+        #expect(ItemAnswers(Self.item("i-8", .review, answers: [.accept, .reply, .askAgent]), replying: true).main == .reply)
+
+        // One answer that would be hidden is a button, not a More of one.
+        let noSession = ItemAnswers(Self.item("i-6", .failure, answers: [.drop, .dismiss, .later]))
+        #expect(noSession.shown == [.drop] && noSession.more.isEmpty)
         #expect(InboxAction.redo.needsText && InboxAction.reply.needsText && !InboxAction.accept.needsText)
     }
 
-    /// ADR 0033 §4a.2: the labels name the result.
+    /// ADR 0033 §4a.2, ADR 0040: the labels name the result.
     @Test func labelsNameTheResult() {
-        #expect(InboxAction.accept.title(for: .review) == "Done")
-        #expect(InboxAction.accept.result == "closes the Task")
+        #expect(InboxAction.accept.title(for: .review) == "Complete Task")
+        #expect(InboxAction.drop.title(for: .failure) == "Drop Task")
+        #expect(InboxAction.keepOpen.title(for: .review) == "Done")
+        #expect(InboxAction.dismiss.title(for: .briefing) == "Done")
         #expect(InboxAction.reply.title(for: .review) == "Send")
         #expect(InboxAction.reply.title(for: .failure) == "Send")
         #expect(InboxAction.reply.title(for: .ask) == "Deny & Send")

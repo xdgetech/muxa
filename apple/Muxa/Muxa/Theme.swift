@@ -59,7 +59,8 @@ enum Icon {
     static let routine = "clock.arrow.circlepath"
     static let briefing = "newspaper"
     static let proposal = "lightbulb"
-    static let later = "clock"
+    static let later = "arrow.down.to.line"
+    static let done = "checkmark"
     static let settings = "gearshape"
     static let ask = "questionmark.bubble"
 }

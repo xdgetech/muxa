@@ -166,17 +166,4 @@ struct WorkTests {
         // A closed entry is refused by the host, and the list is read again.
         await #expect(throws: PaneSession.Failure.self) { try await session.dismiss(session.inboxEntries[1]) }
     }
-
-    @Test func laterTimesAreInTheFuture() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Tokyo"))
-        // 2026-11-03 23:30 in Tokyo.
-        let now = Date(timeIntervalSince1970: 1_762_180_200)
-        #expect(LaterChoice.inAnHour.until(now: now, calendar: calendar) == 1_762_183_800)
-        // 2026-11-04 09:00 in Tokyo.
-        #expect(LaterChoice.tomorrowMorning.until(now: now, calendar: calendar) == 1_762_214_400)
-        #expect(laterProblem(now, now: now) != nil)
-        #expect(laterProblem(now.addingTimeInterval(400 * 86_400), now: now) != nil)
-        #expect(laterProblem(now.addingTimeInterval(60), now: now) == nil)
-    }
 }

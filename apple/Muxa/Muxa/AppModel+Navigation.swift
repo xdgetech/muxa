@@ -117,7 +117,6 @@ extension AppModel {
     func clearDetail() {
         detail = nil
         detailPath = []
-        laterItem = nil
     }
 
     /// At connect, Inbox and Tasks mode stay on their list; Sessions mode opens the
@@ -162,6 +161,27 @@ extension AppModel {
         detail = InboxSelection.next(after: saved.id, in: before.map(\.id), remaining: remaining).map { .item($0) }
         detailPath = []
         if phoneLayout { showSidebar() }
+    }
+
+    /// Later (ADR 0040): the item moves to the bottom at once, and the next one opens
+    /// where it was shown.
+    func later(_ item: InboxItem) {
+        let before = session.openItems
+        Task {
+            do {
+                itemAnswered(try await session.answer(item, .later), before: before)
+            } catch {
+                laterFailure = PaneSession.describe(error)
+            }
+        }
+    }
+
+    /// Ask Agent (ADR 0041): the item and `text` go to the workspace's Ask session,
+    /// and its Chat opens over the item. Throws what the host said went wrong.
+    func askAgent(_ item: InboxItem, text: String) async throws {
+        let started = try await session.askAgent(item, text: text)
+        guard let s = session.sessions.first(where: { $0.id == started.id }) else { return }
+        await open(s, as: .chat)
     }
 
     /// An item left the list while it was shown, answered elsewhere: a tablet shows the next.

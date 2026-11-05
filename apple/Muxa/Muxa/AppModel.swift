@@ -107,8 +107,8 @@ final class AppModel {
     var sidebarToggle = 0
     /// Bumped when a pane is opened: the sidebar hides, so the pane gets the width.
     var paneRequest = 0
-    /// Later for an item, asked for by `⌘⇧L`.
-    var laterItem: InboxItem?
+    /// Why the last Later failed, shown once.
+    var laterFailure: String?
     /// A pane view is about to appear for a pane watched without one (`paneAppeared`).
     var paneViewPending = false
     /// The pane last shown in each session, so a Sessions row opens its last view.

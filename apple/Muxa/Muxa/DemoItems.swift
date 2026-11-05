@@ -2,7 +2,8 @@ import Foundation
 import MuxaProtocol
 
 /// The demo bridge's Inbox items (`work` level 3, ADR 0033), with the host's checks:
-/// only listed answers, a text for Redo, Change course and Send, and a Later in the future.
+/// only listed answers, and a text for Redo, Change course and Send. Later moves an item
+/// down (ADR 0040).
 /// A Routine's item is its stored entry, so Approve still creates one Task.
 extension DemoWork {
     private static var now: UInt64 { UInt64(Date().timeIntervalSince1970) }
@@ -17,14 +18,14 @@ extension DemoWork {
     }
 
     /// As `inbox-list` sends them: open ones with `ask` first and then newest, then
-    /// Later ones, then answered ones. A Later whose time passed is open again.
+    /// the moved-down ones in the order they were moved, then answered ones.
     var shownItems: [InboxItem] {
-        let all = taskItems.map(Self.reopened) + shownEntries.map(item(for:))
+        let all = taskItems + shownEntries.map(item(for:))
         let newest: (InboxItem, InboxItem) -> Bool = { $0.createdAt > $1.createdAt }
-        let open = all.filter { $0.state == .open }.sorted { a, b in
+        let open = all.filter { $0.state == .open && $0.laterAt == nil }.sorted { a, b in
             (a.kind == .ask) != (b.kind == .ask) ? a.kind == .ask : newest(a, b)
         }
-        let later = all.filter { $0.state == .later }.sorted(by: newest)
+        let later = all.filter { $0.state == .open && $0.laterAt != nil }.sorted { ($0.laterAt ?? 0) < ($1.laterAt ?? 0) }
         let closed = all.filter { $0.state == .answered || $0.state == .resolved }.sorted(by: newest)
         return open + later + closed.prefix(100)
     }
@@ -37,30 +38,30 @@ extension DemoWork {
         case "later": .later
         default: .answered
         }
+        let asks: [InboxAction] = offersAskAgent ? [.askAgent] : []
         let answers: [InboxAction] = switch (state, kind) {
-        case (.open, .proposal), (.later, .proposal): [.approve, .reject, .later]
-        case (.open, _), (.later, _): [.dismiss, .later]
+        case (.open, .proposal), (.later, .proposal): [.approve, .reject] + asks + [.later]
+        case (.open, _), (.later, _): [.dismiss] + asks + [.later]
         default: []
         }
         return InboxItem(
             id: entry.id, kind: kind, state: state, question: entry.title, workspace: entry.workspace, title: entry.title,
-            createdAt: entry.createdAt, readAt: entryReads[entry.id], until: entry.until,
+            createdAt: entry.createdAt, readAt: entryReads[entry.id], laterAt: entryLaters[entry.id],
             answer: entry.disposition == "approved" ? .approve : (state == .answered ? .dismiss : nil),
             summary: entry.body, task: entry.task, attachments: Attachments(links: entry.links ?? []),
             routine: entry.routine, proposal: entry.proposal, answers: answers)
     }
 
-    /// Answers a Task's item. A Routine's item goes through `update(_:action:until:)`,
+    /// Answers a Task's item. A Routine's item goes through `update(_:action:)`,
     /// except `read`.
     mutating func answer(
-        _ id: String, _ action: InboxAction, until: UInt64?, text: String?, option: UInt32?, tasks: inout DemoTasks
+        _ id: String, _ action: InboxAction, text: String?, option: UInt32?, tasks: inout DemoTasks
     ) throws(Refusal) -> (InboxItem, ItemEffect) {
         if action == .read, let entry = entries.first(where: { $0.id == id }) {
             entryReads[id] = entryReads[id] ?? Self.now
             return (item(for: entry), .none)
         }
         guard let i = taskItems.firstIndex(where: { $0.id == id }) else { throw Refusal(.badRequest, "\(id) is not an item") }
-        taskItems[i] = Self.reopened(taskItems[i])
         if action == .read {
             taskItems[i].readAt = taskItems[i].readAt ?? Self.now
             return (taskItems[i], .none)
@@ -72,11 +73,7 @@ extension DemoWork {
             throw Refusal(.badRequest, "option is not one of the prompt's options")
         }
         if action == .later {
-            guard let until, until > Self.now, until <= Self.now + 366 * 86_400 else {
-                throw Refusal(.badRequest, "until must be in the future and at most 366 days ahead")
-            }
-            taskItems[i].state = .later
-            taskItems[i].until = until
+            taskItems[i].laterAt = nextLaterAt
             return (taskItems[i], .none)
         }
         let effect = try Self.effect(of: action, on: item, tasks: &tasks)
@@ -108,14 +105,6 @@ extension DemoWork {
         default:
             return .none
         }
-    }
-
-    private static func reopened(_ item: InboxItem) -> InboxItem {
-        guard item.state == .later, (item.until ?? 0) <= now else { return item }
-        var open = item
-        open.state = .open
-        open.until = nil
-        return open
     }
 
     // MARK: Fixtures

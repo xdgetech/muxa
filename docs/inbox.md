@@ -47,18 +47,18 @@ Inbox (3)
 1. The question and the source.
 2. The summary: the agent's last message for the turn, as Markdown.
 3. Attachments as a list with file names. Each opens in the Reader and returns to the item; a link opens in the browser.
-4. The reply box. Send, Redo and Change course send its text to the agent, so they need one.
+4. The reply box. Send, Redo and Change course send its text to the item's agent; Ask Agent sends it with the item to the workspace's Ask session (ADR 0041). They need a text.
 5. The answers for the kind (ADR 0033 §4a):
 
 | Kind | Buttons |
 |---|---|
 | `ask` | Allow, Deny, Deny & send; a question shows its options |
-| `review` | Complete Task, Send; Redo and Change course under More; ✓ |
-| `failure` | Retry, Send; Change course and Drop Task under More; ✓ |
-| `proposal` | Approve, Reject |
-| `briefing` | ✓ |
+| `review` | Complete Task, Send; Redo, Change course and Ask Agent under More; ✓ |
+| `failure` | Retry, Send; Change course, Drop Task and Ask Agent under More; ✓ |
+| `proposal` | Approve, Reject, Ask Agent |
+| `briefing` | Ask Agent, ✓ |
 
-Every kind also has Later (⤓). ✓ and Later are icon buttons and never under More (ADR 0040). ✓ closes only the item: the Task stays as it is. Complete Task sets the Task done and closes its session; Drop Task drops it. More exists only when two or more answers would be hidden. Complete Task and Drop Task ask for no confirmation, because they only set the Task's status; Approve on a proposal still shows the action, target and content first. An answer returns to the list.
+Every kind also has Later (⤓). An `ask` shows Ask Agent as a button, beside Allow, Deny and Deny & send. Ask Agent leaves the item open and opens the Ask session's Chat: the workspace's one ask session at its root, `ask-<workspace>`, which the host starts on the first request (ADR 0041). ✓ and Later are icon buttons and never under More (ADR 0040). ✓ closes only the item: the Task stays as it is. Complete Task sets the Task done and closes its session; Drop Task drops it. More exists only when two or more answers would be hidden. Complete Task and Drop Task ask for no confirmation, because they only set the Task's status; Approve on a proposal still shows the action, target and content first. An answer returns to the list.
 
 ### Phone and tablet (ADR 0035)
 
@@ -82,7 +82,7 @@ Every kind also has Later (⤓). ✓ and Later are icon buttons and never under 
 
 - The sidebar shows the Inbox section above the session tree: the count and the first open items. `Enter` on one opens it in `prefix + T`.
 - `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
-- Keys: `a` the item's main answer (Allow, Complete Task, Retry or Approve), `s` Send (Deny & send on a permission), `r` Deny, Reject or Redo, `c` Change course, `p` and `n` ✓ Done (only the item), `x` Drop Task, `l` Later (moves the item down, with no time), `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Send, Redo and Change course ask for the text. Only the keys the item takes are listed, in the host's order of answers.
+- Keys: `a` the item's main answer (Allow, Complete Task, Retry or Approve), `s` Send (Deny & send on a permission), `r` Deny, Reject or Redo, `c` Change course, `p` and `n` ✓ Done (only the item), `x` Drop Task, `g` Ask agent (the item and a text to the workspace's Ask session; the item stays open), `l` Later (moves the item down, with no time), `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Send, Redo, Change course and Ask agent ask for the text. Only the keys the item takes are listed, in the host's order of answers.
 - Labels name the result (ADR 0033 §4a, ADR 0040): `accept` is "Complete Task", `drop` "Drop Task", `keep-open` and `dismiss` "✓ Done", `reply` is "Send" ("Deny & send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
 
 ## Tasks and Sessions modes
