@@ -148,7 +148,10 @@ install-ipad: app-project
 	@test -n "$(MUXA_DEVICE)" || { echo "set MUXA_DEVICE (see: xcrun devicectl list devices)"; exit 2; }
 	@mkdir -p $(IOS_BUILD)
 	@# Over SSH the login keychain is locked, and codesign fails with only errSecInternalComponent.
+	@# SYMROOT and OBJROOT: Xcode's own build location setting otherwise moves the
+	@# products out of $(IOS_BUILD), and the app installed below would be an old one.
 	@set -o pipefail; $(XCODEBUILD) -destination 'generic/platform=iOS' -derivedDataPath $(IOS_BUILD) \
+		SYMROOT=$(CURDIR)/$(IOS_BUILD)/Build/Products OBJROOT=$(CURDIR)/$(IOS_BUILD)/Build/Intermediates.noindex \
 		-allowProvisioningUpdates build 2>&1 | tee $(IOS_BUILD)/xcodebuild.log || { \
 		if grep -q errSecInternalComponent $(IOS_BUILD)/xcodebuild.log; then \
 			echo; echo "codesign could not use the signing key: the login keychain is locked."; \
