@@ -34,6 +34,7 @@ import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_CAPABILITY
+import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.Wire
@@ -49,7 +50,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; below [WORK_ITEMS] it plays a host from before
+ * [workLevel] is the `work` level it advertises; below [WORK_CLOSE_ASK] it plays a host from before
+ * closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
  * Inbox items (ADR 0033), below [WORK_ASK] one from before ask sessions and branches named after
  * the title (ADR 0031), and at 0 one without Routines.
  */
@@ -57,7 +59,7 @@ class DemoBridge(
     set: Content = Content.TESTS,
     alerts: Boolean = false,
     taskRecords: Boolean = true,
-    workLevel: Int = WORK_ITEMS,
+    workLevel: Int = WORK_CLOSE_ASK,
 ) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
@@ -552,7 +554,7 @@ class DemoBridge(
             val name = "ask-$repoName-${1 + sessions.count { it.name.startsWith("ask-$repoName-") }}"
             val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", dir, false, false, Agent(AgentState.RUNNING, now()))
             followers += pane.id
-            sessions = sessions + Session("$$n", name, repoName, dir, "main", panes = listOf(pane))
+            sessions = sessions + Session("$$n", name, repoName, dir, "main", ask = workspace.name, panes = listOf(pane))
             Message.SessionStarted(req.id, "$$n", name)
         }
         emit(started)
@@ -658,10 +660,11 @@ class DemoBridge(
         emit(Message.SessionsChanged)
     }
 
-    /** fix-login is not merged, so only keep and force close it. */
+    /** fix-login is not merged, so only keep and force close it. An ask session closes too (ADR 0039). */
     private fun closeTask(id: Long, session: String, mode: CloseMode) {
         val found = synchronized(lock) { sessions.firstOrNull { it.id == session } }
-        if (found?.worktree == null) {
+        val isAsk = workLevel >= WORK_CLOSE_ASK && found?.ask != null
+        if (found == null || found.worktree == null && !isAsk) {
             fail(id, ErrorCode.BAD_REQUEST, "$session is not a task")
             return
         }

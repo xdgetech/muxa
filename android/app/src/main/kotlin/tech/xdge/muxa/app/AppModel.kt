@@ -18,7 +18,7 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.protocol.WORK_ITEMS
+import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
@@ -166,6 +166,12 @@ class AppModel(
 
     /** Why the last close failed; nothing was closed then. */
     var closeError by mutableStateOf<String?>(null)
+
+    /** The ask session waiting for the user to confirm its close (ADR 0039). */
+    var closingAsk by mutableStateOf<Session?>(null)
+
+    /** Why the last ask session close failed; nothing was closed then. */
+    var closeAskError by mutableStateOf<String?>(null)
     var docListing by mutableStateOf<Message.DocList?>(null)
         private set
     var docError by mutableStateOf<String?>(null)
@@ -272,7 +278,7 @@ class AppModel(
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
     private var demoTaskRecords = true
-    private var demoWorkLevel = WORK_ITEMS
+    private var demoWorkLevel = WORK_CLOSE_ASK
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -303,7 +309,7 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        demoWorkLevel = WORK_ITEMS
+        demoWorkLevel = WORK_CLOSE_ASK
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
@@ -313,7 +319,7 @@ class AppModel(
         set: DemoBridge.Content,
         alerts: Boolean,
         taskRecords: Boolean = true,
-        workLevel: Int = WORK_ITEMS,
+        workLevel: Int = WORK_CLOSE_ASK,
     ) {
         demoTaskRecords = taskRecords
         demoWorkLevel = workLevel
@@ -333,7 +339,7 @@ class AppModel(
             val alerts: Boolean,
             val taskRecords: Boolean,
             val canLeave: Boolean,
-            val workLevel: Int = WORK_ITEMS,
+            val workLevel: Int = WORK_CLOSE_ASK,
         )
     }
 
@@ -422,6 +428,8 @@ class AppModel(
         newTask = null
         closingTask = null
         closeError = null
+        closingAsk = null
+        closeAskError = null
         alert = null
         connectError = null
         connectFix = null
@@ -954,6 +962,22 @@ class AppModel(
             session.closeTask(s.id, mode)
         } catch (e: PaneSession.Failure) {
             closeError = PaneSession.describe(e)
+            return@launch
+        }
+        if (wasShown) firstSession?.let { openNow(it) }
+        refocusPane()
+    }
+
+    /** Only an ask session closes this way: other sessions without a worktree are the user's. */
+    fun canCloseAsk(s: Session) = isConnected && state.canCloseAskSessions && s.ask != null && s.worktree == null
+
+    fun closeAsk(s: Session) = scope.launch {
+        closingAsk = null
+        val wasShown = s.id == currentSession?.id
+        try {
+            session.closeAskSession(s)
+        } catch (e: PaneSession.Failure) {
+            closeAskError = PaneSession.describe(e)
             return@launch
         }
         if (wasShown) firstSession?.let { openNow(it) }

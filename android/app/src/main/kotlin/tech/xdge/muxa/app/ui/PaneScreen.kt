@@ -205,6 +205,9 @@ private fun MoreMenu(model: AppModel) {
         model.currentSession?.takeIf(model::canClose)?.let { current ->
             DropdownMenuItem({ Text("Close Task…") }, { pick { model.closingTask = current } }, leadingIcon = { Icon(Icons.closeTask, null) })
         }
+        model.currentSession?.takeIf(model::canCloseAsk)?.let { current ->
+            DropdownMenuItem({ Text("Close Session…") }, { pick { model.closingAsk = current } }, leadingIcon = { Icon(Icons.closeTask, null) })
+        }
         HorizontalDivider()
         DropdownMenuItem(
             { Text("Disconnect", color = Theme.failure) },

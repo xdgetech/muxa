@@ -20,11 +20,18 @@ class AskTest {
     /** Starts ask sessions as a `work:2` host does, or refuses with [refusal]. */
     private class AskBridge(private val refusal: ErrorBody? = null, private val named: Boolean = true) : FakeBridge() {
         override fun answer(req: Request) {
+            if (req is Request.CloseTask) {
+                if (sessions.none { it.id == req.session && it.ask != null }) {
+                    return emit(Message.Result(req.id, error = ErrorBody(ErrorCode.BAD_REQUEST, "not an ask session")))
+                }
+                sessions = sessions.filter { it.id != req.session }
+                return emit(Message.Result(req.id))
+            }
             if (req !is Request.StartSession) return super.answer(req)
             if (refusal != null) return emit(Message.Result(req.id, error = refusal))
             val name = "ask-${req.repo.substringAfterLast('/')}-1"
             sessions = sessions + Session(
-                id = "$9", name = name, repo = req.repo.substringAfterLast('/'), repoDir = "/src/${req.repo}",
+                id = "$9", name = name, repo = req.repo.substringAfterLast('/'), repoDir = "/src/${req.repo}", ask = req.workspace,
                 panes = listOf(Pane("%9", "@9", 0, Role.AGENT, 80, 24, "claude", "/src/app", false, false)),
             )
             if (named) emit(Message.SessionStarted(req.id, "$9", name))
@@ -77,6 +84,42 @@ class AskTest {
         } catch (e: PaneSession.Failure.Bridge) {
             assertEquals(ErrorCode.INTERNAL, e.body.code)
         }
+    }
+
+    @Test
+    fun anAskSessionCloses() = runBlocking {
+        val bridge = AskBridge()
+        val session = connected(bridge, listOf("close-task", "task-records", "work:5"))
+        assertTrue(session.state.value.canCloseAskSessions)
+        session.startSession("work", "app")
+        val ask = session.state.value.sessions.single { it.id == "$9" }
+        assertEquals("work", ask.ask)
+        session.closeAskSession(ask)
+        val sent = bridge.received.filterIsInstance<Request.CloseTask>().single()
+        assertEquals("$9", sent.session)
+        assertTrue("listed again", session.state.value.sessions.none { it.id == "$9" })
+    }
+
+    @Test
+    fun aSessionWithoutAskOrAnOlderHostIsNeverClosed() = runBlocking {
+        val older = AskBridge()
+        val session = connected(older, listOf("close-task", "task-records", "work:4"))
+        assertTrue(!session.state.value.canCloseAskSessions)
+        session.startSession("work", "app")
+        val newer = AskBridge()
+        val current = connected(newer, listOf("close-task", "work:5"))
+        for ((s, target) in listOf(
+            session to session.state.value.sessions.single { it.id == "$9" },
+            current to current.state.value.sessions.first { it.ask == null },
+        )) {
+            try {
+                s.closeAskSession(target)
+                fail("not closed")
+            } catch (e: PaneSession.Failure.Bridge) {
+                assertEquals(PaneSession.CLOSE_ASK_UNSUPPORTED, e.body.message)
+            }
+        }
+        assertTrue((older.received + newer.received).none { it is Request.CloseTask })
     }
 
     @Test

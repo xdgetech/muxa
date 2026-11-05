@@ -95,7 +95,7 @@ private fun SessionRow(model: AppModel, s: Session, current: Boolean, number: In
         Row(
             Modifier.fillMaxWidth()
                 .background(if (current) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
-                .combinedClickable(onClick = { model.open(s) }, onLongClick = { if (model.canClose(s) || item != null) menu = true })
+                .combinedClickable(onClick = { model.open(s) }, onLongClick = { if (model.canClose(s) || model.canCloseAsk(s) || item != null) menu = true })
                 .padding(horizontal = 16.dp, vertical = 10.dp)
                 .testTag("session-${s.name}"),
             verticalAlignment = Alignment.CenterVertically,
@@ -115,6 +115,7 @@ private fun SessionRow(model: AppModel, s: Session, current: Boolean, number: In
         DropdownMenu(menu, { menu = false }) {
             if (item != null) DropdownMenuItem({ Text("Show in Inbox") }, { menu = false; model.showInbox(item.record.id) })
             if (model.canClose(s)) DropdownMenuItem({ Text("Close Task…") }, { menu = false; model.closingTask = s }, leadingIcon = { Icon(Icons.closeTask, null) })
+            if (model.canCloseAsk(s)) DropdownMenuItem({ Text("Close Session…") }, { menu = false; model.closingAsk = s }, leadingIcon = { Icon(Icons.closeTask, null) })
         }
     }
 }

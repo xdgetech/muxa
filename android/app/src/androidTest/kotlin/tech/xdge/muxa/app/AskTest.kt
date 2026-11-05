@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -28,9 +29,11 @@ class AskTest {
     val compose = createEmptyComposeRule()
     private var scenario: ActivityScenario<MainActivity>? = null
 
-    /** [work1] plays a host from before ask sessions. */
-    private fun launch(work1: Boolean = false) {
-        scenario = ActivityScenario.launch(demoIntent().putExtra(MainActivity.EXTRA_WORK1, work1))
+    /** [work1] plays a host from before ask sessions, [work3] one from before closing them. */
+    private fun launch(work1: Boolean = false, work3: Boolean = false) {
+        scenario = ActivityScenario.launch(
+            demoIntent().putExtra(MainActivity.EXTRA_WORK1, work1).putExtra(MainActivity.EXTRA_WORK3, work3),
+        )
         compose.waitForInitialPane()
     }
 
@@ -92,6 +95,45 @@ class AskTest {
         waitForTag("ask-app")
         compose.onNodeWithTag("ask-app").performClick()
         compose.waitUntilAtLeastOneExists(hasText("ask-app-2"), TIMEOUT)
+    }
+
+    /** Asks about `app` from the New Task sheet; the ask session's pane shows. */
+    private fun askAboutApp() {
+        newRepoTask("Unused")
+        compose.onNodeWithTag("record-repo-choice").performClick()
+        waitForTag("repo-app")
+        compose.onNodeWithTag("repo-app").performClick()
+        compose.onNodeWithTag("record-ask").performScrollTo().performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("record-ask"), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasText("ask-app-1"), TIMEOUT)
+        waitForTag("pane")
+    }
+
+    /** Close Session closes the shown ask session after a confirmation (ADR 0039). It is no task: no Close Task. */
+    @Test
+    fun anAskSessionClosesFromTheMoreMenu() {
+        launch()
+        askAboutApp()
+        compose.onNodeWithTag("more").performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Close Session…"), TIMEOUT)
+        compose.onNodeWithText("Close Task…").assertDoesNotExist()
+        compose.onNodeWithText("Close Session…").performClick()
+        compose.waitUntilAtLeastOneExists(hasText("The agent stops", substring = true), TIMEOUT)
+        compose.onNodeWithText("Close Session").performClick()
+        compose.waitUntilDoesNotExist(hasText("ask-app-1"), TIMEOUT)
+        compose.pickMode(SidebarMode.SESSIONS)
+        compose.waitUntilAtLeastOneExists(hasTestTag("session-scratch"), TIMEOUT)
+        compose.onNodeWithTag("session-ask-app-1").assertDoesNotExist()
+    }
+
+    /** A host from before closing ask sessions offers no Close Session. */
+    @Test
+    fun anOlderHostHasNoCloseSession() {
+        launch(work3 = true)
+        askAboutApp()
+        compose.onNodeWithTag("more").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("menu-sessions"), TIMEOUT)
+        compose.onNodeWithText("Close Session…").assertDoesNotExist()
     }
 
     /** A host from before ask sessions needs the branch and offers no Ask. */

@@ -162,6 +162,15 @@ fun Root(model: AppModel) {
                 confirmButton = { TextButton({ model.closeError = null; model.refocusPane() }) { Text("OK") } },
             )
         }
+        model.closingAsk?.let { ask -> CloseAskDialog(model, ask) }
+        model.closeAskError?.let { error ->
+            AlertDialog(
+                onDismissRequest = { model.closeAskError = null; model.refocusPane() },
+                title = { Text("Can't Close the Session") },
+                text = { Text(error) },
+                confirmButton = { TextButton({ model.closeAskError = null; model.refocusPane() }) { Text("OK") } },
+            )
+        }
         model.askError?.let { error ->
             AlertDialog(
                 onDismissRequest = { model.askError = null; model.refocusPane() },
@@ -320,6 +329,18 @@ private fun AlertBanner(alert: AgentAlert, open: () -> Unit) {
             Text("${alert.sessionName}: ${alert.kind.message}", Modifier.padding(start = 8.dp), maxLines = 1)
         }
     }
+}
+
+/** Close Session for an ask session (ADR 0039). */
+@Composable
+private fun CloseAskDialog(model: AppModel, ask: tech.xdge.muxa.protocol.Session) {
+    AlertDialog(
+        onDismissRequest = { model.closingAsk = null },
+        title = { Text("Close ${ask.name}?") },
+        text = { Text("The agent stops. The main checkout and its files stay as they are.") },
+        confirmButton = { TextButton({ model.closeAsk(ask) }) { Text("Close Session", color = Theme.failure) } },
+        dismissButton = { TextButton({ model.closingAsk = null }) { Text("Cancel") } },
+    )
 }
 
 @Composable

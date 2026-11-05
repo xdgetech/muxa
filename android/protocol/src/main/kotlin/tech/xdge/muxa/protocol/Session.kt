@@ -22,6 +22,8 @@ data class Session(
     val task: String? = null,
     /** The task record this session runs (`@muxa_task`). */
     val taskId: String? = null,
+    /** The workspace of an ask session (`@muxa_ask`, ADR 0031, 0039). */
+    val ask: String? = null,
     val panes: List<Pane>,
 )
 

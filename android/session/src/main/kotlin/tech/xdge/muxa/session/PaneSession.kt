@@ -34,6 +34,7 @@ import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.RestartRecoveryAction
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_ASK
+import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.workLevel
@@ -127,6 +128,9 @@ class PaneSession(
 
         /** The host starts ask sessions, names a branch after the title and takes relative repos (ADR 0031). */
         val canAsk get() = workLevel >= WORK_ASK
+
+        /** The host closes ask sessions with `close-task` (ADR 0039). */
+        val canCloseAskSessions get() = workLevel >= WORK_CLOSE_ASK && canCloseTasks
 
         /** The host keeps the Inbox as a list of questions (ADR 0033). */
         val canAnswerItems get() = workLevel >= WORK_ITEMS
@@ -684,6 +688,18 @@ class PaneSession(
         refresh()
     }
 
+    /**
+     * Closes the ask session [s], then lists again (ADR 0039). Its agent stops; the main
+     * checkout and its files stay. A session without `ask` is never sent.
+     */
+    suspend fun closeAskSession(s: Session) = withContext(dispatcher) {
+        if (!_state.value.canCloseAskSessions || s.ask == null) {
+            throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, CLOSE_ASK_UNSUPPORTED))
+        }
+        request { Request.CloseTask(it, s.id, CloseMode.KEEP) }
+        refresh()
+    }
+
     /** Starts a task on [branch] of the repo at [repo], and returns its session's name once listed. */
     suspend fun newTask(repo: String, branch: String, base: String?): String = withContext(dispatcher) {
         var requestId = 0L
@@ -993,6 +1009,9 @@ class PaneSession(
     companion object {
         /** Shown when the host cannot start ask sessions. */
         const val ASK_UNSUPPORTED = "This host cannot start ask sessions. Update muxa on the host."
+
+        /** Shown when the host cannot close ask sessions. */
+        const val CLOSE_ASK_UNSUPPORTED = "This host cannot close ask sessions. Update muxa on the host."
 
         /** How long a viewport must stay before the bridge gets it. */
         private val VIEWPORT_SETTLE = 300.milliseconds

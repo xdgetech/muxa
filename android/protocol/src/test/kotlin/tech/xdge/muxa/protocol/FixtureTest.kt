@@ -83,6 +83,23 @@ class FixtureTest {
     }
 
     @Test
+    fun askCloseContractRoundTrips() {
+        val requests = lines("ask-close/requests.jsonl")
+        assertEquals(2, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("ask-close/messages.jsonl")
+        assertEquals(4, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        assertEquals(WORK_CLOSE_ASK, workLevel((Wire.decodeMessage(messages[0]) as Message.Hello).capabilities))
+        val listed = (Wire.decodeMessage(messages[1]) as Message.Result).sessions.orEmpty()
+        assertEquals(listOf(null, "lisk"), listed.map { it.ask })
+    }
+
+    @Test
     fun workspaceContractRoundTrips() {
         val requests = lines("workspaces/requests.jsonl")
         assertEquals(2, requests.size)

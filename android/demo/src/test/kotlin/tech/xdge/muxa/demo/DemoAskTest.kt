@@ -8,7 +8,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import tech.xdge.muxa.protocol.CloseMode
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
@@ -44,6 +46,30 @@ class DemoAskTest {
         assertEquals("/src/app", listed.repoDir)
         assertNull(listed.worktree)
         assertTrue(listed in session.state.value.sessions.manual)
+    }
+
+    @Test
+    fun anAskSessionClosesAndAManualSessionDoesNot() = runBlocking {
+        val session = connected()
+        assertTrue(session.state.value.canCloseAskSessions)
+        val started = session.startSession("work", "app")
+        val ask = session.state.value.sessions.single { it.id == started.session }
+        assertEquals("work", ask.ask)
+        session.closeAskSession(ask)
+        assertTrue(session.state.value.sessions.none { it.id == started.session })
+        val manual = session.state.value.sessions.first { it.worktree == null && it.ask == null }
+        try {
+            session.closeTask(manual.id, CloseMode.KEEP)
+            fail("a manual session is the user's")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorCode.BAD_REQUEST, e.body.code)
+        }
+        assertTrue(session.state.value.sessions.any { it.id == manual.id })
+    }
+
+    @Test
+    fun anOlderHostCannotCloseAnAskSession() = runBlocking {
+        assertFalse(connected(WORK_ITEMS).state.value.canCloseAskSessions)
     }
 
     @Test

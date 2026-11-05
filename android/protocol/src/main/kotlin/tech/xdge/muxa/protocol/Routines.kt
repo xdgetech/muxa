@@ -12,6 +12,9 @@ const val WORK_ROUTINES = 1
 /** Level 2: repos relative to the workspace root, a branch from the title, and `start-session` (ADR 0031). */
 const val WORK_ASK = 2
 
+/** Level 5: `close-task` also closes an ask session, which carries `ask` (ADR 0039). */
+const val WORK_CLOSE_ASK = 5
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }
