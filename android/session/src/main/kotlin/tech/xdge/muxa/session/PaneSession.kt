@@ -492,8 +492,8 @@ class PaneSession(
     // Inbox items (`work` level 3, ADR 0033)
 
     /**
-     * Answers [item] with [action]: [text] for `redo` and `change-course`, [option] for `choose`,
-     * [until] for `later`. Returns the item as the host saved it. A refusal lists the Inbox again,
+     * Answers [item] with [action]: [text] for `redo` and `change-course`, [option] for `choose`.
+     * `later` takes no time (ADR 0040). Returns the item as the host saved it. A refusal lists the Inbox again,
      * since another device may have answered first; an `ask` whose menu changed is [Failure.ItemChanged].
      */
     suspend fun answer(
@@ -501,14 +501,13 @@ class PaneSession(
         action: InboxAction,
         text: String? = null,
         option: Int? = null,
-        until: Long? = null,
     ): InboxItem = withContext(dispatcher) {
         if (!_state.value.canAnswerItems) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ITEMS_UNSUPPORTED))
         var requestId = 0L
         try {
             request { id ->
                 requestId = id
-                Request.UpdateInbox(id, item.id, action, until, text, option)
+                Request.UpdateInbox(id, item.id, action, text = text, option = option)
             }
         } catch (e: Failure) {
             savedItems.remove(requestId)
@@ -518,12 +517,42 @@ class PaneSession(
         }
         val saved = savedItems.remove(requestId)
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Inbox item"))
+        // The host moved the item down (ADR 0040): its order is the list's.
+        if (action == InboxAction.LATER) loadWork()
         // Accept, Drop, Retry and an approved proposal change a Task or start one.
         if (action in TASK_ACTIONS) {
             runCatching { refresh() }
             runCatching { loadTasks() }
         }
         saved
+    }
+
+    /**
+     * Sends [item] and [text] to the workspace's Ask session (ADR 0041), which the host starts
+     * when none is open, and lists the sessions again so the list has it. The item stays open.
+     * Returns the session.
+     */
+    suspend fun askAgent(item: InboxItem, text: String): Message.SessionStarted = withContext(dispatcher) {
+        if (!_state.value.canAnswerItems || InboxAction.ASK_AGENT !in item.answers) {
+            throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ASK_AGENT_UNSUPPORTED))
+        }
+        var requestId = 0L
+        try {
+            request { id ->
+                requestId = id
+                Request.UpdateInbox(id, item.id, InboxAction.ASK_AGENT, text = text)
+            }
+        } catch (e: Exception) {
+            savedItems.remove(requestId)
+            startedSessions.remove(requestId)
+            throw e
+        }
+        savedItems.remove(requestId)
+        // `session-started` arrives before `inbox-saved` and the result.
+        val started = startedSessions.remove(requestId)
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "The bridge did not name the Ask session."))
+        refresh()
+        started
     }
 
     /** Marks [item] read on every device. It stays open. Nothing is asked of a host without items, or for a read item. */
@@ -1021,6 +1050,9 @@ class PaneSession(
 
         /** Shown when an `ask` item's menu changed since it was listed. */
         const val ITEM_CHANGED = "The agent now asks something else. The Inbox shows it as it is now; answer again."
+
+        /** Shown when the host cannot send an item to the workspace's agent (ADR 0041). */
+        const val ASK_AGENT_UNSUPPORTED = "This host cannot send an item to the workspace's agent. Update muxa on the host."
 
         /** Shown when the host keeps no Inbox items. */
         const val ITEMS_UNSUPPORTED = "This host has no Inbox items. Update muxa on the host."

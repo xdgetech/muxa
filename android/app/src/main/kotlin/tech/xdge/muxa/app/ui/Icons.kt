@@ -36,9 +36,9 @@ import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.DisabledByDefault
 import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 
@@ -78,7 +78,7 @@ object Icons {
     val routine = Material.Filled.Update
     val briefing = Material.Filled.Newspaper
     val proposal = Material.Filled.Lightbulb
-    val later = Material.Filled.Schedule
+    val later = Material.Filled.VerticalAlignBottom
     val check = Material.Filled.Check
     val run = Material.Filled.PlayArrow
     val settings = Material.Filled.Settings

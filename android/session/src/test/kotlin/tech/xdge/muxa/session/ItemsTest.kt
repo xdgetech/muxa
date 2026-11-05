@@ -72,15 +72,28 @@ private class ItemsBridge : FakeBridge() {
             return emit(Message.Result(req.id, ErrorBody(it, "refused by the host")))
         }
         val current = items.first { it.id == req.entry }
+        if (req.action == InboxAction.ASK_AGENT) {
+            if (req.text.isNullOrEmpty()) return emit(Message.Result(req.id, ErrorBody(ErrorCode.BAD_REQUEST, "a text is needed")))
+            emit(Message.SessionStarted(req.id, "$9", "ask-work"))
+            emit(Message.InboxSaved(req.id, item = current))
+            return emit(Message.Result(req.id))
+        }
         val saved = when (req.action) {
             InboxAction.READ -> current.copy(readAt = 200)
-            InboxAction.LATER -> current.copy(state = ItemState.LATER, until = req.until)
+            InboxAction.LATER -> current.copy(laterAt = 60)
             else -> current.copy(state = ItemState.ANSWERED, answer = req.action, answers = emptyList())
         }
         if (req.action == InboxAction.ACCEPT) {
             tasks = tasks.map { if (it.id == current.task) it.copy(rev = it.rev + 1, status = TaskStatus.DONE) else it }
         }
-        items = items.map { if (it.id == saved.id) saved else it }
+        items = if (req.action == InboxAction.LATER) {
+            // Below the other open items, above the closed ones (ADR 0040).
+            val others = items.filter { it.id != saved.id }
+            val closed = others.indexOfFirst { it.state != ItemState.OPEN }.takeIf { it >= 0 } ?: others.size
+            others.take(closed) + saved + others.drop(closed)
+        } else {
+            items.map { if (it.id == saved.id) saved else it }
+        }
         emit(Message.InboxSaved(req.id, item = saved))
         emit(Message.Result(req.id))
     }
@@ -200,6 +213,38 @@ class ItemsTest {
     }
 
     @Test
+    fun laterMovesTheItemDownInTheHostsOrder() = runBlocking {
+        val bridge = bridge()
+        val session = connected(bridge)
+        val saved = session.answer(session.state.value.inboxItems[0], InboxAction.LATER)
+        assertEquals(60L, saved.laterAt)
+        assertEquals(ItemState.OPEN, saved.state)
+        assertNull(bridge.asked.filterIsInstance<Request.UpdateInbox>().last().until)
+        // Listed again, moved down, not hidden.
+        assertEquals(listOf("i-00000002", "i-00000001"), session.state.value.inboxItems.waiting(now = 300).map { it.id })
+    }
+
+    /** ADR 0041: the reply names the workspace's Ask session, and the item stays open. */
+    @Test
+    fun askAgentNamesTheSessionAndLeavesTheItemOpen() = runBlocking {
+        val bridge = bridge().apply {
+            items = items.map {
+                if (it.id == "i-00000002") it.copy(answers = it.answers.dropLast(1) + InboxAction.ASK_AGENT + InboxAction.LATER) else it
+            }
+        }
+        val session = connected(bridge)
+        val started = session.askAgent(session.state.value.inboxItems[1], "Put this in Notion.")
+        assertEquals("$9" to "ask-work", started.session to started.name)
+        assertEquals(listOf("i-00000001", "i-00000002"), session.state.value.inboxItems.waiting(now = 300).map { it.id })
+        val sent = bridge.asked.filterIsInstance<Request.UpdateInbox>().last()
+        assertEquals(Request.UpdateInbox(sent.id, "i-00000002", InboxAction.ASK_AGENT, text = "Put this in Notion."), sent)
+        // An item without Ask Agent: nothing is sent.
+        val e = refusal { session.askAgent(session.state.value.inboxItems[0], "x") }
+        assertEquals(PaneSession.ASK_AGENT_UNSUPPORTED, PaneSession.describe(e))
+        assertEquals(1, bridge.asked.count { it is Request.UpdateInbox && it.action == InboxAction.ASK_AGENT })
+    }
+
+    @Test
     fun theButtonsFollowTheKind() {
         val all = { kind: ItemKind, answers: List<InboxAction> -> item("i-1", kind, answers).buttons }
         val review = all(
@@ -207,21 +252,46 @@ class ItemsTest {
             listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
         )
         assertEquals(listOf(InboxAction.ACCEPT, InboxAction.REPLY), review.main)
-        assertEquals(listOf(InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER), review.more)
+        assertEquals(listOf(InboxAction.REDO, InboxAction.CHANGE_COURSE), review.more)
+        assertEquals(InboxAction.KEEP_OPEN, review.done)
+        assertTrue(review.later)
         val failure = all(
             ItemKind.FAILURE,
             listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER),
         )
         assertEquals(listOf(InboxAction.RETRY, InboxAction.REPLY), failure.main)
-        assertEquals(listOf(InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER), failure.more)
+        assertEquals(listOf(InboxAction.CHANGE_COURSE, InboxAction.DROP), failure.more)
+        assertEquals(InboxAction.DISMISS, failure.done)
+        // Later alone is no More.
         val ask = all(ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER))
-        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY), ask.main)
-        // A host before `reply` (ADR 0033 §4a): Redo still sits under More.
+        assertEquals(ItemButtons(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY), emptyList(), later = true), ask)
+        // An ask the app can't answer closes with ✓.
+        assertEquals(InboxAction.DISMISS, all(ItemKind.ASK, listOf(InboxAction.DISMISS, InboxAction.LATER)).done)
+        // A host before `reply` (ADR 0033 §4a): Redo alone is a button, not a More of one.
         val older = all(ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.KEEP_OPEN, InboxAction.LATER))
-        assertEquals(listOf(InboxAction.ACCEPT), older.main)
-        assertEquals(listOf(InboxAction.DISMISS), all(ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.LATER)).main)
+        assertEquals(listOf(InboxAction.ACCEPT, InboxAction.REDO), older.main)
+        assertTrue(older.more.isEmpty())
+        val noSession = all(ItemKind.FAILURE, listOf(InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER))
+        assertEquals(ItemButtons(listOf(InboxAction.DROP), emptyList(), InboxAction.DISMISS, later = true), noSession)
+        val briefing = all(ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.LATER))
+        assertEquals(ItemButtons(emptyList(), emptyList(), InboxAction.DISMISS, later = true), briefing)
+        // ADR 0041: Ask Agent is a briefing's and a proposal's button, and under More on a review.
+        val asking = item("e-2", ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER))
+        assertEquals(listOf(InboxAction.ASK_AGENT), asking.buttons.main)
+        assertEquals(
+            listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.ASK_AGENT),
+            all(ItemKind.PROPOSAL, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.ASK_AGENT, InboxAction.LATER)).main,
+        )
+        val reviewAsks = all(
+            ItemKind.REVIEW,
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.ASK_AGENT, InboxAction.LATER),
+        )
+        assertEquals(listOf(InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.ASK_AGENT), reviewAsks.more)
+        // An ask shows it as a button: it is the only hidden one.
+        val askAsks = all(ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.ASK_AGENT, InboxAction.LATER))
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.ASK_AGENT), askAsks.main)
         // An unknown kind shows what the host offers.
-        assertEquals(listOf(InboxAction.DISMISS), all(ItemKind("digest"), listOf(InboxAction.DISMISS, InboxAction.LATER)).main)
+        assertEquals(listOf(InboxAction.APPROVE), all(ItemKind("digest"), listOf(InboxAction.APPROVE, InboxAction.DISMISS, InboxAction.LATER)).main)
     }
 
     @Test
@@ -242,6 +312,14 @@ class ItemsTest {
         assertNull(asked.mainAnswer())
         assertEquals(listOf("TOML", "JSON"), asked.choices.map { it.label })
         assertTrue(ask.choices.isEmpty())
+        // ADR 0041: with a text, Ask Agent when no other answer takes one.
+        val briefing = item("e-1", ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER))
+        assertEquals(InboxAction.DISMISS, briefing.mainAnswer())
+        assertEquals(InboxAction.ASK_AGENT, briefing.mainAnswer("Put this in Notion."))
+        val reviewAsks = item("i-5", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.ASK_AGENT))
+        assertEquals(InboxAction.REPLY, reviewAsks.mainAnswer("Also update the README."))
+        val olderReview = item("i-6", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.ASK_AGENT))
+        assertEquals(InboxAction.ACCEPT, olderReview.mainAnswer("Keep the old page."))
     }
 
     @Test
@@ -255,7 +333,9 @@ class ItemsTest {
     }
 
     @Test
-    fun aLaterItemWaitsAgainOnceItsTimePassed() {
+    fun aMovedDownItemStillWaits() {
+        assertEquals(true, item("i-3", ItemKind.REVIEW, listOf(InboxAction.ACCEPT)).copy(laterAt = 600).isWaiting(now = 400))
+        // A host before ADR 0040 hid a Later item until its time.
         val later = item("i-1", ItemKind.REVIEW, listOf(InboxAction.ACCEPT), ItemState.LATER, until = 500)
         assertEquals(false, later.isWaiting(now = 400))
         assertEquals(true, later.isWaiting(now = 500))

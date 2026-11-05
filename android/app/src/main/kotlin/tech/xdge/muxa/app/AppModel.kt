@@ -18,7 +18,7 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
+import tech.xdge.muxa.protocol.WORK_ASK_AGENT
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
@@ -189,7 +189,7 @@ class AppModel(
     val selectedTask: String? get() = (selection as? Selection.Task)?.id
     val selectedRoutine: String? get() = (selection as? Selection.Routine)?.key
 
-    /** An Inbox action that asks first: Later's times, a picked time, or an approval. */
+    /** An Inbox action that asks first: a proposal's approval. */
     var inboxPrompt by mutableStateOf<InboxPrompt?>(null)
 
     /** Why the last Inbox action failed, from the host. */
@@ -278,7 +278,7 @@ class AppModel(
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
     private var demoTaskRecords = true
-    private var demoWorkLevel = WORK_CLOSE_ASK
+    private var demoWorkLevel = WORK_ASK_AGENT
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -309,7 +309,7 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        demoWorkLevel = WORK_CLOSE_ASK
+        demoWorkLevel = WORK_ASK_AGENT
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
@@ -319,7 +319,7 @@ class AppModel(
         set: DemoBridge.Content,
         alerts: Boolean,
         taskRecords: Boolean = true,
-        workLevel: Int = WORK_CLOSE_ASK,
+        workLevel: Int = WORK_ASK_AGENT,
     ) {
         demoTaskRecords = taskRecords
         demoWorkLevel = workLevel
@@ -339,7 +339,7 @@ class AppModel(
             val alerts: Boolean,
             val taskRecords: Boolean,
             val canLeave: Boolean,
-            val workLevel: Int = WORK_CLOSE_ASK,
+            val workLevel: Int = WORK_ASK_AGENT,
         )
     }
 

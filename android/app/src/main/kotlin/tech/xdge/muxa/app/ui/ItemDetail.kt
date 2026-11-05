@@ -19,11 +19,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -32,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +56,7 @@ import tech.xdge.muxa.session.choices
 import tech.xdge.muxa.session.isWaiting
 import tech.xdge.muxa.session.mainAnswer
 import tech.xdge.muxa.session.needsText
+import tech.xdge.muxa.session.onlyAsksAgent
 
 /**
  * One Inbox item (ADR 0033): the question and its source, the summary, the evidence that
@@ -122,7 +126,7 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
     }
 }
 
-/** The reply box, a question's options, the main answers and More. */
+/** The reply box, a question's options, the text answers, More, ✓ and Later (ADR 0040). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AnswerBar(model: AppModel, item: InboxItem) {
@@ -133,7 +137,7 @@ private fun AnswerBar(model: AppModel, item: InboxItem) {
         if (item.answers.any { it.needsText }) {
             OutlinedTextField(
                 text, { model.setReply(item, it) }, Modifier.fillMaxWidth().testTag("item-reply"),
-                placeholder = { Text("Reply…") }, maxLines = 4,
+                placeholder = { Text(if (item.onlyAsksAgent) "Ask the workspace's agent…" else "Reply…") }, maxLines = 4,
             )
         }
         val choices = item.choices
@@ -158,18 +162,27 @@ private fun AnswerBar(model: AppModel, item: InboxItem) {
                     OutlinedButton(onClick, tag, enabled = enabled) { Text(action.title(item)) }
                 }
             }
-        }
-        if (InboxAction.ACCEPT in buttons.main) {
-            Text(
-                "Done closes the Task.", Modifier.testTag("item-accept-note"),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            SessionButtons(model, item)
-            Box(Modifier.weight(1f))
             More(model, item, buttons.more, busy, text)
+            buttons.done?.let { IconAnswer(model, item, it, Icons.check, prominent = it == main, enabled = !busy) }
+            if (buttons.later) IconAnswer(model, item, InboxAction.LATER, Icons.later, prominent = false, enabled = !busy)
         }
+        if (model.itemSession(item) != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                SessionButtons(model, item)
+            }
+        }
+    }
+}
+
+/** ✓ and Later: icon buttons whose title is their content description, never under More. */
+@Composable
+private fun IconAnswer(model: AppModel, item: InboxItem, action: InboxAction, icon: ImageVector, prominent: Boolean, enabled: Boolean) {
+    val onClick = { model.tap(item, action) }
+    val tag = Modifier.testTag("item-${action.tag}")
+    if (prominent) {
+        FilledIconButton(onClick, tag, enabled = enabled) { Icon(icon, action.title(item)) }
+    } else {
+        OutlinedIconButton(onClick, tag, enabled = enabled) { Icon(icon, action.title(item)) }
     }
 }
 
@@ -202,7 +215,7 @@ private fun More(model: AppModel, item: InboxItem, actions: List<InboxAction>, b
         DropdownMenu(open, { open = false }) {
             for (action in actions) {
                 DropdownMenuItem(
-                    { Text(action.title(item) + if (action == InboxAction.LATER) "…" else "") },
+                    { Text(action.title(item)) },
                     {
                         open = false
                         model.tap(item, action)
@@ -221,7 +234,10 @@ val InboxAction.wire: String get() = InboxAction.serializer().descriptor.getElem
 /** A button's test tag. Send is `send`: `item-reply` is the reply box. */
 private val InboxAction.tag: String get() = if (this == InboxAction.REPLY) "send" else wire
 
-/** Labels name the result (ADR 0033 §4a). A proposal keeps Approve and Reject. */
+/**
+ * Labels name the result (ADR 0033 §4a, ADR 0040). A proposal keeps Approve and Reject; an
+ * answer that changes the Task names it; ✓ is "Done" for TalkBack.
+ */
 fun InboxAction.title(item: InboxItem): String = when (this) {
     InboxAction.APPROVE -> when (item.kind) {
         ItemKind.PROPOSAL -> "Approve…"
@@ -230,16 +246,16 @@ fun InboxAction.title(item: InboxItem): String = when (this) {
     }
     InboxAction.REJECT -> if (item.kind == ItemKind.ASK) "Deny" else "Reject"
     InboxAction.REPLY -> if (item.kind == ItemKind.ASK) "Deny & Send" else "Send"
-    InboxAction.ACCEPT -> "Done"
+    InboxAction.ACCEPT -> "Complete Task"
     InboxAction.REDO -> "Redo"
     InboxAction.CHANGE_COURSE -> "Change Course"
-    InboxAction.KEEP_OPEN -> "Keep Open"
+    InboxAction.KEEP_OPEN, InboxAction.DISMISS -> "Done"
     InboxAction.RETRY -> "Retry"
-    InboxAction.DROP -> "Drop"
-    InboxAction.DISMISS -> if (item.kind == ItemKind.BRIEFING) "Done" else "Dismiss"
+    InboxAction.DROP -> "Drop Task"
     InboxAction.LATER -> "Later"
     InboxAction.CHOOSE -> "Choose"
     InboxAction.READ -> "Mark Read"
+    InboxAction.ASK_AGENT -> "Ask Agent"
 }
 
 val InboxItem.kindTitle: String

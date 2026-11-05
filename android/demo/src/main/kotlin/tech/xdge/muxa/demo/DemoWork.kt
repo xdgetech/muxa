@@ -33,10 +33,12 @@ internal class DemoWork(
     /** What [update] did: the entry, and for a first approval the goal of the Task to create. */
     class Update(val entry: InboxEntry, val goal: String?)
 
-    /** The entries as `inbox-list` sends them: a Later whose time passed is open again. */
-    fun shownEntries(now: Long): List<InboxEntry> = entries.map {
-        if (it.disposition == "later" && (it.until ?: 0) <= now) it.copy(disposition = "open", until = null) else it
-    }
+    /** The entries as `inbox-list` sends them, newest first. */
+    val shownEntries: List<InboxEntry> get() = entries
+
+    /** When Later moved each entry down (ADR 0040), by id. */
+    var laterAts: Map<String, Long> = emptyMap()
+        private set
 
     /** Starts a run now: the Routine, and the run's session numbered [n], whose agent runs. */
     fun run(workspace: String, routine: String, n: Int, now: Long): Pair<RoutineInfo, Session> {
@@ -51,13 +53,12 @@ internal class DemoWork(
     }
 
     /**
-     * Dismiss and Later change the entry. Approve of an open proposal returns the goal of the
-     * Task to create; [approved] then records it. Approving again returns the entry unchanged.
+     * Dismiss changes the entry, and Later moves it down at [laterAt] (ADR 0040). Approve of an
+     * open proposal returns the goal of the Task to create; [approved] then records it.
+     * Approving again returns the entry unchanged.
      */
-    fun update(id: String, action: InboxAction, until: Long?, now: Long): Update {
-        val i = entries.indexOfFirst { it.id == id }
-        if (i < 0) throw Refusal(ErrorCode.BAD_REQUEST, "$id is not an entry")
-        val entry = shownEntries(now)[i]
+    fun update(id: String, action: InboxAction, laterAt: Long): Update {
+        val entry = entries.firstOrNull { it.id == id } ?: throw Refusal(ErrorCode.BAD_REQUEST, "$id is not an entry")
         if (action == InboxAction.APPROVE && entry.disposition == "approved") return Update(entry, null)
         if (entry.disposition != "open" && entry.disposition != "later") {
             throw Refusal(ErrorCode.BAD_REQUEST, "$id is ${entry.disposition}")
@@ -71,10 +72,8 @@ internal class DemoWork(
             // Reject is an item's word for dismissing a proposal (ADR 0033).
             InboxAction.DISMISS, InboxAction.REJECT -> entry.copy(disposition = "dismissed", until = null)
             InboxAction.LATER -> {
-                if (until == null || until <= now || until > now + LATER_LIMIT) {
-                    throw Refusal(ErrorCode.BAD_REQUEST, "until must be in the future and at most 366 days ahead")
-                }
-                entry.copy(disposition = "later", until = until)
+                laterAts = laterAts + (id to laterAt)
+                return Update(entry, null)
             }
             else -> throw Refusal(ErrorCode.BAD_REQUEST, "$action is not an entry's action")
         }
@@ -89,8 +88,6 @@ internal class DemoWork(
     }
 
     companion object {
-        private const val LATER_LIMIT = 366L * 86_400
-
         /** The UI tests' Routines: one with a run that waits on the user, so its need shows in Inbox. */
         fun tests(now: Long) = DemoWork(
             routines(now, running = "t-r00002"), entries(now),

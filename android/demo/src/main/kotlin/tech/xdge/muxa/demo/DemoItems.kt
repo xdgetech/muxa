@@ -14,37 +14,46 @@ import tech.xdge.muxa.protocol.TaskStatus
 
 /**
  * The demo bridge's Inbox items (ADR 0033, `work` level 3), with the host's checks: only an
- * action in `answers`, a text for Send, Redo and Change course, a valid option and a Later time.
+ * action in `answers`, a text for Send, Redo and Change course, and a valid option. Later moves
+ * an item down and ignores `until` (ADR 0040).
  * A Routine's entries are items too; [DemoWork] keeps them. Not thread safe: the bridge holds its lock.
  */
 internal class DemoItems(private var items: List<InboxItem>) {
     /** What [answer] did: the saved item, and the status its Task gets, if any. */
     class Answer(val item: InboxItem, val status: TaskStatus?)
 
-    /** `items` as `inbox-list` sends it: open ones first, `ask` before the rest, then newest first; then Later; then answered. */
-    fun list(entries: List<InboxEntry>, now: Long): List<InboxItem> {
-        val all = items.map { shown(it, now) } + entries.map(::fromEntry)
-        val open = all.filter { it.state == ItemState.OPEN }
+    /**
+     * `items` as `inbox-list` sends it: open ones not moved down, `ask` before the rest, then newest
+     * first; then the moved-down ones in the order they were moved; then answered. [laterAts] are
+     * the entries' `laterAt`, by id. [askAgent]: the host offers `ask-agent` (ADR 0041).
+     */
+    fun list(entries: List<InboxEntry>, laterAts: Map<String, Long>, askAgent: Boolean): List<InboxItem> {
+        val all = items + entries.map { fromEntry(it, laterAts[it.id], askAgent) }
+        val open = all.filter { it.state == ItemState.OPEN && it.laterAt == null }
             .sortedWith(compareByDescending<InboxItem> { it.kind == ItemKind.ASK }.thenByDescending { it.createdAt })
-        val later = all.filter { it.state == ItemState.LATER }.sortedByDescending { it.createdAt }
+        val later = all.filter { it.state == ItemState.OPEN && it.laterAt != null }.sortedBy { it.laterAt }
         val closed = all.filter { it.state == ItemState.ANSWERED || it.state == ItemState.RESOLVED }.sortedByDescending { it.createdAt }
         return open + later + closed
     }
 
     fun has(id: String) = items.any { it.id == id }
 
-    fun answer(id: String, action: InboxAction, text: String?, option: Int?, until: Long?, now: Long): Answer {
-        val item = items.firstOrNull { it.id == id }?.let { shown(it, now) }
+    /** The latest `laterAt` of the items. */
+    val lastLaterAt: Long? get() = items.mapNotNull { it.laterAt }.maxOrNull()
+
+    /** [laterAt] is what `later` sets: see [DemoWork.nextLaterAt]. */
+    fun answer(id: String, action: InboxAction, text: String?, option: Int?, now: Long, laterAt: Long): Answer {
+        val item = items.firstOrNull { it.id == id }
             ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item $id; list the Inbox again")
         if (action != InboxAction.READ && action !in item.answers) {
             throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "$action does not answer Inbox item $id now")
         }
         val saved = when (action) {
             InboxAction.READ -> item.copy(readAt = item.readAt ?: now)
-            InboxAction.LATER -> item.copy(state = ItemState.LATER, until = laterTime(until, now))
+            InboxAction.LATER -> item.copy(laterAt = laterAt)
             else -> {
                 check(action, item, text, option)
-                item.copy(state = ItemState.ANSWERED, answer = action, answeredAt = now, until = null, answers = emptyList())
+                item.copy(state = ItemState.ANSWERED, answer = action, answeredAt = now, laterAt = null, answers = emptyList())
             }
         }
         items = items.map { if (it.id == id) saved else it }
@@ -68,36 +77,26 @@ internal class DemoItems(private var items: List<InboxItem>) {
 
     companion object {
         private const val MAX_TEXT = 4096
-        private const val LATER_LIMIT = 366L * 86_400
-
-        fun laterTime(until: Long?, now: Long): Long {
-            if (until == null || until <= now || until > now + LATER_LIMIT) {
-                throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "until must be in the future and at most 366 days ahead")
-            }
-            return until
-        }
-
-        /** A Later whose time passed is open again. */
-        private fun shown(item: InboxItem, now: Long) =
-            if (item.state == ItemState.LATER && (item.until ?: 0) <= now) item.copy(state = ItemState.OPEN, until = null) else item
-
-        /** A Routine's entry as an item; it keeps its `e-` id, as the host's `from_entry` does. */
-        fun fromEntry(entry: InboxEntry): InboxItem {
+        /**
+         * A Routine's entry as an item; it keeps its `e-` id, as the host's `from_entry` does.
+         * [laterAt] is when Later moved it down. A stored `later` entry is open (ADR 0040).
+         * [askAgent]: it offers `ask-agent` (ADR 0041).
+         */
+        fun fromEntry(entry: InboxEntry, laterAt: Long?, askAgent: Boolean): InboxItem {
             val (state, answer) = when (entry.disposition) {
-                "open" -> ItemState.OPEN to null
-                "later" -> ItemState.LATER to null
+                "open", "later" -> ItemState.OPEN to null
                 "approved" -> ItemState.ANSWERED to InboxAction.APPROVE
                 else -> ItemState.ANSWERED to InboxAction.DISMISS
             }
             val kind = if (entry.kind == "proposal") ItemKind.PROPOSAL else ItemKind.BRIEFING
             val answers = when {
                 state == ItemState.ANSWERED -> emptyList()
-                kind == ItemKind.PROPOSAL -> listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER)
-                else -> listOf(InboxAction.DISMISS, InboxAction.LATER)
-            }
+                kind == ItemKind.PROPOSAL -> listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.ASK_AGENT, InboxAction.LATER)
+                else -> listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER)
+            }.filter { askAgent || it != InboxAction.ASK_AGENT }
             return InboxItem(
                 entry.id, kind, state, entry.title, entry.workspace, entry.title, entry.createdAt,
-                until = entry.until.takeIf { state == ItemState.LATER }, answer = answer, summary = entry.body,
+                laterAt = laterAt.takeIf { state == ItemState.OPEN }, answer = answer, summary = entry.body,
                 attachments = Attachments(links = entry.links), routine = entry.routine, proposal = entry.proposal, answers = answers,
             )
         }

@@ -10,12 +10,6 @@ import tech.xdge.muxa.session.key
 
 /** What an Inbox action asks the user before it goes to the host. */
 sealed interface InboxPrompt {
-    /** The Later choices for an Inbox item (ADR 0033). */
-    data class ItemLater(val item: InboxItem) : InboxPrompt
-
-    /** A Later time picked by hand. */
-    data class ItemPickTime(val item: InboxItem) : InboxPrompt
-
     /** A proposal item's action, target and content, before approval. */
     data class ApproveItem(val item: InboxItem) : InboxPrompt
 }

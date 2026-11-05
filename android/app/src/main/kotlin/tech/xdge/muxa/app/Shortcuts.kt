@@ -83,9 +83,9 @@ private fun AppModel.openFocusedItem(event: KeyEvent): Boolean {
     return true
 }
 
-/** Asks for Later on the open item, else the focused one. */
+/** Later on the open item, else the focused one: it moves down at once (ADR 0040). */
 private fun AppModel.laterKey() {
     if (!itemsShown) return
     val item = selectedItem?.let(::item) ?: focusedItem
-    if (item != null && InboxAction.LATER in item.answers) inboxPrompt = InboxPrompt.ItemLater(item)
+    if (item != null && InboxAction.LATER in item.answers) answer(item, InboxAction.LATER)
 }

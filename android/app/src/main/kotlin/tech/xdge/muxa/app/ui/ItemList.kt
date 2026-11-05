@@ -38,7 +38,7 @@ import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.SidebarMode
 import tech.xdge.muxa.app.paneItem
 import tech.xdge.muxa.app.selectMode
-import tech.xdge.muxa.app.InboxPrompt
+import tech.xdge.muxa.app.answer
 import tech.xdge.muxa.app.openItem
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
@@ -46,8 +46,8 @@ import tech.xdge.muxa.session.isUnread
 
 /**
  * Inbox mode (ADR 0033, 0035), like a mail list: the question, then where it comes from and
- * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe asks
- * for Later. The row of what the detail shows is highlighted, also while its pane is shown.
+ * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe is
+ * Later: the item moves to the bottom (ADR 0040). The row of what the detail shows is highlighted, also while its pane is shown.
  */
 @Composable
 fun ItemList(model: AppModel, modifier: Modifier) {
@@ -93,7 +93,7 @@ const val NOTHING = "Nothing needs you"
 /** What the Inbox says on a host below `work` level 3. */
 const val OLDER_HOST = "This host needs a newer muxa-bridge for the Inbox. Update muxa on the host."
 
-/** Either swipe asks for Later, where the host takes it now. */
+/** Either swipe is Later, where the host takes it now. */
 @Composable
 private fun ItemRowView(model: AppModel, item: InboxItem, focused: Boolean) {
     val swipe = rememberSwipeToDismissBoxState()
@@ -105,7 +105,7 @@ private fun ItemRowView(model: AppModel, item: InboxItem, focused: Boolean) {
         enableDismissFromStartToEnd = canLater,
         enableDismissFromEndToStart = canLater,
         onDismiss = { direction ->
-            if (direction != SwipeToDismissBoxValue.Settled) model.inboxPrompt = InboxPrompt.ItemLater(item)
+            if (direction != SwipeToDismissBoxValue.Settled) model.answer(item, InboxAction.LATER)
             scope.launch { swipe.reset() }
         },
     ) {

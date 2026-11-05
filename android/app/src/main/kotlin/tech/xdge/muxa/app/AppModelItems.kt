@@ -43,9 +43,10 @@ fun AppModel.setReply(item: InboxItem, text: String) {
 /**
  * Sends [action]. Send, Redo and Change course take the reply box's text. An answer returns to the
  * list on a phone; beside the list, the next item opens. An item answered while its pane is
- * shown leaves the list; the pane stays.
+ * shown leaves the list; the pane stays. Later moves the item down and opens the next one too
+ * (ADR 0040).
  */
-fun AppModel.answer(item: InboxItem, action: InboxAction, option: Int? = null, until: Long? = null) {
+fun AppModel.answer(item: InboxItem, action: InboxAction, option: Int? = null) {
     val text = reply(item).trim().takeIf { action.needsText }
     if (action.needsText && text.isNullOrEmpty()) return
     if (answeringItem != null) return
@@ -54,7 +55,7 @@ fun AppModel.answer(item: InboxItem, action: InboxAction, option: Int? = null, u
     answeringItem = item.id
     scope.launch {
         try {
-            session.answer(item, action, text, option, until)
+            session.answer(item, action, text, option)
             itemReplies = itemReplies - item.id
             afterAnswer(item.id, before)
         } catch (e: PaneSession.Failure) {
@@ -68,7 +69,8 @@ fun AppModel.answer(item: InboxItem, action: InboxAction, option: Int? = null, u
 /** The item that took the answered one's place, beside the list; the list on a phone. */
 private fun AppModel.afterAnswer(answered: String, before: List<String>) {
     if (selectedItem != answered || paneShown) return
-    val waiting = inboxItems.map { it.id }.toSet()
+    // A moved-down item is still listed; the next one takes its place all the same.
+    val waiting = inboxItems.map { it.id }.toSet() - answered
     val next = before.dropWhile { it != answered }.drop(1).firstOrNull { it in waiting }
         ?: before.lastOrNull { it in waiting }
     if (phoneLayout || next == null) {
@@ -80,12 +82,35 @@ private fun AppModel.afterAnswer(answered: String, before: List<String>) {
     }
 }
 
+/**
+ * Ask Agent (ADR 0041): the item and the reply box's text go to the workspace's Ask session, and
+ * its Chat opens over the item. The item stays open; a failure lands in `inboxError`.
+ */
+fun AppModel.askAgent(item: InboxItem) {
+    val text = reply(item).trim()
+    if (text.isEmpty() || answeringItem != null) return
+    answeringItem = item.id
+    scope.launch {
+        try {
+            val started = session.askAgent(item, text)
+            itemReplies = itemReplies - item.id
+            val s = state.sessions.firstOrNull { it.id == started.session } ?: return@launch
+            selection = Selection.Item(item.id)
+            openPane(s, AppModel.PaneView.CHAT)
+        } catch (e: PaneSession.Failure) {
+            inboxError = PaneSession.describe(e)
+        } finally {
+            answeringItem = null
+        }
+    }
+}
+
 /** Approve on a proposal shows its action, target and content first; every other answer goes now. */
 fun AppModel.tap(item: InboxItem, action: InboxAction) {
     if (action == InboxAction.APPROVE && item.kind == ItemKind.PROPOSAL && item.proposal != null) {
         inboxPrompt = InboxPrompt.ApproveItem(item)
-    } else if (action == InboxAction.LATER) {
-        inboxPrompt = InboxPrompt.ItemLater(item)
+    } else if (action == InboxAction.ASK_AGENT) {
+        askAgent(item)
     } else {
         answer(item, action)
     }

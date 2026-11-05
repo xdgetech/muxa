@@ -15,6 +15,9 @@ const val WORK_ASK = 2
 /** Level 5: `close-task` also closes an ask session, which carries `ask` (ADR 0039). */
 const val WORK_CLOSE_ASK = 5
 
+/** Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041). */
+const val WORK_ASK_AGENT = 6
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }
@@ -105,4 +108,7 @@ enum class InboxAction {
     @SerialName("retry") RETRY,
     @SerialName("drop") DROP,
     @SerialName("read") READ,
+
+    /** Sends the item and its text to the workspace's Ask session; the item stays open (ADR 0041). */
+    @SerialName("ask-agent") ASK_AGENT,
 }

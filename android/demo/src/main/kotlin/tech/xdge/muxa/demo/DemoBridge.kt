@@ -12,6 +12,7 @@ import tech.xdge.muxa.protocol.Agent
 import tech.xdge.muxa.protocol.AgentRun
 import tech.xdge.muxa.protocol.AgentState
 import tech.xdge.muxa.protocol.InboxAction
+import tech.xdge.muxa.protocol.ItemState
 import tech.xdge.muxa.protocol.BranchChanges
 import tech.xdge.muxa.protocol.Bytes
 import tech.xdge.muxa.protocol.ChatEntry
@@ -33,6 +34,7 @@ import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASK
+import tech.xdge.muxa.protocol.WORK_ASK_AGENT
 import tech.xdge.muxa.protocol.WORK_CAPABILITY
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
@@ -50,8 +52,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; below [WORK_CLOSE_ASK] it plays a host from before
- * closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
+ * [workLevel] is the `work` level it advertises; below [WORK_ASK_AGENT] it plays a host from before
+ * Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
  * Inbox items (ADR 0033), below [WORK_ASK] one from before ask sessions and branches named after
  * the title (ADR 0031), and at 0 one without Routines.
  */
@@ -59,7 +61,7 @@ class DemoBridge(
     set: Content = Content.TESTS,
     alerts: Boolean = false,
     taskRecords: Boolean = true,
-    workLevel: Int = WORK_CLOSE_ASK,
+    workLevel: Int = WORK_ASK_AGENT,
 ) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
@@ -214,16 +216,47 @@ class DemoBridge(
             }
             is Request.ListInbox -> {
                 val list = synchronized(lock) {
-                    val entries = work.shownEntries(now)
-                    Message.InboxList(req.id, entries, if (workLevel >= WORK_ITEMS) items.list(entries, now) else emptyList())
+                    val entries = work.shownEntries
+                    Message.InboxList(req.id, entries, if (workLevel >= WORK_ITEMS) items.list(entries, work.laterAts, workLevel >= WORK_ASK_AGENT) else emptyList())
                 }
                 emit(list)
                 ok(req.id)
             }
             is Request.RunRoutine -> runRoutine(req, now)
-            is Request.UpdateInbox -> if (workLevel >= WORK_ITEMS && synchronized(lock) { items.has(req.entry) }) answerItem(req, now) else updateEntry(req, now)
+            is Request.UpdateInbox -> if (req.action == InboxAction.ASK_AGENT) {
+                askAgent(req)
+            } else if (workLevel >= WORK_ITEMS && synchronized(lock) { items.has(req.entry) }) answerItem(req, now) else updateEntry(req, now)
             else -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
         }
+    }
+
+    /**
+     * Ask Agent (ADR 0041): the workspace's one Ask session at its root, started on the first
+     * request and reused after. The item stays open.
+     */
+    private fun askAgent(req: Request.UpdateInbox) {
+        if (workLevel < WORK_ASK_AGENT) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        if (req.text.isNullOrEmpty()) return fail(req.id, ErrorCode.BAD_REQUEST, "ask-agent needs a text")
+        val found = synchronized(lock) {
+            val item = items.list(work.shownEntries, work.laterAts, askAgent = true)
+                .firstOrNull { it.id == req.entry && it.state == ItemState.OPEN && InboxAction.ASK_AGENT in it.answers }
+                ?: return@synchronized null
+            val name = "ask-${item.workspace}"
+            val open = sessions.firstOrNull { it.name == name }
+            if (open != null) return@synchronized Triple(item, open, false)
+            val root = content.workspaces.firstOrNull { it.name == item.workspace }?.root ?: "/"
+            val n = 20 + sessions.size
+            val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", root, false, false, Agent(AgentState.RUNNING, now()))
+            followers += pane.id
+            val session = Session("$$n", name, ask = item.workspace, panes = listOf(pane))
+            sessions = sessions + session
+            Triple(item, session, true)
+        } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.entry} is not an open item that takes ask-agent")
+        val (item, session, started) = found
+        emit(Message.SessionStarted(req.id, session.id, session.name))
+        emit(Message.InboxSaved(req.id, item = item))
+        ok(req.id)
+        if (started) emit(Message.SessionsChanged)
     }
 
     /** Starts a run with a session whose agent runs, as the daemon does. */
@@ -246,7 +279,7 @@ class DemoBridge(
     private fun updateEntry(req: Request.UpdateInbox, now: Long) {
         val (saved, created) = try {
             synchronized(lock) {
-                val update = work.update(req.entry, req.action, req.until, now)
+                val update = work.update(req.entry, req.action, nextLaterAt(now))
                 val entry = update.entry
                 val goal = update.goal
                 if (goal == null || entry.task != null) {
@@ -260,17 +293,26 @@ class DemoBridge(
         } catch (e: DemoWork.Refusal) {
             return fail(req.id, e.code, e.message ?: "")
         }
-        val item = if (workLevel >= WORK_ITEMS) DemoItems.fromEntry(saved) else null
+        val item = if (workLevel >= WORK_ITEMS) DemoItems.fromEntry(saved, synchronized(lock) { work.laterAts[saved.id] }, workLevel >= WORK_ASK_AGENT) else null
         emit(Message.InboxSaved(req.id, saved, item))
         ok(req.id)
         if (created) emit(Message.SessionsChanged)
+    }
+
+    /**
+     * What `later` sets: [now], or one second after the last one, so two in one second keep the
+     * order they were moved in (ADR 0040). The caller holds the lock.
+     */
+    private fun nextLaterAt(now: Long): Long {
+        val last = (work.laterAts.values + listOfNotNull(items.lastLaterAt)).maxOrNull() ?: return now
+        return maxOf(now, last + 1)
     }
 
     /** A Task's item: Accept and Drop set the Task's status; the other answers touch no Task here. */
     private fun answerItem(req: Request.UpdateInbox, now: Long) {
         val saved = try {
             synchronized(lock) {
-                val answer = items.answer(req.entry, req.action, req.text, req.option, req.until, now)
+                val answer = items.answer(req.entry, req.action, req.text, req.option, now, nextLaterAt(now))
                 val status = answer.status
                 if (status != null) {
                     tasks = tasks.map { if (it.id == answer.item.task) it.copy(rev = it.rev + 1, status = status, updatedAt = now) else it }

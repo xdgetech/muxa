@@ -149,10 +149,10 @@ class FixtureTest {
     @Test
     fun itemContractRoundTrips() {
         val requests = lines("items/requests.jsonl")
-        assertEquals(16, requests.size)
+        assertEquals(17, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("items/messages.jsonl")
-        assertEquals(4, messages.size)
+        assertEquals(5, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)

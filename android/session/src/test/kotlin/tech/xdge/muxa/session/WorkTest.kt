@@ -2,8 +2,6 @@ package tech.xdge.muxa.session
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -16,8 +14,6 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.RoutineInfo
 import tech.xdge.muxa.protocol.RoutineRun
 import tech.xdge.muxa.protocol.RoutineTrigger
-import java.time.Instant
-import java.time.ZoneId
 
 /** A bridge with Routines and stored entries, as the host answers them. */
 private class WorkBridge : FakeBridge() {
@@ -132,18 +128,5 @@ class WorkTest {
         bridge.routineDaemon = false
         val refusal = assertRefused { session.runRoutine(session.state.value.routines[0]) }
         assertTrue(PaneSession.describe(refusal).contains("muxa-bridge daemon install"))
-    }
-
-    @Test
-    fun laterTimesAreInTheFuture() {
-        val tokyo = ZoneId.of("Asia/Tokyo")
-        // 2026-11-03 23:30 in Tokyo.
-        val now = Instant.ofEpochSecond(1_762_180_200)
-        assertEquals(1_762_183_800L, LaterChoice.IN_AN_HOUR.until(now, tokyo))
-        // 2026-11-04 09:00 in Tokyo.
-        assertEquals(1_762_214_400L, LaterChoice.TOMORROW_MORNING.until(now, tokyo))
-        assertNotNull(laterProblem(now.epochSecond, now.epochSecond))
-        assertNotNull(laterProblem(now.epochSecond + 400 * 86_400, now.epochSecond))
-        assertNull(laterProblem(now.epochSecond + 60, now.epochSecond))
     }
 }

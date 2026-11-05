@@ -9,6 +9,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -29,7 +30,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,7 +108,10 @@ class ItemListTest {
         assertEquals(listOf(ASK, FAILURE, REVIEW), model.inboxItems.take(3).map { it.id })
     }
 
-    /** A review shows its summary and evidence; opening it marks it read; Done removes it and marks the Task done. */
+    /**
+     * A review shows its summary and evidence; opening it marks it read; Complete Task removes it
+     * and marks the Task done. ✓ and Later are icons, never under More (ADR 0040).
+     */
     @Test
     fun acceptingAReviewRemovesItAndMarksTheTaskDone() {
         launchOnInbox()
@@ -116,8 +122,15 @@ class ItemListTest {
         waitForText("item-doc-docs/design.md", "design.md")
         waitForText("item-link", "PR #817")
         compose.waitUntil(TIMEOUT) { item(REVIEW).readAt != null }
-        waitForText("item-accept", "Done")
-        waitForTag("item-accept-note")
+        waitForText("item-accept", "Complete Task")
+        compose.onNode(hasTestTag("item-keep-open") and hasContentDescription("Done")).assertExists()
+        compose.onNode(hasTestTag("item-later") and hasContentDescription("Later")).assertExists()
+        click("item-more")
+        waitForTag("item-more-change-course")
+        compose.onNodeWithTag("item-more-keep-open").assertDoesNotExist()
+        compose.onNodeWithTag("item-more-later").assertDoesNotExist()
+        pressBack()
+        compose.waitUntilDoesNotExist(hasTestTag("item-more-change-course"), TIMEOUT)
         click("item-accept")
         compose.waitUntil(TIMEOUT) { model.inboxItems.none { it.id == REVIEW } }
         compose.waitUntilDoesNotExist(hasTestTag(row(REVIEW)), TIMEOUT)
@@ -170,6 +183,9 @@ class ItemListTest {
         waitForText("item-approve", "Allow")
         waitForText("item-reject", "Deny")
         waitForText("item-send", "Deny & Send")
+        // Later alone is no More.
+        compose.onNodeWithTag("item-more").assertDoesNotExist()
+        waitForTag("item-later")
         compose.onNodeWithTag("item-reply").performTextInput("Keep build; run make clean.")
         key(KeyEvent.KEYCODE_ENTER)
         compose.waitUntil(TIMEOUT) { item(ASK).state == ItemState.ANSWERED }
@@ -189,15 +205,45 @@ class ItemListTest {
         compose.waitUntilDoesNotExist(hasTestTag(row(ASK)), TIMEOUT)
     }
 
-    /** A swipe asks for Later, and the item leaves the list until then. */
+    /** A swipe is Later: the item moves to the bottom of the list at once and stays in it (ADR 0040). */
     @Test
-    fun laterBySwipeHidesTheItem() {
+    fun laterBySwipeMovesTheItemDown() {
         launchOnInbox()
-        compose.onNodeWithTag(row(FAILURE)).performTouchInput { swipeRight() }
-        click("later-in_an_hour")
-        compose.waitUntil(TIMEOUT) { item(FAILURE).state == ItemState.LATER }
-        assertNotNull(item(FAILURE).until)
-        compose.waitUntil(TIMEOUT) { model.inboxItems.none { it.id == FAILURE } }
+        assertNotEquals(ASK, model.inboxItems.last().id)
+        compose.onNodeWithTag(row(ASK)).performTouchInput { swipeRight() }
+        compose.waitUntil(TIMEOUT) { model.inboxItems.last().id == ASK }
+        assertEquals(ItemState.OPEN, item(ASK).state)
+        assertNotNull(item(ASK).laterAt)
+        compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag(row(ASK)))
+        waitForTag(row(ASK))
+    }
+
+    /** A briefing has no More: ✓ closes it, and Later moves it to the bottom. */
+    @Test
+    fun aBriefingOffersDoneAndLater() {
+        launchOnInbox()
+        compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag(row(BRIEFING)))
+        click(row(BRIEFING))
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-dismiss") and hasContentDescription("Done"), TIMEOUT)
+        compose.onNodeWithTag("item-more").assertDoesNotExist()
+        click("item-later")
+        compose.waitUntil(TIMEOUT) { model.inboxItems.last().id == BRIEFING }
+        assertEquals(ItemState.OPEN, item(BRIEFING).state)
+    }
+
+    /** Ask Agent sends a briefing and the text to the workspace's Ask session, and opens it; the item stays (ADR 0041). */
+    @Test
+    fun askAgentOpensTheWorkspacesAskSession() {
+        launchOnInbox()
+        compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag(row(BRIEFING)))
+        click(row(BRIEFING))
+        waitForText("item-ask-agent", "Ask Agent")
+        compose.onNodeWithTag("item-ask-agent").assertIsNotEnabled()
+        compose.onNodeWithTag("item-reply").performTextInput("Put this in Notion.")
+        compose.onNodeWithTag("item-ask-agent").assertIsEnabled().performClick()
+        compose.waitUntil(TIMEOUT) { model.paneShown && model.currentSession?.name == "ask-work" }
+        assertEquals(ItemState.OPEN, item(BRIEFING).state)
+        assertTrue(model.inboxItems.any { it.id == BRIEFING })
     }
 
     /** A proposal's Approve shows its action, target and content first. */
@@ -361,5 +407,6 @@ class ItemListTest {
         const val ASK = "i-0000a001"
         const val REVIEW = "i-0000a002"
         const val FAILURE = "i-0000a003"
+        const val BRIEFING = "e-000000a1"
     }
 }
