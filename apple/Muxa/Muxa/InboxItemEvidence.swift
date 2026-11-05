@@ -1,3 +1,4 @@
+import MarkdownUI
 import MuxaProtocol
 import MuxaSession
 import SwiftUI
@@ -10,8 +11,9 @@ struct ItemSummaryText: View {
     let summary: String
 
     var body: some View {
-        Text(ItemSummary.attributed(summary, attachments: item.attachments))
+        Markdown(ItemSummary.markdown(summary, attachments: item.attachments))
             .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .environment(\.openURL, OpenURLAction { url in
                 switch SummaryLink(url) {
                 case .web?: return .systemAction
@@ -20,6 +22,8 @@ struct ItemSummaryText: View {
                 case nil: return .discarded
                 }
             })
+            // A container, so its paragraphs and links stay elements of their own.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("item-summary")
     }
 

@@ -86,8 +86,14 @@ final class InboxItemTests: XCTestCase {
     func testDoneRemovesAReview() throws {
         let app = launchOnInbox()
         open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
-        XCTAssertTrue(app.staticTexts["item-summary"].label.contains("PR #42"))
-        XCTAssertFalse(app.staticTexts["item-summary"].label.contains("**"), "the summary is Markdown")
+        let summary = app.descendants(matching: .any)["item-summary"].firstMatch
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+        let shown = summary.staticTexts.allElementsBoundByIndex.map(\.label)
+        XCTAssertTrue(shown.contains("Login redirect"), "the heading: \(shown)")
+        XCTAssertTrue(shown.contains { $0.contains("The tests pass.") }, "a list item: \(shown)")
+        XCTAssertTrue(summary.links["PR #42"].exists, "the web link is a link")
+        XCTAssertFalse(shown.contains { $0.hasPrefix("#") || $0.hasPrefix("- ") || $0.contains("**") },
+                       "the summary is Markdown: \(shown)")
         XCTAssertTrue(app.buttons["item-evidence-changes"].label.contains("3 files"))
         XCTAssertTrue(app.buttons["item-evidence-doc-docs/design.md"].label.contains("design.md"))
         XCTAssertTrue(app.buttons["item-evidence-image-build/screenshots/en/login.png"].label.contains("login.png"))

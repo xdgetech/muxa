@@ -209,7 +209,7 @@ struct ItemTests {
         let summary = "Wrote report.md and **chart.png**. See [the PR](https://github.com/example/app/pull/1), "
             + "https://example.com/runs/42 and /work/app/docs/plan.md. [Local](file:///etc/hosts), plan.md, "
             + "[design](notes/plan.md)."
-        let text = ItemSummary.attributed(summary, attachments: attachments)
+        let text = Self.rendered(ItemSummary.markdown(summary, attachments: attachments))
         let links = text.runs.compactMap { run in
             run.link.map { (String(text[run.range].characters), SummaryLink($0)) }
         }
@@ -219,8 +219,47 @@ struct ItemTests {
             .doc("report.md"), .image("shots/chart.png"), .web(URL(string: "https://github.com/example/app/pull/1")!),
             .web(URL(string: "https://example.com/runs/42")!), .doc("docs/plan.md"), .doc("notes/plan.md"),
         ])
-        #expect(!String(text.characters).contains("**"), "Markdown is rendered")
+        #expect(String(text.characters).contains("Local, plan.md"), "a link that is not followed is text")
         #expect(SummaryLink(SummaryLink.doc("a b/c.md").url) == .doc("a b/c.md"))
+    }
+
+    /// Blocks stay as written; code is not linked, and a code span or image that names
+    /// an attachment is a link.
+    @Test func theSummaryKeepsItsBlocks() {
+        let attachments = Attachments(docs: ["docs/plan.md", "notes/My Plan (v2).md"], images: ["shots/my_chart.png"])
+        let summary = """
+            ## Done
+            - Read `plan.md` and `npm test`.
+            > ![chart](shots/my_chart.png), *my_chart.png*
+
+            ```
+            cat docs/plan.md https://example.com
+            ```
+                docs/plan.md
+            1. See `notes/My Plan (v2).md`.
+            """
+        let plan = SummaryLink.doc("docs/plan.md").url.absoluteString
+        let chart = SummaryLink.image("shots/my_chart.png").url.absoluteString
+        let mine = SummaryLink.doc("notes/My Plan (v2).md").url.absoluteString
+        #expect(ItemSummary.markdown(summary, attachments: attachments) == """
+            ## Done
+            - Read [`plan.md`](<\(plan)>) and `npm test`.
+            > [chart](<\(chart)>), *[my\\_chart.png](<\(chart)>)*
+
+            ```
+            cat docs/plan.md https://example.com
+            ```
+                docs/plan.md
+            1. See [`notes/My Plan (v2).md`](<\(mine)>).
+            """)
+        let links = Self.rendered(ItemSummary.markdown(summary, attachments: attachments)).runs.compactMap(\.link)
+        #expect(links.compactMap(SummaryLink.init) == [
+            .doc("docs/plan.md"), .image("shots/my_chart.png"), .image("shots/my_chart.png"), .doc("notes/My Plan (v2).md"),
+        ])
+    }
+
+    private static func rendered(_ markdown: String) -> AttributedString {
+        (try? AttributedString(markdown: markdown)) ?? AttributedString(markdown)
     }
 
     @Test func theRowShowsTheSourceAndTheAge() {

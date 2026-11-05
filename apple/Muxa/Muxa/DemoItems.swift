@@ -150,8 +150,9 @@ extension DemoWork {
                  answers: [.choose, .later]),
         taskItem("i-0000a002", .review, "Ready for review: Fix the login redirect", task: "t-login1",
                  title: "Fix the login redirect", ago: 600, session: "$4", pane: "%5",
-                 summary: "Users now return to the page they came from after sign-in. The flow is in docs/design.md, "
-                     + "and the tests pass. **Ready to merge:** [PR #42](https://github.com/example/app/pull/42).",
+                 summary: "## Login redirect\n\nUsers now return to the page they came from after sign-in.\n\n"
+                     + "- The flow is in docs/design.md.\n- The tests pass.\n\n"
+                     + "**Ready to merge:** [PR #42](https://github.com/example/app/pull/42).",
                  attachments: Attachments(
                      changes: ChangeCount(files: 3, added: 6, removed: 1), docs: ["docs/design.md"],
                      images: ["build/screenshots/en/login.png"],
