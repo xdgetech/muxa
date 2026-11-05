@@ -26,6 +26,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -42,12 +44,14 @@ import tech.xdge.muxa.app.answer
 import tech.xdge.muxa.app.openItem
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
+import tech.xdge.muxa.session.buttons
 import tech.xdge.muxa.session.isUnread
 
 /**
  * Inbox mode (ADR 0033, 0035), like a mail list: the question, then where it comes from and
- * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe is
- * Later: the item moves to the bottom (ADR 0040). The row of what the detail shows is highlighted, also while its pane is shown.
+ * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe right
+ * is ✓, a swipe left is Later: the item moves to the bottom (ADR 0040). The row of what the
+ * detail shows is highlighted, also while its pane is shown.
  */
 @Composable
 fun ItemList(model: AppModel, modifier: Modifier) {
@@ -93,19 +97,23 @@ const val NOTHING = "Nothing needs you"
 /** What the Inbox says on a host below `work` level 3. */
 const val OLDER_HOST = "This host needs a newer muxa-bridge for the Inbox. Update muxa on the host."
 
-/** Either swipe is Later, where the host takes it now. */
+/** A swipe right is ✓, a swipe left is Later (ADR 0040 §6); the host takes either now. */
 @Composable
 private fun ItemRowView(model: AppModel, item: InboxItem, focused: Boolean) {
     val swipe = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
-    val canLater = InboxAction.LATER in item.answers
+    val done = item.buttons.done
     SwipeToDismissBox(
         swipe,
-        backgroundContent = { LaterBackground(swipe.dismissDirection) },
-        enableDismissFromStartToEnd = canLater,
-        enableDismissFromEndToStart = canLater,
+        backgroundContent = { SwipeBackground(swipe.dismissDirection) },
+        enableDismissFromStartToEnd = done != null,
+        enableDismissFromEndToStart = InboxAction.LATER in item.answers,
         onDismiss = { direction ->
-            if (direction != SwipeToDismissBoxValue.Settled) model.answer(item, InboxAction.LATER)
+            when (direction) {
+                SwipeToDismissBoxValue.StartToEnd -> done?.let { model.answer(item, it) }
+                SwipeToDismissBoxValue.EndToStart -> model.answer(item, InboxAction.LATER)
+                SwipeToDismissBoxValue.Settled -> {}
+            }
             scope.launch { swipe.reset() }
         },
     ) {
@@ -113,20 +121,24 @@ private fun ItemRowView(model: AppModel, item: InboxItem, focused: Boolean) {
     }
 }
 
+/** ✓ on green from the start, Later on gray from the end. */
 @Composable
-private fun LaterBackground(direction: SwipeToDismissBoxValue) {
-    val alignment = when (direction) {
-        SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
-        SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
+private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
+    val (alignment, color, icon, label) = when (direction) {
+        SwipeToDismissBoxValue.StartToEnd -> Swipe(Alignment.CenterStart, Theme.done, Icons.check, "Done")
+        SwipeToDismissBoxValue.EndToStart -> Swipe(Alignment.CenterEnd, MaterialTheme.colorScheme.onSurfaceVariant, Icons.later, "Later")
         SwipeToDismissBoxValue.Settled -> return
     }
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 20.dp), contentAlignment = alignment) {
+    val content = MaterialTheme.colorScheme.surface
+    Box(Modifier.fillMaxSize().background(color).padding(horizontal = 20.dp), contentAlignment = alignment) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Icons.later, null)
-            Text("Later")
+            Icon(icon, null, tint = content)
+            Text(label, color = content)
         }
     }
 }
+
+private data class Swipe(val alignment: Alignment, val color: Color, val icon: ImageVector, val label: String)
 
 /** [tag] names the row for tests; the sidebar's copy has its own. */
 @Composable

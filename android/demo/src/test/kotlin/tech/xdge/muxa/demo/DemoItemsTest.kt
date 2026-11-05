@@ -51,12 +51,12 @@ class DemoItemsTest {
     }
 
     @Test
-    fun redoNeedsATextAndAnAnswerNotOfferedIsRefused() = runBlocking {
+    fun sendNeedsATextAndAnAnswerNotOfferedIsRefused() = runBlocking {
         val session = connected()
         val review = session.item("i-0000a002")
-        refused { session.answer(review, InboxAction.REDO) }
+        refused { session.answer(review, InboxAction.REPLY) }
         refused { session.answer(review, InboxAction.RETRY) }
-        assertEquals(ItemState.ANSWERED, session.answer(review, InboxAction.REDO, text = "Keep the old page too.").state)
+        assertEquals(ItemState.ANSWERED, session.answer(review, InboxAction.REPLY, text = "Keep the old page too.").state)
     }
 
     /** ADR 0033 §4a: every Task item offers `reply`; it needs a text, which the agent gets as its next prompt. */

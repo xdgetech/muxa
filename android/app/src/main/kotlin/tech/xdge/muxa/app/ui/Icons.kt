@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.LowPriority
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PanTool
@@ -36,7 +37,6 @@ import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.DisabledByDefault
 import androidx.compose.material.icons.filled.Update
-import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Check
@@ -78,7 +78,8 @@ object Icons {
     val routine = Material.Filled.Update
     val briefing = Material.Filled.Newspaper
     val proposal = Material.Filled.Lightbulb
-    val later = Material.Filled.VerticalAlignBottom
+    /** Later: to the end of the queue, as Music's Play Last (ADR 0040). */
+    val later = Material.Filled.LowPriority
     val check = Material.Filled.Check
     val run = Material.Filled.PlayArrow
     val settings = Material.Filled.Settings

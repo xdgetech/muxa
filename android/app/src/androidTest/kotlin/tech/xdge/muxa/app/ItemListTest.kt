@@ -20,6 +20,7 @@ import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.test.core.app.ActivityScenario
@@ -109,8 +110,8 @@ class ItemListTest {
     }
 
     /**
-     * A review shows its summary and evidence; opening it marks it read; Complete Task removes it
-     * and marks the Task done. ✓ and Later are icons, never under More (ADR 0040).
+     * A review shows its summary and evidence; opening it marks it read. The top bar has Later,
+     * ✓ and …; Complete Task in … removes it and marks the Task done (ADR 0040).
      */
     @Test
     fun acceptingAReviewRemovesItAndMarksTheTaskDone() {
@@ -122,39 +123,19 @@ class ItemListTest {
         waitForText("item-doc-docs/design.md", "design.md")
         waitForText("item-link", "PR #817")
         compose.waitUntil(TIMEOUT) { item(REVIEW).readAt != null }
-        waitForText("item-accept", "Complete Task")
         compose.onNode(hasTestTag("item-keep-open") and hasContentDescription("Done")).assertExists()
         compose.onNode(hasTestTag("item-later") and hasContentDescription("Later")).assertExists()
+        compose.onNodeWithTag("item-reply").assertExists()
+        compose.onNode(hasText("Reply to the agent…")).assertExists()
         click("item-more")
-        waitForTag("item-more-change-course")
+        waitForText("item-more-accept", "Complete Task")
+        waitForTag("item-more-open-session")
         compose.onNodeWithTag("item-more-keep-open").assertDoesNotExist()
-        compose.onNodeWithTag("item-more-later").assertDoesNotExist()
-        pressBack()
-        compose.waitUntilDoesNotExist(hasTestTag("item-more-change-course"), TIMEOUT)
-        click("item-accept")
+        click("item-more-accept")
         compose.waitUntil(TIMEOUT) { model.inboxItems.none { it.id == REVIEW } }
         compose.waitUntilDoesNotExist(hasTestTag(row(REVIEW)), TIMEOUT)
         assertEquals(InboxAction.ACCEPT, item(REVIEW).answer)
         compose.waitUntil(TIMEOUT) { model.state.tasks?.record("t-login1")?.status == TaskStatus.DONE }
-    }
-
-    /** Redo sits under More (ADR 0033 §4a), sends the reply's text, and waits for one. */
-    @Test
-    fun redoNeedsATextAndSendsIt() {
-        launchOnInbox()
-        click(row(REVIEW))
-        click("item-more")
-        waitForTag("item-more-redo")
-        compose.onNodeWithTag("item-more-redo").assertIsNotEnabled()
-        pressBack()
-        compose.waitUntilDoesNotExist(hasTestTag("item-more-redo"), TIMEOUT)
-        compose.onNodeWithTag("item-reply").performTextInput("Keep the old redirect for one release.")
-        click("item-more")
-        waitForTag("item-more-redo")
-        compose.onNodeWithTag("item-more-redo").assertIsEnabled().performClick()
-        compose.waitUntil(TIMEOUT) { item(REVIEW).state == ItemState.ANSWERED }
-        assertEquals(InboxAction.REDO, item(REVIEW).answer)
-        compose.waitUntilDoesNotExist(hasTestTag(row(REVIEW)), TIMEOUT)
     }
 
     /** Send on a review sends the reply's text as `reply`; the Task goes on. */
@@ -162,7 +143,7 @@ class ItemListTest {
     fun sendOnAReviewSendsTheReply() {
         launchOnInbox()
         click(row(REVIEW))
-        waitForText("item-send", "Send")
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-send") and hasContentDescription("Send"), TIMEOUT)
         compose.onNodeWithTag("item-send").assertIsNotEnabled()
         compose.onNodeWithTag("item-reply").performTextInput("Looks good. Also update the README.")
         compose.onNodeWithTag("item-send").assertIsEnabled().performClick()
@@ -182,10 +163,14 @@ class ItemListTest {
         click(row(ASK))
         waitForText("item-approve", "Allow")
         waitForText("item-reject", "Deny")
-        waitForText("item-send", "Deny & Send")
-        // Later alone is no More.
-        compose.onNodeWithTag("item-more").assertDoesNotExist()
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-send") and hasContentDescription("Deny & Send"), TIMEOUT)
+        compose.onNode(hasText("Deny, then tell the agent…")).assertExists()
         waitForTag("item-later")
+        // … holds Open Session only: an ask has no Task answer.
+        click("item-more")
+        waitForTag("item-more-open-session")
+        compose.onNodeWithTag("item-more-accept").assertDoesNotExist()
+        pressBack()
         compose.onNodeWithTag("item-reply").performTextInput("Keep build; run make clean.")
         key(KeyEvent.KEYCODE_ENTER)
         compose.waitUntil(TIMEOUT) { item(ASK).state == ItemState.ANSWERED }
@@ -205,12 +190,12 @@ class ItemListTest {
         compose.waitUntilDoesNotExist(hasTestTag(row(ASK)), TIMEOUT)
     }
 
-    /** A swipe is Later: the item moves to the bottom of the list at once and stays in it (ADR 0040). */
+    /** A swipe left is Later: the item moves to the bottom of the list at once and stays in it (ADR 0040). */
     @Test
-    fun laterBySwipeMovesTheItemDown() {
+    fun laterBySwipeLeftMovesTheItemDown() {
         launchOnInbox()
         assertNotEquals(ASK, model.inboxItems.last().id)
-        compose.onNodeWithTag(row(ASK)).performTouchInput { swipeRight() }
+        compose.onNodeWithTag(row(ASK)).performTouchInput { swipeLeft() }
         compose.waitUntil(TIMEOUT) { model.inboxItems.last().id == ASK }
         assertEquals(ItemState.OPEN, item(ASK).state)
         assertNotNull(item(ASK).laterAt)
@@ -218,7 +203,20 @@ class ItemListTest {
         waitForTag(row(ASK))
     }
 
-    /** A briefing has no More: ✓ closes it, and Later moves it to the bottom. */
+    /** A swipe right is ✓: the item closes; its Task stays as it is (ADR 0040 §6). */
+    @Test
+    fun aSwipeRightClosesTheItem() {
+        launchOnInbox()
+        compose.waitUntil(TIMEOUT) { model.state.tasks?.record("t-lint01") != null }
+        val status = model.state.tasks?.record("t-lint01")?.status
+        compose.onNodeWithTag(row(FAILURE)).performTouchInput { swipeRight() }
+        compose.waitUntil(TIMEOUT) { item(FAILURE).state == ItemState.ANSWERED }
+        assertEquals(InboxAction.DISMISS, item(FAILURE).answer)
+        compose.waitUntilDoesNotExist(hasTestTag(row(FAILURE)), TIMEOUT)
+        assertEquals(status, model.state.tasks?.record("t-lint01")?.status)
+    }
+
+    /** A briefing has no …: ✓ closes it, and Later moves it to the bottom. */
     @Test
     fun aBriefingOffersDoneAndLater() {
         launchOnInbox()
@@ -237,10 +235,11 @@ class ItemListTest {
         launchOnInbox()
         compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag(row(BRIEFING)))
         click(row(BRIEFING))
-        waitForText("item-ask-agent", "Ask Agent")
-        compose.onNodeWithTag("item-ask-agent").assertIsNotEnabled()
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-send") and hasContentDescription("Ask Agent"), TIMEOUT)
+        compose.onNode(hasText("Ask the workspace's agent…")).assertExists()
+        compose.onNodeWithTag("item-send").assertIsNotEnabled()
         compose.onNodeWithTag("item-reply").performTextInput("Put this in Notion.")
-        compose.onNodeWithTag("item-ask-agent").assertIsEnabled().performClick()
+        compose.onNodeWithTag("item-send").assertIsEnabled().performClick()
         compose.waitUntil(TIMEOUT) { model.paneShown && model.currentSession?.name == "ask-work" }
         assertEquals(ItemState.OPEN, item(BRIEFING).state)
         assertTrue(model.inboxItems.any { it.id == BRIEFING })
@@ -288,12 +287,18 @@ class ItemListTest {
         waitForTag("status-row")
     }
 
-    /** Terminal shows the agent's terminal over the item; its row stays highlighted, and Back returns to it. */
+    /**
+     * The source line opens the session over the item: its Chat, which switches to the agent's
+     * terminal. The row stays highlighted, and Back returns to the item (ADR 0040 §5).
+     */
     @Test
-    fun terminalOpensTheAgentPaneAndReturnsToTheItem() {
+    fun theSourceOpensTheSessionAndReturnsToTheItem() {
         launchOnInbox()
         click(row(ASK))
-        click("item-terminal")
+        click("item-open-session")
+        waitForTag("composer")
+        assertEquals(AppModel.PaneView.CHAT, model.paneView)
+        click("view-Agent")
         compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %1 100x30"), TIMEOUT)
         compose.onNodeWithTag("composer").assertDoesNotExist()
         assertEquals(AppModel.PaneView.AGENT, model.paneView)
@@ -310,12 +315,13 @@ class ItemListTest {
         }
     }
 
-    /** Chat answers an `ask` in the agent's conversation. */
+    /** … → Open Session opens the agent's Chat too. */
     @Test
-    fun chatOpensTheAgentsChat() {
+    fun openSessionInTheMenuOpensTheAgentsChat() {
         launchOnInbox()
         click(row(ASK))
-        click("item-chat")
+        click("item-more")
+        click("item-more-open-session")
         waitForTag("composer")
         assertEquals(AppModel.PaneView.CHAT, model.paneView)
     }
@@ -385,7 +391,7 @@ class ItemListTest {
         assertEquals(SidebarMode.INBOX, model.mode)
         if (!model.phoneLayout) {
             click(row(ASK))
-            click("item-terminal")
+            click("item-open-session")
             compose.waitUntil(TIMEOUT) { !model.listShown }
             key(KeyEvent.KEYCODE_0)
             waitForTag("inbox-list")

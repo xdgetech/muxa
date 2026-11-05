@@ -51,8 +51,8 @@ class TryDemoTest {
         compose.onNodeWithTag("composer").assertDoesNotExist()
         // The agent's question is answered in Chat.
         compose.onNodeWithTag("item-row-i-5c000001").performClick()
-        compose.waitUntilAtLeastOneExists(hasTestTag("item-chat"), TIMEOUT)
-        compose.onNodeWithTag("item-chat").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("item-open-session"), TIMEOUT)
+        compose.onNodeWithTag("item-open-session").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("composer"), TIMEOUT)
         // Its agent waits: the waiting row once grew over the messages and the composer on a phone.
         compose.waitUntilAtLeastOneExists(hasTestTag("waiting"), TIMEOUT)

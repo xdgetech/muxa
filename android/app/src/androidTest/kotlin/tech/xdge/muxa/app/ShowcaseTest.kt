@@ -49,7 +49,7 @@ class ShowcaseTest {
         // answered in Chat.
         launch(SidebarMode.INBOX)
         click("item-row-i-5c000001")
-        click("item-chat")
+        click("item-open-session")
         waitForTag("waiting")
         snap("1-chat")
 

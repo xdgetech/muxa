@@ -41,7 +41,7 @@ fun AppModel.setReply(item: InboxItem, text: String) {
 }
 
 /**
- * Sends [action]. Send, Redo and Change course take the reply box's text. An answer returns to the
+ * Sends [action]. Send takes the reply box's text. An answer returns to the
  * list on a phone; beside the list, the next item opens. An item answered while its pane is
  * shown leaves the list; the pane stays. Later moves the item down and opens the next one too
  * (ADR 0040).

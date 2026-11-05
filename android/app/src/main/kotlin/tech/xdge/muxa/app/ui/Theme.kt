@@ -22,6 +22,10 @@ object Theme {
     val attention = Color(0xFFFF9500)
     val failure = Color(0xFFFF3B30)
 
+    /** ✓ closes an item (ADR 0040): a green dark enough for an icon on a light bar. */
+    val done: Color
+        @Composable @ReadOnlyComposable get() = if (isSystemInDarkTheme()) Color(0xFF30D158) else Color(0xFF248A3D)
+
     /** Lines a change adds and removes. */
     val added = Color(0xFF34C759)
     val removed = Color(0xFFFF3B30)

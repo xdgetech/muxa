@@ -100,8 +100,6 @@ enum class InboxAction {
     @SerialName("choose") CHOOSE,
     @SerialName("accept") ACCEPT,
     @SerialName("keep-open") KEEP_OPEN,
-    @SerialName("redo") REDO,
-    @SerialName("change-course") CHANGE_COURSE,
 
     /** Sends its text as it is, and the Task goes on; on an `ask`, after the prompt's cancel option (ADR 0033 §4a). */
     @SerialName("reply") REPLY,

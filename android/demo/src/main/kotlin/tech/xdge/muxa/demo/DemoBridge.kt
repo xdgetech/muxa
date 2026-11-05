@@ -792,7 +792,7 @@ class DemoBridge(
         const val CHAT_PANE = "%1"
 
         /** The Inbox answers whose text goes to the agent as its next prompt. */
-        private val PROMPT_ACTIONS = setOf(InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE)
+        private val PROMPT_ACTIONS = setOf(InboxAction.REPLY)
 
         /** Where the bridge writes a Task's brief for its agent (ADR 0015). */
         const val TASK_DOC = ".muxa/TASK.md"

@@ -14,7 +14,7 @@ import tech.xdge.muxa.protocol.TaskStatus
 
 /**
  * The demo bridge's Inbox items (ADR 0033, `work` level 3), with the host's checks: only an
- * action in `answers`, a text for Send, Redo and Change course, and a valid option. Later moves
+ * action in `answers`, a text for Send, and a valid option. Later moves
  * an item down and ignores `until` (ADR 0040).
  * A Routine's entries are items too; [DemoWork] keeps them. Not thread safe: the bridge holds its lock.
  */
@@ -66,7 +66,7 @@ internal class DemoItems(private var items: List<InboxItem>) {
     }
 
     private fun check(action: InboxAction, item: InboxItem, text: String?, option: Int?) {
-        if (action == InboxAction.REPLY || action == InboxAction.REDO || action == InboxAction.CHANGE_COURSE) {
+        if (action == InboxAction.REPLY) {
             val bytes = text?.toByteArray()?.size ?: 0
             if (bytes !in 1..MAX_TEXT) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "$action needs a text of 1 to $MAX_TEXT bytes")
         }
@@ -140,9 +140,9 @@ internal class DemoItems(private var items: List<InboxItem>) {
 
         /** The host's answers per kind (PROTOCOL.md "Inbox items"), `reply` included (ADR 0033 §4a). */
         private val REVIEW_ANSWERS =
-            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER)
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.KEEP_OPEN, InboxAction.LATER)
         private val FAILURE_ANSWERS =
-            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER)
+            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER)
         private val ASK_ANSWERS = listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER)
 
         /** An open item of the showcase's "work" workspace; a read one was opened 30 seconds after it was made. */

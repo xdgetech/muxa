@@ -42,7 +42,7 @@ private class ItemsBridge : FakeBridge() {
         item("i-00000001", ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER), task = "t-1", prompt = permission),
         item(
             "i-00000002", ItemKind.REVIEW,
-            listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.KEEP_OPEN, InboxAction.LATER),
             task = "t-2", readAt = 50,
         ),
         item("i-00000003", ItemKind.REVIEW, emptyList(), ItemState.ANSWERED, task = "t-3"),
@@ -151,10 +151,10 @@ class ItemsTest {
         val bridge = bridge()
         val session = connected(bridge)
         val review = session.state.value.inboxItems[1]
-        val saved = session.answer(review, InboxAction.REDO, text = "Keep the old export.")
+        val saved = session.answer(review, InboxAction.REPLY, text = "Keep the old export.")
         assertEquals(ItemState.ANSWERED, saved.state)
         val sent = bridge.asked.filterIsInstance<Request.UpdateInbox>().last()
-        assertEquals(Request.UpdateInbox(sent.id, "i-00000002", InboxAction.REDO, text = "Keep the old export."), sent)
+        assertEquals(Request.UpdateInbox(sent.id, "i-00000002", InboxAction.REPLY, text = "Keep the old export."), sent)
         assertEquals(listOf("i-00000001"), session.state.value.inboxItems.waiting(now = 300).map { it.id })
     }
 
@@ -244,66 +244,40 @@ class ItemsTest {
         assertEquals(1, bridge.asked.count { it is Request.UpdateInbox && it.action == InboxAction.ASK_AGENT })
     }
 
+    /** ADR 0040: triage in the top bar, decisions and one reply box at the bottom. */
     @Test
-    fun theButtonsFollowTheKind() {
+    fun theAnswersArePlacedByWhatTheyDo() {
         val all = { kind: ItemKind, answers: List<InboxAction> -> item("i-1", kind, answers).buttons }
-        val review = all(
-            ItemKind.REVIEW,
-            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
-        )
-        assertEquals(listOf(InboxAction.ACCEPT, InboxAction.REPLY), review.main)
-        assertEquals(listOf(InboxAction.REDO, InboxAction.CHANGE_COURSE), review.more)
-        assertEquals(InboxAction.KEEP_OPEN, review.done)
-        assertTrue(review.later)
-        val failure = all(
-            ItemKind.FAILURE,
-            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER),
-        )
-        assertEquals(listOf(InboxAction.RETRY, InboxAction.REPLY), failure.main)
-        assertEquals(listOf(InboxAction.CHANGE_COURSE, InboxAction.DROP), failure.more)
-        assertEquals(InboxAction.DISMISS, failure.done)
-        // Later alone is no More.
+        val review = all(ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.KEEP_OPEN, InboxAction.LATER))
+        assertEquals(ItemButtons(emptyList(), InboxAction.REPLY, listOf(InboxAction.ACCEPT), InboxAction.KEEP_OPEN, later = true, chooses = false), review)
+        val failure = all(ItemKind.FAILURE, listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER))
+        assertEquals(ItemButtons(listOf(InboxAction.RETRY), InboxAction.REPLY, listOf(InboxAction.DROP), InboxAction.DISMISS, later = true, chooses = false), failure)
         val ask = all(ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER))
-        assertEquals(ItemButtons(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY), emptyList(), later = true), ask)
+        assertEquals(ItemButtons(listOf(InboxAction.APPROVE, InboxAction.REJECT), InboxAction.REPLY, emptyList(), null, later = true, chooses = false), ask)
         // An ask the app can't answer closes with ✓.
         assertEquals(InboxAction.DISMISS, all(ItemKind.ASK, listOf(InboxAction.DISMISS, InboxAction.LATER)).done)
-        // A host before `reply` (ADR 0033 §4a): Redo alone is a button, not a More of one.
-        val older = all(ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.KEEP_OPEN, InboxAction.LATER))
-        assertEquals(listOf(InboxAction.ACCEPT, InboxAction.REDO), older.main)
-        assertTrue(older.more.isEmpty())
-        val noSession = all(ItemKind.FAILURE, listOf(InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER))
-        assertEquals(ItemButtons(listOf(InboxAction.DROP), emptyList(), InboxAction.DISMISS, later = true), noSession)
-        val briefing = all(ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.LATER))
-        assertEquals(ItemButtons(emptyList(), emptyList(), InboxAction.DISMISS, later = true), briefing)
-        // ADR 0041: Ask Agent is a briefing's and a proposal's button, and under More on a review.
-        val asking = item("e-2", ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER))
-        assertEquals(listOf(InboxAction.ASK_AGENT), asking.buttons.main)
-        assertEquals(
-            listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.ASK_AGENT),
-            all(ItemKind.PROPOSAL, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.ASK_AGENT, InboxAction.LATER)).main,
-        )
-        val reviewAsks = all(
-            ItemKind.REVIEW,
-            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.ASK_AGENT, InboxAction.LATER),
-        )
-        assertEquals(listOf(InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.ASK_AGENT), reviewAsks.more)
-        // An ask shows it as a button: it is the only hidden one.
-        val askAsks = all(ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.ASK_AGENT, InboxAction.LATER))
-        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.ASK_AGENT), askAsks.main)
-        // An unknown kind shows what the host offers.
-        assertEquals(listOf(InboxAction.APPROVE), all(ItemKind("digest"), listOf(InboxAction.APPROVE, InboxAction.DISMISS, InboxAction.LATER)).main)
+        val question = all(ItemKind.ASK, listOf(InboxAction.CHOOSE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER))
+        assertTrue(question.chooses)
+        assertEquals(listOf(InboxAction.REJECT), question.decisions)
+        // ADR 0041: an item without a session asks the workspace's agent from its reply box.
+        val proposal = all(ItemKind.PROPOSAL, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.ASK_AGENT, InboxAction.LATER))
+        assertEquals(ItemButtons(listOf(InboxAction.APPROVE, InboxAction.REJECT), InboxAction.ASK_AGENT, emptyList(), null, later = true, chooses = false), proposal)
+        val briefing = all(ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER))
+        assertEquals(ItemButtons(emptyList(), InboxAction.ASK_AGENT, emptyList(), InboxAction.DISMISS, later = true, chooses = false), briefing)
+        // An unknown kind places what the host offers the same way.
+        assertEquals(listOf(InboxAction.APPROVE), all(ItemKind("digest"), listOf(InboxAction.APPROVE, InboxAction.DISMISS, InboxAction.LATER)).decisions)
     }
 
     @Test
-    fun theMainAnswerIsTheHostsFirstOrAReply() {
+    fun theMainAnswerIsTheHostsFirstOrTheReplyBoxs() {
         val ask = item("i-1", ItemKind.ASK, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER), prompt = permission)
         assertEquals(InboxAction.APPROVE, ask.mainAnswer())
         assertEquals(InboxAction.REPLY, ask.mainAnswer("Run terraform plan first."))
-        val review = item("i-2", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.LATER))
+        val review = item("i-2", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.KEEP_OPEN, InboxAction.LATER))
         assertEquals(InboxAction.ACCEPT, review.mainAnswer())
         assertEquals(InboxAction.ACCEPT, review.mainAnswer("  "))
         assertEquals(InboxAction.REPLY, review.mainAnswer("Also update the README."))
-        val failure = item("i-3", ItemKind.FAILURE, listOf(InboxAction.RETRY, InboxAction.CHANGE_COURSE, InboxAction.LATER))
+        val failure = item("i-3", ItemKind.FAILURE, listOf(InboxAction.RETRY, InboxAction.DROP, InboxAction.LATER))
         assertEquals(InboxAction.RETRY, failure.mainAnswer())
         // A host without `reply` keeps its first answer, also with a text.
         assertEquals(InboxAction.RETRY, failure.mainAnswer("Try again."))
@@ -312,14 +286,10 @@ class ItemsTest {
         assertNull(asked.mainAnswer())
         assertEquals(listOf("TOML", "JSON"), asked.choices.map { it.label })
         assertTrue(ask.choices.isEmpty())
-        // ADR 0041: with a text, Ask Agent when no other answer takes one.
+        // ADR 0041: with a text, Ask Agent.
         val briefing = item("e-1", ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER))
         assertEquals(InboxAction.DISMISS, briefing.mainAnswer())
         assertEquals(InboxAction.ASK_AGENT, briefing.mainAnswer("Put this in Notion."))
-        val reviewAsks = item("i-5", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.ASK_AGENT))
-        assertEquals(InboxAction.REPLY, reviewAsks.mainAnswer("Also update the README."))
-        val olderReview = item("i-6", ItemKind.REVIEW, listOf(InboxAction.ACCEPT, InboxAction.REDO, InboxAction.ASK_AGENT))
-        assertEquals(InboxAction.ACCEPT, olderReview.mainAnswer("Keep the old page."))
     }
 
     @Test
