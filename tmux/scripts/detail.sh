@@ -2,7 +2,7 @@
 # shellcheck disable=SC2016  # awk programs: $ is awk's, not the shell's
 # Prints the sidebar footer: details of the row under the cursor, then the key hints.
 # Session or window: state and its age, branch, worktree, PR, window count.
-# Repo: its path and how many sessions are in each state.
+# Section or repo: the repo's path, and how many sessions are in each state.
 # Usage: detail.sh <target from tree.sh>
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -57,10 +57,13 @@ EOF
   return 0
 }
 
-repo_lines() {
-  local g="$1"
-  t list-sessions -f "$AGENTS_VISIBLE" -F "#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_repo_dir}${TAB}#{@muxa_task}${TAB}#{session_path}" 2>/dev/null |
-    awk -F'\t' -v g="$g" "$AGENTS_AWK_GROUP"'group($2, $4, $5) == g { print $1 "\t" $3 }' |
+# <section> [repo group]: the sessions in it, by state.
+group_lines() {
+  local sec="$1" g="${2:-}"
+  t list-sessions -f "$AGENTS_VISIBLE" -F "#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_repo_dir}${TAB}#{@muxa_task}${TAB}#{@muxa_ask}${TAB}#{session_path}" 2>/dev/null |
+    awk -F'\t' -v sec="$sec" -v g="$g" "$AGENTS_AWK_GROUP"'
+      { x = section($2, $4, $5, $6) }
+      x == sec && (g == "" || repogroup(x, $2) == g) { print $1 "\t" (g == "" ? "" : $3) }' |
     while IFS="$TAB" read -r s dir; do
       printf '%s\t%s\t%s\n' "$s" "$dir" "$(state_of -s -t "=$s:" | cut -d$'\037' -f1)"
     done |
@@ -83,8 +86,13 @@ case "$target" in
        name="$(t display-message -p -t "=$s:$idx" '#{window_name}' 2>/dev/null)"
        headline "$(state_of -t "=$s:$idx")" "$s:$idx $name"
        session_lines "$s" ;;
-  r:*) g="${target#r:}"
-       printf '%s %s%s%s\n' "$(opt @agents_icon_repo '📂')" "$BO" "$(awk -v g="$g" "$AGENTS_AWK_GROUP"'BEGIN { print glabel(g) }')" "$Z"
-       repo_lines "$g" ;;
+  g:*) sec="${target#g:}"
+       printf '%s%s%s\n' "$BO" "$(awk -v s="$sec" "$AGENTS_AWK_GROUP"'BEGIN { print slabel(s) }')" "$Z"
+       group_lines "$sec"
+       printf '%sEnter or space fold, ? help%s\n' "$D" "$Z"
+       exit 0 ;;
+  r:*) rest="${target#r:}"; sec="${rest%%:*}"; g="${rest#*:}"
+       printf '%s %s%s%s\n' "$(opt @agents_icon_repo '📂')" "$BO" "$(awk -v g="$g" "$AGENTS_AWK_GROUP"'BEGIN { print rlabel(g) }')" "$Z"
+       group_lines "$sec" "$g" ;;
 esac
-printf '%s%s%s\n' "$D" "$(opt @agents_footer 'n new c win o ide x close')" "$Z"
+printf '%s%s%s\n' "$D" "$(opt @agents_footer 'n new c win o ide x close ? help')" "$Z"

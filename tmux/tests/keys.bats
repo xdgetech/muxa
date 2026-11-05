@@ -141,3 +141,38 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   key C-b a
   wait_for '[ "$(active session_name)" = feature-one ]'
 }
+
+# The tree is: Sessions / app / 1 feature-one, then no repo / 2 base.
+@test "space on a section folds it in every sidebar, and again unfolds it" {
+  key C-b Tab
+  for _ in 1 2 3 4; do key k; done
+  select_row Sessions
+  key Space
+  wait_for '[ "$(tx show-options -gqv @agents_folded)" = sessions ]'
+  wait_for "! tx capture-pane -p -t '$SB' | grep -q feature-one"
+  tx capture-pane -p -t "$SB" | grep -q '▸ Sessions 2'
+  key Space
+  wait_for '[ -z "$(tx show-options -gqv @agents_folded)" ]'
+  wait_for "tx capture-pane -p -t '$SB' | grep -q feature-one"
+}
+
+@test "a folded section's sessions get no jump key, but prefix+a still finds them" {
+  tx set-option -g @agents_folded sessions
+  key C-b j 1
+  [ "$(active session_name)" = base ]
+  ai="$(tx list-panes -t feature-one: -F '#{pane_id} #{@agents_role}' | awk '$2 == "ai" { print $1 }')"
+  "$ROOT/scripts/state.sh" set "$ai" waiting
+  key C-b a
+  wait_for '[ "$(active session_name)" = feature-one ]'
+}
+
+@test "x closes a session that has no worktree" {
+  tx new-session -d -s scratch
+  key C-b Tab
+  wait_for "tx capture-pane -p -t '$SB' | grep -q scratch"
+  key j
+  select_row scratch
+  key x
+  key y
+  wait_for '! tx has-session -t =scratch 2>/dev/null'
+}

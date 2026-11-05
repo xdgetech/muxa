@@ -53,7 +53,8 @@ while :; do
     --bind "focus:bg-transform-footer($detail {1})" \
     --bind "load:bg-transform-footer($detail {1})" \
     --bind "j:down,k:up,R:execute-silent($refresh)" \
-    --bind "enter:execute-silent($act go {1})+transform($home)" \
+    --bind "enter:execute-silent($act go {1})+transform($home {1})" \
+    --bind "space:execute-silent($act fold {1}),?:execute-silent($act help)" \
     --bind "esc:execute-silent($act out)+transform($home)" \
     --bind "q:execute-silent($act out)+transform($home)" \
     --bind "n:execute-silent($act new {1}),c:execute-silent($act win {1})" \

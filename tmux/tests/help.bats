@@ -1,0 +1,17 @@
+#!/usr/bin/env bats
+load helper
+
+setup() { setup_server; }
+teardown() { teardown_server; }
+
+@test "help lists the keys the options set, and how to make a manual session" {
+  tx set-option -g @agents_key_ask Q
+  run "$ROOT/scripts/help.sh"
+  [ "$status" -eq 0 ]
+  out="$(printf '%s\n' "$output" | strip_ansi)"
+  [[ "$out" == *"Anywhere: C-b, then"* ]]
+  [[ "$out" == *"  Q              ask session"* ]]
+  [[ "$out" == *"ask sessions (C-b Q)"* ]]
+  [[ "$out" == *"new -s NAME -c DIR"* ]]
+  [[ "$out" == *"  space          fold or unfold a section"* ]]
+}

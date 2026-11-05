@@ -7,25 +7,29 @@ its own git worktree, with the AI pane on the left and a terminal on the right.
 
 ```
 ┌─ tree ───────────────┬─ AI session ─────────┬─ terminal ─────────┐
-│ 📂 web-app           │                      │                    │
-│ ▎1 ⚡ add-api         │  claude              │  git, gh, tests    │
+│ ▾ Tasks 3            │                      │                    │
+│   📂 web-app         │  claude              │  git, gh, tests    │
+│ ▎1 ⚡ add-api         │                      │                    │
 │ ▎    ⚡ 0 main        │                      │                    │
 │ ▎       1 tests      │                      │                    │
 │  2 🙋 fix-ssh #1834  │                      │                    │
 │  3 💤 fix-retry ✅   │                      │                    │
+│ ▸ Sessions 2 💤      │                      │                    │
 │──────────────────────│                      │                    │
 │ ⚡ add-api · working │                      │                    │
 │ ⎇ feat/add-api       │                      │                    │
-│ 📁 web-app-feat-add- │                      │                    │
 │ n new c win o ide x  │                      │                    │
 └──────────────────────┴──────────────────────┴────────────────────┘
 🙋 needs you  ❌ error  ⚡ working  🏁 finished, not seen yet  💤 idle  ✅ PR merged
 ```
 
 A finished turn shows 🏁 until you look at its window, then 💤.
-Sessions group by repo. muxa Tasks without a repo list under `tasks`, running
-muxa Routines under `routines`, and the rest under `sessions`, last.
-One line per session, labelled `1`–`9` then `a`–`z` for the jump keys. `▎`
+The tree has four sections (ADR 0038): **Tasks** (muxa Tasks, by repo),
+**Routines** (running Routine runs), **Ask** (ask sessions) and **Sessions**
+(every other session, by repo). `Enter` or `space` on a section's heading folds
+it in every sidebar. A folded heading shows its count and its most urgent state.
+One line per session, labelled `1`–`9` then `a`–`z` for the jump keys; sessions
+in a folded section get no label. `▎`
 marks the session you are in, and only that session lists its windows. The
 footer shows the row under the cursor: its state and for how long, its branch
 (read live from git), its worktree, PR and window count.
@@ -85,11 +89,12 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 | `prefix + T` | the muxa Inbox, in a popup (see [muxa](#muxa)) |
 | `prefix + A` | ask about a repo: an agent in its main checkout, with no task (needs muxa) |
 
-In the tree: `j`/`k` move, `Enter` go to the task, `1`–`9` go to that task
-(letters only through `prefix + j`), `Esc` leave, `n` new task, `c` new window
-in the task's worktree, `o` IDE, `r` rename, `R` reload.
+In the tree: `j`/`k` move, `Enter` go to the task or fold a section, `space`
+fold a section, `1`–`9` go to that task (letters only through `prefix + j`),
+`Esc` leave, `n` new task, `c` new window in the task's worktree, `o` IDE,
+`r` rename, `R` reload, `?` every key in a popup.
 `x` closes the session and removes the worktree, but only when it is clean and
-merged. `X` closes the session and keeps the worktree. `ctrl-x` removes the
+merged. A session with no worktree, such as an ask or manual session, just closes. `X` closes the session and keeps the worktree. `ctrl-x` removes the
 worktree even when the branch is not merged, but still not when it has
 uncommitted changes. The branch is always kept.
 When the session runs a muxa Task, these keys show a menu instead of the y/n
@@ -116,13 +121,14 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_sidebar` | `on` | |
 | `@agents_sidebar_width` | `28` | |
 | `@agents_min_width` | `100` | narrower clients (a phone) get no tree |
+| `@agents_folded` | | the folded sections of the tree, space-separated: `tasks routines ask sessions`. `Enter` and `space` set it |
 | `@agents_inbox_rows` | `3` | Inbox items the tree shows above the sessions |
 | `@agents_inbox_refresh` | `5` | seconds between two `muxa-cli inbox --json` calls for the tree |
 | `@agents_split` | `50` | terminal pane width, % of a new task window. Showing, hiding or resizing the tree keeps the current split |
 | `@agents_check_gh` | `on` | ask `gh` whether the PR is merged before `x` |
 | `@agents_icon_waiting` / `_error` / `_running` / `_idle` / `_done` | `🙋` / `❌` / `⚡` / `💤` / `🏁` | agent states, in the tree and the status bar |
 | `@agents_icon_repo` / `_merged` / `_window` / `_branch` | `📂` / `✅` / none / `⎇` | |
-| `@agents_footer` | `n new c win o ide x close` | last line of the tree's footer |
+| `@agents_footer` | `n new c win o ide x close ? help` | last line of the tree's footer |
 | `@agents_key_next` / `_prev` / `_attention` / `_jump` | `)` / `(` / `a` / `j` | prefix keys to switch tasks |
 | `@agents_notify` | `on` | desktop notifications |
 | `@agents_notify_events` | `waiting done error` | which changes notify; `done` means a finished turn |

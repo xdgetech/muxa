@@ -6,34 +6,65 @@ teardown() { teardown_server; }
 
 tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
 
-@test "sessions are grouped by repo, plain sessions last" {
+@test "sessions are grouped by repo, sessions without one last" {
   tx new-session -d -s b-task
   tx set-option -t =b-task: @agent_repo app
   tx new-session -d -s a-task
   tx set-option -t =a-task: @agent_repo app
   run tree
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "r:app	📂 app" ]
-  [ "${lines[1]}" = "s:a-task	 1    a-task" ]
-  [ "${lines[2]}" = "s:b-task	 2    b-task" ]
-  [ "${lines[3]}" = "r:~	📂 sessions" ]
-  [ "${lines[4]}" = "s:base	 3    base" ]
+  [ "${lines[0]}" = "g:sessions	▾ Sessions 3" ]
+  [ "${lines[1]}" = "r:sessions:app	  📂 app" ]
+  [ "${lines[2]}" = "s:a-task	 1    a-task" ]
+  [ "${lines[3]}" = "s:b-task	 2    b-task" ]
+  [ "${lines[4]}" = "r:sessions:~	  no repo" ]
+  [ "${lines[5]}" = "s:base	 3    base" ]
 }
 
-@test "muxa Tasks and Routine runs list apart from manual sessions" {
+@test "Tasks, Routine runs, ask sessions and other sessions are sections" {
   mkdir -p "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001" "$BATS_TEST_TMPDIR/w/routines/brief-t-000002"
   tx new-session -d -s fix -c "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001"
   tx set-option -t =fix: @muxa_task t-000001
+  tx new-session -d -s feat
+  tx set-option -t =feat: @muxa_task t-000003
+  tx set-option -t =feat: @agent_repo app
   tx new-session -d -s brief -c "$BATS_TEST_TMPDIR/w/routines/brief-t-000002"
   tx set-option -t =brief: @muxa_task t-000002
+  tx new-session -d -s ask-app-1
+  tx set-option -t =ask-app-1: @muxa_ask work
   run tree
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "r:}r	📂 routines" ]
-  [ "${lines[1]}" = "s:brief	 1    brief" ]
-  [ "${lines[2]}" = "r:}t	📂 tasks" ]
-  [ "${lines[3]}" = "s:fix	 2    fix" ]
-  [ "${lines[4]}" = "r:~	📂 sessions" ]
-  [ "${lines[5]}" = "s:base	 3    base" ]
+  [ "${lines[0]}" = "g:tasks	▾ Tasks 2" ]
+  [ "${lines[1]}" = "r:tasks:app	  📂 app" ]
+  [ "${lines[2]}" = "s:feat	 1    feat" ]
+  [ "${lines[3]}" = "r:tasks:~	  no repo" ]
+  [ "${lines[4]}" = "s:fix	 2    fix" ]
+  [ "${lines[5]}" = "g:routines	▾ Routines 1" ]
+  [ "${lines[6]}" = "s:brief	 3    brief" ]
+  [ "${lines[7]}" = "g:ask	▾ Ask 1" ]
+  [ "${lines[8]}" = "s:ask-app-1	 4    ask-app-1" ]
+  [ "${lines[9]}" = "g:sessions	▾ Sessions 1" ]
+  [ "${lines[10]}" = "s:base	 5    base" ]
+}
+
+@test "a folded section hides its sessions and their labels, and shows their state" {
+  tx new-session -d -s ask-app-1
+  tx set-option -t =ask-app-1: @muxa_ask work
+  tx set-option -p -t ask-app-1 @agent_state waiting
+  tx set-option -g @agents_folded ask
+  run tree
+  [ "${lines[0]}" = "g:ask	▸ Ask 1 🙋" ]
+  [ "${lines[1]}" = "g:sessions	▾ Sessions 1" ]
+  [ "${lines[2]}" = "s:base	 1    base" ]
+  run tree --all
+  [ "${lines[1]}" = "s:ask-app-1	 1 🙋 ask-app-1" ]
+}
+
+@test "a folded section marks the sidebar's own session" {
+  tx set-option -g @agents_folded sessions
+  run tree "$(tx display-message -p -t base:0 '#{pane_id}')"
+  [ "${lines[0]}" = "g:sessions	▎▸ Sessions 1" ]
+  [ "${#lines[@]}" -eq 1 ]
 }
 
 @test "a session shows its most urgent state and its PR" {

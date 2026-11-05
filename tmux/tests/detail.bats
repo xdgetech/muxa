@@ -21,7 +21,7 @@ detail() { "$ROOT/scripts/detail.sh" "$@" | strip_ansi; }
   [ "${lines[1]}" = "⎇ feat" ]
   [ "${lines[2]}" = "📁 app-feat" ]
   [ "${lines[3]}" = "#1834 open" ]
-  [ "${lines[4]}" = "n new c win o ide x close" ]
+  [ "${lines[4]}" = "n new c win o ide x close ? help" ]
   git -C "$wt" checkout -q -b other
   run detail s:base
   [ "${lines[1]}" = "⎇ other" ]
@@ -49,7 +49,7 @@ detail() { "$ROOT/scripts/detail.sh" "$@" | strip_ansi; }
     tx set-option -t "=$s:" @agent_repo_dir "$REPO"
   done
   tx set-option -p -t a @agent_state waiting
-  run detail r:app
+  run detail r:sessions:app
   [ "${lines[0]}" = "📂 app" ]
   [[ "${lines[1]}" == "📁 "*"/repos/app" ]]
   [ "${lines[2]}" = "2 sessions · 🙋 1" ]

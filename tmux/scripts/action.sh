@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # What the sidebar keys and the prefix bindings do.
-# Usage: action.sh <go|out|focus|new|ask|win|ide|ide-current|close|keep|force|rename> [target]
-#        action.sh <next|prev|attention> | jump <key>
-# Targets come from tree.sh: r:<repo>, s:<session>, w:<session>:<window index>.
+# Usage: action.sh <go|out|focus|new|ask|win|ide|ide-current|close|keep|force|rename|fold> [target]
+#        action.sh <next|prev|attention|help> | jump <key>
+# Targets come from tree.sh: g:<section>, r:<section>:<repo>, s:<session>, w:<session>:<window index>.
 set -u
 . "$(dirname "$0")/lib.sh"
 
@@ -38,6 +38,7 @@ go() {
     i:* | I:)
       "$S/muxa.sh" inbox "$(t display-message -p '#{client_name}')" "${target#[iI]:}"
       return 0 ;;
+    g:*) fold; return 0 ;;
     s:*) s="${target#s:}"; t switch-client -t "=$s" || return 1 ;;
     w:*) s="$(session_of "$target")"; idx="${target##*:}"
          t select-window -t "=$s:$idx" && t switch-client -t "=$s" || return 1 ;;
@@ -77,10 +78,31 @@ focus() {
   [ -n "$p" ] && t select-pane -t "$p"
 }
 
-# Sessions in the order and numbering of the tree.
-tree_sessions() { "$S/tree.sh" | awk -F'\t' '$1 ~ /^s:/ { print substr($1, 3) }'; }
+# Sessions in the order and numbering of the tree. --all: also those in folded sections.
+tree_sessions() { "$S/tree.sh" "$@" | awk -F'\t' '$1 ~ /^s:/ { print substr($1, 3) }'; }
 
 current_session() { t display-message -p '#{session_name}'; }
+
+# Folds or unfolds the section of a g: row, in every sidebar.
+fold() {
+  local sec new
+  case "$target" in g:*) sec="${target#g:}" ;; *) return 0 ;; esac
+  new="$(awk -v cur="$(opt "$AGENTS_FOLD_OPT" '')" -v s="$sec" 'BEGIN {
+    n = split(cur, a, " ")
+    for (i = 1; i <= n; i++) if (a[i] == s) hit = 1; else out = out (out == "" ? "" : " ") a[i]
+    if (!hit) out = out (out == "" ? "" : " ") s
+    print out }')"
+  t set-option -g "$AGENTS_FOLD_OPT" "$new"
+  notify_change
+}
+
+# Every key, in a popup. The popup gets the server's environment, not this script's.
+help() {
+  local client; client="$(t display-message -p '#{client_name}')"
+  set -- "$S/help.sh" view
+  [ -n "${TMUX_AGENTS_SOCKET:-}" ] && set -- env "TMUX_AGENTS_SOCKET=$TMUX_AGENTS_SOCKET" "$@"
+  t display-popup -c "$client" -E -w 76 -h 90% -T " muxa for tmux: keys " "$(printf '%q ' "$@")"
+}
 
 # Go to the session <n> rows after the current one in the tree, wrapping around.
 step() {
@@ -102,12 +124,12 @@ jump() {
 }
 
 # Go to the most urgent session that needs you: needs input, then error, then
-# finished. Ties go to the first one after the current session in the tree.
+# finished, also in a folded section. Ties go to the first one after the current session.
 attention() {
   local s
   s="$({
     t list-panes -a -f "$AGENTS_VISIBLE" -F "R${TAB}#{session_name}${TAB}#{@agent_state}"
-    tree_sessions | sed "s/^/O${TAB}/"
+    tree_sessions --all | sed "s/^/O${TAB}/"
   } | awk -F'\t' -v cur="$(current_session)" "$AGENTS_AWK_STATE"'
     $1 == "R" { r = rank($3); if (r > best[$2]) best[$2] = r; next }
     { o[++n] = $2; if ($2 == cur) c = n }
@@ -126,8 +148,9 @@ attention() {
 repo_for() {
   local s dir
   case "$1" in
-    r:*) dir="$(t list-sessions -f "$AGENTS_VISIBLE" -F "#{@agent_repo}${TAB}#{@agent_repo_dir}" |
-                awk -F'\t' -v g="${1#r:}" '$1 == g && $2 != "" { print $2; exit }')" ;;
+    r:*) s="${1#r:}"
+         dir="$(t list-sessions -f "$AGENTS_VISIBLE" -F "#{@agent_repo}${TAB}#{@agent_repo_dir}" |
+                awk -F'\t' -v g="${s#*:}" '$1 == g && $2 != "" { print $2; exit }')" ;;
     *) s="$(session_of "$1")" && dir="$(target_opt "=$s:" @agent_repo_dir)" ;;
   esac
   [ -n "${dir:-}" ] || dir="$(main_repo "$(t display-message -p '#{pane_current_path}')")"
@@ -160,15 +183,18 @@ win() {
 
 # A session that runs a muxa Task also asks what becomes of the Task, so a
 # closed session does not leave it open in the Inbox. <mode> is close.sh's flag.
+# A session without a worktree (an ask or manual session) only closes.
 close_session() {
   local mode="$1" what="$2" s run
   s="$(session_of "$target")" || return 0
   run="run-shell -b \"'$S/close.sh' $mode"
+  what=" and $what"
+  [ -n "$(target_opt "=$s:" @agent_worktree)" ] || what=""
   if [ -z "$(target_opt "=$s:" @muxa_task)" ] || ! "$S/muxa.sh" available; then
-    t confirm-before -p "close $s and $what? (y/n)" "$run '$s'\""
+    t confirm-before -p "close $s$what? (y/n)" "$run '$s'\""
     return
   fi
-  t display-menu -x C -y C -T "#[align=centre] close $s and $what " \
+  t display-menu -x C -y C -T "#[align=centre] close $s$what " \
     "Close, mark the Task done" d "$run --task done '$s'\"" \
     "Close, drop the Task" x "$run --task dropped '$s'\"" \
     "Close, keep the Task open" k "$run '$s'\"" \
@@ -196,8 +222,10 @@ case "$verb" in
   close) close_session "" "remove its worktree" ;;
   keep) close_session --keep "keep its worktree" ;;
   force) close_session --force "remove its worktree, even if unmerged" ;;
+  fold) fold ;;
+  help) help ;;
   rename)
     s="$(session_of "$target")" || exit 0
     t command-prompt -I "$s" -p "rename:" "rename-session -t '=$s' '%%'" ;;
-  *) echo "usage: action.sh <go|out|focus|new|win|ide|ide-current|close|keep|force|rename> [target] | <next|prev|attention> | jump <key>" >&2; exit 2 ;;
+  *) echo "usage: action.sh <go|out|focus|new|ask|win|ide|ide-current|close|keep|force|rename|fold> [target] | <next|prev|attention|help> | jump <key>" >&2; exit 2 ;;
 esac

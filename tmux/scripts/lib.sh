@@ -19,18 +19,24 @@ AGENTS_AWK_STATE='
   function sword(r) { return r==5 ? "needs you" : r==4 ? "error" : r==3 ? "working" : r==2 ? "done" : r==1 ? "idle" : "no agent" }
 '
 
-# The tree's group of a session (ADR 0037): its repo; else a muxa Task's group,
-# "}r" for a Routine run (its folder is <root>/routines/...) or "}t"; else "~",
-# the manual sessions. In byte order the groups follow the repos, sessions last.
+# The tree's sections (ADR 0038): muxa Tasks, Routine runs (a repo-less Task
+# whose folder is <root>/routines/...), ask sessions (@muxa_ask), then every
+# other session. Tasks and Sessions group by repo; "~" is no repo, last in byte order.
 # shellcheck disable=SC2034  # used by scripts that source this file
 AGENTS_AWK_GROUP='
-  function group(repo, task, path) {
-    if (repo != "") return repo
-    if (task == "") return "~"
-    return (path ~ /\/routines\/[^\/]+$/ ? "}r" : "}t")
+  function section(repo, task, ask, path) {
+    if (task != "") return (repo == "" && path ~ /\/routines\/[^\/]+$/ ? "routines" : "tasks")
+    return (ask != "" ? "ask" : "sessions")
   }
-  function glabel(g) { return g == "~" ? "sessions" : g == "}r" ? "routines" : g == "}t" ? "tasks" : g }
+  function sorder(sec) { return sec == "tasks" ? 1 : sec == "routines" ? 2 : sec == "ask" ? 3 : 4 }
+  function repogroup(sec, repo) { return (sec == "routines" || sec == "ask" || repo == "") ? "~" : repo }
+  function slabel(sec) { return sec == "tasks" ? "Tasks" : sec == "routines" ? "Routines" : sec == "ask" ? "Ask" : "Sessions" }
+  function rlabel(r) { return r == "~" ? "no repo" : r }
 '
+
+# Sections the user folded in the tree, space-separated (action.sh fold).
+# shellcheck disable=SC2034  # used by scripts that source this file
+AGENTS_FOLD_OPT=@agents_folded
 
 # A -f filter for list-sessions, list-windows -a and list-panes -a. It skips
 # muxa's device sessions (session option @muxa_device): each holds one window
