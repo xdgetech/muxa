@@ -52,19 +52,19 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$output" == *"2  docs/plan.md"* ]]
   [[ "$output" == *"3  docs/chart.png"* ]]
   [[ "$output" == *"4  PR #817  https://github.com/example/app/pull/817"* ]]
-  [[ "$output" == *"a Complete Task   s Send   r Redo   c Change course   p ✓ Done   l Later (move down)   o open session   space/b scroll   v read all   q close"* ]]
+  [[ "$output" == *"a Complete Task   s Send   p ✓ Done   l Later (move down)   o open session   space/b scroll   v read all   q close"* ]]
 }
 
 @test "labels name what an answer does: an ask allows or denies, a proposal approves" {
   strip() { sed $'s/\x1b\\[[0-9;]*m//g'; }
   [[ "$(inbox view i-0a1b2c3d "$ITEMS" | strip | tail -n 1)" == "a Allow   r Deny   s Deny & send   l Later (move down)"* ]]
-  [[ "$(inbox view i-3d4e5f6a "$ITEMS" | strip | tail -n 1)" == "a Retry   s Send   c Change course   x Drop Task   n ✓ Done   l Later (move down)"* ]]
+  [[ "$(inbox view i-3d4e5f6a "$ITEMS" | strip | tail -n 1)" == "a Retry   s Send   x Drop Task   n ✓ Done   l Later (move down)"* ]]
   [[ "$(inbox view e-1a2b3c4d "$ITEMS" | strip | tail -n 1)" == "a Approve   r Reject   l Later (move down)"* ]]
 }
 
 @test "a key answers with the item's own answers, a number opens evidence" {
   [ "$(inbox key i-2c3d4e5f a "$ITEMS")" = accept ]
-  [ "$(inbox key i-2c3d4e5f r "$ITEMS")" = redo ]
+  [ "$(inbox key i-2c3d4e5f r "$ITEMS")" = "" ]
   [ "$(inbox key i-2c3d4e5f s "$ITEMS")" = reply ]
   [ "$(inbox key i-0a1b2c3d s "$ITEMS")" = reply ]
   [ "$(inbox key i-3d4e5f6a s "$ITEMS")" = reply ]
@@ -155,18 +155,6 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   tx send-keys -K -c "$C" -l "Put this in Notion"
   key Enter
   wait_for 'grep -q "^inbox answer i-2c3d4e5f ask-agent --text Put this in Notion --json$" "$TMPDIR/bin/calls"'
-}
-
-@test "prefix+T: r on a review asks for the feedback and sends it with redo" {
-  fake_cli
-  attach
-  key C-b T
-  sleep 1
-  key j
-  key r
-  tx send-keys -K -c "$C" -l "Keep the old export"
-  key Enter
-  wait_for 'grep -q "^inbox answer i-2c3d4e5f redo --text Keep the old export --json$" "$TMPDIR/bin/calls"'
 }
 
 @test "prefix+T: s on a review asks for the text and sends it with reply" {

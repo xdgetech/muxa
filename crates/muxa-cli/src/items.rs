@@ -32,10 +32,7 @@ impl Answer {
         let a = self.action;
         let wants_text = matches!(
             a,
-            InboxAction::Reply
-                | InboxAction::Redo
-                | InboxAction::ChangeCourse
-                | InboxAction::AskAgent
+            InboxAction::Reply | InboxAction::AskAgent
         );
         let rule = |name: &str, given: bool, wanted: bool, needs: &str| match (given, wanted) {
             (false, true) => Err(format!("{needs} needs {name}")),
@@ -46,7 +43,7 @@ impl Answer {
             "--text",
             self.text.is_some(),
             wants_text,
-            "reply, redo, change-course and ask-agent",
+            "reply and ask-agent",
         )?;
         rule(
             "--option",
@@ -184,14 +181,14 @@ mod tests {
     #[test]
     fn each_flag_belongs_to_its_action() {
         assert!(answer("approve").checked().is_ok());
-        assert!(answer("redo").checked().is_err());
+        assert!(super::action("redo").is_none(), "ADR 0040 removed it");
         assert!(answer("choose").checked().is_err());
-        assert!(answer("later").checked().is_err());
+        assert!(answer("later").checked().is_ok());
         let text = |a| Answer {
             text: Some("again".into()),
             ..answer(a)
         };
-        assert!(text("change-course").checked().is_ok());
+        assert!(text("ask-agent").checked().is_ok());
         assert!(text("reply").checked().is_ok());
         assert!(answer("reply").checked().is_err());
         assert!(text("accept").checked().is_err());
@@ -206,7 +203,7 @@ mod tests {
         assert!(
             Answer {
                 text: Some(String::new()),
-                ..answer("redo")
+                ..answer("reply")
             }
             .checked()
             .is_err()

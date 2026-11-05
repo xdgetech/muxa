@@ -113,8 +113,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  answered and resolved items
   inbox answer ITEM ACTION
                  answers an item. ACTION is approve, reject, choose
-                 (--option N), accept, keep-open, reply, redo or
-                 change-course (--text T), retry, drop, dismiss, later
+                 (--option N), accept, keep-open, reply (--text T),
+                 retry, drop, dismiss, later
                  (moves it below the others), ask-agent (--text T) or read.
                  reply sends the text as it is; on an ask it denies the
                  permission first. ask-agent sends the item and the text to
@@ -589,9 +589,8 @@ mod tests {
 
     #[test]
     fn inbox_answer_takes_each_flag_only_with_its_action() {
-        let a = answer(&["inbox", "answer", "i-1", "redo", "--text", "again"]).unwrap();
-        assert_eq!(a.action, InboxAction::Redo);
-        assert_eq!(a.text.as_deref(), Some("again"));
+        // ADR 0040 removed redo and change-course: Send takes the text as it is.
+        assert!(answer(&["inbox", "answer", "i-1", "redo", "--text", "again"]).is_err());
         let a = answer(&[
             "inbox",
             "answer",
@@ -612,8 +611,7 @@ mod tests {
             InboxAction::Read
         );
         for bad in [
-            &["inbox", "answer", "i-1", "redo"][..],
-            &["inbox", "answer", "i-1", "reply"],
+            &["inbox", "answer", "i-1", "reply"][..],
             &["inbox", "answer", "i-1", "choose"],
             &["inbox", "answer", "i-1", "accept", "--text", "x"],
             &["inbox", "answer", "i-1", "later", "--until", "+1h"],

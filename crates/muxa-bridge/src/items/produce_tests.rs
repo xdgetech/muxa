@@ -442,7 +442,7 @@ fn an_unsent_start_prompt_offers_retry_in_its_session() {
     );
     assert_eq!(
         item.answers,
-        [Retry, Reply, ChangeCourse, Drop, Dismiss, AskAgent, Later]
+        [Retry, Reply, Drop, Dismiss, Later]
     );
 }
 

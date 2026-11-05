@@ -386,7 +386,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
 1. `inbox-list` also has `items[]`: every item, a Routine's entries included, in the order to show them. Open items come first, `ask` before the rest, then newest first. Then the open ones with `laterAt`, in the order they were moved down (ADR 0040), then at most 100 answered or resolved ones, newest first. `entries` stays for older clients.
 2. An item has:
    - `id`: `i-` and 8 hex digits for a Task's item; a Routine's entry keeps its `e-` id;
-   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `change-course`), `proposal` or `briefing`;
+   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `reply`), `proposal` or `briefing`;
    - `state`: `open`, `later`, `answered` or `resolved` (the need ended without an answer from the Inbox);
    - `question` (one line), `workspace`, `title` (the Task's or the entry's) and `createdAt`;
    - optional `readAt`, `laterAt` (epoch seconds: `later` moved it down), `until` (only from a host before ADR 0040, with `later`), `answeredAt`, and `answer` (with `answered`, the action given);
@@ -399,7 +399,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
      - then, in any Task, the Markdown files and images the summary names, by a relative or an absolute path, that exist inside the pane's directory after symlinks and outside `.muxa/` and `.claude/`. Each path is listed once;
      - `links`: the summary's `http` and `https` links, each once, at most 10. A GitHub pull request's link has `title` `PR #<n>`;
    - optional `routine` and `proposal`, for a Routine's item;
-   - `answers[]`: the actions the host accepts now, in the order to show them. Empty once answered or resolved. Show an unknown action as nothing. The first one is the main answer. A `review` has `accept, reply, redo, change-course, keep-open, later`; a `failure` `retry, reply, change-course, drop, dismiss, later`; an `ask` about a permission `approve, reject, reply, later`.
+   - `answers[]`: the actions the host accepts now, in the order to show them. Empty once answered or resolved. Show an unknown action as nothing. The first one is the main answer. A `review` has `accept, reply, keep-open, later`; a `failure` `retry, reply, drop, dismiss, later`; an `ask` about a permission `approve, reject, reply, later`; a briefing `dismiss, ask-agent, later`.
    - Labels are the client's. They name the result (ADR 0033 §4a): `accept` is "Done" (closes the Task) and `reply` "Send". On an `ask`, `approve` is "Allow", `reject` "Deny" and `reply` "Deny & send". A `proposal` keeps "Approve" and "Reject".
 3. A host since ADR 0040 sends no `later` state; it lists a stored `later` item as `open` with `laterAt`. A Task has at most one `open` or `later` item; a newer need resolves the older one.
 4. `update-inbox {entry, action, text?, option?}` answers an item; `entry` is its id. On success: `inbox-saved {inbox, item}`, then `result`. For a Routine's entry, `inbox-saved` has `entry` too.
@@ -407,12 +407,12 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `reject`: an `ask` picks the prompt's `cancel` option; a proposal is dismissed.
    - `choose` with `option`, an index into the prompt's options: answers a question.
    - `accept`: a `review` marks the Task done. `keep-open` answers it and leaves the Task open.
-   - `redo` and `change-course` with `text` (1 to 4096 bytes): send the text to the agent as its next prompt, once the agent is idle. `redo` is feedback on its turn; `change-course` a new direction.
+   - ADR 0040 removed `redo` and `change-course`: `reply` sends the developer's own words. A host since then lists and takes neither.
    - `reply` with `text` (1 to 4096 bytes): a `review` or `failure` sends the text as it is, with no preface, and the Task goes on. An `ask` about a permission first picks the prompt's `cancel` option, waits up to 10 seconds until the adapter no longer reports that menu and reports the agent `idle` or `done`, then sends the text. When the agent does not take the denial in time, the answer is `conflict` and the item stays open; the menu was denied. Old clients drop the unknown `reply`, so no capability is needed.
    - `retry`: a `failure` restarts the agent, as `restart-agent`. `drop` marks the Task dropped.
    - `branch` and `keep`, with `work` level 4: a reading Task's `proposal` about its main checkout (Reading Tasks below). `branch` does `branch-task` with a branch from the title; `keep` answers it and changes nothing.
    - `dismiss` answers the item and does nothing else. `later` sets `laterAt` and leaves the item open; it ignores `until`. `read` sets `readAt` and leaves the item open.
-   - `ask-agent` with `text` (1 to 4096 bytes), with `work` level 6: sends the item and the text to the workspace's Ask session (Ask sessions below) and leaves the item open. It is in `answers` of every open item, before `later`. On success: `session-started {start, session, name}`, `inbox-saved {inbox, item}`, then `result`.
+   - `ask-agent` with `text` (1 to 4096 bytes), with `work` level 6: sends the item and the text to the workspace's Ask session (Ask sessions below) and leaves the item open. It is in `answers` of every open item without `session`, before `later`; an item with a session takes `reply`. On success: `session-started {start, session, name}`, `inbox-saved {inbox, item}`, then `result`.
    - An action not in `answers` is `bad-request`. An `ask` whose prompt changed since the item was made is `conflict`: list again. Nothing is sent to the pane then.
 
 ## Reading Tasks

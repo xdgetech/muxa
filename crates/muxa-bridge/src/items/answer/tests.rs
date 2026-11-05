@@ -188,7 +188,7 @@ async fn an_unknown_item_or_an_answer_it_does_not_take_is_a_bad_request() {
     assert_eq!(e.code, ErrorCode::BadRequest);
     assert!(
         e.message.contains(
-            "it takes accept, reply, redo, change-course, keep-open, ask-agent, later, or read"
+            "it takes accept, reply, keep-open, ask-agent, later, or read"
         ),
         "{}",
         e.message
@@ -309,37 +309,21 @@ fn keys_go_only_to_the_menu_the_item_asked_about() {
 }
 
 #[test]
-fn a_reply_needs_a_text_and_says_what_it_is() {
+fn a_reply_needs_a_text_of_1_to_max_bytes() {
     let item = review("i-00000001");
-    let with = |action, text: &str| {
+    let with = |text: &str| {
         plan(
             &item,
             &Answer {
                 text: Some(text.into()),
-                ..answer("i-00000001", action)
+                ..answer("i-00000001", InboxAction::Reply)
             },
         )
     };
-    assert_eq!(
-        with(InboxAction::Redo, "Use the cache.\nKeep the API."),
-        Ok(Plan::Reply(
-            "Feedback on your last turn. Redo it with this in mind:\n\nUse the cache.\nKeep the API."
-                .into()
-        ))
-    );
-    assert_eq!(
-        with(InboxAction::ChangeCourse, "Drop the cache."),
-        Ok(Plan::Reply(
-            "Change of course. New direction:\n\nDrop the cache.".into()
-        ))
-    );
     for text in [String::new(), "x".repeat(MAX_TEXT + 1)] {
-        assert_eq!(
-            with(InboxAction::Redo, &text).unwrap_err().code,
-            ErrorCode::BadRequest
-        );
+        assert_eq!(with(&text).unwrap_err().code, ErrorCode::BadRequest);
     }
-    assert!(with(InboxAction::Redo, &"x".repeat(MAX_TEXT)).is_ok());
+    assert!(with(&"x".repeat(MAX_TEXT)).is_ok());
 }
 
 #[test]

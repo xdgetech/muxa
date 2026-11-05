@@ -164,8 +164,8 @@ struct FixtureTests {
         #expect(items.map(\.state) == [.open, .open, .open, .open, .answered, .resolved])
         #expect(items[2].laterAt == 1_762_160_500)
         #expect(items[0].answers == [.approve, .reject, .reply, .later])
-        #expect(items[1].answers == [.accept, .reply, .redo, .changeCourse, .keepOpen, .later])
-        #expect(items[2].answers == [.retry, .reply, .changeCourse, .drop, .dismiss, .later])
+        #expect(items[1].answers == [.accept, .reply, .keepOpen, .later])
+        #expect(items[2].answers == [.retry, .reply, .drop, .dismiss, .later])
         #expect(!items[3].answers.contains(.reply), "a proposal takes no reply")
         #expect(items[2].attachments.docs == ["report.md"])
         #expect(items[2].attachments.links.map(\.url) == ["https://example.com/runs/42"])
@@ -182,10 +182,9 @@ struct FixtureTests {
         guard case .updateInboxEntry(_, _, .choose, nil, nil, 1?) = try Wire.decodeRequest(requests[3]) else {
             Issue.record("expected choose with option 1"); return
         }
-        guard case .updateInboxEntry(_, _, .redo, nil, let text?, nil) = try Wire.decodeRequest(requests[6]) else {
-            Issue.record("expected redo with text"); return
+        guard case .updateInboxEntry(_, _, .keepOpen, nil, nil, nil) = try Wire.decodeRequest(requests[6]) else {
+            Issue.record("expected keep-open"); return
         }
-        #expect(!text.isEmpty)
         let replies = try requests.map(Wire.decodeRequest).filter {
             if case .updateInboxEntry(_, _, .reply, nil, let text?, nil) = $0 { !text.isEmpty } else { false }
         }

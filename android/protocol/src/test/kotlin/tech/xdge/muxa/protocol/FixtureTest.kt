@@ -171,7 +171,7 @@ class FixtureTest {
         )
         assertEquals(1_762_160_500L, list.items[2].laterAt)
         assertEquals(
-            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
+            listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.KEEP_OPEN, InboxAction.LATER),
             list.items[1].answers,
         )
         assertEquals(ChangeCount(files = 4, added = 120, removed = 40, scope = "branch"), list.items[1].attachments.changes)
@@ -184,9 +184,8 @@ class FixtureTest {
         assertEquals(both.entry?.id, both.item?.id)
         val choose = Wire.decodeRequest(requests[3]) as Request.UpdateInbox
         assertEquals(InboxAction.CHOOSE to 1, choose.action to choose.option)
-        val redo = Wire.decodeRequest(requests[6]) as Request.UpdateInbox
-        assertEquals(InboxAction.REDO, redo.action)
-        assertFalse(redo.text.isNullOrEmpty())
+        val keepOpen = Wire.decodeRequest(requests[6]) as Request.UpdateInbox
+        assertEquals(InboxAction.KEEP_OPEN, keepOpen.action)
     }
 
     /** ADR 0033 §4a: `reply` with a text, and the evidence a summary names (files and links). */
@@ -199,7 +198,7 @@ class FixtureTest {
         val items = (Wire.decodeMessage(lines("items/messages.jsonl")[1]) as Message.InboxList).items
         assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER), items[0].answers)
         assertEquals(
-            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.CHANGE_COURSE, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER),
+            listOf(InboxAction.RETRY, InboxAction.REPLY, InboxAction.DROP, InboxAction.DISMISS, InboxAction.LATER),
             items[2].answers,
         )
         val failure = items[2].attachments

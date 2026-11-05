@@ -286,7 +286,7 @@ fn item_fixtures_round_trip() {
     let kinds: Vec<ItemKind> = items.iter().map(|i| i.kind).collect();
     use ItemKind::*;
     assert_eq!(kinds, [Ask, Review, Failure, Proposal, Review, Ask]);
-    assert_eq!(items[1].answers[3], InboxAction::ChangeCourse);
+    assert_eq!(items[1].answers[2], InboxAction::KeepOpen);
     assert_eq!(
         (items[2].state, items[2].later_at),
         (ItemState::Open, Some(1_762_160_500))
@@ -346,11 +346,11 @@ fn reply_fixtures_round_trip() {
     assert_eq!(answers("i-0a1b2c3d"), [Approve, Reject, Reply, Later]);
     assert_eq!(
         answers("i-2c3d4e5f"),
-        [Accept, Reply, Redo, ChangeCourse, KeepOpen, Later]
+        [Accept, Reply, KeepOpen, Later]
     );
     assert_eq!(
         answers("i-3d4e5f6a"),
-        [Retry, Reply, ChangeCourse, Drop, Dismiss, Later]
+        [Retry, Reply, Drop, Dismiss, Later]
     );
     let proposal = items.iter().find(|i| i.kind == ItemKind::Proposal).unwrap();
     assert!(!proposal.answers.contains(&Reply));

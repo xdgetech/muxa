@@ -212,10 +212,6 @@ pub enum InboxAction {
     Accept,
     /// A `review`: answers the item and leaves the Task open.
     KeepOpen,
-    /// A `review`: sends `text` to the agent as feedback on its turn.
-    Redo,
-    /// A `review` or `failure`: sends `text` to the agent as a new direction.
-    ChangeCourse,
     /// A `failure`: restarts the agent with a handoff.
     Retry,
     /// A `failure`: marks the Task dropped.

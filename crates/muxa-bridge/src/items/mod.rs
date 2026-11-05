@@ -47,16 +47,19 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
             // A menu the adapter cannot read is answered in the terminal.
             None => vec![Dismiss],
         },
-        ItemKind::Review => vec![Accept, Reply, Redo, ChangeCourse, KeepOpen],
-        // Retry, Reply and Change course reach the agent: they need its session.
+        ItemKind::Review => vec![Accept, Reply, KeepOpen],
+        // Retry and Reply reach the agent: they need its session.
         ItemKind::Failure if item.session.is_none() => vec![Drop, Dismiss],
-        ItemKind::Failure => vec![Retry, Reply, ChangeCourse, Drop, Dismiss],
+        ItemKind::Failure => vec![Retry, Reply, Drop, Dismiss],
         // A reading Task changed its main checkout (ADR 0034 §2).
         ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],
         ItemKind::Proposal => vec![Approve, Reject],
         ItemKind::Briefing => vec![Dismiss],
     };
-    out.push(AskAgent);
+    // An item with a session sends its text to its own agent (ADR 0040 §4).
+    if item.session.is_none() {
+        out.push(AskAgent);
+    }
     out.push(Later);
     out
 }
@@ -251,7 +254,7 @@ mod tests {
         );
         assert_eq!(
             answers(&item(ItemKind::Review, ItemState::Open, 1)),
-            [Accept, Reply, Redo, ChangeCourse, KeepOpen, AskAgent, Later]
+            [Accept, Reply, KeepOpen, AskAgent, Later]
         );
         // An agent's failure has its session; a failed start may not.
         let mut failure = item(ItemKind::Failure, ItemState::Open, 1);
@@ -259,7 +262,7 @@ mod tests {
         failure.session = Some("$1".into());
         assert_eq!(
             answers(&failure),
-            [Retry, Reply, ChangeCourse, Drop, Dismiss, AskAgent, Later]
+            [Retry, Reply, Drop, Dismiss, Later]
         );
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
     }

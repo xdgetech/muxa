@@ -199,10 +199,7 @@ async fn a_reply_reaches_the_pane_and_the_turns_document_is_attached() {
         json!([
             "accept",
             "reply",
-            "redo",
-            "change-course",
             "keep-open",
-            "ask-agent",
             "later"
         ])
     );
@@ -264,7 +261,7 @@ async fn waiting_makes_an_ask_that_a_newer_need_replaces() {
     let items = host.until("ask", |i| !i.is_empty()).await;
     assert_eq!(items[0]["kind"], "ask");
     assert_eq!(items[0]["question"], "The agent waits for you");
-    assert_eq!(items[0]["answers"], json!(["dismiss", "ask-agent", "later"]));
+    assert_eq!(items[0]["answers"], json!(["dismiss", "later"]));
 
     host.report("error", 1010);
     let items = host.until("failure", |i| i.len() == 2).await;

@@ -13,11 +13,11 @@ Proposed. It adds to ADR 0031 §4 (ask sessions) and ADR 0033 §4a (an item's an
 ## Decision
 
 1. **Each workspace has one Ask session at its root.** It is an ask session (`@muxa_ask` is the workspace) that also has `@muxa_ask_root`. It runs the workspace's agent command and environment, like any ask session. Its name is `ask-<workspace>`, or `ask-<workspace>-<n>` when that name is taken. It lists under Sessions and closes like any ask session (ADR 0039).
-2. **`ask-agent` answers any open item with a text** (1 to 4096 bytes). The host types one prompt into the workspace's Ask session: the item's kind, source, question, summary and links, then the text. It starts the session when there is none, and types the prompt once the new agent reports `idle` (at most 30 s, as a Task's start prompt).
+2. **`ask-agent` answers an open item without a session with a text** (1 to 4096 bytes): a briefing, a proposal, a failed start. An item with a session has Send, to its own agent (ADR 0040 §4). The host types one prompt into the workspace's Ask session: the item's kind, source, question, summary and links, then the text. It starts the session when there is none, and types the prompt once the new agent reports `idle` (at most 30 s, as a Task's start prompt).
 3. **The item stays open.** The request is not an answer. The developer closes the item with ✓, or keeps it.
 4. **A busy agent still gets the text.** While the agent works, the text goes in as typed input; Claude Code takes it after the turn. The host refuses only when the agent waits on a menu (the text would pick an option), when its state is unknown, or when a person typed in the session in the last 5 s.
 5. **The reply names the session.** `session-started {start, session, name}` comes before `inbox-saved`, for a new session and for the one already open. The apps open its Chat.
-6. **`ask-agent` is in `answers[]`** of every open item, before `later`. An item of a workspace the host does not know is `bad-request`. A client that does not know it shows nothing.
+6. **`ask-agent` is in `answers[]`** of every open item without a session, before `later`. An item of a workspace the host does not know is `bad-request`. A client that does not know it shows nothing.
 7. **`work` level 6** says the host does this.
 
 ## Consequences

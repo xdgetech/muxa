@@ -111,20 +111,16 @@ fn inbox_lists_items_at_work_level_3() {
 fn each_answer_sends_its_action_and_flags() {
     for (args, want) in [
         (
-            vec!["redo", "--text", "try again"],
-            json!({"action": "redo", "text": "try again"}),
-        ),
-        (
-            vec!["change-course", "--text", "stop"],
-            json!({"action": "change-course", "text": "stop"}),
+            vec!["reply", "--text", "try again"],
+            json!({"action": "reply", "text": "try again"}),
         ),
         (
             vec!["choose", "--option", "1"],
             json!({"action": "choose", "option": 1}),
         ),
         (
-            vec!["later", "--until", "1767340800"],
-            json!({"action": "later", "until": 1_767_340_800}),
+            vec!["later"],
+            json!({"action": "later"}),
         ),
         (vec!["keep-open"], json!({"action": "keep-open"})),
         (vec!["reject"], json!({"action": "reject"})),
@@ -157,9 +153,10 @@ fn inbox_read_is_the_read_answer() {
 #[test]
 fn invalid_answers_exit_2_before_any_request() {
     for args in [
-        &["inbox", "answer", "i-1", "redo"][..],
+        &["inbox", "answer", "i-1", "reply"][..],
+        &["inbox", "answer", "i-1", "redo", "--text", "x"],
         &["inbox", "answer", "i-1", "choose"],
-        &["inbox", "answer", "i-1", "later"],
+        &["inbox", "answer", "i-1", "later", "--until", "+1h"],
         &["inbox", "answer", "i-1", "accept", "--option", "1"],
         &["inbox", "answer", "i-1", "dismiss", "--until", "+1h"],
         &["inbox", "answer", "i-1", "nope"],

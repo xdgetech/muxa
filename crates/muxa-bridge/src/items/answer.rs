@@ -107,7 +107,6 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Retry => Plan::Restart,
         Branch => Plan::Branch,
         Approve | Reject | Choose => pick(item, answer.action, answer.option)?,
-        Redo | ChangeCourse => Plan::Reply(reply_text(answer.action, answer.text.as_deref())?),
         Reply => {
             let text = reply_text(Reply, answer.text.as_deref())?;
             if item.kind != ItemKind::Ask {
@@ -190,8 +189,7 @@ fn choice(option: Option<u32>, options: usize) -> Result<usize, ErrorBody> {
         })
 }
 
-/// The prompt the agent gets. `redo` and `change-course` are prefixed so it
-/// knows what the text is; `reply` is sent as it is.
+/// The prompt the agent gets: the text as it is.
 fn reply_text(action: InboxAction, text: Option<&str>) -> Result<String, ErrorBody> {
     let text = text.unwrap_or_default();
     if text.is_empty() || text.len() > MAX_TEXT {
@@ -200,12 +198,7 @@ fn reply_text(action: InboxAction, text: Option<&str>) -> Result<String, ErrorBo
             name(action)
         )));
     }
-    let lead = match action {
-        InboxAction::Reply => return Ok(text.to_owned()),
-        InboxAction::Redo => "Feedback on your last turn. Redo it with this in mind:",
-        _ => "Change of course. New direction:",
-    };
-    Ok(format!("{lead}\n\n{text}"))
+    Ok(text.to_owned())
 }
 
 async fn act(cx: &Context, task: &str, plan: Plan) -> Result<(), ErrorBody> {

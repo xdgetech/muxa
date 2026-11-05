@@ -4,8 +4,8 @@
 {"type":"update-inbox","id":303,"entry":"i-1b2c3d4e","action":"choose","option":1}
 {"type":"update-inbox","id":304,"entry":"i-2c3d4e5f","action":"accept"}
 {"type":"update-inbox","id":305,"entry":"i-2c3d4e5f","action":"keep-open"}
-{"type":"update-inbox","id":306,"entry":"i-2c3d4e5f","action":"redo","text":"Keep the old export for one more week."}
-{"type":"update-inbox","id":307,"entry":"i-3d4e5f6a","action":"change-course","text":"Stop. Use BigQuery's export instead."}
+{"type":"update-inbox","id":306,"entry":"i-2c3d4e5f","action":"keep-open"}
+{"type":"update-inbox","id":307,"entry":"i-3d4e5f6a","action":"drop"}
 {"type":"update-inbox","id":308,"entry":"i-3d4e5f6a","action":"retry"}
 {"type":"update-inbox","id":309,"entry":"i-3d4e5f6a","action":"drop"}
 {"type":"update-inbox","id":310,"entry":"i-2c3d4e5f","action":"read"}

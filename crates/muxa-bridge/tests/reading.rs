@@ -393,7 +393,7 @@ async fn a_turn_that_changes_the_main_checkout_asks_branch_or_keep() {
     .await;
     let item = items()["items"][0].clone();
     assert_eq!(item["question"], "The agent changed the main checkout");
-    assert_eq!(item["answers"], json!(["branch", "keep", "ask-agent", "later"]));
+    assert_eq!(item["answers"], json!(["branch", "keep", "later"]));
     assert_eq!(item["attachments"]["changes"]["files"], 2);
     let summary = item["summary"].as_str().unwrap();
     assert!(

@@ -166,12 +166,12 @@ apps show, with a goal and a status.
     Retry or Approve; a briefing's ✓ Done.
   - `s` Send: the text goes to the agent as it is, and the Task goes on. On a
     permission it is Deny & send: muxa denies the request, then sends the text.
-  - `r` Deny, Reject or Redo, `c` Change course, `p` and `n` ✓ Done (closes
+  - `r` Deny or Reject, `p` and `n` ✓ Done (closes
     only the item), `x` Drop Task, `l` Later: the item moves below the others
     and stays there until you answer it (ADR 0040). `g` Ask agent sends the item
     and your text to the workspace's Ask session (`ask-<workspace>`), which muxa
-    starts when none is open; the item stays open (ADR 0041). Send, Redo, Change
-    course and Ask agent ask for the text.
+    starts when none is open; the item stays open (ADR 0041). Send and Ask agent
+    ask for the text.
   - Labels say what the answer does (ADR 0033 §4a): on an agent's permission
     `a` is Allow and `r` Deny; a Routine's proposal keeps Approve and Reject.
   - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with
