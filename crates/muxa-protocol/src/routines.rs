@@ -16,6 +16,8 @@ pub const WORK_READ: u32 = 4;
 /// Level 5: `close-task` also closes an ask session, and a session carries
 /// `ask` (ADR 0039).
 pub const WORK_CLOSE_ASK: u32 = 5;
+/// Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041).
+pub const WORK_ASK_AGENT: u32 = 6;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {
@@ -200,7 +202,7 @@ pub enum InboxAction {
     Approve,
     /// Answers the item without acting; a briefing's Done.
     Dismiss,
-    /// Needs `until`.
+    /// Moves the item below the others (ADR 0040). A host before it needs `until`.
     Later,
     /// An `ask`: picks the prompt's `cancel` option. A proposal: as `dismiss`.
     Reject,
@@ -227,6 +229,9 @@ pub enum InboxAction {
     /// A `review` or `failure`: sends `text` to the agent as it is. An `ask`
     /// about a permission: picks the `cancel` option first (ADR 0033 §4a).
     Reply,
+    /// Any open item: sends `text` with the item to the workspace's Ask session,
+    /// and leaves the item open (ADR 0041, level 6).
+    AskAgent,
 }
 
 #[cfg(test)]

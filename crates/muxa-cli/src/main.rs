@@ -115,8 +115,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  answers an item. ACTION is approve, reject, choose
                  (--option N), accept, keep-open, reply, redo or
                  change-course (--text T), retry, drop, dismiss, later
-                 (moves it below the others) or read. reply sends the text as it is;
-                 on an ask it denies the permission first
+                 (moves it below the others), ask-agent (--text T) or read.
+                 reply sends the text as it is; on an ask it denies the
+                 permission first. ask-agent sends the item and the text to
+                 the workspace's Ask session and leaves the item open
   inbox read ITEM
                  marks the item read, as inbox answer ITEM read";
 

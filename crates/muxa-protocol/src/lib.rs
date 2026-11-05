@@ -10,7 +10,8 @@ pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
-    WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_READ, WORK_ROUTINES, work_capability, work_level,
+    WORK_ASK_AGENT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_READ, WORK_ROUTINES, work_capability,
+    work_level,
 };
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 

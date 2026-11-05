@@ -2,6 +2,7 @@
 //! makes and resolves a Task's items from adapter states, `answer` carries
 //! out `update-inbox` on them. A Routine's entries are listed as items too.
 pub mod answer;
+pub mod ask_agent;
 pub mod produce;
 pub mod store;
 
@@ -55,6 +56,7 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Proposal => vec![Approve, Reject],
         ItemKind::Briefing => vec![Dismiss],
     };
+    out.push(AskAgent);
     out.push(Later);
     out
 }
@@ -80,7 +82,9 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         title: entry.title.clone(),
         created_at: entry.created_at,
         read_at: entry.read_at,
-        later_at: entry.later_at.or((entry.disposition == Disposition::Later).then_some(entry.created_at)),
+        later_at: entry
+            .later_at
+            .or((entry.disposition == Disposition::Later).then_some(entry.created_at)),
         until: entry.until,
         answered_at: None,
         answer,
@@ -207,14 +211,18 @@ mod tests {
             item(ItemKind::Failure, ItemState::Open, 3),
         ]);
         let ids: Vec<u64> = ordered.iter().map(|i| i.created_at).collect();
-        assert_eq!(ids, [2, 3, 1, 7, 8, 9], "moved down in the order they were moved");
+        assert_eq!(
+            ids,
+            [2, 3, 1, 7, 8, 9],
+            "moved down in the order they were moved"
+        );
     }
 
     #[test]
     fn answers_follow_the_kind_and_the_prompt() {
         use InboxAction::*;
         let mut ask = item(ItemKind::Ask, ItemState::Open, 1);
-        assert_eq!(answers(&ask), [Dismiss, Later]);
+        assert_eq!(answers(&ask), [Dismiss, AskAgent, Later]);
         ask.prompt = Some(ChatPrompt {
             entry: "toolu_1".into(),
             kind: PromptKind::Permission,
@@ -232,22 +240,26 @@ mod tests {
                 },
             ],
         });
-        assert_eq!(answers(&ask), [Approve, Reject, Reply, Later]);
+        assert_eq!(answers(&ask), [Approve, Reject, Reply, AskAgent, Later]);
         if let Some(p) = ask.prompt.as_mut() {
             p.kind = PromptKind::Plan;
         }
-        assert_eq!(answers(&ask), [Approve, Reject, Later], "only a permission");
+        assert_eq!(
+            answers(&ask),
+            [Approve, Reject, AskAgent, Later],
+            "only a permission"
+        );
         assert_eq!(
             answers(&item(ItemKind::Review, ItemState::Open, 1)),
-            [Accept, Reply, Redo, ChangeCourse, KeepOpen, Later]
+            [Accept, Reply, Redo, ChangeCourse, KeepOpen, AskAgent, Later]
         );
         // An agent's failure has its session; a failed start may not.
         let mut failure = item(ItemKind::Failure, ItemState::Open, 1);
-        assert_eq!(answers(&failure), [Drop, Dismiss, Later]);
+        assert_eq!(answers(&failure), [Drop, Dismiss, AskAgent, Later]);
         failure.session = Some("$1".into());
         assert_eq!(
             answers(&failure),
-            [Retry, Reply, ChangeCourse, Drop, Dismiss, Later]
+            [Retry, Reply, ChangeCourse, Drop, Dismiss, AskAgent, Later]
         );
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
     }
@@ -257,11 +269,11 @@ mod tests {
         use InboxAction::*;
         let mut changed = item(ItemKind::Proposal, ItemState::Open, 1);
         changed.task = Some("t-000001".into());
-        assert_eq!(answers(&changed), [Branch, Keep, Later]);
+        assert_eq!(answers(&changed), [Branch, Keep, AskAgent, Later]);
         changed.routine = Some("Morning".into());
         assert_eq!(
             answers(&changed),
-            [Approve, Reject, Later],
+            [Approve, Reject, AskAgent, Later],
             "a Routine's proposal"
         );
     }
@@ -271,7 +283,10 @@ mod tests {
         let mut i = item(ItemKind::Review, ItemState::Later, 5);
         i.until = Some(4_000_000_000);
         let s = shown(&i);
-        assert_eq!((s.state, s.later_at, s.until), (ItemState::Open, Some(5), None));
+        assert_eq!(
+            (s.state, s.later_at, s.until),
+            (ItemState::Open, Some(5), None)
+        );
         assert!(s.answers.contains(&InboxAction::Later));
     }
 }

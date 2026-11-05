@@ -93,6 +93,7 @@ mod tests {
             task: None,
             task_id: None,
             ask: None,
+            ask_root: false,
             panes: vec![Pane {
                 id: PaneId::new(1),
                 window: WindowId::new(1),

@@ -78,13 +78,15 @@ pub struct Session {
     pub task_id: Option<String>,
     /// The workspace of an ask session (`@muxa_ask`, ADR 0031).
     pub ask: Option<String>,
+    /// The workspace's own ask session at its root (`@muxa_ask_root`, ADR 0041).
+    pub ask_root: bool,
     pub panes: Vec<Pane>,
 }
 
 const SEP: char = '\u{1f}';
 
 /// The list-panes format, one entry per field, joined by \x1f.
-const FIELDS: [&str; 26] = [
+const FIELDS: [&str; 27] = [
     "session_id",
     "session_name",
     "window_id",
@@ -113,6 +115,7 @@ const FIELDS: [&str; 26] = [
     // A device session (ADR 0021): the same panes again; skipped.
     "@muxa_device",
     "@muxa_ask",
+    "@muxa_ask_root",
 ];
 
 fn format(fields: &[&str]) -> String {
@@ -224,6 +227,7 @@ pub(crate) fn parse_sessions(lines: &[Vec<u8>]) -> Vec<Session> {
                     task: row.opt("@agent_task"),
                     task_id: row.opt("@muxa_task"),
                     ask: row.opt("@muxa_ask"),
+                    ask_root: !row.get("@muxa_ask_root").is_empty(),
                     panes: Vec::new(),
                 });
                 tags.push(Vec::new());

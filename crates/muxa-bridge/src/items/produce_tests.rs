@@ -420,7 +420,7 @@ fn a_failed_start_asks_with_a_failure_item() {
     assert_eq!(item.question, "The task did not start: no tmux.");
     assert_eq!(item.task.as_deref(), Some(f.task.as_str()));
     // No session: Retry, Reply and Change course could not reach an agent.
-    assert_eq!(item.answers, [Drop, Dismiss, Later]);
+    assert_eq!(item.answers, [Drop, Dismiss, AskAgent, Later]);
     assert!(items[0].key.starts_with("start:0:"));
 }
 
@@ -442,7 +442,7 @@ fn an_unsent_start_prompt_offers_retry_in_its_session() {
     );
     assert_eq!(
         item.answers,
-        [Retry, Reply, ChangeCourse, Drop, Dismiss, Later]
+        [Retry, Reply, ChangeCourse, Drop, Dismiss, AskAgent, Later]
     );
 }
 

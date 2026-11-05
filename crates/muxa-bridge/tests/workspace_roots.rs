@@ -459,3 +459,117 @@ async fn close_task_closes_an_ask_session_and_refuses_a_user_session() {
     assert_eq!(error_code(&result), ErrorCode::BadRequest);
     desktop.close();
 }
+
+/// An open review of a Task in `lisk`, stored as a bridge stores it.
+fn store_review(entity: &Entity) -> &'static str {
+    let dir = entity.dir.join("state/items");
+    std::fs::create_dir_all(&dir).unwrap();
+    let item = json!({
+        "id": "i-0000a5c0", "key": "review:1", "kind": "review", "state": "open",
+        "question": "Ready for review: Release notes", "workspace": "lisk",
+        "title": "Release notes", "createdAt": 1, "summary": "**v0.7** is ready.",
+        "task": "t-0000a5", "attachments": {"links": [{"url": "https://example.com/pr/7"}]}
+    });
+    let file = json!({"version": 1, "task": "t-0000a5", "items": [item]});
+    std::fs::write(dir.join("t-0000a5.json"), file.to_string()).unwrap();
+    "i-0000a5c0"
+}
+
+/// An agent that reports idle through its pane's tags, then echoes what it gets.
+fn idle_agent(entity: &Entity) -> PathBuf {
+    let script = entity.dir.join("idle-agent.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\n\
+         tmux set-option -p -t \"$TMUX_PANE\" @agent_state_at \"$(date +%s)\"\n\
+         tmux set-option -p -t \"$TMUX_PANE\" @agent_state idle\n\
+         exec cat\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let toml = entity.dir.join("workspaces.toml");
+    let text = std::fs::read_to_string(&toml).unwrap().replacen(
+        "\n\n[[workspace]]\nname = \"other\"",
+        &format!(
+            "\n\n[workspace.agent]\ncommand = \"{}\"\n\n[[workspace]]\nname = \"other\"",
+            script.display()
+        ),
+        1,
+    );
+    std::fs::write(&toml, text).unwrap();
+    script
+}
+
+#[tokio::test]
+async fn ask_agent_types_the_item_into_the_workspaces_one_ask_session() {
+    let server = Server::start();
+    let mut entity = Entity::new("ask-agent");
+    idle_agent(&entity);
+    let item = store_review(&entity);
+    let before = server.layout();
+    let mut bridge = entity.bridge(&server, false).await;
+
+    let ask_agent = |text: &str| json!({"type": "update-inbox", "entry": item, "action": "ask-agent", "text": text});
+    let (messages, result) = send(&mut bridge, ask_agent("Put this in Notion.")).await;
+    ok(&result);
+    let started = messages.iter().find_map(|m| match m {
+        Message::SessionStarted { session, name, .. } => Some((session.clone(), name.clone())),
+        _ => None,
+    });
+    let (session, name) = started.expect("session-started");
+    assert_eq!(name, "ask-lisk");
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::InboxSaved { item: Some(i), .. }
+            if i.id == item && i.state == muxa_protocol::ItemState::Open)),
+        "the item stays open: {messages:?}"
+    );
+    assert_eq!(option(&server, &session, "@muxa_ask"), "lisk");
+    assert_eq!(option(&server, &session, "@muxa_ask_root"), "1");
+    let pane = server.pane(&format!("{session}:"));
+    assert_eq!(
+        server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_current_path}"]),
+        entity.root.display().to_string()
+    );
+    common::wait_until(|| {
+        let shown = server.capture(&pane).join("\n");
+        shown.contains("Ready for review: Release notes")
+            && shown.contains("**v0.7** is ready.")
+            && shown.contains("- https://example.com/pr/7")
+            && shown.contains("My request: Put this in Notion.")
+    })
+    .await;
+
+    // A second request goes to the same session, also while the agent works.
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "running"]);
+    let (messages, result) = send(&mut bridge, ask_agent("And draft a reply.")).await;
+    ok(&result);
+    assert!(
+        messages
+            .iter()
+            .any(|m| matches!(m, Message::SessionStarted { session: s, .. } if *s == session))
+    );
+    common::wait_until(|| {
+        server
+            .capture(&pane)
+            .join("\n")
+            .contains("My request: And draft a reply.")
+    })
+    .await;
+
+    // A menu would take the text as its answer: refused, nothing typed.
+    server.tmux(&["set-option", "-p", "-t", &pane, "@agent_state", "waiting"]);
+    let (_, result) = send(&mut bridge, ask_agent("Never typed.")).await;
+    assert_eq!(error_code(&result), ErrorCode::Conflict);
+    assert!(!server.capture(&pane).join("\n").contains("Never typed."));
+
+    let (_, result) = send(&mut bridge, ask_agent("")).await;
+    assert_eq!(error_code(&result), ErrorCode::BadRequest);
+
+    // Only the new session was added; no pane that was there changed.
+    let after = server.layout();
+    for line in before.lines() {
+        assert!(after.lines().any(|l| l == line), "{line} changed:\n{after}");
+    }
+}

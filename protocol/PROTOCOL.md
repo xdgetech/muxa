@@ -329,7 +329,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), and level 5 closing ask sessions with `close-task` (ADR 0039). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), and level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -412,6 +412,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `retry`: a `failure` restarts the agent, as `restart-agent`. `drop` marks the Task dropped.
    - `branch` and `keep`, with `work` level 4: a reading Task's `proposal` about its main checkout (Reading Tasks below). `branch` does `branch-task` with a branch from the title; `keep` answers it and changes nothing.
    - `dismiss` answers the item and does nothing else. `later` sets `laterAt` and leaves the item open; it ignores `until`. `read` sets `readAt` and leaves the item open.
+   - `ask-agent` with `text` (1 to 4096 bytes), with `work` level 6: sends the item and the text to the workspace's Ask session (Ask sessions below) and leaves the item open. It is in `answers` of every open item, before `later`. On success: `session-started {start, session, name}`, `inbox-saved {inbox, item}`, then `result`.
    - An action not in `answers` is `bad-request`. An `ask` whose prompt changed since the item was made is `conflict`: list again. Nothing is sent to the pane then.
 
 ## Reading Tasks
@@ -441,6 +442,7 @@ A bridge with `work` level 2 starts ask sessions: the workspace's agent in a rep
 4. An unknown workspace, a repo outside the root, or a repo of another workspace is `bad-request`. A failed start is `task-failed` or `tmux`.
 5. The agent can change files in the main checkout. Nothing enforces read-only.
 6. With `work` level 5, `close-task {session, mode}` closes an ask session (ADR 0039). `session` is its id. Only a session with `ask` and no `worktree` or `taskId` closes this way; any other session without a `worktree` is `bad-request`. Its device sessions close first, and the clients attached to it move to the most recently used other session, as for a task. `mode` changes nothing: the main checkout and its files stay as they are. A client shows Close Session only on a session with `ask`, and only with level 5. An older host sends no `ask`.
+7. With `work` level 6, each workspace has one Ask session at its root (ADR 0041): an ask session with `ask` that the host tagged `@muxa_ask_root`, named `ask-<workspace>` (`-2`, `-3`... when taken). `update-inbox` with `ask-agent` starts it when none is open, and types one prompt into its agent pane: the item's kind, source, workspace, question, summary, proposal and links, then `My request: <text>`. A new agent gets up to 30 seconds to report `idle`, else `conflict`. An open one gets the text while it works; it is `conflict` when the agent waits on a menu, when its state is unknown, or when a person typed in the session in the last 5 seconds. Nothing is typed then.
 
 ## Rendering a pane
 

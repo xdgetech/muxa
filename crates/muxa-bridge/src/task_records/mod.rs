@@ -8,7 +8,7 @@ pub(crate) mod brief;
 pub(crate) mod close;
 mod create;
 mod facts;
-mod handoff;
+pub(crate) mod handoff;
 pub(crate) mod observation;
 pub(crate) mod park;
 mod reading;
@@ -84,7 +84,7 @@ impl Config {
     }
 
     /// Read on every request, so editing the file needs no bridge restart. Blocking.
-    fn load_workspaces(&self) -> Result<Workspaces, ErrorBody> {
+    pub(crate) fn load_workspaces(&self) -> Result<Workspaces, ErrorBody> {
         let Some(path) = &self.workspaces else {
             return Ok(Workspaces::default());
         };

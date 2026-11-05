@@ -1,6 +1,7 @@
 //! Ask sessions (ADR 0031): the workspace's agent in a repo's main checkout,
-//! to ask about its code. No Task, no worktree and no record, so the session
-//! lists as a manual one. `close-task` closes it and leaves the checkout (ADR 0039).
+//! to ask about its code, or at the workspace root (ADR 0041). No Task, no
+//! worktree and no record, so the session lists as a manual one. `close-task`
+//! closes it and leaves the checkout (ADR 0039).
 
 use std::path::Path;
 
@@ -15,6 +16,8 @@ use super::{Launched, TaskError, end_session, session_name};
 /// Marks the session as an ask session; the value is its workspace. It is
 /// never `@muxa_task` or `@muxa_device`.
 pub const TAG: &str = "@muxa_ask";
+/// Marks the workspace's own ask session at its root (ADR 0041).
+pub const ROOT_TAG: &str = "@muxa_ask_root";
 /// Names tried before giving up.
 const MAX_NAMES: u32 = 100;
 
@@ -77,6 +80,58 @@ pub async fn start(
         id: session,
         name,
         dir: main,
+    })
+}
+
+/// The workspace's ask session at its root, if one is open.
+pub fn root_session<'a>(
+    sessions: &'a [muxa_tmux::Session],
+    workspace: &str,
+) -> Option<&'a muxa_tmux::Session> {
+    sessions
+        .iter()
+        .find(|s| s.ask_root && s.ask.as_deref() == Some(workspace) && is_ask(s))
+}
+
+/// Starts the workspace's ask session at its root: `ask-<workspace>`, or
+/// `ask-<workspace>-<n>` when that name is taken. As `start`, nothing else changes.
+pub async fn start_root(
+    client: &Client,
+    command: &str,
+    workspaces: &Workspaces,
+    workspace: &str,
+) -> Result<Launched, TaskError> {
+    let ws = workspaces.get(workspace).ok_or_else(|| {
+        TaskError::Invalid(format!(
+            "no workspace named {workspace:?}; list-tasks shows the host's workspaces"
+        ))
+    })?;
+    if !ws.root.is_dir() {
+        return Err(TaskError::Invalid(format!(
+            "{} is not a directory",
+            ws.root.display()
+        )));
+    }
+    let taken = muxa_tmux::session_names(client).await?;
+    let base = session_name(&format!("ask-{}", slug(&ws.name)));
+    let name = std::iter::once(base.clone())
+        .chain((2..=MAX_NAMES).map(|n| session_name(&format!("{base}-{n}"))))
+        .find(|n| !taken.contains(n))
+        .ok_or_else(|| {
+            TaskError::Failed(format!(
+                "{MAX_NAMES} sessions named {base} are open; close one first"
+            ))
+        })?;
+    let session = Builtin::new(command.to_owned())
+        .start(client, &name, &ws.root, ws.agent.as_ref())
+        .await?;
+    muxa_tmux::set_session_option(client, session, TAG, &ws.name).await?;
+    muxa_tmux::set_session_option(client, session, ROOT_TAG, "1").await?;
+    tracing::info!(session = %session, workspace = %ws.name, "workspace ask session started");
+    Ok(Launched {
+        id: session,
+        name,
+        dir: ws.root.clone(),
     })
 }
 

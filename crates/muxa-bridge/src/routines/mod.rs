@@ -32,6 +32,19 @@ pub use runs::tick;
 
 /// Answers a `work` level 1 request: its list or saved message, and its error.
 pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
+    if let Request::UpdateInbox {
+        id,
+        entry,
+        action: muxa_protocol::InboxAction::AskAgent,
+        text,
+        ..
+    } = &req
+    {
+        return match crate::items::ask_agent::ask(cx, *id, entry, text.as_deref()).await {
+            Ok(messages) => (messages, None),
+            Err(e) => (Vec::new(), Some(e)),
+        };
+    }
     let result = match req {
         Request::ListRoutines { id } => {
             let config = Arc::clone(&cx.records);
@@ -86,10 +99,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 })
         }
         Request::UpdateInbox {
-            id,
-            entry,
-            action,
-            ..
+            id, entry, action, ..
         } => inbox::update(cx, entry, action)
             .await
             .map(|entry| Message::InboxSaved {

@@ -287,7 +287,10 @@ fn item_fixtures_round_trip() {
     use ItemKind::*;
     assert_eq!(kinds, [Ask, Review, Failure, Proposal, Review, Ask]);
     assert_eq!(items[1].answers[3], InboxAction::ChangeCourse);
-    assert_eq!((items[2].state, items[2].later_at), (ItemState::Open, Some(1_762_160_500)));
+    assert_eq!(
+        (items[2].state, items[2].later_at),
+        (ItemState::Open, Some(1_762_160_500))
+    );
     // An old client's update-inbox has no text or option.
     let old: Request = serde_json::from_str(
         r#"{"type":"update-inbox","id":1,"entry":"e-00000000","action":"dismiss"}"#,

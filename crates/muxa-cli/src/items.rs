@@ -32,7 +32,10 @@ impl Answer {
         let a = self.action;
         let wants_text = matches!(
             a,
-            InboxAction::Reply | InboxAction::Redo | InboxAction::ChangeCourse
+            InboxAction::Reply
+                | InboxAction::Redo
+                | InboxAction::ChangeCourse
+                | InboxAction::AskAgent
         );
         let rule = |name: &str, given: bool, wanted: bool, needs: &str| match (given, wanted) {
             (false, true) => Err(format!("{needs} needs {name}")),
@@ -43,7 +46,7 @@ impl Answer {
             "--text",
             self.text.is_some(),
             wants_text,
-            "reply, redo and change-course",
+            "reply, redo, change-course and ask-agent",
         )?;
         rule(
             "--option",
@@ -119,7 +122,11 @@ pub async fn answer(
     if !has_items(&conn) {
         return Err("this host has no Inbox items; update muxa-bridge on the host".into());
     }
-    let launches = matches!(answer.action, InboxAction::Approve | InboxAction::Retry);
+    // Ask Agent may start the workspace's Ask session and wait for its agent.
+    let launches = matches!(
+        answer.action,
+        InboxAction::Approve | InboxAction::Retry | InboxAction::AskAgent
+    );
     let entry = item.to_owned();
     let Answer {
         action,

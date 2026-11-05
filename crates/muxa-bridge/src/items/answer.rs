@@ -128,6 +128,8 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
             }
         }
         KeepOpen | Keep | Dismiss | Read => Plan::Nothing,
+        // `routines::handle` sends it to `items::ask_agent` first.
+        AskAgent => return Err(bad("ask-agent is not an answer to the Task")),
     })
 }
 
