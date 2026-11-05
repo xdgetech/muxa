@@ -68,7 +68,7 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 - A host below `work:3` gets "This host needs a newer muxa-bridge for the Inbox", with Tasks and Sessions.
 - The reply box shows only when the item takes a text answer: `reply` or `ask-agent`. The send arrow needs its text.
 - The main answer is the reply box's action while it has text (ADR 0033 §4a.3). Otherwise it is the host's first answer, unless that is `choose`, `later` or a text answer. muxa for tmux uses the same rule. A decision that is the main answer is the prominent button.
-- iPad keys: Command+T Inbox mode, Command+L Tasks mode, Command+Shift+S Sessions mode, Command+0 shows or hides the sidebar, Command+, Settings. In the Inbox: Command+Up/Down move between items, Return opens an item on a phone, Command+Return sends the main answer, Command+O opens the item's session, Command+Shift+L moves the item down.
+- iPad keys: Command+T Inbox mode, Command+L Tasks mode, Command+Shift+S Sessions mode, Command+0 shows or hides the sidebar, Command+, Settings. In the Inbox: Command+Up/Down move between items, Return opens an item on a phone, Command+Return sends the main answer, Command+O opens the item's terminal, Command+Shift+L moves the item down.
 - Android: Back from an attachment closes the Reader and returns to the item.
 - Android keys: the same with Ctrl+Shift (Ctrl+Shift+T, L, S, 0, O, Up/Down), Enter opens, Ctrl+Shift+Enter sends the main answer, Ctrl+Shift+Alt+L moves the item down. A swipe right is ✓, a swipe left moves it down.
 - Demo: Try the Demo, the showcase and the test demo play a `work:3` host. UI tests pick the mode with `-mode inbox|tasks|sessions` on iOS and `--es mode inbox|tasks|sessions` on Android.
