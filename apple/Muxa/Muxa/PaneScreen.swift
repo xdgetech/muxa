@@ -123,6 +123,9 @@ struct PaneScreen: View {
                 if let current = model.currentSession, model.canClose(current) {
                     Button("Close Task…", systemImage: Icon.closeTask) { model.closingTask = current }
                 }
+                if let current = model.currentSession, model.canCloseAsk(current) {
+                    Button("Close Session…", systemImage: Icon.closeTask) { model.closingAsk = current }
+                }
                 Divider()
                 Button("Disconnect", systemImage: Icon.disconnect, role: .destructive) {
                     Task { await model.disconnect() }

@@ -67,6 +67,10 @@ final class AppModel {
     var closingTask: Session?
     /// Why the last close failed; nothing was closed then.
     var closeError: String?
+    /// The ask session waiting for the user to confirm its close (ADR 0039).
+    var closingAsk: Session?
+    /// Why the last ask session close failed; nothing was closed then.
+    var closeAskError: String?
     /// Why an ask session from a repo header did not start.
     var askError: String?
     /// An ask session started from the New Task sheet, shown once the sheet has closed.
@@ -734,6 +738,24 @@ final class AppModel {
             try await session.closeTask(session: s.id, mode: mode)
         } catch {
             closeError = PaneSession.describe(error)
+            return
+        }
+        if wasShown, let next = firstSession { await open(next) }
+        refocusPane()
+    }
+
+    /// Only an ask session closes this way: other sessions without a worktree are the user's.
+    func canCloseAsk(_ s: Session) -> Bool {
+        isConnected && session.canCloseAskSessions && s.ask != nil && s.worktree == nil
+    }
+
+    func closeAsk(_ s: Session) async {
+        closingAsk = nil
+        let wasShown = s.id == currentSession?.id
+        do {
+            try await session.closeAskSession(s)
+        } catch {
+            closeAskError = PaneSession.describe(error)
             return
         }
         if wasShown, let next = firstSession { await open(next) }

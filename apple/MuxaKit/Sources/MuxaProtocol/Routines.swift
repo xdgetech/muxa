@@ -7,6 +7,8 @@ public let workRoutines: UInt32 = 1
 /// Level 2: repos relative to the workspace root, a branch from the title,
 /// and `start-session` (ADR 0031).
 public let workAsk: UInt32 = 2
+/// Level 5: `close-task` also closes an ask session, which carries `ask` (ADR 0039).
+public let workCloseAsk: UInt32 = 5
 
 /// The highest `work` level in `capabilities`; 0 when the host has none.
 public func workLevel(_ capabilities: [String]) -> UInt32 {

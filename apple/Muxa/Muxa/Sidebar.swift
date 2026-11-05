@@ -191,6 +191,9 @@ struct SidebarSessions: View {
                         if model.canClose(s) {
                             Button("Close Task…", systemImage: Icon.closeTask) { model.closingTask = s }
                         }
+                        if model.canCloseAsk(s) {
+                            Button("Close Session…", systemImage: Icon.closeTask) { model.closingAsk = s }
+                        }
                     }
                 }
             } header: {

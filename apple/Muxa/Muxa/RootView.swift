@@ -93,6 +93,7 @@ struct RootView: View {
         } message: { _ in
             Text("Close removes the worktree only when the branch is merged. Uncommitted changes are never removed, and the branch is kept.")
         }
+        .closeAskSession()
         .alert(
             "Can't Ask",
             isPresented: Binding(get: { model.askError != nil }, set: { if !$0 { model.askError = nil } })

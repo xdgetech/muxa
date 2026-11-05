@@ -102,14 +102,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "work:3",
+            "task-loop", "tasks-changed", "viewport", "work:5",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:3" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:5" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:3" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:5" ? "work:2" : $0 } }
+        // A bridge from before closing ask sessions (ADR 0039).
+        if arguments.contains("-work3") { return all.map { $0 == "work:5" ? "work:3" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -297,7 +299,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                             command: "claude", path: dir, dead: false, shellForeground: false,
                             agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
             followers.insert(pane.id)
-            let session = Session(id: "$\(n)", name: "ask-\(base)-\(k)", repo: base, repoDir: dir, branch: "main", panes: [pane])
+            let session = Session(
+                id: "$\(n)", name: "ask-\(base)-\(k)", repo: base, repoDir: dir, branch: "main", ask: workspace, panes: [pane])
             sessions.append(session)
             return .success(session)
         }
@@ -582,7 +585,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// fix-login is not merged, so only keep and force close it.
     private func closeTask(id: UInt64, session: String, mode: CloseMode) {
         let found = lock.withLock { sessions.first { $0.id == session } }
-        guard let found, found.worktree != nil else {
+        // An ask session closes too (ADR 0039); `mode` changes nothing for it.
+        let isAsk = Self.workLevel >= workCloseAsk && found?.ask != nil
+        guard let found, found.worktree != nil || isAsk else {
             emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(session) is not a task"), sessions: nil))
             return
         }

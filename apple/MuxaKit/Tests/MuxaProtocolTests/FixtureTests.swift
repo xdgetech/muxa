@@ -95,6 +95,27 @@ struct FixtureTests {
         #expect(start == 41 && session == "$7" && name == "ask-cto-copilot-1")
     }
 
+    @Test func askCloseContractRoundTrips() throws {
+        let requests = try Self.lines("ask-close/requests.jsonl")
+        #expect(requests.count == 2)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("ask-close/messages.jsonl")
+        #expect(messages.count == 4)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workCloseAsk)
+        guard case .result(_, _, let sessions?) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected sessions"); return
+        }
+        #expect(sessions.map(\.ask) == [nil, "lisk"])
+    }
+
     @Test func routineContractRoundTrips() throws {
         let requests = try Self.lines("routines/requests.jsonl")
         #expect(requests.count == 6)

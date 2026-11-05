@@ -125,6 +125,49 @@ final class AskTests: XCTestCase {
         XCTAssertTrue(app.navigationBars.descendants(matching: .any)["ask-app-2"].firstMatch.waitForExistence(timeout: 10))
     }
 
+    /// Asks about `app` from the New Task sheet; the ask session's pane shows.
+    @MainActor
+    private func askAboutApp(_ arguments: [String] = []) -> XCUIApplication {
+        let app = openNewTask(arguments)
+        showRepoFields(app)
+        pickRepo(app, search: "app", name: "app")
+        let ask = app.buttons["record-ask"]
+        reveal(app, ask)
+        tapWhenReady(ask)
+        XCTAssertTrue(app.navigationBars.descendants(matching: .any)["ask-app-1"].firstMatch.waitForExistence(timeout: 10))
+        return app
+    }
+
+    /// Close Session closes the shown ask session after a confirmation, and the next
+    /// session shows (ADR 0039). An ask session is no task: it has no Close Task.
+    @MainActor
+    func testAnAskSessionClosesFromTheMoreMenu() throws {
+        let app = askAboutApp()
+        app.buttons["More"].tap()
+        XCTAssertTrue(app.buttons["Close Session…"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Close Task…"].exists)
+        tapWhenReady(app.buttons["Close Session…"])
+        let confirm = app.buttons["Close Session"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["The agent stops. The main checkout and its files stay as they are."].exists)
+        save("close-ask-session")
+        confirm.tap()
+        XCTAssertTrue(app.navigationBars.descendants(matching: .any)["ask-app-1"].firstMatch.waitForNonExistence(timeout: 10))
+        showSidebar(app)
+        // Sessions mode lists manual sessions: scratch stays, the ask session is gone.
+        XCTAssertTrue(app.staticTexts["scratch"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["ask-app-1"].exists, "no longer listed")
+    }
+
+    /// A host before `work` level 5 cannot close an ask session: no Close Session.
+    @MainActor
+    func testAnOlderHostHasNoCloseSession() throws {
+        let app = askAboutApp(["-work3"])
+        app.buttons["More"].tap()
+        XCTAssertTrue(app.buttons["Sessions…"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Close Session…"].exists)
+    }
+
     /// A host before `work` level 2 still needs a branch and has no Ask.
     @MainActor
     func testAnOlderHostNeedsABranchAndHasNoAsk() throws {

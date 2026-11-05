@@ -21,6 +21,21 @@ extension PaneSession {
     /// Shown when the host has no ask sessions.
     public static let askUnsupported = "This host cannot start ask sessions. Update muxa on the host."
 
+    /// Whether the host closes ask sessions with `close-task` (`work` level 5, ADR 0039).
+    public var canCloseAskSessions: Bool { workLevel >= workCloseAsk && canCloseTasks }
+
+    /// Shown when the host cannot close ask sessions.
+    public static let closeAskUnsupported = "This host cannot close ask sessions. Update muxa on the host."
+
+    /// Closes the ask session `s`, then lists again. Its agent stops; the main
+    /// checkout and its files stay as they are. Other sessions are never sent.
+    public func closeAskSession(_ s: Session) async throws {
+        guard canCloseAskSessions, s.ask != nil else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.closeAskUnsupported))
+        }
+        try await closeTask(session: s.id, mode: .keep)
+    }
+
     /// Starts an ask session in `repo` and lists sessions again, so the list has it.
     public func startSession(workspace: String, repo: String) async throws -> StartedSession {
         guard canAsk else {

@@ -11,11 +11,13 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
     public var task: String?
     /// The task record this session runs (`@muxa_task`).
     public var taskId: String?
+    /// The workspace of an ask session (`@muxa_ask`, ADR 0031, 0039).
+    public var ask: String?
     public var panes: [Pane]
 
     public init(
         id: String, name: String, repo: String? = nil, repoDir: String? = nil, branch: String? = nil,
-        worktree: String? = nil, task: String? = nil, taskId: String? = nil, panes: [Pane]
+        worktree: String? = nil, task: String? = nil, taskId: String? = nil, ask: String? = nil, panes: [Pane]
     ) {
         self.id = id
         self.name = name
@@ -25,6 +27,7 @@ public struct Session: Codable, Equatable, Sendable, Identifiable {
         self.worktree = worktree
         self.task = task
         self.taskId = taskId
+        self.ask = ask
         self.panes = panes
     }
 }

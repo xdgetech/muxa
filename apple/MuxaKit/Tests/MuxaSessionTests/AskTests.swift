@@ -11,13 +11,23 @@ final class AskBridge: FakeBridge, @unchecked Sendable {
 
     override func send(_ line: Data) async throws {
         let req = try Wire.decodeRequest(line)
+        if case .closeTask(let id, let target, _) = req {
+            lock.withLock { _closes.append(target) }
+            guard sessions.contains(where: { $0.id == target && $0.ask != nil }) else {
+                emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(target) is not an ask session"), sessions: nil))
+                return
+            }
+            sessions.removeAll { $0.id == target }
+            emit(.result(id: id, error: nil, sessions: nil))
+            return
+        }
         guard case .startSession(let id, let workspace, let repo) = req else { return try await super.send(line) }
         lock.withLock { _asks.append(req) }
         guard workspace == "work", repo == "/src/app" else {
             emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(repo) is not a repo of \(workspace)"), sessions: nil))
             return
         }
-        sessions.append(Session(id: "$7", name: "ask-app-1", repo: "app", repoDir: repo, panes: [
+        sessions.append(Session(id: "$7", name: "ask-app-1", repo: "app", repoDir: repo, ask: workspace, panes: [
             Pane(id: "%7", window: "@7", index: 0, role: .agent, cols: 20, rows: 5,
                  command: "claude", path: repo, dead: false, shellForeground: false),
         ]))
@@ -28,6 +38,9 @@ final class AskBridge: FakeBridge, @unchecked Sendable {
     private let lock = NSLock()
     private var _asks: [Request] = []
     var asks: [Request] { lock.withLock { _asks } }
+    private var _closes: [String] = []
+    /// The session ids `close-task` was sent for.
+    var closes: [String] { lock.withLock { _closes } }
 }
 
 @MainActor
@@ -70,6 +83,36 @@ struct AskTests {
         await #expect(throws: PaneSession.Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not name the session."))) {
             try await session.startSession(workspace: "work", repo: "/src/app")
         }
+    }
+
+    @Test func anAskSessionCloses() async throws {
+        let bridge = AskBridge()
+        bridge.capabilities = ["close-task", "task-records", "work:5"]
+        let session = try await connected(bridge)
+        #expect(session.canCloseAskSessions)
+        _ = try await session.startSession(workspace: "work", repo: "/src/app")
+        let ask = try #require(session.sessions.first { $0.id == "$7" })
+        #expect(ask.ask == "work")
+        try await session.closeAskSession(ask)
+        #expect(bridge.closes == ["$7"])
+        #expect(!session.sessions.contains { $0.id == "$7" }, "listed again")
+    }
+
+    @Test func aSessionWithoutAskOrAnOlderHostIsNeverClosed() async throws {
+        let bridge = AskBridge()
+        bridge.capabilities = ["close-task", "task-records", "work:4"]
+        let session = try await connected(bridge)
+        #expect(!session.canCloseAskSessions)
+        _ = try await session.startSession(workspace: "work", repo: "/src/app")
+        let ask = try #require(session.sessions.first { $0.id == "$7" })
+        let unsupported = PaneSession.Failure.bridge(ErrorBody(code: .unsupported, message: PaneSession.closeAskUnsupported))
+        await #expect(throws: unsupported) { try await session.closeAskSession(ask) }
+        let newerBridge = AskBridge()
+        newerBridge.capabilities = ["close-task", "work:5"]
+        let newer = try await connected(newerBridge)
+        let manual = try #require(newer.sessions.first { $0.id == "$1" })
+        await #expect(throws: unsupported) { try await newer.closeAskSession(manual) }
+        #expect(bridge.closes.isEmpty && newerBridge.closes.isEmpty)
     }
 
     @Test func anOlderHostIsNeverAsked() async throws {
