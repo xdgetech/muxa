@@ -1,67 +1,48 @@
 import Foundation
 import MuxaProtocol
 
-/// How an item's answers are offered (docs/inbox.md, "The item screen"; ADR 0040):
-/// text buttons, More only when two or more would be hidden, and ✓ and Later as
-/// icon buttons. Only actions the host listed appear.
+/// How an item's answers are offered (docs/inbox.md, "The item screen"; ADR 0040).
+/// Triage (✓, Later, and the … menu) is the same on every item; the bottom answers
+/// the agent: its decisions, then one reply box. Only actions the host listed appear.
 public struct ItemAnswers: Equatable, Sendable {
-    /// The text buttons, in the host's order.
-    public var shown: [InboxAction]
-    /// Under More, in the host's order. Never one alone, never ✓ or Later.
-    public var more: [InboxAction]
+    /// Under the body, in the host's order: Allow, Deny, Approve, Reject, Retry.
+    public var decisions: [InboxAction]
+    /// What the reply box's text does: Send to the item's agent, or Ask Agent where
+    /// the item has no session (ADR 0041).
+    public var text: InboxAction?
+    /// In the top bar's … menu: Complete Task, Drop Task.
+    public var menu: [InboxAction]
     /// ✓: `keep-open` or `dismiss`, which close only the item.
     public var done: InboxAction?
     /// Later moves the item down.
     public var later: Bool
-    /// Command+Return: `reply` while the reply box has text, else the host's first
-    /// answer, unless it needs a choice or moves the item down (ADR 0033 §4a.3).
+    /// Command+Return: the reply box's action while it has text, else the host's
+    /// first answer unless it needs a choice, time or text (ADR 0033 §4a.3).
     public var main: InboxAction?
-    /// `choose` is offered: the prompt's options are the buttons.
+    /// `choose` is offered: the prompt's options are the decisions.
     public var chooses: Bool
 
     /// `replying`: the reply box has text.
     public init(_ item: InboxItem, replying: Bool = false) {
         let answers = item.answers.filter { $0 != .read }
         chooses = answers.contains(.choose)
-        let done = answers.first { $0 == .keepOpen || $0 == .dismiss }
-        self.done = done
+        done = answers.first { $0 == .keepOpen || $0 == .dismiss }
         later = answers.contains(.later)
-        let rest = answers.filter { $0 != .choose && $0 != .later && $0 != done }
-        let visible = Self.visible(item.kind)
-        let hidden = rest.filter { !visible.contains($0) }
-        if hidden.count >= 2 {
-            shown = rest.filter { visible.contains($0) }
-            more = hidden
+        decisions = answers.filter { $0 == .approve || $0 == .reject || $0 == .retry }
+        text = answers.first(where: \.needsText)
+        menu = answers.filter { $0 == .accept || $0 == .drop }
+        if replying, let text {
+            main = text
         } else {
-            shown = rest
-            more = []
-        }
-        if replying, answers.contains(.reply) {
-            main = .reply
-        } else if replying, answers.contains(.askAgent), !answers.contains(where: { $0.needsText && $0 != .askAgent }) {
-            main = .askAgent
-        } else {
-            main = answers.first.flatMap { $0 == .choose || $0 == .later ? nil : $0 }
-        }
-    }
-
-    /// The text buttons each kind shows outside More. A `review`'s Redo and Change
-    /// Course, and a `failure`'s Change Course and Drop Task, go under More.
-    private static func visible(_ kind: ItemKind) -> Set<InboxAction> {
-        switch kind {
-        case .ask: [.approve, .reject, .reply]
-        case .proposal: [.approve, .reject, .askAgent]
-        case .review: [.accept, .reply]
-        case .failure: [.retry, .reply]
-        case .briefing: [.askAgent]
-        case .other: [.approve, .reject, .accept, .retry, .reply]
+            // Never past the first: a question's next answer may be its cancel.
+            main = answers.first.flatMap { $0 == .choose || $0 == .later || $0.needsText ? nil : $0 }
         }
     }
 }
 
 extension InboxAction {
-    /// Redo, Change course, Send and Ask Agent take the reply box's text, so they need one.
-    public var needsText: Bool { self == .redo || self == .changeCourse || self == .reply || self == .askAgent }
+    /// Send and Ask Agent take the reply box's text, so they need one.
+    public var needsText: Bool { self == .reply || self == .askAgent }
 
     /// The button's title. It names the result (ADR 0033 §4a.2, ADR 0040): on an
     /// `ask` Allow, Deny and Deny & Send; a proposal keeps Approve and Reject; an
@@ -74,8 +55,6 @@ extension InboxAction {
         case .choose: "Choose"
         case .accept: "Complete Task"
         case .keepOpen, .dismiss: "Done"
-        case .redo: "Redo"
-        case .changeCourse: "Change Course"
         case .retry: "Retry"
         case .drop: "Drop Task"
         case .later: "Later"

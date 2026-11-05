@@ -98,14 +98,13 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(app.buttons["item-evidence-doc-docs/design.md"].label.contains("design.md"))
         XCTAssertTrue(app.buttons["item-evidence-image-build/screenshots/en/login.png"].label.contains("login.png"))
         XCTAssertTrue(app.links["item-evidence-link"].exists || app.buttons["item-evidence-link"].exists)
-        XCTAssertEqual(answer(app, "accept").label, "Complete Task")
-        XCTAssertEqual(answer(app, "reply").label, "Send")
+        XCTAssertEqual(app.buttons["item-send"].label, "Send")
         XCTAssertEqual(answer(app, "keep-open").label, "Done", "✓ closes only the item")
-        XCTAssertTrue(answer(app, "later").exists, "Later is never under More")
-        for action in ["redo", "change-course"] {
-            XCTAssertFalse(answer(app, action).exists, "\(action) is under More")
-        }
+        XCTAssertTrue(answer(app, "later").exists, "Later is in the top bar")
+        XCTAssertFalse(answer(app, "accept").exists, "Complete Task is in the … menu")
         save("inbox-item-review")
+        tapWhenReady(app.buttons["item-more"])
+        XCTAssertEqual(answer(app, "accept").label, "Complete Task")
         tapWhenReady(answer(app, "accept"))
         XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
         if !isPhone {
@@ -123,24 +122,12 @@ final class InboxItemTests: XCTestCase {
     func testSendRepliesToAReview() throws {
         let app = launchOnInbox()
         open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
-        XCTAssertFalse(answer(app, "reply").isEnabled, "no text yet")
+        XCTAssertFalse(app.buttons["item-send"].isEnabled, "no text yet")
         tapWhenReady(app.textFields["item-reply"])
         app.textFields["item-reply"].typeText("Also update the README.")
-        XCTAssertTrue(answer(app, "reply").isHittable, "the answers stay above the keyboard")
-        XCTAssertTrue(answer(app, "reply").isEnabled)
-        tapWhenReady(answer(app, "reply"))
-        XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
-    }
-
-    /// Redo is under More, needs a reply, and sends it.
-    @MainActor
-    func testRedoIsUnderMoreAndSendsTheReply() throws {
-        let app = launchOnInbox()
-        open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
-        tapWhenReady(app.textFields["item-reply"])
-        app.textFields["item-reply"].typeText("Keep the old redirect for one week.")
-        tapWhenReady(app.buttons["item-more"])
-        tapWhenReady(answer(app, "redo"))
+        XCTAssertTrue(app.buttons["item-send"].isHittable, "the reply box stays above the keyboard")
+        XCTAssertTrue(app.buttons["item-send"].isEnabled)
+        tapWhenReady(app.buttons["item-send"])
         XCTAssertTrue(row(app, "i-0000a002").waitForNonExistence(timeout: 5))
     }
 
@@ -151,11 +138,11 @@ final class InboxItemTests: XCTestCase {
         open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
         XCTAssertEqual(answer(app, "approve").label, "Allow")
         XCTAssertEqual(answer(app, "reject").label, "Deny")
-        XCTAssertEqual(answer(app, "reply").label, "Deny & Send")
-        XCTAssertFalse(answer(app, "reply").isEnabled, "no text yet")
+        XCTAssertEqual(app.buttons["item-send"].label, "Deny & Send")
+        XCTAssertFalse(app.buttons["item-send"].isEnabled, "no text yet")
         tapWhenReady(app.textFields["item-reply"])
         app.textFields["item-reply"].typeText("Deploy to staging first.")
-        tapWhenReady(answer(app, "reply"))
+        tapWhenReady(app.buttons["item-send"])
         XCTAssertTrue(row(app, "i-0000a001").waitForNonExistence(timeout: 5))
         showMode(app, 1)
         tapWhenReady(app.buttons["task-t-auth01"])
@@ -235,7 +222,7 @@ final class InboxItemTests: XCTestCase {
         open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
         tapWhenReady(app.buttons["item-evidence-doc-docs/design.md"])
         XCTAssertTrue(app.webViews.firstMatch.staticTexts["Design"].waitForExistence(timeout: 10))
-        tapWhenReady(app.buttons["Done"].firstMatch)
+        tapWhenReady(app.buttons["reader-done"].firstMatch)
         waitForQuestion(app, "Ready for review: Fix the login redirect")
         XCTAssertFalse(app.descendants(matching: .any)["pane"].firstMatch.exists, "the item, not the pane")
     }
@@ -247,23 +234,21 @@ final class InboxItemTests: XCTestCase {
         open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
         tapWhenReady(app.links["docs/design.md"])
         XCTAssertTrue(app.webViews.firstMatch.staticTexts["Design"].waitForExistence(timeout: 10))
-        tapWhenReady(app.buttons["Done"].firstMatch)
+        tapWhenReady(app.buttons["reader-done"].firstMatch)
         waitForQuestion(app, "Ready for review: Fix the login redirect")
     }
 
-    /// Terminal shows the item's session in the Agent view, and its row stays
+    /// Open Session in the … menu shows the item's session, and its row stays
     /// highlighted. On a phone, Back returns to the item (ADR 0035 §3).
     @MainActor
-    func testTerminalShowsTheAgentAndTheRowStaysHighlighted() throws {
+    func testOpenSessionShowsItAndTheRowStaysHighlighted() throws {
         let app = launchOnInbox()
         open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
-        tapWhenReady(app.buttons["item-open-terminal"])
-        let pane = app.descendants(matching: .any)["pane"].firstMatch
-        XCTAssertTrue(pane.waitForExistence(timeout: 10))
-        XCTAssertTrue(waitFor(pane, containing: "pane %1 100x30"))
-        XCTAssertTrue(app.segmentedControls["view-mode"].buttons["Agent"].isSelected, "Terminal opens Agent, not Chat")
-        XCTAssertFalse(app.descendants(matching: .any)["composer"].firstMatch.exists)
-        save("inbox-item-terminal")
+        tapWhenReady(app.buttons["item-more"])
+        tapWhenReady(app.buttons["item-open-session-menu"])
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.segmentedControls["view-mode"].buttons["Chat"].isSelected, "its Chat, where the agent has one")
+        save("inbox-item-session")
         if isPhone {
             tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch)
             waitForQuestion(app, "Allow Bash: npm run deploy", "Back returns to the item")
@@ -282,7 +267,7 @@ final class InboxItemTests: XCTestCase {
     func testChatShowsTheConversation() throws {
         let app = launchOnInbox()
         open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
-        tapWhenReady(app.buttons["item-open-chat"])
+        tapWhenReady(app.buttons["item-open-session"])
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.segmentedControls["view-mode"].buttons["Chat"].isSelected)
     }
@@ -293,10 +278,11 @@ final class InboxItemTests: XCTestCase {
     func testAskAgentOpensTheWorkspacesAskSessionAndKeepsTheItem() throws {
         let app = launchOnInbox()
         open(app, "e-000000a1", question: "Release moved to Thursday")
-        XCTAssertFalse(answer(app, "ask-agent").isEnabled, "no text yet")
+        XCTAssertEqual(app.buttons["item-send"].label, "Ask Agent")
+        XCTAssertFalse(app.buttons["item-send"].isEnabled, "no text yet")
         tapWhenReady(app.textFields["item-reply"])
         app.textFields["item-reply"].typeText("Put this in Notion.")
-        tapWhenReady(answer(app, "ask-agent"))
+        tapWhenReady(app.buttons["item-send"])
         // A phone pushes the pane under the session's name; a tablet shows its view switch.
         let pane = isPhone ? app.navigationBars["ask-work"] : app.segmentedControls["view-mode"]
         XCTAssertTrue(pane.waitForExistence(timeout: 10), "the Ask session's pane")
@@ -307,16 +293,28 @@ final class InboxItemTests: XCTestCase {
         }
     }
 
-    /// An item with a session offers Chat and Terminal; one without a session neither.
+    /// An item with a session opens it from its source line; one without has none.
     @MainActor
     func testOnlyAnItemWithASessionOffersItsSession() throws {
         let app = launchOnInbox()
         open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
-        XCTAssertTrue(app.buttons["item-open-terminal"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["item-open-chat"].exists)
+        XCTAssertTrue(app.buttons["item-open-session"].waitForExistence(timeout: 5))
         if isPhone { tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch) }
         open(app, "i-0000a004", question: "Which test runner should the suite use?")
-        XCTAssertFalse(app.buttons["item-open-terminal"].exists, "no session runs it")
+        XCTAssertFalse(app.buttons["item-open-session"].exists, "no session runs it")
+    }
+
+    /// A swipe right is ✓: the item closes at once (ADR 0040 §6).
+    @MainActor
+    func testDoneBySwipeRightClosesTheItem() throws {
+        let app = launchOnInbox()
+        let briefing = row(app, "e-000000a1")
+        reveal(app, briefing)
+        briefing.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: briefing.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)))
+        let button = app.collectionViews["sidebar-list"].buttons["Done"]
+        if button.waitForExistence(timeout: 2), button.isHittable { button.tap() }
+        XCTAssertTrue(briefing.waitForNonExistence(timeout: 5))
     }
 
     /// From the pane, Cmd+T, Cmd+L and Cmd+Shift+S pick the modes and show the sidebar;

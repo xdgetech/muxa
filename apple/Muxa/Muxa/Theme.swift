@@ -15,6 +15,10 @@ enum Theme {
     static let connected = Color.green
     static let attention = Color.orange
     static let failure = Color.red
+    /// ✓ closes an item: a green dark enough for an icon on white (ADR 0040).
+    static let done = Color("Done")
+    /// Later lowers an item's priority: the neutral gray of less important things.
+    static let later = Color.secondary
     /// Lines a change adds and removes.
     static let added = Color.green
     static let removed = Color.red
@@ -59,8 +63,10 @@ enum Icon {
     static let routine = "clock.arrow.circlepath"
     static let briefing = "newspaper"
     static let proposal = "lightbulb"
-    static let later = "arrow.down.to.line"
+    /// Music's "Play Last": to the end of the queue (ADR 0040).
+    static let later = "text.line.last.and.arrowtriangle.forward"
     static let done = "checkmark"
+    static let openSession = "arrow.up.right.square"
     static let settings = "gearshape"
     static let ask = "questionmark.bubble"
 }

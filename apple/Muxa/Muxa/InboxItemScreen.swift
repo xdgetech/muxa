@@ -3,8 +3,9 @@ import MuxaSession
 import SwiftUI
 
 /// One Inbox item (docs/inbox.md, "The item screen"): the question and its source,
-/// the summary, the evidence, a reply box and the answers. Opening it marks it read;
-/// it never answers it. `answered` gets the item as the host saved it.
+/// the summary and the evidence; ✓, Later and the … menu in the top bar; the answers
+/// to the agent and the reply box at the bottom. Opening it marks it read; it never
+/// answers it. `answered` gets the item as the host saved it.
 struct InboxItemScreen: View {
     @Environment(AppModel.self) private var model
     let id: String
@@ -31,7 +32,7 @@ struct InboxItemScreen: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.question).font(.title3.weight(.semibold))
                         .accessibilityIdentifier("item-question")
-                    Text(source(item)).font(.subheadline).foregroundStyle(.secondary)
+                    sourceLine(item)
                 }
                 if let summary = item.summary, !summary.isEmpty {
                     ItemSummaryText(item: item, summary: summary)
@@ -58,6 +59,7 @@ struct InboxItemScreen: View {
         .safeAreaInset(edge: .bottom) { answerBar(item) }
         .navigationTitle(item.kind.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItemGroup(placement: .topBarTrailing) { topBar(item) } }
         .sheet(item: $approving) { item in
             ApproveSheet(title: item.title, workspace: item.workspace, proposal: item.proposal) {
                 approving = nil
@@ -83,87 +85,94 @@ struct InboxItemScreen: View {
         return "\(from) · \(item.age())"
     }
 
-    // MARK: Answers
-
-    private func answerBar(_ item: InboxItem) -> some View {
-        let answers = ItemAnswers(item, replying: hasReply)
-        return VStack(spacing: 8) {
-            if item.answers.contains(where: \.needsText) {
-                TextField(item.answers.contains(where: { $0.needsText && $0 != .askAgent }) ? "Reply…" : "Ask the workspace's agent…",
-                          text: $reply, axis: .vertical)
-                    .lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($replying)
-                    .accessibilityIdentifier("item-reply")
-            }
-            if answers.chooses, let options = item.prompt?.options {
-                ViewThatFits {
-                    HStack { optionButtons(item, options) }
-                    VStack(alignment: .leading) { optionButtons(item, options) }
+    /// The source opens the item's session (ADR 0035 §3): its Chat where the agent has
+    /// one, else the agent's pane. The pane switches between Chat, Agent and Shell.
+    @ViewBuilder
+    private func sourceLine(_ item: InboxItem) -> some View {
+        if model.itemSession(item) != nil {
+            Button {
+                openSession(item)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(source(item))
+                    Image(systemName: "chevron.right").font(.caption)
                 }
             }
-            // A phone puts the ways into the session on a row of their own.
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    answerButtons(item, answers)
-                    Spacer(minLength: 0)
-                    sessionButtons(item)
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack { answerButtons(item, answers) }
-                    HStack {
-                        Spacer(minLength: 0)
-                        sessionButtons(item)
-                    }
-                }
-            }
-            .disabled(sending)
+            .font(.subheadline)
+            .accessibilityIdentifier("item-open-session")
+        } else {
+            Text(source(item)).font(.subheadline).foregroundStyle(.secondary)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(.bar)
     }
 
-    /// The text buttons, More when two or more are hidden, then ✓ and Later as icons
-    /// (ADR 0040).
+    // MARK: Answers
+
+    /// Later, ✓ and the … menu, the same on every item (ADR 0040): what the developer
+    /// does with the item, apart from what the agent asked.
     @ViewBuilder
-    private func answerButtons(_ item: InboxItem, _ answers: ItemAnswers) -> some View {
-        ForEach(answers.shown, id: \.self) { action in
-            answerButton(item, action, prominent: action == answers.main)
+    private func topBar(_ item: InboxItem) -> some View {
+        let answers = ItemAnswers(item)
+        if answers.later {
+            Button(InboxAction.later.title(for: item.kind), systemImage: Icon.later) { perform(item, .later) }
+                .tint(Theme.later)
+                .disabled(sending)
+                .accessibilityIdentifier("item-answer-later")
         }
-        if !answers.more.isEmpty {
+        if let done = answers.done {
+            Button(done.title(for: item.kind), systemImage: Icon.done) { perform(item, done) }
+                .tint(Theme.done)
+                .disabled(sending)
+                .accessibilityIdentifier("item-answer-\(done.rawValue)")
+        }
+        let session = model.itemSession(item) != nil
+        if !answers.menu.isEmpty || session {
             Menu {
-                ForEach(answers.more, id: \.self) { action in
-                    Button(action.title(for: item.kind)) { perform(item, action) }
-                        .disabled(action.needsText && !hasReply)
+                ForEach(answers.menu, id: \.self) { action in
+                    Button(action.title(for: item.kind), role: action == .drop ? .destructive : nil) { perform(item, action) }
                         .accessibilityIdentifier("item-answer-\(action.rawValue)")
+                }
+                if session {
+                    Button("Open Session", systemImage: Icon.openSession) { openSession(item) }
+                        .accessibilityIdentifier("item-open-session-menu")
                 }
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
             }
+            .disabled(sending)
             .accessibilityIdentifier("item-more")
-        }
-        if let done = answers.done {
-            iconButton(item, done, systemImage: Icon.done, prominent: done == answers.main)
-        }
-        if answers.later {
-            iconButton(item, .later, systemImage: Icon.later, prominent: false)
         }
     }
 
-    /// Chat and Terminal show the item's session (ADR 0035 §3): an `ask` is answered
-    /// in Chat, a `failure` read in the terminal. Chat only where the agent has one.
+    /// The answers to what the agent asked, then the reply box.
     @ViewBuilder
-    private func sessionButtons(_ item: InboxItem) -> some View {
-        if model.itemSession(item) != nil {
-            if model.hasChat(item) {
-                Button("Chat", systemImage: Icon.chat) { model.open(item, as: .chat) }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("item-open-chat")
+    private func answerBar(_ item: InboxItem) -> some View {
+        let answers = ItemAnswers(item, replying: hasReply)
+        let options = answers.chooses ? item.prompt?.options ?? [] : []
+        if !options.isEmpty || !answers.decisions.isEmpty || answers.text != nil {
+            VStack(spacing: 8) {
+                if !options.isEmpty {
+                    ViewThatFits {
+                        HStack { optionButtons(item, options) }
+                        VStack(alignment: .leading) { optionButtons(item, options) }
+                    }
+                }
+                if !answers.decisions.isEmpty {
+                    HStack(spacing: 10) {
+                        ForEach(answers.decisions, id: \.self) { action in
+                            answerButton(item, action, prominent: action == answers.main)
+                        }
+                    }
+                    .controlSize(.large)
+                    .disabled(sending)
+                }
+                if let action = answers.text {
+                    ItemComposer(item: item, action: action, text: $reply, focused: $replying,
+                                 sending: sending) { send(item, action) }
+                }
             }
-            Button("Terminal", systemImage: Icon.agent) { model.open(item, as: .terminal) }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("item-open-terminal")
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(.bar)
         }
     }
 
@@ -180,19 +189,10 @@ struct InboxItemScreen: View {
 
     @ViewBuilder
     private func answerButton(_ item: InboxItem, _ action: InboxAction, prominent: Bool) -> some View {
-        styled(Button(action.title(for: item.kind)) { perform(item, action) }, prominent: prominent)
-            .disabled(action.needsText && !hasReply)
-            .accessibilityIdentifier("item-answer-\(action.rawValue)")
-    }
-
-    private func iconButton(_ item: InboxItem, _ action: InboxAction, systemImage: String, prominent: Bool) -> some View {
-        styled(Button(action.title(for: item.kind), systemImage: systemImage) { perform(item, action) }, prominent: prominent)
-            .labelStyle(.iconOnly)
-            .accessibilityIdentifier("item-answer-\(action.rawValue)")
-    }
-
-    @ViewBuilder
-    private func styled(_ button: some View, prominent: Bool) -> some View {
+        let button = Button { perform(item, action) } label: {
+            Text(action.title(for: item.kind)).frame(maxWidth: .infinity)
+        }
+        .accessibilityIdentifier("item-answer-\(action.rawValue)")
         if prominent {
             button.buttonStyle(.borderedProminent)
         } else {
@@ -201,6 +201,11 @@ struct InboxItemScreen: View {
     }
 
     private var hasReply: Bool { !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// Its Chat where the agent has one, else its pane; the pane switches views.
+    private func openSession(_ item: InboxItem) {
+        model.open(item, as: model.hasChat(item) ? .chat : .terminal)
+    }
 
     /// Approve on a proposal shows what the Task will get first.
     private func perform(_ item: InboxItem, _ action: InboxAction) {

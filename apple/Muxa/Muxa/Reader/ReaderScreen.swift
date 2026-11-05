@@ -48,6 +48,7 @@ struct ReaderScreen: View {
                     if width == .compact {
                         ToolbarItem(placement: .primaryAction) {
                             Button("Done") { model.closeReader() }
+                                .accessibilityIdentifier("reader-done")
                         }
                     }
                 }
@@ -122,6 +123,7 @@ struct ReaderScreen: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Done") { model.closeReader() }
                     .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("reader-done")
             }
         }
     }

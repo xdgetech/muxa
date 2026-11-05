@@ -8,7 +8,7 @@ import Testing
 final class ItemBridge: FakeBridge, @unchecked Sendable {
     var items: [InboxItem] = [
         ItemTests.item("i-00000001", .ask, answers: [.approve, .reject, .later]),
-        ItemTests.item("i-00000002", .review, answers: [.accept, .redo, .changeCourse, .keepOpen, .later]),
+        ItemTests.item("i-00000002", .review, answers: [.accept, .reply, .keepOpen, .later]),
         ItemTests.item("i-00000003", .review, state: .answered),
     ]
     /// The ask's menu changed: `approve` is a conflict.
@@ -114,12 +114,12 @@ struct ItemTests {
     @Test func anAnswerSendsItsTextAndTheItemLeavesTheList() async throws {
         let bridge = ItemBridge()
         let session = try await connected(bridge)
-        let saved = try await session.answer(session.openItems[1], .redo, text: "Keep the old export.")
+        let saved = try await session.answer(session.openItems[1], .reply, text: "Keep the old export.")
         #expect(saved.state == .answered)
-        #expect(saved.answer == .redo)
+        #expect(saved.answer == .reply)
         #expect(session.openItems.map(\.id) == ["i-00000001"])
         #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000002", .redo, nil, "Keep the old export.", nil) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-00000002", .reply, nil, "Keep the old export.", nil) = $0 { true } else { false }
         })
     }
 
@@ -128,8 +128,8 @@ struct ItemTests {
         let session = try await connected(bridge)
         let lists = bridge.sent.filter { if case .listInbox = $0 { true } else { false } }.count
         do {
-            try await session.answer(session.openItems[1], .redo, text: "")
-            Issue.record("an empty Redo must be refused")
+            try await session.answer(session.openItems[1], .reply, text: "")
+            Issue.record("an empty Send must be refused")
         } catch {
             #expect(PaneSession.describe(error) == "a text is needed")
         }
@@ -200,48 +200,37 @@ struct ItemTests {
     }
 
     @Test func answersFollowTheKindsTable() {
-        let reviewItem = Self.item("i-1", .review, answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later])
+        let reviewItem = Self.item("i-1", .review, answers: [.accept, .reply, .keepOpen, .later])
         let review = ItemAnswers(reviewItem)
-        #expect(review.shown == [.accept, .reply])
-        #expect(review.more == [.redo, .changeCourse])
+        #expect(review.decisions.isEmpty, "a review asks nothing to decide")
+        #expect(review.text == .reply && review.menu == [.accept])
         #expect(review.done == .keepOpen && review.later)
         #expect(review.main == .accept)
         #expect(ItemAnswers(reviewItem, replying: true).main == .reply, "a typed reply is the main answer")
 
-        let failure = ItemAnswers(Self.item("i-2", .failure, answers: [.retry, .reply, .changeCourse, .drop, .dismiss, .later]))
-        #expect(failure.shown == [.retry, .reply])
-        #expect(failure.more == [.changeCourse, .drop])
-        #expect(failure.done == .dismiss)
-
-        let older = Self.item("i-4", .review, answers: [.accept, .redo, .changeCourse, .keepOpen, .later])
-        #expect(ItemAnswers(older).shown == [.accept], "a host without reply")
-        #expect(ItemAnswers(older, replying: true).main == .accept)
+        let failure = ItemAnswers(Self.item("i-2", .failure, answers: [.retry, .reply, .drop, .dismiss, .later]))
+        #expect(failure.decisions == [.retry] && failure.main == .retry)
+        #expect(failure.text == .reply && failure.menu == [.drop] && failure.done == .dismiss)
 
         let ask = ItemAnswers(Self.item("i-5", .ask, answers: [.approve, .reject, .reply, .later]))
-        #expect(ask.shown == [.approve, .reject, .reply])
-        #expect(ask.more.isEmpty && ask.done == nil && ask.later, "Later alone is no More")
+        #expect(ask.decisions == [.approve, .reject] && ask.text == .reply)
+        #expect(ask.menu.isEmpty && ask.done == nil && ask.later)
 
         let question = ItemAnswers(Self.item("i-3", .ask, answers: [.choose, .later]))
-        #expect(question.chooses)
-        #expect(question.shown.isEmpty)
-        #expect(question.main == nil)
+        #expect(question.chooses && question.decisions.isEmpty && question.text == nil && question.main == nil)
+        let cancellable = ItemAnswers(Self.item("i-9", .ask, answers: [.choose, .reject, .later]))
+        #expect(cancellable.main == nil, "Command+Return never picks a question's cancel")
 
-        let briefing = ItemAnswers(Self.item("e-1", .briefing, answers: [.dismiss, .later]))
-        #expect(briefing.shown.isEmpty && briefing.more.isEmpty)
+        let proposal = ItemAnswers(Self.item("e-3", .proposal, answers: [.approve, .reject, .askAgent, .later]))
+        #expect(proposal.decisions == [.approve, .reject] && proposal.text == .askAgent)
+
+        // ADR 0041: a briefing's reply box asks the workspace's agent.
+        let briefingItem = Self.item("e-1", .briefing, answers: [.dismiss, .askAgent, .later])
+        let briefing = ItemAnswers(briefingItem)
+        #expect(briefing.decisions.isEmpty && briefing.menu.isEmpty && briefing.text == .askAgent)
         #expect(briefing.done == .dismiss && briefing.main == .dismiss)
-
-        // ADR 0041: Ask Agent is a briefing's text button, and its main answer while typing.
-        let asking = Self.item("e-2", .briefing, answers: [.dismiss, .askAgent, .later])
-        #expect(ItemAnswers(asking).shown == [.askAgent] && ItemAnswers(asking).main == .dismiss)
-        #expect(ItemAnswers(asking, replying: true).main == .askAgent)
-        let reviewAsks = ItemAnswers(Self.item("i-7", .review, answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .askAgent, .later]))
-        #expect(reviewAsks.more == [.redo, .changeCourse, .askAgent])
-        #expect(ItemAnswers(Self.item("i-8", .review, answers: [.accept, .reply, .askAgent]), replying: true).main == .reply)
-
-        // One answer that would be hidden is a button, not a More of one.
-        let noSession = ItemAnswers(Self.item("i-6", .failure, answers: [.drop, .dismiss, .later]))
-        #expect(noSession.shown == [.drop] && noSession.more.isEmpty)
-        #expect(InboxAction.redo.needsText && InboxAction.reply.needsText && !InboxAction.accept.needsText)
+        #expect(ItemAnswers(briefingItem, replying: true).main == .askAgent)
+        #expect(InboxAction.reply.needsText && InboxAction.askAgent.needsText && !InboxAction.accept.needsText)
     }
 
     /// ADR 0033 §4a.2, ADR 0040: the labels name the result.

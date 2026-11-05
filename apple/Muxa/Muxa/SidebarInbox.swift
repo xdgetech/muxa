@@ -28,9 +28,15 @@ struct SidebarInbox: View {
                     .foregroundStyle(.primary)
                     .sidebarHighlight(model.highlights(item))
                     .accessibilityIdentifier("item-row-\(item.id)")
+                    // A swipe right is ✓, a swipe left is Later (ADR 0040 §6).
+                    .swipeActions(edge: .leading) {
+                        if ItemAnswers(item).done != nil {
+                            Button("Done", systemImage: Icon.done) { model.done(item) }.tint(Theme.done)
+                        }
+                    }
                     .swipeActions(edge: .trailing) {
                         if item.answers.contains(.later) {
-                            Button("Later", systemImage: Icon.later) { model.later(item) }.tint(.indigo)
+                            Button("Later", systemImage: Icon.later) { model.later(item) }.tint(.gray)
                         }
                     }
             }

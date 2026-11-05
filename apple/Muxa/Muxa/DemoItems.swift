@@ -68,7 +68,7 @@ extension DemoWork {
         }
         let item = taskItems[i]
         guard item.answers.contains(action) else { throw Refusal(.badRequest, "\(action.rawValue) is not an answer of \(id)") }
-        if [.redo, .changeCourse, .reply].contains(action), (text ?? "").isEmpty { throw Refusal(.badRequest, "\(action.rawValue) needs a text") }
+        if action == .reply, (text ?? "").isEmpty { throw Refusal(.badRequest, "\(action.rawValue) needs a text") }
         if action == .choose, Int(option ?? .max) >= (item.prompt?.options.count ?? 0) {
             throw Refusal(.badRequest, "option is not one of the prompt's options")
         }
@@ -100,7 +100,7 @@ extension DemoWork {
             return .taskChanged
         }
         switch action {
-        case .approve, .reject, .choose, .redo, .changeCourse, .reply, .retry:
+        case .approve, .reject, .choose, .reply, .retry:
             return item.pane.map(ItemEffect.agentRuns) ?? .none
         default:
             return .none
@@ -146,11 +146,11 @@ extension DemoWork {
                      changes: ChangeCount(files: 3, added: 6, removed: 1), docs: ["docs/design.md"],
                      images: ["build/screenshots/en/login.png"],
                      links: [SourceLink(url: "https://github.com/example/app/pull/42", title: "PR #42")]),
-                 answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later]),
+                 answers: [.accept, .reply, .keepOpen, .later]),
         taskItem("i-0000a003", .failure, "The agent stopped with an error", task: "t-price1",
                  title: "Draft the pricing page", ago: 1800, read: true,
                  summary: "npm install failed: the lockfile is out of date.",
-                 answers: [.retry, .reply, .changeCourse, .drop, .dismiss, .later]),
+                 answers: [.retry, .reply, .drop, .dismiss, .later]),
     ]
 
     /// Try the Demo's items: an agent asking, and two finished turns.
@@ -166,11 +166,11 @@ extension DemoWork {
                  attachments: Attachments(
                      changes: ChangeCount(files: 6, added: 212, removed: 48), docs: ["README.md"],
                      links: [SourceLink(url: "https://github.com/example/dashboard/pull/318", title: "PR #318")]),
-                 answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later]),
+                 answers: [.accept, .reply, .keepOpen, .later]),
         taskItem("i-5c000003", .review, "Ready for review: Faster search index", task: "t-3c4d5e",
                  title: "Faster search index", ago: 1800, session: "$4", pane: "%6", read: true,
                  summary: "The index builds in 41 s instead of 96 s. Search results are unchanged.",
                  attachments: Attachments(changes: ChangeCount(files: 2, added: 37, removed: 12)),
-                 answers: [.accept, .reply, .redo, .changeCourse, .keepOpen, .later]),
+                 answers: [.accept, .reply, .keepOpen, .later]),
     ]
 }

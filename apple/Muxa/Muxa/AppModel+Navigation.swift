@@ -165,11 +165,18 @@ extension AppModel {
 
     /// Later (ADR 0040): the item moves to the bottom at once, and the next one opens
     /// where it was shown.
-    func later(_ item: InboxItem) {
+    func later(_ item: InboxItem) { triage(item, .later) }
+
+    /// ✓ from a swipe: the item closes; its Task stays as it is.
+    func done(_ item: InboxItem) {
+        if let done = ItemAnswers(item).done { triage(item, done) }
+    }
+
+    private func triage(_ item: InboxItem, _ action: InboxAction) {
         let before = session.openItems
         Task {
             do {
-                itemAnswered(try await session.answer(item, .later), before: before)
+                itemAnswered(try await session.answer(item, action), before: before)
             } catch {
                 laterFailure = PaneSession.describe(error)
             }

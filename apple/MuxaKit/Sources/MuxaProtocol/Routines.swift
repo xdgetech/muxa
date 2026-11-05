@@ -196,8 +196,6 @@ public enum InboxAction: String, Codable, Sendable {
     case approve, dismiss, later
     case reject, choose, accept
     case keepOpen = "keep-open"
-    case redo
-    case changeCourse = "change-course"
     case retry, drop, read
     /// Sends the text as it is; on an `ask` it denies the menu first (ADR 0033 §4a).
     case reply
