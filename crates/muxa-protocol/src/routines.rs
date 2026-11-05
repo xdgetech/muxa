@@ -139,6 +139,9 @@ pub struct InboxEntry {
     pub run: String,
     pub occurrence: String,
     pub disposition: Disposition,
+    /// Epoch seconds when a device first opened it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<u64>,
     /// With `later`: epoch seconds when the entry is open again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<u64>,

@@ -81,6 +81,7 @@ pub async fn update(
         let state = owner(&store, &entry)?;
         let at = now();
         match action {
+            InboxAction::Read => Ok(Step::Done(read(&store, &state, &entry, at)?)),
             InboxAction::Dismiss | InboxAction::Later => {
                 let saved = close(&store, &state, &entry, action, until, at)?;
                 tracing::info!(entry, action = ?action, "inbox entry updated");
@@ -94,7 +95,7 @@ pub async fn update(
                 Ok(Step::Done(saved))
             }
             other => Err(bad(format!(
-                "{other:?} does not answer a Routine's entry; approve, reject, dismiss or later do"
+                "{other:?} does not answer a Routine's entry; approve, reject, dismiss, later or read do"
             ))),
         }
     })
@@ -187,6 +188,19 @@ fn close(
                 s.entry.until = None;
             }
         }
+        Ok(shown(&s.entry, at))
+    })
+}
+
+/// The first read stays; an entry in any state can be read.
+fn read(
+    store: &RoutineStore,
+    state: &RoutineState,
+    entry: &str,
+    at: u64,
+) -> Result<InboxEntry, ErrorBody> {
+    with_entry(store, state, entry, |s| {
+        s.entry.read_at.get_or_insert(at);
         Ok(shown(&s.entry, at))
     })
 }
@@ -347,6 +361,7 @@ mod tests {
             run: "t-000001".into(),
             occurrence: "now-1".into(),
             disposition,
+            read_at: None,
             until,
             proposal: Some(Proposal {
                 action: "Close".into(),

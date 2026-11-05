@@ -13,6 +13,8 @@ final class ItemBridge: FakeBridge, @unchecked Sendable {
     ]
     /// The ask's menu changed: `approve` is a conflict.
     var promptChanged = false
+    /// An older host refuses `read` on a Routine's entry.
+    var refusesRead = false
 
     override func send(_ line: Data) async throws {
         let req = try Wire.decodeRequest(line)
@@ -28,6 +30,7 @@ final class ItemBridge: FakeBridge, @unchecked Sendable {
             record(req)
             guard let i = items.firstIndex(where: { $0.id == entry }) else { return refuse(id, .badRequest, "no such item") }
             if action == .read {
+                if refusesRead { return refuse(id, .badRequest, "Read does not answer a Routine's entry") }
                 items[i].readAt = 50
             } else {
                 guard items[i].answers.contains(action) else { return refuse(id, .badRequest, "\(action.rawValue) is not offered") }
@@ -136,6 +139,15 @@ struct ItemTests {
         await session.markRead(session.openItems[0])
         let reads = bridge.sent.filter { if case .updateInboxEntry(_, _, .read, _, _, _) = $0 { true } else { false } }
         #expect(reads.count == 1)
+    }
+
+    @Test func aRefusedReadIsNoErrorAndKeepsTheDot() async throws {
+        let bridge = ItemBridge()
+        bridge.refusesRead = true
+        let session = try await connected(bridge)
+        await session.markRead(session.openItems[0])
+        #expect(session.workError == nil)
+        #expect(session.openItems[0].readAt == nil)
     }
 
     @Test func tasksChangedListsTheItemsAgain() async throws {

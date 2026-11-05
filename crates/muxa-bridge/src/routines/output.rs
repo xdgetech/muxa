@@ -339,6 +339,7 @@ pub fn publish(
                 run: run.to_owned(),
                 occurrence: occurrence.to_owned(),
                 disposition: Disposition::Open,
+                read_at: None,
                 until: None,
                 proposal: item.proposal,
                 task: None,

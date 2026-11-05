@@ -369,6 +369,25 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
         .request(json!({"type": "update-inbox", "entry": briefing.id, "action": "approve"}))
         .await;
     assert_eq!(error_of(&bad).0, ErrorCode::BadRequest);
+    // A device opening the briefing marks it read once; it stays open.
+    let mut read_at = None;
+    for _ in 0..2 {
+        let read = conn
+            .request(json!({"type": "update-inbox", "entry": briefing.id, "action": "read"}))
+            .await;
+        let Some(Message::InboxSaved {
+            entry: Some(entry),
+            item: Some(item),
+            ..
+        }) = read.first()
+        else {
+            panic!("read answered {read:?}");
+        };
+        assert_eq!(entry.disposition, Disposition::Open);
+        assert!(entry.read_at.is_some() && item.read_at == entry.read_at);
+        assert!(read_at.is_none() || read_at == entry.read_at);
+        read_at = entry.read_at;
+    }
     let later = conn
         .request(
             json!({"type": "update-inbox", "entry": briefing.id, "action": "later",

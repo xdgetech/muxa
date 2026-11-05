@@ -45,15 +45,12 @@ extension PaneSession {
         return saved
     }
 
-    /// Marks `item` read once a device opens it. A failure lands in `workError`;
-    /// the item stays as it is.
+    /// Marks `item` read once a device opens it. Read is a hint, not an answer:
+    /// a failure leaves the dot and is no error to show (an older host refuses
+    /// it on a Routine's entry).
     public func markRead(_ item: InboxItem) async {
         guard canUseItems, item.readAt == nil else { return }
-        do {
-            try await answer(item, .read)
-        } catch {
-            workError = Self.describe(error)
-        }
+        _ = try? await answer(item, .read)
     }
 
     /// A newer state of a listed item replaces it; a new one goes first.

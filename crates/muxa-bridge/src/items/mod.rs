@@ -79,7 +79,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         workspace: entry.workspace.clone(),
         title: entry.title.clone(),
         created_at: entry.created_at,
-        read_at: None,
+        read_at: entry.read_at,
         until: entry.until,
         answered_at: None,
         answer,
