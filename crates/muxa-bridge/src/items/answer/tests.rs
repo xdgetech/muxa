@@ -110,7 +110,6 @@ fn answer(item: &str, action: InboxAction) -> Answer {
     Answer {
         item: item.into(),
         action,
-        until: None,
         text: None,
         option: None,
     }
@@ -210,25 +209,20 @@ async fn read_is_kept_once_and_the_item_stays_open() {
 }
 
 #[tokio::test]
-async fn later_needs_a_time_ahead_and_a_passed_later_is_open() {
+async fn later_moves_the_item_down_and_it_stays_open() {
     let f = fixture(review("i-00000001"));
-    let later = |until| Answer {
-        until,
-        ..answer("i-00000001", InboxAction::Later)
-    };
-    for until in [None, Some(1), Some(now() + super::MAX_LATER + 60)] {
-        let e = update(&f.cx, later(until)).await.unwrap_err();
-        assert_eq!(e.code, ErrorCode::BadRequest, "{until:?}");
-    }
-    let until = now() + 3600;
-    let saved = update(&f.cx, later(Some(until))).await.unwrap();
-    assert_eq!((saved.state, saved.until), (ItemState::Later, Some(until)));
-    assert!(!saved.answers.is_empty());
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::Later))
+        .await
+        .unwrap();
+    assert_eq!(saved.state, ItemState::Open);
+    assert!(saved.later_at.is_some());
+    assert!(saved.answers.contains(&InboxAction::Accept));
 
-    let mut passed = review("i-00000002");
-    passed.state = ItemState::Later;
-    passed.until = Some(1);
-    let f = fixture(passed);
+    // Stored hidden before ADR 0040, with a time not passed yet: it is open.
+    let mut hidden = review("i-00000002");
+    hidden.state = ItemState::Later;
+    hidden.until = Some(4_000_000_000);
+    let f = fixture(hidden);
     let saved = update(&f.cx, answer("i-00000002", InboxAction::KeepOpen))
         .await
         .unwrap();
@@ -272,7 +266,6 @@ fn an_ask_picks_the_option_its_answer_names() {
             option,
             ..answer("i-00000001", action)
         },
-        1,
     ) {
         Ok(Plan::Pick { option, pane, .. }) => {
             assert_eq!(pane.to_string(), "%3");
@@ -293,7 +286,6 @@ fn an_ask_picks_the_option_its_answer_names() {
                 option,
                 ..answer("i-00000001", InboxAction::Choose)
             },
-            1,
         )
     };
     assert!(matches!(chosen(Some(2)), Ok(Plan::Pick { option: 2, .. })));
@@ -325,7 +317,6 @@ fn a_reply_needs_a_text_and_says_what_it_is() {
                 text: Some(text.into()),
                 ..answer("i-00000001", action)
             },
-            1,
         )
     };
     assert_eq!(
@@ -359,7 +350,6 @@ fn a_reply_sends_the_text_as_it_is() {
                 text: Some(text.into()),
                 ..answer(&item.id, InboxAction::Reply)
             },
-            1,
         )
     };
     let text = "Use the cache.\nKeep the API.";
@@ -387,7 +377,6 @@ fn an_asks_reply_denies_the_menu_then_sends_the_text() {
             text: Some("Run the tests first.".into()),
             ..answer("i-00000001", InboxAction::Reply)
         },
-        1,
     );
     let Ok(Plan::DenyAndReply {
         pane,
@@ -411,7 +400,6 @@ fn an_asks_reply_denies_the_menu_then_sends_the_text() {
             text: Some("x".into()),
             ..answer("i-00000002", InboxAction::Reply)
         },
-        1,
     )
     .unwrap_err();
     assert_eq!(

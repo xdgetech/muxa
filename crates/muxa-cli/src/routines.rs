@@ -153,8 +153,8 @@ fn entry_line(e: &InboxEntry) -> String {
         InboxEntryKind::Briefing => "briefing",
         InboxEntryKind::Proposal => "proposal",
     };
-    let state = match (e.disposition, e.until, &e.task) {
-        (Disposition::Later, Some(u), _) => format!("later until {}", crate::when::format(u)),
+    let state = match (e.disposition, e.later_at, &e.task) {
+        (Disposition::Open, Some(_), _) => "later".into(),
         (Disposition::Approved, _, Some(t)) => format!("approved: {t}"),
         (d, _, _) => format!("{d:?}").to_lowercase(),
     };
@@ -257,7 +257,6 @@ pub async fn act(
     mut conn: Conn,
     entry: &str,
     action: InboxAction,
-    until: Option<u64>,
     as_json: bool,
 ) -> Result<String, String> {
     require(&conn)?;
@@ -273,7 +272,7 @@ pub async fn act(
                 id,
                 entry: entry_id,
                 action,
-                until,
+                until: None,
                 text: None,
                 option: None,
             },

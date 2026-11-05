@@ -52,14 +52,14 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$output" == *"2  docs/plan.md"* ]]
   [[ "$output" == *"3  docs/chart.png"* ]]
   [[ "$output" == *"4  PR #817  https://github.com/example/app/pull/817"* ]]
-  [[ "$output" == *"a Done (closes the Task)   s Send   r Redo   c Change course   p Keep open   l Later   o open session   space/b scroll   v read all   q close"* ]]
+  [[ "$output" == *"a Complete Task   s Send   r Redo   c Change course   p ✓ Done   l Later (move down)   o open session   space/b scroll   v read all   q close"* ]]
 }
 
 @test "labels name what an answer does: an ask allows or denies, a proposal approves" {
   strip() { sed $'s/\x1b\\[[0-9;]*m//g'; }
-  [[ "$(inbox view i-0a1b2c3d "$ITEMS" | strip | tail -n 1)" == "a Allow   r Deny   s Deny & send   l Later"* ]]
-  [[ "$(inbox view i-3d4e5f6a "$ITEMS" | strip | tail -n 1)" == "a Retry   s Send   c Change course   x Drop   n Dismiss   l Later"* ]]
-  [[ "$(inbox view e-1a2b3c4d "$ITEMS" | strip | tail -n 1)" == "a Approve   r Reject   l Later"* ]]
+  [[ "$(inbox view i-0a1b2c3d "$ITEMS" | strip | tail -n 1)" == "a Allow   r Deny   s Deny & send   l Later (move down)"* ]]
+  [[ "$(inbox view i-3d4e5f6a "$ITEMS" | strip | tail -n 1)" == "a Retry   s Send   c Change course   x Drop Task   n ✓ Done   l Later (move down)"* ]]
+  [[ "$(inbox view e-1a2b3c4d "$ITEMS" | strip | tail -n 1)" == "a Approve   r Reject   l Later (move down)"* ]]
 }
 
 @test "a key answers with the item's own answers, a number opens evidence" {
@@ -94,8 +94,8 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   fake_cli
   inbox cache --force
   run bash -c "'$ROOT/scripts/inbox.sh' rows | cut -f1"
-  [ "$output" = "$(printf '%s\n' I: i-0a1b2c3d i-2c3d4e5f e-1a2b3c4d | sed '2,$s/^/i:/')" ]
-  [[ "$(inbox rows | head -n 1)" == *"Inbox"*" 3"* ]]
+  [ "$output" = "$(printf '%s\n' I: i-0a1b2c3d i-2c3d4e5f i-3d4e5f6a | sed '2,$s/^/i:/')" ]
+  [[ "$(inbox rows | head -n 1)" == *"Inbox"*" 4"* ]]
   tx set-option -g @agents_inbox_rows 1
   [ "$(inbox rows | wc -l | tr -d ' ')" = 2 ]
 }
@@ -131,6 +131,16 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   key j
   key a
   wait_for 'grep -q "^inbox answer i-2c3d4e5f accept --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: l moves the item down at once, with no time" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key l
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f later --json$" "$TMPDIR/bin/calls"'
 }
 
 @test "prefix+T: r on a review asks for the feedback and sends it with redo" {
@@ -200,6 +210,6 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   fake_cli
   attach
   sb="$(tx list-panes -t base: -F '#{pane_id} #{@agents_sidebar_pane}' | awk '$2 == 1 { print $1 }')"
-  wait_for "tx capture-pane -p -t '$sb' | grep -q 'Inbox 3'"
+  wait_for "tx capture-pane -p -t '$sb' | grep -q 'Inbox 4'"
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'Allow Bash'"
 }

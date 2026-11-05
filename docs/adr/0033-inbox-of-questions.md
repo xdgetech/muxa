@@ -4,6 +4,8 @@
 
 Proposed. The developer chose this shape on 2026-11-04. It replaces the Inbox list of ADR 0025 ("List first, with explicit disposition"), ADR 0027 §4 (Move down and Later on the Task record), and what is left of ADR 0023 in the Inbox (need labels, groups, the local Snooze). The manual Sessions list (ADR 0025, ADR 0027 §4) and Routines (ADR 0026) stay.
 
+ADR 0040 changes §4 (Later moves an item down instead of hiding it) and §4a.2 (✓, Complete Task, Drop Task, and More).
+
 ## Context
 
 - The Inbox shows the state of each Task: groups, needs, a queue order, Move down. It does not say what the user must decide, and it is hard to read on a phone.

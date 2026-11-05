@@ -28,7 +28,9 @@ data class InboxItem(
     val createdAt: Long,
     /** Set by the `read` answer. Null: unread. */
     val readAt: Long? = null,
-    /** With `later`: epoch seconds when the item is open again. */
+    /** Set by `later`: the host lists the item below the others (ADR 0040). */
+    val laterAt: Long? = null,
+    /** Only from a host before ADR 0040, with `later`: when the item is open again. */
     val until: Long? = null,
     val answeredAt: Long? = null,
     /** With `answered`: the answer given. Null also when a newer host sent an action this client does not know. */

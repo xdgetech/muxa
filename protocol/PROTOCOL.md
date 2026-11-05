@@ -73,7 +73,7 @@ sequenceDiagram
 | `list-routines` | `id` | list the host's Routines (capability `work` level 1, Routines below); a `routine-list` comes before the `result` |
 | `run-routine` | `id`, `workspace`, `routine` | start a run of an enabled Routine now; needs the muxa daemon; a `routine-saved` comes before the `result` |
 | `list-inbox` | `id` | list the stored Inbox entries (capability `work` level 1); an `inbox-list` comes before the `result` |
-| `update-inbox` | `id`, `entry`, `action`, optional `until` | approve, dismiss or defer a stored entry; an `inbox-saved` comes before the `result` |
+| `update-inbox` | `id`, `entry`, `action`, optional `text`, `option` | approve, dismiss or move down a stored entry; an `inbox-saved` comes before the `result` |
 | `start-session` | `id`, `workspace`, `repo` | start an ask session: the workspace's agent in the repo's main checkout, with no Task (capability `work` level 2, Ask sessions below); a `session-started` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
@@ -344,9 +344,9 @@ A Routine runs an agent on a trigger and publishes briefings and proposals to In
 3. A run is a task record with `kind: "routine-run"`. `list-tasks` never lists it. Its session carries `taskId`, so a client can open it, and can show a need of the run (an agent waiting on the user) by matching `running.task` with a session's `taskId`.
 4. Each scheduled run has an `occurrence` id: the local date and time, e.g. `2026-11-03T09:00`. A run-now is `now-<epoch seconds>`. After sleep or a restart, at most one missed occurrence runs. A repeated local time (DST) runs once. A local time that does not exist that day runs at the next valid minute.
 5. `list-inbox` sends `inbox-list {inbox, entries[]}`, newest first. An entry has `id` (`e-` and 8 hex digits), `workspace`, `routine`, `key`, `kind` (`briefing` or `proposal`), `title`, `body`, optional `links[] {url, title?}`, `createdAt`, `run` (the run's record id), `occurrence`, `disposition` (`open`, `later`, `approved` or `dismissed`), optional `readAt` (epoch seconds), optional `until`, optional `proposal {action, target, content, hash}` and optional `task`. Treat an unknown kind or disposition as one without a known action. A `later` entry whose `until` has passed is listed as `open`.
-6. `update-inbox {entry, action, until?}`:
+6. `update-inbox {entry, action}`:
    - `approve`, for a proposal only: creates one Task, as `create-task` would, in the Routine's workspace and project, with the proposal unchanged in its goal, and its `hash` (`sha256:` and the hex SHA-256 of `action`, a NUL byte, `target`, a NUL byte, and `content`). The entry gets `disposition: "approved"` and `task`. Approving again returns the same entry and creates nothing.
-   - `dismiss`; `later` with `until` (epoch seconds, in the future). Neither touches a Task.
+   - `dismiss`; `later` sets `laterAt` and keeps the entry `open`, below the others (ADR 0040). A host before ADR 0040 needs `until` and hides the entry until then; a newer host ignores `until`. Neither touches a Task.
    - `read` sets `readAt` once, in any disposition, and changes nothing else. A host before this change refuses it.
    - On success: `inbox-saved {inbox, entry}`, then `result`. An unknown entry, a briefing to approve, or an entry already approved or dismissed is `bad-request`.
 
@@ -383,13 +383,13 @@ The check's reasons are in `.muxa/checks/<attempt>.log`. Logs on the host carry 
 
 A bridge with `work` level 3 keeps Inbox items: one stored question for the user each (ADR 0033). Fixtures: `fixtures/items/`.
 
-1. `inbox-list` also has `items[]`: every item, a Routine's entries included, in the order to show them. Open items come first, `ask` before the rest, then newest first. Then `later` ones, then at most 100 answered or resolved ones, newest first. `entries` stays for older clients.
+1. `inbox-list` also has `items[]`: every item, a Routine's entries included, in the order to show them. Open items come first, `ask` before the rest, then newest first. Then the open ones with `laterAt`, in the order they were moved down (ADR 0040), then at most 100 answered or resolved ones, newest first. `entries` stays for older clients.
 2. An item has:
    - `id`: `i-` and 8 hex digits for a Task's item; a Routine's entry keeps its `e-` id;
    - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `change-course`), `proposal` or `briefing`;
    - `state`: `open`, `later`, `answered` or `resolved` (the need ended without an answer from the Inbox);
    - `question` (one line), `workspace`, `title` (the Task's or the entry's) and `createdAt`;
-   - optional `readAt`, `until` (with `later`), `answeredAt`, and `answer` (with `answered`, the action given);
+   - optional `readAt`, `laterAt` (epoch seconds: `later` moved it down), `until` (only from a host before ADR 0040, with `later`), `answeredAt`, and `answer` (with `answered`, the action given);
    - optional `summary`: the agent's last message for the turn, or the entry's body, at most 4096 bytes;
    - optional `task`, `session` (`$n`) and `pane` (`%n`). Open the pane's `changes`, `docs` and `images` with `pane` for the attachments;
    - optional `prompt`, with `ask`: the menu, as in Chat's `prompt`;
@@ -401,8 +401,8 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - optional `routine` and `proposal`, for a Routine's item;
    - `answers[]`: the actions the host accepts now, in the order to show them. Empty once answered or resolved. Show an unknown action as nothing. The first one is the main answer. A `review` has `accept, reply, redo, change-course, keep-open, later`; a `failure` `retry, reply, change-course, drop, dismiss, later`; an `ask` about a permission `approve, reject, reply, later`.
    - Labels are the client's. They name the result (ADR 0033 §4a): `accept` is "Done" (closes the Task) and `reply` "Send". On an `ask`, `approve` is "Allow", `reject` "Deny" and `reply` "Deny & send". A `proposal` keeps "Approve" and "Reject".
-3. A `later` item whose `until` has passed is listed as `open`. A Task has at most one `open` or `later` item; a newer need resolves the older one.
-4. `update-inbox {entry, action, until?, text?, option?}` answers an item; `entry` is its id. On success: `inbox-saved {inbox, item}`, then `result`. For a Routine's entry, `inbox-saved` has `entry` too.
+3. A host since ADR 0040 sends no `later` state; it lists a stored `later` item as `open` with `laterAt`. A Task has at most one `open` or `later` item; a newer need resolves the older one.
+4. `update-inbox {entry, action, text?, option?}` answers an item; `entry` is its id. On success: `inbox-saved {inbox, item}`, then `result`. For a Routine's entry, `inbox-saved` has `entry` too.
    - `approve`: an `ask` picks the prompt's first option that is not `cancel`; a proposal is approved as above.
    - `reject`: an `ask` picks the prompt's `cancel` option; a proposal is dismissed.
    - `choose` with `option`, an index into the prompt's options: answers a question.
@@ -411,7 +411,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `reply` with `text` (1 to 4096 bytes): a `review` or `failure` sends the text as it is, with no preface, and the Task goes on. An `ask` about a permission first picks the prompt's `cancel` option, waits up to 10 seconds until the adapter no longer reports that menu and reports the agent `idle` or `done`, then sends the text. When the agent does not take the denial in time, the answer is `conflict` and the item stays open; the menu was denied. Old clients drop the unknown `reply`, so no capability is needed.
    - `retry`: a `failure` restarts the agent, as `restart-agent`. `drop` marks the Task dropped.
    - `branch` and `keep`, with `work` level 4: a reading Task's `proposal` about its main checkout (Reading Tasks below). `branch` does `branch-task` with a branch from the title; `keep` answers it and changes nothing.
-   - `dismiss` answers the item and does nothing else. `later` needs `until`. `read` sets `readAt` and leaves the item open.
+   - `dismiss` answers the item and does nothing else. `later` sets `laterAt` and leaves the item open; it ignores `until`. `read` sets `readAt` and leaves the item open.
    - An action not in `answers` is `bad-request`. An `ask` whose prompt changed since the item was made is `conflict`: list again. Nothing is sent to the pane then.
 
 ## Reading Tasks

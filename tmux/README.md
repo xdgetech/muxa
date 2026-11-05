@@ -162,13 +162,14 @@ apps show, with a goal and a status.
 - `prefix + T` shows the Inbox (ADR 0033): one row per question an agent or a
   Routine has for you, with the selected item below the list: its question, the
   agent's last message, its numbered evidence and its keys.
-  - `j`/`k` move. `a` gives the item's main answer: Allow, Done (closes the
-    Task), Retry or Approve; a briefing's Done.
+  - `j`/`k` move. `a` gives the item's main answer: Allow, Complete Task,
+    Retry or Approve; a briefing's ✓ Done.
   - `s` Send: the text goes to the agent as it is, and the Task goes on. On a
     permission it is Deny & send: muxa denies the request, then sends the text.
-  - `r` Deny, Reject or Redo, `c` Change course, `p` Keep open, `x` Drop,
-    `n` Dismiss, `l` Later. Send, Redo and Change course ask for the text, Later
-    for the time.
+  - `r` Deny, Reject or Redo, `c` Change course, `p` and `n` ✓ Done (closes
+    only the item), `x` Drop Task, `l` Later: the item moves below the others
+    and stays there until you answer it (ADR 0040). Send, Redo and Change course
+    ask for the text.
   - Labels say what the answer does (ADR 0033 §4a): on an agent's permission
     `a` is Allow and `r` Deny; a Routine's proposal keeps Approve and Reject.
   - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with

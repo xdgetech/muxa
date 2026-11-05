@@ -40,11 +40,13 @@ fn store(config: &Config) -> Result<RoutineStore, ErrorBody> {
     RoutineStore::open(&dir).map_err(|e| state_error(&e))
 }
 
-/// The entry as clients see it: a `later` past its time is `open`.
-pub fn shown(entry: &InboxEntry, at: u64) -> InboxEntry {
+/// The entry as clients see it. A `later` entry stored before ADR 0040 is
+/// open and moved down.
+pub fn shown(entry: &InboxEntry) -> InboxEntry {
     let mut e = entry.clone();
-    if e.disposition == Disposition::Later && e.until.is_none_or(|u| u <= at) {
+    if e.disposition == Disposition::Later {
         e.disposition = Disposition::Open;
+        e.later_at.get_or_insert(e.created_at);
         e.until = None;
     }
     e
@@ -58,10 +60,9 @@ pub fn list(config: &Config) -> Result<Vec<InboxEntry>, ErrorBody> {
     let states = RoutineStore::open(dir)
         .and_then(|s| s.all())
         .map_err(|e| state_error(&e))?;
-    let at = now();
     let mut entries: Vec<InboxEntry> = states
         .iter()
-        .flat_map(|s| s.entries.iter().map(|e| shown(&e.entry, at)))
+        .flat_map(|s| s.entries.iter().map(|e| shown(&e.entry)))
         .collect();
     entries.sort_by(|a, b| (b.created_at, &b.id).cmp(&(a.created_at, &a.id)));
     entries.truncate(MAX_LIST);
@@ -73,7 +74,6 @@ pub async fn update(
     cx: &Context,
     entry: String,
     action: InboxAction,
-    until: Option<u64>,
 ) -> Result<InboxEntry, ErrorBody> {
     let config = Arc::clone(&cx.records);
     let found = blocking(move || {
@@ -83,14 +83,14 @@ pub async fn update(
         match action {
             InboxAction::Read => Ok(Step::Done(read(&store, &state, &entry, at)?)),
             InboxAction::Dismiss | InboxAction::Later => {
-                let saved = close(&store, &state, &entry, action, until, at)?;
+                let saved = close(&store, &state, &entry, action, at)?;
                 tracing::info!(entry, action = ?action, "inbox entry updated");
                 Ok(Step::Done(saved))
             }
             InboxAction::Approve => begin_approval(&config, &store, &state, &entry, at),
             // A proposal's Reject is its Dismiss; a briefing's Done is Dismiss already.
             InboxAction::Reject if is_proposal(&state, &entry) => {
-                let saved = close(&store, &state, &entry, InboxAction::Dismiss, None, at)?;
+                let saved = close(&store, &state, &entry, InboxAction::Dismiss, at)?;
                 tracing::info!(entry, action = ?action, "inbox entry updated");
                 Ok(Step::Done(saved))
             }
@@ -169,26 +169,20 @@ fn close(
     state: &RoutineState,
     entry: &str,
     action: InboxAction,
-    until: Option<u64>,
     at: u64,
 ) -> Result<InboxEntry, ErrorBody> {
     with_entry(store, state, entry, |s| {
-        let current = shown(&s.entry, at).disposition;
-        if !matches!(current, Disposition::Open | Disposition::Later) || s.approving.is_some() {
+        if shown(&s.entry).disposition != Disposition::Open || s.approving.is_some() {
             return Err(bad(format!("Inbox entry {entry} is already closed")));
         }
-        match (action, until) {
-            (InboxAction::Later, Some(u)) if u > at => {
-                s.entry.disposition = Disposition::Later;
-                s.entry.until = Some(u);
-            }
-            (InboxAction::Later, _) => return Err(bad("later needs an until in the future")),
-            _ => {
-                s.entry.disposition = Disposition::Dismissed;
-                s.entry.until = None;
-            }
+        s.entry.until = None;
+        if action == InboxAction::Later {
+            s.entry.disposition = Disposition::Open;
+            s.entry.later_at = Some(at);
+        } else {
+            s.entry.disposition = Disposition::Dismissed;
         }
-        Ok(shown(&s.entry, at))
+        Ok(shown(&s.entry))
     })
 }
 
@@ -201,7 +195,7 @@ fn read(
 ) -> Result<InboxEntry, ErrorBody> {
     with_entry(store, state, entry, |s| {
         s.entry.read_at.get_or_insert(at);
-        Ok(shown(&s.entry, at))
+        Ok(shown(&s.entry))
     })
 }
 
@@ -362,6 +356,7 @@ mod tests {
             occurrence: "now-1".into(),
             disposition,
             read_at: None,
+            later_at: None,
             until,
             proposal: Some(Proposal {
                 action: "Close".into(),
@@ -378,15 +373,14 @@ mod tests {
     }
 
     #[test]
-    fn a_later_entry_opens_again_when_its_time_passed() {
+    fn a_later_entry_from_before_adr_0040_is_open_and_moved_down() {
+        let open = shown(&entry(Disposition::Later, Some(4_000_000_000)));
         assert_eq!(
-            shown(&entry(Disposition::Later, Some(10)), 9).disposition,
-            Disposition::Later
+            (open.disposition, open.later_at, open.until),
+            (Disposition::Open, Some(1), None)
         );
-        let open = shown(&entry(Disposition::Later, Some(10)), 10);
-        assert_eq!((open.disposition, open.until), (Disposition::Open, None));
         assert_eq!(
-            shown(&entry(Disposition::Dismissed, None), 10).disposition,
+            shown(&entry(Disposition::Dismissed, None)).disposition,
             Disposition::Dismissed
         );
     }

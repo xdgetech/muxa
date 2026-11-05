@@ -37,9 +37,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] routine run [WORKSPACE/]NAME [--json]
        muxa-cli [--bridge CMD] inbox [--all] [--json]
        muxa-cli [--bridge CMD] inbox (approve | dismiss) ENTRY [--json]
-       muxa-cli [--bridge CMD] inbox later ENTRY --until TIME [--json]
+       muxa-cli [--bridge CMD] inbox later ENTRY [--json]
        muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
-                [--until TIME] [--json]
+                [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
@@ -106,9 +106,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   inbox approve ENTRY
                  creates one Task that performs the proposal; approving
                  again returns the same Task
-  inbox dismiss ENTRY, inbox later ENTRY --until TIME
-                 closes the entry, or hides it until TIME:
-                 2026-11-04T09:00Z (UTC), +30m, +2h, +1d or epoch seconds
+  inbox dismiss ENTRY, inbox later ENTRY
+                 closes the entry, or moves it below the others
                  With work level 3, inbox lists Inbox items instead: id,
                  kind, state, age, title and question; --all also lists
                  answered and resolved items
@@ -116,7 +115,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  answers an item. ACTION is approve, reject, choose
                  (--option N), accept, keep-open, reply, redo or
                  change-course (--text T), retry, drop, dismiss, later
-                 (--until TIME) or read. reply sends the text as it is;
+                 (moves it below the others) or read. reply sends the text as it is;
                  on an ask it denies the permission first
   inbox read ITEM
                  marks the item read, as inbox answer ITEM read";
@@ -201,7 +200,6 @@ enum Cmd {
     Act {
         entry: String,
         action: InboxAction,
-        until: Option<u64>,
         json: bool,
     },
 }
@@ -218,7 +216,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut operation, mut revision, mut action) = (None, None, None);
     let mut new = tasks::NewTask::default();
     let mut check = tasks::LoopFlags::default();
-    let mut until = None;
     let (mut text, mut option) = (None, None);
     while let Some(arg) = p.next()? {
         match arg {
@@ -251,7 +248,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("max-attempts") => check.max_attempts = Some(p.value()?.parse()?),
             Long("check-timeout") => check.timeout = Some(p.value()?.parse()?),
             Long("reset") => reset = true,
-            Long("until") => until = Some(p.value()?.string()?),
             Long("all") => all = true,
             Long("text") => text = Some(p.value()?.string()?),
             Long("option") => option = Some(p.value()?.parse()?),
@@ -301,12 +297,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     if (text.is_some() || option.is_some()) && !is_answer {
         return Err(lexopt::Error::Custom(
             "--text and --option require inbox answer".into(),
-        ));
-    }
-    let is_later = matches!(words.as_slice(), [w, l, _] if w == "inbox" && l == "later");
-    if until.is_some() && !is_later && !is_answer || is_later && until.is_none() {
-        return Err(lexopt::Error::Custom(
-            "inbox later needs --until, and only it takes it".into(),
         ));
     }
     if new.worker.is_some() && !is_new && !is_restart {
@@ -380,11 +370,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 })?,
                 text,
                 option,
-                until: until
-                    .as_deref()
-                    .map(|t| when::parse(t, when::now()))
-                    .transpose()
-                    .map_err(|e| lexopt::Error::Custom(e.into()))?,
             }
             .checked()
             .map_err(|e| lexopt::Error::Custom(e.into()))?,
@@ -396,7 +381,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 action: InboxAction::Read,
                 text: None,
                 option: None,
-                until: None,
             },
             json,
         },
@@ -410,11 +394,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Cmd::Act {
                 entry: entry.clone(),
                 action,
-                until: until
-                    .as_deref()
-                    .map(|t| when::parse(t, when::now()))
-                    .transpose()
-                    .map_err(|e| lexopt::Error::Custom(e.into()))?,
                 json,
             }
         }
@@ -531,9 +510,8 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Act {
             entry,
             action,
-            until,
             json,
-        } => routines::act(conn, &entry, action, until, json).await,
+        } => routines::act(conn, &entry, action, json).await,
     }
 }
 
@@ -625,8 +603,8 @@ mod tests {
         assert_eq!(a.text.as_deref(), Some("Use the cache."));
         let a = answer(&["inbox", "answer", "i-1", "choose", "--option", "2"]).unwrap();
         assert_eq!(a.option, Some(2));
-        let a = answer(&["inbox", "answer", "i-1", "later", "--until", "1767340800"]).unwrap();
-        assert_eq!(a.until, Some(1_767_340_800));
+        let a = answer(&["inbox", "answer", "i-1", "later"]).unwrap();
+        assert_eq!(a.action, InboxAction::Later);
         assert_eq!(
             answer(&["inbox", "read", "i-1"]).unwrap().action,
             InboxAction::Read
@@ -635,9 +613,8 @@ mod tests {
             &["inbox", "answer", "i-1", "redo"][..],
             &["inbox", "answer", "i-1", "reply"],
             &["inbox", "answer", "i-1", "choose"],
-            &["inbox", "answer", "i-1", "later"],
             &["inbox", "answer", "i-1", "accept", "--text", "x"],
-            &["inbox", "answer", "i-1", "approve", "--until", "+1h"],
+            &["inbox", "answer", "i-1", "later", "--until", "+1h"],
             &["inbox", "answer", "i-1", "shrug"],
             &["inbox", "approve", "e-1", "--text", "x"],
             &["inbox", "read", "i-1", "--option", "1"],

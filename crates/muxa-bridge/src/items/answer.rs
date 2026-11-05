@@ -20,13 +20,10 @@ use crate::task_records::{Context, reply, restart, set_status};
 
 /// The most bytes a `reply`, `redo` or `change-course` text has.
 pub const MAX_TEXT: usize = 4096;
-/// The latest Later the host accepts, in seconds from now.
-pub const MAX_LATER: u64 = 366 * 24 * 60 * 60;
 
 pub struct Answer {
     pub item: String,
     pub action: InboxAction,
-    pub until: Option<u64>,
     pub text: Option<String>,
     pub option: Option<u32>,
 }
@@ -35,7 +32,8 @@ pub struct Answer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Plan {
     Read,
-    Later(u64),
+    /// Moves the item down (ADR 0040).
+    Later,
     Status(TaskStatus),
     Restart,
     /// `branch-task` on a reading Task (ADR 0034 §3).
@@ -61,8 +59,7 @@ enum Plan {
 
 pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody> {
     let (task, item) = find(cx, &answer.item).await?;
-    let at = now();
-    let plan = plan(&shown(&item, at), &answer, at)?;
+    let plan = plan(&shown(&item), &answer)?;
     act(cx, &task, plan.clone()).await?;
     let saved = close(cx, &task, &answer.item, answer.action, plan).await?;
     tracing::info!(item = %answer.item, task, action = ?answer.action, "inbox item answered");
@@ -93,8 +90,8 @@ async fn find(cx: &Context, id: &str) -> Result<(String, InboxItem), ErrorBody> 
     .await
 }
 
-/// Pure. `item` is as shown at `at`: a passed `later` is open.
-fn plan(item: &InboxItem, answer: &Answer, at: u64) -> Result<Plan, ErrorBody> {
+/// Pure. `item` is as shown.
+fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
     use InboxAction::*;
     if answer.action == Read {
         return Ok(Plan::Read);
@@ -104,7 +101,7 @@ fn plan(item: &InboxItem, answer: &Answer, at: u64) -> Result<Plan, ErrorBody> {
         return Err(not_allowed(item, answer.action, &allowed));
     }
     Ok(match answer.action {
-        Later => Plan::Later(later(answer.until, at)?),
+        Later => Plan::Later,
         Accept => Plan::Status(TaskStatus::Done),
         Drop => Plan::Status(TaskStatus::Dropped),
         Retry => Plan::Restart,
@@ -145,20 +142,6 @@ fn not_allowed(item: &InboxItem, action: InboxAction, allowed: &[InboxAction]) -
         item.id,
         names.join(", ")
     ))
-}
-
-/// After now (`at`, epoch seconds), at most `MAX_LATER` ahead.
-fn later(until: Option<u64>, at: u64) -> Result<u64, ErrorBody> {
-    let until = until.ok_or_else(|| bad("later needs until, in epoch seconds"))?;
-    if until <= at {
-        return Err(bad(format!("later: until {until} is not after now ({at})")));
-    }
-    if until - at > MAX_LATER {
-        return Err(bad(format!(
-            "later: until {until} is more than a year ahead"
-        )));
-    }
-    Ok(until)
 }
 
 /// The menu option an `ask`'s answer picks.
@@ -258,7 +241,7 @@ async fn act(cx: &Context, task: &str, plan: Plan) -> Result<(), ErrorBody> {
             prompt::wait_taken(cx, pane, &asked).await?;
             reply::send_after_deny(&cx.env().await?, task, &text).await
         }
-        Plan::Read | Plan::Later(_) | Plan::Nothing => Ok(()),
+        Plan::Read | Plan::Later | Plan::Nothing => Ok(()),
     }
 }
 
@@ -304,9 +287,10 @@ fn apply(
         Plan::Read => {
             item.read_at.get_or_insert(at);
         }
-        Plan::Later(until) => {
-            item.state = ItemState::Later;
-            item.until = Some(*until);
+        Plan::Later => {
+            item.state = ItemState::Open;
+            item.later_at = Some(at);
+            item.until = None;
         }
         // A second device's answer came first: it stays. A `resolved` one
         // may be this answer's own effect, so the answer wins.
@@ -319,7 +303,7 @@ fn apply(
         }
     }
     item.answers = answers(item);
-    Ok(shown(item, at))
+    Ok(shown(item))
 }
 
 enum Failed {

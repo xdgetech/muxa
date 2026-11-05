@@ -166,9 +166,10 @@ class FixtureTest {
             list.items.map { it.kind },
         )
         assertEquals(
-            listOf(ItemState.OPEN, ItemState.OPEN, ItemState.LATER, ItemState.OPEN, ItemState.ANSWERED, ItemState.RESOLVED),
+            listOf(ItemState.OPEN, ItemState.OPEN, ItemState.OPEN, ItemState.OPEN, ItemState.ANSWERED, ItemState.RESOLVED),
             list.items.map { it.state },
         )
+        assertEquals(1_762_160_500L, list.items[2].laterAt)
         assertEquals(
             listOf(InboxAction.ACCEPT, InboxAction.REPLY, InboxAction.REDO, InboxAction.CHANGE_COURSE, InboxAction.KEEP_OPEN, InboxAction.LATER),
             list.items[1].answers,

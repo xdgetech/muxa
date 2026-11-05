@@ -360,7 +360,7 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
     assert!(listed[0].goal.contains("\n\nClosing.\n\n") && listed[0].goal.contains(hash.as_str()));
     assert_eq!(listed[0].status, TaskStatus::Open);
 
-    // Dismiss and later on the briefing.
+    // Read, later and dismiss on the briefing.
     let briefing = entries
         .iter()
         .find(|e| e.kind == InboxEntryKind::Briefing)
@@ -388,6 +388,7 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
         assert!(read_at.is_none() || read_at == entry.read_at);
         read_at = entry.read_at;
     }
+    // Later moves it down and keeps it open; an older app's until is ignored.
     let later = conn
         .request(
             json!({"type": "update-inbox", "entry": briefing.id, "action": "later",
@@ -396,7 +397,8 @@ async fn a_run_publishes_once_and_an_approval_creates_one_task() {
         .await;
     assert!(
         matches!(later.first(), Some(Message::InboxSaved { entry: Some(entry), .. })
-        if entry.disposition == Disposition::Later)
+        if entry.disposition == Disposition::Open && entry.later_at.is_some()
+            && entry.until.is_none())
     );
     let dismissed = conn
         .request(json!({"type": "update-inbox", "entry": briefing.id, "action": "dismiss"}))

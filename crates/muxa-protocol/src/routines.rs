@@ -142,7 +142,10 @@ pub struct InboxEntry {
     /// Epoch seconds when a device first opened it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub read_at: Option<u64>,
-    /// With `later`: epoch seconds when the entry is open again.
+    /// Set by `later`: the entry is listed below the others (ADR 0040).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub later_at: Option<u64>,
+    /// Only on an entry stored before ADR 0040: when a hidden entry was open again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<u64>,
     /// Only for kind `proposal`.

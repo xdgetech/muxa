@@ -9,7 +9,7 @@
 {"type":"update-inbox","id":308,"entry":"i-3d4e5f6a","action":"retry"}
 {"type":"update-inbox","id":309,"entry":"i-3d4e5f6a","action":"drop"}
 {"type":"update-inbox","id":310,"entry":"i-2c3d4e5f","action":"read"}
-{"type":"update-inbox","id":311,"entry":"i-2c3d4e5f","action":"later","until":1762246800}
+{"type":"update-inbox","id":311,"entry":"i-2c3d4e5f","action":"later"}
 {"type":"update-inbox","id":312,"entry":"e-1a2b3c4d","action":"reject"}
 {"type":"update-inbox","id":320,"entry":"i-2c3d4e5f","action":"reply","text":"Looks good. Also update the README."}
 {"type":"update-inbox","id":321,"entry":"i-0a1b2c3d","action":"reply","text":"Do not apply. Run terraform plan and show me the diff."}

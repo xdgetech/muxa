@@ -203,6 +203,7 @@ pub(crate) fn tests_item(id: &str, state: ItemState) -> InboxItem {
         title: "Fixture".into(),
         created_at: 1,
         read_at: None,
+        later_at: None,
         until: None,
         answered_at: None,
         answer: None,

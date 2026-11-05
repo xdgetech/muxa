@@ -18,7 +18,9 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     public var createdAt: UInt64
     /// Set by the `read` answer. Nil: unread.
     public var readAt: UInt64?
-    /// With `later`: epoch seconds when the item is open again.
+    /// Set by `later`: the host lists the item below the others (ADR 0040).
+    public var laterAt: UInt64?
+    /// Only from a host before ADR 0040, with `later`: when the item is open again.
     public var until: UInt64?
     public var answeredAt: UInt64?
     /// With `answered`: the answer given. Nil also when a newer host sent an action this client does not know.
@@ -41,7 +43,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 
     public init(
         id: String, kind: ItemKind, state: ItemState, question: String, workspace: String, title: String,
-        createdAt: UInt64, readAt: UInt64? = nil, until: UInt64? = nil, answeredAt: UInt64? = nil,
+        createdAt: UInt64, readAt: UInt64? = nil, laterAt: UInt64? = nil, until: UInt64? = nil, answeredAt: UInt64? = nil,
         answer: InboxAction? = nil, summary: String? = nil, task: String? = nil, session: String? = nil,
         pane: String? = nil, prompt: ChatPrompt? = nil, attachments: Attachments = Attachments(),
         routine: String? = nil, proposal: Proposal? = nil, answers: [InboxAction] = []
@@ -54,6 +56,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         self.title = title
         self.createdAt = createdAt
         self.readAt = readAt
+        self.laterAt = laterAt
         self.until = until
         self.answeredAt = answeredAt
         self.answer = answer
@@ -71,7 +74,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 
 extension InboxItem: Codable {
     private enum Key: String, CodingKey {
-        case id, kind, state, question, workspace, title, createdAt, readAt, until, answeredAt, answer
+        case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, answeredAt, answer
         case summary, task, session, pane, prompt, attachments, routine, proposal, answers
     }
 
@@ -85,6 +88,7 @@ extension InboxItem: Codable {
         title = try c.decode(String.self, forKey: .title)
         createdAt = try c.decode(UInt64.self, forKey: .createdAt)
         readAt = try c.decodeIfPresent(UInt64.self, forKey: .readAt)
+        laterAt = try c.decodeIfPresent(UInt64.self, forKey: .laterAt)
         until = try c.decodeIfPresent(UInt64.self, forKey: .until)
         answeredAt = try c.decodeIfPresent(UInt64.self, forKey: .answeredAt)
         answer = try c.decodeIfPresent(String.self, forKey: .answer).flatMap(InboxAction.init(rawValue:))
@@ -109,6 +113,7 @@ extension InboxItem: Codable {
         try c.encode(title, forKey: .title)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encodeIfPresent(readAt, forKey: .readAt)
+        try c.encodeIfPresent(laterAt, forKey: .laterAt)
         try c.encodeIfPresent(until, forKey: .until)
         try c.encodeIfPresent(answeredAt, forKey: .answeredAt)
         try c.encodeIfPresent(answer, forKey: .answer)

@@ -66,14 +66,14 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             id,
             entry,
             action,
-            until,
             text,
             option,
+            ..
         } if entry.starts_with("i-") => {
+            // `until` is ignored: Later moves an item down (ADR 0040).
             let answer = crate::items::answer::Answer {
                 item: entry,
                 action,
-                until,
                 text,
                 option,
             };
@@ -89,9 +89,8 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             id,
             entry,
             action,
-            until,
             ..
-        } => inbox::update(cx, entry, action, until)
+        } => inbox::update(cx, entry, action)
             .await
             .map(|entry| Message::InboxSaved {
                 inbox: id,

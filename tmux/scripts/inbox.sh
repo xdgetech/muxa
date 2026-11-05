@@ -68,15 +68,15 @@ JQ_DEFS='
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
   def dot: if .readAt then " " else "●" end;
   def shown: select(.state == "open" or .state == "later");
-  # Labels name the result (ADR 0033 §4a). A proposal keeps Approve and Reject.
+  # Labels name the result (ADR 0033 §4a, ADR 0040): ✓ closes only the item, and
+  # an answer that changes the Task names it. A proposal keeps Approve and Reject.
   def answer_label($a):
     (.kind == "ask") as $ask |
-    {"approve": (if $ask then "Allow" else "Approve" end), "accept": "Done (closes the Task)",
+    {"approve": (if $ask then "Allow" else "Approve" end), "accept": "Complete Task",
      "retry": "Retry", "reject": (if $ask then "Deny" else "Reject" end),
      "reply": (if $ask then "Deny & send" else "Send" end),
-     "redo": "Redo", "change-course": "Change course", "keep-open": "Keep open",
-     "drop": "Drop", "later": "Later",
-     "dismiss": (if .kind == "briefing" then "Done" else "Dismiss" end)}[$a] // $a;
+     "redo": "Redo", "change-course": "Change course", "keep-open": "✓ Done",
+     "drop": "Drop Task", "later": "Later (move down)", "dismiss": "✓ Done"}[$a] // $a;
   # [{key, act}] in the order of .answers: a is the main answer, the rest have a key each.
   def keymap: (.answers // []) as $a | [
     (if ($a | length) > 0 and ($a[0] | IN("choose", "later") | not) then {key: "a", act: $a[0]} else empty end),
@@ -127,7 +127,7 @@ detail() {
 list() {
   iq -r "$JQ_DEFS"'
     .items[] | shown |
-    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .state == "later" then " · later" else "" end)\u001b[0m"
+    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .laterAt or .state == "later" then " · later" else "" end)\u001b[0m"
   ' "$1"
 }
 
@@ -173,9 +173,9 @@ text_prompt() {
   esac
 }
 
-# Runs one answer of the item in <json>. Asks for the text or the time an action needs.
+# Runs one answer of the item in <json>. Asks for the text an action needs.
 answer() {
-  local id="$1" act="$2" json="$3" text until err kind
+  local id="$1" act="$2" json="$3" text err kind
   set -- inbox answer "$id"
   case "$act" in
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
@@ -186,10 +186,6 @@ answer() {
       IFS= read -r -e -p '> ' text || return 0
       [ -n "$text" ] || return 0
       set -- "$@" "$act" --text "$text"
-      ;;
-    later)
-      IFS= read -r -e -p 'Later until (+30m, +1h, +1d or 2026-11-05T09:00Z) [+1h]: ' until || return 0
-      set -- "$@" later --until "${until:-+1h}"
       ;;
     *) set -- "$@" "$act" ;;
   esac

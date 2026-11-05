@@ -20,7 +20,6 @@ pub struct Answer {
     pub action: InboxAction,
     pub text: Option<String>,
     pub option: Option<u32>,
-    pub until: Option<u64>,
 }
 
 /// The kebab-case name on the wire.
@@ -51,12 +50,6 @@ impl Answer {
             self.option.is_some(),
             a == InboxAction::Choose,
             "choose",
-        )?;
-        rule(
-            "--until",
-            self.until.is_some(),
-            a == InboxAction::Later,
-            "later",
         )?;
         if self
             .text
@@ -99,8 +92,8 @@ pub fn line(item: &InboxItem, now: u64) -> String {
         ItemKind::Briefing => "briefing",
     };
     let mut state = wire(json!(item.state));
-    if let (ItemState::Later, Some(u)) = (item.state, item.until) {
-        state = format!("later until {}", crate::when::format(u));
+    if item.state == ItemState::Open && item.later_at.is_some() {
+        state = "later".into();
     }
     if let (ItemState::Answered, Some(a)) = (item.state, item.answer) {
         state = format!("answered: {}", wire(json!(a)));
@@ -132,7 +125,6 @@ pub async fn answer(
         action,
         text,
         option,
-        until,
     } = answer;
     let messages = conn
         .call(
@@ -140,7 +132,7 @@ pub async fn answer(
                 id,
                 entry,
                 action,
-                until,
+                until: None,
                 text,
                 option,
             },
@@ -179,7 +171,6 @@ mod tests {
             action: super::action(action).unwrap(),
             text: None,
             option: None,
-            until: None,
         }
     }
 

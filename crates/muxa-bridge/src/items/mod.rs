@@ -11,7 +11,6 @@ use muxa_protocol::{
 };
 
 use crate::convert::error_body;
-use crate::records::now;
 use crate::task_records::Config;
 use store::ItemStore;
 
@@ -64,7 +63,8 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
 pub fn from_entry(entry: &InboxEntry) -> InboxItem {
     let (state, answer) = match entry.disposition {
         Disposition::Open => (ItemState::Open, None),
-        Disposition::Later => (ItemState::Later, None),
+        // Stored before ADR 0040; `shown` lists it as moved down.
+        Disposition::Later => (ItemState::Open, None),
         Disposition::Approved => (ItemState::Answered, Some(InboxAction::Approve)),
         Disposition::Dismissed => (ItemState::Answered, Some(InboxAction::Dismiss)),
     };
@@ -80,6 +80,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         title: entry.title.clone(),
         created_at: entry.created_at,
         read_at: entry.read_at,
+        later_at: entry.later_at.or((entry.disposition == Disposition::Later).then_some(entry.created_at)),
         until: entry.until,
         answered_at: None,
         answer,
@@ -100,11 +101,13 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
     item
 }
 
-/// The item as clients see it: a `later` past its time is `open`, with its answers.
-pub fn shown(item: &InboxItem, at: u64) -> InboxItem {
+/// The item as clients see it, with its answers. A `later` item stored before
+/// ADR 0040 is open and moved down.
+pub fn shown(item: &InboxItem) -> InboxItem {
     let mut i = item.clone();
-    if i.state == ItemState::Later && i.until.is_none_or(|u| u <= at) {
+    if i.state == ItemState::Later {
         i.state = ItemState::Open;
+        i.later_at.get_or_insert(i.created_at);
         i.until = None;
     }
     i.answers = answers(&i);
@@ -114,7 +117,6 @@ pub fn shown(item: &InboxItem, at: u64) -> InboxItem {
 /// Blocking. Every item: open ones (`ask` first, then newest), then later
 /// ones, then the newest closed ones. `entries` are the Routines' (already shown).
 pub fn list(config: &Config, entries: &[InboxEntry]) -> Result<Vec<InboxItem>, ErrorBody> {
-    let at = now();
     let mut items: Vec<InboxItem> = entries.iter().map(from_entry).collect();
     if let Some(dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) {
         let files = ItemStore::open(dir).and_then(|s| s.all()).map_err(|e| {
@@ -124,7 +126,7 @@ pub fn list(config: &Config, entries: &[InboxEntry]) -> Result<Vec<InboxItem>, E
         items.extend(
             files
                 .iter()
-                .flat_map(|t| t.items.iter().map(|s| shown(&s.item, at))),
+                .flat_map(|t| t.items.iter().map(|s| shown(&s.item))),
         );
     }
     Ok(order(items))
@@ -162,14 +164,16 @@ pub fn evidence_paths(config: &Config, pane: &str) -> Vec<String> {
 }
 
 fn order(mut items: Vec<InboxItem>) -> Vec<InboxItem> {
-    let rank = |i: &InboxItem| match (i.state, i.kind) {
-        (ItemState::Open, ItemKind::Ask) => 0,
-        (ItemState::Open, _) => 1,
-        (ItemState::Later, _) => 2,
-        _ => 3,
+    // Open and not moved down: `ask` first, then newest. Moved down: in the
+    // order they were moved (ADR 0040). Then the newest closed ones.
+    let rank = |i: &InboxItem| match (i.state, i.kind, i.later_at) {
+        (ItemState::Open, ItemKind::Ask, None) => (0, 0),
+        (ItemState::Open, _, None) => (1, 0),
+        (ItemState::Open, _, Some(at)) => (2, at),
+        _ => (3, 0),
     };
     items.sort_by(|a, b| (rank(a), b.created_at, &b.id).cmp(&(rank(b), a.created_at, &a.id)));
-    let open = items.iter().filter(|i| rank(i) < 3).count();
+    let open = items.iter().filter(|i| rank(i).0 < 3).count();
     items.truncate(open + MAX_CLOSED);
     items
 }
@@ -186,17 +190,24 @@ mod tests {
         i
     }
 
+    fn moved_down(kind: ItemKind, created_at: u64, later_at: u64) -> InboxItem {
+        let mut i = item(kind, ItemState::Open, created_at);
+        i.later_at = Some(later_at);
+        i
+    }
+
     #[test]
-    fn asks_come_first_then_newest_then_later_then_closed() {
+    fn asks_come_first_then_newest_then_moved_down_then_closed() {
         let ordered = order(vec![
             item(ItemKind::Review, ItemState::Open, 1),
             item(ItemKind::Review, ItemState::Answered, 9),
+            moved_down(ItemKind::Review, 8, 20),
             item(ItemKind::Ask, ItemState::Open, 2),
+            moved_down(ItemKind::Ask, 7, 10),
             item(ItemKind::Failure, ItemState::Open, 3),
-            item(ItemKind::Review, ItemState::Later, 8),
         ]);
         let ids: Vec<u64> = ordered.iter().map(|i| i.created_at).collect();
-        assert_eq!(ids, [2, 3, 1, 8, 9]);
+        assert_eq!(ids, [2, 3, 1, 7, 8, 9], "moved down in the order they were moved");
     }
 
     #[test]
@@ -256,10 +267,11 @@ mod tests {
     }
 
     #[test]
-    fn a_later_item_opens_again_when_its_time_passed() {
-        let mut i = item(ItemKind::Review, ItemState::Later, 1);
-        i.until = Some(10);
-        assert_eq!(shown(&i, 9).state, ItemState::Later);
-        assert_eq!(shown(&i, 10).state, ItemState::Open);
+    fn a_later_item_from_before_adr_0040_is_open_and_moved_down() {
+        let mut i = item(ItemKind::Review, ItemState::Later, 5);
+        i.until = Some(4_000_000_000);
+        let s = shown(&i);
+        assert_eq!((s.state, s.later_at, s.until), (ItemState::Open, Some(5), None));
+        assert!(s.answers.contains(&InboxAction::Later));
     }
 }

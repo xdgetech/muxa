@@ -25,7 +25,11 @@ pub struct InboxItem {
     /// Set by the `read` answer. Absent: unread.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub read_at: Option<u64>,
-    /// With `later`: epoch seconds when the item is open again.
+    /// Set by `later`: the item is listed below the others, in the order they
+    /// were moved down (ADR 0040).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub later_at: Option<u64>,
+    /// Only on an item stored before ADR 0040: when a hidden item was open again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

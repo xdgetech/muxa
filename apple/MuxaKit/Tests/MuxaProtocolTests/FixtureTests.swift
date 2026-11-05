@@ -161,7 +161,8 @@ struct FixtureTests {
         }
         #expect(entries.isEmpty)
         #expect(items.map(\.kind) == [.ask, .review, .failure, .proposal, .review, .ask])
-        #expect(items.map(\.state) == [.open, .open, .later, .open, .answered, .resolved])
+        #expect(items.map(\.state) == [.open, .open, .open, .open, .answered, .resolved])
+        #expect(items[2].laterAt == 1_762_160_500)
         #expect(items[0].answers == [.approve, .reject, .reply, .later])
         #expect(items[1].answers == [.accept, .reply, .redo, .changeCourse, .keepOpen, .later])
         #expect(items[2].answers == [.retry, .reply, .changeCourse, .drop, .dismiss, .later])
