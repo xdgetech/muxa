@@ -267,8 +267,8 @@ fn routine_contract_fixtures_round_trip() {
 #[test]
 fn item_fixtures_round_trip() {
     use muxa_protocol::{InboxAction, ItemKind, ItemState, WORK_ITEMS, work_level};
-    assert_eq!(round_trip::<Request>("items/requests.jsonl"), 16);
-    assert_eq!(round_trip::<Message>("items/messages.jsonl"), 4);
+    assert_eq!(round_trip::<Request>("items/requests.jsonl"), 17);
+    assert_eq!(round_trip::<Message>("items/messages.jsonl"), 5);
     let path = format!(
         "{}/../../protocol/fixtures/items/messages.jsonl",
         env!("CARGO_MANIFEST_DIR")

@@ -143,6 +143,20 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   wait_for 'grep -q "^inbox answer i-2c3d4e5f later --json$" "$TMPDIR/bin/calls"'
 }
 
+@test "prefix+T: g asks the workspace's agent with a text, and the item stays" {
+  fake_cli
+  jq -c '.items[1].answers += ["ask-agent"]' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  [ "$(inbox key i-2c3d4e5f g "$ITEMS")" = ask-agent ]
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key g
+  tx send-keys -K -c "$C" -l "Put this in Notion"
+  key Enter
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f ask-agent --text Put this in Notion --json$" "$TMPDIR/bin/calls"'
+}
+
 @test "prefix+T: r on a review asks for the feedback and sends it with redo" {
   fake_cli
   attach

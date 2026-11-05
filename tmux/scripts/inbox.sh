@@ -75,7 +75,7 @@ JQ_DEFS='
     {"approve": (if $ask then "Allow" else "Approve" end), "accept": "Complete Task",
      "retry": "Retry", "reject": (if $ask then "Deny" else "Reject" end),
      "reply": (if $ask then "Deny & send" else "Send" end),
-     "redo": "Redo", "change-course": "Change course", "keep-open": "✓ Done",
+     "redo": "Redo", "change-course": "Change course", "keep-open": "✓ Done", "ask-agent": "Ask agent",
      "drop": "Drop Task", "later": "Later (move down)", "dismiss": "✓ Done"}[$a] // $a;
   # [{key, act}] in the order of .answers: a is the main answer, the rest have a key each.
   def keymap: (.answers // []) as $a | [
@@ -84,6 +84,7 @@ JQ_DEFS='
     (if $a | index("reject") then {key: "r", act: "reject"}
      elif $a | index("redo") then {key: "r", act: "redo"} else empty end),
     (if $a | index("change-course") then {key: "c", act: "change-course"} else empty end),
+    (if $a | index("ask-agent") then {key: "g", act: "ask-agent"} else empty end),
     (if $a | index("keep-open") then {key: "p", act: "keep-open"} else empty end),
     (if $a | index("drop") then {key: "x", act: "drop"} else empty end),
     (if ($a | index("dismiss")) and $a[0] != "dismiss" then {key: "n", act: "dismiss"} else empty end),
@@ -169,6 +170,7 @@ text_prompt() {
   case "$1" in
     redo) echo "Feedback for the agent's last turn:" ;;
     change-course) echo "New direction for the agent:" ;;
+    ask-agent) echo "Request for the workspace's agent, with this item (the item stays open):" ;;
     reply) if [ "$2" = ask ]; then echo "Deny, then tell the agent instead:"; else echo "Message for the agent:"; fi ;;
   esac
 }
@@ -179,7 +181,7 @@ answer() {
   set -- inbox answer "$id"
   case "$act" in
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
-    reply | redo | change-course)
+    reply | redo | change-course | ask-agent)
       clear
       kind="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .kind' "$json")"
       printf '%s\n\n' "$(text_prompt "$act" "$kind")"
@@ -273,7 +275,7 @@ ui() {
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
-      --expect 'enter,ctrl-r,a,s,r,c,p,x,n,l,o,v,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,s,r,c,g,p,x,n,l,o,v,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
