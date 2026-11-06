@@ -105,6 +105,7 @@ where
         capabilities.push("task-handoff".into());
         capabilities.push("task-restart-recovery".into());
         capabilities.push("tasks-changed".into());
+        capabilities.push("workers".into());
         // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034),
         // 5 closes ask sessions (ADR 0039), 6 asks the workspace's agent from an item (ADR 0041).
         capabilities.push(muxa_protocol::work_capability(

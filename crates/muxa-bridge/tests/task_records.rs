@@ -150,7 +150,7 @@ impl Host {
         };
         assert!(capabilities.contains(&"task-records".to_owned()));
         assert!(capabilities.contains(&"task-restart-recovery".to_owned()));
-        assert!(!capabilities.contains(&"workers".to_owned()));
+        assert!(capabilities.contains(&"workers".to_owned()));
         bridge
     }
 }
@@ -1336,7 +1336,7 @@ async fn restart_with(bridge: &mut Bridge, fields: Value) -> (Option<TaskRecord>
 }
 
 /// ADR 0027 section 1 through the wire: a name, `default`, or no field (Keep);
-/// `rev` is checked only when sent. `workers` stays unadvertised.
+/// `rev` is checked only when sent.
 async fn workers_create_and_restart_through_the_wire(mode: Mode) {
     let server = Server::start();
     let mut host = worker_host("workers", mode);

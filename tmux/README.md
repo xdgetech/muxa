@@ -151,6 +151,9 @@ apps show, with a goal and a status.
   `- no repo` starts a task without a repo, in the workspace's own directory.
   A path that is not listed can be typed. An empty branch lets muxa name one
   after the title; an older muxa needs the branch. A title is required.
+  When the host lists workers (`[[worker]]`) that the workspace may use, the
+  form then asks for the agent: `default`, the workspace's own agent, comes
+  first. Without such a worker, the workspace's agent runs and nothing is asked.
   muxa starts the task through `new.sh`, hands the goal to the agent in
   `.muxa/TASK.md`, and this client moves to the new session.
 - `prefix + A` starts an ask session: muxa's agent in a repo's main checkout,

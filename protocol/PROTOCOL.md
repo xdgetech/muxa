@@ -256,9 +256,9 @@ A bridge with the `task-handoff` capability records the agents that work on a Ta
    - Once the new agent has finished a turn (`idle` or `done`, since the restart), the bridge types `Read .muxa/TASK.md and .muxa/HANDOFF.md, then continue.` When that does not happen within 30 seconds, the record's `note` says so.
    - An unknown task is `bad-request`.
 
-## Workers (implemented; not advertised)
+## Workers
 
-ADR 0022 release W adds the optional `workers` capability within protocol v1. ADR 0027 section 1 sets the selection contract below. The bridge serves named create and Keep/default/named restart, but it does **not advertise `workers`** yet. The demo bridges reject worker requests as `unsupported`.
+ADR 0022 release W adds the optional `workers` capability within protocol v1. ADR 0027 section 1 sets the selection contract below. The bridge serves named create and Keep/default/named restart, and advertises `workers` when task records are on. The demo bridges do not advertise it and reject worker requests as `unsupported`.
 
 Clients MUST check the capability before they send `worker` or restart `rev`. Older bridges may ignore unknown fields.
 

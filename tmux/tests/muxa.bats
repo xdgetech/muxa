@@ -135,6 +135,52 @@ INBOX='{"workspaces":["work"],"truncated":false,"tasks":[
     task new --workspace work --title "Write the memo" --goal "For the board" --json)" ]
 }
 
+# Workers as muxa-cli lists them: one for every workspace, one for work only.
+WORKERS='{"workspaces":["home","work"],"capabilities":["task-records","work:2","workers"],"tasks":[],"workers":[
+ {"name":"codex","agent":"codex","description":"Codex in the repo"},
+ {"name":"reviewer","agent":"claude-code","workspaces":["work"]}]}'
+
+@test "the agent picker lists default first, then the workers the workspace may use" {
+  run bash -c "printf '%s' '$WORKERS' | '$ROOT/scripts/muxa.sh' worker-rows home"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' "default${TAB}default  the workspace's agent" "codex${TAB}codex  codex  Codex in the repo")" ]
+  run bash -c "printf '%s' '$WORKERS' | '$ROOT/scripts/muxa.sh' worker-rows work"
+  [ "${#lines[@]}" -eq 3 ]
+  [ "${lines[2]}" = "reviewer${TAB}reviewer  claude-code" ]
+}
+
+@test "the agent picker has no rows without workers for the workspace" {
+  run bash -c "printf '%s' '{\"workspaces\":[\"home\"],\"tasks\":[]}' | '$ROOT/scripts/muxa.sh' worker-rows home"
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+  run bash -c "printf '%s' '{\"workers\":[{\"name\":\"r\",\"agent\":\"codex\",\"workspaces\":[]}]}' | '$ROOT/scripts/muxa.sh' worker-rows home"
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+}
+
+@test "create passes the picked worker" {
+  fake_cli '{"group":"no-agent","record":{"id":"t-00000e"},"session":{"id":"$5","name":"x"}}'
+  run muxa create work "" "" "Write the memo" "" codex
+  [ "$output" = '$5' ]
+  [ "$(cat "$TMPDIR/bin/args")" = "$(printf '%s\n' --bridge "muxa-bridge --socket $TMUX_AGENTS_SOCKET" \
+    task new --workspace work --title "Write the memo" --goal "Write the memo" --json --worker codex)" ]
+}
+
+@test "prefix+N asks for the agent when the workspace has workers" {
+  sid="$(tx display-message -p -t =base: '#{session_id}')"
+  fake_cli "$(printf '%s' "$WORKERS" | jq -c --arg sid "$sid" '. + {"group":"no-agent","record":{"id":"t-0000d2"},"session":{"id":$sid,"name":"base"}}')"
+  tx set-option -g @agents_muxa_workspace home
+  attach
+  tx send-keys -K -c "$C" C-b N
+  sleep 1.5
+  answer ""              # workspace: the default, home
+  answer "-"             # no repo
+  answer "Memo"          # title
+  answer ""              # goal: the title
+  answer "codex"         # agent
+  wait_for '[ -e "$TMPDIR/bin/ended" ]'
+  [ "$(cat "$TMPDIR/bin/args")" = "$(printf '%s\n' --bridge "muxa-bridge --socket $TMUX_AGENTS_SOCKET" \
+    task new --workspace home --title Memo --goal Memo --json --worker codex)" ]
+}
+
 @test "create says why muxa refused" {
   fake_cli ''
   FAKE_FAIL="bad-request: no workspace named \"nope\"" run muxa create nope "" "" T ""
