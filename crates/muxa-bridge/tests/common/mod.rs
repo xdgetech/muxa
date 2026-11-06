@@ -62,6 +62,14 @@ impl Server {
             "sh",
         ]);
         server.tmux(&["set-option", "-g", "default-shell", "/bin/sh"]);
+        // Scripts tmux runs (muxa for tmux's keys) list worktrees here too.
+        let xdg = server.xdg_state();
+        server.tmux(&[
+            "set-environment",
+            "-g",
+            "XDG_STATE_HOME",
+            xdg.to_str().unwrap(),
+        ]);
         let found = server.tmux(&["display-message", "-p", "#{pid} #{socket_path}"]);
         let (pid, path) = found.split_once(' ').expect("pid and socket path");
         (server.pid, server.path) = (pid.to_owned(), path.to_owned());
@@ -144,6 +152,14 @@ impl Drop for Server {
     }
 }
 
+impl Server {
+    /// `XDG_STATE_HOME` of the processes a test starts on this server, so
+    /// muxa's list of worktrees (ADR 0043) never reaches the developer's.
+    pub fn xdg_state(&self) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("muxa-xdg-{}", self.socket))
+    }
+}
+
 /// The bridge binary on a test server.
 pub struct Bridge {
     pub child: Child,
@@ -160,6 +176,7 @@ impl Bridge {
             .args(["--socket", &server.socket])
             .args(extra)
             .env_remove("TMUX")
+            .env("XDG_STATE_HOME", server.xdg_state())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)

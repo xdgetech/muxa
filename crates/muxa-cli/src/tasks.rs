@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     LoopSpec, LoopState, Message, Request, RestartRecoveryAction, TaskLoop, TaskRecord, TaskStatus,
-    WORK_ASK, WORK_READ, WorkerInfo, WorkspaceInfo, work_level,
+    WORK_ASK, WORK_READ, WorkerInfo, WorkspaceInfo, WorktreeEnd, work_level,
 };
 use serde_json::json;
 
@@ -267,13 +267,14 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
     Ok(String::new())
 }
 
-/// `task done` and `task drop`: closes the Task's record. Its session, if
-/// any, keeps running (PROTOCOL.md, update-task). Reads the record's `rev`
-/// first; a `conflict` means it changed meanwhile.
+/// `task done` and `task drop`: ends the Task with its session and worktree
+/// (PROTOCOL.md, update-task; ADR 0043). Reads the record's `rev` first; a
+/// `conflict` means it changed meanwhile.
 pub async fn close(
     conn: &mut Conn,
     task: &str,
     status: TaskStatus,
+    worktree: WorktreeEnd,
     as_json: bool,
 ) -> Result<String, String> {
     let (_, records, _, _) = fetch(conn).await?;
@@ -289,6 +290,7 @@ pub async fn close(
                 task: task.to_owned(),
                 rev,
                 status,
+                worktree: Some(worktree),
             },
             WAIT,
         )

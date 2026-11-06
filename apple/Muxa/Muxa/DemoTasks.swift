@@ -187,7 +187,13 @@ extension DemoTasks {
     enum Refusal: Error {
         case badRequest(String)
         case conflict
+        /// Done or Drop with `worktree: remove` on a Task in `unmerged` (ADR 0043).
+        case wouldLoseWork(String)
     }
+
+    /// Tasks whose branch is not merged: Done or Drop asks before it removes the
+    /// worktree, so the UI tests can answer the question.
+    static let unmerged = ["t-perf01": "its branch is not merged"]
 
     /// A new record, or why the bridge refuses it. `launched` is false when the launch fails.
     mutating func create(
@@ -212,9 +218,14 @@ extension DemoTasks {
         return record
     }
 
-    mutating func update(_ id: String, rev: UInt64, status: TaskStatus) throws(Refusal) -> TaskRecord {
+    mutating func update(
+        _ id: String, rev: UInt64, status: TaskStatus, worktree: WorktreeEnd? = nil
+    ) throws(Refusal) -> TaskRecord {
         guard let i = records.firstIndex(where: { $0.id == id }) else { throw .badRequest("\(id) is not a task") }
         guard records[i].rev == rev else { throw .conflict }
+        if worktree == .remove, status == .done || status == .dropped, let reason = Self.unmerged[id] {
+            throw .wouldLoseWork(reason)
+        }
         records[i].rev += 1
         records[i].status = status
         records[i].updatedAt = Self.now

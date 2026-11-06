@@ -260,10 +260,7 @@ mod tests {
         let mut failure = item(ItemKind::Failure, ItemState::Open, 1);
         assert_eq!(answers(&failure), [Drop, Dismiss, AskAgent, Later]);
         failure.session = Some("$1".into());
-        assert_eq!(
-            answers(&failure),
-            [Retry, Reply, Drop, Dismiss, Later]
-        );
+        assert_eq!(answers(&failure), [Retry, Reply, Drop, Dismiss, Later]);
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
     }
 

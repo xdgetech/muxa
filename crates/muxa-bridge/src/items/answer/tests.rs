@@ -112,6 +112,7 @@ fn answer(item: &str, action: InboxAction) -> Answer {
         action,
         text: None,
         option: None,
+        worktree: None,
     }
 }
 
@@ -187,9 +188,8 @@ async fn an_unknown_item_or_an_answer_it_does_not_take_is_a_bad_request() {
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::BadRequest);
     assert!(
-        e.message.contains(
-            "it takes accept, reply, keep-open, ask-agent, later, or read"
-        ),
+        e.message
+            .contains("it takes accept, reply, keep-open, ask-agent, later, or read"),
         "{}",
         e.message
     );

@@ -36,6 +36,8 @@ use socket::Control;
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 const CONNECT_WAIT: Duration = Duration::from_millis(500);
 const TICK: Duration = Duration::from_secs(2);
+/// Between two worktree sweeps (ADR 0043 §6).
+const SWEEP_EVERY: Duration = Duration::from_secs(10 * 60);
 /// What `install` and `restart` wait for the new daemon to answer `hello`.
 const START_WAIT: Duration = Duration::from_secs(5);
 const START_POLL: Duration = Duration::from_millis(100);
@@ -72,6 +74,8 @@ struct Daemon {
     tmux: Arc<tmux::Lazy>,
     loops: tokio::sync::Mutex<loops::Engine>,
     items: tokio::sync::Mutex<items::Watch>,
+    /// When the last worktree sweep started (ADR 0043 §6); None before the first.
+    swept: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl Daemon {
@@ -128,6 +132,26 @@ impl Daemon {
         drop(items);
         self.park(idle).await;
         crate::routines::tick(&self.records).await;
+        self.sweep();
+    }
+
+    /// Starts a worktree sweep at start, then every [`SWEEP_EVERY`], in the
+    /// background: it runs git on each worktree nothing holds.
+    fn sweep(&self) {
+        let Ok(mut swept) = self.swept.lock() else {
+            return;
+        };
+        if swept.is_some_and(|at| at.elapsed() < SWEEP_EVERY) {
+            return;
+        }
+        *swept = Some(std::time::Instant::now());
+        let cx = self.records.clone();
+        self.records.pending.spawn(async move {
+            let pending = crate::task_records::sweep::sweep(&cx).await;
+            if !pending.is_empty() {
+                tracing::info!(count = pending.len(), "worktrees wait for the user");
+            }
+        });
     }
 }
 
@@ -212,6 +236,7 @@ fn run(args: args::Args) -> ExitCode {
         },
         loops: tokio::sync::Mutex::new(engine),
         items: tokio::sync::Mutex::new(items::Watch::default()),
+        swept: std::sync::Mutex::new(None),
         tmux,
     };
     match runtime.block_on(serve(Arc::new(daemon), &path)) {

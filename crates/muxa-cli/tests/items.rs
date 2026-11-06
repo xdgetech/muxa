@@ -118,10 +118,7 @@ fn each_answer_sends_its_action_and_flags() {
             vec!["choose", "--option", "1"],
             json!({"action": "choose", "option": 1}),
         ),
-        (
-            vec!["later"],
-            json!({"action": "later"}),
-        ),
+        (vec!["later"], json!({"action": "later"})),
         (vec!["keep-open"], json!({"action": "keep-open"})),
         (vec!["reject"], json!({"action": "reject"})),
     ] {

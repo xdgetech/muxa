@@ -8,6 +8,7 @@ struct TaskDetail: View {
     let id: String
     @State private var saving = false
     @State private var error: String?
+    @State private var lostWork: LostWork?
     @State private var loopStart: LoopStart?
     @State private var loopError: String?
 
@@ -65,6 +66,7 @@ struct TaskDetail: View {
         .navigationTitle(r.title)
         .navigationBarTitleDisplayMode(.inline)
         .loopSheets(starting: $loopStart, error: $loopError)
+        .lostWorkAlert($lostWork)
         .alert("Can't Change the Status", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -86,15 +88,20 @@ struct TaskDetail: View {
 
     private static let statuses: [TaskStatus] = [.open, .review, .done, .dropped]
 
-    private func set(_ status: TaskStatus, on r: TaskRecord) {
+    /// Done and Drop remove the worktree; when that could lose work, the user decides.
+    private func set(_ status: TaskStatus, on r: TaskRecord, worktree: WorktreeEnd = .remove) {
         guard status != r.status, !saving else { return }
         saving = true
         Task {
             defer { saving = false }
             do {
-                _ = try await model.session.updateTask(r, status: status)
+                _ = try await model.session.updateTask(r, status: status, worktree: worktree)
             } catch {
-                self.error = PaneSession.describe(error)
+                if let reason = PaneSession.lostWork(error) {
+                    lostWork = LostWork(reason: reason) { set(status, on: r, worktree: .force) }
+                } else {
+                    self.error = PaneSession.describe(error)
+                }
             }
         }
     }

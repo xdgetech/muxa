@@ -81,6 +81,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             action,
             text,
             option,
+            worktree,
             ..
         } if entry.starts_with("i-") => {
             // `until` is ignored: Later moves an item down (ADR 0040).
@@ -89,6 +90,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 action,
                 text,
                 option,
+                worktree,
             };
             crate::items::answer::update(cx, answer)
                 .await

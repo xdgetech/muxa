@@ -50,9 +50,9 @@ struct TaskRecordTests {
 
 @MainActor
 struct TaskWriteTests {
-    func connected() async throws -> (PaneSession, FakeBridge) {
+    func connected(capabilities: [String] = ["task-records"]) async throws -> (PaneSession, FakeBridge) {
         let bridge = FakeBridge()
-        bridge.capabilities = ["task-records"]
+        bridge.capabilities = capabilities
         bridge.taskRecords = [TaskRecordTests.record]
         let session = PaneSession()
         try await session.connect {
@@ -105,5 +105,36 @@ struct TaskWriteTests {
         }
         #expect(session.taskRecords.first?.rev == 2)
         #expect(session.taskRecords.first?.status == .review)
+    }
+
+    /// Done at `work` level 7 removes the worktree; work that could be lost needs a yes (ADR 0043).
+    @Test func doneAsksBeforeItLosesWork() async throws {
+        let (session, bridge) = try await connected(capabilities: ["task-records", "work:7"])
+        bridge.unmerged = [TaskRecordTests.record.id]
+        do {
+            _ = try await session.updateTask(TaskRecordTests.record, status: .done)
+            Issue.record("unmerged work must be refused")
+        } catch {
+            #expect(PaneSession.lostWork(error) == "its branch is not merged")
+        }
+        #expect(session.taskRecords.first?.status == .open, "nothing changed")
+        let saved = try await session.updateTask(TaskRecordTests.record, status: .done, worktree: .force)
+        #expect(saved.status == .done)
+        let ends = bridge.received.compactMap { if case .updateTask(_, _, _, _, let end) = $0 { end } else { nil } }
+        #expect(ends == [.remove, .force])
+    }
+
+    @Test func onlyAnEndSendsTheWorktreeAndOnlyToALevel7Host() async throws {
+        let (session, bridge) = try await connected(capabilities: ["task-records", "work:7"])
+        let review = try await session.updateTask(TaskRecordTests.record, status: .review)
+        _ = try await session.updateTask(review, status: .dropped)
+        let (older, olderBridge) = try await connected(capabilities: ["task-records", "work:6"])
+        _ = try await older.updateTask(TaskRecordTests.record, status: .done)
+        let sent = { (b: FakeBridge) in b.received.compactMap { if case .updateTask(_, _, _, let s, let end) = $0 { (s, end) } else { nil } } }
+        #expect(sent(bridge).map(\.0) == [.review, .dropped])
+        #expect(sent(bridge).map(\.1) == [nil, .remove])
+        #expect(sent(olderBridge).map(\.1) == [nil])
+        #expect(PaneSession.removeAnyway("its branch is not merged")
+            == "Its branch is not merged. Remove its worktree and branch anyway?")
     }
 }

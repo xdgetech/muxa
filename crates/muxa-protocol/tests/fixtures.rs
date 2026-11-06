@@ -227,6 +227,52 @@ fn ask_close_fixtures_round_trip() {
 }
 
 #[test]
+fn worktree_end_fixtures_round_trip() {
+    use muxa_protocol::{ErrorCode, WORK_END_REMOVES, WorktreeEnd, work_level};
+    assert_eq!(round_trip::<Request>("worktree-end/requests.jsonl"), 3);
+    assert_eq!(round_trip::<Message>("worktree-end/messages.jsonl"), 4);
+    let read = |name: &str| {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/worktree-end/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    };
+    let requests: Vec<Request> = read("requests.jsonl")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        requests[1],
+        Request::UpdateTask {
+            worktree: Some(WorktreeEnd::Force),
+            ..
+        }
+    ));
+    let messages: Vec<Message> = read("messages.jsonl")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[0] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_END_REMOVES);
+    let Message::Result {
+        error: Some(error), ..
+    } = &messages[1]
+    else {
+        panic!()
+    };
+    assert_eq!(error.code, ErrorCode::WouldLoseWork);
+    // A client before level 7 sends no `worktree`; the worktree stays.
+    let old: Request = serde_json::from_str(
+        r#"{"type":"update-task","id":1,"task":"t-7f3a2c","rev":3,"status":"done"}"#,
+    )
+    .unwrap();
+    assert!(matches!(old, Request::UpdateTask { worktree: None, .. }));
+}
+
+#[test]
 fn routine_contract_fixtures_round_trip() {
     use muxa_protocol::{Disposition, InboxAction, work_level};
     assert_eq!(round_trip::<Request>("routines/requests.jsonl"), 6);
@@ -344,14 +390,8 @@ fn reply_fixtures_round_trip() {
             .unwrap()
     };
     assert_eq!(answers("i-0a1b2c3d"), [Approve, Reject, Reply, Later]);
-    assert_eq!(
-        answers("i-2c3d4e5f"),
-        [Accept, Reply, KeepOpen, Later]
-    );
-    assert_eq!(
-        answers("i-3d4e5f6a"),
-        [Retry, Reply, Drop, Dismiss, Later]
-    );
+    assert_eq!(answers("i-2c3d4e5f"), [Accept, Reply, KeepOpen, Later]);
+    assert_eq!(answers("i-3d4e5f6a"), [Retry, Reply, Drop, Dismiss, Later]);
     let proposal = items.iter().find(|i| i.kind == ItemKind::Proposal).unwrap();
     assert!(!proposal.answers.contains(&Reply));
 }

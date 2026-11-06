@@ -14,7 +14,7 @@ use crate::records::workers::{LaunchCommand, ResolvedWorker};
 
 use super::{
     Closing, LAUNCH_TIMEOUT, Launch, Launched, TaskError, TaskLauncher, TaskRequest, TaskSession,
-    git, last_line, run, session_for_worktree, session_name,
+    git, last_line, run, session_for_worktree, session_name, worktrees,
 };
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -170,82 +170,31 @@ impl TaskLauncher for Builtin {
         mode: CloseMode,
     ) -> Closing<'a> {
         Box::pin(async move {
-            let remove = mode != CloseMode::Keep && task.worktree.is_dir();
-            if remove {
-                check_removable(task, mode).await?;
-            }
+            let main = task
+                .repo_dir
+                .clone()
+                .unwrap_or_else(|| task.worktree.clone());
+            let removal = if mode != CloseMode::Keep && task.worktree.is_dir() {
+                if mode == CloseMode::Close {
+                    if let Some(why) = worktrees::risk(&task.worktree, &main).await? {
+                        return Err(TaskError::Failed(format!(
+                            "{}: {why}. Close it with mode force to remove the worktree and branch anyway, or keep to keep them.",
+                            task.name
+                        )));
+                    }
+                }
+                let force = mode == CloseMode::Force;
+                Some(worktrees::Removal::read(&main, &task.worktree, force).await)
+            } else {
+                None
+            };
             super::end_session(client, task.id, &task.name).await?;
-            if remove {
-                remove_worktree(task).await?;
+            if let Some(removal) = removal {
+                removal.run(&task.name).await?;
             }
             Ok(())
         })
     }
-}
-
-/// Nothing may be lost: no uncommitted changes, and for `close`, a merged branch.
-async fn check_removable(task: &TaskSession, mode: CloseMode) -> Result<(), TaskError> {
-    let out = run(
-        git(&task.worktree).args(["status", "--porcelain"]),
-        GIT_TIMEOUT,
-        "git status",
-    )
-    .await?;
-    if !out.status.success() || !out.stdout.is_empty() {
-        return Err(TaskError::Failed(format!(
-            "{} has uncommitted changes. Commit or stash them, or close it and keep the worktree.",
-            task.name
-        )));
-    }
-    if mode == CloseMode::Close && !merged(task).await {
-        return Err(TaskError::Failed(format!(
-            "{} is not merged. Close it and keep the worktree, or remove the worktree anyway.",
-            task.name
-        )));
-    }
-    Ok(())
-}
-
-/// The branch adds nothing to the repo's default branch.
-async fn merged(task: &TaskSession) -> bool {
-    let main = task
-        .repo_dir
-        .clone()
-        .unwrap_or_else(|| task.worktree.clone());
-    let Ok(base) = default_base(&main).await else {
-        return false;
-    };
-    run(
-        git(&task.worktree).args(["merge-base", "--is-ancestor", "HEAD", &base]),
-        GIT_TIMEOUT,
-        "git merge-base",
-    )
-    .await
-    .is_ok_and(|o| o.status.success())
-}
-
-/// Without `--force`: git itself refuses a worktree with changes.
-async fn remove_worktree(task: &TaskSession) -> Result<(), TaskError> {
-    let main = task
-        .repo_dir
-        .clone()
-        .unwrap_or_else(|| task.worktree.clone());
-    let out = run(
-        git(&main).arg("worktree").arg("remove").arg(&task.worktree),
-        GIT_TIMEOUT,
-        "git worktree remove",
-    )
-    .await?;
-    if out.status.success() {
-        return Ok(());
-    }
-    let why = last_line(&out.stderr).unwrap_or_default();
-    Err(TaskError::Failed(format!(
-        "closed {}, but could not remove {}: {}",
-        task.name,
-        task.worktree.display(),
-        why.trim_start_matches("fatal: ")
-    )))
 }
 
 /// A task's worktree and the main checkout it belongs to.
@@ -292,7 +241,7 @@ pub(crate) async fn worktree(req: &TaskRequest) -> Result<Worktree, TaskError> {
     } else {
         let base = match &req.base {
             Some(b) => b.clone(),
-            None => default_base(&main).await?,
+            None => worktrees::default_base(&main).await?,
         };
         add.args(["-b", &req.branch]).arg(&path).arg(base);
     }
@@ -305,6 +254,7 @@ pub(crate) async fn worktree(req: &TaskRequest) -> Result<Worktree, TaskError> {
             req.branch
         )));
     }
+    worktrees::register(&path);
     Ok(Worktree { main, path })
 }
 
@@ -391,20 +341,4 @@ pub(crate) async fn has_ref(dir: &Path, name: &str) -> bool {
     )
     .await
     .is_ok_and(|o| o.status.success())
-}
-
-/// origin's default branch, else the main checkout's current one.
-async fn default_base(main: &Path) -> Result<String, TaskError> {
-    for args in [
-        &["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"][..],
-        &["rev-parse", "--abbrev-ref", "HEAD"][..],
-    ] {
-        let out = run(git(main).args(args), GIT_TIMEOUT, "git").await?;
-        if let Some(base) = last_line(&out.stdout).filter(|_| out.status.success()) {
-            return Ok(base);
-        }
-    }
-    Err(TaskError::Failed(
-        "the repo has no default branch to start from; give a base".into(),
-    ))
 }

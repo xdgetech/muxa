@@ -57,13 +57,11 @@ internal class DemoItems(private var items: List<InboxItem>) {
             }
         }
         items = items.map { if (it.id == id) saved else it }
-        val status = when (action) {
-            InboxAction.ACCEPT -> TaskStatus.DONE
-            InboxAction.DROP -> TaskStatus.DROPPED
-            else -> null
-        }
-        return Answer(saved, status)
+        return Answer(saved, ending(action))
     }
+
+    /** The Task of item [id], when it has one. */
+    fun task(id: String): String? = items.firstOrNull { it.id == id }?.task
 
     private fun check(action: InboxAction, item: InboxItem, text: String?, option: Int?) {
         if (action == InboxAction.REPLY) {
@@ -77,6 +75,13 @@ internal class DemoItems(private var items: List<InboxItem>) {
 
     companion object {
         private const val MAX_TEXT = 4096
+
+        /** The status [action] gives the item's Task: Done and Drop end it. */
+        fun ending(action: InboxAction): TaskStatus? = when (action) {
+            InboxAction.ACCEPT -> TaskStatus.DONE
+            InboxAction.DROP -> TaskStatus.DROPPED
+            else -> null
+        }
         /**
          * A Routine's entry as an item; it keeps its `e-` id, as the host's `from_entry` does.
          * [laterAt] is when Later moved it down. A stored `later` entry is open (ADR 0040).

@@ -81,9 +81,14 @@ sealed interface Request {
         val worker: String? = null,
     ) : Request
 
-    /** Set a task record's [status]. [rev] is the one the client saw; a stale one fails with `conflict`. */
+    /**
+     * Set a task record's [status]. [rev] is the one the client saw; a stale one fails with `conflict`.
+     * [worktree] goes with `done` and `dropped`; without it the worktree stays.
+     */
     @Serializable
-    data class UpdateTask(override val id: Long, val task: String, val rev: Long, val status: TaskStatus) : Request
+    data class UpdateTask(
+        override val id: Long, val task: String, val rev: Long, val status: TaskStatus, val worktree: WorktreeEnd? = null,
+    ) : Request
 
     /**
      * Restart a task's agent in the same pane, after a handoff (capability `task-handoff`, ADR 0018).
@@ -127,6 +132,8 @@ sealed interface Request {
         val until: Long? = null,
         val text: String? = null,
         val option: Int? = null,
+        /** As `update-task`'s, for an answer that makes the Task done or dropped. */
+        val worktree: WorktreeEnd? = null,
     ) : Request
 
     /**
@@ -147,5 +154,13 @@ enum class CloseMode {
     @SerialName("close") CLOSE,
     @SerialName("keep") KEEP,
     /** Remove it even when the branch is not merged. */
+    @SerialName("force") FORCE,
+}
+
+/** What a Task's end does with its worktree and branch (`work` level 7, ADR 0043). */
+@Serializable
+enum class WorktreeEnd {
+    /** Removes them, unless that could lose work: then `would-lose-work` and nothing changes. */
+    @SerialName("remove") REMOVE,
     @SerialName("force") FORCE,
 }

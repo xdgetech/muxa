@@ -103,16 +103,16 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "work:6",
+            "task-loop", "tasks-changed", "viewport", "work:7",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:6" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:7" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:6" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:7" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:6" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:7" ? "work:3" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -200,9 +200,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
         case .listRoutines, .listInbox, .runRoutine, .updateInboxEntry:
             serveWork(req)
-        case .updateTask(let id, let task, let rev, let status):
+        case .updateTask(let id, let task, let rev, let status, let worktree):
             let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
-                do throws(DemoTasks.Refusal) { return .success(try tasks.update(task, rev: rev, status: status)) } catch { return .failure(error) }
+                do throws(DemoTasks.Refusal) {
+                    return .success(try tasks.update(task, rev: rev, status: status, worktree: worktree))
+                } catch { return .failure(error) }
             }
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
@@ -314,6 +316,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             emit(.result(id: id, error: ErrorBody(code: .badRequest, message: message), sessions: nil))
         case .failure(.conflict):
             emit(.result(id: id, error: ErrorBody(code: .conflict, message: "conflict"), sessions: nil))
+        case .failure(.wouldLoseWork(let reason)):
+            emit(.result(id: id, error: ErrorBody(code: .wouldLoseWork, message: reason), sessions: nil))
         }
     }
 
@@ -377,13 +381,13 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .updateInboxEntry(let id, let entry, .askAgent, _, let text, _):
+        case .updateInboxEntry(let id, let entry, .askAgent, _, let text, _, _):
             askAgent(id: id, item: entry, text: text)
         // `until` is ignored: Later moves an item down (ADR 0040).
-        case .updateInboxEntry(let id, let entry, let action, _, let text, let option):
+        case .updateInboxEntry(let id, let entry, let action, _, let text, let option, let worktree):
             let isEntry = lock.withLock { work.entries.contains { $0.id == entry } }
             if Self.workLevel >= workItems, !isEntry || action == .read {
-                answerItem(id: id, item: entry, action: action, text: text, option: option)
+                answerItem(id: id, item: entry, action: action, text: text, option: option, worktree: worktree)
             } else {
                 // A proposal's Reject dismisses it.
                 updateEntry(id: id, entry: entry, action: action == .reject ? .dismiss : action)
@@ -425,10 +429,12 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     /// Answers a Task's item, or marks any item read. The agent that takes the answer
     /// runs again; Accept and Drop set the Task's status.
-    private func answerItem(id: UInt64, item: String, action: InboxAction, text: String?, option: UInt32?) {
+    private func answerItem(
+        id: UInt64, item: String, action: InboxAction, text: String?, option: UInt32?, worktree: WorktreeEnd?
+    ) {
         let outcome = lock.withLock { () -> Result<(InboxItem, DemoWork.ItemEffect), DemoWork.Refusal> in
             do throws(DemoWork.Refusal) {
-                let answered = try work.answer(item, action, text: text, option: option, tasks: &tasks)
+                let answered = try work.answer(item, action, text: text, option: option, worktree: worktree, tasks: &tasks)
                 if case .agentRuns(let pane) = answered.1 {
                     for s in sessions.indices {
                         guard let p = sessions[s].panes.firstIndex(where: { $0.id == pane }) else { continue }
@@ -558,6 +564,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             emit(.result(id: id, error: ErrorBody(code: .badRequest, message: message), sessions: nil))
         case .failure(.conflict):
             emit(.result(id: id, error: ErrorBody(code: .conflict, message: "the task changed since you read it"), sessions: nil))
+        case .failure(.wouldLoseWork(let reason)):
+            emit(.result(id: id, error: ErrorBody(code: .wouldLoseWork, message: reason), sessions: nil))
         }
     }
 

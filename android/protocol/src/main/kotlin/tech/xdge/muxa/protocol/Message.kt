@@ -205,5 +205,7 @@ value class ErrorCode(val name: String) {
         val TASK_FAILED = ErrorCode("task-failed")
         /** The task record changed since the client read it; list it again. */
         val CONFLICT = ErrorCode("conflict")
+        /** Removing the worktree could lose work; the message says why. Nothing changed (ADR 0043). */
+        val WOULD_LOSE_WORK = ErrorCode("would-lose-work")
     }
 }

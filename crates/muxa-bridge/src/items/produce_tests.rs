@@ -440,10 +440,7 @@ fn an_unsent_start_prompt_offers_retry_in_its_session() {
         (item.session.as_deref(), item.pane.as_deref()),
         (Some("$3"), Some("%7"))
     );
-    assert_eq!(
-        item.answers,
-        [Retry, Reply, Drop, Dismiss, Later]
-    );
+    assert_eq!(item.answers, [Retry, Reply, Drop, Dismiss, Later]);
 }
 
 #[test]

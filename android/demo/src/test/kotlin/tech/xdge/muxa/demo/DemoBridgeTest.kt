@@ -183,6 +183,23 @@ class DemoBridgeTest {
         assertEquals(TaskStatus.DONE, session.state.value.tasks!!.record("t-login1")!!.status)
     }
 
+    /** t-perf01's branch is not merged: Done asks first, and only the forced end saves it (ADR 0043). */
+    @Test
+    fun anUnmergedTaskEndsOnlyWhenForced() = runBlocking {
+        val (session, _) = connected()
+        val seen = session.state.value.tasks!!.record("t-perf01")!!
+        try {
+            session.updateTask(seen, TaskStatus.DONE)
+            fail("unmerged work should be refused")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorCode.WOULD_LOSE_WORK, e.body.code)
+            assertEquals("its branch is not merged", e.body.message)
+        }
+        assertEquals(TaskStatus.OPEN, session.state.value.tasks!!.record("t-perf01")!!.status)
+        session.updateTask(seen, TaskStatus.DONE, forceWorktree = true)
+        assertEquals(TaskStatus.DONE, session.state.value.tasks!!.record("t-perf01")!!.status)
+    }
+
     @Test
     fun aTaskSessionListsItsBrief() = runBlocking {
         val (session, _) = connected()

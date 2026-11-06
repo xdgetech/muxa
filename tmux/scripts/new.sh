@@ -53,6 +53,7 @@ default_worktree() {
   else
     git -C "$main" worktree add -q -b "$branch" "$path" "${base:-$(default_base "$main")}"
   fi 2>"$err" || return 1
+  register_worktree "$path" || log "could not list $path in $(worktrees_dir)"
   printf '%s\n' "$path"
 }
 

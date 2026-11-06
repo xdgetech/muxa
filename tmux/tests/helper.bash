@@ -8,6 +8,8 @@ setup_server() {
   TMPDIR="$(mktemp -d /tmp/ta.XXXXXX)"
   export TMPDIR
   export TMUX_AGENTS_SOCKET="ta-$$-${BATS_TEST_NUMBER}"
+  # The list of muxa's worktrees (ADR 0043) must not reach the developer's.
+  export XDG_STATE_HOME="$TMPDIR/state"
   # Outside any git repo, so the tree shows no branch for it.
   tx -f /dev/null new-session -d -s base -x 200 -y 50 -c "$TMPDIR"
   tx set-option -g @agents_check_gh off

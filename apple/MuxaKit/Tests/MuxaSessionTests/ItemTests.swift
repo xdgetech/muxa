@@ -26,7 +26,7 @@ final class ItemBridge: FakeBridge, @unchecked Sendable {
         case .listRoutines(let id):
             emit(.routineList(routines: id, entries: []))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .updateInboxEntry(let id, let entry, let action, _, let text, _):
+        case .updateInboxEntry(let id, let entry, let action, _, let text, _, _):
             record(req)
             guard let i = items.firstIndex(where: { $0.id == entry }) else { return refuse(id, .badRequest, "no such item") }
             if action == .askAgent, items[i].answers.contains(.askAgent) {
@@ -119,8 +119,21 @@ struct ItemTests {
         #expect(saved.answer == .reply)
         #expect(session.openItems.map(\.id) == ["i-00000001"])
         #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000002", .reply, nil, "Keep the old export.", nil) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-00000002", .reply, nil, "Keep the old export.", nil, nil) = $0 { true } else { false }
         })
+    }
+
+    /// Complete Task ends the Task with its worktree at `work` level 7 (ADR 0043); Done does not.
+    @Test func completeTaskRemovesTheWorktreeOnALevel7Host() async throws {
+        let bridge = ItemBridge()
+        bridge.items[0].answers = [.keepOpen]
+        let session = try await connected(bridge, level: "work:7")
+        try await session.answer(session.openItems[0], .keepOpen)
+        try await session.answer(session.openItems[0], .accept)
+        let sent = bridge.sent.compactMap { if case .updateInboxEntry(_, _, let a, _, _, _, let end) = $0 { (a, end) } else { nil } }
+            .filter { $0.0 != .read }
+        #expect(sent.map(\.0) == [.keepOpen, .accept])
+        #expect(sent.map(\.1) == [nil, .remove])
     }
 
     @Test func theHostsRefusalIsShownAndTheListIsReadAgain() async throws {
@@ -153,7 +166,7 @@ struct ItemTests {
         #expect(session.openItems[0].readAt == 50)
         #expect(session.openItems[0].state == .open)
         await session.markRead(session.openItems[0])
-        let reads = bridge.sent.filter { if case .updateInboxEntry(_, _, .read, _, _, _) = $0 { true } else { false } }
+        let reads = bridge.sent.filter { if case .updateInboxEntry(_, _, .read, _, _, _, _) = $0 { true } else { false } }
         #expect(reads.count == 1)
     }
 
@@ -173,7 +186,7 @@ struct ItemTests {
         #expect(started == StartedSession(id: "$9", name: "ask-w"))
         #expect(session.openItems.map(\.id) == ["i-00000001", "i-00000002"], "the item stays open")
         #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000002", .askAgent, nil, "Put this in Notion.", nil) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-00000002", .askAgent, nil, "Put this in Notion.", nil, nil) = $0 { true } else { false }
         })
         // A host without Ask Agent lists no such answer: nothing is sent.
         await #expect(throws: PaneSession.Failure.self) { try await session.askAgent(session.openItems[0], text: "x") }
@@ -254,7 +267,7 @@ struct ItemTests {
         let session = try await connected(bridge)
         try await session.answer(session.openItems[0], .reply, text: "Run terraform plan first.")
         #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000001", .reply, nil, "Run terraform plan first.", nil) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-00000001", .reply, nil, "Run terraform plan first.", nil, nil) = $0 { true } else { false }
         })
     }
 

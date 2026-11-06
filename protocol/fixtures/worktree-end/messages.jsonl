@@ -1,0 +1,4 @@
+{"type":"hello","protocol":1,"bridge":"0.1.0","tmux":"3.5a","capabilities":["close-task","task-records","work:7"]}
+{"type":"result","id":61,"error":{"code":"would-lose-work","message":"its branch is not merged"}}
+{"type":"task-saved","task":62,"record":{"id":"t-7f3a2c","rev":4,"workspace":"app","title":"Fix the login timeout","goal":"Find why login times out after 30 s and fix it.","status":"done","createdAt":1767225600,"updatedAt":1767240000,"repo":"/work/app","branch":"fix/login-timeout","dir":"/work/app-fix-login-timeout"}}
+{"type":"result","id":62}

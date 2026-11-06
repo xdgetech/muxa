@@ -93,13 +93,16 @@ In the tree: `j`/`k` move, `Enter` go to the task or fold a section, `space`
 fold a section, `1`–`9` go to that task (letters only through `prefix + j`),
 `Esc` leave, `n` new task, `c` new window in the task's worktree, `o` IDE,
 `r` rename, `R` reload, `?` every key in a popup.
-`x` closes the session and removes the worktree, but only when it is clean and
-merged. A session with no worktree, such as an ask or manual session, just closes. `X` closes the session and keeps the worktree. `ctrl-x` removes the
-worktree even when the branch is not merged, but still not when it has
-uncommitted changes. The branch is always kept.
+`x` closes the session and removes its worktree and branch (ADR 0043). When
+that could lose work (uncommitted changes, or a branch that is not merged), the
+question says so, and a yes removes them anyway. A session with no worktree, such
+as an ask or manual session, just closes. `ctrl-x` does the same as `x`.
 When the session runs a muxa Task, these keys show a menu instead of the y/n
-question: close and mark the Task done, close and drop it, or close and keep it
-open. The Task changes only once the session is closed.
+question: close and mark the Task done, close and drop it, or park it: close the
+session and keep the Task open with its worktree. `X` parks directly. A session
+without a Task has nothing to keep its worktree for, so `X` does not close it.
+The Task changes only once the session is closed. Without a yes, the branch goes
+only when each of its commits is in the base branch or on a remote.
 Every close also stops what is left running in the worktree: processes whose
 directory is in it, also orphans, and Docker Compose projects started from it
 (`docker compose down`, volumes are kept).
@@ -209,6 +212,13 @@ tasks through the names below. They stay stable; a change to one is a breaking c
   or finds the running one for the branch. It prints the session name on its last
   line. On failure it exits non-zero. A tool must pass `--no-switch`: without it,
   the attached client moves to the new session.
+- `close.sh [--keep|--force|--check] [--task done|dropped] <session>` closes a
+  task's session. Without `--keep` it removes the worktree and its branch when
+  nothing can be lost, and fails otherwise; `--force` removes them anyway.
+  `--check` prints why removing could lose work, or nothing.
+- Worktrees that `new.sh` creates are listed in `$XDG_STATE_HOME/muxa/worktrees/`
+  (else `~/.local/state/muxa/worktrees/`): one file per worktree, named after its
+  path with `/` as `%`. Only listed worktrees are ever removed without a close.
 - `TMUX_AGENTS_SOCKET`: when set, the scripts use `tmux -L <it>`.
 - Session options: `@agent_repo` (repo name), `@agent_repo_dir` (main checkout),
   `@agent_branch`, `@agent_worktree`, `@agent_task`, and `@muxa_task`: the muxa

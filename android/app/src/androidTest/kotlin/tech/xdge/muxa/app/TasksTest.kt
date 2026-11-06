@@ -30,6 +30,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.session.InboxGroup
 
 /** Tasks mode (ADR 0035) against the demo bridge's records: one Task in each group. */
@@ -331,6 +332,32 @@ class TasksTest {
         // It opens its new session's pane.
         tap("task-open-pane")
         compose.waitUntilAtLeastOneExists(hasText("plan-the-trip"), TIMEOUT)
+    }
+
+    private fun pickDone() {
+        tap("task-status")
+        waitForTag("status-done")
+        compose.onNodeWithTag("status-done").performClick()
+    }
+
+    /**
+     * ADR 0043: the demo's t-perf01 has a branch that is not merged. Done asks first with the
+     * host's reason; Cancel keeps the Task open, and Remove ends it.
+     */
+    @Test
+    fun doneAsksBeforeItRemovesUnmergedWork() {
+        openTasks()
+        openTask("t-perf01")
+        pickDone()
+        waitForText("lose-work-message", "Its branch is not merged. Remove its worktree and branch anyway?")
+        compose.onNodeWithTag("lose-work-cancel").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("lose-work-message"), TIMEOUT)
+        assertEquals(TaskStatus.OPEN, model.state.tasks?.record("t-perf01")?.status)
+        pickDone()
+        waitForTag("lose-work-remove")
+        compose.onNodeWithTag("lose-work-remove").performClick()
+        compose.waitUntil(TIMEOUT) { model.state.tasks?.record("t-perf01")?.status == TaskStatus.DONE }
+        compose.onNodeWithTag("lose-work-message").assertDoesNotExist()
     }
 
     @Test

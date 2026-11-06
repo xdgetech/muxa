@@ -1,0 +1,3 @@
+{"type":"update-task","id":61,"task":"t-7f3a2c","rev":3,"status":"done","worktree":"remove"}
+{"type":"update-task","id":62,"task":"t-7f3a2c","rev":3,"status":"done","worktree":"force"}
+{"type":"update-inbox","id":63,"entry":"i-00000001","action":"drop","worktree":"remove"}

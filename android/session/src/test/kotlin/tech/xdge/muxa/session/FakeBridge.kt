@@ -26,6 +26,7 @@ import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WorkspaceInfo
 import tech.xdge.muxa.protocol.WorkerInfo
 import tech.xdge.muxa.protocol.Wire
+import tech.xdge.muxa.protocol.WorktreeEnd
 import tech.xdge.muxa.transport.BridgeChannel
 import java.util.concurrent.Executors
 
@@ -52,6 +53,9 @@ open class FakeBridge : BridgeChannel {
     var workspaces = listOf(WorkspaceInfo("work"))
     var workers = listOf<WorkerInfo>()
     var tasks = listOf<TaskRecord>()
+
+    /** Set: `worktree: remove` is refused with `would-lose-work` and this reason, as for unmerged work. */
+    var loseWork: String? = null
 
     /** False: the daemon went away after `hello`, so loop requests are `unsupported`. */
     var daemon = true
@@ -129,6 +133,11 @@ open class FakeBridge : BridgeChannel {
                 val current = tasks.first { it.id == req.task }
                 if (current.rev != req.rev) {
                     emit(Message.Result(req.id, ErrorBody(ErrorCode.CONFLICT, "stale rev")))
+                    return
+                }
+                val reason = loseWork
+                if (reason != null && req.worktree == WorktreeEnd.REMOVE) {
+                    emit(Message.Result(req.id, ErrorBody(ErrorCode.WOULD_LOSE_WORK, reason)))
                     return
                 }
                 val saved = current.copy(rev = current.rev + 1, status = req.status)

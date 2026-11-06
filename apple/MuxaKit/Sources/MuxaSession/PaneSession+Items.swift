@@ -17,18 +17,22 @@ extension PaneSession {
 
     /// Answers `item` and returns it as the host saved it. A refusal lists the Inbox
     /// again, because another device or the terminal may have answered first.
+    /// Complete Task and Drop Task take `worktree` as `updateTask` does.
     @discardableResult
     public func answer(
-        _ item: InboxItem, _ action: InboxAction, text: String? = nil, option: UInt32? = nil
+        _ item: InboxItem, _ action: InboxAction, text: String? = nil, option: UInt32? = nil,
+        worktree: WorktreeEnd = .remove
     ) async throws -> InboxItem {
         guard canUseItems else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.itemsUnsupported))
         }
+        let end = action == .accept || action == .drop ? worktreeEnd(worktree) : nil
         var requestId: UInt64 = 0
         do {
             try await request { id in
                 requestId = id
-                return .updateInboxEntry(id: id, entry: item.id, action: action, until: nil, text: text, option: option)
+                return .updateInboxEntry(
+                    id: id, entry: item.id, action: action, until: nil, text: text, option: option, worktree: end)
             }
         } catch Failure.bridge(let body) where body.code == .conflict {
             savedItems[requestId] = nil

@@ -256,3 +256,73 @@ async fn the_daemon_attaches_one_no_output_client_and_reattaches() {
     assert_eq!(still, "80x24", "the daemon's client sized a window");
     assert!(daemon.shutdown().await.success());
 }
+
+/// ADR 0043 §6: at start the daemon removes a listed worktree that nothing
+/// holds when nothing can be lost. One with work, or one a pane works in, stays.
+#[tokio::test]
+async fn the_daemon_sweeps_listed_worktrees_nothing_holds() {
+    let server = Server::start();
+    let host = Host::new("sweep");
+    let repo = common::repo::Repo::new("daemon-sweep");
+    let root = repo.root.join("repos/.worktrees");
+    std::fs::create_dir_all(&root).unwrap();
+    let list = server.xdg_state().join("muxa/worktrees");
+    std::fs::create_dir_all(&list).unwrap();
+    let add = |branch: &str| {
+        let path = root.join(format!("app-{branch}"));
+        common::repo::git(
+            &repo.app,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                branch,
+                path.to_str().unwrap(),
+            ],
+        );
+        let real = path.canonicalize().unwrap();
+        let entry = list.join(real.display().to_string().replace('/', "%"));
+        std::fs::write(entry, format!("{}\n", real.display())).unwrap();
+        real
+    };
+    let clean = add("clean");
+    let work = add("work");
+    common::repo::git(
+        &work,
+        &[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "work",
+        ],
+    );
+    let held = add("held");
+    server.tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        "held",
+        "-c",
+        held.to_str().unwrap(),
+        "sh",
+    ]);
+
+    let _daemon = host.daemon(&server).await;
+    common::wait_until(|| !clean.exists()).await;
+    let branch = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo.app)
+        .args(["rev-parse", "--verify", "-q", "refs/heads/clean"])
+        .output()
+        .unwrap();
+    assert!(!branch.status.success(), "the branch went with it");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(work.is_dir(), "unmerged work waits for the user");
+    assert!(held.is_dir(), "a pane works in it");
+}

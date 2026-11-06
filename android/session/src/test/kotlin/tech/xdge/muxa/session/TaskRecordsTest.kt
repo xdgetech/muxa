@@ -6,11 +6,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
 import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorktreeEnd
 
 class TaskRecordsTest {
     private fun record(id: String, rev: Long = 1, status: TaskStatus = TaskStatus.OPEN) =
@@ -109,5 +111,43 @@ class TaskRecordsTest {
             assertTrue(PaneSession.describe(e).contains("changed on another device"))
         }
         assertEquals(TaskStatus.REVIEW, session.state.value.tasks?.record("t-1")?.status)
+    }
+
+    /** Level 7: Done and Drop take the worktree; work that could be lost waits for the user's force (ADR 0043). */
+    @Test
+    fun anEndAsksBeforeItLosesWork() = runBlocking {
+        val bridge = FakeBridge().apply {
+            capabilities = listOf("task-records", "work:7")
+            tasks = listOf(record("t-1"))
+            loseWork = "its branch is not merged"
+        }
+        val session = connected(bridge)
+        val seen = session.state.value.tasks!!.records.single()
+        assertTrue(session.state.value.endsWorktrees)
+        try {
+            session.updateTask(seen, TaskStatus.DROPPED)
+            fail("unmerged work should be refused")
+        } catch (e: PaneSession.Failure.Bridge) {
+            assertEquals(ErrorBody(ErrorCode.WOULD_LOSE_WORK, "its branch is not merged"), e.body)
+        }
+        assertEquals(TaskStatus.OPEN, session.state.value.tasks?.record("t-1")?.status)
+        session.updateTask(seen, TaskStatus.DROPPED, forceWorktree = true)
+        assertEquals(TaskStatus.DROPPED, session.state.value.tasks?.record("t-1")?.status)
+        val sent = bridge.received.filterIsInstance<Request.UpdateTask>()
+        assertEquals(listOf(WorktreeEnd.REMOVE, WorktreeEnd.FORCE), sent.map { it.worktree })
+    }
+
+    /** Only an end on a level 7 host sends `worktree`; an older host keeps the worktree as before. */
+    @Test
+    fun otherStatusesAndOlderHostsSendNoWorktree() = runBlocking {
+        for ((level, status) in listOf(7 to TaskStatus.REVIEW, 6 to TaskStatus.DONE)) {
+            val bridge = FakeBridge().apply {
+                capabilities = listOf("task-records", "work:$level")
+                tasks = listOf(record("t-1"))
+            }
+            val session = connected(bridge)
+            session.updateTask(session.state.value.tasks!!.records.single(), status, forceWorktree = true)
+            assertNull(bridge.received.filterIsInstance<Request.UpdateTask>().single().worktree)
+        }
     }
 }

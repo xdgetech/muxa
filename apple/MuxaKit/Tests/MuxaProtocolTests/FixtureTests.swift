@@ -116,6 +116,37 @@ struct FixtureTests {
         #expect(sessions.map(\.ask) == [nil, "lisk"])
     }
 
+    @Test func worktreeEndContractRoundTrips() throws {
+        let requests = try Self.lines("worktree-end/requests.jsonl")
+        #expect(requests.count == 3)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("worktree-end/messages.jsonl")
+        #expect(messages.count == 4)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workWorktreeEnd)
+        guard case .result(_, let error?, _) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected an error result"); return
+        }
+        #expect(error == ErrorBody(code: .wouldLoseWork, message: "its branch is not merged"))
+        let ends = try requests.map(Wire.decodeRequest).map { request -> WorktreeEnd? in
+            switch request {
+            case .updateTask(_, _, _, .done, let end), .updateInboxEntry(_, _, .drop, nil, nil, nil, let end): end
+            default: nil
+            }
+        }
+        #expect(ends == [.remove, .force, .remove])
+        // Without `worktree` the request is as before: the host keeps the worktree.
+        let plain = try Wire.encode(Request.updateTask(id: 1, task: "t-1", rev: 1, status: .done))
+        #expect(!String(decoding: plain, as: UTF8.self).contains("worktree"))
+    }
+
     @Test func routineContractRoundTrips() throws {
         let requests = try Self.lines("routines/requests.jsonl")
         #expect(requests.count == 6)
@@ -179,14 +210,14 @@ struct FixtureTests {
             Issue.record("expected inbox-saved with an entry and an item"); return
         }
         #expect(entry.id == both.id)
-        guard case .updateInboxEntry(_, _, .choose, nil, nil, 1?) = try Wire.decodeRequest(requests[3]) else {
+        guard case .updateInboxEntry(_, _, .choose, nil, nil, 1?, nil) = try Wire.decodeRequest(requests[3]) else {
             Issue.record("expected choose with option 1"); return
         }
-        guard case .updateInboxEntry(_, _, .keepOpen, nil, nil, nil) = try Wire.decodeRequest(requests[6]) else {
+        guard case .updateInboxEntry(_, _, .keepOpen, nil, nil, nil, nil) = try Wire.decodeRequest(requests[6]) else {
             Issue.record("expected keep-open"); return
         }
         let replies = try requests.map(Wire.decodeRequest).filter {
-            if case .updateInboxEntry(_, _, .reply, nil, let text?, nil) = $0 { !text.isEmpty } else { false }
+            if case .updateInboxEntry(_, _, .reply, nil, let text?, nil, nil) = $0 { !text.isEmpty } else { false }
         }
         #expect(replies.count == 3)
     }

@@ -344,6 +344,30 @@ final class TasksTests: XCTestCase {
         save("record-done")
     }
 
+    /// Done on a Task with unmerged work asks first (ADR 0043): Cancel keeps it open,
+    /// Remove ends it with its worktree.
+    @MainActor
+    func testDoneOnUnmergedWorkAsksBeforeRemovingTheWorktree() throws {
+        let app = launchOnTasks()
+        openTask(app, "t-perf01")
+        let status = app.buttons["task-status"]
+        reveal(app, status)
+        tapWhenReady(status)
+        tapWhenReady(app.buttons["Done"])
+        let alert = app.alerts["Remove the Worktree?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertTrue(alert.staticTexts["Its branch is not merged. Remove its worktree and branch anyway?"].exists)
+        save("worktree-lose-work")
+        alert.buttons["Cancel"].tap()
+        XCTAssertTrue(waitFor(status, labelOrValue: "Open"), "Cancel changes nothing")
+
+        tapWhenReady(status)
+        tapWhenReady(app.buttons["Done"])
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        alert.buttons["Remove"].tap()
+        XCTAssertTrue(waitFor(status, labelOrValue: "Done"))
+    }
+
     /// Scrolls Tasks to a task, then opens it: on a phone the lower groups are off screen.
     @MainActor
     private func openTask(_ app: XCUIApplication, _ id: String) {

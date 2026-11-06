@@ -3,7 +3,9 @@
 
 use std::time::Duration;
 
-use muxa_protocol::{InboxAction, InboxItem, ItemKind, ItemState, Message, Request, WORK_ITEMS};
+use muxa_protocol::{
+    InboxAction, InboxItem, ItemKind, ItemState, Message, Request, WORK_ITEMS, WorktreeEnd,
+};
 use serde_json::json;
 
 use crate::conn::Conn;
@@ -20,6 +22,8 @@ pub struct Answer {
     pub action: InboxAction,
     pub text: Option<String>,
     pub option: Option<u32>,
+    /// Used by the host only when the answer ends the Task (ADR 0043).
+    pub worktree: Option<WorktreeEnd>,
 }
 
 /// The kebab-case name on the wire.
@@ -30,10 +34,7 @@ pub fn action(name: &str) -> Option<InboxAction> {
 impl Answer {
     pub fn checked(self) -> Result<Self, String> {
         let a = self.action;
-        let wants_text = matches!(
-            a,
-            InboxAction::Reply | InboxAction::AskAgent
-        );
+        let wants_text = matches!(a, InboxAction::Reply | InboxAction::AskAgent);
         let rule = |name: &str, given: bool, wanted: bool, needs: &str| match (given, wanted) {
             (false, true) => Err(format!("{needs} needs {name}")),
             (true, false) => Err(format!("{name} is only for {needs}")),
@@ -129,6 +130,7 @@ pub async fn answer(
         action,
         text,
         option,
+        worktree,
     } = answer;
     let messages = conn
         .call(
@@ -139,6 +141,7 @@ pub async fn answer(
                 until: None,
                 text,
                 option,
+                worktree,
             },
             match action {
                 _ if launches => LAUNCH_WAIT,
@@ -175,6 +178,7 @@ mod tests {
             action: super::action(action).unwrap(),
             text: None,
             option: None,
+            worktree: None,
         }
     }
 

@@ -76,7 +76,7 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   wait_for '[ ! -d "$wt" ]'  # removed after the session is gone
 }
 
-@test "ctrl-x then y removes the worktree of an unmerged task" {
+@test "x on an unmerged task says so, and y removes its worktree anyway" {
   wt="$(tx show-options -t =feature-one: -qv @agent_worktree)"
   [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
   git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
@@ -84,11 +84,25 @@ active() { tx display-message -p -c "$C" "#{$1}"; }
   key k
   key k
   select_row feature-one
-  key C-x
+  key x
   sleep 0.5
   key y
   wait_for '! tx has-session -t =feature-one 2>/dev/null'
   wait_for '[ ! -d "$wt" ]'  # removed after the session is gone
+}
+
+@test "X on a session without a Task leaves it and its worktree" {
+  wt="$(tx show-options -t =feature-one: -qv @agent_worktree)"
+  key C-b Tab
+  key k
+  key k
+  select_row feature-one
+  key X
+  sleep 0.5
+  key y
+  sleep 0.5
+  tx has-session -t =feature-one
+  [ -d "$wt" ]
 }
 
 @test "a finished turn stays done until you look at its window" {

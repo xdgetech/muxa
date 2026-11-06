@@ -124,6 +124,35 @@ git_where() {
   printf '%s\t%s\n' "$branch" "${out#*$'\n'}"
 }
 
+# muxa's list of the worktrees it created (ADR 0043). Only listed worktrees are
+# ever removed without the user closing their session. One file per worktree,
+# named after its resolved path with '/' as '%', holding that path.
+worktrees_dir() {
+  local s="${XDG_STATE_HOME:-}"
+  case "$s" in /*) ;; *) s="$HOME/.local/state" ;; esac
+  printf '%s/muxa/worktrees' "$s"
+}
+worktree_entry() { printf '%s/%s' "$(worktrees_dir)" "$(printf '%s' "$1" | tr '/' '%')"; }
+register_worktree() {
+  local real
+  real="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  mkdir -p "$(worktrees_dir)" && printf '%s\n' "$real" >"$(worktree_entry "$real")"
+}
+# <resolved path>: the worktree may already be gone, so callers resolve it first.
+unregister_worktree() { rm -f "$(worktree_entry "$1")"; }
+
+# The reason in muxa-cli's would-lose-work error, or nothing (ADR 0043).
+lost_work() { printf '%s\n' "$1" | sed -n 's/.*would-lose-work: //p' | tail -n 1; }
+
+# On a terminal: whether to remove a Task's worktree and branch after all.
+confirm_loss() {
+  local answer
+  printf '%s. Remove its worktree and branch anyway? (y/n) ' "$1"
+  IFS= read -r -n 1 answer || return 1
+  echo
+  [ "$answer" = y ]
+}
+
 # Branch new work starts from: origin's default branch, else the main checkout's branch.
 default_base() {
   git -C "$1" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null \

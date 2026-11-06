@@ -56,8 +56,9 @@ public enum Request: Equatable, Sendable {
         id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?,
         branch: String?, base: String?, loop: LoopSpec? = nil, worker: String? = nil)
     /// Set a task record's status. `rev` is the one the client saw; a stale one
-    /// fails with `conflict`. A `task-saved` comes first.
-    case updateTask(id: UInt64, task: String, rev: UInt64, status: TaskStatus)
+    /// fails with `conflict`. A `task-saved` comes first. `worktree` (`work` level 7)
+    /// goes with `done` and `dropped`; nil keeps the worktree.
+    case updateTask(id: UInt64, task: String, rev: UInt64, status: TaskStatus, worktree: WorktreeEnd? = nil)
     /// Restart a task's agent in the same pane, after a handoff (capability
     /// `task-handoff`, ADR 0018). Refused while the agent runs, unless `force`.
     /// A `task-saved` comes first.
@@ -76,8 +77,11 @@ public enum Request: Equatable, Sendable {
     /// The stored Inbox entries (capability `work` level 1).
     case listInbox(id: UInt64)
     /// Answer a stored entry or an Inbox item (its `i-` id). `until` goes with
-    /// `later`, `text` with `redo`, `change-course` and `reply`, `option` with `choose`.
-    case updateInboxEntry(id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil)
+    /// `later`, `text` with `redo`, `change-course` and `reply`, `option` with `choose`,
+    /// `worktree` with an answer that makes the Task done or dropped.
+    case updateInboxEntry(
+        id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil,
+        worktree: WorktreeEnd? = nil)
     /// An agent session in a repo's main checkout, to ask about its code: no
     /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as
     /// `createTask`'s. A `session-started` comes first.
@@ -92,10 +96,10 @@ public enum Request: Equatable, Sendable {
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
-            .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _),
+            .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
-            .updateInboxEntry(let id, _, _, _, _, _), .startSession(let id, _, _):
+            .updateInboxEntry(let id, _, _, _, _, _, _), .startSession(let id, _, _):
             id
         }
     }
@@ -106,7 +110,7 @@ extension Request: Codable {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
         case cols, rows, operation, action
-        case routine, entry, until, option
+        case routine, entry, until, option, worktree
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -148,11 +152,12 @@ extension Request: Codable {
             try c.encodeIfPresent(base, forKey: .base)
             try c.encodeIfPresent(loop, forKey: .loop)
             try c.encodeIfPresent(worker, forKey: .worker)
-        case .updateTask(let id, let task, let rev, let status):
+        case .updateTask(let id, let task, let rev, let status, let worktree):
             try c.head("update-task", id)
             try c.encode(task, forKey: .task)
             try c.encode(rev, forKey: .rev)
             try c.encode(status, forKey: .status)
+            try c.encodeIfPresent(worktree, forKey: .worktree)
         case .restartAgent(let id, let task, let force, let worker, let rev):
             try c.head("restart-agent", id)
             try c.encode(task, forKey: .task)
@@ -183,13 +188,14 @@ extension Request: Codable {
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(repo, forKey: .repo)
-        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option):
+        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option, let worktree):
             try c.head("update-inbox", id)
             try c.encode(entry, forKey: .entry)
             try c.encode(action, forKey: .action)
             try c.encodeIfPresent(until, forKey: .until)
             try c.encodeIfPresent(text, forKey: .text)
             try c.encodeIfPresent(option, forKey: .option)
+            try c.encodeIfPresent(worktree, forKey: .worktree)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -276,7 +282,8 @@ extension Request: Codable {
             self = .updateTask(
                 id: id, task: try c.decode(String.self, forKey: .task),
                 rev: try c.decode(UInt64.self, forKey: .rev),
-                status: try c.decode(TaskStatus.self, forKey: .status))
+                status: try c.decode(TaskStatus.self, forKey: .status),
+                worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree))
         case "restart-agent":
             self = .restartAgent(
                 id: id, task: try c.decode(String.self, forKey: .task),
@@ -309,7 +316,8 @@ extension Request: Codable {
                 action: try c.decode(InboxAction.self, forKey: .action),
                 until: try c.decodeIfPresent(UInt64.self, forKey: .until),
                 text: try c.decodeIfPresent(String.self, forKey: .text),
-                option: try c.decodeIfPresent(UInt32.self, forKey: .option))
+                option: try c.decodeIfPresent(UInt32.self, forKey: .option),
+                worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(
@@ -347,5 +355,13 @@ public enum CloseMode: String, Codable, Sendable {
     /// Keep it.
     case keep
     /// Remove it even when the branch is not merged.
+    case force
+}
+
+/// What a Task's end does with its worktree (`work` level 7, ADR 0043).
+public enum WorktreeEnd: String, Codable, Sendable {
+    /// Remove it and its branch; refused with `would-lose-work` when work could be lost.
+    case remove
+    /// Remove them even then, after the user said yes.
     case force
 }

@@ -175,6 +175,7 @@ async fn new_sh_links_the_session_when_it_creates_it() {
             "--no-switch",
         ])
         .env("TMUX_AGENTS_SOCKET", &server.socket)
+        .env("XDG_STATE_HOME", server.xdg_state())
         .env_remove("TMUX")
         .output()
         .unwrap();
@@ -201,4 +202,136 @@ async fn new_sh_links_the_session_when_it_creates_it() {
     );
     drop(bridge);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// What closing left behind: the error, whether the worktree, the branch and
+/// the list entry (ADR 0043) are still there.
+async fn close_outcome(
+    server: &Server,
+    bridge: &mut Bridge,
+    repo: &Repo,
+    branch: &str,
+    mode: &str,
+) -> String {
+    // Both launchers name the session after the branch.
+    let session = branch.replace(['/', '.'], "-");
+    let worktree = PathBuf::from(server.tmux(&[
+        "show-options",
+        "-qv",
+        "-t",
+        &format!("={session}:"),
+        "@agent_worktree",
+    ]));
+    let listed = server.xdg_state().join("muxa/worktrees").join(
+        worktree
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+            .replace('/', "%"),
+    );
+    let id = server.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &format!("={session}:"),
+        "#{session_id}",
+    ]);
+    let result = bridge
+        .request_within(
+            json!({"type": "close-task", "session": id, "mode": mode}),
+            LAUNCH_WAIT,
+        )
+        .await;
+    let refused = match result {
+        Message::Result { error: None, .. } => "closed".to_owned(),
+        Message::Result { error: Some(e), .. } => {
+            if e.message.contains("uncommitted") {
+                "refused: uncommitted".to_owned()
+            } else if e.message.contains("not merged") {
+                "refused: unmerged".to_owned()
+            } else {
+                format!("refused: {}", e.message)
+            }
+        }
+        other => panic!("{other:?}"),
+    };
+    let branch_kept = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&repo.app)
+        .args([
+            "rev-parse",
+            "--verify",
+            "-q",
+            &format!("refs/heads/{branch}"),
+        ])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    format!(
+        "{branch} {mode}: {refused}, worktree={}, branch={branch_kept}, listed={}",
+        worktree.exists(),
+        listed.exists()
+    )
+}
+
+#[tokio::test]
+async fn both_launchers_remove_a_worktree_alike() {
+    let Some(checkout) = checkout() else { return };
+    let mut seen = Vec::new();
+    for launcher in ["tmux-agents", "builtin"] {
+        let server = if launcher == "builtin" {
+            Server::start()
+        } else {
+            agents_server(&checkout)
+        };
+        let repo = Repo::new(&format!("contract-close-{launcher}"));
+        let (dir, mut args) = host(&format!("close-{launcher}"));
+        if launcher == "builtin" {
+            args.extend(["--task-launcher", "builtin", "--task-command", "cat"].map(String::from));
+        }
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (mut bridge, _) = Bridge::start(&server, &args).await;
+        let mut outcomes = Vec::new();
+        for branch in ["feat/merged", "feat/unmerged", "feat/dirty"] {
+            create(&mut bridge, &repo.app, branch).await;
+        }
+        let wt = |b: &str| {
+            repo.root
+                .join("repos/.worktrees")
+                .join(format!("app-{}", b.replace('/', "-")))
+        };
+        common::repo::git(
+            &wt("feat/unmerged"),
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "work",
+            ],
+        );
+        std::fs::write(wt("feat/dirty").join("wip.txt"), "wip\n").unwrap();
+        for (branch, mode) in [
+            ("feat/merged", "close"),
+            ("feat/unmerged", "close"),
+            ("feat/dirty", "close"),
+            ("feat/unmerged", "force"),
+            ("feat/dirty", "force"),
+        ] {
+            outcomes.push(close_outcome(&server, &mut bridge, &repo, branch, mode).await);
+        }
+        drop(bridge);
+        let _ = std::fs::remove_dir_all(dir);
+        seen.push(outcomes);
+    }
+    assert_eq!(
+        seen[1], seen[0],
+        "the built-in launcher (left) no longer closes as tmux-agents does (right)"
+    );
 }

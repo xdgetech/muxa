@@ -11,6 +11,8 @@ public let workAsk: UInt32 = 2
 public let workCloseAsk: UInt32 = 5
 /// Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041).
 public let workAskAgent: UInt32 = 6
+/// Level 7: `worktree` on `update-task` and `update-inbox`, and `would-lose-work` (ADR 0043).
+public let workWorktreeEnd: UInt32 = 7
 
 /// The highest `work` level in `capabilities`; 0 when the host has none.
 public func workLevel(_ capabilities: [String]) -> UInt32 {

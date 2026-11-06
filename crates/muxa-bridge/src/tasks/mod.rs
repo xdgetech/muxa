@@ -6,6 +6,7 @@ pub mod ask;
 pub mod branch;
 pub mod builtin;
 pub mod tmux_agents;
+pub mod worktrees;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -77,8 +78,8 @@ pub trait TaskLauncher: Send + Sync {
     /// Starts the task, or finds the one already running for the branch, and
     /// returns its session. It must never move an attached client.
     fn launch<'a>(&'a self, client: &'a Client, req: &'a TaskRequest) -> Launch<'a>;
-    /// Closes the task's session, and removes its worktree as `mode` allows.
-    /// A worktree with uncommitted changes is never removed; the branch is kept.
+    /// Closes the task's session, and removes its worktree and branch as
+    /// `mode` allows (ADR 0043). `close` refuses when work could be lost.
     fn close<'a>(
         &'a self,
         client: &'a Client,

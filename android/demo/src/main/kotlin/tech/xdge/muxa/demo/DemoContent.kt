@@ -63,6 +63,9 @@ internal interface DemoContent {
 
     /** The Tasks' Inbox items (ADR 0033); a host at `work` level 3 serves them. */
     fun items(now: Long): DemoItems = DemoItems(emptyList())
+
+    /** Tasks whose branch is not merged: ending one with `worktree: remove` is `would-lose-work` (ADR 0043). */
+    val unmerged: Set<String> get() = emptySet()
 }
 
 /** A record as the bridge writes one; [rev] 1 unless it was changed since. */
@@ -395,6 +398,8 @@ internal object TestContent : DemoContent {
     override fun work(now: Long) = DemoWork.tests(now)
 
     override fun items(now: Long) = DemoItems.tests(now)
+
+    override val unmerged = setOf("t-perf01")
 
     /** A frame that shows whether the grid is exact: corners, a ruler and the last row. */
     override fun screen(p: Pane): ByteArray {

@@ -275,6 +275,7 @@ pub async fn act(
                 until: None,
                 text: None,
                 option: None,
+                worktree: None,
             },
             wait,
         )

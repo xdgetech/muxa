@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. The developer chose this on 2026-11-04. It adds to ADR 0033 (Accept marks the Task done) and ADR 0026 (Routine runs). It follows the direction of ADR 0034 §4: a session can close while the Task's record and files stay.
+Proposed. The developer chose this on 2026-11-04. ADR 0043 supersedes §1's "the worktree or folder stays": a worktree goes when nothing holds it. It adds to ADR 0033 (Accept marks the Task done) and ADR 0026 (Routine runs). It follows the direction of ADR 0034 §4: a session can close while the Task's record and files stay.
 
 ## Context
 

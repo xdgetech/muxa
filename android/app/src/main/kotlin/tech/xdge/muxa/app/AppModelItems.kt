@@ -49,17 +49,23 @@ fun AppModel.setReply(item: InboxItem, text: String) {
 fun AppModel.answer(item: InboxItem, action: InboxAction, option: Int? = null) {
     val text = reply(item).trim().takeIf { action.needsText }
     if (action.needsText && text.isNullOrEmpty()) return
+    sendAnswer(item, action, text, option)
+}
+
+/** Done and Drop that could lose work ask first ([AppModel.losingWork]); Remove sends them again with [forceWorktree]. */
+internal fun AppModel.sendAnswer(item: InboxItem, action: InboxAction, text: String?, option: Int?, forceWorktree: Boolean = false) {
     if (answeringItem != null) return
     inboxPrompt = null
     val before = inboxItems.map { it.id }
     answeringItem = item.id
     scope.launch {
         try {
-            session.answer(item, action, text, option)
+            session.answer(item, action, text, option, forceWorktree)
             itemReplies = itemReplies - item.id
             afterAnswer(item.id, before)
         } catch (e: PaneSession.Failure) {
-            inboxError = PaneSession.describe(e)
+            val reason = e.lostWork
+            if (reason != null) losingWork = LosingWork.Answer(item, action, text, option, reason) else inboxError = PaneSession.describe(e)
         } finally {
             answeringItem = null
         }

@@ -63,7 +63,7 @@ sequenceDiagram
 | `close-task` | `id`, `session`, `mode` | close a task's session (capability `close-task`), or an ask session (`work` level 5, Ask sessions below) |
 | `list-tasks` | `id` | list the task records and workspaces (capability `task-records`); a `task-list` comes before the `result` |
 | `create-task` | `id`, `workspace`, `title`, `goal`, optional `project`, `repo`, `branch`, `base`, `loop {check, maxAttempts?, timeout?}`, `worker` (Workers below), `read` (Reading Tasks below) | record a task and start its agent, with a Task Loop when `loop` is set (capability `task-loop`); a `task-saved` comes before the `result` |
-| `update-task` | `id`, `task`, `rev`, `status` | set a task record's status; a `task-saved` comes before the `result` |
+| `update-task` | `id`, `task`, `rev`, `status`, optional `worktree` (`work` level 7) | set a task record's status; a `task-saved` comes before the `result` |
 | `restart-agent` | `id`, `task`, optional `force`, `worker`, `rev` (Workers below) | restart the task's agent in the same pane, after a handoff (capability `task-handoff`); a `task-saved` comes before the `result` |
 | `branch-task` | `id`, `task`, optional `branch` | give a reading Task a worktree and restart its agent there (capability `work` level 4, Reading Tasks below); a `task-saved` comes before the `result` |
 | `park-task` | `id`, `task` | write the handoff and close the Task's session; the Task stays (capability `work` level 4); a `task-saved` comes before the `result` |
@@ -73,7 +73,7 @@ sequenceDiagram
 | `list-routines` | `id` | list the host's Routines (capability `work` level 1, Routines below); a `routine-list` comes before the `result` |
 | `run-routine` | `id`, `workspace`, `routine` | start a run of an enabled Routine now; needs the muxa daemon; a `routine-saved` comes before the `result` |
 | `list-inbox` | `id` | list the stored Inbox entries (capability `work` level 1); an `inbox-list` comes before the `result` |
-| `update-inbox` | `id`, `entry`, `action`, optional `text`, `option` | approve, dismiss or move down a stored entry; an `inbox-saved` comes before the `result` |
+| `update-inbox` | `id`, `entry`, `action`, optional `text`, `option`, `worktree` (`work` level 7) | approve, dismiss or move down a stored entry; an `inbox-saved` comes before the `result` |
 | `start-session` | `id`, `workspace`, `repo` | start an ask session: the workspace's agent in the repo's main checkout, with no Task (capability `work` level 2, Ask sessions below); a `session-started` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
@@ -111,7 +111,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `session-started` | `start`, `session`, `name` |
 | `bye` | `reason` |
 
-Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `conflict`, `tmux`, `internal`.
+Error codes: `bad-request`, `invalid-pane`, `no-pane`, `unsupported-key`, `too-large`, `unsupported`, `task-failed`, `conflict`, `would-lose-work`, `tmux`, `internal`.
 
 ### Sessions
 
@@ -198,11 +198,11 @@ A bridge with the `tasks` capability starts tasks: a git worktree on a branch, a
 3. A wrong `repo`, `branch` or `base` is `bad-request`. A failed launch is `task-failed`; the message says why. A launch can take several seconds, and other requests are answered meanwhile.
 4. The new session is detached. No attached client moves, and no existing window or pane changes.
 5. `close-task {session, mode}` closes a task: a session with a `worktree`. `session` is its id. With `work` level 5 it also closes an ask session (Ask sessions below). Other sessions are `bad-request`. `mode` says what happens to the worktree:
-   - `close`: removed when the branch is merged; otherwise the request fails and nothing changes.
+   - `close`: removed with its branch when nothing can be lost: no uncommitted changes, and the branch is merged. Otherwise the request fails and nothing changes.
    - `keep`: kept.
-   - `force`: removed even when the branch is not merged.
+   - `force`: removed with its branch, also with uncommitted changes or an unmerged branch. A client sends it only after the user said yes.
 
-   A worktree with uncommitted changes is never removed: the request fails and nothing changes. The branch is always kept. Clients attached to the session, the bridge's own included, move to the most recently used other session before it closes. The `result` comes when it is closed; a failure is `task-failed` with the reason.
+   Without `force`, the branch goes only when each of its commits is in the base branch or on a remote (ADR 0043). Clients attached to the session, the bridge's own included, move to the most recently used other session before it closes. The `result` comes when it is closed; a failure is `task-failed` with the reason.
 
 ## Task records
 
@@ -231,7 +231,8 @@ A bridge with the `task-records` capability keeps Tasks: durable records of work
    - A failed launch still keeps the record, with a `note`. The bridge sends `task-saved` with it, then a `result` with `task-failed`. The record names a `session` only when one started before the failure.
    - A wrong workspace, `repo`, `branch` or `base`, or an empty `title`, is `bad-request`, and no record is kept.
    - The bridge writes `.muxa/TASK.md` in `dir`. It types `Read .muxa/TASK.md and start.` into the agent pane once the agent's state is `idle`, or a `done` that began after the wait. When that does not happen within 30 seconds, it does not type it, and the record's `note` says so. The record has a new `rev` then.
-4. `update-task {task, rev, status}` sets the status of the record whose id is `task`. `rev` is the one the client last saw. When the record changed since, the request fails with `conflict` and nothing changes: list again and retry. On success, `task-saved` with the new record comes before the `result`. Setting `done` or `dropped` then closes the Task's session, as `close-task` does with mode `keep`: the worktree or folder stays (ADR 0037). This happens after the `result` and does not change it. Other statuses never start or close a session. A request without `status` is `bad-request`: the `inbox {down?, until?}` of the removed Inbox queue (ADR 0027 §4, removed by ADR 0033) is no longer read. A record that a host stored with an `inbox` field still loads; the host keeps the field on disk and never sends it.
+4. `update-task {task, rev, status}` sets the status of the record whose id is `task`. `rev` is the one the client last saw. When the record changed since, the request fails with `conflict` and nothing changes: list again and retry. On success, `task-saved` with the new record comes before the `result`. Setting `done` or `dropped` then closes the Task's session, as `close-task` does with mode `keep`: the worktree or folder stays (ADR 0037). This happens after the `result` and does not change it.
+   - With `work` level 7 and `done` or `dropped`, `worktree` ends the Task with its worktree (ADR 0043). `remove`: when removing the worktree could lose work (uncommitted changes, or a branch that is not merged), the request fails with `would-lose-work`, the message says why, and nothing changes: no status, no session. Ask the user, then send `force`. Otherwise the session closes, the worktree and its branch are removed as `close-task` does with `close` or `force`, and then the status is saved. A parked Task (no session) has its worktree removed the same way. A Task without a repo keeps its folder. All of it happens before the `result`. Without `worktree`, the host acts as above. Other statuses never start or close a session. A request without `status` is `bad-request`: the `inbox {down?, until?}` of the removed Inbox queue (ADR 0027 §4, removed by ADR 0033) is no longer read. A record that a host stored with an `inbox` field still loads; the host keeps the field on disk and never sends it.
 5. A session runs a Task when its `taskId` is the record's `id`. The agent's state stays on the session's panes; the Task's `status` does not follow it.
 6. `taskId` comes from the session option `@muxa_task`. Options end with the tmux server, so a session without one gets the `id` of the record whose `dir` is the session's `worktree`, or the path of its first visible pane. A record whose tag a session carries is not matched again. The bridge does not write the tag back.
 
@@ -329,7 +330,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), and level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041), and level 7 `worktree` on `update-task` and `update-inbox` (ADR 0043). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -402,7 +403,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `answers[]`: the actions the host accepts now, in the order to show them. Empty once answered or resolved. Show an unknown action as nothing. The first one is the main answer. A `review` has `accept, reply, keep-open, later`; a `failure` `retry, reply, drop, dismiss, later`; an `ask` about a permission `approve, reject, reply, later`; a briefing `dismiss, ask-agent, later`.
    - Labels are the client's. They name the result (ADR 0033 §4a): `accept` is "Done" (closes the Task) and `reply` "Send". On an `ask`, `approve` is "Allow", `reject` "Deny" and `reply` "Deny & send". A `proposal` keeps "Approve" and "Reject".
 3. A host since ADR 0040 sends no `later` state; it lists a stored `later` item as `open` with `laterAt`. A Task has at most one `open` or `later` item; a newer need resolves the older one.
-4. `update-inbox {entry, action, text?, option?}` answers an item; `entry` is its id. On success: `inbox-saved {inbox, item}`, then `result`. For a Routine's entry, `inbox-saved` has `entry` too.
+4. `update-inbox {entry, action, text?, option?, worktree?}` answers an item; `entry` is its id. On success: `inbox-saved {inbox, item}`, then `result`. For a Routine's entry, `inbox-saved` has `entry` too. With `work` level 7, an answer that makes the Task done or dropped takes `worktree` as `update-task` does, `would-lose-work` included; other answers ignore it.
    - `approve`: an `ask` picks the prompt's first option that is not `cancel`; a proposal is approved as above.
    - `reject`: an `ask` picks the prompt's `cancel` option; a proposal is dismissed.
    - `choose` with `option`, an index into the prompt's options: answers a question.

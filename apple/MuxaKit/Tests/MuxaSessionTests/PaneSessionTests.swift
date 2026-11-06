@@ -26,6 +26,8 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
     var taskRecords: [TaskRecord] = []
     var workers: [WorkerInfo] = []
     var workspaces: [WorkspaceInfo] = [WorkspaceInfo(name: "work")]
+    /// Tasks whose worktree has unmerged work: `update-task` with `remove` is refused (ADR 0043).
+    var unmerged: Set<String> = []
     /// Tasks whose agent is running: `restart-agent` without force is refused.
     var runningAgents: Set<String> = []
     /// False: the daemon went away after `hello`, so loop requests are `unsupported`.
@@ -88,9 +90,13 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             taskRecords.append(record)
             emit(.taskSaved(task: id, record: record))
             emit(.result(id: id, error: launched ? nil : ErrorBody(code: .taskFailed, message: "launch failed"), sessions: nil))
-        case .updateTask(let id, let task, let rev, let status):
+        case .updateTask(let id, let task, let rev, let status, let worktree):
             guard let i = taskRecords.firstIndex(where: { $0.id == task }), taskRecords[i].rev == rev else {
                 emit(.result(id: id, error: ErrorBody(code: .conflict, message: "stale"), sessions: nil))
+                return
+            }
+            if worktree == .remove, unmerged.contains(task) {
+                emit(.result(id: id, error: ErrorBody(code: .wouldLoseWork, message: "its branch is not merged"), sessions: nil))
                 return
             }
             taskRecords[i].rev += 1

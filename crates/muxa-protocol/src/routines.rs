@@ -18,6 +18,9 @@ pub const WORK_READ: u32 = 4;
 pub const WORK_CLOSE_ASK: u32 = 5;
 /// Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041).
 pub const WORK_ASK_AGENT: u32 = 6;
+/// Level 7: `update-task` and `update-inbox` take `worktree`, and a Task's
+/// end removes its worktree (ADR 0043).
+pub const WORK_END_REMOVES: u32 = 7;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {

@@ -303,7 +303,7 @@ async fn the_builtin_launcher_closes_only_what_can_be_lost_safely() {
     );
 
     std::fs::write(wt.join("README.md"), "changed\n").unwrap();
-    let error = close_task(&mut bridge, &x, "force")
+    let error = close_task(&mut bridge, &x, "close")
         .await
         .expect("closed with changes");
     assert_eq!(error.code, ErrorCode::TaskFailed);
@@ -331,26 +331,48 @@ async fn the_builtin_launcher_closes_only_what_can_be_lost_safely() {
         "{ping:?}"
     );
 
-    // A branch with nothing new is merged: its worktree goes, the branch stays.
+    // A branch with nothing new is merged: its worktree, branch and list entry go (ADR 0043).
     new_task(&mut bridge, &repo.app, "feat/y").await;
     let y = server.tmux(&["display-message", "-p", "-t", "=feat-y:", "#{session_id}"]);
+    let listed = server.xdg_state().join("muxa/worktrees").join(
+        worktrees
+            .join("app-feat-y")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+            .replace('/', "%"),
+    );
+    assert!(listed.is_file(), "{}", listed.display());
     assert_eq!(close_task(&mut bridge, &y, "close").await, None);
     assert!(!worktrees.join("app-feat-y").exists());
-    git(
-        &repo.app,
-        &["rev-parse", "--verify", "-q", "refs/heads/feat/y"],
-    );
+    assert!(!has_branch(&repo.app, "feat/y"));
+    assert!(!listed.exists());
 
-    // Force removes an unmerged worktree, still keeping the branch.
+    // Force, after the user's yes, removes unmerged work and changes with the branch.
     new_task(&mut bridge, &repo.app, "feat/z").await;
     let z = server.tmux(&["display-message", "-p", "-t", "=feat-z:", "#{session_id}"]);
     commit_in(&worktrees.join("app-feat-z"), "z.txt");
+    std::fs::write(worktrees.join("app-feat-z/wip.txt"), "wip\n").unwrap();
     assert_eq!(close_task(&mut bridge, &z, "force").await, None);
     assert!(!worktrees.join("app-feat-z").exists());
-    git(
-        &repo.app,
-        &["rev-parse", "--verify", "-q", "refs/heads/feat/z"],
-    );
+    assert!(!has_branch(&repo.app, "feat/z"));
+}
+
+fn has_branch(repo: &Path, branch: &str) -> bool {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args([
+            "rev-parse",
+            "--verify",
+            "-q",
+            &format!("refs/heads/{branch}"),
+        ])
+        .output()
+        .unwrap()
+        .status
+        .success()
 }
 
 #[tokio::test]

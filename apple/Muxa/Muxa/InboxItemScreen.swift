@@ -14,6 +14,7 @@ struct InboxItemScreen: View {
     @State private var approving: InboxItem?
     @State private var sending = false
     @State private var failure: String?
+    @State private var lostWork: LostWork?
     @FocusState private var replying: Bool
 
     var body: some View {
@@ -66,6 +67,7 @@ struct InboxItemScreen: View {
                 send(item, .approve)
             }
         }
+        .lostWorkAlert($lostWork)
         .alert("Can't Answer", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -216,7 +218,8 @@ struct InboxItemScreen: View {
         }
     }
 
-    private func send(_ item: InboxItem, _ action: InboxAction, option: UInt32? = nil) {
+    /// Complete Task and Drop Task remove the worktree; when that could lose work, the user decides.
+    private func send(_ item: InboxItem, _ action: InboxAction, option: UInt32? = nil, worktree: WorktreeEnd = .remove) {
         let text = action.needsText ? reply.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         sending = true
         Task {
@@ -229,12 +232,16 @@ struct InboxItemScreen: View {
                     replying = false
                     return
                 }
-                let saved = try await model.session.answer(item, action, text: text, option: option)
+                let saved = try await model.session.answer(item, action, text: text, option: option, worktree: worktree)
                 reply = ""
                 replying = false
                 answered(saved)
             } catch {
-                failure = PaneSession.describe(error)
+                if let reason = PaneSession.lostWork(error) {
+                    lostWork = LostWork(reason: reason) { send(item, action, option: option, worktree: .force) }
+                } else {
+                    failure = PaneSession.describe(error)
+                }
             }
         }
     }

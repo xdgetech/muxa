@@ -441,13 +441,18 @@ public final class PaneSession {
     public static let taskConflict = "This task changed on another device. The list now shows its latest state. Try again."
 
     /// Sets a task's status. When the record changed since `record.rev`, the list is
-    /// loaded again and the error says so; nothing changed then.
-    public func updateTask(_ record: TaskRecord, status: TaskStatus) async throws -> TaskRecord {
+    /// loaded again and the error says so; nothing changed then. Done and Drop remove
+    /// the worktree as `worktree` says, where the host can (ADR 0043); a
+    /// `would-lose-work` error asks for `.force`.
+    public func updateTask(
+        _ record: TaskRecord, status: TaskStatus, worktree: WorktreeEnd = .remove
+    ) async throws -> TaskRecord {
+        let end = status == .done || status == .dropped ? worktreeEnd(worktree) : nil
         var requestId: UInt64 = 0
         do {
             try await request { id in
                 requestId = id
-                return .updateTask(id: id, task: record.id, rev: record.rev, status: status)
+                return .updateTask(id: id, task: record.id, rev: record.rev, status: status, worktree: end)
             }
         } catch Failure.bridge(let body) where body.code == .conflict {
             await loadTasks()

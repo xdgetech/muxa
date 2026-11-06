@@ -26,6 +26,8 @@ pub struct Answer {
     pub action: InboxAction,
     pub text: Option<String>,
     pub option: Option<u32>,
+    /// With an answer that ends the Task (ADR 0043).
+    pub worktree: Option<muxa_protocol::WorktreeEnd>,
 }
 
 /// What an accepted answer does before the item closes.
@@ -60,7 +62,7 @@ enum Plan {
 pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody> {
     let (task, item) = find(cx, &answer.item).await?;
     let plan = plan(&shown(&item), &answer)?;
-    act(cx, &task, plan.clone()).await?;
+    act(cx, &task, plan.clone(), answer.worktree).await?;
     let saved = close(cx, &task, &answer.item, answer.action, plan).await?;
     tracing::info!(item = %answer.item, task, action = ?answer.action, "inbox item answered");
     Ok(saved)
@@ -201,9 +203,20 @@ fn reply_text(action: InboxAction, text: Option<&str>) -> Result<String, ErrorBo
     Ok(text.to_owned())
 }
 
-async fn act(cx: &Context, task: &str, plan: Plan) -> Result<(), ErrorBody> {
+async fn act(
+    cx: &Context,
+    task: &str,
+    plan: Plan,
+    worktree: Option<muxa_protocol::WorktreeEnd>,
+) -> Result<(), ErrorBody> {
     match plan {
         Plan::Status(status) => {
+            let ends = matches!(status, TaskStatus::Done | TaskStatus::Dropped);
+            if let Some(choice) = worktree.filter(|_| ends) {
+                return crate::task_records::end::end(cx, task, None, status, choice)
+                    .await
+                    .map(drop);
+            }
             set_status(&cx.records, task.to_owned(), status).await?;
             crate::task_records::close::close_when_ended(cx, task, status);
             Ok(())

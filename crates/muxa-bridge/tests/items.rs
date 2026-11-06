@@ -196,12 +196,7 @@ async fn a_reply_reaches_the_pane_and_the_turns_document_is_attached() {
     assert_eq!(item["attachments"]["docs"], json!(["report.md"]));
     assert_eq!(
         item["answers"],
-        json!([
-            "accept",
-            "reply",
-            "keep-open",
-            "later"
-        ])
+        json!(["accept", "reply", "keep-open", "later"])
     );
 
     // The pane's folder is in no repo: the docs list serves the attached file.

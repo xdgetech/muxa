@@ -198,6 +198,7 @@ private fun TaskDialogs(model: AppModel) {
             confirmButton = { TextButton({ model.taskError = null }) { Text("OK") } },
         )
     }
+    LoseWorkDialog(model)
     RestartAgentDialog(model)
     RestartErrorDialog(model)
     StartLoopDialog(model)

@@ -11,7 +11,9 @@ mod when;
 
 use std::process::ExitCode;
 
-use muxa_protocol::{InboxAction, LoopSpec, RestartRecoveryAction, Role, Session, TaskStatus};
+use muxa_protocol::{
+    InboxAction, LoopSpec, RestartRecoveryAction, Role, Session, TaskStatus, WorktreeEnd,
+};
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
@@ -19,7 +21,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
                 [--project P] [--repo REPO [--branch B] [--base REF]] [--worker NAME]
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
-       muxa-cli [--bridge CMD] task (done | drop) ID [--json]
+       muxa-cli [--bridge CMD] task (done | drop) ID [--force] [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
        muxa-cli [--bridge CMD] ask close SESSION [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
@@ -65,7 +67,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  Desktop tools)
   task done ID   marks a task record done
   task drop ID   marks a task record dropped: given up, not finished.
-                 Neither closes the task's session
+                 Both close the task's session and remove its worktree and
+                 branch (ADR 0043). When that could lose work they change
+                 nothing and fail with would-lose-work; --force removes them
+                 anyway. inbox answer does the same for answers that end a task
   task restart ID
                  restarts the task's agent in the same pane, after a handoff
                  in .muxa/HANDOFF.md; --force also while the agent runs.
@@ -148,6 +153,7 @@ enum Cmd {
     Close {
         task: String,
         status: TaskStatus,
+        worktree: WorktreeEnd,
         json: bool,
     },
     Restart {
@@ -306,6 +312,12 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "--worker requires task new or task restart".into(),
         ));
     }
+    // A Task's end removes its worktree; --force after the user said yes (ADR 0043).
+    let worktree = if force {
+        WorktreeEnd::Force
+    } else {
+        WorktreeEnd::Remove
+    };
     let cmd = match words.as_slice() {
         [w] if w == "list" => Cmd::List,
         [w, target] if w == "watch" => Cmd::Watch {
@@ -351,11 +363,13 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         [w, d, id] if w == "task" && d == "done" => Cmd::Close {
             task: id.clone(),
             status: TaskStatus::Done,
+            worktree,
             json,
         },
         [w, d, id] if w == "task" && d == "drop" => Cmd::Close {
             task: id.clone(),
             status: TaskStatus::Dropped,
+            worktree,
             json,
         },
         [w] if w == "routines" => Cmd::Routines { json },
@@ -372,6 +386,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 })?,
                 text,
                 option,
+                worktree: Some(worktree),
             }
             .checked()
             .map_err(|e| lexopt::Error::Custom(e.into()))?,
@@ -383,6 +398,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 action: InboxAction::Read,
                 text: None,
                 option: None,
+                worktree: None,
             },
             json,
         },
@@ -483,7 +499,12 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         } => ask::ask(&mut conn, &repo, workspace, json).await,
         Cmd::CloseAsk { session, json } => ask::close(&mut conn, &session, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
-        Cmd::Close { task, status, json } => tasks::close(&mut conn, &task, status, json).await,
+        Cmd::Close {
+            task,
+            status,
+            worktree,
+            json,
+        } => tasks::close(&mut conn, &task, status, worktree, json).await,
         Cmd::Recover {
             task,
             resolution,

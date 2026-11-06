@@ -10,8 +10,8 @@ pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
-    WORK_ASK_AGENT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_READ, WORK_ROUTINES, work_capability,
-    work_level,
+    WORK_ASK_AGENT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_END_REMOVES, WORK_READ, WORK_ROUTINES,
+    work_capability, work_level,
 };
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
@@ -218,6 +218,10 @@ pub enum Request {
         /// The `rev` the client last saw.
         rev: u64,
         status: TaskStatus,
+        /// With `done` or `dropped`: what happens to the Task's worktree
+        /// (`work` level 7, ADR 0043). Without it, the worktree stays.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worktree: Option<WorktreeEnd>,
     },
     /// Restart the agent of a task in the same pane, with a handoff written
     /// first (ADR 0018). Needs the `task-handoff` capability. Refused while the
@@ -296,6 +300,9 @@ pub enum Request {
         /// With `choose`: the index into the prompt's options.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         option: Option<u32>,
+        /// With an answer that ends the Task, as in `update-task`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worktree: Option<WorktreeEnd>,
     },
     /// Start an agent session in a repo's main checkout, to ask about its
     /// code: no Task, no worktree (capability `work` level 2, ADR 0031). A
@@ -854,6 +861,17 @@ pub enum CloseMode {
     Force,
 }
 
+/// What a Task's end does to its worktree (ADR 0043).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorktreeEnd {
+    /// Remove the worktree and its branch when nothing can be lost;
+    /// otherwise fail with `would-lose-work` and change nothing.
+    Remove,
+    /// Remove them anyway: the user said yes.
+    Force,
+}
+
 /// An image file in a pane's repo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1012,6 +1030,9 @@ pub enum ErrorCode {
     TaskFailed,
     /// The task record changed since the client read it; list it again.
     Conflict,
+    /// Removing the Task's worktree could lose work; the message says why.
+    /// Nothing changed. Ask the user, then send `worktree: force`.
+    WouldLoseWork,
     Tmux,
     Internal,
 }

@@ -80,14 +80,46 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ -d "$wt" ]
 }
 
-@test "close removes a clean merged worktree and keeps the branch" {
+@test "new lists the worktree it creates" {
+  new feature/listed
+  wt="$(tx show-options -t =feature-listed: -qv @agent_worktree)"
+  real="$(cd "$wt" && pwd -P)"
+  [ "$(cat "$XDG_STATE_HOME/muxa/worktrees/$(printf '%s' "$real" | tr / %)")" = "$real" ]
+}
+
+@test "close removes a clean merged worktree, its branch and its list entry" {
   new feature/done
   wt="$(tx show-options -t =feature-done: -qv @agent_worktree)"
   run "$ROOT/scripts/close.sh" feature-done
   [ "$status" -eq 0 ]
   ! tx has-session -t =feature-done
   [ ! -d "$wt" ]
-  git -C "$REPO" show-ref --verify -q refs/heads/feature/done
+  ! git -C "$REPO" show-ref --verify -q refs/heads/feature/done
+  [ -z "$(ls -A "$XDG_STATE_HOME/muxa/worktrees")" ]
+}
+
+@test "close --check says why removing could lose work" {
+  new feature/check
+  wt="$(tx show-options -t =feature-check: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
+  [ -z "$("$ROOT/scripts/close.sh" --check feature-check)" ]
+  git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
+  [ "$("$ROOT/scripts/close.sh" --check feature-check)" = "its branch is not merged" ]
+  touch "$wt/new-file"
+  [ "$("$ROOT/scripts/close.sh" --check feature-check)" = "it has uncommitted changes" ]
+  tx has-session -t =feature-check
+}
+
+@test "close keeps a merged PR's branch that has commits on no remote" {
+  new feature/pr
+  wt="$(tx show-options -t =feature-pr: -qv @agent_worktree)"
+  [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
+  git -C "$wt" -c user.email=t@t -c user.name=t commit -q --allow-empty -m after-merge
+  tx set-option -t =feature-pr: @agent_pr_state merged
+  run "$ROOT/scripts/close.sh" feature-pr
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  git -C "$REPO" show-ref --verify -q refs/heads/feature/pr
 }
 
 @test "close --keep leaves the worktree" {
@@ -110,6 +142,8 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   run new feature/custom
   [ "$status" -eq 0 ]
   [ "$(tx show-options -t =feature-custom: -qv @agent_worktree)" = "$custom" ]
+  # The other tool owns it, so muxa never lists it for removal.
+  [ ! -d "$XDG_STATE_HOME/muxa/worktrees" ]
 }
 
 @test "new explains a branch that is checked out in the main checkout" {
@@ -133,7 +167,7 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   grep -q "could not create a worktree for bad..name: .*bad..name" "$TMPDIR/tmux-agents-$(id -u)/agents.log"
 }
 
-@test "close --force removes an unmerged worktree and keeps the branch" {
+@test "close --force removes an unmerged worktree and its branch" {
   new feature/force
   wt="$(tx show-options -t =feature-force: -qv @agent_worktree)"
   [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
@@ -142,18 +176,19 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ "$status" -eq 0 ]
   ! tx has-session -t =feature-force
   [ ! -d "$wt" ]
-  git -C "$REPO" show-ref --verify -q refs/heads/feature/force
+  ! git -C "$REPO" show-ref --verify -q refs/heads/feature/force
 }
 
-@test "close --force still refuses uncommitted changes" {
+# --force follows the user's yes to the question that named the changes.
+@test "close --force removes uncommitted changes too" {
   new feature/force-dirty
   wt="$(tx show-options -t =feature-force-dirty: -qv @agent_worktree)"
   [ -n "$wt" ] && [ -d "$wt" ]  # never let git -C "" touch this repo
   touch "$wt/new-file"
   run "$ROOT/scripts/close.sh" --force feature-force-dirty
-  [ "$status" -eq 1 ]
-  tx has-session -t =feature-force-dirty
-  [ -d "$wt" ]
+  [ "$status" -eq 0 ]
+  ! tx has-session -t =feature-force-dirty
+  [ ! -d "$wt" ]
 }
 
 @test "close stops processes left in the worktree, also orphans, and no others" {

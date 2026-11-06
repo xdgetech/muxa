@@ -42,6 +42,7 @@ pub fn spawn(server: &Server, dir: &Path, extra: &[&str]) -> Child {
         .arg(dir)
         .args(extra)
         .env_remove("TMUX")
+        .env("XDG_STATE_HOME", server.xdg_state())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

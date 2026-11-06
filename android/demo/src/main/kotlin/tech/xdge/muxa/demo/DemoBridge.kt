@@ -39,7 +39,9 @@ import tech.xdge.muxa.protocol.WORK_CAPABILITY
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
+import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
+import tech.xdge.muxa.protocol.WorktreeEnd
 import tech.xdge.muxa.transport.BridgeChannel
 import java.util.UUID
 
@@ -52,8 +54,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; below [WORK_ASK_AGENT] it plays a host from before
- * Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
+ * [workLevel] is the `work` level it advertises; below [WORK_WORKTREE_END] it plays a host whose Done
+ * keeps the worktree (ADR 0043), below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
  * Inbox items (ADR 0033), below [WORK_ASK] one from before ask sessions and branches named after
  * the title (ADR 0031), and at 0 one without Routines.
  */
@@ -61,7 +63,7 @@ class DemoBridge(
     set: Content = Content.TESTS,
     alerts: Boolean = false,
     taskRecords: Boolean = true,
-    workLevel: Int = WORK_ASK_AGENT,
+    workLevel: Int = WORK_WORKTREE_END,
 ) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
@@ -312,6 +314,9 @@ class DemoBridge(
     private fun answerItem(req: Request.UpdateInbox, now: Long) {
         val saved = try {
             synchronized(lock) {
+                if (DemoItems.ending(req.action) != null) {
+                    lostWork(items.task(req.entry), req.worktree)?.let { throw DemoWork.Refusal(ErrorCode.WOULD_LOSE_WORK, it) }
+                }
                 val answer = items.answer(req.entry, req.action, req.text, req.option, now, nextLaterAt(now))
                 val status = answer.status
                 if (status != null) {
@@ -610,6 +615,7 @@ class DemoBridge(
         val saved = synchronized(lock) {
             val current = tasks.firstOrNull { it.id == req.task } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.task} is not a task")
             if (current.rev != req.rev) return fail(req.id, ErrorCode.CONFLICT, "the task changed since you read it")
+            if (status in ENDS) lostWork(current.id, req.worktree)?.let { return fail(req.id, ErrorCode.WOULD_LOSE_WORK, it) }
             val now = now()
             val saved = current.copy(rev = current.rev + 1, status = status, updatedAt = now, loop = current.loop?.afterStatus(status, now))
             tasks = tasks.map { if (it.id == saved.id) saved else it }
@@ -618,6 +624,13 @@ class DemoBridge(
         emit(Message.TaskSaved(req.id, saved))
         ok(req.id)
     }
+
+    /**
+     * Why removing [task]'s worktree could lose work, when [worktree] asks to remove it and does not force it.
+     * The demo removes nothing: a forced end only saves the status.
+     */
+    private fun lostWork(task: String?, worktree: WorktreeEnd?): String? =
+        UNMERGED.takeIf { worktree == WorktreeEnd.REMOVE && task in content.unmerged }
 
     /** Starts a Task's loop, also a stopped or passed one, when its workspace allows the check. */
     private fun startLoop(req: Request.StartLoop) = changeLoop(req.id, req.task) { current, now ->
@@ -811,6 +824,10 @@ class DemoBridge(
                 "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
                 "task-loop", "tasks-changed", "viewport",
             )
+
+        /** The statuses that end a Task, and so take `worktree` (ADR 0043). */
+        private val ENDS = setOf(TaskStatus.DONE, TaskStatus.DROPPED)
+        private const val UNMERGED = "its branch is not merged"
 
         /** What a bridge says to a request it does not know. */
         const val NO_REQUEST = "The demo bridge does not support this request."

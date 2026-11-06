@@ -55,7 +55,7 @@ extension DemoWork {
     /// Answers a Task's item. A Routine's item goes through `update(_:action:)`,
     /// except `read`.
     mutating func answer(
-        _ id: String, _ action: InboxAction, text: String?, option: UInt32?, tasks: inout DemoTasks
+        _ id: String, _ action: InboxAction, text: String?, option: UInt32?, worktree: WorktreeEnd?, tasks: inout DemoTasks
     ) throws(Refusal) -> (InboxItem, ItemEffect) {
         if action == .read, let entry = entries.first(where: { $0.id == id }) {
             entryReads[id] = entryReads[id] ?? Self.now
@@ -76,7 +76,7 @@ extension DemoWork {
             taskItems[i].laterAt = nextLaterAt
             return (taskItems[i], .none)
         }
-        let effect = try Self.effect(of: action, on: item, tasks: &tasks)
+        let effect = try Self.effect(of: action, on: item, worktree: worktree, tasks: &tasks)
         taskItems[i].state = .answered
         taskItems[i].answer = action
         taskItems[i].answeredAt = Self.now
@@ -85,7 +85,9 @@ extension DemoWork {
         return (taskItems[i], effect)
     }
 
-    private static func effect(of action: InboxAction, on item: InboxItem, tasks: inout DemoTasks) throws(Refusal) -> ItemEffect {
+    private static func effect(
+        of action: InboxAction, on item: InboxItem, worktree: WorktreeEnd?, tasks: inout DemoTasks
+    ) throws(Refusal) -> ItemEffect {
         let status: TaskStatus? = switch action {
         case .accept: .done
         case .drop: .dropped
@@ -93,7 +95,9 @@ extension DemoWork {
         }
         if let status, let record = tasks.record(item.task) {
             do throws(DemoTasks.Refusal) {
-                _ = try tasks.update(record.id, rev: record.rev, status: status)
+                _ = try tasks.update(record.id, rev: record.rev, status: status, worktree: worktree)
+            } catch .wouldLoseWork(let reason) {
+                throw Refusal(.wouldLoseWork, reason)
             } catch {
                 throw Refusal(.conflict, "\(record.id) changed")
             }

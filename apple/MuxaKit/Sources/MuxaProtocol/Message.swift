@@ -85,6 +85,9 @@ public enum ErrorCode: Equatable, Sendable {
     case taskFailed
     /// The task record changed since the client read it; list it again.
     case conflict
+    /// Ending the Task would remove uncommitted or unmerged work; the message says
+    /// which. Nothing changed (ADR 0043).
+    case wouldLoseWork
     /// A code added by a newer bridge.
     case other(String)
 }
@@ -94,7 +97,7 @@ extension ErrorCode: Codable {
         (.badRequest, "bad-request"), (.invalidPane, "invalid-pane"), (.noPane, "no-pane"),
         (.unsupportedKey, "unsupported-key"), (.tooLarge, "too-large"), (.tmux, "tmux"),
         (.internal, "internal"), (.unsupported, "unsupported"), (.taskFailed, "task-failed"),
-        (.conflict, "conflict"),
+        (.conflict, "conflict"), (.wouldLoseWork, "would-lose-work"),
     ]
 
     public var name: String {

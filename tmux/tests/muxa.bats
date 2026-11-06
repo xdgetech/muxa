@@ -38,6 +38,13 @@ fake_cli() {
 printf '%s\n' "$@" >"$(dirname "$0")/args"
 (shift 2; echo "$*") >>"$(dirname "$0")/calls"
 if [ -n "${FAKE_FAIL:-}" ]; then echo "muxa-cli: $FAKE_FAIL" >&2; exit 1; fi
+# A file, as the popup gets the server's environment: a Task end that would
+# lose work, unless --force (ADR 0043).
+lose="$(dirname "$0")/lose"
+case " $* " in
+  *" --force "*) ;;
+  *" task done "* | *" task drop "*) [ -f "$lose" ] && { echo "muxa-cli: would-lose-work: $(cat "$lose")" >&2; exit 1; } ;;
+esac
 out="$(dirname "$0")/out-$3"
 [ -f "$out" ] || out="$(dirname "$0")/out"
 cat "$out"
@@ -395,6 +402,21 @@ cli_tasks() {
   ! grep -q '^task drop' "$TMPDIR/bin/calls"
 }
 
+@test "prefix+T: Done that would lose work says why, and y removes it anyway" {
+  fake_cli "$INBOX"
+  echo "its branch is not merged" >"$TMPDIR/bin/lose"
+  attach
+  tx send-keys -K -c "$C" C-b T
+  sleep 1.5
+  tx send-keys -K -c "$C" C-d
+  sleep 0.5
+  tx send-keys -K -c "$C" y
+  wait_for 'grep -q "^task done t-000001 --json$" "$TMPDIR/bin/calls"'
+  sleep 0.5
+  tx send-keys -K -c "$C" y
+  wait_for 'grep -q "^task done t-000001 --force --json$" "$TMPDIR/bin/calls"'
+}
+
 @test "prefix+T: Enter on a Task with no session offers Drop" {
   fake_cli "$(printf '%s' "$INBOX" | jq -c '.tasks |= [.[3]]')"
   attach
@@ -424,7 +446,7 @@ cli_tasks() {
   [ ! -e "$TMPDIR/bin/calls" ]
 }
 
-@test "X in the tree on a Task's session asks, then closes it and marks the Task done" {
+@test "x in the tree on a Task's session asks, then closes it and marks the Task done" {
   new feature/menu --muxa-task t-0000e3 >/dev/null
   fake_cli '{}'
   attach
@@ -437,7 +459,7 @@ cli_tasks() {
     tx send-keys -K -c "$C" k
     sleep 0.3
   done
-  tx send-keys -K -c "$C" X
+  tx send-keys -K -c "$C" x
   sleep 0.5
   tx send-keys -K -c "$C" d
   wait_for '! tx has-session -t =feature-menu 2>/dev/null'

@@ -17,6 +17,7 @@ import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WorktreeEnd
 
 private val permission = ChatPrompt(
     "toolu_01", ChatPrompt.Kind.PERMISSION,
@@ -168,6 +169,33 @@ class ItemsTest {
         val sent = bridge.asked.filterIsInstance<Request.UpdateInbox>().last()
         assertEquals(1, sent.option)
         assertNull(sent.text)
+    }
+
+    /** At level 7, Done takes the Task's worktree; after `would-lose-work` the item is still open for the forced answer (ADR 0043). */
+    @Test
+    fun doneRemovesTheWorktreeAndForceFollowsARefusal() = runBlocking {
+        val bridge = bridge(level = 7)
+        val session = connected(bridge)
+        val review = session.state.value.inboxItems[1]
+        bridge.refuse = ErrorCode.WOULD_LOSE_WORK
+        val e = refusal { session.answer(review, InboxAction.ACCEPT) }
+        assertEquals(ErrorCode.WOULD_LOSE_WORK, (e as PaneSession.Failure.Bridge).body.code)
+        assertEquals(ItemState.OPEN, session.state.value.inboxItems[1].state)
+        session.answer(review, InboxAction.ACCEPT, forceWorktree = true)
+        assertEquals(TaskStatus.DONE, session.state.value.tasks?.record("t-2")?.status)
+        val sent = bridge.asked.filterIsInstance<Request.UpdateInbox>()
+        assertEquals(listOf(WorktreeEnd.REMOVE, WorktreeEnd.FORCE), sent.map { it.worktree })
+    }
+
+    /** Answers that do not end the Task, and any answer to an older host, send no `worktree`. */
+    @Test
+    fun onlyAnEndAtLevelSevenSendsWorktree() = runBlocking {
+        for ((level, action) in listOf(7 to InboxAction.KEEP_OPEN, 6 to InboxAction.ACCEPT)) {
+            val bridge = bridge(level)
+            val session = connected(bridge)
+            session.answer(session.state.value.inboxItems[1], action)
+            assertNull(bridge.asked.filterIsInstance<Request.UpdateInbox>().single().worktree)
+        }
     }
 
     @Test

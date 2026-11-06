@@ -100,6 +100,36 @@ class FixtureTest {
     }
 
     @Test
+    fun worktreeEndContractRoundTrips() {
+        val requests = lines("worktree-end/requests.jsonl")
+        assertEquals(3, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("worktree-end/messages.jsonl")
+        assertEquals(4, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        assertEquals(WORK_WORKTREE_END, workLevel((Wire.decodeMessage(messages[0]) as Message.Hello).capabilities))
+        assertEquals(
+            ErrorBody(ErrorCode.WOULD_LOSE_WORK, "its branch is not merged"),
+            (Wire.decodeMessage(messages[1]) as Message.Result).error,
+        )
+        assertEquals(
+            Request.UpdateTask(61, "t-7f3a2c", 3, TaskStatus.DONE, WorktreeEnd.REMOVE),
+            Wire.decodeRequest(requests[0]),
+        )
+        assertEquals(WorktreeEnd.FORCE, (Wire.decodeRequest(requests[1]) as Request.UpdateTask).worktree)
+        assertEquals(
+            Request.UpdateInbox(63, "i-00000001", InboxAction.DROP, worktree = WorktreeEnd.REMOVE),
+            Wire.decodeRequest(requests[2]),
+        )
+        // An older client's request has no `worktree` key at all.
+        assertFalse("worktree" in Wire.encode(Request.UpdateTask(1, "t-1", 1, TaskStatus.DONE)))
+    }
+
+    @Test
     fun workspaceContractRoundTrips() {
         val requests = lines("workspaces/requests.jsonl")
         assertEquals(2, requests.size)

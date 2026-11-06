@@ -36,7 +36,9 @@ import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
+import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
+import tech.xdge.muxa.protocol.WorktreeEnd
 import tech.xdge.muxa.protocol.workLevel
 import tech.xdge.muxa.terminal.PaneRenderer
 import tech.xdge.muxa.transport.BridgeChannel
@@ -134,6 +136,9 @@ class PaneSession(
 
         /** The host keeps the Inbox as a list of questions (ADR 0033). */
         val canAnswerItems get() = workLevel >= WORK_ITEMS
+
+        /** Done and Drop also remove the Task's worktree and branch, and ask first when that could lose work (ADR 0043). */
+        val endsWorktrees get() = workLevel >= WORK_WORKTREE_END
     }
 
     private val _state = MutableStateFlow(State())
@@ -292,14 +297,16 @@ class PaneSession(
 
     /**
      * Sets [record]'s status. On `conflict` the list is loaded again before the failure is
-     * thrown, so the user sees the record as it is now and can try again.
+     * thrown, so the user sees the record as it is now and can try again. Done and Drop remove
+     * the worktree too; `would-lose-work` asks the user, who resends with [forceWorktree].
      */
-    suspend fun updateTask(record: TaskRecord, status: TaskStatus): TaskRecord = withContext(dispatcher) {
+    suspend fun updateTask(record: TaskRecord, status: TaskStatus, forceWorktree: Boolean = false): TaskRecord = withContext(dispatcher) {
         var requestId = 0L
+        val worktree = worktreeEnd(status in ENDING_STATUSES, forceWorktree)
         try {
             request { id ->
                 requestId = id
-                Request.UpdateTask(id, record.id, record.rev, status)
+                Request.UpdateTask(id, record.id, record.rev, status, worktree)
             }
         } catch (e: Failure.Bridge) {
             savedTasks.remove(requestId)
@@ -483,6 +490,13 @@ class PaneSession(
         s.copy(routines = if (s.routines.any(same)) s.routines.map { if (same(it)) routine else it } else s.routines + routine)
     }
 
+    /** `worktree` for a request that may end a Task: none before level 7, so the worktree stays (ADR 0043). */
+    private fun worktreeEnd(ends: Boolean, force: Boolean): WorktreeEnd? = when {
+        !ends || !_state.value.endsWorktrees -> null
+        force -> WorktreeEnd.FORCE
+        else -> WorktreeEnd.REMOVE
+    }
+
     /** A saved item replaces the listed one in its place; the host's next list orders it. */
     private fun keep(item: InboxItem) = _state.update { s ->
         if (s.inboxItems.none { it.id == item.id }) return@update s
@@ -495,19 +509,22 @@ class PaneSession(
      * Answers [item] with [action]: [text] for `redo` and `change-course`, [option] for `choose`.
      * `later` takes no time (ADR 0040). Returns the item as the host saved it. A refusal lists the Inbox again,
      * since another device may have answered first; an `ask` whose menu changed is [Failure.ItemChanged].
+     * Done and Drop end the Task with its worktree, as [updateTask] does with [forceWorktree].
      */
     suspend fun answer(
         item: InboxItem,
         action: InboxAction,
         text: String? = null,
         option: Int? = null,
+        forceWorktree: Boolean = false,
     ): InboxItem = withContext(dispatcher) {
         if (!_state.value.canAnswerItems) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ITEMS_UNSUPPORTED))
         var requestId = 0L
+        val worktree = worktreeEnd(action in ENDING_ACTIONS, forceWorktree)
         try {
             request { id ->
                 requestId = id
-                Request.UpdateInbox(id, item.id, action, text = text, option = option)
+                Request.UpdateInbox(id, item.id, action, text = text, option = option, worktree = worktree)
             }
         } catch (e: Failure) {
             savedItems.remove(requestId)
@@ -1047,6 +1064,10 @@ class PaneSession(
 
         /** The answers after which the Task list and the sessions are read again. */
         private val TASK_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP, InboxAction.RETRY, InboxAction.APPROVE)
+
+        /** The statuses and the answers that end a Task, and so take `worktree` (ADR 0043). */
+        private val ENDING_STATUSES = setOf(TaskStatus.DONE, TaskStatus.DROPPED)
+        private val ENDING_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP)
 
         /** Shown when an `ask` item's menu changed since it was listed. */
         const val ITEM_CHANGED = "The agent now asks something else. The Inbox shows it as it is now; answer again."

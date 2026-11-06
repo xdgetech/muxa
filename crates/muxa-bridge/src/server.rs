@@ -109,7 +109,7 @@ where
         // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034),
         // 5 closes ask sessions (ADR 0039), 6 asks the workspace's agent from an item (ADR 0041).
         capabilities.push(muxa_protocol::work_capability(
-            muxa_protocol::WORK_ASK_AGENT,
+            muxa_protocol::WORK_END_REMOVES,
         ));
     }
     // Checked once per session (ADR 0019); each record request looks again.

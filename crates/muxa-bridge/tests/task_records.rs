@@ -66,6 +66,8 @@ both!(
     a_task_without_a_repo_gets_its_own_directory_and_session,
     a_task_without_a_repo_keeps_its_session_when_the_agent_exits,
     a_task_that_ends_closes_its_session_and_keeps_its_folder,
+    a_task_end_removes_its_worktree_only_when_nothing_is_lost,
+    a_parked_task_s_end_removes_its_worktree,
     a_fresh_done_gets_the_start_prompt,
     a_repo_task_runs_in_its_worktree_with_task_md_excluded,
     a_branch_that_runs_an_open_task_is_refused,
@@ -387,6 +389,109 @@ async fn a_task_that_ends_closes_its_session_and_keeps_its_folder(mode: Mode) {
     common::wait_until(|| !session_names(&server).contains(&name)).await;
     assert!(dir.join(".muxa/TASK.md").is_file(), "the folder stays");
     assert_eq!(session_names(&server), ["work"], "other sessions stay");
+}
+
+fn has_branch(repo: &Path, branch: &str) -> bool {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args([
+            "rev-parse",
+            "--verify",
+            "-q",
+            &format!("refs/heads/{branch}"),
+        ])
+        .output()
+        .unwrap()
+        .status
+        .success()
+}
+
+/// ADR 0043: `worktree: remove` refuses when work could be lost and changes
+/// nothing; `force` then ends the Task with its session, worktree and branch.
+async fn a_task_end_removes_its_worktree_only_when_nothing_is_lost(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("end-remove", mode);
+    let repo = Repo::new(&mode.name("records-end"));
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (saved, result) =
+        create(&mut bridge, json!({"repo": repo.app, "branch": "feat/end"})).await;
+    ok(&result);
+    let r = saved.expect("task-saved");
+    let worktree = repo.root.join("repos/.worktrees/app-feat-end");
+    git(
+        &worktree,
+        &[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "work",
+        ],
+    );
+
+    let end = |worktree: &str| json!({"type": "update-task", "task": r.id, "rev": r.rev, "status": "done", "worktree": worktree});
+    let (saved, result) = send(&mut bridge, end("remove")).await;
+    assert!(saved.is_none());
+    let Message::Result { error: Some(e), .. } = &result else {
+        panic!("{result:?}")
+    };
+    assert_eq!(e.code, ErrorCode::WouldLoseWork);
+    assert!(e.message.contains("not merged"), "{}", e.message);
+    assert_eq!(record_of(&mut bridge, &r.id).await.status, TaskStatus::Open);
+    assert!(session_names(&server).contains(&"feat-end".to_owned()));
+    assert!(worktree.is_dir());
+
+    let (saved, result) = send(&mut bridge, end("force")).await;
+    ok(&result);
+    assert_eq!(saved.expect("task-saved").status, TaskStatus::Done);
+    assert!(!session_names(&server).contains(&"feat-end".to_owned()));
+    assert!(!worktree.exists());
+    assert!(!has_branch(&repo.app, "feat/end"));
+}
+
+/// A parked Task has no session; its end still removes the worktree.
+async fn a_parked_task_s_end_removes_its_worktree(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("end-parked", mode);
+    let repo = Repo::new(&mode.name("records-parked"));
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (saved, result) = create(
+        &mut bridge,
+        json!({"repo": repo.app, "branch": "feat/parked"}),
+    )
+    .await;
+    ok(&result);
+    let r = saved.expect("task-saved");
+    let worktree = repo.root.join("repos/.worktrees/app-feat-parked");
+    let (saved, result) = send(&mut bridge, json!({"type": "park-task", "task": r.id})).await;
+    ok(&result);
+    let parked = saved.expect("task-saved");
+    assert!(worktree.is_dir(), "a parked Task keeps its worktree");
+
+    let (saved, result) = send(
+        &mut bridge,
+        json!({"type": "update-task", "task": r.id, "rev": parked.rev, "status": "dropped", "worktree": "remove"}),
+    )
+    .await;
+    ok(&result);
+    assert_eq!(saved.expect("task-saved").status, TaskStatus::Dropped);
+    assert!(!worktree.exists());
+    assert!(!has_branch(&repo.app, "feat/parked"));
 }
 
 fn epoch() -> u64 {

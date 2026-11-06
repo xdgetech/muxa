@@ -181,7 +181,7 @@ text_prompt() {
 
 # Runs one answer of the item in <json>. Asks for the text an action needs.
 answer() {
-  local id="$1" act="$2" json="$3" text err kind
+  local id="$1" act="$2" json="$3" text err kind why
   set -- inbox answer "$id"
   case "$act" in
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
@@ -196,6 +196,13 @@ answer() {
     *) set -- "$@" "$act" ;;
   esac
   if ! err="$(muxa "$@" --json 2>&1 >/dev/null)"; then
+    why="$(lost_work "$err")"
+    if [ -n "$why" ]; then
+      # An answer that ends the Task would lose work (ADR 0043).
+      printf '\n'
+      confirm_loss "$why" || return 0
+      err="$(muxa "$@" --force --json 2>&1 >/dev/null)" && return 0
+    fi
     printf '\nmuxa could not answer: %s\n' "$(printf '%s' "$err" | sed 's/^muxa-cli: //' | tail -n 1)"
     pause
   fi

@@ -162,27 +162,28 @@ no_session() {
   IFS= read -r -n 1 answer || return 0
   echo
   case "$answer" in
-    d) close_task "$1" "done" || pause ;;
-    x) close_task "$1" dropped || pause ;;
+    d) close_task "$1" "done" ask || pause ;;
+    x) close_task "$1" dropped ask || pause ;;
   esac
 }
 
 confirm_close() {
   local answer verb="mark \"$2\" Done"
   [ "$3" = dropped ] && verb="drop \"$2\""
-  printf '%s? Its session keeps running. (y/n) ' "$verb"
+  printf '%s? Its session closes, and its worktree and branch go. (y/n) ' "$verb"
   IFS= read -r -n 1 answer || return 0
   echo
   [ "$answer" = y ] || return 0
-  close_task "$1" "$3" || pause
+  close_task "$1" "$3" ask || pause
 }
 
 pause() { echo "Press Enter."; read -r _; }
 
-# Marks a Task record done or dropped. muxa keeps the record; the session,
-# if any, is left alone.
+# Marks a Task record done or dropped. muxa keeps the record, closes the
+# session and removes the worktree and branch (ADR 0043). When that could lose
+# work, muxa changes nothing; with <ask> the user may say to remove them anyway.
 close_task() {
-  local task="$1" status="$2" verb err
+  local task="$1" status="$2" ask="${3:-}" verb err why
   case "$status" in
     done) verb="done" ;;
     dropped) verb=drop ;;
@@ -193,6 +194,11 @@ close_task() {
     *) fail "not a muxa task id: $task"; return 2 ;;
   esac
   if ! err="$(run_muxa task "$verb" "$task" --json 2>&1 >/dev/null)"; then
+    why="$(lost_work "$err")"
+    if [ -n "$why" ] && [ -n "$ask" ]; then
+      confirm_loss "$why" || return 0
+      err="$(run_muxa task "$verb" "$task" --force --json 2>&1 >/dev/null)" && { notify_change; return 0; }
+    fi
     fail "muxa could not mark $task $status: $(printf '%s' "$err" | sed 's/^muxa-cli: //' | tail -n 1)"
     return 1
   fi

@@ -18,7 +18,7 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.protocol.WORK_ASK_AGENT
+import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
@@ -241,6 +241,9 @@ class AppModel(
     /** Why the last status change failed, e.g. another device changed the Task first. */
     var taskError by mutableStateOf<String?>(null)
 
+    /** A Done or Drop that asks before its worktree goes, because work could be lost (ADR 0043). */
+    var losingWork by mutableStateOf<LosingWork?>(null)
+
     /** The Task whose agent restart waits for the user's confirmation, by id. */
     var restartingTask by mutableStateOf<String?>(null)
 
@@ -278,7 +281,7 @@ class AppModel(
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
     private var demoTaskRecords = true
-    private var demoWorkLevel = WORK_ASK_AGENT
+    private var demoWorkLevel = WORK_WORKTREE_END
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -309,7 +312,7 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        demoWorkLevel = WORK_ASK_AGENT
+        demoWorkLevel = WORK_WORKTREE_END
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
@@ -319,7 +322,7 @@ class AppModel(
         set: DemoBridge.Content,
         alerts: Boolean,
         taskRecords: Boolean = true,
-        workLevel: Int = WORK_ASK_AGENT,
+        workLevel: Int = WORK_WORKTREE_END,
     ) {
         demoTaskRecords = taskRecords
         demoWorkLevel = workLevel
@@ -339,7 +342,7 @@ class AppModel(
             val alerts: Boolean,
             val taskRecords: Boolean,
             val canLeave: Boolean,
-            val workLevel: Int = WORK_ASK_AGENT,
+            val workLevel: Int = WORK_WORKTREE_END,
         )
     }
 
@@ -419,6 +422,7 @@ class AppModel(
         answeringItem = null
         newTaskRecord = null
         taskError = null
+        losingWork = null
         askError = null
         restartingTask = null
         restartError = null
@@ -1045,12 +1049,14 @@ class AppModel(
         }
     }
 
-    fun setStatus(record: TaskRecord, status: TaskStatus) = scope.launch {
+    /** Sets [record]'s status; Done and Drop that could lose work ask first ([losingWork]). */
+    fun setStatus(record: TaskRecord, status: TaskStatus, forceWorktree: Boolean = false) = scope.launch {
         if (record.status == status) return@launch
         try {
-            session.updateTask(record, status)
+            session.updateTask(record, status, forceWorktree)
         } catch (e: PaneSession.Failure) {
-            taskError = PaneSession.describe(e)
+            val reason = e.lostWork
+            if (reason != null) losingWork = LosingWork.Status(record, status, reason) else taskError = PaneSession.describe(e)
         }
     }
 

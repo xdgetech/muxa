@@ -182,24 +182,43 @@ win() {
 }
 
 # A session that runs a muxa Task also asks what becomes of the Task, so a
-# closed session does not leave it open in the Inbox. <mode> is close.sh's flag.
-# A session without a worktree (an ask or manual session) only closes.
+# closed session does not leave it open in the Inbox. A worktree goes with its
+# session (ADR 0043); when that could lose work, the question says why and a
+# yes removes it anyway. A session without a worktree (an ask or manual
+# session) only closes.
 close_session() {
-  local mode="$1" what="$2" s run
+  local s run what="" why="" flag="" task=""
   s="$(session_of "$target")" || return 0
-  run="run-shell -b \"'$S/close.sh' $mode"
-  what=" and $what"
-  [ -n "$(target_opt "=$s:" @agent_worktree)" ] || what=""
-  if [ -z "$(target_opt "=$s:" @muxa_task)" ] || ! "$S/muxa.sh" available; then
+  if [ -n "$(target_opt "=$s:" @agent_worktree)" ]; then
+    why="$("$S/close.sh" --check "$s")"
+    what=" and remove its worktree and branch"
+    [ -z "$why" ] || { what=": $why. Remove its worktree and branch anyway"; flag=--force; }
+  fi
+  run="run-shell -b \"'$S/close.sh' $flag"
+  [ -n "$(target_opt "=$s:" @muxa_task)" ] && "$S/muxa.sh" available && task=1
+  if [ -z "$task" ]; then
     t confirm-before -p "close $s$what? (y/n)" "$run '$s'\""
     return
   fi
   t display-menu -x C -y C -T "#[align=centre] close $s$what " \
     "Close, mark the Task done" d "$run --task done '$s'\"" \
     "Close, drop the Task" x "$run --task dropped '$s'\"" \
-    "Close, keep the Task open" k "$run '$s'\"" \
+    "Park: close, keep the Task and its worktree" k "run-shell -b \"'$S/close.sh' --keep '$s'\"" \
     "" \
     "Cancel" q ""
+}
+
+# Only an open Task holds a worktree without a session (ADR 0043), so X parks
+# the session's Task. A session without one has nothing to keep it for.
+keep_session() {
+  local s
+  s="$(session_of "$target")" || return 0
+  if [ -z "$(target_opt "=$s:" @muxa_task)" ] || ! "$S/muxa.sh" available; then
+    say "$s has no muxa Task to keep its worktree for. Press x to close it."
+    return
+  fi
+  t confirm-before -p "park $s: close it, keep its Task and worktree? (y/n)" \
+    "run-shell -b \"'$S/close.sh' --keep '$s'\""
 }
 
 case "$verb" in
@@ -219,9 +238,8 @@ case "$verb" in
   win) win ;;
   ide) s="$(session_of "$target")" && "$S/ide.sh" "$s" ;;
   ide-current) "$S/ide.sh" "$(t display-message -p '#{session_name}')" ;;
-  close) close_session "" "remove its worktree" ;;
-  keep) close_session --keep "keep its worktree" ;;
-  force) close_session --force "remove its worktree, even if unmerged" ;;
+  close|force) close_session ;;
+  keep) keep_session ;;
   fold) fold ;;
   help) help ;;
   rename)

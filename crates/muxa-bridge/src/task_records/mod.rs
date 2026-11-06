@@ -7,6 +7,7 @@ pub(crate) mod branch_task;
 pub(crate) mod brief;
 pub(crate) mod close;
 mod create;
+pub(crate) mod end;
 mod facts;
 pub(crate) mod handoff;
 pub(crate) mod observation;
@@ -15,6 +16,7 @@ mod reading;
 pub mod remote;
 pub(crate) mod reply;
 pub(crate) mod restart;
+pub(crate) mod sweep;
 
 pub use brief::{BRIEF, HANDOFF};
 pub use restart::restart;
@@ -178,6 +180,21 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             task,
             rev,
             status,
+            worktree: Some(choice),
+        } if matches!(status, TaskStatus::Done | TaskStatus::Dropped) => {
+            one(end::end(cx, &task, Some(rev), status, choice)
+                .await
+                .map(|record| Message::TaskSaved {
+                    task: id,
+                    record: convert::task_record(record),
+                }))
+        }
+        Request::UpdateTask {
+            id,
+            task,
+            rev,
+            status,
+            ..
         } => {
             let saved = update(&cx.records, id, task.clone(), rev, status).await;
             if saved.is_ok() {
