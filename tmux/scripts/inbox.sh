@@ -68,25 +68,29 @@ JQ_DEFS='
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
   def dot: if .readAt then " " else "●" end;
   def shown: select(.state == "open" or .state == "later");
-  # Labels name the result (ADR 0033 §4a, ADR 0040): ✓ closes only the item, and
-  # an answer that changes the Task names it. A proposal keeps Approve and Reject.
+  # Labels name the result as the apps do (ADR 0033 §4a, ADR 0040): ✓ closes only
+  # the item, and an answer that changes the Task names it. A proposal keeps
+  # Approve and Reject.
   def answer_label($a):
     (.kind == "ask") as $ask |
     {"approve": (if $ask then "Allow" else "Approve" end), "accept": "Complete Task",
      "retry": "Retry", "reject": (if $ask then "Deny" else "Reject" end),
-     "reply": (if $ask then "Deny & send" else "Send" end),
-     "keep-open": "✓ Done", "ask-agent": "Ask agent",
-     "drop": "Drop Task", "later": "Later (move down)", "dismiss": "✓ Done"}[$a] // $a;
-  # [{key, act}] in the order of .answers: a is the main answer, the rest have a key each.
-  def keymap: (.answers // []) as $a | [
-    (if ($a | length) > 0 and ($a[0] | IN("choose", "later") | not) then {key: "a", act: $a[0]} else empty end),
-    (if $a | index("reply") then {key: "s", act: "reply"} else empty end),
-    (if $a | index("reject") then {key: "r", act: "reject"} else empty end),
-    (if $a | index("ask-agent") then {key: "g", act: "ask-agent"} else empty end),
-    (if $a | index("keep-open") then {key: "p", act: "keep-open"} else empty end),
-    (if $a | index("drop") then {key: "x", act: "drop"} else empty end),
-    (if ($a | index("dismiss")) and $a[0] != "dismiss" then {key: "n", act: "dismiss"} else empty end),
-    (if $a | index("later") then {key: "l", act: "later"} else empty end)] | sort_by(.act as $x | $a | index($x));
+     "reply": (if $ask then "Deny & Send" else "Send" end),
+     "keep-open": "✓ Done", "ask-agent": "Ask Agent",
+     "drop": "Drop Task", "later": "Later", "dismiss": "✓ Done"}[$a] // $a;
+  # [{key, act, group}] as the apps place them (ADR 0040): triage is the top bar
+  # and its … menu, answers are the decisions and the reply box. `a` is never
+  # Complete Task, which the apps keep in the menu.
+  def keymap: (.answers // []) as $a |
+    def pick($acts): [$a[] | select(IN($acts[]))][0] // empty;
+    def bind($key; $act; $group): {key: $key, act: $act, group: $group};
+    [(pick(["later"]) | bind("l"; .; "triage")),
+     (pick(["keep-open", "dismiss"]) | bind("d"; .; "triage")),
+     (pick(["accept"]) | bind("c"; .; "triage")),
+     (pick(["drop"]) | bind("x"; .; "triage")),
+     (pick(["approve", "retry"]) | bind("a"; .; "answer")),
+     (pick(["reject"]) | bind("r"; .; "answer")),
+     (pick(["reply", "ask-agent"]) | bind("s"; .; "answer"))];
   # Numbered evidence: the changes, docs, images and links.
   def evidence: (.attachments // {}) as $t | [
     ($t.changes // empty | {kind: "diff", ref: (.scope // ""),
@@ -130,7 +134,8 @@ list() {
   ' "$1"
 }
 
-# The preview of one item: question, summary, evidence, options and keys.
+# The preview of one item: question, summary, evidence, options, then the
+# keys: triage on one line, answers on the next.
 view() {
   iq -r --arg item "$1" "$JQ_DEFS"'
     .items[] | select(.id == $item) | . as $i |
@@ -145,8 +150,11 @@ view() {
       "\u001b[1m\(.prompt.question // "Options")\u001b[0m",
       (.prompt.options | to_entries[] | "  \(.key + 1)  \(.value.label)"), ""
      else empty end),
-    ([keymap[] | . as $k | "\($k.key) \($i | answer_label($k.act))"] +
-      (if .session then ["o open session"] else [] end) + ["space/b scroll", "v read all", "q close"] | join("   "))
+    ([keymap[] | select(.group == "triage") | . as $k | "\($k.key) \($i | answer_label($k.act))"] +
+      (if .session then ["o Open Session"] else [] end) | select(length > 0) | join("   ")),
+    ([keymap[] | select(.group == "answer") | . as $k | "\($k.key) \($i | answer_label($k.act))"]
+      | select(length > 0) | join("   ")),
+    "\u001b[2mspace/b scroll   v read all   q close\u001b[0m"
   ' "$2"
 }
 
@@ -266,12 +274,13 @@ ui() {
       break
     fi
     pos="$(printf '%s\n' "$rows" | awk -F'\t' -v f="$focus" '$1 == f { print NR; exit }')"
-    picked="$(printf '%s\n' "$rows" | fzf --ansi --no-input --delimiter '\t' --with-nth 2 --no-sort \
+    # --sync so start:pos lands after the rows load, also after an answer.
+    picked="$(printf '%s\n' "$rows" | fzf --sync --ansi --no-input --delimiter '\t' --with-nth 2 --no-sort \
       --layout reverse --info hidden --pointer '▌' --highlight-line \
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
-      --expect 'enter,ctrl-r,a,s,r,g,p,x,n,l,o,v,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,o,v,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"

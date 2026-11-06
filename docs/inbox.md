@@ -67,7 +67,7 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 - At connect, Inbox and Tasks mode stay on their list, also when it is empty ("Nothing needs you"). Sessions mode opens the default pane.
 - A host below `work:3` gets "This host needs a newer muxa-bridge for the Inbox", with Tasks and Sessions.
 - The reply box shows only when the item takes a text answer: `reply` or `ask-agent`. The send arrow needs its text.
-- The main answer is the reply box's action while it has text (ADR 0033 §4a.3). Otherwise it is the host's first answer, unless that is `choose`, `later` or a text answer. muxa for tmux uses the same rule. A decision that is the main answer is the prominent button.
+- The main answer is the reply box's action while it has text (ADR 0033 §4a.3). Otherwise it is the host's first answer, unless that is `choose`, `later` or a text answer. A decision that is the main answer is the prominent button.
 - iPad keys: Command+T Inbox mode, Command+L Tasks mode, Command+Shift+S Sessions mode, Command+0 shows or hides the sidebar, Command+, Settings. In the Inbox: Command+Up/Down move between items, Return opens an item on a phone, Command+Return sends the main answer, Command+O opens the item's terminal, Command+Shift+L moves the item down.
 - Android: Back from an attachment closes the Reader and returns to the item.
 - Android keys: the same with Ctrl+Shift (Ctrl+Shift+T, L, S, 0, O, Up/Down), Enter opens, Ctrl+Shift+Enter sends the main answer, Ctrl+Shift+Alt+L moves the item down. A swipe right is ✓, a swipe left moves it down.
@@ -77,8 +77,8 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 
 - The sidebar shows the Inbox section above the session tree: the count and the first open items. `Enter` on one opens it in `prefix + T`.
 - `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
-- Keys: `a` the item's main answer (Allow, Complete Task, Retry or Approve), `s` Send (Deny & send on a permission), `r` Deny or Reject, `p` and `n` ✓ Done (only the item), `x` Drop Task, `g` Ask agent (the item and a text to the workspace's Ask session; the item stays open), `l` Later (moves the item down, with no time), `1`–`9` open evidence (the diff first) or choose a question's option, `Enter` or `o` open the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Send and Ask agent ask for the text. Only the keys the item takes are listed, in the host's order of answers.
-- Labels name the result (ADR 0033 §4a, ADR 0040): `accept` is "Complete Task", `drop` "Drop Task", `keep-open` and `dismiss` "✓ Done", `reply` is "Send" ("Deny & send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
+- The keys follow the apps' item screen (ADR 0040), on two lines. Triage: `l` Later (moves the item down, with no time), `d` ✓ Done (only the item), `c` Complete Task, `x` Drop Task, `o` Open Session. Answers: `a` the first decision (Allow, Approve or Retry; never Complete Task), `r` Deny or Reject, `1`–`9` a question's option, `s` the reply box (Send with a session, Deny & Send on a permission, Ask Agent without a session; it asks for the text). Otherwise `1`–`9` open evidence (the diff first). `Enter` also opens the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Only the keys the item takes are listed.
+- Labels are the apps' labels (ADR 0033 §4a, ADR 0040): `accept` is "Complete Task", `drop` "Drop Task", `keep-open` and `dismiss` "✓ Done", `later` "Later", `ask-agent` "Ask Agent", `reply` is "Send" ("Deny & Send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
 
 ## Tasks and Sessions modes
 

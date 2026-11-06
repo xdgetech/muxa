@@ -165,18 +165,19 @@ apps show, with a goal and a status.
 - `prefix + T` shows the Inbox (ADR 0033): one row per question an agent or a
   Routine has for you, with the selected item below the list: its question, the
   agent's last message, its numbered evidence and its keys.
-  - `j`/`k` move. `a` gives the item's main answer: Allow, Complete Task,
-    Retry or Approve; a briefing's ✓ Done.
-  - `s` Send: the text goes to the agent as it is, and the Task goes on. On a
-    permission it is Deny & send: muxa denies the request, then sends the text.
-  - `r` Deny or Reject, `p` and `n` ✓ Done (closes
-    only the item), `x` Drop Task, `l` Later: the item moves below the others
-    and stays there until you answer it (ADR 0040). `g` Ask agent sends the item
-    and your text to the workspace's Ask session (`ask-<workspace>`), which muxa
-    starts when none is open; the item stays open (ADR 0041). Send and Ask agent
-    ask for the text.
-  - Labels say what the answer does (ADR 0033 §4a): on an agent's permission
-    `a` is Allow and `r` Deny; a Routine's proposal keeps Approve and Reject.
+  - `j`/`k` move. The keys sit on two lines, as on the apps' item screen
+    (ADR 0040). The first line is triage: `l` Later (the item moves below the
+    others and stays there until you answer it), `d` ✓ Done (closes only the
+    item), `c` Complete Task, `x` Drop Task and `o` Open Session.
+  - The second line answers the agent: `a` its first decision (Allow, Approve
+    or Retry; never Complete Task), `r` Deny or Reject, and `s` the reply box.
+    `s` asks for the text. With a session it is Send: the text goes to the agent
+    as it is, and the Task goes on; on a permission it is Deny & Send, which
+    denies the request first. Without a session it is Ask Agent: the item and
+    your text go to the workspace's Ask session (`ask-<workspace>`), which muxa
+    starts when none is open; the item stays open (ADR 0041).
+  - Labels are the apps' labels (ADR 0033 §4a): on an agent's permission `a`
+    is Allow and `r` Deny; a Routine's proposal keeps Approve and Reject.
   - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with
     the system opener (a link is also copied to the tmux buffer). For a question,
     `1`–`9` choose its option instead.

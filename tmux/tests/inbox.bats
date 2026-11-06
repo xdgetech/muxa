@@ -52,18 +52,20 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$output" == *"2  docs/plan.md"* ]]
   [[ "$output" == *"3  docs/chart.png"* ]]
   [[ "$output" == *"4  PR #817  https://github.com/example/app/pull/817"* ]]
-  [[ "$output" == *"a Complete Task   s Send   p ✓ Done   l Later (move down)   o open session   space/b scroll   v read all   q close"* ]]
+  [[ "$output" == *$'l Later   d ✓ Done   c Complete Task   o Open Session\ns Send\nspace/b scroll   v read all   q close'* ]]
 }
 
-@test "labels name what an answer does: an ask allows or denies, a proposal approves" {
-  strip() { sed $'s/\x1b\\[[0-9;]*m//g'; }
-  [[ "$(inbox view i-0a1b2c3d "$ITEMS" | strip | tail -n 1)" == "a Allow   r Deny   s Deny & send   l Later (move down)"* ]]
-  [[ "$(inbox view i-3d4e5f6a "$ITEMS" | strip | tail -n 1)" == "a Retry   s Send   x Drop Task   n ✓ Done   l Later (move down)"* ]]
-  [[ "$(inbox view e-1a2b3c4d "$ITEMS" | strip | tail -n 1)" == "a Approve   r Reject   l Later (move down)"* ]]
+@test "labels name what an answer does, as in the apps: triage first, then the answers" {
+  keys() { inbox view "$1" "$ITEMS" | sed $'s/\x1b\\[[0-9;]*m//g' | tail -n 3 | sed '$d'; }
+  [ "$(keys i-0a1b2c3d)" = "$(printf 'l Later   o Open Session\na Allow   r Deny   s Deny & Send')" ]
+  [ "$(keys i-3d4e5f6a)" = "$(printf 'l Later   d ✓ Done   x Drop Task\na Retry   s Send')" ]
+  [ "$(keys e-1a2b3c4d)" = "$(printf 'l Later\na Approve   r Reject')" ]
 }
 
 @test "a key answers with the item's own answers, a number opens evidence" {
-  [ "$(inbox key i-2c3d4e5f a "$ITEMS")" = accept ]
+  [ "$(inbox key i-2c3d4e5f a "$ITEMS")" = "" ]
+  [ "$(inbox key i-2c3d4e5f c "$ITEMS")" = accept ]
+  [ "$(inbox key i-2c3d4e5f d "$ITEMS")" = keep-open ]
   [ "$(inbox key i-2c3d4e5f r "$ITEMS")" = "" ]
   [ "$(inbox key i-2c3d4e5f s "$ITEMS")" = reply ]
   [ "$(inbox key i-0a1b2c3d s "$ITEMS")" = reply ]
@@ -75,7 +77,9 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [ "$(inbox key i-0a1b2c3d r "$ITEMS")" = reject ]
   [ "$(inbox key i-3d4e5f6a a "$ITEMS")" = retry ]
   [ "$(inbox key i-3d4e5f6a x "$ITEMS")" = drop ]
-  [ "$(inbox key i-3d4e5f6a n "$ITEMS")" = dismiss ]
+  [ "$(inbox key i-3d4e5f6a d "$ITEMS")" = dismiss ]
+  [ "$(inbox key i-3d4e5f6a p "$ITEMS")" = "" ]
+  [ "$(inbox key i-3d4e5f6a n "$ITEMS")" = "" ]
   [ "$(inbox key e-1a2b3c4d r "$ITEMS")" = reject ]
 }
 
@@ -123,14 +127,27 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [ "$(head -n 1 "$TMPDIR/bin/calls")" = "inbox --json" ]
 }
 
-@test "prefix+T: a on the selected item sends its main answer" {
+@test "prefix+T: a on an ask allows it" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key a
+  wait_for 'grep -q "^inbox answer i-0a1b2c3d approve --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: a never completes a Task; c does" {
   fake_cli
   attach
   key C-b T
   sleep 1
   key j
   key a
+  # a does nothing here; the popup lists the Inbox again before it takes a key.
+  sleep 1
+  key c
   wait_for 'grep -q "^inbox answer i-2c3d4e5f accept --json$" "$TMPDIR/bin/calls"'
+  [ "$(grep -c "^inbox answer" "$TMPDIR/bin/calls")" = 1 ]
 }
 
 @test "prefix+T: l moves the item down at once, with no time" {
@@ -143,15 +160,16 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   wait_for 'grep -q "^inbox answer i-2c3d4e5f later --json$" "$TMPDIR/bin/calls"'
 }
 
-@test "prefix+T: g asks the workspace's agent with a text, and the item stays" {
+@test "prefix+T: s without a session asks the workspace's agent with a text" {
   fake_cli
-  jq -c '.items[1].answers += ["ask-agent"]' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
-  [ "$(inbox key i-2c3d4e5f g "$ITEMS")" = ask-agent ]
+  jq -c '.items[1].answers = ["accept", "ask-agent", "keep-open", "later"]' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  [ "$(inbox key i-2c3d4e5f s "$ITEMS")" = ask-agent ]
+  [[ "$(inbox view i-2c3d4e5f "$ITEMS")" == *"s Ask Agent"* ]]
   attach
   key C-b T
   sleep 1
   key j
-  key g
+  key s
   tx send-keys -K -c "$C" -l "Put this in Notion"
   key Enter
   wait_for 'grep -q "^inbox answer i-2c3d4e5f ask-agent --text Put this in Notion --json$" "$TMPDIR/bin/calls"'
