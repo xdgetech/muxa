@@ -878,3 +878,52 @@ async fn worker_new_session_preserves_native_arguments_and_existing_layout() {
         dir.canonicalize().unwrap().to_string_lossy()
     );
 }
+
+/// The agent's exit leaves a shell in the same pane; the shell's exit closes it.
+#[tokio::test]
+async fn a_pane_gets_a_shell_once_after_its_process_exits() {
+    use muxa_tmux::{new_session, shell_after_exit};
+    let server = Server::start();
+    let dir = std::env::temp_dir().join(format!(
+        "muxa shell \"after\" $exit-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::SeqCst)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = Cleanup(dir.clone());
+    let (client, _notes) = Client::attach(&server.options(), None).unwrap();
+    let path = dir.to_string_lossy().into_owned();
+    let (session, pane) = new_session(&client, "agent", &path, &[], "sleep 1")
+        .await
+        .unwrap();
+    shell_after_exit(&client, pane, &path).await.unwrap();
+    let show = |format: &str| {
+        server
+            .tmux(&["display-message", "-p", "-t", &pane.to_string(), format])
+            .trim()
+            .to_owned()
+    };
+    wait_for(|| show("#{pane_current_command}") != "sleep").await;
+    assert_eq!(show("#{pane_id} #{pane_dead}"), format!("{pane} 0"));
+    let shell = server.tmux(&["show-options", "-gv", "default-shell"]);
+    assert!(
+        show("#{pane_start_command}").starts_with(&format!("{} ", shell.trim())),
+        "{}",
+        show("#{pane_start_command}")
+    );
+    let here = std::fs::canonicalize(&dir).unwrap();
+    assert_eq!(
+        std::fs::canonicalize(show("#{pane_current_path}")).unwrap(),
+        here
+    );
+
+    server.tmux(&["send-keys", "-t", &pane.to_string(), "exit", "Enter"]);
+    let sessions = || server.tmux(&["list-sessions", "-F", "#{session_id}"]);
+    wait_for(|| !sessions().lines().any(|s| s == session.to_string())).await;
+}

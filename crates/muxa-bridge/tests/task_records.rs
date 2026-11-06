@@ -64,6 +64,7 @@ both!(
     old_run_assignments_read_as_worker_names,
     another_writer_s_change_is_announced,
     a_task_without_a_repo_gets_its_own_directory_and_session,
+    a_task_without_a_repo_keeps_its_session_when_the_agent_exits,
     a_task_that_ends_closes_its_session_and_keeps_its_folder,
     a_fresh_done_gets_the_start_prompt,
     a_repo_task_runs_in_its_worktree_with_task_md_excluded,
@@ -253,6 +254,43 @@ fn prompts(server: &Server, pane: &str) -> usize {
         .iter()
         .filter(|l| l.as_str() == PROMPT)
         .count()
+}
+
+/// The agent's exit leaves a shell in its pane, so the session stays.
+async fn a_task_without_a_repo_keeps_its_session_when_the_agent_exits(mode: Mode) {
+    let server = Server::start();
+    let mut host = Host::new("dir-exit", mode);
+    let mut bridge = host
+        .bridge(
+            &server,
+            &["--task-launcher", "builtin", "--task-command", AGENT],
+        )
+        .await;
+    let (saved, result) = create(&mut bridge, json!({})).await;
+    ok(&result);
+    let r = saved.expect("task-saved");
+    let name = r.session.clone().expect("session");
+    let pane = server.pane(&format!("={name}:"));
+    let show = |format: &str| {
+        server
+            .tmux(&["display-message", "-p", "-t", &pane, format])
+            .trim()
+            .to_owned()
+    };
+    let agent = show("#{pane_pid}");
+
+    let killed = std::process::Command::new("kill")
+        .arg(&agent)
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    common::wait_until(|| show("#{pane_pid}") != agent).await;
+    assert_eq!(show("#{session_name} #{pane_dead}"), format!("{name} 0"));
+    assert_eq!(
+        std::fs::canonicalize(show("#{pane_current_path}")).unwrap(),
+        std::fs::canonicalize(r.dir.unwrap()).unwrap()
+    );
+    assert_eq!(option(&server, &name, "@muxa_task"), r.id);
 }
 
 async fn a_task_without_a_repo_gets_its_own_directory_and_session(mode: Mode) {

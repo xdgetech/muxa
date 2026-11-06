@@ -266,6 +266,34 @@ pub async fn set_session_option(
         .map(drop)
 }
 
+/// When `pane`'s process exits, the pane gets a login shell in `dir` instead
+/// of closing, so its session stays. It holds once: the shell's own exit closes
+/// the pane. A `respawn-pane -k` is no exit (`scripts/repro/shell-after-exit.sh`).
+pub async fn shell_after_exit(client: &Client, pane: PaneId, dir: &str) -> Result<(), Error> {
+    let shell = global_option(client, "default-shell")
+        .await?
+        .unwrap_or_else(|| DEFAULT_SHELL.to_owned());
+    for line in shell_after_exit_lines(pane, dir, &shell) {
+        client.command(&line).await?;
+    }
+    Ok(())
+}
+
+const DEFAULT_SHELL: &str = "/bin/sh";
+
+/// The hook first: an exit after `remain-on-exit` but before it would leave a dead pane.
+fn shell_after_exit_lines(pane: PaneId, dir: &str, shell: &str) -> [String; 2] {
+    let once = format!(
+        "set-hook -pu -t {pane} pane-died ; set-option -pu -t {pane} remain-on-exit ; respawn-pane -k -t {pane} -c {} -- {} -l",
+        quote(dir),
+        quote(shell)
+    );
+    [
+        format!("set-hook -p -t {pane} pane-died {}", quote(&once)),
+        format!("set-option -p -t {pane} remain-on-exit on"),
+    ]
+}
+
 /// A global option's value; None when it is unset or empty.
 pub async fn global_option(client: &Client, name: &str) -> Result<Option<String>, Error> {
     let reply = client
@@ -362,6 +390,16 @@ mod tests {
             new_session_line("t", "/d", &env, "claude").unwrap(),
             r##"new-session -d -P -F "#{session_id} #{pane_id}" -s "t" -c "/d" -e "CLAUDE_CONFIG_DIR=/h/.claude-a" -e "TOKEN=a\"b \$c" "claude""##
         );
+    }
+
+    #[test]
+    fn the_shell_after_exit_hook_quotes_the_directory_and_shell() {
+        let [hook, option] = shell_after_exit_lines(PaneId::new(3), "/w/a \"b\" $x", "/bin/zsh");
+        assert_eq!(
+            hook,
+            r##"set-hook -p -t %3 pane-died "set-hook -pu -t %3 pane-died ; set-option -pu -t %3 remain-on-exit ; respawn-pane -k -t %3 -c \"/w/a \\\"b\\\" \\\$x\" -- \"/bin/zsh\" -l""##
+        );
+        assert_eq!(option, "set-option -p -t %3 remain-on-exit on");
     }
 
     #[test]

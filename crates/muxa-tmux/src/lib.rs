@@ -28,7 +28,7 @@ pub use input::{paste, send_bytes, send_keys, send_text, valid_key};
 pub use lifecycle::{
     clients_of, global_option, kill_session, last_other_session, new_session, new_session_command,
     pane_start_command, respawn_pane, respawn_pane_command, session_names, set_pane_option,
-    set_session_option, switch_client,
+    set_session_option, shell_after_exit, switch_client,
 };
 pub use parser::{Notification, Reply};
 pub use sizing::{Grid, follows_device, release_size, resize_client, take_size, window_size};

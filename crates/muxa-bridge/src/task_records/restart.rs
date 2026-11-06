@@ -199,6 +199,12 @@ pub(super) async fn restart_record(
     if replacement.pid == op.source_pid {
         return Err(uncertain(&operation));
     }
+    // The hook fires once, so an earlier exit may have used it up.
+    if let Err(e) =
+        muxa_tmux::shell_after_exit(&env.client, found.pane, &dir.to_string_lossy()).await
+    {
+        tracing::warn!(pane = %found.pane, error = %e, "the pane closes when the agent exits");
+    }
     op.phase = Phase::Replaced;
     op.replacement = Some(replacement);
     let saved = blocking(move || {

@@ -75,6 +75,7 @@ impl Builtin {
             }
         };
         muxa_tmux::set_pane_option(client, pane, "@muxa_role", "agent").await?;
+        muxa_tmux::shell_after_exit(client, pane, &dir.to_string_lossy()).await?;
         Ok(session)
     }
 
