@@ -1,0 +1,15 @@
+[tasks."qa:ios:check"]
+description = "Check the host QA volume and existing shared simulators"
+run = "python3 scripts/ios-simulator.py check iphone ipad-mini ipad-pro"
+
+[tasks."qa:ios:iphone"]
+description = "Run UI tests on the shared iPhone"
+run = "make test-app-iphone"
+
+[tasks."qa:ios:ipad-mini"]
+description = "Run UI tests on the shared iPad mini"
+run = "make test-app"
+
+[tasks."screenshots:ios"]
+description = "Capture screenshots on the shared iPhone and 13-inch iPad"
+run = "make screenshots"

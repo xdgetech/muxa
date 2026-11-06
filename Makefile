@@ -34,6 +34,7 @@ test-tmux:
 
 test-harness:
 	bats tests/harness
+	python3 -m unittest discover -s tests/harness -p 'test_ios_simulator.py'
 
 # muxa for tmux (tmux/; tmux >= 3.4, fzf, jq): its bats tests, each on its own
 # tmux server, and the contract test of new.sh against the built-in launcher.
@@ -103,8 +104,7 @@ test-android-release:
 
 # The iPad and iPhone app. The Xcode project is generated from apple/Muxa/project.yml (XcodeGen).
 # SwiftTerm has a build plugin; command-line builds skip Xcode's trust prompt for it.
-MUXA_SIM ?= iPad mini (A17 Pro)
-MUXA_SIM_IPHONE ?= iPhone 18 Pro Max
+export MUXA_SIM MUXA_SIM_IPHONE
 XCODEBUILD = xcodebuild -project apple/Muxa/Muxa.xcodeproj -scheme Muxa -skipPackagePluginValidation
 
 app-project:
@@ -114,12 +114,12 @@ build-app: app-project
 	$(XCODEBUILD) -destination 'generic/platform=iOS Simulator' build
 
 # UI test against the in-app demo bridge; no host needed.
-test-app: app-project
-	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM)' test
+test-app:
+	python3 scripts/ios-simulator.py run ipad-mini -- bash scripts/test-app.sh
 
 # The same UI test on an iPhone.
-test-app-iphone: app-project
-	$(XCODEBUILD) -destination 'platform=iOS Simulator,name=$(MUXA_SIM_IPHONE)' test
+test-app-iphone:
+	python3 scripts/ios-simulator.py run iphone -- bash scripts/test-app.sh
 
 # Renders the icon from apple/Muxa/Art/app-icon.swift: iOS's light, dark and tinted images,
 # Android's adaptive icon layers, and Play's store icon and feature graphic.

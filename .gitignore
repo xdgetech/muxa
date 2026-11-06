@@ -10,3 +10,7 @@ apple/**/DerivedData/
 apple/Muxa/Muxa.xcodeproj/
 apple/Muxa/Config/Local.xcconfig
 /build
+# Host-specific simulator identities and storage paths.
+.ios-qa.local.json
+mise.local.toml
+__pycache__/

@@ -1,0 +1,18 @@
+{
+  "volume": "/Volumes/YOUR_QA_VOLUME",
+  "storage_root": "/Volumes/YOUR_QA_VOLUME/ios-qa",
+  "devices": {
+    "iphone": {
+      "udid": "YOUR_EXISTING_IPHONE_UDID",
+      "runtime": "YOUR_INSTALLED_IOS_RUNTIME_IDENTIFIER"
+    },
+    "ipad-mini": {
+      "udid": "YOUR_EXISTING_IPAD_MINI_UDID",
+      "runtime": "YOUR_INSTALLED_IOS_RUNTIME_IDENTIFIER"
+    },
+    "ipad-pro": {
+      "udid": "YOUR_EXISTING_IPAD_PRO_UDID",
+      "runtime": "YOUR_INSTALLED_IOS_RUNTIME_IDENTIFIER"
+    }
+  }
+}

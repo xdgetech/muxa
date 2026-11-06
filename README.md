@@ -147,6 +147,12 @@ make test-android-app # Android UI tests on a running emulator
 
 Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Coding agents: [`AGENTS.md`](AGENTS.md). Security: [`SECURITY.md`](SECURITY.md).
 
+iOS UI tests and screenshots reuse host-configured simulators under a shared
+lock. Configure the local devices and mounted QA storage as described in
+[`docs/ios-qa.md`](docs/ios-qa.md). Mise exposes `qa:ios:iphone`,
+`qa:ios:ipad-mini`, `qa:ios:check` and `screenshots:ios`; the Make commands
+use the same implementation. Host UUIDs and storage paths are never committed.
+
 ## License
 
 | Part | License |

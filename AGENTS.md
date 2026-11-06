@@ -45,7 +45,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `make build-android` / `make lint-android` | build the debug app, or run Android lint on it. |
 | `make test-android-app` | the app's UI tests (demo bridge, fold and resize) on the running emulator or device. |
 | `MUXA_DEVICE=<name or id> make install-ipad` | **humans only**: build, sign and run on a paired iPad. It creates signing assets on the developer's Apple account. |
-| `make screenshots` | App Store screenshots, captioned in English and Japanese: iPad 2752x2064 into `build/screenshots/appstore-ipad/{en,ja}`, iPhone 1320x2868 into `appstore-iphone/`. README images into `docs/images/`. Runs `ShowcaseTests` against the demo's `-showcase` data on simulators of its own. |
+| `make screenshots` | App Store screenshots, captioned in English and Japanese: iPad 2752x2064, iPhone 1320x2868. Runs `ShowcaseTests` on shared host-configured QA simulators under one lock, with no device creation. Outputs and README JPEGs go into a fresh run directory on the QA volume; existing images are preserved. See `docs/ios-qa.md`. |
 | `make screenshots-android` | Google Play screenshots: phone 1080x1920 into `build/screenshots/play-phone/{en,ja}`, tablet 2560x1440 into `play-tablet/`. Runs `ShowcaseTest` on the `Pixel_10a` and `Pixel_Tablet` emulators (`MUXA_AVD_PHONE`, `MUXA_AVD_TABLET`). |
 | `make app-icon` | renders the icon from `apple/Muxa/Art/app-icon.swift`: iOS's light, dark and tinted images, Android's adaptive icon layers, and Play's store icon and feature graphic. |
 | `make lint-store` | the store listings fit each store's limits and never say "demo" or "trial" (part of `make check`). |

@@ -174,7 +174,7 @@ The server:
 | Routines | `make check` (config, schedule with DST and catch-up, output validation, publish); `make test-tmux` (`tests/routines.rs`: a real daemon and a fake agent run, publish, retry and approve; a scheduled run; the bridge without a daemon) |
 | muxa for tmux and its contract | `make test-tmux-plugin` (ADR 0017, 0032): the plugin's bats tests and `tests/tmux_agents.rs` against `tmux/`; `make lint-sh` |
 | MuxaKit | `make test-apple`; `make test-apple-tmux` against the real bridge |
-| The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, in the simulator against the in-app demo bridge |
+| The iPad and iPhone app | `make test-app` (iPad mini, with the fold test) and `make test-app-iphone`, against the in-app demo bridge on existing shared simulators under one host lock; host setup: `docs/ios-qa.md` (ADR 0042) |
 | The Android client | `make test-android`, `make test-android-tmux`, `make lint-android`; `make test-android-app` on a phone, Pixel Tablet and Pixel Fold emulator, against the in-app demo bridge |
 | The store listings | `make lint-store` (in `make check`); `make screenshots` and `make screenshots-android` check every image's size |
 | Android release build (full R8, ADR 0030) | `make test-android-release`: the minified app connects over SSH to a throwaway host and shows a pane, on an emulator |
