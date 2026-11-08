@@ -24,9 +24,11 @@ public enum KeyMap {
     }
 
     /// `characters` is what the key types without modifiers applied by the OS
-    /// (`UIKey.charactersIgnoringModifiers`).
-    public static func map(special: Special?, characters: String, modifiers: Modifiers) -> Output {
+    /// (`UIKey.charactersIgnoringModifiers`). `inputModes` is how many keyboard
+    /// languages the user has: with more than one, Control+Space switches them.
+    public static func map(special: Special?, characters: String, modifiers: Modifiers, inputModes: Int = 1) -> Output {
         if modifiers.contains(.command) { return .none }
+        if special == nil, characters == " ", modifiers == .control, inputModes > 1 { return .none }
         if let special {
             guard let name = name(special, shift: modifiers.contains(.shift)) else { return .none }
             return .keys([prefix(modifiers, shiftInName: special == .tab) + name])

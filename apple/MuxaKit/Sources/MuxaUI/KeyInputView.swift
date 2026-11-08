@@ -179,7 +179,8 @@ public final class KeyInputView: UIView, UITextInput {
                 unhandled.insert(press)
                 continue
             }
-            let output = KeyMap.map(special: special, characters: key.charactersIgnoringModifiers, modifiers: mods)
+            let output = KeyMap.map(special: special, characters: key.charactersIgnoringModifiers, modifiers: mods,
+                                    inputModes: UITextInputMode.activeInputModes.count)
             if output == .none {
                 unhandled.insert(press)
             } else {

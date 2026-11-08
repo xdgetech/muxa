@@ -28,6 +28,14 @@ struct KeyMapTests {
         #expect(KeyMap.map(special: nil, characters: " ", modifiers: [.control]) == .keys(["C-Space"]))
     }
 
+    /// With two keyboard languages, iPadOS switches them on Control+Space; the pane
+    /// must leave it to the system. With one, the pane gets C-Space.
+    @Test func controlSpaceSwitchesTheLanguageWhenThereAreTwo() {
+        #expect(KeyMap.map(special: nil, characters: " ", modifiers: [.control], inputModes: 2) == .none)
+        #expect(KeyMap.map(special: nil, characters: " ", modifiers: [.control], inputModes: 1) == .keys(["C-Space"]))
+        #expect(KeyMap.map(special: nil, characters: " ", modifiers: [.control, .option], inputModes: 2) == .keys(["C-M-Space"]))
+    }
+
     @Test func plainCharactersAreText() {
         #expect(KeyMap.map(special: nil, characters: "a", modifiers: []) == .text("a"))
         #expect(KeyMap.map(special: nil, characters: "é", modifiers: [.shift]) == .text("é"))
