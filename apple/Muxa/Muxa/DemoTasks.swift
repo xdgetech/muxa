@@ -96,7 +96,7 @@ struct DemoTasks: Sendable {
                ago: 1200, project: "Launch", dir: "/work/tasks/draft-the-pricing-page-t-price1",
                note: "The agent did not start: no agent command is set for this workspace."),
         record("t-relnot", "work", "Write the release notes", "Summarize the changes since 1.2 for the blog.",
-               status: .done, ago: 86_400, project: "Launch", dir: "/work/tasks/write-the-release-notes-t-relnot",
+               status: .done, ago: 10_800, project: "Launch", dir: "/work/tasks/write-the-release-notes-t-relnot",
                loop: loop("make check", .passed, attempts: 1, ago: 86_500,
                           lastCheck: check(2, exit: 0, seconds: 52, ago: 86_500))) { _ in [
                    AgentRun(id: 1, agent: "codex", startedAt: now - 90_000, agentSession: "rollout-2026-10-31T09-12-44",
@@ -153,7 +153,7 @@ struct DemoTasks: Sendable {
                "Compare our plans with three competitors and propose new prices.",
                ago: 5400, project: "Pricing", dir: "~/work/tasks/plan-the-q3-pricing-change-t-6f7a8b"),
         record("t-9b8c7d", "personal", "File the VAT return", "Collect the quarter's invoices and file the VAT return.",
-               status: .done, ago: 172_800, dir: "~/personal/tasks/file-the-vat-return-t-9b8c7d"),
+               status: .done, ago: 21_600, dir: "~/personal/tasks/file-the-vat-return-t-9b8c7d"),
     ])
 
     func record(_ id: String?) -> TaskRecord? {

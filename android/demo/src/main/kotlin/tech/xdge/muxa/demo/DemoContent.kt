@@ -357,7 +357,7 @@ internal object TestContent : DemoContent {
         ),
         demoTask(
             "t-relnot", "work", "Write the release notes", "Summarize the changes since 1.2 for the blog.",
-            TaskStatus.DONE, now - 86_400, project = "Launch", dir = "/work/tasks/write-the-release-notes-t-relnot",
+            TaskStatus.DONE, now - 10_800, project = "Launch", dir = "/work/tasks/write-the-release-notes-t-relnot",
             runs = listOf(demoRun(1, now - 90_000, agent = "codex", agentSession = "rollout-2026-10-31T09-12-44")),
             loop = demoLoop(
                 "make check", LoopState.PASSED, attempts = 1, since = now - 86_500,

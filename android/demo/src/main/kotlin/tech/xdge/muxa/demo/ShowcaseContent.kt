@@ -303,7 +303,7 @@ internal object ShowcaseContent : DemoContent {
         ),
         demoTask(
             "t-9b8c7d", "personal", "File the VAT return", "Collect the quarter's invoices and file the VAT return.",
-            TaskStatus.DONE, now - 172_800, dir = "~/personal/tasks/file-the-vat-return-t-9b8c7d",
+            TaskStatus.DONE, now - 21_600, dir = "~/personal/tasks/file-the-vat-return-t-9b8c7d",
         ),
     )
 
