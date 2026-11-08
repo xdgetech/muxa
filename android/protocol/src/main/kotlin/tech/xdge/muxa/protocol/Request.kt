@@ -14,6 +14,9 @@ sealed interface Request {
     @Serializable data class Watch(override val id: Long, val pane: String) : Request
     @Serializable data class Unwatch(override val id: Long) : Request
 
+    /** The pane's last [lines] scrollback lines and its screen, once (capability `history`). */
+    @Serializable data class History(override val id: Long, val pane: String, val lines: Int? = null) : Request
+
     /** The grid the pane area shows at the default font (capability `viewport`, ADR 0020). The bridge sizes the watched pane's window for it. */
     @Serializable data class Viewport(override val id: Long, val cols: Int, val rows: Int) : Request
 

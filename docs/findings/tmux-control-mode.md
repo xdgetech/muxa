@@ -55,6 +55,7 @@ Before ADR 0020, `refresh-client -C` was rejected as a workaround for narrow-cli
 | `%output` arrives only for panes in the control client's current session. After `switch-client`, it arrives for the new session's panes. | `scripts/repro/output-scope.sh` |
 | `%output` escapes only bytes below 0x20 and `\` (as `\ooo`). Every other byte, including invalid UTF-8, is passed raw. Read lines as bytes. | `scripts/repro/output-raw-bytes.sh` |
 | While a program uses the alternate screen, `capture-pane` shows the alternate screen and `capture-pane -a` shows the primary one. | `scripts/repro/alt-capture.sh` |
+| On a control client, `capture-pane -p -e -S -<n>` sends the last `n` scrollback lines, then the screen, with raw escape bytes for colors. The pane stays out of copy mode. `history_size` counts the lines the pane keeps. The `history` request relies on this. | `scripts/repro/history-capture.sh` |
 
 ## Commands
 

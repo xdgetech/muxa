@@ -112,6 +112,7 @@ class PaneSession(
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
+        val canShowHistory get() = "history" in capabilities
         val canShowChanges get() = "changes" in capabilities
         val canShowImages get() = "images" in capabilities
         val canStartTasks get() = "tasks" in capabilities
@@ -161,6 +162,7 @@ class PaneSession(
     private var imageId: Long? = null
     // Lists and task names that arrive just before their `result`.
     private val docListings = mutableMapOf<Long, Message.DocList>()
+    private val histories = mutableMapOf<Long, Message.History>()
     private val changeListings = mutableMapOf<Long, Message.ChangeList>()
     private val imageListings = mutableMapOf<Long, Message.ImageList>()
     private val createdTasks = mutableMapOf<Long, String>()
@@ -625,6 +627,16 @@ class PaneSession(
         runCatching { request { Request.Unchat(it) } }
     }
 
+    /** The pane's scrollback, then its screen, once (capability `history`). Null when none came. */
+    suspend fun history(pane: String, lines: Int? = null): Message.History? = withContext(dispatcher) {
+        var requestId = 0L
+        request { id ->
+            requestId = id
+            Request.History(id, pane, lines)
+        }
+        histories.remove(requestId)
+    }
+
     /** The pane's documents: its agent's first, then its repo's. */
     suspend fun documents(pane: String): Message.DocList = withContext(dispatcher) {
         var requestId = 0L
@@ -938,6 +950,7 @@ class PaneSession(
             is Message.ChatEntries -> if (message.chat == chatId) _state.update { it.copy(chat = it.chat?.apply(message)) }
             is Message.ChatEnded -> if (message.chat == chatId) _state.update { it.copy(chat = it.chat?.copy(ended = message.reason)) }
             is Message.DocList -> docListings[message.docs] = message
+            is Message.History -> histories[message.history] = message
             is Message.ChangeList -> changeListings[message.changes] = message
             is Message.ImageList -> imageListings[message.images] = message
             is Message.TaskCreated -> createdTasks[message.task] = message.session
@@ -1026,6 +1039,7 @@ class PaneSession(
         diffId = null
         imageId = null
         docListings.clear()
+        histories.clear()
         changeListings.clear()
         imageListings.clear()
         createdTasks.clear()

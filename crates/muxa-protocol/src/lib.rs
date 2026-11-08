@@ -20,6 +20,10 @@ use serde::{Deserialize, Serialize};
 /// Changes when a message changes incompatibly.
 pub const VERSION: u32 = 1;
 
+/// Scrollback lines a `history` request sends when it names none, and at most.
+pub const DEFAULT_HISTORY_LINES: u32 = 2000;
+pub const MAX_HISTORY_LINES: u32 = 10_000;
+
 /// Sent by the client. Every request has an `id`, echoed in its `result`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
@@ -38,6 +42,15 @@ pub enum Request {
     },
     Unwatch {
         id: u64,
+    },
+    /// The pane's scrollback and screen, once (capability `history`). A
+    /// `history` comes before the `result`.
+    History {
+        id: u64,
+        pane: String,
+        /// Scrollback lines above the screen, 1 to `MAX_HISTORY_LINES`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lines: Option<u32>,
     },
     /// The grid the client's pane area shows at its default font (capability
     /// `viewport`, ADR 0020). The bridge sizes the watched pane's window for
@@ -326,6 +339,7 @@ impl Request {
             | Request::List { id }
             | Request::Watch { id, .. }
             | Request::Unwatch { id }
+            | Request::History { id, .. }
             | Request::Viewport { id, .. }
             | Request::Keys { id, .. }
             | Request::Text { id, .. }
@@ -392,6 +406,18 @@ pub enum Message {
         rows: u16,
         #[serde(with = "base64_bytes")]
         data: Vec<u8>,
+    },
+    /// A pane's scrollback, then its screen: lines `cols` wide, each ending in
+    /// a newline, with their colors as escape sequences.
+    History {
+        history: u64,
+        pane: String,
+        cols: u16,
+        #[serde(with = "base64_bytes")]
+        data: Vec<u8>,
+        /// The pane has older lines than were sent.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        truncated: bool,
     },
     /// Feed `data` to the emulator of the current screen.
     Output {

@@ -196,7 +196,7 @@ struct CellMetrics {
 
 /// The emulator's replies to host queries (device attributes, cursor position)
 /// must not reach the pane: tmux answers those itself. Size changes are ignored.
-private final class DropReplies: TerminalViewDelegate {
+final class DropReplies: TerminalViewDelegate {
     func send(source: TerminalView, data: ArraySlice<UInt8>) {}
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {}
     func setTerminalTitle(source: TerminalView, title: String) {}

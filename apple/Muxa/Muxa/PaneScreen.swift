@@ -14,7 +14,7 @@ struct PaneScreen: View {
             // under the Pretty view so switching back is instant.
             PaneHost(
                 session: model.session, fit: model.paneFit, focus: model.showsPretty ? nil : model.focusRequest,
-                onPinch: { model.paneFit = $0 })
+                onPinch: { model.paneFit = $0 }, onScrollBack: { model.showHistory() })
             if model.showsPretty {
                 ChatView(log: model.chat)
             }
@@ -117,6 +117,10 @@ struct PaneScreen: View {
                 .pickerStyle(.menu)
                 // Also on a phone: its list holds manual sessions only (ADR 0027).
                 Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
+                if model.canShowHistory {
+                    Button("Scrollback", systemImage: Icon.history) { model.showHistory() }
+                        .accessibilityIdentifier("menu-history")
+                }
                 if let task = model.paneTask {
                     Button("Task Info", systemImage: Icon.tasks) { model.taskInfo = task.id }
                         .accessibilityIdentifier("menu-task-info")
@@ -208,6 +212,8 @@ struct PaneHost: UIViewRepresentable {
     var focus: Int?
     /// The user pinched to another fit.
     var onPinch: (PaneFit) -> Void = { _ in }
+    /// The user pulled down past the grid's top: show the scrollback.
+    var onScrollBack: () -> Void = {}
 
     func makeUIView(context: Context) -> PaneContainer {
         let view = PaneContainer()
@@ -228,6 +234,7 @@ struct PaneHost: UIViewRepresentable {
     func updateUIView(_ view: PaneContainer, context: Context) {
         view.fitOverride = fit
         view.onPinch = onPinch
+        view.onScrollBack = onScrollBack
         if let focus, view.focusRequest != focus {
             view.focusRequest = focus
             // After SwiftUI has removed whatever held the keyboard (a sheet, the composer).
@@ -246,6 +253,10 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     private var cursorWasVisible = true
     var focusRequest = 0
     var onPinch: (PaneFit) -> Void = { _ in }
+    var onScrollBack: () -> Void = {}
+    private var pulledBack = false
+    /// A pull down past the top by this many points opens the scrollback.
+    private static let pullDistance: CGFloat = 60
     /// The grid this view shows at the default font changed (ADR 0020).
     var onViewport: (PaneViewport) -> Void = { _ in }
     private var viewport: PaneViewport?
@@ -258,7 +269,8 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         super.init(frame: .zero)
         backgroundColor = .black
         scroll.backgroundColor = .black
-        scroll.alwaysBounceVertical = false
+        // A pull down past the top asks for the scrollback, also when the grid fits.
+        scroll.alwaysBounceVertical = true
         scroll.alwaysBounceHorizontal = false
         scroll.isDirectionalLockEnabled = true
         scroll.indicatorStyle = .white
@@ -351,6 +363,16 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         let around = scroll.contentSize.width > scroll.bounds.width ? caret.width * 4 : 0
         scroll.scrollRectToVisible(caret.insetBy(dx: -around, dy: 0), animated: false)
         cursorWasVisible = true
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView.isDragging, !pulledBack, scrollView.contentOffset.y < -Self.pullDistance else { return }
+        pulledBack = true
+        onScrollBack()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        pulledBack = false
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {

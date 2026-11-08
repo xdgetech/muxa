@@ -7,6 +7,8 @@ public enum Request: Equatable, Sendable {
     /// Show this pane. `screen` and `output` for it carry this request's id as `watch`.
     case watch(id: UInt64, pane: String)
     case unwatch(id: UInt64)
+    /// The pane's last `lines` scrollback lines and its screen, once (capability `history`).
+    case history(id: UInt64, pane: String, lines: Int?)
     /// The grid the pane area shows at the default font (capability `viewport`,
     /// ADR 0020). The bridge sizes the watched pane's window for it.
     case viewport(id: UInt64, cols: Int, rows: Int)
@@ -92,7 +94,7 @@ public enum Request: Equatable, Sendable {
     public var id: UInt64 {
         switch self {
         case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
-            .watch(let id, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
+            .watch(let id, _), .history(let id, _, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
@@ -109,7 +111,7 @@ extension Request: Codable {
     fileprivate enum Key: String, CodingKey {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
-        case cols, rows, operation, action
+        case cols, rows, operation, action, lines
         case routine, entry, until, option, worktree
     }
 
@@ -119,6 +121,10 @@ extension Request: Codable {
         case .ping(let id): try c.head("ping", id)
         case .list(let id): try c.head("list", id)
         case .unwatch(let id): try c.head("unwatch", id)
+        case .history(let id, let pane, let lines):
+            try c.head("history", id)
+            try c.encode(pane, forKey: .pane)
+            try c.encodeIfPresent(lines, forKey: .lines)
         case .viewport(let id, let cols, let rows):
             try c.head("viewport", id)
             try c.encode(cols, forKey: .cols)
@@ -250,6 +256,7 @@ extension Request: Codable {
         case "ping": self = .ping(id: id)
         case "list": self = .list(id: id)
         case "unwatch": self = .unwatch(id: id)
+        case "history": self = .history(id: id, pane: try pane(), lines: try c.decodeIfPresent(Int.self, forKey: .lines))
         case "viewport":
             self = .viewport(
                 id: id, cols: try c.decode(Int.self, forKey: .cols), rows: try c.decode(Int.self, forKey: .rows))

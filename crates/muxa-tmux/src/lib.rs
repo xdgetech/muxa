@@ -7,6 +7,7 @@ mod device;
 mod discover;
 mod error;
 mod escape;
+mod history;
 mod ids;
 mod input;
 mod lifecycle;
@@ -23,6 +24,7 @@ pub use device::{
 pub use discover::{AgentState, AgentStatus, Pane, Role, Session, list_sessions, locate, pane};
 pub use error::Error;
 pub use escape::{decode_output, quote};
+pub use history::{History, history};
 pub use ids::{PaneId, SessionId, WindowId};
 pub use input::{paste, send_bytes, send_keys, send_text, valid_key};
 pub use lifecycle::{

@@ -48,6 +48,24 @@ final class DemoTests: XCTestCase {
 
     /// A pane taller than a landscape view fits the width, scrolls, and follows the
     /// cursor until the user scrolls away from it.
+    /// Scrollback in More shows the host's earlier lines over the pane; Done returns to it.
+    @MainActor
+    func testScrollbackShowsTheHostsEarlierLines() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "sessions"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
+        tapWhenReady(app.buttons["More"])
+        tapWhenReady(app.buttons["menu-history"])
+        let history = app.descendants(matching: .any)["history"].firstMatch
+        XCTAssertTrue(history.waitForExistence(timeout: 10))
+        let lines = NSPredicate(format: "value CONTAINS %@", "Earlier output, line 60")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: lines, object: history)], timeout: 5), .completed)
+        tapWhenReady(app.buttons["history-done"])
+        XCTAssertTrue(history.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.exists)
+    }
+
     @MainActor
     func testLandscapeFitsWidthAndFollowsTheCursor() throws {
         let app = XCUIApplication()

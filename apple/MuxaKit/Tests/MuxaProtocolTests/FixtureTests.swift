@@ -25,7 +25,7 @@ struct FixtureTests {
 
     @Test func requestsRoundTrip() throws {
         let lines = try Self.lines("requests.jsonl")
-        #expect(lines.count == 34)
+        #expect(lines.count == 36)
         for line in lines {
             let request = try Wire.decodeRequest(line)
             let again = try Wire.encode(request)
@@ -35,7 +35,7 @@ struct FixtureTests {
 
     @Test func messagesRoundTrip() throws {
         let lines = try Self.lines("messages.jsonl")
-        #expect(lines.count == 39)
+        #expect(lines.count == 41)
         for line in lines {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }

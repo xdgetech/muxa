@@ -8,6 +8,7 @@ import android.webkit.WebView
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
@@ -120,6 +121,23 @@ class DemoTest {
     }
 
     /** The switcher lists every session, the Tasks' too. The session shortcuts follow the manual list. */
+    /** Scrollback in More shows the host's earlier lines over the pane, newest at the bottom. */
+    @Test
+    fun scrollbackShowsTheHostsEarlierLines() {
+        launch()
+        waitForTag("composer")
+        shortcut(KeyEvent.KEYCODE_R)
+        waitForPane("pane %1 100x30")
+        compose.onNodeWithTag("more").performClick()
+        // The item gets its size a frame after the menu opens; a click before that lands nowhere.
+        compose.waitUntil(TIMEOUT) { runCatching { compose.onNodeWithTag("menu-history").assertIsDisplayed() }.isSuccess }
+        compose.onNodeWithTag("menu-history").performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Earlier output, line 60"), TIMEOUT)
+        compose.onNodeWithTag("history-done").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("history"), TIMEOUT)
+        waitForPane("pane %1 100x30")
+    }
+
     @Test
     fun theSwitcherListsTaskSessionsAndShortcutsSkipThem() {
         launch()

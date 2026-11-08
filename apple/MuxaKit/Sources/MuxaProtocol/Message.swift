@@ -13,6 +13,9 @@ public enum Message: Equatable, Sendable {
     case screen(watch: UInt64, pane: String, cols: UInt16, rows: UInt16, data: Data)
     /// Feed `data` to the emulator of the current screen.
     case output(watch: UInt64, pane: String, data: Data)
+    /// A pane's scrollback, then its screen: lines `cols` wide, each ending in `\n`, with
+    /// colors as escape sequences (capability `history`). For a separate emulator.
+    case history(history: UInt64, pane: String, cols: UInt16, data: Data, truncated: Bool)
     /// Sessions, windows or panes changed: send `list` again.
     case sessionsChanged
     /// The watched pane no longer exists.
@@ -122,6 +125,7 @@ extension Message: Codable {
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
         case routines, routine, entries, entry, problems, inbox, items, item
         case start, name
+        case history, truncated
     }
 
     public init(from decoder: any Decoder) throws {
@@ -146,6 +150,13 @@ extension Message: Codable {
                 cols: try c.decode(UInt16.self, forKey: .cols),
                 rows: try c.decode(UInt16.self, forKey: .rows),
                 data: try c.decodeBase64(forKey: .data))
+        case "history":
+            self = .history(
+                history: try c.decode(UInt64.self, forKey: .history),
+                pane: try c.decode(String.self, forKey: .pane),
+                cols: try c.decode(UInt16.self, forKey: .cols),
+                data: try c.decodeBase64(forKey: .data),
+                truncated: try c.decodeIfPresent(Bool.self, forKey: .truncated) ?? false)
         case "output":
             self = .output(
                 watch: try c.decode(UInt64.self, forKey: .watch),
@@ -264,6 +275,13 @@ extension Message: Codable {
             try c.encode(cols, forKey: .cols)
             try c.encode(rows, forKey: .rows)
             try c.encode(data.base64EncodedString(), forKey: .data)
+        case .history(let history, let pane, let cols, let data, let truncated):
+            try c.encode("history", forKey: .type)
+            try c.encode(history, forKey: .history)
+            try c.encode(pane, forKey: .pane)
+            try c.encode(cols, forKey: .cols)
+            try c.encode(data.base64EncodedString(), forKey: .data)
+            if truncated { try c.encode(true, forKey: .truncated) }
         case .output(let watch, let pane, let data):
             try c.encode("output", forKey: .type)
             try c.encode(watch, forKey: .watch)

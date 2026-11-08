@@ -31,7 +31,7 @@ class FixtureTest {
     @Test
     fun requestsRoundTrip() {
         val lines = lines("requests.jsonl")
-        assertEquals(34, lines.size)
+        assertEquals(36, lines.size)
         for (line in lines) {
             assertEquals(line, tree(line), tree(Wire.encode(Wire.decodeRequest(line))))
         }
@@ -40,7 +40,7 @@ class FixtureTest {
     @Test
     fun messagesRoundTrip() {
         val lines = lines("messages.jsonl")
-        assertEquals(39, lines.size)
+        assertEquals(41, lines.size)
         for (line in lines) {
             val message = Wire.decodeMessage(line)
             assertFalse("fixture type is unknown: $line", message is Message.Unknown)

@@ -43,6 +43,7 @@ sequenceDiagram
 | `list` | `id` | `result` carries `sessions` |
 | `watch` | `id`, `pane` | show this pane; replaces the previous watch |
 | `unwatch` | `id` | stop `screen`/`output` |
+| `history` | `id`, `pane`, optional `lines` | the pane's scrollback, then its screen, once (capability `history`); a `history` comes before the `result`. See "Rendering a pane" |
 | `viewport` | `id`, `cols`, `rows` | the grid the client's pane area shows at its default font (capability `viewport`); the bridge sizes the watched pane's window for it. See "Rendering a pane" |
 | `keys` | `id`, `pane`, `keys[]` | named keys: up to three `C-`/`M-`/`S-` modifiers, then one printable ASCII character, `F1`–`F12`, or one of `Up Down Left Right Home End PageUp PageDown Enter Escape Tab BTab BSpace DC IC Space KPEnter` |
 | `text` | `id`, `pane`, `text` | typed literally |
@@ -87,6 +88,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `result` | `id` (absent only for an unreadable request), optional `error {code, message}`, optional `sessions` |
 | `screen` | `watch`, `pane`, `cols`, `rows`, `data` |
 | `output` | `watch`, `pane`, `data` |
+| `history` | `history`, `pane`, `cols`, `data`, optional `truncated` |
 | `sessions-changed` | none. Send `list` again. Sent when tmux reports a structural change, and when an agent pane's role or state changed (checked every 2 seconds). Best effort: tmux reports pane changes only for the bridge's current session, so also re-list whenever the session list is shown. |
 | `pane-gone` | `watch`, `pane`, optional `reason` |
 | `chat-entries` | `chat`, `seq`, optional `reset`, `entries[]`, optional `status {state, since}`, optional `agent`, optional `truncated`, optional `prompt {entry, kind, question?, options[] {label, keys[], cancel?}}` |
@@ -455,6 +457,10 @@ A bridge with `work` level 2 starts ask sessions: the workspace's agent in a rep
   4. Only windows whose `window-size` is `latest` follow. The pane can still be any size: keep rendering the `screen` you get.
   5. A client that never sends `viewport` never changes a window's size.
 - `screen.data` starts with a full reset (`ESC c`) and restores the screen, the cursor, the scroll region and the modes. Feed it to the emulator as-is.
+- **History** (capability `history`). `history {pane, lines?}` sends the pane's last `lines` scrollback lines (1 to 10000, default 2000), then its visible screen, as `capture-pane -e` shows them. Other values get `bad-request`.
+  1. `history.data` (base64) is lines `cols` wide, oldest first, each ending in `\n`, with colors as escape sequences. It is at most 8 MiB: the oldest lines go first. Feed it to a separate emulator `cols` wide with a scrollback, turning each `\n` into `\r\n`. It is not for the watch's emulator.
+  2. `truncated: true` says the pane keeps older lines than were sent, also when the size limit left some out.
+  3. Reading it changes nothing in the pane: no copy mode, no scroll position. While a program shows the alternate screen, the scrollback is the primary screen's.
 - Bytes the emulator would send back to the host must be dropped: replies to device-attribute or cursor-position queries. tmux answers those itself.
 
 ## Versioning

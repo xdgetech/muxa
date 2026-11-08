@@ -81,6 +81,7 @@ public final class PaneSession {
     @ObservationIgnored private var imageListings: [UInt64: ImageListing] = [:]
     /// `doc-list` messages waiting for their `result`.
     @ObservationIgnored private var listings: [UInt64: DocListing] = [:]
+    @ObservationIgnored private var histories: [UInt64: PaneHistory] = [:]
     /// `task-list` messages waiting for their `result`.
     @ObservationIgnored private var taskListings: [UInt64: TaskListing] = [:]
     /// Records from `task-saved`, by request id, until the result arrives.
@@ -248,6 +249,18 @@ public final class PaneSession {
     }
 
     public var canReadDocs: Bool { capabilities.contains("docs") }
+    public var canShowHistory: Bool { capabilities.contains("history") }
+
+    /// The pane's scrollback, then its screen, once (capability `history`). Nil when none came.
+    public func history(pane: String, lines: Int? = nil) async throws -> PaneHistory? {
+        var requestId: UInt64 = 0
+        try await request { id in
+            requestId = id
+            return .history(id: id, pane: pane, lines: lines)
+        }
+        // The history arrives just before the result.
+        return histories.removeValue(forKey: requestId)
+    }
 
     /// The pane's documents: its agent's first, then its repo's.
     public func documents(pane: String) async throws -> DocListing {
@@ -715,6 +728,8 @@ public final class PaneSession {
             chat?.ended = reason
         case .docList(let listing):
             listings[listing.docs] = listing
+        case .history(let id, let pane, let cols, let data, let truncated):
+            histories[id] = PaneHistory(pane: pane, cols: Int(cols), data: data, truncated: truncated)
         case .changeList(let listing):
             changeListings[listing.changes] = listing
         case .diffContent(let id, _, let text, let binary) where id == diffId:
@@ -809,6 +824,7 @@ public final class PaneSession {
         diffId = nil
         imageId = nil
         listings = [:]
+        histories = [:]
         changeListings = [:]
         imageListings = [:]
         taskListings = [:]

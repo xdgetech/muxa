@@ -200,6 +200,12 @@ private fun MoreMenu(model: AppModel) {
                 leadingIcon = { Icon(Icons.tasks, null) }, modifier = Modifier.testTag("menu-tasks"),
             )
         }
+        if (model.canShowHistory) {
+            DropdownMenuItem(
+                { Text("Scrollback") }, { pick { model.showHistory() } },
+                leadingIcon = { Icon(Icons.history, null) }, modifier = Modifier.testTag("menu-history"),
+            )
+        }
         model.paneTaskRecord?.let { record ->
             DropdownMenuItem(
                 { Text("Task Info") }, { pick { model.taskInfo = record.id } },
@@ -256,6 +262,7 @@ private fun PaneHost(model: AppModel, focusRequest: Int?) {
             update = {
                 it.fitOverride = model.paneFit
                 it.onPinch = { fit -> model.paneFit = fit }
+                it.onScrollBack = { model.showHistory() }
             },
             // The view scrolls to follow the cursor, and Compose does not clip an AndroidView:
             // the rows above its scroll position drew over the bar.

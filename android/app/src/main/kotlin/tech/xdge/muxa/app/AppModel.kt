@@ -52,6 +52,8 @@ import tech.xdge.muxa.transport.SshBridge
 import tech.xdge.muxa.transport.SshTarget
 import tech.xdge.muxa.transport.TransportError
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.withContext
+import tech.xdge.muxa.terminal.History
 
 /**
  * One window's state: its connection and which pane it shows. The saved hosts and the
@@ -163,6 +165,9 @@ class AppModel(
 
     /** The task waiting for the user to pick how to close it. */
     var closingTask by mutableStateOf<Session?>(null)
+
+    /** The shown pane's scrollback, while it is open over the pane. */
+    var history by mutableStateOf<PaneHistory?>(null)
 
     /** The Task whose detail shows over its pane, from More (ADR 0044). */
     var taskInfo by mutableStateOf<String?>(null)
@@ -416,6 +421,7 @@ class AppModel(
     /** What belonged to the last host's connection. */
     private fun resetHostState() {
         taskInfo = null
+        history = null
         rawPanes = emptySet()
         paneFit = null
         readerReturnsToItem = false
@@ -1087,6 +1093,27 @@ class AppModel(
         taskInfo = null
         val s = sessionOf(record) ?: return@launch
         openNow(s, view)
+    }
+
+    /** The bridge sends a pane's scrollback (capability `history`). */
+    val canShowHistory: Boolean get() = isConnected && state.canShowHistory
+
+    /** Reads the shown pane's scrollback from the host and shows it over the pane. */
+    fun showHistory() = scope.launch {
+        val pane = state.watchedPane ?: return@launch
+        if (!canShowHistory || history != null) return@launch
+        history = PaneHistory.Loading
+        history = try {
+            val reply = session.history(pane)
+            if (reply == null) {
+                PaneHistory.Failed("The host sent no scrollback. Try again.")
+            } else {
+                val lines = withContext(Dispatchers.Default) { History.lines(reply.cols, reply.data.array) }
+                PaneHistory.Loaded(reply.cols, lines, reply.truncated)
+            }
+        } catch (e: Exception) {
+            PaneHistory.Failed(PaneSession.describe(e))
+        }
     }
 
     /** The bridge can restart a Task's agent with a handoff (ADR 0018). */

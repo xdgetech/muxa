@@ -131,6 +131,7 @@ class DemoBridge(
         when (val req = Wire.decodeRequest(line)) {
             is Request.List -> emit(Message.Result(req.id, sessions = synchronized(lock) { sessions }))
             is Request.Watch -> watch(req)
+            is Request.History -> history(req)
             is Request.Viewport -> viewport(req)
             is Request.Text -> {
                 ok(req.id)
@@ -369,6 +370,14 @@ class DemoBridge(
         ok(req.id)
         val p = sized(req.pane) ?: return
         emit(Message.Screen(req.id, req.pane, p.cols, p.rows, Bytes(content.screen(p))))
+    }
+
+    /** Earlier output above the pane's screen, as the bridge sends it: one line per `\n`. */
+    private fun history(req: Request.History) {
+        val p = sized(req.pane) ?: return fail(req.id, ErrorCode.NO_PANE, "no pane ${req.pane}")
+        val text = (1..HISTORY_LINES).joinToString("") { "Earlier output, line $it\n" }
+        emit(Message.History(req.id, req.pane, p.cols, Bytes(text.toByteArray())))
+        ok(req.id)
     }
 
     private fun viewport(req: Request.Viewport) {
@@ -822,12 +831,15 @@ class DemoBridge(
         private val CAPABILITIES =
             listOf(
                 "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-                "task-loop", "tasks-changed", "viewport",
+                "task-loop", "tasks-changed", "viewport", "history",
             )
 
         /** The statuses that end a Task, and so take `worktree` (ADR 0043). */
         private val ENDS = setOf(TaskStatus.DONE, TaskStatus.DROPPED)
         private const val UNMERGED = "its branch is not merged"
+
+        /** Lines of earlier output a demo pane has. */
+        private const val HISTORY_LINES = 60
 
         /** What a bridge says to a request it does not know. */
         const val NO_REQUEST = "The demo bridge does not support this request."

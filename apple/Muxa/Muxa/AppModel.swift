@@ -183,6 +183,7 @@ final class AppModel {
     /// What belonged to the last host's connection.
     private func resetHostState() {
         taskInfo = nil
+        history = nil
         currentHostID = nil
         connectError = nil
         connectFix = nil
@@ -774,6 +775,31 @@ final class AppModel {
 
     /// The Task whose detail shows over its pane, from More (ADR 0044).
     var taskInfo: String?
+
+    /// The shown pane's scrollback, while it is open over the pane.
+    var history: HistoryState?
+
+    enum HistoryState: Equatable {
+        case loading
+        case loaded(PaneHistory)
+        case failed(String)
+    }
+
+    var canShowHistory: Bool { isConnected && session.canShowHistory }
+
+    /// Reads the shown pane's scrollback from the host and shows it over the pane.
+    func showHistory() {
+        guard canShowHistory, history == nil, let pane = session.watchedPane else { return }
+        history = .loading
+        Task {
+            do {
+                let reply = try await session.history(pane: pane)
+                history = reply.map(HistoryState.loaded) ?? .failed("The host sent no scrollback. Try again.")
+            } catch {
+                history = .failed(PaneSession.describe(error))
+            }
+        }
+    }
 
     /// The Task the shown pane's session runs.
     var paneTask: TaskItem? { currentSession?.taskId.flatMap(inboxItem) }

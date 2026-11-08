@@ -97,6 +97,7 @@ where
         "images",
         "branch-changes",
         "viewport",
+        "history",
     ]
     .map(String::from)
     .into();
@@ -411,6 +412,9 @@ impl Worker {
             }
             Request::Unwatch { id } => {
                 return self.to_watcher(|ack| Command::Unwatch { id, ack }).await;
+            }
+            Request::History { id, pane, lines } => {
+                return Some(self.history(id, &pane, lines).await);
             }
             Request::Viewport { cols, rows, .. } => {
                 let Some(grid) = crate::viewport::valid(cols, rows) else {
@@ -736,6 +740,35 @@ impl Worker {
             agents: Arc::clone(&self.agents),
             pending: self.pending.clone(),
         }
+    }
+
+    /// Sends the pane's scrollback and screen, then the caller sends the `result`.
+    async fn history(&self, id: u64, pane: &str, lines: Option<u32>) -> Result<(), ErrorBody> {
+        let pane = pane.parse::<PaneId>().map_err(|e| convert::error(&e))?;
+        let lines = lines.unwrap_or(muxa_protocol::DEFAULT_HISTORY_LINES);
+        if !(1..=muxa_protocol::MAX_HISTORY_LINES).contains(&lines) {
+            return Err(error_body(
+                ErrorCode::BadRequest,
+                format!(
+                    "history: lines must be 1 to {}",
+                    muxa_protocol::MAX_HISTORY_LINES
+                ),
+            ));
+        }
+        let history = timed(muxa_tmux::history(&self.client, pane, lines))
+            .await
+            .map_err(|e| convert::error(&e))?;
+        let msg = Message::History {
+            history: id,
+            pane: pane.to_string(),
+            cols: history.cols,
+            data: history.data,
+            truncated: history.truncated,
+        };
+        self.out
+            .send(msg)
+            .await
+            .map_err(|_| error_body(ErrorCode::Internal, "the client left"))
     }
 
     async fn to_watcher(

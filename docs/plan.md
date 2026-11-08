@@ -24,7 +24,8 @@ What works today:
   - Restart agent with a handoff in `.muxa/HANDOFF.md`, and the Task's runs (ADR 0018);
   - the Task Loop: a check after each turn, a Loop section with its state, Start loop, Stop loop and the check log, when the host runs the daemon (ADR 0019);
   - a banner when an agent in another session waits, finishes or fails (ADR 0008);
-  - Japanese input in the pane;
+  - Japanese input in the pane; Control+Space switches the keyboard language when there are two;
+  - the pane's scrollback, read once from the host (`history`): a pull down past the top, or More → Scrollback;
   - a bar with Esc, Tab, Ctrl and the arrows above the on-screen keyboard.
 - **iPhone app** (the same app, ADR 0012): the layout follows the size classes, so a folded iPhone Duo gets the phone layout and an unfolded one the iPad layout, without losing the pane, its screen or the keyboard. On a phone, a pane whose font would go below 9 pt keeps 9 pt and scrolls on both axes.
 
@@ -41,7 +42,7 @@ Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow belo
 4. **Phase 3, Routines and Inbox:** `[[routine]]`, the trigger on the daemon tick, `routine-run` records, the output publish, Move down and Later on the Task record, and the Inbox list with approve → Task (ADR 0026 S0–S3). CLI first, then one app, then the other. Move down and Later on the Task record are done on the host and in the CLI (`task-inbox`, `task down`, `task later`, `task requeue`); the shared queue code in both apps follows them. S3 is done in the CLI, the iOS app and the Android app: the Inbox list, Move down and Later, approve, dismiss and later of stored entries, and the Routines list and detail with Run now. Workspaces as Entities (ADR 0031, proposed) are done on the host and in the CLI behind `work:2`: repos under the root with relative names, a branch from the title, and ask sessions (`start-session`, `muxa-cli ask`). Both apps have the UI: the workspace's repos in New Task, the optional branch, and Ask in the sheet and on a repo header. Next in this phase: the Inbox as a list of questions (ADR 0033, below), which replaces Move down and the queue.
 5. **Phase 4:** workspace memory as a Routine (ADR 0027 section 6). Then, as needed, the Linux daemon.
 6. **Phase 5:** workflow graph, then autonomous work.
-7. **Any time:** scrollback, mouse, `pause-after`, watching several panes.
+7. **Any time:** mouse, `pause-after`, watching several panes.
 
 - **Inbox visibility and navigation** (ADR 0023, slice 1 accepted; `docs/inbox.md`): identify Task sessions by title, group, reported age and loop; retain List/detail and add Triage navigation, Next and local Snooze. Phones open Triage once per connection for Needs attention only. Existing Chat keeps approvals and composition. In both apps the Inbox list of ADR 0025 replaced Triage.
   - P0 done: shared needs and deterministic queue order, CLI `need`, 26 cross-client fixture cases. Verified with `make check`, `make test-apple` and `make test-android`.
@@ -124,7 +125,7 @@ Direction from `docs/vision.md`, not commitments:
 
 Scheduled: find why the snapshot/stream stress test (`crates/muxa-bridge/tests/stream.rs`) sees an 11-row shift in about 1 of 1000 runs under heavy load. It may be a snapshot/stream ordering bug.
 
-Also: `pause-after` for slow links, scrollback, watching several panes, mouse. Deferred with no date (ADR 0027): muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008). Cut: input leases for two typing devices.
+Also: `pause-after` for slow links, watching several panes, mouse. Deferred with no date (ADR 0027): muxa's own push notifications while the app is closed (APNs needs a relay server, ADR 0008). Cut: input leases for two typing devices.
 
 ## Design
 

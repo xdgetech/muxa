@@ -100,10 +100,13 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: Self.capabilities))
     }
 
+    /// Lines of earlier output a demo pane has.
+    private static let historyLines = 60
+
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "work:7",
+            "task-loop", "tasks-changed", "viewport", "history", "work:7",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -124,6 +127,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         switch req {
         case .list(let id):
             emit(.result(id: id, error: nil, sessions: lock.withLock { sessions }))
+        case .history(let id, let pane, _):
+            // Earlier output above the pane's screen, one line per `\n`, as the bridge sends it.
+            let text = (1...Self.historyLines).map { "Earlier output, line \($0)\n" }.joined()
+            emit(.history(history: id, pane: pane, cols: UInt16(sized(pane)?.cols ?? 80), data: Data(text.utf8), truncated: false))
+            ok(id)
         case .watch(let id, let pane):
             // The alert comes a few seconds after the first pane shows, so a phone's
             // first Inbox does not hide it.

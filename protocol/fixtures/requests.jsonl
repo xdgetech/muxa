@@ -32,3 +32,5 @@
 {"type":"start-loop","id":33,"task":"t-7f3a2c","loop":{"check":"cargo test --workspace","maxAttempts":3}}
 {"type":"stop-loop","id":34,"task":"t-7f3a2c"}
 {"type":"viewport","id":35,"cols":120,"rows":40}
+{"type":"history","id":60,"pane":"%12"}
+{"type":"history","id":61,"pane":"%12","lines":500}

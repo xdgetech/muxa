@@ -50,6 +50,10 @@ class TerminalPaneView(context: Context) : View(context) {
     /** The user pinched to another fit. */
     var onPinch: (PaneFit) -> Unit = {}
 
+    /** The user pulled down past the top of the grid, or scrolled up there: show the scrollback. */
+    var onScrollBack: () -> Unit = {}
+    private var pulled = 0f
+
     /** After new bytes or a new screen, on the main thread. */
     var onContent: () -> Unit = {}
 
@@ -304,6 +308,7 @@ class TerminalPaneView(context: Context) : View(context) {
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean {
                 scroller.forceFinished(true)
+                pulled = 0f
                 return true
             }
 
@@ -314,6 +319,7 @@ class TerminalPaneView(context: Context) : View(context) {
 
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
                 dragging = true
+                pullDown(dx, dy)
                 // One axis at a time, as the iOS scroll view locks its direction.
                 if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) scrollBy(dx.toInt(), 0) else scrollBy(0, dy.toInt())
                 clampScroll()
@@ -349,6 +355,16 @@ class TerminalPaneView(context: Context) : View(context) {
         },
     )
 
+    /** A vertical drag down while the grid's top shows; fires once per drag. */
+    private fun pullDown(dx: Float, dy: Float) {
+        if (dy >= 0 || kotlin.math.abs(dx) > kotlin.math.abs(dy) || scrollY > 0 || pulled < 0) return
+        pulled -= dy
+        if (pulled > cellHeight * PULL_ROWS) {
+            pulled = -1f
+            onScrollBack()
+        }
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         pinch.onTouchEvent(event)
@@ -372,6 +388,10 @@ class TerminalPaneView(context: Context) : View(context) {
     /** A mouse wheel or a two-finger trackpad scroll moves the view; it never types. */
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.isFromSource(InputDevice.SOURCE_CLASS_POINTER) && event.actionMasked == MotionEvent.ACTION_SCROLL) {
+            if (scrollY <= 0 && event.getAxisValue(MotionEvent.AXIS_VSCROLL) > 0) {
+                onScrollBack()
+                return true
+            }
             val step = cellHeight * 3
             scrollBy((-event.getAxisValue(MotionEvent.AXIS_HSCROLL) * step).toInt(), (-event.getAxisValue(MotionEvent.AXIS_VSCROLL) * step).toInt())
             clampScroll()
@@ -562,6 +582,9 @@ class TerminalPaneView(context: Context) : View(context) {
 
     private companion object {
         val CURSOR = Color.argb(160, 220, 220, 220)
+
+        /** How far, in rows, a drag pulls down past the top before the scrollback opens. */
+        const val PULL_ROWS = 3
 
         fun special(keyCode: Int): KeyMap.Special? = when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> KeyMap.Special.Up

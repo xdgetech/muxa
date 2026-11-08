@@ -53,6 +53,7 @@ object Icons {
     val agent = Material.Filled.Terminal
     val fit = Material.Filled.FormatSize
     val more = Material.Filled.MoreVert
+    val history = Material.Filled.ArrowUpward
     val disconnect = Material.Filled.LinkOff
     val add = Material.Filled.Add
     val newTask = Material.Filled.AddBox

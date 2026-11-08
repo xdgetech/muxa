@@ -28,6 +28,13 @@ sealed interface Message {
     @Serializable
     data class Screen(val watch: Long, val pane: String, val cols: Int, val rows: Int, val data: Bytes) : Message
 
+    /**
+     * A pane's scrollback, then its screen: lines [cols] wide, each ending in a newline, with
+     * colors as escape sequences (capability `history`). For a separate emulator, not the watch's.
+     */
+    @Serializable
+    data class History(val history: Long, val pane: String, val cols: Int, val data: Bytes, val truncated: Boolean = false) : Message
+
     /** Feed [data] to the emulator of the current screen. */
     @Serializable
     data class Output(val watch: Long, val pane: String, val data: Bytes) : Message
