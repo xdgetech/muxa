@@ -133,4 +133,16 @@ class InboxTest {
             InboxGroup.entries.map { it.title },
         )
     }
+
+    @Test
+    fun aTaskClosedMoreThanADayAgoIsLeftOutOfTheList() {
+        val now = 10 * CLOSED_LISTED_FOR
+        val records = listOf(
+            record("today", TaskStatus.DONE, now - CLOSED_LISTED_FOR + 1),
+            record("old", TaskStatus.DROPPED, now - CLOSED_LISTED_FOR),
+            record("open"),
+        )
+        assertEquals(listOf("open", "today"), inbox(records, emptyList(), now).flatMap { s -> s.items.map { it.record.id } })
+        assertEquals(3, inbox(records, emptyList()).sumOf { it.items.size })
+    }
 }

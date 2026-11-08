@@ -766,11 +766,15 @@ final class AppModel {
 
     var canKeepTasks: Bool { isConnected && session.canKeepTasks }
 
-    /// The task records by Inbox group, with the sessions that run them.
-    var inbox: [InboxSection] { session.taskRecords.inbox(sessions: session.sessions) }
+    /// The task records by Inbox group, with the sessions that run them. A Task
+    /// closed more than a day ago is left out.
+    var inbox: [InboxSection] {
+        session.taskRecords.inbox(sessions: session.sessions, now: UInt64(Date().timeIntervalSince1970))
+    }
 
+    /// Any Task, also one the list leaves out, so an item can still open it.
     func inboxItem(_ id: String) -> TaskItem? {
-        inbox.lazy.flatMap(\.items).first { $0.id == id }
+        session.taskRecords.first { $0.id == id }.map { TaskItem(record: $0, sessions: session.sessions) }
     }
 
     /// The bridge reached the muxa daemon, so tasks can have a Task Loop (ADR 0019).

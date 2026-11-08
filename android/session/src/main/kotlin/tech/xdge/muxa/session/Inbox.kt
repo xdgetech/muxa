@@ -80,9 +80,17 @@ private fun agentItem(record: TaskRecord, sessions: List<Session>): TaskItem {
     return TaskItem(record, group, session, pane, agent)
 }
 
-/** The non-empty groups in [InboxGroup] order; newest change first within a group. */
-fun inbox(records: List<TaskRecord>, sessions: List<Session>): List<InboxSection> {
-    val byGroup = records.map { taskItem(it, sessions) }.groupBy { it.group }
+/** How long a closed Task stays listed after its last change, in seconds. */
+const val CLOSED_LISTED_FOR: Long = 24 * 60 * 60
+
+/**
+ * The non-empty groups in [InboxGroup] order; newest change first within a group. With [now]
+ * (epoch seconds), a closed Task unchanged for [CLOSED_LISTED_FOR] is left out.
+ */
+fun inbox(records: List<TaskRecord>, sessions: List<Session>, now: Long? = null): List<InboxSection> {
+    val byGroup = records.map { taskItem(it, sessions) }
+        .filter { now == null || it.group != InboxGroup.CLOSED || it.record.updatedAt + CLOSED_LISTED_FOR > now }
+        .groupBy { it.group }
     return InboxGroup.entries.mapNotNull { group ->
         val items = byGroup[group] ?: return@mapNotNull null
         InboxSection(group, items.sortedWith(compareByDescending<TaskItem> { it.record.updatedAt }.thenByDescending { it.record.id }))

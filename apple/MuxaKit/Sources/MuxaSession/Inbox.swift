@@ -87,10 +87,20 @@ public struct InboxSection: Equatable, Sendable, Identifiable {
     public var id: InboxGroup { group }
 }
 
+extension InboxGroup {
+    /// How long a closed Task stays listed after its last change, in seconds.
+    public static let closedListedFor: UInt64 = 24 * 60 * 60
+}
+
 extension Array where Element == TaskRecord {
-    /// The non-empty groups in their fixed order.
-    public func inbox(sessions: [Session]) -> [InboxSection] {
+    /// The non-empty groups in their fixed order. With `now` (epoch seconds), a
+    /// closed Task unchanged for `closedListedFor` is left out.
+    public func inbox(sessions: [Session], now: UInt64? = nil) -> [InboxSection] {
         let items = map { TaskItem(record: $0, sessions: sessions) }
+            .filter { item in
+                guard let now, item.group == .closed else { return true }
+                return item.record.updatedAt + InboxGroup.closedListedFor > now
+            }
             .sorted { ($0.record.updatedAt, $0.record.id) > ($1.record.updatedAt, $1.record.id) }
         return InboxGroup.allCases.compactMap { group in
             let members = items.filter { $0.group == group }

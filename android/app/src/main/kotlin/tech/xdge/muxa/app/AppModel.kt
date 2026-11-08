@@ -996,6 +996,10 @@ class AppModel(
     /** The Tasks by Inbox group, from the records and their sessions' agent states. */
     val inbox: List<InboxSection> get() = inbox(state.tasks?.records.orEmpty(), state.sessions)
 
+    /** [inbox] as the Tasks list shows it: a Task closed more than a day ago is left out. */
+    val listedTasks: List<InboxSection>
+        get() = inbox(state.tasks?.records.orEmpty(), state.sessions, System.currentTimeMillis() / 1000)
+
     /**
      * Records the Task and shows it: its detail in Tasks mode, else its session. A failed
      * launch shows the Task's detail, with the note that says why. Throws only when nothing

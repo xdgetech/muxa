@@ -63,7 +63,7 @@ import tech.xdge.muxa.session.taskItem
 fun TaskList(model: AppModel, modifier: Modifier) {
     val selected = model.selectedTask ?: model.paneTask
     Column(modifier) {
-        val sections = model.inbox
+        val sections = model.listedTasks
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(Modifier.fillMaxSize().testTag("task-list")) {
                 if (model.canUseRoutines) item(key = "routines") { RoutinesRow(model) }

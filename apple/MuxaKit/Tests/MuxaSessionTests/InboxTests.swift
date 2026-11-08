@@ -99,4 +99,16 @@ struct InboxTests {
         #expect(inbox.map(\.group) == [.needsAttention, .running, .closed])
         #expect(inbox[0].items.map(\.id) == ["new", "old"])
     }
+
+    @Test func aTaskClosedMoreThanADayAgoIsLeftOutOfTheList() {
+        let day = InboxGroup.closedListedFor
+        let now: UInt64 = 10 * day
+        let records = [
+            Self.record("today", .done, updated: now - day + 1), Self.record("old", .dropped, updated: now - day),
+            Self.record("open", updated: 1),
+        ]
+        let inbox = records.inbox(sessions: [], now: now)
+        #expect(inbox.flatMap(\.items).map(\.id) == ["open", "today"])
+        #expect(records.inbox(sessions: []).flatMap(\.items).count == 3)
+    }
 }
