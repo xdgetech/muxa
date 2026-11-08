@@ -74,7 +74,7 @@ fun Root(model: AppModel) {
     val paneOpen = model.isConnected && model.paneShown && model.state.watchedPane != null
 
     LaunchedEffect(phone) { model.layoutChanged(phone) }
-    LaunchedEffect(model.isConnected) { if (!model.isConnected) model.listShown = true }
+    LaunchedEffect(model.isConnected) { if (!model.isConnected && !model.suspended) model.listShown = true }
     // Beside the list the first item is selected, as the next one is after an answer.
     val first = model.inboxItems.firstOrNull()?.id
     LaunchedEffect(phone, model.mode, model.selection, model.paneShown, first) {

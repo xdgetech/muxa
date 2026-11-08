@@ -25,6 +25,25 @@ final class TasksTests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["composer"].firstMatch.exists)
     }
 
+    /// Back from another app, the app shows what it showed: the item picked, not the
+    /// first one, though leaving for the background disconnects.
+    @MainActor
+    func testReturningFromTheBackgroundKeepsTheView() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "inbox"]
+        app.launch()
+        tapWhenReady(app.buttons["item-row-i-0000a002"])
+        let question = app.staticTexts["item-question"].firstMatch
+        XCTAssertTrue(question.waitForExistence(timeout: 5))
+        let shown = question.label
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10))
+        sleep(2)
+        app.activate()
+        XCTAssertTrue(question.waitForExistence(timeout: 10))
+        XCTAssertEqual(question.label, shown)
+    }
+
     /// Tasks mode stays on its list at connect too.
     @MainActor
     func testConnectStaysOnTheListInTasksMode() throws {

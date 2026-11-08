@@ -48,6 +48,8 @@ final class AppModel {
     private var afterTrust: AfterTrust?
     /// The user pressed Disconnect: returning to the foreground does not reconnect.
     private var stayDisconnected = false
+    /// The app left for the background. Its view stays, so the user returns to it.
+    private(set) var suspended = false
     /// Agent panes the user switched to Raw. Every other agent pane shows Pretty when it can.
     private(set) var rawPanes: Set<String> = []
     var showReader = false
@@ -209,8 +211,10 @@ final class AppModel {
         showSettings = false
         defer { connecting = false }
         do {
+            let resuming = suspended && sameHost
+            suspended = false
             try await session.connect({ try await self.open(host) }, samePanes: sameHost)
-            await connected()
+            await connected(resuming: resuming)
         } catch TransportError.hostKeyMismatch(let presented) {
             afterTrust = .connect
             untrustedKey = presented
@@ -287,6 +291,7 @@ final class AppModel {
 
     /// Leaving for the background: close cleanly so the bridge exits, and come back later.
     func suspend() async {
+        suspended = true
         await session.disconnect()
     }
 

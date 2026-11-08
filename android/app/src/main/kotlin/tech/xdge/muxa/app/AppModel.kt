@@ -274,6 +274,10 @@ class AppModel(
     /** The user pressed Disconnect: returning to the foreground does not reconnect. */
     private var stayDisconnected = false
 
+    /** The app left for the background. Its view stays, so the user returns to it. */
+    var suspended by mutableStateOf(false)
+        private set
+
     /** Asked for from the session switcher: shown once the switcher has closed. */
     private var newTaskAfterSwitcher: (() -> Unit)? = null
 
@@ -465,8 +469,12 @@ class AppModel(
             paneShown = false
             listShown = true
         }
+        val resuming = suspended && sameHost
+        suspended = false
         try {
             session.connect(samePanes = sameHost) { open(host) }
+            // Back from the background, what was shown stays; the session watches its pane again.
+            if (resuming && (selection != null || paneShown)) return
             // Inbox and Tasks mode stay on their list; Sessions mode shows the pane (ADR 0035).
             if (pane != null && state.sessions.any { s -> s.panes.any { it.id == pane } }) {
                 watch(pane)
@@ -555,7 +563,10 @@ class AppModel(
     }
 
     /** Leaving for the background: close cleanly so the bridge exits, and come back later. */
-    suspend fun suspend() = session.disconnect()
+    suspend fun suspend() {
+        suspended = true
+        session.disconnect()
+    }
 
     /** Launch or return to the foreground: reconnect to the last host and pane. */
     suspend fun resume() {

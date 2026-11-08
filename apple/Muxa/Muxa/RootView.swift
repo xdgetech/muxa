@@ -46,7 +46,7 @@ struct RootView: View {
             if compactColumn == .detail { compactColumn = .sidebar }
         }
         .onChange(of: model.isConnected) { _, connected in
-            if !connected {
+            if !connected, !model.suspended {
                 model.clearDetail()
                 columns = .all
                 compactColumn = .sidebar

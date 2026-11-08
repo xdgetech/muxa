@@ -120,8 +120,10 @@ extension AppModel {
     }
 
     /// At connect, Inbox and Tasks mode stay on their list; Sessions mode opens the
-    /// default pane as before (ADR 0035 §6).
-    func connected() async {
+    /// default pane as before (ADR 0035 §6). Back from the background, what was shown
+    /// stays: the session watches its pane again by itself.
+    func connected(resuming: Bool = false) async {
+        if resuming, detail != nil { return }
         switch mode {
         case .sessions:
             await openDefaultPane()
