@@ -164,6 +164,9 @@ class AppModel(
     /** The task waiting for the user to pick how to close it. */
     var closingTask by mutableStateOf<Session?>(null)
 
+    /** The Task whose detail shows over its pane, from More (ADR 0044). */
+    var taskInfo by mutableStateOf<String?>(null)
+
     /** Why the last close failed; nothing was closed then. */
     var closeError by mutableStateOf<String?>(null)
 
@@ -412,6 +415,7 @@ class AppModel(
 
     /** What belonged to the last host's connection. */
     private fun resetHostState() {
+        taskInfo = null
         rawPanes = emptySet()
         paneFit = null
         readerReturnsToItem = false
@@ -1080,6 +1084,7 @@ class AppModel(
 
     /** The Task's session over its detail, in [view]: the terminal, or its Chat. */
     fun openTask(record: TaskRecord, view: PaneView) = scope.launch {
+        taskInfo = null
         val s = sessionOf(record) ?: return@launch
         openNow(s, view)
     }
@@ -1139,6 +1144,7 @@ class AppModel(
      * its last check. Closing it returns to the Task.
      */
     fun readTask(record: TaskRecord, tab: ReaderTab, doc: String = TASK_DOC) = scope.launch {
+        taskInfo = null
         val s = sessionOf(record) ?: return@launch
         s.defaultPane?.let { watch(it.id) }
         if (!canReadDocs) return@launch

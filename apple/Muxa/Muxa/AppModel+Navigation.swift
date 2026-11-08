@@ -114,6 +114,13 @@ extension AppModel {
     /// The pane is on screen, as the detail or pushed over it.
     var showsPane: Bool { detail == .pane || detailPath.last == .pane }
 
+    /// A Task row (ADR 0044): its session, as a Sessions row opens it; its detail when
+    /// it has no session or is closed.
+    func openTaskRow(_ item: TaskItem) {
+        guard let s = item.session, item.group != .closed else { return select(.task(item.id)) }
+        Task { await open(s) }
+    }
+
     func clearDetail() {
         detail = nil
         detailPath = []

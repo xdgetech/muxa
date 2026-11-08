@@ -67,6 +67,7 @@ struct RootView: View {
             // Only Trust or Cancel closes it, so a held setup password is always cleared.
             TrustHostSheet(key: key).interactiveDismissDisabled()
         }
+        .paneSheets()
         .sheet(isPresented: $model.showSwitcher, onDismiss: model.switcherClosed) {
             SessionSwitcher()
         }

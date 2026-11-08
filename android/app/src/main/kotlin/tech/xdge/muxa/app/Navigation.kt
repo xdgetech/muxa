@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.InboxItem
+import tech.xdge.muxa.session.TaskItem
+import tech.xdge.muxa.session.InboxGroup
+import tech.xdge.muxa.protocol.TaskRecord
 
 // The sidebar's modes and the detail that follows the selection (ADR 0035).
 
@@ -85,6 +88,21 @@ fun AppModel.select(next: Selection?) {
 
 /** Opens the Task's detail. */
 fun AppModel.showTask(id: String) = select(Selection.Task(id))
+
+/**
+ * A Task row: the Task's session as a Sessions row opens it, else its detail when it has no
+ * session or is closed (ADR 0044). Back returns to the list.
+ */
+fun AppModel.openTaskRow(item: TaskItem) {
+    val session = item.session
+    if (session == null || item.group == InboxGroup.CLOSED) return showTask(item.record.id)
+    selection = null
+    open(session)
+}
+
+/** The Task the shown pane's session runs, for Task Info in More. */
+val AppModel.paneTaskRecord: TaskRecord?
+    get() = currentSession?.taskId?.let { id -> state.tasks?.records?.firstOrNull { it.id == id } }
 
 fun AppModel.showRoutine(key: String) = select(Selection.Routine(key))
 

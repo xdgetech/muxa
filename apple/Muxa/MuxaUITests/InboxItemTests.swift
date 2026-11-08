@@ -145,8 +145,8 @@ final class InboxItemTests: XCTestCase {
         tapWhenReady(app.buttons["item-send"])
         XCTAssertTrue(row(app, "i-0000a001").waitForNonExistence(timeout: 5))
         showMode(app, 1)
+        // The row opens the session in Chat, its first view (ADR 0044).
         tapWhenReady(app.buttons["task-t-auth01"])
-        tapWhenReady(app.buttons["task-open-chat"])
         let sent = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Deploy to staging first.")).firstMatch
         XCTAssertTrue(sent.waitForExistence(timeout: 10), "the agent got the text")
     }

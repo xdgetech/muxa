@@ -117,6 +117,10 @@ struct PaneScreen: View {
                 .pickerStyle(.menu)
                 // Also on a phone: its list holds manual sessions only (ADR 0027).
                 Button("Sessions…", systemImage: Icon.session) { model.showSwitcher = true }
+                if let task = model.paneTask {
+                    Button("Task Info", systemImage: Icon.tasks) { model.taskInfo = task.id }
+                        .accessibilityIdentifier("menu-task-info")
+                }
                 if model.canCreateTasks {
                     Button("New Task…", systemImage: Icon.newTask) { model.startNewTask() }
                 }

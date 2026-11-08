@@ -5,6 +5,7 @@ import android.view.KeyEvent
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyDescendant
@@ -88,18 +89,19 @@ class TasksTest {
         assertFalse(model.paneShown)
     }
 
-    /** On a phone the pane returns to the Task it was opened from, and the Task to the list. */
+    /** A Task row opens its pane, as a Sessions row does (ADR 0044); on a phone Back returns to the list. */
     @Test
-    fun backReturnsFromThePaneToTheTaskThenTheList() {
+    fun aTaskRowOpensItsPaneAndBackReturnsToTheList() {
         openTasks()
         openTask("t-login1")
-        tap("task-open-pane")
         compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %5 100x30"), TIMEOUT)
         assertEquals("t-login1", model.paneTask)
+        openMenuItem("menu-task-info")
+        waitForTag("task-info")
+        compose.onNodeWithTag("task-info-done").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("task-info"), TIMEOUT)
         if (!model.phoneLayout) return
         compose.onNodeWithTag("back").performClick()
-        waitForTag("task-detail")
-        InstrumentationRegistry.getInstrumentation().runOnMainSync { model.back() }
         waitForTag("task-list")
     }
 
@@ -169,6 +171,30 @@ class TasksTest {
         compose.onNodeWithTag("task-$id").performClick()
     }
 
+    /** A Task with a session opens its pane; its detail is Task Info under More (ADR 0044). */
+    private fun openTaskInfo(id: String) {
+        openTask(id)
+        // The list has its own More; wait for the pane's.
+        compose.waitUntil(TIMEOUT) { model.paneTask == id }
+        openMenuItem("menu-task-info")
+        waitForTag("task-info")
+    }
+
+    /**
+     * Opens More and clicks [tag]. The pane screen can still change while its Chat loads,
+     * which closes a menu opened too early, so More opens again until the item has a size.
+     */
+    private fun openMenuItem(tag: String) {
+        compose.waitUntil(TIMEOUT) {
+            waitForTag("more")
+            compose.onNodeWithTag("more").performClick()
+            runCatching {
+                compose.waitUntil(MENU_WAIT) { compose.onNodeWithTag(tag).fetchSemanticsNode().size.height > 0 }
+            }.isSuccess
+        }
+        compose.onNodeWithTag(tag).performScrollTo().performClick()
+    }
+
     /** Clicks a control of the Task detail, which scrolls. */
     private fun tap(tag: String) {
         waitForTag(tag)
@@ -188,8 +214,6 @@ class TasksTest {
             waitForTag("inbox-${group.name}")
         }
         openTask("t-login1")
-        waitForTag("task-open-pane")
-        compose.onNodeWithTag("task-open-pane").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %5 100x30"), TIMEOUT)
     }
 
@@ -204,7 +228,7 @@ class TasksTest {
     @Test
     fun theBriefOpensInTheReader() {
         openTasks()
-        openTask("t-auth01")
+        openTaskInfo("t-auth01")
         waitForTag("task-open-brief")
         compose.onNodeWithTag("task-open-brief").performClick()
         // The Reader opens on the brief itself, on every layout.
@@ -216,7 +240,7 @@ class TasksTest {
     @Test
     fun restartingAnIdleAgentAddsARun() {
         openTasks()
-        openTask("t-login1")
+        openTaskInfo("t-login1")
         waitForTag("run-1")
         compose.onNodeWithTag("run-2").assertDoesNotExist()
         compose.onNodeWithTag("task-open-handoff").assertDoesNotExist()
@@ -234,7 +258,7 @@ class TasksTest {
     @Test
     fun aRunningAgentAsksToStopIt() {
         openTasks()
-        openTask("t-docs01")
+        openTaskInfo("t-docs01")
         waitForTag("task-restart-agent")
         compose.onNodeWithTag("task-restart-agent").performClick()
         waitForTag("restart-force")
@@ -247,7 +271,7 @@ class TasksTest {
     @Test
     fun theHandoffOpensInTheReader() {
         openTasks()
-        openTask("t-auth01")
+        openTaskInfo("t-auth01")
         waitForTag("task-open-handoff")
         compose.onNodeWithTag("task-open-handoff").performClick()
         waitForTag("reader")
@@ -406,11 +430,13 @@ class TasksTest {
         openTasks()
         // The row merges its texts: its badge is part of it.
         waitForText("task-t-auth01", "Loop paused")
-        openTask("t-auth01")
+        openTaskInfo("t-auth01")
         compose.waitUntilAtLeastOneExists(hasTestTag("task-detail") and hasAnyDescendant(hasText(InboxGroup.NEEDS_ATTENTION.title)), TIMEOUT)
         waitForText("loop-reason", "The loop resumes after the agent finishes its turn.")
         compose.onNodeWithTag("loop-stop").assertExists()
-        if (compose.onAllNodesWithTag("task-back").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("task-back").performClick()
+        compose.onNodeWithTag("task-info-done").performClick()
+        // Back shows the list beside the pane, or instead of it on a phone.
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { model.back() }
         // No agent runs this one: only its loop puts it there.
         openTask("t-lint01")
         waitForText("loop-reason", "Stopped: the check failed 3 times.")
@@ -420,7 +446,7 @@ class TasksTest {
     @Test
     fun theCheckLogOpensInTheReader() {
         openTasks()
-        openTask("t-auth01")
+        openTaskInfo("t-auth01")
         tap("loop-open-log")
         waitForTag("reader")
         compose.waitUntilAtLeastOneExists(hasText("CHECK.md"), TIMEOUT)
@@ -441,5 +467,8 @@ class TasksTest {
 
     private companion object {
         const val TIMEOUT = 10_000L
+
+        /** How long an opened menu gets to lay out its items. */
+        const val MENU_WAIT = 2_000L
     }
 }

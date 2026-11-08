@@ -121,21 +121,25 @@ final class TasksTests: XCTestCase {
         save("task-detail-note")
     }
 
-    /// A task's Terminal shows its session's agent pane, and its row stays highlighted.
+    /// A Task row opens its session's pane as a Sessions row does, and stays highlighted.
+    /// Its detail is Task Info under More (ADR 0044).
     @MainActor
     func testATaskOpensItsSessionsPane() throws {
         let app = launchOnTasks()
         tapWhenReady(app.buttons["task-t-login1"])
-        XCTAssertTrue(app.staticTexts["After sign-in, return users to the page they came from."].waitForExistence(timeout: 5))
-        save("task-detail")
-        tapWhenReady(app.buttons["task-open-terminal"])
         let pane = app.descendants(matching: .any)["pane"].firstMatch
         XCTAssertTrue(pane.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFor(pane, containing: "pane %5 100x30"))
+        tapWhenReady(app.buttons["More"])
+        tapWhenReady(app.buttons["menu-task-info"])
+        XCTAssertTrue(app.staticTexts["After sign-in, return users to the page they came from."].waitForExistence(timeout: 5))
+        save("task-detail")
+        tapWhenReady(app.buttons["task-info-done"])
+        XCTAssertTrue(pane.waitForExistence(timeout: 5))
         if isPhone {
-            // Back returns to the Task, then to the list.
+            // Back returns to the list.
             tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch)
-            XCTAssertTrue(app.buttons["task-open-terminal"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["task-t-login1"].waitForExistence(timeout: 5))
         } else {
             showSidebar(app)
             XCTAssertTrue(app.buttons["task-t-login1"].waitForExistence(timeout: 5))
@@ -147,7 +151,7 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testATaskOpensItsTaskFileInTheReader() throws {
         let app = launchOnTasks()
-        tapWhenReady(app.buttons["task-t-docs01"])
+        openTaskInfo(app, "t-docs01")
         tapWhenReady(app.buttons["task-open-file"])
         let web = app.webViews.firstMatch
         XCTAssertTrue(web.staticTexts["Document the new settings page."].waitForExistence(timeout: 10))
@@ -293,7 +297,7 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testRestartingAnIdleAgentAddsARun() throws {
         let app = launchOnTasks()
-        tapWhenReady(app.buttons["task-t-login1"])
+        openTaskInfo(app, "t-login1")
         XCTAssertFalse(app.buttons["task-open-handoff"].exists, "no restart yet, so no handoff")
         let restart = app.buttons["task-restart"]
         XCTAssertTrue(restart.waitForExistence(timeout: 5))
@@ -326,7 +330,7 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testRestartingARunningAgentAsksForForce() throws {
         let app = launchOnTasks()
-        tapWhenReady(app.buttons["task-t-docs01"])
+        openTaskInfo(app, "t-docs01")
         let restart = app.buttons["task-restart"]
         XCTAssertTrue(restart.waitForExistence(timeout: 5))
         reveal(app, restart)
@@ -345,16 +349,16 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testMarkingATaskDoneClosesIt() throws {
         let app = launchOnTasks()
-        tapWhenReady(app.buttons["task-t-login1"])
+        openTaskInfo(app, "t-login1")
         // The Loop section can push the status below the fold.
         reveal(app, app.buttons["task-status"])
         tapWhenReady(app.buttons["task-status"])
-        tapWhenReady(app.buttons["Done"])
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label == 'Done' AND identifier != 'task-info-done'")).firstMatch)
         // The picker shows the saved status once the host has it.
         let saved = NSPredicate(format: "value CONTAINS 'Done' OR label CONTAINS 'Done'")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: saved, object: app.buttons["task-status"])],
                                       timeout: 5), .completed)
-        if isPhone { app.navigationBars.buttons["BackButton"].firstMatch.tap() }
+        closeTaskInfo(app)
         // Running sits just below where Ready for review was.
         XCTAssertTrue(header(app, "Running").waitForExistence(timeout: 5))
         XCTAssertFalse(header(app, "Ready for review").exists, "its only task left the group")
@@ -394,6 +398,26 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.collectionViews["sidebar-list"].waitForExistence(timeout: 5))
         reveal(app, row, in: "sidebar-list")
         tapWhenReady(row)
+    }
+
+    /// A Task with a session opens its pane; its detail is Task Info under More (ADR 0044).
+    @MainActor
+    private func openTaskInfo(_ app: XCUIApplication, _ id: String) {
+        openTask(app, id)
+        tapWhenReady(app.buttons["More"])
+        tapWhenReady(app.buttons["menu-task-info"])
+        XCTAssertTrue(app.buttons["task-info-done"].waitForExistence(timeout: 5))
+    }
+
+    /// Closes Task Info and returns to the Tasks list.
+    @MainActor
+    private func closeTaskInfo(_ app: XCUIApplication) {
+        tapWhenReady(app.buttons["task-info-done"])
+        if isPhone {
+            tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch)
+        } else {
+            showSidebar(app)
+        }
     }
 
     @MainActor
@@ -446,14 +470,14 @@ final class TasksTests: XCTestCase {
         XCTAssertLessThan(lint.frame.minY, header(app, "Ready for review").frame.minY)
         save("loop-inbox")
 
-        openTask(app, "t-auth01")
+        openTaskInfo(app, "t-auth01")
         XCTAssertTrue(waitFor(app.staticTexts["loop-reason"], labelOrValue: "The loop resumes after the agent finishes its turn."))
         let stop = app.buttons["loop-stop"]
         reveal(app, stop)
         XCTAssertTrue(stop.exists)
         XCTAssertFalse(app.buttons["loop-start"].exists, "an active loop is stopped, not started")
         save("loop-paused")
-        if isPhone { app.navigationBars.buttons["BackButton"].firstMatch.tap() }
+        closeTaskInfo(app)
         openTask(app, "t-lint01")
         XCTAssertTrue(waitFor(app.staticTexts["loop-reason"], labelOrValue: "Stopped: the check failed 3 times."))
         XCTAssertTrue(waitFor(app.staticTexts["loop-last-check"], labelOrValue: "Attempt 3 · exit 1 · 14 s"))
@@ -463,7 +487,7 @@ final class TasksTests: XCTestCase {
     @MainActor
     func testTheCheckLogOpensInTheReader() throws {
         let app = launchOnTasks()
-        openTask(app, "t-auth01")
+        openTaskInfo(app, "t-auth01")
         let open = app.buttons["loop-open-log"]
         reveal(app, open)
         tapWhenReady(open)

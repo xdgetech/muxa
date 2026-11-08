@@ -28,7 +28,7 @@ struct SidebarTasks: View {
         ForEach(model.inbox) { section in
             Section {
                 ForEach(section.items) { item in
-                    Button { model.select(.task(item.id)) } label: { TaskRow(item: item) }
+                    Button { model.openTaskRow(item) } label: { TaskRow(item: item) }
                         .foregroundStyle(.primary)
                         .sidebarHighlight(model.highlights(item))
                         .accessibilityIdentifier("task-\(item.id)")

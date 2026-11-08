@@ -54,6 +54,13 @@ import tech.xdge.muxa.session.need
 import tech.xdge.muxa.session.TaskItem
 import tech.xdge.muxa.session.hasHandoff
 import tech.xdge.muxa.session.taskItem
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
+import tech.xdge.muxa.app.openTaskRow
 
 /**
  * Tasks mode (ADR 0035): the Routines first, then every Task by group. The row of what the
@@ -77,7 +84,7 @@ fun TaskList(model: AppModel, modifier: Modifier) {
                         )
                     }
                     items(section.items, key = { it.record.id }) { item ->
-                        TaskRow(item, item.record.id == selected) { model.showTask(item.record.id) }
+                        TaskRow(item, item.record.id == selected) { model.openTaskRow(item) }
                     }
                 }
                 if (model.state.tasks?.truncated == true) {
@@ -157,13 +164,17 @@ fun statusTitle(status: TaskStatus): String = when (status) {
 /** A Task's detail, or "Pick a Task." without one. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier) {
+fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier, onClose: (() -> Unit)? = null) {
     val phone = LocalPhoneLayout.current
     Column(modifier) {
         TopAppBar(
             title = { Text(record?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = {
-                if (phone && record != null) IconButton(model::back, Modifier.testTag("task-back")) { Icon(Icons.back, "Tasks") }
+                if (onClose != null) {
+                    IconButton(onClose, Modifier.testTag("task-info-done")) { Icon(Icons.close, "Done") }
+                } else if (phone && record != null) {
+                    IconButton(model::back, Modifier.testTag("task-back")) { Icon(Icons.back, "Tasks") }
+                }
             },
         )
         if (record == null) {
@@ -196,6 +207,20 @@ fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier) {
             (item.session?.name ?: record.session)?.let { Field("Session", it, mono = true) }
             Field("Updated", AgentSummary.age(record.updatedAt) + " ago")
             RunsSection(record, item)
+        }
+    }
+}
+
+/** A Task's detail over its pane, from More (ADR 0044). An action that opens a view closes it. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+fun TaskInfoDialog(model: AppModel, id: String) {
+    val close = { model.taskInfo = null; model.refocusPane() }
+    val record = model.state.tasks?.records?.firstOrNull { it.id == id }
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // A dialog is its own window: it needs the tag setting the main window has (Root).
+        Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
+            TaskDetail(model, record, Modifier.fillMaxSize().navigationBarsPadding().testTag("task-info"), onClose = close)
         }
     }
 }

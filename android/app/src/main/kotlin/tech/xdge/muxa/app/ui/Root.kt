@@ -154,6 +154,7 @@ fun Root(model: AppModel) {
         }
         model.newTask?.let { draft -> NewTaskSheet(model, draft) }
         model.closingTask?.let { task -> CloseTaskDialog(model, task) }
+        model.taskInfo?.let { id -> TaskInfoDialog(model, id) }
         model.closeError?.let { error ->
             AlertDialog(
                 onDismissRequest = { model.closeError = null; model.refocusPane() },

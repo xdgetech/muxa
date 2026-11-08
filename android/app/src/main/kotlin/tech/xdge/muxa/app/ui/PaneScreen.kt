@@ -58,6 +58,7 @@ import tech.xdge.muxa.app.shortcut
 import tech.xdge.muxa.app.pane.TerminalPaneView
 import tech.xdge.muxa.session.KeyBar
 import tech.xdge.muxa.session.PaneFit
+import tech.xdge.muxa.app.paneTaskRecord
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -197,6 +198,12 @@ private fun MoreMenu(model: AppModel) {
             DropdownMenuItem(
                 { Text("Inbox…") }, { pick { model.showInbox() } },
                 leadingIcon = { Icon(Icons.tasks, null) }, modifier = Modifier.testTag("menu-tasks"),
+            )
+        }
+        model.paneTaskRecord?.let { record ->
+            DropdownMenuItem(
+                { Text("Task Info") }, { pick { model.taskInfo = record.id } },
+                leadingIcon = { Icon(Icons.tasks, null) }, modifier = Modifier.testTag("menu-task-info"),
             )
         }
         if (model.canCreateTasks) {

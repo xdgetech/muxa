@@ -2,6 +2,26 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
+/// A Task's detail over its pane, from More (ADR 0044).
+struct TaskInfoSheet: View {
+    @Environment(AppModel.self) private var model
+    let id: String
+
+    var body: some View {
+        NavigationStack {
+            TaskDetail(id: id)
+                .navigationTitle(model.inboxItem(id)?.record.title ?? "Task")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { model.taskInfo = nil }.accessibilityIdentifier("task-info-done")
+                    }
+                }
+        }
+        .accessibilityIdentifier("task-info")
+    }
+}
+
 /// One task record: its goal, where its agent works, and the ways into its session.
 struct TaskDetail: View {
     @Environment(AppModel.self) private var model

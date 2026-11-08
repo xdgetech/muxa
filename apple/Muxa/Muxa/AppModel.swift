@@ -182,6 +182,7 @@ final class AppModel {
 
     /// What belonged to the last host's connection.
     private func resetHostState() {
+        taskInfo = nil
         currentHostID = nil
         connectError = nil
         connectFix = nil
@@ -771,6 +772,12 @@ final class AppModel {
 
     var canKeepTasks: Bool { isConnected && session.canKeepTasks }
 
+    /// The Task whose detail shows over its pane, from More (ADR 0044).
+    var taskInfo: String?
+
+    /// The Task the shown pane's session runs.
+    var paneTask: TaskItem? { currentSession?.taskId.flatMap(inboxItem) }
+
     /// The task records by Inbox group, with the sessions that run them. A Task
     /// closed more than a day ago is left out.
     var inbox: [InboxSection] {
@@ -805,8 +812,10 @@ final class AppModel {
     /// Where the daemon writes the last check's result (ADR 0019).
     static let checkFile = ".muxa/CHECK.md"
 
-    /// Opens a Task's session as asked: its pane over the Task, or the Reader.
+    /// Opens a Task's session as asked: its pane over the Task, or the Reader. From
+    /// Task Info, the sheet closes first.
     func open(_ item: TaskItem, as opening: TaskOpening) {
+        taskInfo = nil
         guard let s = item.session else { return }
         Task { await open(s, as: opening) }
     }
