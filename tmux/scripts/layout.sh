@@ -35,10 +35,31 @@ term="$(t split-window -h -d -t "$ai" -c "$wt" -l "$(opt @agents_split 50)%" -P 
   || die "could not split window $win"
 t set-option -p -t "$term" @agents_role term
 
-# Typed into the pane's shell, so the shell stays when the agent exits.
-if [ "$agent" = 1 ]; then
+# tmux's own quoting, for a value inside a command that tmux parses later.
+tmux_quote() {
+  local s="${1//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  printf '"%s"' "${s//\$/\\\$}"
+}
+
+# The agent is the AI pane's program, run by an interactive login shell so it
+# gets the user's PATH. Typing it into a starting shell lost it while the
+# sidebar resized the pane. When the agent exits, a one-time hook gives the pane
+# a login shell, as the bridge's built-in launcher does.
+start_agent() {
+  local cmd sh
   # The command is a tmux format, expanded for the AI pane.
-  t send-keys -t "$ai" -l "$(t display-message -p -t "$ai" "$(opt @agents_launch_cmd "$AGENTS_LAUNCH_CMD")")"
-  t send-keys -t "$ai" Enter
-fi
+  cmd="$(t display-message -p -t "$ai" "$(opt @agents_launch_cmd "$AGENTS_LAUNCH_CMD")")"
+  sh="$(t show-options -gqv default-shell)"
+  [ -n "$sh" ] || sh=/bin/sh
+  t set-hook -p -t "$ai" pane-died "set-hook -pu -t $ai pane-died ; set-option -pu -t $ai remain-on-exit ; respawn-pane -k -t $ai -c $(tmux_quote "$wt") -- $(tmux_quote "$sh") -l"
+  t set-option -p -t "$ai" remain-on-exit on
+  # new.sh gave the first shell these; a respawn would drop them.
+  t respawn-pane -k -t "$ai" -c "$wt" \
+    -e "AGENTS_REPO_DIR=$(target_opt "$ai" @agent_repo_dir)" -e "AGENTS_WORKTREE=$wt" \
+    -e "AGENTS_BRANCH=$(target_opt "$ai" @agent_branch)" -e "AGENTS_TASK=$(target_opt "$ai" @agent_task)" \
+    -- "$sh" -lic "$cmd" || die "could not start the agent in $ai"
+}
+
+[ "$agent" = 1 ] && start_agent
 t select-pane -t "$ai"

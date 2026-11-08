@@ -4,7 +4,7 @@ bats_require_minimum_version 1.5.0
 
 setup() { setup_server; make_repo; }
 # The sleeps in the process test; a failed run must not leave them behind.
-teardown() { pkill -f "^sleep 730[12]$" || true; teardown_server; }
+teardown() { pkill -f "^sleep 730[123]$" || true; teardown_server; }
 
 new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
 
@@ -37,18 +37,29 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ "$(tx show-options -t =AGT-1: -qv @agent_task)" = AGT-1 ]
 }
 
-@test "new types the launch command into the AI pane" {
-  tx set-option -g @agents_launch_cmd "echo agent-started"
+@test "new runs the launch command as the AI pane's program, with the task's environment" {
+  tx set-option -g @agents_launch_cmd "echo \"\$AGENTS_BRANCH\" > '$TMPDIR/started'; exec sleep 7303"
   "$ROOT/scripts/new.sh" "$REPO" feature/launch --no-switch
   ai="$(tx list-panes -t =feature-launch: -F '#{pane_id} #{@agents_role}' | awk '$2=="ai"{print $1}')"
-  wait_for "tx capture-pane -p -t '$ai' | grep -q '^agent-started'"
+  wait_for "[ \"\$(pane_opt '$ai' pane_current_command)\" = sleep ]"
+  [ "$(cat "$TMPDIR/started")" = feature/launch ]
+}
+
+@test "the AI pane keeps a shell in the worktree when the agent exits" {
+  tx set-option -g @agents_launch_cmd "exit 3"
+  "$ROOT/scripts/new.sh" "$REPO" feature/exits --no-switch
+  ai="$(tx list-panes -t =feature-exits: -F '#{pane_id} #{@agents_role}' | awk '$2=="ai"{print $1}')"
+  wait_for "[ -z \"\$(tx show-hooks -p -t '$ai' pane-died)\" ]"
+  [ "$(pane_opt "$ai" pane_dead)" = 0 ]
+  [ "$(pane_opt "$ai" @agents_role)" = ai ]
+  [ "$(pane_opt "$ai" pane_current_path)" = "$(tx show-options -t =feature-exits: -qv @agent_worktree)" ]
+  [ -z "$(tx show-options -p -t "$ai" -qv remain-on-exit)" ]
 }
 
 @test "the launch command is a tmux format with the agent's name" {
-  tx set-option -g @agents_launch_cmd "echo name=#{@agent_name}"
+  tx set-option -g @agents_launch_cmd "echo name=#{@agent_name} > '$TMPDIR/named'"
   "$ROOT/scripts/new.sh" "$REPO" feature/named --no-switch
-  ai="$(tx list-panes -t =feature-named: -F '#{pane_id} #{@agents_role}' | awk '$2=="ai"{print $1}')"
-  wait_for "tx capture-pane -p -t '$ai' | grep -q '^name=app-feature-named$'"
+  wait_for "grep -qx name=app-feature-named '$TMPDIR/named'"
 }
 
 @test "a second agent in the same task gets its own name" {
