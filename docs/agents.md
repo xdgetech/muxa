@@ -114,6 +114,34 @@ An assistant request (ADR 0046, `src/assistant/`) asks one workspace's agent, it
 - **After the run.** A stored Result closes the session on the daemon's next tick. The folder stays until the next version stores a Result, or for 7 days. After `run_timeout` with no Result, the request is `timed-out`, but the agent is not stopped, and a later Result is still stored. `cancel-request` and a new version end the older run.
 - **Logs.** Ids, sizes and states only. Never Capture text, a brief or a Result.
 
+### Delegate notes (ADR 0047 §1)
+
+Each delegate keeps `<root>/.muxa/assistant/NOTES.md`: durable facts about the workspace's work, the user's stated preferences for it, and where things are. The brief tells the agent what never goes there: Task progress, whole Capture texts, secrets, and anything about another workspace.
+
+- **The copy.** At a run's start the host copies the live file to `.muxa/assistant/NOTES.md` in the run folder and keeps its SHA-256 as `base`. A live file over 16 KiB, not UTF-8, with a NUL byte, a symlink or not a regular file fails the start with its path and size, before any session exists.
+- **Proposing.** The agent never writes the live file. It puts the full new text in `notes` of `result.json` (at most 16 KiB). The host stores it on the Result as `notes {text, base}`. The text the run read proposes nothing.
+- **Applying.** `[workspace.assistant] notes` decides who writes it. `"review"` (the default): the user reads the proposal in Work detail and taps Update notes, which sends `apply-notes {source, version, base}`. `"auto"`: the host applies a stored proposal at once. Both write only while the live file still hashes to `base`; else `apply-notes` is `conflict` and `auto` keeps the proposal for the user.
+- **Forgetting.** Edit or delete the file. The next run reads the edited file. Stored Results keep their `notes` as history.
+
+### The overall assistant (ADR 0047 §2–§5)
+
+The overall assistant is a workspace with `[workspace.assistant] overall = true`, at most one per host. It uses the workspace's own root, agent, env, worker and budgets. Its root holds only its notes and run folders. Clients leave it out of the New Task and Capture pickers, and it takes no requests (`unsupported`).
+
+- **Configuration** (`docs/examples/workspaces.toml`):
+  - On each other workspace with `[workspace.assistant]`: `share` (`none`, `outline` or `summaries`; default `summaries` with `delegate = true`, else `none`) says what the overall assistant reads. `overall_requests` (`none`, `review` or `auto`; default `review`) says whether it may ask that workspace.
+  - On the overall workspace: `plans`, at most 3 schedules of five cron fields (default `["30 7 * * 1-5"]`, weekdays at 07:30; `[]` plans on demand only), and `timezone`, an IANA name (default the host's zone). `delegate`, `share` and `overall_requests` are refused there. Its budget defaults are `max_open_runs` 1, `max_runs_per_day` 8 and `run_timeout` `"15m"`.
+  - `[assistant] max_auto_requests_per_day` (default 5) caps the requests it sends without approval, across the host. Its runs also count against `[assistant] max_runs_per_day`.
+- **Triggers.** Each schedule runs as a Routine's: one catch-up after the host slept, a repeated DST hour once. Schedules due at once make one plan. `plan-now {minutes?}` starts one on demand. One plan run is open at a time; a second is `conflict`. A reached budget keeps the occurrence as a `failed` plan with its `reason`, and the next occurrence runs again.
+- **The brief.** The host writes it to `.muxa/assistant/BRIEF.md` in the run folder (mode 0600), and the goal points to it. Per workspace, by `share`:
+  - `outline`: Work item titles, states, `laterAt`, `pinnedAt` and `due`; request scopes and delivery states with their times; open Inbox items' kinds, titles and ages.
+  - `summaries`: `outline`, plus each Work item's newest current Result: the summary cut to 600 characters, at most 3 open questions and 3 next actions of 200 characters each, and the number of findings.
+  - `none`: nothing, not even the name.
+  - Also: unsorted Captures and Work items without a workspace, whole, because sorting them is its job; the open Inbox items, the previous plan, its own notes and the plan schema. The shared part is at most 32 KiB; the oldest items are left out first, and the brief says how many.
+  - Never: findings' text, sources and file paths, Result `files`, a workspace's Capture text, a delegate's notes, `TASK.md`, or pane content.
+- **The plan file.** The agent writes `.muxa/assistant/plan.json` and ends its turn: at most 3 `top` rows, `proposals[]` and optional `notes`. The host checks it in its own process, as a request's result, and enforces the rules the agent cannot be trusted with: pinned Work items first in pin order, no item with `laterAt` in `top`. It derives `dueSoon`, `unanswered`, `stale` and `changed` itself. The schema and limits are in `protocol/PROTOCOL.md`, "Plans and the overall assistant" and "Plan file". The host keeps 7 plans.
+- **Proposals.** Each `sort` or `delegate` proposal of the newest plan becomes one Inbox item with `approve`, `reject` and `later`. A proposal makes no item when an open item already asks the same thing. `approve` runs `sort-capture` or `request-assistant` once; a second approve returns what the first made. A `delegate` to a workspace with `overall_requests = "auto"` is approved by the host itself, within every budget and at most once per workspace per plan; the item stays, `answered`, so the user sees every request sent. Past a budget it stays open for the user. A `sort` is always reviewed. A `none` workspace refuses even an approved request.
+- **Logs.** Ids, counts, hashes, states and schedule times. Never notes, plan texts, reasons, purposes or summaries.
+
 From a terminal: `muxa-cli routines`, `routine run [WORKSPACE/]NAME`, `inbox`, and `inbox approve|dismiss ENTRY` or `inbox later ENTRY --until +4h`. With `work` level 3, `inbox` lists Inbox items, and `inbox answer ITEM ACTION` answers one (Desktop tools below).
 
 ## Desktop tools

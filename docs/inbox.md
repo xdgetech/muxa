@@ -111,6 +111,30 @@ Unsorted
 - `+` opens Capture: text, an optional workspace, **Save**, **Ask Assistant** and "Start a Task instead…". A host below `work:8` keeps New Task.
 - muxa for tmux: `prefix + T` lists Work rows with `l` Later, `d` complete and `a` ask.
 
+## Today, proposals and pins (ADR 0047)
+
+With `work:9` and an overall assistant, a **Today** section comes above Decisions. It shows the newest plan with a result.
+
+1. **Rows**: at most 3. Each row shows its Work item's or Inbox item's title, the why, the minutes and the next step. A row of a Work item whose request has no answer yet, or whose newest Result is older than the item, says so. Tapping a row opens its Work item or Inbox item.
+2. **Why** opens the row's basis (due, dependency, goal, time or manual, with its source and time) and what is missing.
+3. **Due soon**: one line under the rows, "Due soon, moved down by you: …", for items you moved down with Later that are due within 24 hours. They are never rows.
+4. **New**: the header shows New when a plan arrived that this device has not shown yet. A new plan replaces the rows but never changes the selection or the scroll.
+5. **Plan Now** asks the overall assistant for a plan now. While it runs, the section says "Making a plan…". A failed or cancelled newest plan shows the host's `reason` as it is, above the last good rows. With no plan yet, or an empty one, the section says so.
+
+- iOS: a tap on Plan Now sets no time limit. A long press offers "I Have 30 minutes", "1 hour" or "2 hours".
+- Android: Plan now opens a dialog with an optional "Minutes you have" field (1 to 1440).
+- The apps do not show `changed` (a row new or moved since the previous plan). muxa for tmux and `muxa-cli plan` do.
+
+The overall assistant's proposals are Decisions items of kind `sort` (sort an unsorted Capture) and `delegate` (ask a workspace's assistant to work on a Work item). Their answers are **Approve**, **Reject** and **Later**. Approve runs the action once; approving twice makes nothing new. A `delegate` the host sent itself (`overall_requests = "auto"`) is already answered, and its summary says so.
+
+Pins and due dates live on Work items:
+
+- Work detail has **Pin** / **Unpin** and **Due**. A pinned item comes first in Work, in pin order, and fills the first Today rows. Pin clears Later; Later, Complete, Withdraw and Merge clear the pin.
+- A Work row shows "pinned" and "due <date>" after its state.
+- Work detail shows a Result's proposed `NOTES.md` in full, with **Update Notes**. The apps keep no copy of the live file, so they show the whole text, not a diff. A changed live file is `conflict`: ask again.
+
+muxa for tmux (`prefix + T`): Today comes first, with `new` or `moved` on a row. `o` or `Enter` on a row goes to its item in the list. `p` plans now and asks for the minutes first (`Enter` gives no limit). `P` on a Work item pins or unpins it. `sort` and `delegate` items take `a` Approve, `r` Reject and `l` Later.
+
 ## Tasks and Sessions modes
 
 - Tasks mode lists Routines first, then every Task grouped by what it needs: Needs attention, Ready for review, Running, No agent, Closed (`protocol/fixtures/inbox/groups.jsonl`). Closed lists a Task for a day after its last change; an item can still open an older one. A Task with a session opens its pane, as a Sessions row does; its detail is Task Info in the pane's More menu (ADR 0044). A Task without a session, or a closed one, shows its detail. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.

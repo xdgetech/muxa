@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0 (the wire types), B1 (notes), B2 (the overall workspace and the brief's filter), B3 (plans and their check), B4 (plan schedules, `plan-now` and budgets), B5 (proposals as Inbox items, `overall_requests` and `max_auto_requests_per_day`) and B6 (pins and deadlines) are built; hosts do not advertise level 9 yet.
+Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0–B10 are implemented.
 
 ## Context
 
@@ -76,7 +76,7 @@ A plan is a record `plans/p-<8hex>.json` in the assistant store, made by one ove
 
 ### 8. Clients
 
-- **Work detail:** Notes diff with Update notes; the plan's reason when the item is in Today.
+- **Work detail:** the proposed notes text with Update notes (clients keep no copy of the live file, so no diff); the plan's reason when the item is in Today.
 - **Inbox:** Today section; `sort` and `delegate` items with Approve, Reject, Later; the delegate's name is the workspace's.
 - **muxa for tmux:** Today rows in `prefix + T` with `o` to open the target; `p` plan now. CLI: `plan`, `plan now`, `assist notes WORK --apply`.
 
@@ -126,7 +126,7 @@ Logs carry ids, counts, hashes, states and schedule times; never notes, plan tex
 | B5 | `sort` and `delegate` items, approve once, `overall_requests`, `max_auto_requests_per_day` | approve twice makes one request; `auto` respects every budget and one per workspace; `none` refuses |
 | B6 | `pin`, `unpin`, `due` | list order; a stale `rev` conflicts |
 | B7 | advertise `work:9`; CLI; muxa for tmux | bats; `plan now` without an overall workspace is `unsupported` |
-| B8 | iOS: Notes diff, Today, new items | UI tests on the demo |
+| B8 | iOS: proposed notes, Today, new items | UI tests on the demo |
 | B9 | Android | the same |
 | B10 | docs: `agents.md`, `inbox.md`, `work-model.md`, `SECURITY.md`, `plan.md` | — |
 | — | **PA2 done** | spec §11 PA2: results merged without aggregated credentials; unanswered and stale shown; Later, pins and the selection untouched |

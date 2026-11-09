@@ -28,6 +28,20 @@ This defines the product concepts used by the vision and milestone plan. Propose
 - An assistant run uses the Routine machinery (create path, delivery, Loop, in-process check), but it belongs to a request, not to a Routine. A Routine is configured and triggered; a request is asked once per version by the user.
 - A decision a Task needs stays an Inbox item. Its Work item shows "waiting on decision" and has no answer of its own.
 
+## Plans and the overall assistant (ADR 0047)
+
+| Concept | Question it answers | Identity and lifetime |
+|---|---|---|
+| Delegate notes | What does a workspace's assistant remember between runs? | `<root>/.muxa/assistant/NOTES.md`, one per workspace with `[workspace.assistant]`. A run reads a copy and may propose a new text; it is written only when the user applies it, or by the host with `notes = "auto"` |
+| Overall assistant | Who looks across workspaces? | One workspace with `overall = true`. It reads only what each workspace's `share` allows, and asks other workspaces only through proposals |
+| Plan | What should I do next? | `p-<8hex>`: one overall run's answer, at most 3 rows with reasons and minutes. Made on a schedule or by Plan Now. The host keeps 7 |
+| Proposal | What does the overall assistant want to do for me? | An Inbox item of kind `sort` or `delegate`, from the newest plan only |
+
+- A Work item's `pinnedAt` and `due` are the user's. A pinned item is listed first and fills the first plan rows. A plan's estimated deadline stays in its `basis`, never on the item.
+- A plan never changes a Work item, an Inbox item, their order or `laterAt`. An item moved down with Later is never a row; when it is due soon, it shows in one line under the rows.
+- A `sort` proposal, approved, does what `sort-capture` does to the Capture. A `delegate` proposal, approved, makes an assistant request on the Work item, as `request-assistant` does. Approving twice makes one request. Rejecting changes nothing else.
+- The overall assistant never sends a request without approval, unless the receiving workspace sets `overall_requests = "auto"`. Even then the Inbox item stays, answered, so every request it sent is visible.
+
 A Session is not inherently manual, and a Task is not a renamed tmux Session. A manual shell or manually launched Claude/Codex can exist without a Task. A Task can have no live session, for example after its session ends. A person can type inside a Task's session while its Task identity remains unchanged. No process-name or terminal-content heuristic promotes a manual session into a Task.
 
 ## Example
