@@ -97,6 +97,23 @@ A Routine (ADR 0026, `src/routines/`) is a `[[routine]]` in a workspace's `<root
 - **Approval.** `update-inbox approve` creates one Task through `create-task`'s path. Its goal holds the proposal unchanged, its hash, and a last line `muxa-proposal: <entry> <hash>`. A second approval, also after a crash, finds that Task by the line instead of making another.
 - **Logs.** Ids, counts and outcomes only. Never instructions, titles, bodies, links or state.
 
+## Assistant runs
+
+An assistant request (ADR 0046, `src/assistant/`) asks one workspace's agent, its delegate, to work on a Work item. Each run is a task record of kind `assistant-run`, with the same create path, session tag, delivery claims and Loop engine as a Routine run. `list-tasks`, the Inbox items and park skip it.
+
+- **Configuration.** In `workspaces.toml` (`docs/examples/workspaces.toml`):
+  - `[assistant]` at the top level is the host's switch: `enabled`, and `max_runs_per_day` across all workspaces (default 20). Without it, no workspace takes requests.
+  - `[workspace.assistant]` allows requests to one workspace: `delegate = true`, an optional `worker`, `max_open_runs` (default 1), `max_runs_per_day` (default 10) and `run_timeout` (default `"30m"`). Without it, the workspace keeps Captures and Work items but takes no requests.
+- **Claude Code only.** The delegate is `[workspace.assistant].worker`, else the workspace's agent. A request needs automatic delivery and a finished turn. A Codex delegate (ADR 0028), or a command with no muxa adapter, is refused before any run folder exists, and the message says to set a Claude Code worker.
+- **Budgets.** Before a run starts: the workspace's open runs stay within `max_open_runs`, and the runs started today within both `max_runs_per_day`. A refusal is `conflict` with the limit and when it resets.
+- **The daemon.** Requests run only in the daemon. Without it, `request-assistant` is `unsupported` and clients say automatic processing is off. Captures and lists work in the bridge alone.
+- **Where it runs.** A new directory `<root>/assistant/<scope>-<request>-v<version>-<id>` in the workspace, and a session of the same name tagged `@muxa_task`. Neither name holds Capture text. The goal ends with `muxa-request: <request> v<version>`; after a crash, one request version still makes one run.
+- **The brief.** `.muxa/TASK.md` holds the Work item's title, the scope (`research`, `compare` or `draft`) and its rule, the purpose, the linked Captures as written, and Earlier work: the request's earlier Results and the Tasks started for the item, newest first. Captures and earlier summaries are marked as data, not instructions. The Result section states the schema below.
+- **The result file.** The agent writes `.muxa/assistant/result.json`, then ends its turn. The schema and limits are in `protocol/PROTOCOL.md`, "Assistant result file".
+- **The check.** It runs in the daemon's process (`assistant/result.rs`). On a pass, one locked write stores the Result as a new version on the request; older Results become `stale`. The Work item does not change. On a fail, the reasons go to `.muxa/checks/<attempt>.log`, and the loop types: `The assistant result did not pass the check. The reasons are in .muxa/checks/<attempt>.log. Fix .muxa/assistant/result.json, then end your turn.` After 3 fails, the request is `failed`.
+- **After the run.** A stored Result closes the session on the daemon's next tick. The folder stays until the next version stores a Result, or for 7 days. After `run_timeout` with no Result, the request is `timed-out`, but the agent is not stopped, and a later Result is still stored. `cancel-request` and a new version end the older run.
+- **Logs.** Ids, sizes and states only. Never Capture text, a brief or a Result.
+
 From a terminal: `muxa-cli routines`, `routine run [WORKSPACE/]NAME`, `inbox`, and `inbox approve|dismiss ENTRY` or `inbox later ENTRY --until +4h`. With `work` level 3, `inbox` lists Inbox items, and `inbox answer ITEM ACTION` answers one (Desktop tools below).
 
 ## Desktop tools

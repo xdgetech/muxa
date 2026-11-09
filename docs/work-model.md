@@ -13,6 +13,21 @@ This defines the product concepts used by the vision and milestone plan. Propose
 | Routine | What runs on a trigger, and what does it propose? | Host configuration with a stable id: workspace, project, trigger, worker, instructions and output policy. Its runs are not Tasks; they appear only in its history and as running work |
 | Inbox item | What must I decide now? | One stored question (ADR 0033): a Task's agent asks, waits for review or failed, or a Routine proposes or briefs. It has its own read and answered state. Answering may change its Task (Accept, Drop) but the item is not the Task |
 
+## Unstarted work and the assistant (ADR 0046)
+
+| Concept | Question it answers | Identity and lifetime |
+|---|---|---|
+| Capture | What did I write down? | `c-<8hex>`: the original text (at most 16 KiB, never rewritten), its source and an optional workspace. `received` (Unsorted) until the user sorts it into a Work item or keeps it as a note. Never pruned automatically |
+| Work item | What do I intend to do, before it is a Task? | `w-<8hex>`: title, workspace, `open` / `done` / `withdrawn`, Later. It links Captures, assistant requests and Tasks. `in-progress` and `waiting-decision` are derived from its Tasks and requests |
+| Assistant request | What did I ask a workspace's agent to find out? | `q-<8hex>`: one Work item, a scope (`research`, `compare`, `draft`), a purpose, versions, a derived delivery state, and up to 10 Results. A newer version makes older Results `stale` |
+| Assistant run | Which execution answers a request version? | A record of kind `assistant-run`, like a `routine-run`: hidden from Tasks and Inbox items, with its own folder and session. One per request version |
+
+- A Capture and a Work item link many-to-many. Nothing links, merges or discards them without the user.
+- A Work item is not a Task. Starting a Task from it (`create-task` with `work`) makes one Task per Work item `rev`, and the Task keeps `work`. The item stays open until the user completes it.
+- A Result never changes the Work item's state, and never starts a Task. The user reads it and decides.
+- An assistant run uses the Routine machinery (create path, delivery, Loop, in-process check), but it belongs to a request, not to a Routine. A Routine is configured and triggered; a request is asked once per version by the user.
+- A decision a Task needs stays an Inbox item. Its Work item shows "waiting on decision" and has no answer of its own.
+
 A Session is not inherently manual, and a Task is not a renamed tmux Session. A manual shell or manually launched Claude/Codex can exist without a Task. A Task can have no live session, for example after its session ends. A person can type inside a Task's session while its Task identity remains unchanged. No process-name or terminal-content heuristic promotes a manual session into a Task.
 
 ## Example

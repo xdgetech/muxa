@@ -80,6 +80,37 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 - The keys follow the apps' item screen (ADR 0040), on two lines. Triage: `l` Later (moves the item down, with no time), `d` ✓ Done (only the item), `c` Complete Task, `x` Drop Task, `o` Open Session. Answers: `a` the first decision (Allow, Approve or Retry; never Complete Task), `r` Deny or Reject, `1`–`9` a question's option, `s` the reply box (Send with a session, Deny & Send on a permission, Ask Agent without a session; it asks for the text). Otherwise `1`–`9` open evidence (the diff first). `Enter` also opens the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Only the keys the item takes are listed.
 - Labels are the apps' labels (ADR 0033 §4a, ADR 0040): `accept` is "Complete Task", `drop` "Drop Task", `keep-open` and `dismiss` "✓ Done", `later` "Later", `ask-agent` "Ask Agent", `reply` is "Send" ("Deny & Send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
 
+## Work and Unsorted (ADR 0046)
+
+With `work:8` the Inbox has three sections, in this order. An older host shows Decisions only.
+
+```
+Decisions
+● Approve terraform apply
+  lisk-infra · 4m
+Work
+  Compare hosting plans
+  open · Company
+  Result ready
+  Reduce GA cost
+  waiting on decision · Lisk
+Unsorted
+  call the bank about the card
+  2h · Personal
+```
+
+1. **Decisions**: the Inbox items above. The Inbox count on the mode control counts these only. Work items and Captures are not counted.
+2. **Work**: open Work items in the host's order; items moved down with Later come last (ADR 0040). A row shows the title, then the state, the workspace and "later". A Work item whose Task has an open item shows "waiting on decision", with no answer of its own: the decision is in Decisions.
+3. **Unsorted**: Captures not sorted yet, newest first. Captures still on the device come first, marked "Not sent", and are sent again on connect.
+
+- Swipe on a Work row: right is **Complete**, left is **Later** (moves it to the bottom, never hides it).
+- Swipe on an Unsorted row: right makes a **Work Item**, left keeps it as a **Note**. A "Not sent" row swipes left to **Delete**.
+- A Work row with an assistant request shows its newest delivery: `pending`, `received`, `processing`, `unconfirmed`, `failed`, `timed-out`, `cancel-requested` or `cancelled` (ADR 0046 §6). These are derived from the run on every list; `failed` and `timed-out` show as needing attention.
+- **Result ready** replaces the delivery when the newest Result was not shown on this device yet. The device keeps the ids and versions it showed, never the Result's text. Opening the Work item clears it.
+- The Work detail shows the Captures' full texts, each request with its delivery and Results, Cancel, Ask Again, and Open Session while the run lives. Result files are paths; the Reader cannot open them yet.
+- `+` opens Capture: text, an optional workspace, **Save**, **Ask Assistant** and "Start a Task instead…". A host below `work:8` keeps New Task.
+- muxa for tmux: `prefix + T` lists Work rows with `l` Later, `d` complete and `a` ask.
+
 ## Tasks and Sessions modes
 
 - Tasks mode lists Routines first, then every Task grouped by what it needs: Needs attention, Ready for review, Running, No agent, Closed (`protocol/fixtures/inbox/groups.jsonl`). Closed lists a Task for a day after its last change; an item can still open an older one. A Task with a session opens its pane, as a Sessions row does; its detail is Task Info in the pane's More menu (ADR 0044). A Task without a session, or a closed one, shows its detail. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.
