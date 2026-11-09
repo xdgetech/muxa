@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.app.assistNote
 import tech.xdge.muxa.app.changeWork
 import tech.xdge.muxa.app.listedWork
 import tech.xdge.muxa.app.sendNow
@@ -42,6 +43,7 @@ import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
+import tech.xdge.muxa.session.RESULT_READY
 import tech.xdge.muxa.session.UnsentCapture
 import tech.xdge.muxa.session.firstLine
 import tech.xdge.muxa.session.isLater
@@ -98,13 +100,13 @@ private fun WorkRowView(model: AppModel, item: WorkItem) {
             scope.launch { swipe.reset() }
         },
     ) {
-        WorkRow(item, model.workDetail == item.id) { model.workDetail = item.id }
+        WorkRow(item, model.assistNote(item), model.workDetail == item.id) { model.workDetail = item.id }
     }
 }
 
-/** The title, then "waiting on decision · work · later". */
+/** The title, then "waiting on decision · work · later", then the newest request's state or "Result ready". */
 @Composable
-private fun WorkRow(item: WorkItem, focused: Boolean, open: () -> Unit) {
+private fun WorkRow(item: WorkItem, assist: String?, focused: Boolean, open: () -> Unit) {
     Column(
         Modifier.fillMaxWidth()
             .background(if (focused) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface)
@@ -121,6 +123,15 @@ private fun WorkRow(item: WorkItem, focused: Boolean, open: () -> Unit) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        assist?.let {
+            Text(
+                it,
+                Modifier.testTag("work-assist-${item.id}"),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (it == RESULT_READY) Theme.connected else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
     }
 }
 

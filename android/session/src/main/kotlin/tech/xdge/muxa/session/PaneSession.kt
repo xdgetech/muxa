@@ -17,6 +17,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import tech.xdge.muxa.protocol.Bytes
+import tech.xdge.muxa.protocol.AssistScope
+import tech.xdge.muxa.protocol.AssistSpec
+import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.CaptureSource
 import tech.xdge.muxa.protocol.CloseMode
@@ -86,6 +89,12 @@ class PaneSession(
 
         /** The Capture or Work item changed on another device since it was listed; nothing was written. */
         class WorkChanged : Failure("the work item changed")
+
+        /**
+         * The host refused an assistant request or cancel for a reason other than a stale `rev`: a limit with
+         * when it resets, a run already starting, or a newer version. [body]'s message says which.
+         */
+        class Refused(val body: ErrorBody) : Failure(body.message)
     }
 
     data class State(
@@ -122,6 +131,10 @@ class PaneSession(
         val work: List<WorkItem> = emptyList(),
         /** The unsorted Captures, newest first, as last listed (`work` level 8). */
         val captures: List<Capture> = emptyList(),
+        /** The assistant requests of the listed Work items, as last listed (`work` level 8). */
+        val requests: List<AssistantRequest> = emptyList(),
+        /** Work items read with `get-work`, by id: their Captures' texts for the detail. */
+        val workDetails: Map<String, WorkDetail> = emptyMap(),
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -188,8 +201,9 @@ class PaneSession(
     private val inboxListings = mutableMapOf<Long, Message.InboxList>()
     private val savedRoutines = mutableMapOf<Long, RoutineInfo>()
     private val savedItems = mutableMapOf<Long, InboxItem>()
-    private val savedCaptures = mutableMapOf<Long, Capture>()
-    private val savedWork = mutableMapOf<Long, WorkItem>()
+    private val savedCaptures = mutableMapOf<Long, Message.CaptureSaved>()
+    private val savedWork = mutableMapOf<Long, Message.WorkSaved>()
+    private val workDetailListings = mutableMapOf<Long, Message.WorkDetail>()
     private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
 
@@ -215,7 +229,7 @@ class PaneSession(
                     watchedPane = null, paneGoneReason = null, sessions = emptyList(), chat = null,
                     unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
                     routines = emptyList(), inboxItems = emptyList(), workError = null,
-                    work = emptyList(), captures = emptyList(),
+                    work = emptyList(), captures = emptyList(), requests = emptyList(), workDetails = emptyMap(),
                 )
             }
         }
@@ -461,6 +475,7 @@ class PaneSession(
                     inboxItems = if (s.canAnswerItems) inbox?.items ?: s.inboxItems else emptyList(),
                     work = if (s.canCapture) inbox?.work ?: s.work else emptyList(),
                     captures = if (s.canCapture) inbox?.captures ?: s.captures else emptyList(),
+                    requests = if (s.canCapture) inbox?.requests ?: s.requests else emptyList(),
                     workError = null,
                 )
             }
@@ -617,20 +632,97 @@ class PaneSession(
         requireCaptures()
         val saved = written(savedCaptures, "the Capture") { id -> Request.Capture(id, clientId, text, CaptureSource.APP, workspace) }
         loadWork()
-        saved
+        saved.entry
+    }
+
+    /**
+     * Saves the input and asks [workspace]'s assistant about it: the host also makes a Work item and a
+     * request. When the assistant cannot start, the Capture is still saved and [Assisted.refusal] says
+     * why. Throws only when nothing was saved.
+     */
+    suspend fun captureAndAsk(clientId: String, text: String, workspace: String, assist: AssistSpec): Assisted = withContext(dispatcher) {
+        requireCaptures()
+        var requestId = 0L
+        val refusal = try {
+            request { id ->
+                requestId = id
+                Request.Capture(id, clientId, text, CaptureSource.APP, workspace, assist)
+            }
+            null
+        } catch (e: Failure.Bridge) {
+            e
+        } catch (e: Failure) {
+            savedCaptures.remove(requestId)
+            throw e
+        }
+        val saved = savedCaptures.remove(requestId)
+        loadWork()
+        when {
+            saved != null -> Assisted(saved.entry, saved.work, saved.request, refusal?.let(::assistFailure))
+            refusal != null -> throw refusal
+            else -> throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Capture"))
+        }
     }
 
     /** Sorts an unsorted [capture]: a new Work item, a link to [work], or a note. */
     suspend fun sortCapture(capture: Capture, action: SortAction, work: WorkItem? = null): Capture = withContext(dispatcher) {
         requireCaptures()
-        changing(savedCaptures, "the Capture") { id -> Request.SortCapture(id, capture.id, capture.rev, action, work = work?.id) }
+        changing(savedCaptures, "the Capture") { id -> Request.SortCapture(id, capture.id, capture.rev, action, work = work?.id) }.entry
     }
 
     /** Changes [item] at the `rev` this client saw. */
     suspend fun updateWork(item: WorkItem, action: WorkAction): WorkItem = withContext(dispatcher) {
         requireCaptures()
-        changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, action) }
+        changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, action) }.entry
     }
+
+    /**
+     * Reads [work] with every Capture it links, sorted or not, for its detail. The result is kept in
+     * `workDetails`. An unknown item is the host's `bad-request`.
+     */
+    suspend fun getWork(work: String): WorkDetail = withContext(dispatcher) {
+        requireCaptures()
+        val listed = listing({ Request.GetWork(it, work) }) { workDetailListings.remove(it) }
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Work item"))
+        val detail = WorkDetail(listed.entry, listed.captures, listed.requests)
+        _state.update { s -> s.copy(workDetails = s.workDetails + (work to detail)) }
+        detail
+    }
+
+    /**
+     * Asks [workspace]'s agent (null: the item's) to work on [item] at the `rev` this client saw.
+     * Asking again at the item's new `rev` adds a version to that workspace's request. A stale `rev`
+     * is [Failure.WorkChanged]; a limit or a run already starting is [Failure.Refused] with the host's
+     * message; no daemon is `unsupported` with the host's message.
+     */
+    suspend fun requestAssistant(
+        item: WorkItem,
+        scope: AssistScope,
+        purpose: String? = null,
+        workspace: String? = null,
+    ): AssistantRequest = withContext(dispatcher) {
+        requireCaptures()
+        val saved = changing(savedWork, "the request", conflict = { e -> if (changedSince(item)) Failure.WorkChanged() else Failure.Refused(e.body) }) { id ->
+            Request.RequestAssistant(id, item.id, item.rev, scope, workspace, purpose?.takeIf { it.isNotBlank() })
+        }
+        saved.request ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the request"))
+    }
+
+    /** Stops [request]'s current version. A newer version on the host is [Failure.Refused] with its message. */
+    suspend fun cancelRequest(request: AssistantRequest): AssistantRequest = withContext(dispatcher) {
+        requireCaptures()
+        val saved = changing(savedWork, "the request", conflict = { e -> Failure.Refused(e.body) }) { id ->
+            Request.CancelRequest(id, request.id, request.version)
+        }
+        saved.request ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the request"))
+    }
+
+    /** The listed item has another `rev` than [seen]: someone changed it since. */
+    private fun changedSince(seen: WorkItem): Boolean = _state.value.work.firstOrNull { it.id == seen.id }?.let { it.rev != seen.rev } ?: false
+
+    /** A refused assist, as [requestAssistant] reports it. */
+    private fun assistFailure(e: Failure.Bridge): Failure =
+        if (e.body.code == ErrorCode.CONFLICT) Failure.Refused(e.body) else e
 
     private fun requireCaptures() {
         if (!_state.value.canCapture) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, CAPTURE_UNSUPPORTED))
@@ -638,15 +730,21 @@ class PaneSession(
 
     /**
      * A change at a `rev`: on success or refusal the Inbox is listed again, for the host's order
-     * and derived states. A stale `rev` is [Failure.WorkChanged].
+     * and derived states. A `conflict` becomes [conflict]'s failure, read after the new list:
+     * by default [Failure.WorkChanged], a stale `rev`.
      */
-    private suspend fun <T> changing(saved: MutableMap<Long, T>, what: String, make: (Long) -> Request): T {
+    private suspend fun <T> changing(
+        saved: MutableMap<Long, T>,
+        what: String,
+        conflict: (Failure.Bridge) -> Failure = { Failure.WorkChanged() },
+        make: (Long) -> Request,
+    ): T {
         val result = try {
             written(saved, what, make)
         } catch (e: Failure) {
             if (e is Failure.NotConnected) throw e
             loadWork()
-            if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) throw Failure.WorkChanged()
+            if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) throw conflict(e)
             throw e
         }
         loadWork()
@@ -1083,9 +1181,10 @@ class PaneSession(
                 }
             }
             is Message.SessionStarted -> startedSessions[message.start] = message
-            is Message.CaptureSaved -> savedCaptures[message.capture] = message.entry
-            is Message.WorkSaved -> savedWork[message.work] = message.entry
-            is Message.WorkDetail, is Message.Unknown -> {}
+            is Message.CaptureSaved -> savedCaptures[message.capture] = message
+            is Message.WorkSaved -> savedWork[message.work] = message
+            is Message.WorkDetail -> workDetailListings[message.work] = message
+            is Message.Unknown -> {}
         }
     }
 
@@ -1140,6 +1239,7 @@ class PaneSession(
         savedItems.clear()
         savedCaptures.clear()
         savedWork.clear()
+        workDetailListings.clear()
         startedSessions.clear()
         inputs.clear()
         sentViewport = null
@@ -1203,6 +1303,7 @@ class PaneSession(
             is Failure.LaunchFailed -> "The task was saved, but its agent did not start: ${error.body.message}"
             is Failure.ItemChanged -> ITEM_CHANGED
             is Failure.WorkChanged -> WORK_CHANGED
+            is Failure.Refused -> error.body.message
             is Failure.ProtocolMismatch ->
                 "The bridge speaks protocol ${error.bridge}; this app speaks $PROTOCOL_VERSION. Update one of them."
             is Failure.NoHello ->

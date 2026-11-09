@@ -1,5 +1,7 @@
 package tech.xdge.muxa.session
 
+import tech.xdge.muxa.protocol.AssistScope
+import tech.xdge.muxa.protocol.AssistSpec
 import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
@@ -49,6 +51,8 @@ data class CaptureDraft(
     /** Null: no workspace yet. */
     val workspace: String? = null,
     val clientId: String = UUID.randomUUID().toString(),
+    /** What Ask Assistant asks for. */
+    val scope: AssistScope = AssistScope.RESEARCH,
 ) {
     /** What to fix before Save; null when it can be sent. */
     val problem: String?
@@ -57,6 +61,12 @@ data class CaptureDraft(
             text.trim().toByteArray().size > CAPTURE_MAX_BYTES -> "This is too long. Keep it under 16 KiB."
             else -> null
         }
+
+    /** What to fix before Ask Assistant: also a workspace. Null when it can be sent. */
+    val askProblem: String? get() = problem ?: assistProblem(workspace, null)
+
+    /** `capture {assist}`. */
+    val assist: AssistSpec get() = AssistSpec(scope)
 
     /** "Start a Task instead…": the text is the goal, its first line the title. */
     fun taskDraft(workspaces: List<WorkspaceInfo>): TaskRecordDraft = TaskRecordDraft(

@@ -2,6 +2,9 @@ package tech.xdge.muxa.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +16,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
@@ -30,14 +34,19 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.app.askFromCapture
 import tech.xdge.muxa.app.captureToTask
 import tech.xdge.muxa.app.saveCapture
+import tech.xdge.muxa.protocol.AssistScope
+import tech.xdge.muxa.session.ASSIST_SCOPES
 import tech.xdge.muxa.session.CaptureDraft
 import tech.xdge.muxa.session.PaneSession
+import tech.xdge.muxa.session.label
 
 /**
  * `+` on a host with `work:8` (ADR 0046 §10): write it down now, sort it later. Save keeps the
- * text on the host and starts nothing. "Start a Task instead…" opens New Task with the text.
+ * text on the host and starts nothing. Ask Assistant also makes a Work item and asks the
+ * workspace's assistant, so it needs a workspace. "Start a Task instead…" opens New Task with the text.
  */
 @Composable
 fun CaptureSheet(model: AppModel, initial: CaptureDraft) {
@@ -51,12 +60,12 @@ fun CaptureSheet(model: AppModel, initial: CaptureDraft) {
         model.captureDraft = next
         error = null
     }
-    fun save() {
-        if (draft.problem != null || saving) return
+    fun send(ask: Boolean) {
+        if ((if (ask) draft.askProblem else draft.problem) != null || saving) return
         saving = true
         scope.launch {
             try {
-                model.saveCapture(draft)
+                if (ask) model.askFromCapture(draft) else model.saveCapture(draft)
             } catch (e: PaneSession.Failure) {
                 error = PaneSession.describe(e)
             } finally {
@@ -75,8 +84,10 @@ fun CaptureSheet(model: AppModel, initial: CaptureDraft) {
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 )
                 CaptureWorkspace(model, draft.workspace) { edit(draft.copy(workspace = it)) }
+                ScopePicker(draft.scope, "capture-scope") { edit(draft.copy(scope = it)) }
                 Text(
-                    "Save keeps it in the Inbox under Unsorted. Nothing starts.",
+                    "Save keeps it in the Inbox under Unsorted. Nothing starts. " +
+                        "Ask Assistant makes a Work item and asks the workspace's assistant.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -91,37 +102,58 @@ fun CaptureSheet(model: AppModel, initial: CaptureDraft) {
             if (saving) {
                 CircularProgressIndicator()
             } else {
-                TextButton(::save, enabled = draft.problem == null, modifier = Modifier.testTag("capture-save")) { Text("Save") }
+                Row {
+                    TextButton({ send(ask = true) }, enabled = draft.askProblem == null, modifier = Modifier.testTag("capture-ask")) {
+                        Text("Ask Assistant")
+                    }
+                    TextButton({ send(ask = false) }, enabled = draft.problem == null, modifier = Modifier.testTag("capture-save")) { Text("Save") }
+                }
             }
         },
         dismissButton = { TextButton({ model.captureDraft = null }, enabled = !saving) { Text("Cancel") } },
     )
 }
 
-/** Optional: "No workspace" until the user picks one. */
+/** Research, Compare or Draft: what the assistant is asked to do. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ScopePicker(scope: AssistScope, tag: String, pick: (AssistScope) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (s in ASSIST_SCOPES) {
+            FilterChip(s == scope, { pick(s) }, { Text(s.label) }, Modifier.testTag("$tag-${s.raw}"))
+        }
+    }
+}
+
+/** Optional for Save, needed by Ask Assistant: "No workspace" until the user picks one. */
+@Composable
+private fun CaptureWorkspace(model: AppModel, workspace: String?, pick: (String?) -> Unit) =
+    WorkspacePicker(model, workspace, "Workspace (optional for Save)", "capture-workspace", pick)
+
+/** A workspace from the host's list, or "No workspace"; [tag] names the field and, with a suffix, each choice. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CaptureWorkspace(model: AppModel, workspace: String?, pick: (String?) -> Unit) {
+internal fun WorkspacePicker(model: AppModel, workspace: String?, label: String, tag: String, pick: (String?) -> Unit) {
     val workspaces = model.state.tasks?.workspaces.orEmpty()
     if (workspaces.isEmpty()) return
     var picking by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(picking, { picking = it }) {
         OutlinedTextField(
             workspace ?: NO_WORKSPACE, {},
-            Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag("capture-workspace"),
-            readOnly = true, singleLine = true, label = { Text("Workspace (optional)") },
+            Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable).testTag(tag),
+            readOnly = true, singleLine = true, label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(picking) },
         )
         ExposedDropdownMenu(picking, { picking = false }) {
             DropdownMenuItem({ Text(NO_WORKSPACE) }, {
                 pick(null)
                 picking = false
-            }, modifier = Modifier.testTag("capture-workspace-none"))
+            }, modifier = Modifier.testTag("$tag-none"))
             for (w in workspaces) {
                 DropdownMenuItem({ Text(w.name) }, {
                     pick(w.name)
                     picking = false
-                }, modifier = Modifier.testTag("capture-workspace-${w.name}"))
+                }, modifier = Modifier.testTag("$tag-${w.name}"))
             }
         }
     }
@@ -138,5 +170,17 @@ fun CaptureNotice(model: AppModel) {
         title = { Text("Saved on This Device") },
         text = { Text(notice, Modifier.testTag("capture-notice")) },
         confirmButton = { TextButton({ model.captureNotice = null }) { Text("OK") } },
+    )
+}
+
+/** After Ask Assistant saved the Capture but the assistant did not start: the host's reason. */
+@Composable
+fun AssistNotice(model: AppModel) {
+    val notice = model.assistNotice ?: return
+    AlertDialog(
+        onDismissRequest = { model.assistNotice = null },
+        title = { Text("Assistant Not Started") },
+        text = { Text(notice, Modifier.testTag("assist-notice")) },
+        confirmButton = { TextButton({ model.assistNotice = null }) { Text("OK") } },
     )
 }

@@ -1,7 +1,10 @@
 package tech.xdge.muxa.app
 
 import kotlinx.coroutines.launch
+import tech.xdge.muxa.protocol.AssistScope
+import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.Capture
+import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
@@ -9,6 +12,7 @@ import tech.xdge.muxa.session.CaptureDraft
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.UnsentCapture
+import tech.xdge.muxa.session.assistNote
 import tech.xdge.muxa.session.forWork
 import tech.xdge.muxa.session.listed
 import tech.xdge.muxa.session.unsentReason
@@ -29,6 +33,12 @@ val AppModel.unsortedCaptures: List<Capture> get() = if (canCapture) state.captu
 val AppModel.unsentHere: List<UnsentCapture> get() = unsentList.filter { it.host == currentHostId }
 
 fun AppModel.workItem(id: String): WorkItem? = state.work.firstOrNull { it.id == id }
+
+/** The assistant requests of the listed Work items. */
+val AppModel.listedRequests: List<AssistantRequest> get() = if (canCapture) state.requests else emptyList()
+
+/** The Work row's note on its newest request; null without one. */
+fun AppModel.assistNote(item: WorkItem): String? = assistNote(item, listedRequests)
 
 /** `+` (ADR 0035 §5, changed by ADR 0046): Capture on a host with `work:8`, else New Task. */
 fun AppModel.openPlus() {
@@ -54,6 +64,69 @@ suspend fun AppModel.saveCapture(draft: CaptureDraft) {
         captureNotice = NOT_SENT
     }
     captureDraft = null
+}
+
+/**
+ * Ask Assistant on the Capture sheet: saves with `assist`. When the assistant cannot start, the host
+ * still keeps the Capture; the sheet closes and the notice gives the host's reason. Without a
+ * connection it waits as "Not sent", and is sent later without asking: nothing starts by itself.
+ */
+suspend fun AppModel.askFromCapture(draft: CaptureDraft) {
+    if (draft.askProblem != null) return
+    val text = draft.text.trim()
+    val workspace = draft.workspace ?: return
+    val assisted = try {
+        session.captureAndAsk(draft.clientId, text, workspace, draft.assist)
+    } catch (e: PaneSession.Failure) {
+        if (unsentReason(e) != null) throw e
+        val host = currentHostId ?: throw e
+        unsent.add(UnsentCapture(draft.clientId, host, text, workspace, System.currentTimeMillis() / 1000))
+        captureNotice = NOT_SENT_ASK
+        captureDraft = null
+        return
+    }
+    captureDraft = null
+    val refusal = assisted.refusal ?: return
+    val where = if (assisted.work != null) "as a Work item" else "under Unsorted"
+    assistNotice = "Saved $where. The assistant did not start: ${PaneSession.describe(refusal)}"
+}
+
+/** Reads the item with its Captures' texts for the detail. Returns the host's reason when it could not. */
+suspend fun AppModel.loadWorkDetail(id: String): String? = try {
+    session.getWork(id)
+    null
+} catch (e: PaneSession.Failure) {
+    PaneSession.describe(e)
+}
+
+/** Ask Assistant or Ask again on the detail. Returns the host's reason when it refused. */
+suspend fun AppModel.askAssistant(item: WorkItem, scope: AssistScope, purpose: String?, workspace: String?): String? =
+    busyWith(item.id) { session.requestAssistant(item, scope, purpose, workspace) }
+
+/** Cancel on a request whose run has no result yet. Returns the host's reason when it refused. */
+suspend fun AppModel.cancelRequest(item: WorkItem, request: AssistantRequest): String? =
+    busyWith(item.id) { session.cancelRequest(request) }
+
+/** The session of [request]'s run, while it lives. */
+fun AppModel.runSession(request: AssistantRequest): Session? = request.run?.let { run -> state.sessions.firstOrNull { it.taskId == run } }
+
+/** Open Session: the run's pane, as a Sessions row opens it. */
+fun AppModel.openRunSession(session: Session) {
+    workDetail = null
+    open(session)
+}
+
+private suspend fun AppModel.busyWith(id: String, action: suspend () -> Unit): String? {
+    if (changingWork != null) return null
+    changingWork = id
+    return try {
+        action()
+        null
+    } catch (e: PaneSession.Failure) {
+        PaneSession.describe(e)
+    } finally {
+        changingWork = null
+    }
 }
 
 /** "Start a Task instead…": the New Task form with the text, and no Capture saved. */
@@ -113,6 +186,10 @@ private fun AppModel.change(id: String, action: suspend () -> Unit) {
         }
     }
 }
+
+/** What the app says when Ask Assistant could not reach the host. */
+const val NOT_SENT_ASK = "Not sent yet. Muxa keeps it on this device and sends it when it connects to the host. " +
+    "The assistant is not asked then: ask from the Inbox once it is there."
 
 /** What the app says when a Save could not reach the host. */
 const val NOT_SENT = "Not sent yet. Muxa keeps it on this device and sends it when it connects to the host."

@@ -2,7 +2,6 @@ package tech.xdge.muxa.app
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -46,8 +45,7 @@ class WorkInboxTest {
 
     private fun waitForTag(tag: String) = compose.waitUntilAtLeastOneExists(hasTestTag(tag), TIMEOUT)
 
-    private fun waitForText(tag: String, text: String) =
-        compose.waitUntilAtLeastOneExists(hasTestTag(tag) and hasText(text, substring = true), TIMEOUT)
+    private fun waitForText(tag: String, text: String) = compose.waitForTextIn(tag, text, TIMEOUT)
 
     private fun scrollTo(tag: String) {
         compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag(tag))

@@ -187,6 +187,7 @@ fun Root(model: AppModel) {
         model.workDetail?.let { WorkDetail(model, it) }
         model.captureDraft?.let { CaptureSheet(model, it) }
         CaptureNotice(model)
+        AssistNotice(model)
         model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }
     }
 }

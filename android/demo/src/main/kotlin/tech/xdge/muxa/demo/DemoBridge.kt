@@ -67,6 +67,8 @@ class DemoBridge(
     alerts: Boolean = false,
     taskRecords: Boolean = true,
     workLevel: Int = WORK_WORKTREE_END,
+    /** How fast an assistant run moves on (ADR 0046). */
+    assistPace: AssistPace = AssistPace.DEMO,
 ) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
     enum class Content { TESTS, SHOWCASE }
@@ -108,7 +110,7 @@ class DemoBridge(
     private val items = content.items(now())
 
     /** Captures and Work items (ADR 0046). */
-    private val assistant = content.assistant(now())
+    private val assistant = content.assistant(now()).also { it.pace = assistPace }
     private var sessions: List<Session> = content.sessions(now()) + work.sessions
     private val capabilities = CAPABILITIES
         .filter { taskRecords || it != "task-records" } +
@@ -120,6 +122,7 @@ class DemoBridge(
     /** The host's task records; grows when a task is created. */
     private var tasks: List<TaskRecord> = content.tasks(now())
     private var createdCount = 0
+    private var runCount = 0
 
     private class ChatFollow(val id: Long, var seq: Long = 0, var count: Int = 0)
 
@@ -209,10 +212,8 @@ class DemoBridge(
             is Request.CloseTask -> closeTask(req.id, req.session, req.mode)
             is Request.Keys -> keys(req)
             is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
-            is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork -> serveAssistant(req)
-            // No assistant runs in the demo, as on a host without the daemon.
-            is Request.RequestAssistant, is Request.CancelRequest ->
-                fail(req.id, ErrorCode.UNSUPPORTED, if (workLevel >= WORK_ASSISTANT) NO_ASSISTANT else NO_REQUEST)
+            is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork,
+            is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }
@@ -228,11 +229,13 @@ class DemoBridge(
                 ok(req.id)
             }
             is Request.ListInbox -> {
+                if (workLevel >= WORK_ASSISTANT) advanceRuns(now)
                 val list = synchronized(lock) {
                     val entries = work.shownEntries
                     val shown = if (workLevel >= WORK_ITEMS) items.list(entries, work.laterAts, workLevel >= WORK_ASK_AGENT) else emptyList()
                     if (workLevel < WORK_ASSISTANT) return@synchronized Message.InboxList(req.id, entries, shown)
-                    Message.InboxList(req.id, entries, shown, assistant.listed(::derivedState), assistant.unsorted)
+                    val listed = assistant.listed(::derivedState)
+                    Message.InboxList(req.id, entries, shown, listed, assistant.unsorted, assistant.requestsOf(listed))
                 }
                 emit(list)
                 ok(req.id)
@@ -245,40 +248,116 @@ class DemoBridge(
         }
     }
 
-    /** Captures and Work items (ADR 0046), refused as a bridge below `work` level 8 refuses them. */
+    /** Captures, Work items and assistant requests (ADR 0046), refused as a bridge below `work` level 8 refuses them. */
     private fun serveAssistant(req: Request) {
         if (workLevel < WORK_ASSISTANT) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
         val now = now()
         try {
             val saved = synchronized(lock) {
                 when (req) {
-                    is Request.Capture -> Message.CaptureSaved(req.id, assistant.capture(req, now))
-                    is Request.SortCapture -> assistant.sort(req, now).let { (c, w) -> Message.CaptureSaved(req.id, c, w) }
+                    is Request.Capture -> return capture(req, now)
+                    is Request.SortCapture -> assistant.sort(req, now).let { (c, w) -> Message.CaptureSaved(req.id, c, w?.let(::derived)) }
                     is Request.UpdateWork -> {
                         val laterAt = maxOf(now, (assistant.lastLaterAt ?: 0) + 1)
-                        assistant.update(req, now, laterAt).let { Message.WorkSaved(req.id, it.copy(state = derivedState(it))) }
+                        Message.WorkSaved(req.id, derived(assistant.update(req, now, laterAt)))
+                    }
+                    is Request.GetWork -> assistant.detail(req.work).let { (w, captures, requests) ->
+                        Message.WorkDetail(req.id, derived(w), captures, requests)
+                    }
+                    is Request.RequestAssistant -> return ask(req, now)
+                    is Request.CancelRequest -> {
+                        val (w, q, ended) = assistant.cancel(req, now)
+                        ended?.let(::endRun)
+                        Message.WorkSaved(req.id, derived(w), q)
                     }
                     else -> return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
                 }
             }
             emit(saved)
             ok(req.id)
+            if (req is Request.CancelRequest) emit(Message.SessionsChanged)
         } catch (e: DemoWork.Refusal) {
             fail(req.id, e.code, e.message ?: "")
         }
     }
+
+    /** A Capture; with `assist`, also a Work item and a request. A refusal still saves the Capture. The caller holds the lock. */
+    private fun capture(req: Request.Capture, now: Long) {
+        val c = assistant.capture(req, now)
+        val spec = req.assist ?: return emitAll(Message.CaptureSaved(req.id, c), Message.Result(req.id))
+        val a = assistant.assist(c, spec, now, System.currentTimeMillis(), workspaceNames, ::startRun)
+        a.asked?.ended?.let(::endRun)
+        emit(Message.CaptureSaved(req.id, a.capture, a.work?.let(::derived), a.asked?.request))
+        val refusal = a.refusal
+        if (refusal != null) return fail(req.id, refusal.code, refusal.message ?: "")
+        ok(req.id)
+        if (a.asked?.run != null) runStarted()
+    }
+
+    /** `request-assistant`: a run with its own session, as the daemon starts one. The caller holds the lock. */
+    private fun ask(req: Request.RequestAssistant, now: Long) {
+        val a = assistant.ask(req, now, System.currentTimeMillis(), workspaceNames, ::startRun)
+        a.ended?.let(::endRun)
+        emitAll(Message.WorkSaved(req.id, derived(a.work), a.request), Message.Result(req.id))
+        if (a.run != null) runStarted()
+    }
+
+    private val workspaceNames get() = content.workspaces.map { it.name }.toSet()
+
+    /** A new run's session, named `<scope>-<request>-v<version>-<run>` as the host names it. The caller holds the lock. */
+    private fun startRun(name: String): String {
+        val id = "t-run%03d".format(++runCount)
+        val n = 20 + sessions.size
+        val dir = "/assistant/$id"
+        val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", dir, false, false, Agent(AgentState.RUNNING, now()))
+        followers += pane.id
+        sessions = sessions + Session("$$n", "$name-$id", taskId = id, panes = listOf(pane))
+        return id
+    }
+
+    /** The run's session closes. The caller holds the lock. */
+    private fun endRun(run: String) {
+        sessions = sessions.filter { it.taskId != run }
+    }
+
+    /** The app lists again when the run should have moved on, as a host's `tasks-changed` makes it. */
+    private fun runStarted() {
+        emit(Message.SessionsChanged)
+        val pace = assistant.pace
+        if (pace == AssistPace.NEVER) return
+        scope.launch {
+            delay(pace.pendingMillis + RUN_TICK_MILLIS)
+            emit(Message.TasksChanged)
+            delay(pace.processingMillis)
+            emit(Message.TasksChanged)
+        }
+    }
+
+    /** Moves the runs on before a list; a run with its Result closes its session. */
+    private fun advanceRuns(now: Long) {
+        val ended = synchronized(lock) {
+            assistant.advance(now, System.currentTimeMillis()).onEach(::endRun)
+        }
+        if (ended.isNotEmpty()) emit(Message.SessionsChanged)
+    }
+
+    private fun emitAll(vararg messages: Message) = messages.forEach(::emit)
+
+    /** [w] with the state the host derives. The caller holds the lock. */
+    private fun derived(w: WorkItem) = w.copy(state = derivedState(w))
 
     /**
      * What the host derives for an open Work item: waiting on a decision while a linked Task has
      * an open Inbox item, in progress while one runs. The caller holds the lock.
      */
     private fun derivedState(w: WorkItem): WorkState {
-        if (w.state != WorkState.OPEN || w.tasks.isEmpty()) return w.state
+        if (w.state != WorkState.OPEN) return w.state
+        if (w.tasks.isEmpty()) return if (assistant.running(w)) WorkState.IN_PROGRESS else w.state
         val asking = items.list(work.shownEntries, work.laterAts, askAgent = false)
             .filter { it.state == ItemState.OPEN }.mapNotNull { it.task }.toSet()
         if (w.tasks.any { it in asking }) return WorkState.WAITING_DECISION
         val running = tasks.filter { it.id in w.tasks && it.status == TaskStatus.OPEN }.map { it.id }
-        return if (sessions.any { it.taskId in running }) WorkState.IN_PROGRESS else WorkState.OPEN
+        return if (sessions.any { it.taskId in running } || assistant.running(w)) WorkState.IN_PROGRESS else WorkState.OPEN
     }
 
     /**
@@ -904,7 +983,9 @@ class DemoBridge(
 
         /** What a bridge says to a request it does not know. */
         const val NO_REQUEST = "The demo bridge does not support this request."
-        const val NO_ASSISTANT = "Automatic processing is off in the demo."
+
+        /** A little after a run should have moved on, the app lists again. */
+        private const val RUN_TICK_MILLIS = 100L
         private const val UPDATE_DELAY_MILLIS = 2_000L
 
         private fun now() = System.currentTimeMillis() / 1_000

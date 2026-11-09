@@ -221,6 +221,9 @@ class AppModel(
     /** Shown once a Save could not reach the host: the capture waits on this device. */
     var captureNotice by mutableStateOf<String?>(null)
 
+    /** Shown when a Capture was saved but its assistant did not start, with the host's reason. */
+    var assistNotice by mutableStateOf<String?>(null)
+
     /** The Work item whose detail is open, by id. */
     var workDetail by mutableStateOf<String?>(null)
 
@@ -475,6 +478,7 @@ class AppModel(
         inboxError = null
         captureDraft = null
         captureNotice = null
+        assistNotice = null
         workDetail = null
         changingWork = null
         itemReplies = emptyMap()

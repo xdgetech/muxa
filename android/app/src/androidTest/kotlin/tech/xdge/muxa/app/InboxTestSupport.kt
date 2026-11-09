@@ -3,7 +3,9 @@ package tech.xdge.muxa.app
 import android.content.Intent
 import android.view.KeyEvent
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -31,6 +33,15 @@ fun ComposeTestRule.exists(tag: String) = onAllNodesWithTag(tag).fetchSemanticsN
 
 @OptIn(ExperimentalTestApi::class)
 fun ComposeTestRule.waitForTag(tag: String, timeout: Long = 10_000) = waitUntilAtLeastOneExists(hasTestTag(tag), timeout)
+
+/**
+ * Waits for [text] on the node tagged [tag] or below it. It reads the unmerged tree: a tagged Text
+ * inside a clickable row is merged into the row, so the merged tree has no node with its tag.
+ */
+fun ComposeTestRule.waitForTextIn(tag: String, text: String, timeout: Long = 10_000) = waitUntil(timeout) {
+    val shows = hasText(text, substring = true) or hasAnyDescendant(hasText(text, substring = true))
+    onAllNodes(hasTestTag(tag) and shows, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+}
 
 @OptIn(ExperimentalTestApi::class)
 fun ComposeTestRule.click(tag: String) {
