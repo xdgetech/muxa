@@ -37,6 +37,8 @@ data class Plan(
     val changed: List<PlanChange> = emptyList(),
     /** The overall assistant's proposed notes. Never logged. */
     val notes: Notes? = null,
+    /** Why a plan is `failed` or `cancelled`: host text naming ids and limits. */
+    val reason: String? = null,
 )
 
 /** One row of a plan's `top`: a Work item or an Inbox item. */

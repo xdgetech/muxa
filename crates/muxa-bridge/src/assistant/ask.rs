@@ -162,6 +162,14 @@ fn find(
     }
 }
 
+/// Blocking. The Work item `rev` that made the current version of its
+/// request to `workspace`: a resend of it makes nothing new.
+pub fn asked_rev(config: &Config, work: &str, workspace: &str) -> Result<Option<u64>, ErrorBody> {
+    let requests = super::shelf::<AssistantRequest>(config)?;
+    let found = find(&requests, work, workspace).map_err(ErrorBody::from)?;
+    Ok(found.and_then(|(_, extra)| asked(&extra)))
+}
+
 fn asked(extra: &Extra) -> Option<u64> {
     extra.get(ASKED_FIELD).and_then(serde_json::Value::as_u64)
 }

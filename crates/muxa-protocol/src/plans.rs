@@ -51,6 +51,10 @@ pub struct Plan {
     /// The overall assistant's proposed notes. Never logged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<Notes>,
+    /// Why a plan is `failed` or `cancelled`, at most 500 bytes: host text
+    /// naming ids and limits, never the agent's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// One row of `top`: a Work item or an Inbox item. Texts are never logged.

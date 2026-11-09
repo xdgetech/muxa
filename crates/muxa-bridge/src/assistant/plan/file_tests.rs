@@ -136,6 +136,16 @@ fn field_counterexamples_name_the_field_and_never_the_value() {
             "proposals[0].work must be a Work item's id with action link",
         ),
         (
+            plan(
+                vec![],
+                vec![
+                    json!({"kind": "sort", "capture": "c-4e5f6a7b", "action": "note",
+                            "title": "Keep it"}),
+                ],
+            ),
+            "proposals[0]: workspace and title go with action work only",
+        ),
+        (
             plan(vec![], vec![json!({"kind": "pay", "to": MARK})]),
             "proposals[0] does not match the schema",
         ),

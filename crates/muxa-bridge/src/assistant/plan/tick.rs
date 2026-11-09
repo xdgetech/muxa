@@ -135,7 +135,7 @@ fn unstarted(shelf: &Shelf<Plan>, p: &Plan, records: &[Record], now: u64) {
             return Ok(None);
         }
         extra.remove(CREATING_FIELD);
-        extra.insert(super::REASON_FIELD.into(), "The run did not start.".into());
+        p.reason = Some("The run did not start.".into());
         p.delivery = Delivery::Failed;
         p.delivery_at = now;
         p.rev += 1;

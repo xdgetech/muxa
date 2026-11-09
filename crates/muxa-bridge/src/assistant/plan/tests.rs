@@ -75,6 +75,7 @@ impl Host {
                         stale: Vec::new(),
                         changed: Vec::new(),
                         notes,
+                        reason: None,
                     },
                     extra,
                 ))

@@ -333,7 +333,7 @@ pub fn end(
         p.delivery = state;
         p.delivery_at = at;
         p.rev += 1;
-        extra.insert(super::REASON_FIELD.into(), why.into());
+        p.reason = Some(super::reason(why));
         extra.remove(super::start::CREATING_FIELD);
         Ok(true)
     })?;

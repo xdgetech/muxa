@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0 (the wire types), B1 (notes), B2 (the overall workspace and the brief's filter), B3 (plans and their check), B4 (plan schedules, `plan-now` and budgets) and B6 (pins and deadlines) are built; hosts do not advertise level 9 yet.
+Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0 (the wire types), B1 (notes), B2 (the overall workspace and the brief's filter), B3 (plans and their check), B4 (plan schedules, `plan-now` and budgets), B5 (proposals as Inbox items, `overall_requests` and `max_auto_requests_per_day`) and B6 (pins and deadlines) are built; hosts do not advertise level 9 yet.
 
 ## Context
 
@@ -82,7 +82,7 @@ A plan is a record `plans/p-<8hex>.json` in the assistant store, made by one ove
 
 ### 9. Logs and budgets
 
-Logs carry ids, counts, hashes, states and schedule times; never notes, plan texts, reasons, purposes or summaries. Overall runs count against `[assistant] max_runs_per_day` and the overall workspace's own limits (defaults: `max_open_runs` 1, `max_runs_per_day` 8, `run_timeout` 15m). A reached limit stops automatic plans with a visible reason and a resume, as spec §8 asks: the occurrence is kept as a `failed` plan with the reason, and the next occurrence runs again. Until the wire carries the reason, it is in the plan's file and the host log names the limit.
+Logs carry ids, counts, hashes, states and schedule times; never notes, plan texts, reasons, purposes or summaries. Overall runs count against `[assistant] max_runs_per_day` and the overall workspace's own limits (defaults: `max_open_runs` 1, `max_runs_per_day` 8, `run_timeout` 15m). A reached limit stops automatic plans with a visible reason and a resume, as spec §8 asks: the occurrence is kept as a `failed` plan with its `reason`, and the next occurrence runs again.
 
 ## Not decided
 
@@ -105,6 +105,14 @@ Logs carry ids, counts, hashes, states and schedule times; never notes, plan tex
   - The overall assistant as host code without an agent: ranking needs judgment the host cannot write as rules.
   - A Routine as the morning trigger: a Routine publishes briefings and proposals; a plan is a different record with host-derived marks.
   - Auto-delegation by default: spec §6 wants explicit scope per workspace.
+
+## Implementation notes (B5)
+
+- **Where items live.** A plan's proposal items are kept in its run's item file (`items/<run>.json`), keyed `proposal:<plan>:<index>`, so a second scan makes none. They have no `task`. Only the newest plan's proposals are asked; one whose Capture, or Work item and workspace, an open item already asks about makes no second item.
+- **Approve once.** The item file keeps each approval by item id and proposal hash: the `rev` it ran at, its claim while it runs, and the ids it made. A retry after a crash sends the `rev` the request was asked at, so `request-assistant` finds that version instead of making one; a sort's single write is found by the Capture's `rev` plus one.
+- **`auto` keeps the item.** The host approves the item itself and leaves it `answered` with a summary that says so, instead of sending without an item: the user sees every request the overall assistant sent, and a second approve returns it. Past a budget the item stays open with the limit in its summary, and the host does not try it again.
+- **A sorted Capture.** Approving a `sort` whose Capture was sorted meanwhile resolves the item with the reason; the reply is `conflict`.
+- **Sort fields.** The plan file takes a sort's `workspace` and `title` with action `work` only, as `sort-capture` does, so an approved proposal always runs.
 
 ## Delivery slices
 

@@ -45,6 +45,19 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             Err(e) => (Vec::new(), Some(e)),
         };
     }
+    if let Request::UpdateInbox {
+        id,
+        entry,
+        action: muxa_protocol::InboxAction::Approve,
+        ..
+    } = &req
+    {
+        if entry.starts_with("i-") {
+            if let Some(answer) = crate::assistant::proposals::answer(cx, *id, entry).await {
+                return answer;
+            }
+        }
+    }
     let result = match req {
         Request::ListRoutines { id } => {
             let config = Arc::clone(&cx.records);

@@ -302,6 +302,7 @@ impl Host {
                     stale: Vec::new(),
                     changed: Vec::new(),
                     notes: None,
+                    reason: None,
                 })
             })
             .unwrap()
@@ -450,7 +451,7 @@ fn a_stopped_loop_fails_the_plan_unless_a_user_stopped_it() {
         Delivery::Processing
     );
     stopped(&state, &record, &lp(Reason::Limit));
-    let (p, extra) = h.plans().get_with_extra(&plan.id).unwrap().unwrap();
+    let p = h.plans().get(&plan.id).unwrap().unwrap();
     assert_eq!(p.delivery, Delivery::Failed);
-    assert_eq!(extra[super::super::REASON_FIELD], "No valid plan.");
+    assert_eq!(p.reason.as_deref(), Some("No valid plan."));
 }

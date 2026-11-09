@@ -23,12 +23,12 @@ use crate::task_records::{Config, Context};
 
 /// Plans kept, newest first.
 pub const KEEP: usize = 7;
-/// The plan file's reason for a failed plan: host text, never the agent's.
-pub const REASON_FIELD: &str = "reason";
 /// The plan file's overall workspace, whose notes the plan proposes to change.
 pub const WORKSPACE_FIELD: &str = "workspace";
 /// Minutes the user may say they have.
 const MAX_MINUTES: u32 = 1440;
+/// Bytes of a plan's `reason`.
+pub const MAX_REASON: usize = 500;
 
 /// `plan-now {minutes?}`: a `plan-saved` with the new plan, and the error
 /// when its run did not start.
@@ -125,6 +125,15 @@ pub fn overall_timeout(config: &Config) -> u64 {
         .ok()
         .and_then(|w| w.overall()?.assistant.as_ref().map(|d| d.run_timeout))
         .unwrap_or(crate::records::assistant::OVERALL_RUN_TIMEOUT)
+}
+
+/// A failed or cancelled plan's `reason`: host text, cut to [`MAX_REASON`] bytes.
+pub fn reason(why: &str) -> String {
+    let mut end = why.len().min(MAX_REASON);
+    while !why.is_char_boundary(end) {
+        end -= 1;
+    }
+    why[..end].to_owned()
 }
 
 /// The plans' folder; refused without a state directory.

@@ -55,8 +55,8 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],
         ItemKind::Proposal => vec![Approve, Reject],
         ItemKind::Briefing => vec![Dismiss],
-        // The overall assistant's proposals come with level 9 (ADR 0047 §4).
-        ItemKind::Sort | ItemKind::Delegate => vec![Approve, Reject],
+        // The overall assistant's proposals (ADR 0047 §4): no agent to ask.
+        ItemKind::Sort | ItemKind::Delegate => return vec![Approve, Reject, Later],
     };
     // An item with a session sends its text to its own agent (ADR 0040 §4).
     if item.session.is_none() {

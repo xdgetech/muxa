@@ -86,6 +86,7 @@ fn plan(id: &str, delivery: Delivery, rows: &[&str]) -> Plan {
         stale: Vec::new(),
         changed: Vec::new(),
         notes: None,
+        reason: None,
     }
 }
 

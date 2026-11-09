@@ -108,6 +108,11 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Drop => Plan::Status(TaskStatus::Dropped),
         Retry => Plan::Restart,
         Branch => Plan::Branch,
+        // Approve runs in `assistant::proposals`, which `routines::handle` calls first.
+        Reject if matches!(item.kind, ItemKind::Sort | ItemKind::Delegate) => Plan::Nothing,
+        Approve if matches!(item.kind, ItemKind::Sort | ItemKind::Delegate) => {
+            return Err(bad("approve on a proposal item runs through the assistant"));
+        }
         Approve | Reject | Choose => pick(item, answer.action, answer.option)?,
         Reply => {
             let text = reply_text(Reply, answer.text.as_deref())?;

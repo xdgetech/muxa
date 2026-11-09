@@ -324,6 +324,13 @@ fn sort(
     if workspace.as_deref().is_some_and(|w| !is_name(w)) {
         reasons.push(format!("{at}.workspace must be a workspace's name."));
     }
+    // As sort-capture takes them, so an approval can run unchanged.
+    let work_action = action.is_none_or(|a| a == SortAction::Work);
+    if !work_action && (workspace.is_some() || title.is_some()) {
+        reasons.push(format!(
+            "{at}: workspace and title go with action work only."
+        ));
+    }
     if let Some(t) = &title {
         one_line(&format!("{at}.title"), t, MAX_TITLE, reasons);
     }

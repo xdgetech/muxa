@@ -16,6 +16,7 @@ pub mod notes;
 pub mod overall_brief;
 pub mod plan;
 pub mod policy;
+pub mod proposals;
 pub mod record;
 pub mod result;
 pub mod share;

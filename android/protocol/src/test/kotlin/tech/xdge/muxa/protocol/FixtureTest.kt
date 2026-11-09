@@ -136,7 +136,7 @@ class FixtureTest {
         assertEquals(27, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(22, messages.size)
+        assertEquals(23, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -233,6 +233,10 @@ class FixtureTest {
         )
         val answered = (messages[20] as Message.InboxSaved).item!!
         assertTrue(answered.answers.isEmpty() && answered.delegate != null)
+        // A plan whose run did not start says why, in host text.
+        val failed = (messages[22] as Message.PlanSaved).entry
+        assertTrue(failed.delivery == Delivery.FAILED && !failed.reason.isNullOrEmpty())
+        assertTrue(list.plans.all { it.reason == null })
         // A client before level 9 reads an inbox-list without plans.
         val old = Wire.decodeMessage("""{"type":"inbox-list","inbox":1,"entries":[]}""") as Message.InboxList
         assertTrue(old.plans.isEmpty() && old.assistant == null)

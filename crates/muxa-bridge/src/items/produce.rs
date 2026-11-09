@@ -17,7 +17,7 @@ use crate::task_records::Config;
 use super::store::{ItemStore, StoredItem, TaskItems, new_id};
 
 /// Characters in a question.
-const MAX_QUESTION: usize = 200;
+pub(crate) const MAX_QUESTION: usize = 200;
 
 /// What a Task's agent and loop ask of the Inbox now.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,7 +301,7 @@ fn stop_question(reason: &Reason) -> &'static str {
 }
 
 /// Whitespace and control characters become single spaces; at most `max` characters.
-fn one_line(text: &str, max: usize) -> String {
+pub(crate) fn one_line(text: &str, max: usize) -> String {
     let mut out = String::new();
     for word in text
         .split(|c: char| c.is_whitespace() || c.is_control())

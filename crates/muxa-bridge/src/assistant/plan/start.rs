@@ -8,7 +8,7 @@ use std::sync::Arc;
 use muxa_protocol::{Delivery, ErrorBody, ErrorCode, Plan};
 use serde_json::json;
 
-use super::{REASON_FIELD, WORKSPACE_FIELD};
+use super::WORKSPACE_FIELD;
 use crate::assistant::ask::{CLAIMS, CREATING_LIMIT, budget};
 use crate::assistant::delivery::{self, Facts};
 use crate::assistant::policy::{self, Delegated, Starting};
@@ -198,16 +198,16 @@ fn new_plan(
                 stale: Vec::new(),
                 changed: Vec::new(),
                 notes: None,
+                reason: refused.map(super::reason),
             };
             let mut extra = Extra::new();
             extra.insert(WORKSPACE_FIELD.into(), d.workspace.clone().into());
             if let Some(o) = occurrence {
                 extra.insert(OCCURRENCE_FIELD.into(), o.into());
             }
-            match refused {
-                Some(why) => extra.insert(REASON_FIELD.into(), why.into()),
-                None => extra.insert(CREATING_FIELD.into(), json!(now)),
-            };
+            if refused.is_none() {
+                extra.insert(CREATING_FIELD.into(), json!(now));
+            }
             Ok::<_, crate::routines::store::StateError>((plan, extra))
         })
         .map_err(|e| crate::assistant::state_error(&e))
@@ -296,10 +296,7 @@ fn finish(
                 if let (Some(why), false) = (&why, delivery::settled(p.delivery)) {
                     p.delivery = Delivery::Failed;
                     p.delivery_at = at;
-                    extra.insert(
-                        REASON_FIELD.into(),
-                        format!("The run did not start: {why}").into(),
-                    );
+                    p.reason = Some(super::reason(&format!("The run did not start: {why}")));
                 }
                 p.rev += 1;
                 Ok(())

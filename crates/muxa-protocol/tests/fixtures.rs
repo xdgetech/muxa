@@ -444,7 +444,7 @@ fn assistant_fixtures_round_trip() {
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
     assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 27);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 22);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 23);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -725,6 +725,13 @@ fn plan_fixtures_round_trip() {
         panic!()
     };
     assert!(item.answers.is_empty() && item.delegate.is_some());
+    // A plan whose run did not start says why, in host text.
+    let Message::PlanSaved { entry, .. } = &messages[22] else {
+        panic!()
+    };
+    assert_eq!(entry.delivery, Delivery::Failed);
+    assert!(entry.reason.as_deref().is_some_and(|r| r.len() <= 500));
+    assert!(plans.iter().all(|p| p.reason.is_none()));
     // A client before level 9 reads an inbox-list without plans.
     let old: Message =
         serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();

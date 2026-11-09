@@ -53,6 +53,7 @@ pub async fn tick(cx: &Context) {
     }
     super::cleanup::remove(plan.dirs).await;
     super::plan::schedule::tick(cx).await;
+    super::proposals::tick(cx).await;
 }
 
 async fn watch_plans(cx: &Context, watched: Vec<(String, String)>, sessions: &[Session]) {

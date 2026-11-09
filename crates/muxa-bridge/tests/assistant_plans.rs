@@ -3,7 +3,8 @@
 //! agent of `data/assistant-agent.py`. One catch-up and one occurrence of
 //! `plans`, the plan check and its fail prompt, an open run conflicts, a
 //! budget stops a scheduled plan with a reason, no plan text in the
-//! daemon's log, and the windows that were there do not change.
+//! daemon's log, and the windows that were there do not change. Slice B5:
+//! a delegate proposal to an `auto` workspace is sent once, without review.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -15,7 +16,10 @@ use std::time::{Duration, Instant};
 use common::Server;
 use common::daemon::{Conn, Daemon};
 use jiff::{Timestamp, ToSpan, tz::TimeZone};
-use muxa_protocol::{ChangeKind, Delivery, ErrorCode, Message, Plan, WorkItem};
+use muxa_protocol::{
+    ChangeKind, Delivery, ErrorCode, InboxAction, InboxItem, ItemKind, ItemState, Message, Plan,
+    WorkItem,
+};
 use serde_json::{Value, json};
 
 const AGENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/assistant-agent.py");
@@ -40,6 +44,11 @@ impl Host {
     /// `Overall` is the overall workspace with `overall` in its table; `w`
     /// delegates and shares summaries.
     fn new(name: &str, overall: &str) -> Host {
+        Host::with_w(name, overall, "")
+    }
+
+    /// [`Host::new`], with `w_table` added to `w`'s `[workspace.assistant]`.
+    fn with_w(name: &str, overall: &str, w_table: &str) -> Host {
         let base = std::env::temp_dir().join(format!("muxa-plan-it-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         for d in ["overall", "w", "state/assistant", "steer", "bin"] {
@@ -59,7 +68,7 @@ impl Host {
                 "[assistant]\nenabled = true\n\
                  [[workspace]]\nname = \"Overall\"\nroot = \"{o}\"\n{overall}\
                  [[workspace]]\nname = \"w\"\nroot = \"{w}\"\n\
-                 [workspace.assistant]\ndelegate = true\n",
+                 [workspace.assistant]\ndelegate = true\n{w_table}\n",
                 o = base.join("overall").display(),
                 w = base.join("w").display(),
             ),
@@ -108,11 +117,6 @@ impl Host {
 
     fn record(&self, id: &str) -> Value {
         self.json(self.base.join(format!("state/{id}.json")))
-    }
-
-    /// The plan's file, with the host's own fields.
-    fn plan_file(&self, id: &str) -> Value {
-        self.json(self.base.join(format!("state/assistant/plans/{id}.json")))
     }
 
     fn tagged(&self, task: &str) -> bool {
@@ -235,9 +239,10 @@ async fn scheduled_plans_run_once_conflict_while_open_and_stop_at_a_budget() {
     );
     h.missed_three_days();
     h.steer("stall", &json!(true));
+    // Before the daemon: its first tick may already open the catch-up's session.
+    let before = h.server.layout();
     let mut daemon = h.daemon().await;
     let mut conn = daemon.connect().await;
-    let before = h.server.layout();
 
     // The first tick: three missed midnights make one plan.
     let listed = until_plans(
@@ -325,10 +330,7 @@ async fn scheduled_plans_run_once_conflict_while_open_and_stop_at_a_budget() {
     assert_eq!(stopped.at as i64, next_at.as_second());
     assert_eq!(stopped.delivery, Delivery::Failed);
     assert_eq!(stopped.run, None);
-    let reason = h.plan_file(&stopped.id)["reason"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let reason = stopped.reason.as_deref().unwrap_or_default();
     assert!(reason.contains("max_runs_per_day"), "{reason}");
     assert_eq!(listed[1].id, first.id, "newest first");
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -398,5 +400,105 @@ async fn plan_now_makes_a_plan_with_the_users_minutes() {
     );
     let brief = std::fs::read_to_string(dir.join(".muxa/assistant/BRIEF.md")).unwrap();
     assert!(brief.contains("about 45 minutes"));
+    daemon.shutdown().await;
+}
+
+/// The open and answered `delegate` items, and the requests listed.
+async fn delegates(conn: &mut Conn) -> (Vec<InboxItem>, Vec<muxa_protocol::AssistantRequest>) {
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    match listed.first() {
+        Some(Message::InboxList {
+            items, requests, ..
+        }) => (
+            items
+                .iter()
+                .filter(|i| i.kind == ItemKind::Delegate)
+                .cloned()
+                .collect(),
+            requests.clone(),
+        ),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_auto_delegate_proposal_is_sent_once_without_review() {
+    const PURPOSE: &str = "purpose-mark-2b9d";
+    const REASON: &str = "reason-mark-71ae";
+    let h = Host::with_w(
+        "auto",
+        "overall = true\nplans = []",
+        "overall_requests = \"auto\"",
+    );
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let item = pinned_item(&mut conn).await;
+    let mut plan = plan_json(&item.id);
+    plan["proposals"] = json!([{"kind": "delegate", "work": item.id, "workspace": "w",
+                                "scope": "research", "purpose": format!("Find a host. {PURPOSE}"),
+                                "reason": format!("Pinned, and nobody asked. {REASON}")}]);
+    h.steer("first.json", &plan);
+    let answer = conn.request(json!({"type": "plan-now"})).await;
+    assert!(
+        matches!(answer.last(), Some(Message::Result { error: None, .. })),
+        "{answer:?}"
+    );
+    until_plans(&mut conn, &h, "the plan", Duration::from_secs(120), |p| {
+        p.first().is_some_and(|p| p.delivery == Delivery::Resulted)
+    })
+    .await;
+
+    // The host sends it itself, and keeps the item answered for the user to see.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let (items, requests) = loop {
+        let (items, requests) = delegates(&mut conn).await;
+        if items.iter().any(|i| i.state == ItemState::Answered) {
+            break (items, requests);
+        }
+        assert!(Instant::now() < deadline, "no auto request: {items:?}");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    };
+    assert_eq!(items.len(), 1, "{items:?}");
+    let sent = &items[0];
+    assert_eq!(sent.answer, Some(InboxAction::Approve));
+    assert_eq!(sent.workspace, "Overall");
+    assert!(
+        sent.summary
+            .as_deref()
+            .is_some_and(|s| s.contains("Sent without review"))
+    );
+    let asked: Vec<_> = requests.iter().filter(|q| q.work == item.id).collect();
+    assert_eq!(asked.len(), 1, "{requests:?}");
+    assert_eq!((asked[0].workspace.as_str(), asked[0].version), ("w", 1));
+
+    // Later ticks send nothing more; the user's approve returns the same request.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let again = conn
+        .request(json!({"type": "update-inbox", "entry": sent.id, "action": "approve"}))
+        .await;
+    let Some(Message::WorkSaved {
+        request: Some(q), ..
+    }) = again.first()
+    else {
+        panic!("{again:?}")
+    };
+    assert_eq!((&q.id, q.version), (&asked[0].id, 1));
+    assert!(
+        matches!(again.get(1), Some(Message::InboxSaved { .. })),
+        "{again:?}"
+    );
+    let (_, requests) = delegates(&mut conn).await;
+    let versions: Vec<u64> = requests
+        .iter()
+        .filter(|q| q.work == item.id)
+        .map(|q| q.version)
+        .collect();
+    assert_eq!(versions, [1]);
+
+    let log = daemon.log();
+    for mark in [PURPOSE, REASON] {
+        assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
+    }
+    assert!(log.contains("delegate proposal approved"), "{log}");
     daemon.shutdown().await;
 }
