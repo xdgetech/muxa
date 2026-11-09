@@ -326,3 +326,57 @@ async fn the_daemon_sweeps_listed_worktrees_nothing_holds() {
     assert!(work.is_dir(), "unmerged work waits for the user");
     assert!(held.is_dir(), "a pane works in it");
 }
+
+/// ADR 0047: at start the daemon closes a session tagged with a done or
+/// dropped Task, as tmux-resurrect restores one, and keeps its folder. A
+/// session of an open Task and an untagged one stay.
+#[tokio::test]
+async fn the_daemon_closes_sessions_of_ended_tasks() {
+    let server = Server::start();
+    let host = Host::new("ended");
+    let state = host.dir.join("daemon-state");
+    std::fs::create_dir_all(&state).unwrap();
+    let task = |id: &str, status: &str| {
+        let dir = host.dir.join("work").join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let record = json!({
+            "version": 1, "id": id, "rev": 1, "workspace": "work", "title": id, "goal": "",
+            "status": status, "createdAt": 1, "updatedAt": 1,
+            "dir": dir.display().to_string(),
+        });
+        std::fs::write(state.join(format!("{id}.json")), record.to_string()).unwrap();
+        let session = server.tmux(&[
+            "new-session",
+            "-d",
+            "-P",
+            "-F",
+            "#{session_id}",
+            "-s",
+            id,
+            "-c",
+            dir.to_str().unwrap(),
+            "sh",
+        ]);
+        server.tmux(&["set-option", "-t", session.trim(), "@muxa_task", id]);
+        dir
+    };
+    let done = task("t-d0ae01", "done");
+    task("t-d40901", "dropped");
+    task("t-09e401", "open");
+    server.tmux(&["new-session", "-d", "-s", "plain", "sh"]);
+    let names = || {
+        let mut names: Vec<String> = server
+            .tmux(&["list-sessions", "-F", "#{session_name}"])
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        names.sort();
+        names
+    };
+
+    let _daemon = host.daemon(&server).await;
+    common::wait_until(|| names() == ["plain", "t-09e401", "work"]).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(names(), ["plain", "t-09e401", "work"]);
+    assert!(done.is_dir(), "the Task's folder stays");
+}

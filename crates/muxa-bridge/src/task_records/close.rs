@@ -1,11 +1,14 @@
 //! Closing a Task's session: on `close-task`, and when the Task ends (ADR 0037).
 //! `close-task` also closes an ask session (ADR 0039).
 
+use std::collections::HashSet;
+
 use muxa_protocol::{CloseMode, ErrorBody, ErrorCode, TaskStatus};
 use muxa_tmux::Client;
 
-use super::{Config, Context};
+use super::{Config, Context, Env};
 use crate::convert::{self, error_body};
+use crate::records::Status;
 use crate::tasks;
 
 pub(crate) async fn close_task(
@@ -179,25 +182,70 @@ async fn claim_close(
 /// keeping its worktree or folder (ADR 0037). A failure is logged; the
 /// status stands.
 pub(crate) async fn close_ended(cx: &Context, task: &str) {
-    let env = match cx.env().await {
-        Ok(env) => env,
-        Err(e) => {
-            tracing::warn!(task, error = %e.message, "cannot reach tmux to close an ended task");
-            return;
-        }
-    };
-    let sessions = match muxa_tmux::list_sessions(&env.client).await {
-        Ok(s) => s,
+    let (env, sessions) = match sessions(cx).await {
+        Ok(found) => found,
         Err(e) => {
             tracing::warn!(task, error = %e, "cannot list sessions to close an ended task");
             return;
         }
     };
-    let Some(session) = sessions.iter().find(|s| s.task_id.as_deref() == Some(task)) else {
-        return;
+    if let Some(session) = sessions.iter().find(|s| s.task_id.as_deref() == Some(task)) {
+        close_ended_session(cx, &env.client, session, task).await;
+    }
+}
+
+/// Closes every session tagged with a done or dropped Task (ADR 0047): one
+/// that tmux-resurrect restored after its Task ended, or one whose close failed.
+pub(crate) async fn close_all_ended(cx: &Context) {
+    let config = std::sync::Arc::clone(&cx.records);
+    let ended = tokio::task::spawn_blocking(move || {
+        config
+            .records_if_any()
+            .into_iter()
+            .filter(|r| matches!(r.status, Status::Done | Status::Dropped))
+            .map(|r| r.id)
+            .collect::<HashSet<_>>()
+    })
+    .await;
+    let ended = match ended {
+        Ok(ended) if !ended.is_empty() => ended,
+        Ok(_) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "cannot read the records to close ended tasks' sessions");
+            return;
+        }
     };
+    let (env, sessions) = match sessions(cx).await {
+        Ok(found) => found,
+        // No tmux is usual on an idle host; the next sweep looks again.
+        Err(e) => {
+            tracing::debug!(error = %e, "no sessions to close for ended tasks");
+            return;
+        }
+    };
+    for session in &sessions {
+        if let Some(task) = session.task_id.as_deref().filter(|t| ended.contains(*t)) {
+            close_ended_session(cx, &env.client, session, task).await;
+        }
+    }
+}
+
+async fn sessions(cx: &Context) -> Result<(Env, Vec<muxa_tmux::Session>), String> {
+    let env = cx.env().await.map_err(|e| e.message)?;
+    let sessions = muxa_tmux::list_sessions(&env.client)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((env, sessions))
+}
+
+async fn close_ended_session(
+    cx: &Context,
+    client: &Client,
+    session: &muxa_tmux::Session,
+    task: &str,
+) {
     let id = session.id.to_string();
-    match close_linked(&env.client, &cx.tasks, &cx.records, session, task).await {
+    match close_linked(client, &cx.tasks, &cx.records, session, task).await {
         Ok(()) => tracing::info!(task, session = %id, "closed the ended task's session"),
         Err(e) => {
             tracing::warn!(task, session = %id, error = %e.message, "cannot close the ended task's session")
