@@ -7,11 +7,12 @@ use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
 
 use muxa_protocol::{
-    AssistResult, AssistantRequest, Delivery, Finding, PossibleDuplicate, ResultSource,
+    AssistResult, AssistantRequest, Delivery, Finding, Notes, PossibleDuplicate, ResultSource,
 };
 use rustix::fs::{Mode, OFlags};
 use serde::Deserialize;
 
+use super::notes::{MAX_NOTES, base_of};
 use super::record::RunFor;
 use crate::routines::output::valid_url;
 
@@ -51,6 +52,7 @@ struct RawResult {
     files: Vec<String>,
     #[serde(default)]
     possible_duplicates: Vec<RawDuplicate>,
+    notes: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -173,6 +175,7 @@ pub fn validate(bytes: &[u8], run: &RunFor) -> Result<AssistResult, Vec<String>>
             &mut reasons,
         );
     }
+    let notes = raw.notes.and_then(|text| proposal(text, run, &mut reasons));
     if !reasons.is_empty() {
         return Err(reasons);
     }
@@ -193,8 +196,24 @@ pub fn validate(bytes: &[u8], run: &RunFor) -> Result<AssistResult, Vec<String>>
                 reason: d.reason,
             })
             .collect(),
-        // Proposed notes come with level 9 (ADR 0047 slice B1).
-        notes: None,
+        notes,
+    })
+}
+
+/// The proposed notes, stored with the base the run read (ADR 0047 §1).
+/// None when the text is the copy's own: nothing to apply.
+fn proposal(text: String, run: &RunFor, reasons: &mut Vec<String>) -> Option<Notes> {
+    if text.len() > MAX_NOTES || text.contains('\0') {
+        reasons.push("notes must be at most 16 KiB of text, without NUL.".into());
+        return None;
+    }
+    let Some(base) = &run.notes_base else {
+        reasons.push("notes: this run read no notes; leave notes out.".into());
+        return None;
+    };
+    (base_of(text.as_bytes()) != *base).then(|| Notes {
+        text,
+        base: base.clone(),
     })
 }
 

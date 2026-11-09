@@ -37,6 +37,7 @@ fn record() -> Record {
             request: "q-0000000a".into(),
             version: 2,
             work: "w-0000000b".into(),
+            notes_base: None,
         }
         .fields(),
     );

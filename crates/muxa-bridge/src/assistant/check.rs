@@ -74,11 +74,17 @@ fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
         one(retry())
     })?;
     let at = now();
+    let notes = found.notes.clone();
     let stored = requests.update::<_, Failure>(&run.request, |q| {
         result::store(q, found, at).map_err(Failure::Refused)
     });
     match stored {
-        Ok(Some(s)) => Ok(s),
+        Ok(Some(s)) => {
+            if let (Stored::New, Some(notes)) = (s, &notes) {
+                super::apply::auto_apply(config, record, &run, notes);
+            }
+            Ok(s)
+        }
         Ok(None) => Err(one(format!(
             "Request {} is no longer on this host; the result is not stored.",
             run.request

@@ -332,12 +332,15 @@ async fn start_run(cx: &Context, q: AssistantRequest, d: &Delegated) -> Option<E
             .get(&work_id)
             .map_err(|e| super::state_error(&e))?
             .ok_or_else(|| bad(format!("no Work item {work_id}")))?;
-        Ok(Brief::gather(&config, &item, &req)?.goal())
+        // An invalid notes file fails the start before any record or session (ADR 0047 §1).
+        let root = super::apply::workspace_root(&config, &req.workspace)?;
+        let notes = super::notes::read(&root).map_err(|e| super::apply::refused(&e))?;
+        Ok((Brief::gather(&config, &item, &req)?.goal(), notes.base))
     })
     .await;
     let (record, error) = match made {
         Err(e) => (None, Some(e)),
-        Ok(goal) => {
+        Ok((goal, notes_base)) => {
             tracing::info!(request = %q.id, version = q.version, workspace = %q.workspace, "assistant run starting");
             let new = NewTask {
                 workspace: q.workspace.clone(),
@@ -348,6 +351,7 @@ async fn start_run(cx: &Context, q: AssistantRequest, d: &Delegated) -> Option<E
                     request: q.id.clone(),
                     version: q.version,
                     work: q.work.clone(),
+                    notes_base: Some(notes_base),
                 }),
                 ..NewTask::default()
             };

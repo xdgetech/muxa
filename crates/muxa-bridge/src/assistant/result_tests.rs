@@ -13,6 +13,7 @@ fn run() -> RunFor {
         request: "q-0000000a".into(),
         version: 2,
         work: "w-0000000b".into(),
+        notes_base: None,
     }
 }
 
@@ -315,4 +316,40 @@ fn at_most_ten_results_are_kept() {
     assert_eq!(q.results.len(), MAX_RESULTS);
     assert_eq!(q.results[0].version, 12);
     assert_eq!(q.results[9].version, 3);
+}
+
+#[test]
+fn notes_are_kept_with_the_runs_base_and_checked_for_size_and_nul() {
+    let read = crate::assistant::notes::base_of(b"# Old\n");
+    let with_base = RunFor {
+        notes_base: Some(read.clone()),
+        ..run()
+    };
+    let mut v = good();
+    v["notes"] = json!(format!("# New\n{SENTINEL}\n"));
+    let bytes = serde_json::to_vec(&v).unwrap();
+    let notes = validate(&bytes, &with_base).unwrap().notes.unwrap();
+    assert_eq!((notes.base.as_str(), notes.text.len()), (read.as_str(), 20));
+
+    // A run that read no notes may not propose any.
+    let all = validate(&bytes, &run()).unwrap_err().join("\n");
+    assert!(all.contains("notes"), "{all}");
+    assert!(!all.contains(SENTINEL), "{all}");
+    for text in [
+        format!("{SENTINEL}\u{0}"),
+        format!("{SENTINEL}{}", "x".repeat(16 << 10)),
+    ] {
+        v["notes"] = json!(text);
+        let bytes = serde_json::to_vec(&v).unwrap();
+        let all = validate(&bytes, &with_base).unwrap_err().join("\n");
+        assert!(all.contains("notes must be at most 16 KiB"), "{all}");
+        assert!(!all.contains(SENTINEL), "{all}");
+    }
+    // An empty text clears the notes; the copy's own text proposes nothing.
+    v["notes"] = json!("");
+    let cleared = validate(&serde_json::to_vec(&v).unwrap(), &with_base).unwrap();
+    assert_eq!(cleared.notes.unwrap().text, "");
+    v["notes"] = json!("# Old\n");
+    let same = validate(&serde_json::to_vec(&v).unwrap(), &with_base).unwrap();
+    assert_eq!(same.notes, None);
 }

@@ -387,14 +387,10 @@ async fn start(
                     let dir = workspace
                         .assistant_dir(&record.title, &record.id)
                         .map_err(Failure::before)?;
-                    let at = dir.clone();
+                    let (at, root, saved) = (dir.clone(), workspace.root.clone(), record.clone());
                     blocking(move || {
-                        crate::assistant::record::prepare(&at).map_err(|e| {
-                            error_body(
-                                ErrorCode::Internal,
-                                format!("cannot create the assistant run folder: {e}"),
-                            )
-                        })
+                        crate::assistant::record::prepare_run(&saved, &root, &at)
+                            .map_err(|m| error_body(ErrorCode::Internal, m))
                     })
                     .await
                     .map_err(|e| Failure::before(e.message))?;

@@ -87,6 +87,7 @@ mod tests {
             request: "q-0000000a".into(),
             version,
             work: "w-0000000b".into(),
+            notes_base: None,
         }
         .fields();
         let dir = ws.get("w").unwrap().assistant_dir("Plan", id).unwrap();

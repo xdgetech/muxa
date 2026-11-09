@@ -331,3 +331,72 @@ async fn get_work_returns_a_sorted_captures_text_and_logs_none() {
     let log = daemon.log();
     assert!(!log.contains(SECRET), "the daemon logged the text");
 }
+
+fn error_code(messages: &[Message]) -> Option<ErrorCode> {
+    match messages.last() {
+        Some(Message::Result { error: Some(e), .. }) => Some(e.code),
+        _ => None,
+    }
+}
+
+/// ADR 0047 slice B6, at the wire.
+#[tokio::test]
+async fn a_pinned_item_is_listed_first_and_a_due_is_kept() {
+    let host = Host::new("pins");
+    let mut args = host.args();
+    args.extend([
+        "--daemon-dir".into(),
+        host.base.join("no-daemon").display().to_string(),
+    ]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (mut bridge, _) = Bridge::start(&host.server, &args).await;
+    let mut items = Vec::new();
+    for (client, text) in [("client-p1", "First"), ("client-p2", "Second")] {
+        let c = saved(&call(&mut bridge, capture_req(client, text)).await);
+        let sorted = call(
+            &mut bridge,
+            json!({"type": "sort-capture", "capture": c.id, "rev": c.rev, "action": "work"}),
+        )
+        .await;
+        items.push(work_saved(&sorted));
+    }
+    let first = &items[0];
+    let pin = json!({"type": "update-work", "work": first.id, "rev": first.rev, "action": "pin"});
+    let pinned = work_saved(&call(&mut bridge, pin).await);
+    assert!(pinned.pinned_at.is_some());
+    let stale =
+        json!({"type": "update-work", "work": first.id, "rev": first.rev, "action": "unpin"});
+    assert_eq!(
+        error_code(&call(&mut bridge, stale).await),
+        Some(ErrorCode::Conflict)
+    );
+
+    let due = json!({"type": "update-work", "work": first.id, "rev": pinned.rev, "action": "edit",
+                     "due": {"at": 1762930800u64, "timezone": "Asia/Tokyo"}});
+    let dated = work_saved(&call(&mut bridge, due).await);
+    assert_eq!(dated.due.as_ref().map(|d| d.at), Some(1_762_930_800));
+    let bad = json!({"type": "update-work", "work": first.id, "rev": dated.rev, "action": "edit",
+                     "due": {"at": 1, "timezone": "Mars/Olympus"}});
+    assert_eq!(
+        error_code(&call(&mut bridge, bad).await),
+        Some(ErrorCode::BadRequest)
+    );
+
+    let listed = call(&mut bridge, json!({"type": "list-inbox"})).await;
+    let ids: Vec<String> = listed
+        .iter()
+        .find_map(|m| match m {
+            Message::InboxList { work, .. } => Some(work.iter().map(|w| w.id.clone()).collect()),
+            _ => None,
+        })
+        .expect("an inbox-list");
+    assert_eq!(ids, [items[0].id.clone(), items[1].id.clone()]);
+
+    // apply-notes reaches the host's assistant code, not the B0 refusal.
+    let apply = json!({"type": "apply-notes", "source": "q-00000000", "version": 1,
+                       "base": "0".repeat(64)});
+    assert_eq!(
+        error_code(&call(&mut bridge, apply).await),
+        Some(ErrorCode::BadRequest)
+    );
+}

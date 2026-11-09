@@ -696,7 +696,8 @@ impl Worker {
             | Request::UpdateInbox { .. }
             | Request::Capture { .. }
             | Request::SortCapture { .. }
-            | Request::UpdateWork { .. }) => {
+            | Request::UpdateWork { .. }
+            | Request::ApplyNotes { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -727,12 +728,12 @@ impl Worker {
                 }
                 return None;
             }
-            // The host side comes with `work` level 9 (ADR 0047); until it
-            // advertises that level, no client sends these.
-            Request::ApplyNotes { .. } | Request::PlanNow { .. } => {
+            // Plans come with `work` level 9 (ADR 0047 slice B3); until the
+            // host advertises that level, no client sends this.
+            Request::PlanNow { .. } => {
                 return Some(Err(error_body(
                     ErrorCode::Unsupported,
-                    "this host has no plans or notes yet: update muxa-bridge",
+                    "this host has no plans yet: update muxa-bridge",
                 )));
             }
             Request::Bye { .. } => Ok(()),

@@ -24,6 +24,10 @@ pub struct RunFor {
     pub version: u64,
     /// `w-…`: the request's Work item.
     pub work: String,
+    /// The SHA-256 of the notes the run read at its start (ADR 0047 §1).
+    /// None: a run from before notes, which may not propose any.
+    #[serde(default, rename = "notesBase", skip_serializing_if = "Option::is_none")]
+    pub notes_base: Option<String>,
 }
 
 impl RunFor {
@@ -31,10 +35,11 @@ impl RunFor {
     pub fn fields(&self) -> serde_json::Map<String, serde_json::Value> {
         let mut extra = serde_json::Map::new();
         extra.insert(KIND_FIELD.into(), ASSISTANT_RUN.into());
-        extra.insert(
-            ASSISTANT_FIELD.into(),
-            serde_json::json!({"request": self.request, "version": self.version, "work": self.work}),
-        );
+        let mut run = serde_json::json!({"request": self.request, "version": self.version, "work": self.work});
+        if let Some(base) = &self.notes_base {
+            run["notesBase"] = base.clone().into();
+        }
+        extra.insert(ASSISTANT_FIELD.into(), run);
         extra
     }
 }
@@ -90,6 +95,16 @@ pub fn prepare(dir: &Path) -> std::io::Result<()> {
         .create(dir.join(STAGE_DIR))
 }
 
+/// Before the agent starts: [`prepare`], and the copy of the notes whose
+/// base the record holds. `root` is the workspace's.
+pub fn prepare_run(record: &Record, root: &Path, dir: &Path) -> Result<(), String> {
+    prepare(dir).map_err(|e| format!("cannot create the assistant run folder: {e}"))?;
+    match record.assistant_run().and_then(|run| run.notes_base) {
+        Some(base) => super::notes::copy_into(root, dir, &base).map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +138,7 @@ mod tests {
             request: "q-0000000a".into(),
             version: 2,
             work: "w-0000000b".into(),
+            notes_base: Some("e3b0".into()),
         };
         let mut r = record(run.fields());
         assert!(r.is_assistant_run() && r.is_background_run() && !r.is_routine_run());

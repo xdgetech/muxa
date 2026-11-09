@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slice B0 (the wire types) is built; hosts do not advertise level 9 yet.
+Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0 (the wire types), B1 (notes) and B6 (pins and deadlines) are built; hosts do not advertise level 9 yet.
 
 ## Context
 

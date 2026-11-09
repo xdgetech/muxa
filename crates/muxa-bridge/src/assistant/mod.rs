@@ -1,5 +1,6 @@
 //! Captures, Work items and assistant requests (ADR 0046): the user's input
 //! and unfinished work, kept apart from Tasks and Inbox items.
+pub mod apply;
 pub mod ask;
 mod assist;
 pub mod brief;
@@ -10,6 +11,7 @@ mod cleanup;
 pub mod delivery;
 mod derive;
 pub mod detail;
+pub mod notes;
 pub mod policy;
 pub mod record;
 pub mod result;
@@ -39,7 +41,7 @@ const MAX_CLOSED: usize = 100;
 /// Unsorted Captures in one list.
 const MAX_CAPTURES: usize = 200;
 
-/// Answers a `work` level 8 request: its saved message, and its error.
+/// Answers a `work` level 8 or 9 request: its saved message, and its error.
 pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
     match req {
         Request::Capture {
@@ -127,11 +129,6 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             into,
             due,
         } => {
-            // A deadline comes with level 9 (ADR 0047 §6).
-            if due.is_some() {
-                let e = error_body(ErrorCode::BadRequest, "update-work: due needs work level 9");
-                return (Vec::new(), Some(e));
-            }
             let config = Arc::clone(&cx.records);
             let update = work::Update {
                 work,
@@ -140,6 +137,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 title,
                 workspace,
                 into,
+                due,
             };
             match blocking(move || work::update(&config, update).map(|i| listed(&config, i))).await
             {
@@ -225,6 +223,25 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 Err(e) => (Vec::new(), Some(e)),
             }
         }
+        Request::ApplyNotes {
+            id,
+            source,
+            version,
+            base,
+        } => {
+            let config = Arc::clone(&cx.records);
+            match blocking(move || apply::apply_notes(&config, &source, version, &base)).await {
+                Ok((entry, request)) => (
+                    vec![Message::WorkSaved {
+                        work: id,
+                        entry,
+                        request: Some(Box::new(request)),
+                    }],
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
         _ => (
             Vec::new(),
             Some(error_body(
@@ -292,19 +309,27 @@ pub fn list(config: &Config) -> Result<Listing, ErrorBody> {
     })
 }
 
-/// Open items, newest `createdAt` first; then the ones moved down with
-/// Later, in the order moved; then at most [`MAX_CLOSED`] closed ones,
-/// newest `updatedAt` first.
+/// Pinned items, in the order pinned (ADR 0047 §6); then open items, newest
+/// `createdAt` first; then the ones moved down with Later, in the order
+/// moved; then at most [`MAX_CLOSED`] closed ones, newest `updatedAt` first.
 fn order(items: Vec<WorkItem>) -> Vec<WorkItem> {
     let closed = |w: &WorkItem| matches!(w.state, WorkState::Done | WorkState::Withdrawn);
     let (mut done, rest): (Vec<_>, Vec<_>) = items.into_iter().partition(closed);
+    let (mut pinned, rest): (Vec<_>, Vec<_>) =
+        rest.into_iter().partition(|w| w.pinned_at.is_some());
     let (mut later, mut open): (Vec<_>, Vec<_>) =
         rest.into_iter().partition(|w| w.later_at.is_some());
+    pinned.sort_by(|a, b| a.pinned_at.cmp(&b.pinned_at).then(a.id.cmp(&b.id)));
     open.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
     later.sort_by(|a, b| a.later_at.cmp(&b.later_at).then(a.id.cmp(&b.id)));
     done.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(b.id.cmp(&a.id)));
     done.truncate(MAX_CLOSED);
-    open.into_iter().chain(later).chain(done).collect()
+    pinned
+        .into_iter()
+        .chain(open)
+        .chain(later)
+        .chain(done)
+        .collect()
 }
 
 /// Opens one kind's folder; refused without a state directory.
@@ -381,6 +406,24 @@ mod tests {
         ]);
         let ids: Vec<&str> = listed.iter().map(|w| &w.id[9..]).collect();
         assert_eq!(ids, ["5", "3", "6", "2", "4", "1"]);
+    }
+
+    #[test]
+    fn pinned_items_come_first_in_the_order_pinned() {
+        use WorkState::*;
+        let pinned = |id: &str, created: u64, at: u64| WorkItem {
+            pinned_at: Some(at),
+            ..item(id, Open, created, created, None)
+        };
+        let listed = order(vec![
+            item("w-00000001", Open, 50, 50, None),
+            pinned("w-00000002", 10, 300),
+            item("w-00000003", Open, 5, 5, Some(25)),
+            pinned("w-00000004", 40, 200),
+            item("w-00000005", Done, 1, 60, None),
+        ]);
+        let ids: Vec<&str> = listed.iter().map(|w| &w.id[9..]).collect();
+        assert_eq!(ids, ["4", "2", "1", "3", "5"]);
     }
 
     #[test]

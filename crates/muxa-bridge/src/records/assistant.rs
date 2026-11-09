@@ -38,6 +38,29 @@ pub struct Delegate {
     pub max_runs_per_day: u32,
     /// Seconds before a run without a result is `timed-out`.
     pub run_timeout: u64,
+    /// Who writes a run's proposed notes to the live file (ADR 0047 §1).
+    pub notes: NotesMode,
+}
+
+/// `notes = "review" | "auto"`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum NotesMode {
+    /// The user applies each proposal with `apply-notes`. A page or document
+    /// a run read could plant text that every later run would trust.
+    #[default]
+    Review,
+    /// The host applies a passing proposal at publish, while the base holds.
+    Auto,
+}
+
+impl NotesMode {
+    fn parse(value: Option<&str>) -> Result<Self, String> {
+        match value {
+            None | Some("review") => Ok(Self::Review),
+            Some("auto") => Ok(Self::Auto),
+            Some(_) => Err("notes must be \"review\" or \"auto\"".into()),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -68,6 +91,7 @@ pub(super) struct RawDelegate {
     max_open_runs: Option<i64>,
     max_runs_per_day: Option<i64>,
     run_timeout: Option<String>,
+    notes: Option<String>,
 }
 
 impl RawDelegate {
@@ -91,6 +115,7 @@ impl RawDelegate {
                 .transpose()
                 .map_err(|r| format!("run_timeout {r}"))?
                 .unwrap_or(DEFAULT_RUN_TIMEOUT),
+            notes: NotesMode::parse(self.notes.as_deref())?,
         };
         Ok(self.delegate.then_some(delegate))
     }
@@ -166,13 +191,14 @@ mod tests {
             (None, 1, 10)
         );
         assert_eq!(d.run_timeout, 1800);
+        assert_eq!(d.notes, super::NotesMode::Review);
         assert_eq!(w.delegate("w2"), None);
     }
 
     #[test]
     fn values_are_kept_and_the_host_switch_gates_delegates() {
         let ws = "[workspace.assistant]\ndelegate = true\nworker = \"Researcher\"\n\
-                  max_open_runs = 2\nmax_runs_per_day = 4\nrun_timeout = \"2h\"";
+                  max_open_runs = 2\nmax_runs_per_day = 4\nrun_timeout = \"2h\"\nnotes = \"auto\"";
         let w = parse("[assistant]\nenabled = true\nmax_runs_per_day = 7", ws).unwrap();
         assert_eq!(w.assistant().max_runs_per_day, 7);
         let d = w.delegate("w").unwrap();
@@ -181,6 +207,7 @@ mod tests {
             (d.max_open_runs, d.max_runs_per_day, d.run_timeout),
             (2, 4, 7200)
         );
+        assert_eq!(d.notes, super::NotesMode::Auto);
         let off = parse("[assistant]\nenabled = false", ws).unwrap();
         assert!(off.all()[0].assistant.is_some());
         assert_eq!(off.delegate("w"), None);
@@ -238,6 +265,11 @@ mod tests {
                 on,
                 "[workspace.assistant]\ndelegate = false\nrun_timeout = \"30\"",
                 "run_timeout",
+            ),
+            (
+                on,
+                "[workspace.assistant]\ndelegate = true\nnotes = \"always\"",
+                "notes must be",
             ),
             (
                 on,

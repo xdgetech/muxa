@@ -1,7 +1,7 @@
 //! `sort-capture` and `update-work`: the user's changes to Captures and
 //! Work items. Each checks the `rev` the client saw, under the record's lock.
 use muxa_protocol::{
-    Capture, CaptureState, ErrorBody, ErrorCode, SortAction, WorkAction, WorkItem, WorkState,
+    Capture, CaptureState, Due, ErrorBody, ErrorCode, SortAction, WorkAction, WorkItem, WorkState,
 };
 
 use super::store::Shelf;
@@ -11,6 +11,8 @@ use crate::task_records::Config;
 
 /// Characters.
 pub const MAX_TITLE: usize = 200;
+/// Bytes of an IANA time zone name, as a Routine's `timezone` allows.
+const MAX_ZONE: usize = 64;
 
 /// A failed change: the store's error, or one for the client.
 pub(super) enum Fail {
@@ -141,9 +143,11 @@ pub struct Update {
     pub title: Option<String>,
     pub workspace: Option<String>,
     pub into: Option<String>,
+    pub due: Option<Due>,
 }
 
-/// Blocking. The changed Work item.
+/// Blocking. The changed Work item. A `pin` of a pinned item or an `unpin`
+/// of an unpinned one returns it unchanged, with its `rev`.
 pub fn update(config: &Config, u: Update) -> Result<WorkItem, ErrorBody> {
     let title = check_update(config, &u)?;
     let works = super::shelf::<WorkItem>(config)?;
@@ -159,9 +163,16 @@ pub fn update(config: &Config, u: Update) -> Result<WorkItem, ErrorBody> {
                 if let Some(name) = &u.workspace {
                     w.workspace = Some(name.clone());
                 }
+                if let Some(due) = &u.due {
+                    w.due = Some(due.clone());
+                }
             }
             WorkAction::Later if !open => return Err(is_closed(w).into()),
-            WorkAction::Later => w.later_at = Some(at),
+            // Moving an item down ends its pin; pinning it moves it up again.
+            WorkAction::Later => {
+                w.later_at = Some(at);
+                w.pinned_at = None;
+            }
             WorkAction::Complete => w.state = WorkState::Done,
             WorkAction::Withdraw => w.state = WorkState::Withdrawn,
             WorkAction::Reopen if open => {
@@ -172,9 +183,15 @@ pub fn update(config: &Config, u: Update) -> Result<WorkItem, ErrorBody> {
                 w.later_at = None;
                 w.merged_into = None;
             }
-            WorkAction::Pin | WorkAction::Unpin => {
-                return Err(bad("update-work: pin needs work level 9").into());
+            WorkAction::Pin if !open => return Err(is_closed(w).into()),
+            // Already pinned, or not pinned: nothing changes, not even `rev`.
+            WorkAction::Pin if w.pinned_at.is_some() => return Ok(w.clone()),
+            WorkAction::Pin => {
+                w.pinned_at = Some(at);
+                w.later_at = None;
             }
+            WorkAction::Unpin if w.pinned_at.is_none() => return Ok(w.clone()),
+            WorkAction::Unpin => w.pinned_at = None,
             WorkAction::Merge if !open => return Err(is_closed(w).into()),
             WorkAction::Merge => {
                 let into = u.into.as_deref().unwrap_or_default();
@@ -183,7 +200,9 @@ pub fn update(config: &Config, u: Update) -> Result<WorkItem, ErrorBody> {
                 w.merged_into = Some(into.to_owned());
             }
         }
-        if !closed(w.state) {
+        if closed(w.state) {
+            w.pinned_at = None;
+        } else {
             // A derived state is never stored.
             w.state = WorkState::Open;
         }
@@ -203,19 +222,24 @@ pub fn update(config: &Config, u: Update) -> Result<WorkItem, ErrorBody> {
 
 /// The fields each action takes, and the edited title.
 fn check_update(config: &Config, u: &Update) -> Result<Option<String>, ErrorBody> {
-    let edits = u.title.is_some() || u.workspace.is_some();
+    let edits = u.title.is_some() || u.workspace.is_some() || u.due.is_some();
     match u.action {
-        // Pins come with level 9 (ADR 0047 §6).
-        WorkAction::Pin | WorkAction::Unpin => Err(bad("update-work: pin needs work level 9")),
         WorkAction::Edit if u.into.is_some() => Err(bad("update-work: edit takes no into")),
-        WorkAction::Edit if !edits => Err(bad("update-work: edit needs a title or a workspace")),
+        WorkAction::Edit if !edits => {
+            Err(bad("update-work: edit needs a title, a workspace or a due"))
+        }
         WorkAction::Edit => {
             if let Some(name) = &u.workspace {
                 check_workspace(config, name)?;
             }
+            if let Some(due) = &u.due {
+                check_due(due)?;
+            }
             u.title.as_deref().map(check_title).transpose()
         }
-        _ if edits => Err(bad("update-work: only edit takes a title or a workspace")),
+        _ if edits => Err(bad(
+            "update-work: only edit takes a title, a workspace or a due",
+        )),
         WorkAction::Merge => match &u.into {
             None => Err(bad("update-work: merge needs into")),
             Some(into) if *into == u.work => {
@@ -303,6 +327,24 @@ fn check_title(title: &str) -> Result<String, ErrorBody> {
         )));
     }
     Ok(t.to_owned())
+}
+
+/// `at` a time jiff can hold, after 1970; `timezone` a known IANA name.
+/// The error never quotes either.
+fn check_due(due: &Due) -> Result<(), ErrorBody> {
+    let zone = due.timezone.as_str();
+    let shaped = !zone.is_empty() && zone.len() <= MAX_ZONE && !zone.chars().any(char::is_control);
+    let at = i64::try_from(due.at)
+        .ok()
+        .filter(|s| *s > 0)
+        .and_then(|s| jiff::Timestamp::from_second(s).ok());
+    if at.is_none() || !shaped || jiff::tz::TimeZone::get(zone).is_err() {
+        return Err(bad(
+            "update-work: due needs at (epoch seconds above 0) and timezone, a known IANA \
+             name such as Asia/Tokyo",
+        ));
+    }
+    Ok(())
 }
 
 /// The text's first non-blank line, cut to [`MAX_TITLE`] characters.

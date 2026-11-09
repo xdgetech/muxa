@@ -109,6 +109,7 @@ impl Host {
                     request: request.into(),
                     version,
                     work: "w-00000000".into(),
+                    notes_base: None,
                 }
                 .fields(),
             );

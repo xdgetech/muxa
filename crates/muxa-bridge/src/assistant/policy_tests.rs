@@ -124,6 +124,7 @@ fn run(id: &str, ws: &str, request: &str, status: Status, created: u64) -> Recor
             request: request.into(),
             version: 1,
             work: "w-00000001".into(),
+            notes_base: None,
         }
         .fields(),
     );

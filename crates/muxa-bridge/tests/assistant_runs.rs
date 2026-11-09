@@ -585,3 +585,143 @@ async fn without_a_daemon_automatic_processing_is_off() {
     }
     assert!(!h.base.join("w/assistant").exists());
 }
+
+/// Notes text that must never reach the daemon's log (ADR 0047 §9).
+const NOTES_MARK: &str = "notes-mark-3b6f";
+
+fn notes_path(h: &Host) -> PathBuf {
+    h.base.join("w/.muxa/assistant/NOTES.md")
+}
+
+fn with_notes(text: &str) -> Value {
+    let mut v = good();
+    v["notes"] = json!(text);
+    v
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn notes_are_read_at_the_start_proposed_and_applied_only_on_request() {
+    let h = Host::new("notes", "");
+    let new = format!("# Hosting\n\n- {NOTES_MARK} new\n");
+    h.steer("first.json", &with_notes(&new));
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let mut item = work_item(&mut conn, "c-notes", "w").await;
+
+    // An oversized file or a symlink fails the start before any run exists.
+    std::fs::create_dir_all(h.base.join("w/.muxa/assistant")).unwrap();
+    std::fs::write(
+        notes_path(&h),
+        format!("{NOTES_MARK}{}", "x".repeat(16 << 10)),
+    )
+    .unwrap();
+    let elsewhere = h.base.join("elsewhere.md");
+    std::fs::write(&elsewhere, NOTES_MARK).unwrap();
+    for (needle, last) in [("16399 bytes", false), ("not a regular file", true)] {
+        let answer = ask_raw(&mut conn, &item, None).await;
+        let (code, message) = error_of(&answer);
+        assert_eq!(code, ErrorCode::BadRequest);
+        assert!(
+            message.contains("NOTES.md") && message.contains(needle),
+            "{message}"
+        );
+        assert!(!message.contains(NOTES_MARK), "{message}");
+        match answer.first() {
+            Some(Message::WorkSaved {
+                entry,
+                request: Some(q),
+                ..
+            }) => {
+                assert_eq!(q.delivery, Delivery::Failed);
+                item = entry.clone();
+            }
+            other => panic!("{other:?}"),
+        }
+        if !last {
+            std::fs::remove_file(notes_path(&h)).unwrap();
+            std::os::unix::fs::symlink(&elsewhere, notes_path(&h)).unwrap();
+        }
+    }
+    assert_eq!(h.runs(), 0);
+    assert!(!h.base.join("w/assistant").exists());
+
+    std::fs::remove_file(notes_path(&h)).unwrap();
+    let old = format!("# Hosting\n\n- {NOTES_MARK} old\n");
+    std::fs::write(notes_path(&h), &old).unwrap();
+    let (_, q) = ask(&mut conn, &item).await;
+    let run = q.run.clone().expect("a run");
+    let done = until(&mut conn, &h, &q.id, Delivery::Resulted).await;
+    let copy = std::fs::read_to_string(h.dir(&run).join(".muxa/assistant/NOTES.md")).unwrap();
+    assert_eq!(copy, old);
+    let task_md = std::fs::read_to_string(h.dir(&run).join(".muxa/TASK.md")).unwrap();
+    assert!(task_md.contains(".muxa/assistant/NOTES.md"), "{task_md}");
+    let notes = done.results[0].notes.clone().expect("proposed notes");
+    assert_eq!(
+        (notes.text.as_str(), notes.base.clone()),
+        (new.as_str(), sha256(old.as_bytes()))
+    );
+    assert_eq!(
+        std::fs::read_to_string(notes_path(&h)).unwrap(),
+        old,
+        "review never writes at publish"
+    );
+
+    // The two failed starts made versions 1 and 2.
+    assert_eq!(done.results[0].version, 3);
+    let apply = json!({"type": "apply-notes", "source": q.id, "version": 3, "base": notes.base});
+    let answer = conn.request(apply.clone()).await;
+    match answer.as_slice() {
+        [
+            Message::WorkSaved {
+                request: Some(saved),
+                ..
+            },
+            Message::Result { error: None, .. },
+        ] => {
+            assert_eq!(saved.id, q.id)
+        }
+        other => panic!("apply-notes: {other:?}"),
+    }
+    assert_eq!(std::fs::read_to_string(notes_path(&h)).unwrap(), new);
+    // Applied, the live file no longer hashes to the proposal's base.
+    let (code, message) = error_of(&conn.request(apply).await);
+    assert_eq!(code, ErrorCode::Conflict, "{message}");
+
+    let log = daemon.log();
+    for mark in MARKS.iter().chain([&NOTES_MARK]) {
+        assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
+    }
+    daemon.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn with_notes_auto_a_passing_result_writes_the_notes_at_publish() {
+    let h = Host::new("auto-notes", "notes = \"auto\"");
+    let new = format!("# Hosting\n\n- {NOTES_MARK}\n");
+    h.steer("first.json", &with_notes(&new));
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let item = work_item(&mut conn, "c-auto", "w").await;
+    assert!(!notes_path(&h).exists());
+    let (_, q) = ask(&mut conn, &item).await;
+    let done = until(&mut conn, &h, &q.id, Delivery::Resulted).await;
+    assert_eq!(done.results[0].notes.as_ref().unwrap().base, sha256(b""));
+    eventually("the notes are not written", || {
+        std::fs::read_to_string(notes_path(&h)).is_ok_and(|t| t == new)
+    })
+    .await;
+    let log = daemon.log();
+    assert!(log.contains("notes applied at publish"), "{log}");
+    for mark in MARKS.iter().chain([&NOTES_MARK]) {
+        assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
+    }
+    daemon.shutdown().await;
+}

@@ -100,6 +100,7 @@ fn change(w: &WorkItem, action: WorkAction) -> Update {
         title: None,
         workspace: None,
         into: None,
+        due: None,
     }
 }
 
@@ -422,4 +423,85 @@ fn get_work_returns_every_linked_capture_in_the_items_order() {
         assert_eq!(e.code, ErrorCode::BadRequest, "{unknown}");
         assert_eq!(e.message, format!("no Work item {unknown}"));
     }
+}
+
+fn set_due(w: &WorkItem, at: u64, timezone: &str) -> Update {
+    Update {
+        due: Some(Due {
+            at,
+            timezone: timezone.into(),
+        }),
+        ..change(w, WorkAction::Edit)
+    }
+}
+
+#[test]
+fn a_pinned_item_is_listed_first_and_a_repeat_keeps_its_rev() {
+    let h = host();
+    let a = h.item("first");
+    let b = h.item("second");
+    // Both may share a creation second; the unpinned order is the store's own.
+    let before: Vec<String> = h.listed().into_iter().map(|w| w.id).collect();
+    let pinned = h.act(&a, WorkAction::Pin).unwrap();
+    assert!(pinned.pinned_at.is_some());
+    assert_eq!(pinned.rev, a.rev + 1);
+    let ids: Vec<String> = h.listed().into_iter().map(|w| w.id).collect();
+    assert_eq!(ids, [a.id.clone(), b.id.clone()]);
+    // Pinning again changes nothing, not even rev; a stale rev still conflicts.
+    assert_eq!(h.act(&pinned, WorkAction::Pin).unwrap(), pinned);
+    assert_eq!(code(h.act(&a, WorkAction::Pin)), ErrorCode::Conflict);
+    let unpinned = h.act(&pinned, WorkAction::Unpin).unwrap();
+    assert_eq!((unpinned.pinned_at, unpinned.rev), (None, pinned.rev + 1));
+    assert_eq!(h.act(&unpinned, WorkAction::Unpin).unwrap(), unpinned);
+    let ids: Vec<String> = h.listed().into_iter().map(|w| w.id).collect();
+    assert_eq!(ids, before);
+}
+
+#[test]
+fn later_ends_a_pin_pin_ends_later_and_closing_ends_both() {
+    let h = host();
+    let a = h.item("first");
+    let pinned = h.act(&a, WorkAction::Pin).unwrap();
+    let later = h.act(&pinned, WorkAction::Later).unwrap();
+    assert_eq!((later.pinned_at, later.later_at.is_some()), (None, true));
+    let up = h.act(&later, WorkAction::Pin).unwrap();
+    assert_eq!((up.pinned_at.is_some(), up.later_at), (true, None));
+    let done = h.act(&up, WorkAction::Complete).unwrap();
+    assert_eq!((done.state, done.pinned_at), (WorkState::Done, None));
+    assert_eq!(code(h.act(&done, WorkAction::Pin)), ErrorCode::BadRequest);
+    // Nothing to unpin on a closed item.
+    assert_eq!(h.act(&done, WorkAction::Unpin).unwrap(), done);
+}
+
+#[test]
+fn edit_sets_a_valid_due_and_refuses_others_without_quoting_them() {
+    let h = host();
+    let item = h.item("File taxes");
+    let dated = update(&h.config, set_due(&item, 1_762_930_800, "Asia/Tokyo")).unwrap();
+    let due = dated.due.clone().unwrap();
+    assert_eq!(
+        (due.at, due.timezone.as_str()),
+        (1_762_930_800, "Asia/Tokyo")
+    );
+    assert_eq!(
+        (dated.title.as_str(), dated.rev),
+        ("File taxes", item.rev + 1)
+    );
+    for (at, zone) in [
+        (0, "Asia/Tokyo"),
+        (u64::MAX, "Asia/Tokyo"),
+        (1, ""),
+        (1, "SECRET-2/Nowhere"),
+        (1, "Asia/Tokyo\n"),
+    ] {
+        let e = update(&h.config, set_due(&dated, at, zone)).unwrap_err();
+        assert_eq!(e.code, ErrorCode::BadRequest, "{at} {zone:?}");
+        assert!(!e.message.contains("SECRET-2"), "{}", e.message);
+    }
+    let not_edit = Update {
+        action: WorkAction::Pin,
+        ..set_due(&dated, 1, "UTC")
+    };
+    assert_eq!(code(update(&h.config, not_edit)), ErrorCode::BadRequest);
+    assert_eq!(h.listed()[0], dated);
 }
