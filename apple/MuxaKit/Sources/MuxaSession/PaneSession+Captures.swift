@@ -68,16 +68,18 @@ extension PaneSession {
         return saved.work
     }
 
-    /// Changes a Work item: Later, Complete, Withdraw or Reopen. Its Tasks stay as they are.
+    /// Changes a Work item: Later, Complete, Withdraw or Reopen; at level 9 also Pin,
+    /// Unpin, and Edit with `due`. Its Tasks stay as they are.
     @discardableResult
-    public func update(_ item: WorkItem, _ action: WorkAction) async throws -> WorkItem {
+    public func update(_ item: WorkItem, _ action: WorkAction, due: Due? = nil) async throws -> WorkItem {
         try requireCaptures()
+        if action == .pin || action == .unpin || due != nil { try requirePlans() }
         var requestId: UInt64 = 0
         do {
             try await changing {
                 try await request { id in
                     requestId = id
-                    return .updateWork(id: id, work: item.id, rev: item.rev, action: action)
+                    return .updateWork(id: id, work: item.id, rev: item.rev, action: action, due: due)
                 }
             }
         } catch {
@@ -114,11 +116,16 @@ extension PaneSession {
             workList = []
             captures = []
             assistantRequests = []
+            plans = []
+            assistantInfo = nil
             return
         }
         workList = inbox.work
         captures = inbox.captures
         assistantRequests = inbox.requests
+        // An older host sends neither; a level 8 host is not asked for plans.
+        plans = canPlan ? inbox.plans : []
+        assistantInfo = canPlan ? inbox.assistant : nil
         for c in inbox.captures { knownCaptures[c.id] = c }
         for r in inbox.requests { keepRead(r) }
     }

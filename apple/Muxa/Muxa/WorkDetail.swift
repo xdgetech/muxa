@@ -16,6 +16,9 @@ struct WorkDetail: View {
             let requests = model.session.requests(of: item)
             List {
                 header(item)
+                if let row = model.session.planRow(forWork: item.id) {
+                    PlanReasonSection(row: row)
+                }
                 captures(item)
                 ForEach(requests) { request in
                     RequestSection(request: request)
@@ -30,6 +33,9 @@ struct WorkDetail: View {
                 }
                 if item.isOpen, !(requests.last.map { $0.delivery.isActive || $0.delivery == .cancelRequested } ?? false) {
                     AskSection(item: item, again: !requests.isEmpty)
+                }
+                if model.usesPlans, item.isOpen {
+                    DueSection(item: item)
                 }
                 actions(item)
             }
@@ -53,6 +59,10 @@ struct WorkDetail: View {
             LabeledContent("State", value: item.state.shown)
                 .accessibilityIdentifier("work-state")
             if let workspace = item.workspace { LabeledContent("Workspace", value: workspace) }
+            if item.pinnedAt != nil {
+                Label("Pinned: listed first, and first in a plan", systemImage: Icon.pin).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("work-pinned")
+            }
             if item.laterAt != nil {
                 Label("Moved down with Later", systemImage: Icon.later).foregroundStyle(.secondary)
             }
@@ -99,6 +109,13 @@ struct WorkDetail: View {
     private func actions(_ item: WorkItem) -> some View {
         Section {
             if item.isOpen {
+                if model.usesPlans {
+                    let pinned = item.pinnedAt != nil
+                    Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? Icon.unpin : Icon.pin) {
+                        model.setPinned(item, !pinned)
+                    }
+                    .accessibilityIdentifier("work-pin")
+                }
                 if model.canKeepTasks {
                     Button("Start a Task", systemImage: Icon.newTask) { Task { await model.startTask(for: item) } }
                         .accessibilityIdentifier("work-start-task")

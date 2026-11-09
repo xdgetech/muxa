@@ -80,4 +80,9 @@ enum Icon {
     static let assistant = "sparkles"
     static let cancel = "stop.circle"
     static let result = "doc.text.magnifyingglass"
+    /// The overall assistant's plan, and the user's pins and due dates (ADR 0047).
+    static let today = "sun.max"
+    static let pin = "pin"
+    static let unpin = "pin.slash"
+    static let due = "calendar.badge.clock"
 }

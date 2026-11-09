@@ -107,6 +107,8 @@ extension PaneSession {
         var work: [WorkItem]
         var captures: [Capture]
         var requests: [AssistantRequest]
+        var plans: [Plan]
+        var assistant: AssistantInfo?
     }
 
     /// Sends a list request; its list arrives just before the result. Nil when none came.

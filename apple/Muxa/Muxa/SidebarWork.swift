@@ -13,7 +13,8 @@ struct SidebarWorkSection: View {
             Section {
                 ForEach(items) { item in
                     Button { model.select(.work(item.id)) } label: {
-                        WorkRow(item: item, request: model.latestRequest(of: item), resultReady: model.hasNewResult(item))
+                        WorkRow(item: item, request: model.latestRequest(of: item), resultReady: model.hasNewResult(item),
+                                mark: model.requestMark(item))
                     }
                         .foregroundStyle(.primary)
                         .sidebarHighlight(model.detail == .work(item.id))
@@ -41,6 +42,8 @@ struct WorkRow: View {
     var request: AssistantRequest?
     /// The newest Result is not shown on this device yet.
     var resultReady = false
+    /// The plan's mark on the request: not answered, or older than the item (ADR 0047 §5).
+    var mark: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -54,6 +57,9 @@ struct WorkRow: View {
                 Text("Assistant: \(request.delivery.shown)").font(.caption)
                     .foregroundStyle(request.delivery == .failed || request.delivery == .timedOut ? Theme.attention : .secondary)
             }
+            if let mark {
+                Text(mark).font(.caption).foregroundStyle(Theme.attention)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -61,7 +67,9 @@ struct WorkRow: View {
     }
 
     private var details: String {
-        [item.state.shown, item.workspace, item.laterAt == nil ? nil : "later"].compactMap { $0 }.joined(separator: " · ")
+        [item.pinnedAt == nil ? nil : "pinned", item.state.shown, item.workspace, item.laterAt == nil ? nil : "later",
+         item.due.map { "due \($0.shown)" }]
+            .compactMap { $0 }.joined(separator: " · ")
     }
 }
 

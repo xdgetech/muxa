@@ -27,18 +27,27 @@ extension PaneSession {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.itemsUnsupported))
         }
         let end = action == .accept || action == .drop ? worktreeEnd(worktree) : nil
+        // The overall assistant's proposals (ADR 0047 §4): approve sorts a Capture or asks a
+        // delegate, and a `capture-saved` or `work-saved` comes before `inbox-saved`.
+        let proposes = item.kind == .sort || item.kind == .delegate
         var requestId: UInt64 = 0
+        defer {
+            savedCaptures[requestId] = nil
+            savedWork[requestId] = nil
+            savedRequests[requestId] = nil
+        }
         do {
             try await request { id in
                 requestId = id
                 return .updateInboxEntry(
                     id: id, entry: item.id, action: action, until: nil, text: text, option: option, worktree: end)
             }
-        } catch Failure.bridge(let body) where body.code == .conflict {
+        } catch Failure.bridge(let body) where body.code == .conflict && !proposes {
             savedItems[requestId] = nil
             await loadWork()
             throw Failure.bridge(ErrorBody(code: .conflict, message: Self.itemConflict))
         } catch {
+            // A proposal's refusal keeps the host's reason: a sorted Capture, a budget, no daemon.
             savedItems[requestId] = nil
             await loadWork()
             throw error
@@ -50,6 +59,8 @@ extension PaneSession {
         case .read: break
         // The host moved the item down (ADR 0040): its order is the list's.
         case .later: await loadWork()
+        // An approved proposal sorted a Capture or made a request: the Work list changed.
+        case _ where proposes: await loadWork()
         // Accept, Drop, Retry and an approved proposal change a Task.
         default: await loadTasks()
         }

@@ -50,6 +50,11 @@ struct InboxItemScreen: View {
                     .padding(12)
                     .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
+                if item.delegate != nil || item.sort != nil {
+                    OverallProposal(item: item)
+                        .padding(12)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                }
                 ItemEvidence(item: item)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -241,6 +246,38 @@ struct InboxItemScreen: View {
                     lostWork = LostWork(reason: reason) { send(item, action, option: option, worktree: .force) }
                 } else {
                     failure = PaneSession.describe(error)
+                }
+            }
+        }
+    }
+}
+
+/// What approving the overall assistant's proposal does (ADR 0047 §4): ask a
+/// workspace's delegate, or sort a Capture. The delegate's name is its workspace's.
+private struct OverallProposal: View {
+    @Environment(AppModel.self) private var model
+    let item: InboxItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let d = item.delegate {
+                LabeledContent("Asks", value: "\(d.workspace)'s assistant")
+                    .accessibilityIdentifier("item-delegate-workspace")
+                LabeledContent("Scope", value: d.scope.shown.capitalized)
+                LabeledContent("Work Item", value: model.workItem(d.work)?.title ?? d.work)
+                Text(d.purpose).textSelection(.enabled)
+                    .accessibilityIdentifier("item-delegate-purpose")
+                Text(d.reason).font(.callout).foregroundStyle(.secondary)
+            }
+            if let s = item.sort {
+                LabeledContent("Action", value: s.action.shown)
+                    .accessibilityIdentifier("item-sort-action")
+                if let workspace = s.workspace { LabeledContent("Workspace", value: workspace) }
+                if let title = s.title { LabeledContent("Title", value: title) }
+                if let work = s.work { LabeledContent("Into", value: model.workItem(work)?.title ?? work) }
+                if let text = model.session.knownCaptures[s.capture]?.text {
+                    Text(text).font(.callout).textSelection(.enabled)
+                        .accessibilityIdentifier("item-sort-capture")
                 }
             }
         }

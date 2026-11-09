@@ -64,6 +64,9 @@ struct ResultSections: View {
                     .accessibilityIdentifier("work-result-summary")
                 Text("Version \(result.version) · \(result.at.shownDate)").font(.caption).foregroundStyle(.secondary)
             }
+            if model.usesPlans, let notes = result.notes {
+                NotesSection(request: request, result: result, notes: notes)
+            }
             if !result.findings.isEmpty {
                 Section("Findings") {
                     ForEach(Array(result.findings.enumerated()), id: \.offset) { _, finding in
@@ -185,7 +188,7 @@ struct AskSection: View {
             if item.workspace == nil {
                 Picker("Workspace", selection: $workspace) {
                     Text("Pick one").tag(String?.none)
-                    ForEach(model.session.workspaces) { w in Text(w.name).tag(String?.some(w.name)) }
+                    ForEach(model.session.pickableWorkspaces) { w in Text(w.name).tag(String?.some(w.name)) }
                 }
             }
             Button(again ? "Ask Again" : "Ask Assistant", systemImage: Icon.assistant, action: ask)

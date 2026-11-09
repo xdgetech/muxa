@@ -37,11 +37,16 @@ extension DemoBridge {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .updateWork(let id, let item, let rev, let action, _, _, _, _):
+        case .updateWork(let id, let item, let rev, let action, let title, let workspace, _, let due):
+            // A level 8 host knows neither pins nor due dates (ADR 0047 §7).
+            if Self.workLevel < workPlans, action == .pin || action == .unpin || due != nil {
+                return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "unknown action"), sessions: nil))
+            }
             let outcome = lock.withLock { () -> Result<WorkItem, DemoWork.Refusal> in
                 do throws(DemoWork.Refusal) {
                     let laterAt = max(work.nextLaterAt, work.assistant.lastLaterAt + 1)
-                    return .success(try work.assistant.update(item, rev: rev, action: action, laterAt: laterAt))
+                    return .success(try work.assistant.update(
+                        item, rev: rev, action: action, laterAt: laterAt, title: title, workspace: workspace, due: due))
                 } catch { return .failure(error) }
             }
             switch outcome {
@@ -129,7 +134,7 @@ extension DemoBridge {
     }
 
     /// Starts and closes the runs' sessions, and moves a new run on at each step of its delivery.
-    private func apply(_ change: DemoAssistant.RunChange) {
+    func apply(_ change: DemoAssistant.RunChange) {
         guard change.started != nil || !change.ended.isEmpty else { return }
         lock.withLock {
             let ended = Set(change.ended.map(\.task))

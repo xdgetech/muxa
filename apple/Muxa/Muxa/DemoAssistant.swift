@@ -26,7 +26,8 @@ struct DemoAssistant: Sendable {
         captures.filter { $0.state == .received }.sorted { $0.createdAt > $1.createdAt }
     }
 
-    /// Open first, newest first; then the moved-down ones in the order moved; then
+    /// Pinned open ones first, in the order pinned (`work` level 9, ADR 0047 §6); then the
+    /// other open ones, newest first; then the moved-down ones in the order moved; then
     /// done and withdrawn, newest change first. `waiting` derives a linked Task's open item.
     /// A live run makes the item in progress, as a running Task does.
     func shownWork(waiting: (String) -> Bool) -> [WorkItem] {
@@ -37,7 +38,9 @@ struct DemoAssistant: Sendable {
             shown.state = item.tasks.contains(where: waiting) ? .waitingDecision : .inProgress
             return shown
         }
-        let open = derived.filter { $0.isListedOpen && $0.laterAt == nil }.sorted { $0.createdAt > $1.createdAt }
+        let pinned = derived.filter { $0.isListedOpen && $0.pinnedAt != nil }.sorted { ($0.pinnedAt ?? 0) < ($1.pinnedAt ?? 0) }
+        let open = pinned + derived.filter { $0.isListedOpen && $0.laterAt == nil && $0.pinnedAt == nil }
+            .sorted { $0.createdAt > $1.createdAt }
         let later = derived.filter { $0.isListedOpen && $0.laterAt != nil }.sorted { ($0.laterAt ?? 0) < ($1.laterAt ?? 0) }
         let closed = derived.filter { !$0.isListedOpen }.sorted { $0.updatedAt > $1.updatedAt }
         return open + later + closed.prefix(100)
@@ -53,7 +56,7 @@ struct DemoAssistant: Sendable {
     }
 
     mutating func sort(
-        _ id: String, rev: UInt64, action: SortAction, into target: String?, title: String?
+        _ id: String, rev: UInt64, action: SortAction, into target: String?, title: String?, workspace: String? = nil
     ) throws(Refusal) -> (Capture, WorkItem?) {
         guard let i = captures.firstIndex(where: { $0.id == id }) else { throw Refusal(.badRequest, "\(id) is not a capture") }
         guard captures[i].rev == rev else { throw Refusal(.conflict, "\(id) changed since you read it") }
@@ -64,7 +67,7 @@ struct DemoAssistant: Sendable {
             let made = WorkItem(
                 id: Self.id("w", work.count + 0x100), rev: 1,
                 title: title ?? String(Self.firstLine(captures[i].text).prefix(200)), state: .open,
-                createdAt: Self.now, updatedAt: Self.now, workspace: captures[i].workspace, captures: [id])
+                createdAt: Self.now, updatedAt: Self.now, workspace: workspace ?? captures[i].workspace, captures: [id])
             work.append(made)
             item = made
         case .link:
@@ -85,18 +88,43 @@ struct DemoAssistant: Sendable {
     }
 
     /// Later, complete, withdraw and reopen; `laterAt` is the next place at the bottom.
-    mutating func update(_ id: String, rev: UInt64, action: WorkAction, laterAt: UInt64) throws(Refusal) -> WorkItem {
+    /// At level 9 also pin, unpin, and edit with `due`; a pin of a pinned item, or an
+    /// unpin of an unpinned one, keeps `rev`.
+    mutating func update(
+        _ id: String, rev: UInt64, action: WorkAction, laterAt: UInt64, title: String? = nil, workspace: String? = nil,
+        due: Due? = nil
+    ) throws(Refusal) -> WorkItem {
         guard let i = work.firstIndex(where: { $0.id == id }) else { throw Refusal(.badRequest, "\(id) is not a Work item") }
         guard work[i].rev == rev else { throw Refusal(.conflict, "\(id) changed since you read it") }
         switch action {
-        case .later: work[i].laterAt = laterAt
-        case .complete: work[i].state = .done
-        case .withdraw: work[i].state = .withdrawn
+        case .later:
+            work[i].laterAt = laterAt
+            work[i].pinnedAt = nil
+        case .complete, .withdraw:
+            work[i].state = action == .complete ? .done : .withdrawn
+            work[i].pinnedAt = nil
         case .reopen:
             work[i].state = .open
             work[i].laterAt = nil
-        case .edit, .merge, .pin, .unpin:
-            throw Refusal(.unsupported, "The demo bridge does not edit, merge or pin Work items.")
+        case .pin:
+            guard work[i].isListedOpen else { throw Refusal(.badRequest, "\(id) is \(work[i].state.raw)") }
+            guard work[i].pinnedAt == nil else { return work[i] }
+            work[i].pinnedAt = max(Self.now, (work.compactMap(\.pinnedAt).max() ?? 0) + 1)
+            work[i].laterAt = nil
+        case .unpin:
+            guard work[i].pinnedAt != nil else { return work[i] }
+            work[i].pinnedAt = nil
+        case .edit:
+            if let due {
+                guard due.at > 0, TimeZone(identifier: due.timezone) != nil else {
+                    throw Refusal(.badRequest, "due needs a time and a known time zone")
+                }
+                work[i].due = due
+            }
+            if let title { work[i].title = String(title.prefix(200)) }
+            if let workspace { work[i].workspace = workspace }
+        case .merge:
+            throw Refusal(.unsupported, "The demo bridge does not merge Work items.")
         }
         touch(i)
         return work[i]
@@ -138,12 +166,15 @@ struct DemoAssistant: Sendable {
                 workspace: workspace, work: work.map { [$0] } ?? [])
     }
 
-    private static func item(
+    static func item(
         _ id: String, _ title: String, ago: UInt64, workspace: String?, captures: [String] = [], tasks: [String] = [],
-        requests: [String] = []
+        requests: [String] = [], pinnedAgo: UInt64? = nil, laterAgo: UInt64? = nil, dueIn: UInt64? = nil
     ) -> WorkItem {
         WorkItem(id: id, rev: 1 + UInt64(requests.count), title: title, state: .open, createdAt: now - ago,
-                 updatedAt: now - ago, workspace: workspace, captures: captures, requests: requests, tasks: tasks)
+                 updatedAt: now - ago, workspace: workspace, laterAt: laterAgo.map { now - $0 },
+                 pinnedAt: pinnedAgo.map { now - $0 },
+                 due: dueIn.map { Due(at: now + $0, timezone: TimeZone.current.identifier) },
+                 captures: captures, requests: requests, tasks: tasks)
     }
 
     /// The UI tests' fixtures: one item waits on the passkey Task's question and holds a

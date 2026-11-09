@@ -6,7 +6,7 @@ import Testing
 
 /// A bridge that also answers assistant requests (ADR 0046 §9) as the host does, with
 /// a daemon unless `daemon` is false.
-final class AssistantBridge: CaptureBridge, @unchecked Sendable {
+class AssistantBridge: CaptureBridge, @unchecked Sendable {
     var requests: [AssistantRequest] = []
     /// `request-assistant` is refused with this, after a `work-saved` with a failed request.
     var refusal: ErrorBody?

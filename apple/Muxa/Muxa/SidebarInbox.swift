@@ -24,7 +24,10 @@ struct SidebarInbox: View {
                 Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure)
             }
             if model.usesWork {
-                // Decisions first, then Work and Unsorted (ADR 0046 §10).
+                // Today above Decisions (ADR 0047 §5), then Work and Unsorted (ADR 0046 §10).
+                if model.showsToday {
+                    SidebarTodaySection()
+                }
                 Section {
                     decisions(items)
                 } header: {
@@ -90,6 +93,9 @@ struct InboxItemRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.question).font(item.isUnread ? .headline : .body).lineLimit(2)
+                if let delegate = item.delegate {
+                    Text(delegate.shown).font(.caption).foregroundStyle(.secondary)
+                }
                 Text(item.source()).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

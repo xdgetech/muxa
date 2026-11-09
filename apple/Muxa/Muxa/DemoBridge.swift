@@ -106,18 +106,20 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:8",
+            "task-loop", "tasks-changed", "viewport", "history", "work:9",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:8" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:9" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:8" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:9" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:8" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:9" ? "work:3" : $0 } }
         // A bridge from before Captures (ADR 0046): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:8" ? "work:7" : $0 } }
+        if arguments.contains("-work7") { return all.map { $0 == "work:9" ? "work:7" : $0 } }
+        // A bridge from before the overall assistant (ADR 0047): no Today, pins or notes.
+        if arguments.contains("-work8") { return all.map { $0 == "work:9" ? "work:8" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -223,9 +225,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
-        // The demo has no overall assistant yet (`work` level 9, ADR 0047).
-        case .applyNotes(let id, _, _, _), .planNow(let id, _):
-            unsupported(id, Self.noRequest)
+        case .applyNotes, .planNow:
+            servePlans(req)
         case .capture, .sortCapture, .updateWork, .requestAssistant, .cancelRequest, .getWork:
             await serveCaptures(req)
         case .restartAgent(let id, let task, let force, let worker, let rev):
@@ -383,8 +384,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .listInbox(let id):
             let (entries, items) = lock.withLock { (work.shownEntries, work.shownItems) }
             let (listed, captures, requests) = listedWork()
-            emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? items : [],
-                            work: listed, captures: captures, requests: requests))
+            let (plans, assistant) = listedPlans()
+            // A host below level 9 has no overall assistant, so none of its proposals.
+            let shown = Self.workLevel >= workPlans ? items : items.filter { $0.kind != .sort && $0.kind != .delegate }
+            emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? shown : [],
+                            work: listed, captures: captures, requests: requests, plans: plans, assistant: assistant))
             ok(id)
         case .runRoutine(let id, let workspace, let routine):
             let outcome = lock.withLock { () -> Result<RoutineInfo, DemoWork.Refusal> in
@@ -405,6 +409,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .updateInboxEntry(let id, let entry, .askAgent, _, let text, _, _):
             askAgent(id: id, item: entry, text: text)
         // `until` is ignored: Later moves an item down (ADR 0040).
+        case .updateInboxEntry(let id, let entry, .approve, _, _, _, _) where isOverallProposal(entry):
+            approveProposal(id: id, item: entry)
         case .updateInboxEntry(let id, let entry, let action, _, let text, let option, let worktree):
             let isEntry = lock.withLock { work.entries.contains { $0.id == entry } }
             if Self.workLevel >= workItems, !isEntry || action == .read {

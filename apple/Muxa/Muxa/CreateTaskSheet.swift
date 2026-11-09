@@ -30,7 +30,8 @@ struct CreateTaskSheet: View {
                 Form {
                     Section {
                         Picker("Workspace", selection: $draft.workspace) {
-                            ForEach(model.session.workspaces) { w in
+                            // The overall assistant's workspace takes no Tasks (ADR 0047 §2).
+                            ForEach(model.session.pickableWorkspaces) { w in
                                 Text(w.name).tag(w.name)
                             }
                         }

@@ -75,6 +75,13 @@ public final class PaneSession {
     public internal(set) var knownCaptures: [String: Capture] = [:]
     /// Work items as `get-work` last read them, by id: every Capture they link and their requests.
     public internal(set) var workDetails: [String: LoadedWork] = [:]
+    /// The kept plans, newest first, as last listed (`work` level 9, ADR 0047).
+    public internal(set) var plans: [Plan] = []
+    /// The overall assistant and the delegates, as last listed. Nil below level 9.
+    public internal(set) var assistantInfo: AssistantInfo?
+    /// Notes proposals applied from this device, by `source version`: the live file now
+    /// differs from their base, so applying again would only conflict.
+    public internal(set) var appliedNotes: Set<String> = []
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -113,6 +120,8 @@ public final class PaneSession {
     /// id (`PaneSession+Assistant.swift`).
     @ObservationIgnored var savedRequests: [UInt64: AssistantRequest] = [:]
     @ObservationIgnored var readWorks: [UInt64: LoadedWork] = [:]
+    /// `plan-saved`, by request id (`PaneSession+Plans.swift`).
+    @ObservationIgnored var savedPlans: [UInt64: Plan] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
     @ObservationIgnored var startedSessions: [UInt64: StartedSession] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
@@ -157,6 +166,9 @@ public final class PaneSession {
             assistantRequests = []
             knownCaptures = [:]
             workDetails = [:]
+            plans = []
+            assistantInfo = nil
+            appliedNotes = []
         }
         phase = .connecting
         do {
@@ -806,9 +818,10 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries, let items, let work, let captures, let requests, _, _):
+        case .inboxList(let id, let entries, let items, let work, let captures, let requests, let plans, let assistant):
             inboxListings[id] = InboxListing(
-                entries: entries, items: items, work: work, captures: captures, requests: requests)
+                entries: entries, items: items, work: work, captures: captures, requests: requests, plans: plans,
+                assistant: assistant)
         case .inboxSaved(let id, let entry, let item):
             // A Routine's item comes with its entry; a Task's item has none.
             if let entry {
@@ -837,13 +850,16 @@ public final class PaneSession {
             }
         case .workDetail(let id, let entry, let captures, let requests):
             readWorks[id] = LoadedWork(entry: entry, captures: captures, requests: requests)
+        case .planSaved(let id, let entry):
+            // A run that did not start comes as a `failed` plan before the error.
+            savedPlans[id] = entry
+            keep(entry)
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
-        // Plans come with `work` level 9 (ADR 0047); no client asks for them yet.
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded, .planSaved:
+            .diffContent, .diffEnded, .imageContent, .imageEnded:
             break
         }
     }
@@ -886,6 +902,7 @@ public final class PaneSession {
         savedWork = [:]
         savedRequests = [:]
         readWorks = [:]
+        savedPlans = [:]
         startedSessions = [:]
         inputs = []
         sentViewport = nil

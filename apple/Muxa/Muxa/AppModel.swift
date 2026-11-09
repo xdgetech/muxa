@@ -123,6 +123,9 @@ final class AppModel {
     var paneRequest = 0
     /// Why the last Later or ✓ from the list failed, shown once.
     var laterFailure: String?
+    /// The plan Today showed first on this host, then the one the user last opened from
+    /// it: a newer plan shows New (ADR 0047 §5). Nil until Today first appears.
+    var seenPlan: (host: UUID?, id: String?)?
     /// A pane view is about to appear for a pane watched without one (`paneAppeared`).
     var paneViewPending = false
     /// The pane last shown in each session, so a Sessions row opens its last view.
@@ -678,7 +681,7 @@ final class AppModel {
     private func showRecordSheet(repo: String) async {
         // The workspaces come with the task list.
         if session.workspaces.isEmpty { await session.loadTasks() }
-        newRecord = TaskRecordDraft(repo: repo, in: session.workspaces)
+        newRecord = TaskRecordDraft(repo: repo, in: session.pickableWorkspaces)
     }
 
     func recordCreated(_ record: TaskRecord) {

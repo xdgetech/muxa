@@ -47,7 +47,7 @@ extension AppModel {
     func startTaskInstead(of draft: CaptureDraft) async {
         if session.workspaces.isEmpty { await session.loadTasks() }
         let repo = currentSession?.repoDir ?? session.sessions.knownRepos.first?.dir ?? ""
-        var base = TaskRecordDraft(repo: repo, in: session.workspaces)
+        var base = TaskRecordDraft(repo: repo, in: session.pickableWorkspaces)
         if let workspace = draft.workspace, workspace != base.workspace {
             base = TaskRecordDraft(workspace: workspace)
         }
@@ -105,7 +105,7 @@ extension AppModel {
     /// The New Task form for a Work item: one Task per item `rev`, on any device.
     func startTask(for item: WorkItem) async {
         if session.workspaces.isEmpty { await session.loadTasks() }
-        let workspace = item.workspace ?? session.workspaces.first?.name ?? ""
+        let workspace = item.workspace ?? session.pickableWorkspaces.first?.name ?? ""
         let texts = item.captures.compactMap { session.knownCaptures[$0]?.text }
         newRecord = TaskRecordDraft(
             workspace: workspace, title: String(item.title.prefix(CaptureDraft.titleLength)),

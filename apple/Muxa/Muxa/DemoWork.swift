@@ -19,6 +19,8 @@ struct DemoWork: Sendable {
     var offersAskAgent = true
     /// Captures and Work items (`work` level 8, ADR 0046).
     var assistant = DemoAssistant(captures: [], work: [])
+    /// The overall assistant's plans and the delegates' notes (`work` level 9, ADR 0047).
+    var plans = DemoPlans()
 
     struct Refusal: Error {
         var body: ErrorBody
@@ -156,6 +158,9 @@ struct DemoWork: Sendable {
         sessions: [runSession(routine: "linear-triage", task: "t-r00002", number: 90, state: .waiting, ago: 120)],
         taskItems: testItems, assistant: .tests)
 
-    static let showcase = DemoWork(
+    /// Try the Demo and the store screenshots, with the overall assistant (`DemoPlans.swift`).
+    static let showcase = showcasePlanned
+
+    static let showcaseBase = DemoWork(
         routines: routines(running: nil), entries: entries, sessions: [], taskItems: showcaseItems, assistant: .showcase)
 }

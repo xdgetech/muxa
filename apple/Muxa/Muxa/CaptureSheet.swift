@@ -27,11 +27,12 @@ struct CaptureSheet: View {
                          ? "Saved on the host, in the Inbox under Unsorted. Nothing starts."
                          : "Not connected. It stays on this device and is sent when you connect.")
                 }
-                if !model.session.workspaces.isEmpty {
+                if !model.session.pickableWorkspaces.isEmpty {
                     Section {
                         Picker("Workspace", selection: $draft.workspace) {
                             Text("None").tag(String?.none)
-                            ForEach(model.session.workspaces) { w in
+                            // The overall assistant's workspace takes no Captures (ADR 0047 §2).
+                            ForEach(model.session.pickableWorkspaces) { w in
                                 Text(w.name).tag(String?.some(w.name))
                             }
                         }

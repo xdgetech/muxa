@@ -121,6 +121,8 @@ struct DemoTasks: Sendable {
     private static let showcaseWorkspaces = [
         WorkspaceInfo(name: "work", checks: .list(["make test", "make lint"])),
         WorkspaceInfo(name: "personal"),
+        // The overall assistant's (ADR 0047 §2): pickers leave it out.
+        WorkspaceInfo(name: DemoPlans.overall),
     ]
 
     /// Try the Demo and the store screenshots, linked to `Showcase.sessions`.
