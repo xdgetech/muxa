@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.askFromCapture
 import tech.xdge.muxa.app.captureToTask
+import tech.xdge.muxa.app.pickableWorkspaces
 import tech.xdge.muxa.app.saveCapture
 import tech.xdge.muxa.protocol.AssistScope
 import tech.xdge.muxa.session.ASSIST_SCOPES
@@ -130,11 +131,11 @@ internal fun ScopePicker(scope: AssistScope, tag: String, pick: (AssistScope) ->
 private fun CaptureWorkspace(model: AppModel, workspace: String?, pick: (String?) -> Unit) =
     WorkspacePicker(model, workspace, "Workspace (optional for Save)", "capture-workspace", pick)
 
-/** A workspace from the host's list, or "No workspace"; [tag] names the field and, with a suffix, each choice. */
+/** A workspace from the host's list, without the overall assistant's, or "No workspace"; [tag] names the field and, with a suffix, each choice. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun WorkspacePicker(model: AppModel, workspace: String?, label: String, tag: String, pick: (String?) -> Unit) {
-    val workspaces = model.state.tasks?.workspaces.orEmpty()
+    val workspaces = model.pickableWorkspaces
     if (workspaces.isEmpty()) return
     var picking by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(picking, { picking = it }) {

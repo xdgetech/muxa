@@ -38,6 +38,18 @@ internal class DemoItems(private var items: List<InboxItem>) {
 
     fun has(id: String) = items.any { it.id == id }
 
+    fun item(id: String): InboxItem? = items.firstOrNull { it.id == id }
+
+    /** The overall assistant's proposal items join the list (ADR 0047). */
+    fun add(more: List<InboxItem>) {
+        items = items + more
+    }
+
+    /** Stores [item] as it is now: an approved proposal's, written by the bridge. */
+    fun save(item: InboxItem) {
+        items = items.map { if (it.id == item.id) item else it }
+    }
+
     /** The latest `laterAt` of the items. */
     val lastLaterAt: Long? get() = items.mapNotNull { it.laterAt }.maxOrNull()
 

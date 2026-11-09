@@ -6,12 +6,15 @@ import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.CaptureSource
 import tech.xdge.muxa.protocol.CaptureState
 import tech.xdge.muxa.protocol.Delivery
+import tech.xdge.muxa.protocol.Due
 import tech.xdge.muxa.protocol.ErrorCode
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
+import java.time.DateTimeException
+import java.time.ZoneId
 
 /**
  * The demo bridge's Captures, Work items and assistant requests (ADR 0046, `work` level 8), with the
@@ -46,13 +49,14 @@ internal class DemoAssistant(
     val unsorted: List<Capture> get() = captures.filter { it.state == CaptureState.RECEIVED }.sortedByDescending { it.createdAt }
 
     /**
-     * `work` as `inbox-list` sends it: open first, newest first; then the ones Later moved
-     * down, in the order moved; then the closed ones, newest change first. [derive] gives an
-     * open item the state its Tasks make.
+     * `work` as `inbox-list` sends it: the pinned ones in pin order (level 9), then the other open
+     * ones, newest first; then the ones Later moved down, in the order moved; then the closed ones,
+     * newest change first. [derive] gives an open item the state its Tasks make.
      */
     fun listed(derive: (WorkItem) -> WorkState): List<WorkItem> {
-        val (closed, live) = work.partition { it.state == WorkState.DONE || it.state == WorkState.WITHDRAWN }
-        val open = live.filter { it.laterAt == null }.sortedByDescending { it.createdAt }
+        val (closed, live) = work.partition { it.isClosed }
+        val (pinned, unpinned) = live.filter { it.laterAt == null }.partition { it.pinnedAt != null }
+        val open = pinned.sortedBy { it.pinnedAt } + unpinned.sortedByDescending { it.createdAt }
         val later = live.filter { it.laterAt != null }.sortedBy { it.laterAt }
         return (open + later).map { it.copy(state = derive(it)) } + closed.sortedByDescending { it.updatedAt }.take(CLOSED_LISTED)
     }
@@ -90,19 +94,64 @@ internal class DemoAssistant(
         return sorted to item
     }
 
-    /** [laterAt] is what `later` sets; it grows, so the list keeps the order moved. */
+    /**
+     * [laterAt] is what `later` sets; it grows, so the list keeps the order moved. `pin` (level 9) sets
+     * `pinnedAt` the same way and clears `laterAt`; a pin of a pinned item, or an unpin of an unpinned
+     * one, keeps `rev`. `later`, `complete` and `withdraw` clear `pinnedAt`.
+     */
     fun update(req: Request.UpdateWork, now: Long, laterAt: Long): WorkItem {
         val w = current(req.work, req.rev)
         val changed = when (req.action) {
-            WorkAction.EDIT -> w.copy(title = req.title ?: w.title, workspace = req.workspace ?: w.workspace)
-            WorkAction.LATER -> w.copy(laterAt = laterAt)
-            WorkAction.COMPLETE -> w.copy(state = WorkState.DONE)
-            WorkAction.WITHDRAW -> w.copy(state = WorkState.WITHDRAWN)
+            WorkAction.EDIT -> w.copy(title = req.title ?: w.title, workspace = req.workspace ?: w.workspace, due = req.due?.let(::checked) ?: w.due)
+            WorkAction.LATER -> w.copy(laterAt = laterAt, pinnedAt = null)
+            WorkAction.COMPLETE -> w.copy(state = WorkState.DONE, pinnedAt = null)
+            WorkAction.WITHDRAW -> w.copy(state = WorkState.WITHDRAWN, pinnedAt = null)
             WorkAction.REOPEN -> w.copy(state = WorkState.OPEN, laterAt = null)
             WorkAction.MERGE -> throw DemoWork.Refusal(ErrorCode.UNSUPPORTED, "The demo does not merge Work items.")
-            WorkAction.PIN, WorkAction.UNPIN -> throw DemoWork.Refusal(ErrorCode.UNSUPPORTED, "The demo does not pin Work items.")
+            WorkAction.PIN -> {
+                if (w.isClosed) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${w.id} is done or withdrawn; reopen it first")
+                if (w.pinnedAt != null) return w
+                w.copy(pinnedAt = maxOf(now, (work.mapNotNull { it.pinnedAt }.maxOrNull() ?: 0) + 1), laterAt = null)
+            }
+            WorkAction.UNPIN -> if (w.pinnedAt == null) return w else w.copy(pinnedAt = null)
         }
         return save(changed, now)
+    }
+
+    private fun checked(due: Due): Due {
+        val known = try {
+            ZoneId.of(due.timezone)
+            due.timezone.contains('/') || due.timezone == "UTC"
+        } catch (e: DateTimeException) {
+            false
+        }
+        if (due.at <= 0 || !known) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "due needs at above 0 and a known IANA timezone")
+        return due
+    }
+
+    /** The plans' fixtures (ADR 0047): pins and deadlines, without a new `rev`. */
+    fun seed(pins: Map<String, Long>, dues: Map<String, Due>) {
+        work = work.map { w -> w.copy(pinnedAt = pins[w.id] ?: w.pinnedAt, due = dues[w.id] ?: w.due) }
+    }
+
+    fun workItem(id: String): WorkItem? = work.firstOrNull { it.id == id }
+
+    fun captureOf(id: String): Capture? = captures.firstOrNull { it.id == id }
+
+    fun request(id: String): AssistantRequest? = requests.firstOrNull { it.id == id }
+
+    /**
+     * What a plan's listing derives now: the requests of open Work items whose current version has no
+     * result and is not cancelled, and those whose newest result is older than their item's change.
+     */
+    fun unansweredAndStale(): Pair<List<String>, List<String>> {
+        val open = work.filterNot { it.isClosed }.associateBy { it.id }
+        val mine = requests.filter { it.work in open }
+        val unanswered = mine.filter { q ->
+            q.results.none { it.version == q.version } && q.delivery != Delivery.CANCELLED && q.delivery != Delivery.CANCEL_REQUESTED
+        }
+        val stale = mine.filter { q -> q.results.firstOrNull()?.let { it.at < (open[q.work]?.updatedAt ?: 0) } == true }
+        return unanswered.map { it.id } to stale.map { it.id }
     }
 
     /** The latest `laterAt`, for the next one. */
@@ -239,6 +288,8 @@ internal class DemoAssistant(
             Assisted(sorted, item, null, e)
         }
     }
+
+    private val WorkItem.isClosed get() = state == WorkState.DONE || state == WorkState.WITHDRAWN
 
     private fun current(id: String, rev: Long): WorkItem {
         val w = work.firstOrNull { it.id == id } ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "$id is not a Work item")

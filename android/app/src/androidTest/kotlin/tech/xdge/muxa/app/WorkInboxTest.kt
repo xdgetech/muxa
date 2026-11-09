@@ -63,6 +63,8 @@ class WorkInboxTest {
     fun theInboxHasThreeSectionsAndCountsDecisionsOnly() {
         launchOnInbox()
         for (section in listOf("decisions", "work", "unsorted")) scrollTo("inbox-section-$section")
+        // Today comes with `work:9` only (ADR 0047).
+        assertTrue(!compose.exists("inbox-section-today"))
         waitForText("sidebar-mode-inbox", "Inbox ${model.inboxItems.size}")
         // A Task with an open item: the Work item waits on it and has no answer of its own.
         scrollTo("work-row-$WAITING")

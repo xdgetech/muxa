@@ -33,6 +33,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.app.pickableWorkspaces
 import tech.xdge.muxa.protocol.DEFAULT_WORKER
 import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneSession
@@ -107,7 +108,8 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(picking) },
                     )
                     ExposedDropdownMenu(picking, { picking = false }) {
-                        for (w in workspaces) {
+                        // The overall assistant's workspace takes no Tasks from here (ADR 0047 §2).
+                        for (w in model.pickableWorkspaces) {
                             DropdownMenuItem({ Text(w.name) }, {
                                 // Another workspace allows other checks.
                                 val loop = draft.loop?.let { w.checks?.let { checks -> LoopDraft(checks) } }

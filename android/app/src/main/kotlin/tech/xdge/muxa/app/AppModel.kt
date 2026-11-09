@@ -19,6 +19,7 @@ import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
+import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.protocol.WorkspaceInfo
@@ -230,6 +231,15 @@ class AppModel(
     /** The Work item or Capture a change is on its way for, by id. */
     var changingWork by mutableStateOf<String?>(null)
 
+    /** The plan whose rows the user has seen: a newer one shows New in Today (ADR 0047 §5). */
+    var seenPlan by mutableStateOf<String?>(null)
+
+    /** Plan now's sheet is open. */
+    var planNowShown by mutableStateOf(false)
+
+    /** The notes applied from this device, as `source:version`, so the Notes section says so. */
+    var appliedNotes by mutableStateOf<Set<String>>(emptySet())
+
     /** An Inbox action that asks first: a proposal's approval. */
     var inboxPrompt by mutableStateOf<InboxPrompt?>(null)
 
@@ -342,6 +352,7 @@ class AppModel(
                 val old = mirror
                 mirror = new
                 if (old.sessions != new.sessions) sessionsChanged(old.sessions, new.sessions)
+                if (old.plans != new.plans) notePlans()
             }
         }
         watchHosts()
@@ -363,8 +374,8 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        // Try the Demo shows Captures and Work items (ADR 0046); the UI tests pick their level.
-        demoWorkLevel = WORK_ASSISTANT
+        // Try the Demo shows Captures, Work items (ADR 0046) and Today (ADR 0047); the UI tests pick their level.
+        demoWorkLevel = WORK_PLANS
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
@@ -481,6 +492,9 @@ class AppModel(
         assistNotice = null
         workDetail = null
         changingWork = null
+        seenPlan = null
+        planNowShown = false
+        appliedNotes = emptySet()
         itemReplies = emptyMap()
         answeringItem = null
         newTaskRecord = null
@@ -1007,7 +1021,7 @@ class AppModel(
     internal fun showRecordSheet(make: (List<WorkspaceInfo>) -> TaskRecordDraft) = scope.launch {
         // The workspaces come with the task list.
         if (state.tasks == null) runCatching { session.loadTasks() }
-        newTaskRecord = make(state.tasks?.workspaces.orEmpty())
+        newTaskRecord = make(pickableWorkspaces)
     }
 
     fun switcherClosed() {

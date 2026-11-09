@@ -67,6 +67,9 @@ internal interface DemoContent {
     /** Captures and Work items (ADR 0046); a host at `work` level 8 serves them. */
     fun assistant(now: Long): DemoAssistant = DemoAssistant(emptyList(), emptyList())
 
+    /** The overall assistant and its plans (ADR 0047); a host at `work` level 9 serves them. */
+    fun plans(now: Long): DemoPlans? = null
+
     /** Tasks whose branch is not merged: ending one with `worktree: remove` is `would-lose-work` (ADR 0043). */
     val unmerged: Set<String> get() = emptySet()
 }
@@ -403,6 +406,8 @@ internal object TestContent : DemoContent {
     override fun items(now: Long) = DemoItems.tests(now)
 
     override fun assistant(now: Long) = DemoAssistant.tests(now)
+
+    override fun plans(now: Long) = DemoPlans.tests(now)
 
     override val unmerged = setOf("t-perf01")
 

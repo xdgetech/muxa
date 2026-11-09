@@ -14,6 +14,7 @@ import tech.xdge.muxa.app.ui.MuxaTheme
 import tech.xdge.muxa.app.ui.Root
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
+import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
@@ -49,8 +50,10 @@ class MainActivity : ComponentActivity() {
                 alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false),
                 taskRecords = !intent.getBooleanExtra(EXTRA_NO_TASK_RECORDS, false),
                 // A host from before ask sessions (ADR 0031), Inbox items (ADR 0033) or
-                // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0046).
+                // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0046),
+                // or with the overall assistant's plans (ADR 0047).
                 workLevel = when {
+                    intent.getBooleanExtra(EXTRA_WORK9, false) -> WORK_PLANS
                     intent.getBooleanExtra(EXTRA_WORK8, false) -> WORK_ASSISTANT
                     intent.getBooleanExtra(EXTRA_WORK1, false) -> WORK_ROUTINES
                     intent.getBooleanExtra(EXTRA_WORK2, false) -> WORK_ASK
@@ -145,5 +148,8 @@ class MainActivity : ComponentActivity() {
 
         /** A bridge with Captures and Work items: `+` opens Capture, and the Inbox has three sections. */
         const val EXTRA_WORK8 = "work8"
+
+        /** A bridge with the overall assistant: Today in the Inbox, pins, deadlines and notes. */
+        const val EXTRA_WORK9 = "work9"
     }
 }

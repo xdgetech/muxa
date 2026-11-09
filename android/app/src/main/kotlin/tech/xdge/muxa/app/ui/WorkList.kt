@@ -47,6 +47,8 @@ import tech.xdge.muxa.session.RESULT_READY
 import tech.xdge.muxa.session.UnsentCapture
 import tech.xdge.muxa.session.firstLine
 import tech.xdge.muxa.session.isLater
+import tech.xdge.muxa.session.isPinned
+import tech.xdge.muxa.session.label
 import tech.xdge.muxa.session.stateLabel
 
 // The Inbox's Work and Unsorted sections (ADR 0046 §10). The badge still counts decisions only.
@@ -135,8 +137,9 @@ private fun WorkRow(item: WorkItem, assist: String?, focused: Boolean, open: () 
     }
 }
 
+/** "open · work · pinned · due Wed 12 Nov 16:00"; pins and deadlines come at `work:9` only. */
 val WorkItem.subtitle: String
-    get() = listOfNotNull(stateLabel, workspace, "later".takeIf { isLater }).joinToString(" · ")
+    get() = listOfNotNull(stateLabel, workspace, "later".takeIf { isLater }, "pinned".takeIf { isPinned }, due?.label()).joinToString(" · ")
 
 /** The first line; then a Work item, a note, or a link to an open item. */
 @Composable

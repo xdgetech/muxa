@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.app.canPlan
 import tech.xdge.muxa.app.changeWork
 import tech.xdge.muxa.app.listedRequests
 import tech.xdge.muxa.app.loadWorkDetail
@@ -36,6 +37,7 @@ import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
 import tech.xdge.muxa.session.WorkDetail as WorkRead
 import tech.xdge.muxa.session.isClosed
+import tech.xdge.muxa.session.isPinned
 import tech.xdge.muxa.session.requestsOf
 import tech.xdge.muxa.session.taskItem
 
@@ -70,8 +72,10 @@ fun WorkDetail(model: AppModel, id: String) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(item.subtitle, Modifier.testTag("work-detail-state"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TodayReason(model, item)
                 Captures(detail, loadError)
                 for (request in requests) RequestSection(model, item, request)
+                NotesSection(model, requests)
                 AskPanel(model, item, requests)
                 LinkedTasks(model, item)
                 if (item.state == WorkState.WAITING_DECISION) {
@@ -126,7 +130,7 @@ private fun LinkedTasks(model: AppModel, item: WorkItem) {
     }
 }
 
-/** Complete, Later and Withdraw on an open item; Reopen on a closed one. Start a Task on both. */
+/** Complete, Later and Withdraw on an open item, and at `work:9` Pin and Due; Reopen on a closed one. Start a Task on both. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Actions(model: AppModel, item: WorkItem, busy: Boolean) {
@@ -140,6 +144,10 @@ private fun Actions(model: AppModel, item: WorkItem, busy: Boolean) {
             act("Complete", "work-complete", WorkAction.COMPLETE)()
             act("Later", "work-later", WorkAction.LATER)()
             act("Withdraw", "work-withdraw", WorkAction.WITHDRAW)()
+            if (model.canPlan) {
+                if (item.isPinned) act("Unpin", "work-unpin", WorkAction.UNPIN)() else act("Pin", "work-pin", WorkAction.PIN)()
+                DueButton(model, item, busy)
+            }
         }
         if (model.canCreateTasks) {
             TextButton({ model.startWorkTask(item) }, Modifier.testTag("work-start-task"), enabled = !busy) { Text("Start a Task") }

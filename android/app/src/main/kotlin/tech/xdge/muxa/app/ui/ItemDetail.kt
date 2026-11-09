@@ -111,6 +111,7 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
         Field("Target", p.target, mono = true)
         Field("Content", p.content, mono = true)
     }
+    OverallProposal(model, item)
     ItemAttachments(model, item)
     if (item.kind == ItemKind.ASK && item.prompt == null) {
         Text(
@@ -287,5 +288,7 @@ val InboxItem.kindTitle: String
         ItemKind.FAILURE -> "Failure"
         ItemKind.PROPOSAL -> "Proposal"
         ItemKind.BRIEFING -> "Briefing"
+        ItemKind.SORT -> "Sort"
+        ItemKind.DELEGATE -> "Request"
         else -> kind.raw
     }

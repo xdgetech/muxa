@@ -42,6 +42,7 @@ import tech.xdge.muxa.app.paneItem
 import tech.xdge.muxa.app.selectMode
 import tech.xdge.muxa.app.answer
 import tech.xdge.muxa.app.canCapture
+import tech.xdge.muxa.app.hasToday
 import tech.xdge.muxa.app.openItem
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
@@ -53,7 +54,7 @@ import tech.xdge.muxa.session.isUnread
  * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe right
  * is ✓, a swipe left is Later: the item moves to the bottom (ADR 0040). The row of what the
  * detail shows is highlighted, also while its pane is shown. On a host with `work:8` the items
- * are the Decisions section, and Work and Unsorted follow (ADR 0046).
+ * are the Decisions section, and Work and Unsorted follow (ADR 0046); `work:9` adds Today above them (ADR 0047).
  */
 @Composable
 fun ItemList(model: AppModel, modifier: Modifier) {
@@ -66,9 +67,11 @@ fun ItemList(model: AppModel, modifier: Modifier) {
     LazyColumn(modifier.fillMaxWidth().testTag("inbox-list")) {
         if (!model.usesItems) {
             item(key = "old-host") { InboxEmpty(model, OLDER_HOST, "inbox") }
-        } else if (items.isEmpty() && !model.hasWorkRows) {
+        } else if (items.isEmpty() && !model.hasWorkRows && !model.hasToday) {
             item(key = "empty") { InboxEmpty(model, NOTHING, "inbox") }
         }
+        // Today leads at `work:9`; a new plan keeps the scroll and the selection (ADR 0047 §5).
+        if (sections) todaySection(model)
         if (sections && items.isNotEmpty()) item(key = "h-decisions") { InboxSectionHeader("Decisions", "decisions") }
         items(items, key = { it.id }) { item ->
             ItemRowView(model, item, item.id == highlighted)

@@ -5,6 +5,7 @@ import tech.xdge.muxa.protocol.AssistScope
 import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.Delivery
 import tech.xdge.muxa.protocol.Finding
+import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.PossibleDuplicate
 import tech.xdge.muxa.protocol.ResultSource
 
@@ -45,6 +46,13 @@ internal object DemoResults {
         possibleDuplicates = listOfNotNull(duplicateOf?.let { PossibleDuplicate(it, "It names the same vendor.") }),
     )
 
+    /** The SHA-256 of no bytes: the base of notes proposed when the workspace had none (ADR 0047 §1). */
+    const val EMPTY_NOTES = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+    const val TESTS_NOTES = "# Personal\n\n- Domains renew at the current registrar; auto-renew is the default.\n"
+
+    const val SHOWCASE_NOTES = "# Work\n\n- Invoices move to Stripe Billing before March.\n- Webhooks live in src/app/payments/webhooks.ts.\n"
+
     /** The UI tests': w-0000b003 asked twice; v2 has its Result, v1's is stale. */
     fun tests(now: Long) = listOf(
         AssistantRequest(
@@ -64,6 +72,7 @@ internal object DemoResults {
                     next = listOf("Turn on auto-renew."),
                     files = listOf("/home/dev/assistant/compare-q-0000a001-v2-t-run002/registrars.md"),
                     possibleDuplicates = listOf(PossibleDuplicate("w-0000b001", "Both need the company card.")),
+                    notes = Notes(TESTS_NOTES, EMPTY_NOTES),
                 ),
                 AssistResult(1, now - 5_400, "Three registrars fit. Prices differ by less than 5 USD a year.", stale = true),
             ),
@@ -93,6 +102,7 @@ internal object DemoResults {
                     next = listOf("Start a Task to change the webhooks.", "Export the customer list."),
                     files = listOf("/src/assistant/research-q-5c00a001-v1-t-run001/billing.md"),
                     possibleDuplicates = listOf(PossibleDuplicate("w-5c00b002", "Both change the payment webhooks.")),
+                    notes = Notes(SHOWCASE_NOTES, EMPTY_NOTES),
                 ),
             ),
         ),

@@ -11,7 +11,10 @@ import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.Agent
 import tech.xdge.muxa.protocol.AgentRun
 import tech.xdge.muxa.protocol.AgentState
+import tech.xdge.muxa.protocol.CaptureState
 import tech.xdge.muxa.protocol.InboxAction
+import tech.xdge.muxa.protocol.InboxItem
+import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.protocol.ItemState
 import tech.xdge.muxa.protocol.BranchChanges
 import tech.xdge.muxa.protocol.Bytes
@@ -39,11 +42,14 @@ import tech.xdge.muxa.protocol.WORK_ASK_AGENT
 import tech.xdge.muxa.protocol.WORK_CAPABILITY
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
+import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
+import tech.xdge.muxa.protocol.WorkAction
+import tech.xdge.muxa.protocol.WorkspaceInfo
 import tech.xdge.muxa.protocol.WorktreeEnd
 import tech.xdge.muxa.transport.BridgeChannel
 import java.util.UUID
@@ -57,7 +63,7 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0046); below [WORK_WORKTREE_END] it plays a host whose Done
+ * [workLevel] is the `work` level it advertises; at [WORK_PLANS] it has the overall assistant's plans (ADR 0047); at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0046); below [WORK_WORKTREE_END] it plays a host whose Done
  * keeps the worktree (ADR 0043), below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
  * Inbox items (ADR 0033), below [WORK_ASK] one from before ask sessions and branches named after
  * the title (ADR 0031), and at 0 one without Routines.
@@ -117,6 +123,16 @@ class DemoBridge(
         listOfNotNull("$WORK_CAPABILITY:$workLevel".takeIf { workLevel > 0 })
 
     private val workLevel = tech.xdge.muxa.protocol.workLevel(capabilities)
+
+    /** The overall assistant (ADR 0047): its pins, deadlines and proposal items join the fixtures at level 9. */
+    private val plans: DemoPlans? = content.plans(now())?.takeIf { workLevel >= WORK_PLANS }?.also { p ->
+        assistant.seed(p.pins, p.dues)
+        items.add(p.proposals)
+        p.planMillis = assistPace.pendingMillis + assistPace.processingMillis
+    }
+
+    /** The workspaces `list-tasks` names: the overall assistant's is one of them. */
+    private val listedWorkspaces = content.workspaces + listOfNotNull(plans?.let { WorkspaceInfo(it.overall) })
     private val images = content.images(now())
 
     /** The host's task records; grows when a task is created. */
@@ -180,7 +196,7 @@ class DemoBridge(
             is Request.StartLoop -> startLoop(req)
             is Request.StopLoop -> stopLoop(req)
             is Request.ListTasks -> {
-                emit(Message.TaskList(req.id, content.workspaces, synchronized(lock) { tasks }))
+                emit(Message.TaskList(req.id, listedWorkspaces, synchronized(lock) { tasks }))
                 ok(req.id)
             }
             is Request.Doc -> doc(req)
@@ -214,8 +230,7 @@ class DemoBridge(
             is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
             is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork,
             is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
-            // The demo has no overall assistant yet (`work` level 9, ADR 0047).
-            is Request.ApplyNotes, is Request.PlanNow -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+            is Request.ApplyNotes, is Request.PlanNow -> servePlans(req)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }
@@ -237,7 +252,13 @@ class DemoBridge(
                     val shown = if (workLevel >= WORK_ITEMS) items.list(entries, work.laterAts, workLevel >= WORK_ASK_AGENT) else emptyList()
                     if (workLevel < WORK_ASSISTANT) return@synchronized Message.InboxList(req.id, entries, shown)
                     val listed = assistant.listed(::derivedState)
-                    Message.InboxList(req.id, entries, shown, listed, assistant.unsorted, assistant.requestsOf(listed))
+                    val p = plans ?: return@synchronized Message.InboxList(req.id, entries, shown, listed, assistant.unsorted, assistant.requestsOf(listed))
+                    p.advance(now, System.currentTimeMillis(), listed, shown)
+                    val (unanswered, stale) = assistant.unansweredAndStale()
+                    Message.InboxList(
+                        req.id, entries, shown, listed, assistant.unsorted, assistant.requestsOf(listed),
+                        p.listed(unanswered, stale), p.info,
+                    )
                 }
                 emit(list)
                 ok(req.id)
@@ -245,6 +266,8 @@ class DemoBridge(
             is Request.RunRoutine -> runRoutine(req, now)
             is Request.UpdateInbox -> if (req.action == InboxAction.ASK_AGENT) {
                 askAgent(req)
+            } else if (synchronized(lock) { items.item(req.entry)?.kind }.let { it == ItemKind.SORT || it == ItemKind.DELEGATE }) {
+                answerProposal(req, now)
             } else if (workLevel >= WORK_ITEMS && synchronized(lock) { items.has(req.entry) }) answerItem(req, now) else updateEntry(req, now)
             else -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
         }
@@ -260,6 +283,9 @@ class DemoBridge(
                     is Request.Capture -> return capture(req, now)
                     is Request.SortCapture -> assistant.sort(req, now).let { (c, w) -> Message.CaptureSaved(req.id, c, w?.let(::derived)) }
                     is Request.UpdateWork -> {
+                        if (workLevel < WORK_PLANS && (req.action == WorkAction.PIN || req.action == WorkAction.UNPIN || req.due != null)) {
+                            return fail(req.id, ErrorCode.BAD_REQUEST, "pin, unpin and due need work level 9")
+                        }
                         val laterAt = maxOf(now, (assistant.lastLaterAt ?: 0) + 1)
                         Message.WorkSaved(req.id, derived(assistant.update(req, now, laterAt)))
                     }
@@ -304,7 +330,97 @@ class DemoBridge(
         if (a.run != null) runStarted()
     }
 
+    /** The workspaces that take requests: not the overall assistant's. */
     private val workspaceNames get() = content.workspaces.map { it.name }.toSet()
+
+    /** `plan-now` and `apply-notes` (ADR 0047), refused as a bridge below `work` level 9 refuses them. */
+    private fun servePlans(req: Request) {
+        val p = plans ?: return fail(req.id, ErrorCode.BAD_REQUEST, "unknown request for work level $workLevel")
+        val now = now()
+        try {
+            val saved = synchronized(lock) {
+                when (req) {
+                    is Request.PlanNow -> Message.PlanSaved(req.id, p.planNow(req.minutes, now, System.currentTimeMillis()))
+                    is Request.ApplyNotes -> if (req.source.startsWith("p-")) {
+                        Message.PlanSaved(req.id, p.applyPlanNotes(req.source, req.version, req.base, now))
+                    } else {
+                        val q = assistant.request(req.source) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no request ${req.source}")
+                        val result = q.results.firstOrNull { it.version == req.version && !it.stale }
+                        p.applyNotes(q.workspace, result?.notes, req.base, now)
+                        Message.WorkSaved(req.id, derived(assistant.workItem(q.work) ?: return@synchronized null), q)
+                    }
+                    else -> null
+                }
+            } ?: return fail(req.id, ErrorCode.BAD_REQUEST, NO_REQUEST)
+            emitAll(saved, Message.Result(req.id))
+        } catch (e: DemoWork.Refusal) {
+            return fail(req.id, e.code, e.message ?: "")
+        }
+        if (req is Request.PlanNow) planStarted(p.planMillis)
+    }
+
+    /** The app lists again once the plan should be made, as the host's `tasks-changed` makes it. */
+    private fun planStarted(after: Long) {
+        if (assistPaceNever) return
+        scope.launch {
+            delay(after + RUN_TICK_MILLIS)
+            emit(Message.TasksChanged)
+        }
+    }
+
+    private val assistPaceNever get() = assistant.pace == AssistPace.NEVER
+
+    /**
+     * Approve, Reject or Later on a `sort` or `delegate` item (ADR 0047 §4). Approve runs the action
+     * once, at the Capture's or Work item's current `rev`; a second approve returns the item. A
+     * refused delegate leaves the item open; a Capture sorted meanwhile resolves it.
+     */
+    private fun answerProposal(req: Request.UpdateInbox, now: Long) {
+        val outcome = synchronized(lock) {
+            val item = items.item(req.entry) ?: return@synchronized ProposalOutcome(null, emptyList(), ErrorBody(ErrorCode.BAD_REQUEST, "no item"))
+            if (req.action != InboxAction.APPROVE || item.answer == InboxAction.APPROVE) {
+                if (item.answer == InboxAction.APPROVE) return@synchronized ProposalOutcome(item, emptyList(), null)
+                return@synchronized try {
+                    ProposalOutcome(items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item, emptyList(), null)
+                } catch (e: DemoWork.Refusal) {
+                    ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))
+                }
+            }
+            approve(item, now, req.id)
+        }
+        outcome.written.forEach(::emit)
+        outcome.item?.let { emit(Message.InboxSaved(req.id, item = it)) }
+        outcome.error?.let { fail(req.id, it.code, it.message) } ?: ok(req.id)
+        if (outcome.started) runStarted()
+    }
+
+    private class ProposalOutcome(val item: InboxItem?, val written: List<Message>, val error: ErrorBody?, val started: Boolean = false)
+
+    /** Runs an approved proposal's action. The caller holds the lock. */
+    private fun approve(item: InboxItem, now: Long, id: Long): ProposalOutcome {
+        val answered = { summary: String? ->
+            item.copy(state = ItemState.ANSWERED, answer = InboxAction.APPROVE, answeredAt = now, laterAt = null, answers = emptyList(), summary = summary)
+                .also(items::save)
+        }
+        item.sort?.let { s ->
+            val c = assistant.captureOf(s.capture)
+            if (c == null || c.state == CaptureState.SORTED) {
+                val resolved = item.copy(state = ItemState.RESOLVED, answers = emptyList(), summary = "${s.capture} was sorted meanwhile.").also(items::save)
+                return ProposalOutcome(resolved, emptyList(), ErrorBody(ErrorCode.CONFLICT, "${s.capture} was sorted meanwhile"))
+            }
+            val (sorted, w) = assistant.sort(Request.SortCapture(0, c.id, c.rev, s.action, s.work, s.title, s.workspace), now)
+            return ProposalOutcome(answered(null), listOf(Message.CaptureSaved(id, sorted, w?.let(::derived))), null)
+        }
+        val d = item.delegate ?: return ProposalOutcome(null, emptyList(), ErrorBody(ErrorCode.BAD_REQUEST, "${item.id} has no action"))
+        val w = assistant.workItem(d.work) ?: return ProposalOutcome(null, emptyList(), ErrorBody(ErrorCode.BAD_REQUEST, "no Work item ${d.work}"))
+        return try {
+            val a = assistant.ask(Request.RequestAssistant(0, w.id, w.rev, d.scope, d.workspace, d.purpose), now, System.currentTimeMillis(), workspaceNames, ::startRun)
+            a.ended?.let(::endRun)
+            ProposalOutcome(answered(null), listOf(Message.WorkSaved(id, derived(a.work), a.request)), null, started = a.run != null)
+        } catch (e: DemoWork.Refusal) {
+            ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))
+        }
+    }
 
     /** A new run's session, named `<scope>-<request>-v<version>-<run>` as the host names it. The caller holds the lock. */
     private fun startRun(name: String): String {

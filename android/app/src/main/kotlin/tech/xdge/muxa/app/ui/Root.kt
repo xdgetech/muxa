@@ -186,6 +186,7 @@ fun Root(model: AppModel) {
         // After the Reader, so the sheets open over it too.
         model.workDetail?.let { WorkDetail(model, it) }
         model.captureDraft?.let { CaptureSheet(model, it) }
+        PlanNowDialog(model)
         CaptureNotice(model)
         AssistNotice(model)
         model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }

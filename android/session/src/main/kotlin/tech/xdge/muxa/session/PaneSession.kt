@@ -19,18 +19,23 @@ import kotlinx.serialization.SerializationException
 import tech.xdge.muxa.protocol.Bytes
 import tech.xdge.muxa.protocol.AssistScope
 import tech.xdge.muxa.protocol.AssistSpec
+import tech.xdge.muxa.protocol.AssistantInfo
 import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.CaptureSource
 import tech.xdge.muxa.protocol.CloseMode
+import tech.xdge.muxa.protocol.Due
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
+import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.protocol.LoopSpec
 import tech.xdge.muxa.protocol.Message
+import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.PROTOCOL_VERSION
+import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.RoutineInfo
 import tech.xdge.muxa.protocol.Session
@@ -43,6 +48,7 @@ import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
+import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.WorkAction
@@ -95,6 +101,9 @@ class PaneSession(
          * when it resets, a run already starting, or a newer version. [body]'s message says which.
          */
         class Refused(val body: ErrorBody) : Failure(body.message)
+
+        /** The live `NOTES.md` changed since the run read it; nothing was written (ADR 0047 §1). */
+        class NotesChanged : Failure("the notes changed")
     }
 
     data class State(
@@ -135,6 +144,10 @@ class PaneSession(
         val requests: List<AssistantRequest> = emptyList(),
         /** Work items read with `get-work`, by id: their Captures' texts for the detail. */
         val workDetails: Map<String, WorkDetail> = emptyMap(),
+        /** The overall assistant's kept plans, newest first, as last listed (`work` level 9, ADR 0047). */
+        val plans: List<Plan> = emptyList(),
+        /** Who assists on the host, as last listed (`work` level 9); null when nobody does. */
+        val assistant: AssistantInfo? = null,
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -169,6 +182,9 @@ class PaneSession(
 
         /** `+` saves a Capture, and the Inbox lists Work items and unsorted Captures (ADR 0046). */
         val canCapture get() = workLevel >= WORK_ASSISTANT
+
+        /** The Inbox has Today, Work items take pins and deadlines, and Results propose notes (ADR 0047). */
+        val canPlan get() = workLevel >= WORK_PLANS
     }
 
     private val _state = MutableStateFlow(State())
@@ -203,6 +219,7 @@ class PaneSession(
     private val savedItems = mutableMapOf<Long, InboxItem>()
     private val savedCaptures = mutableMapOf<Long, Message.CaptureSaved>()
     private val savedWork = mutableMapOf<Long, Message.WorkSaved>()
+    private val savedPlans = mutableMapOf<Long, Plan>()
     private val workDetailListings = mutableMapOf<Long, Message.WorkDetail>()
     private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
@@ -230,6 +247,7 @@ class PaneSession(
                     unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
                     routines = emptyList(), inboxItems = emptyList(), workError = null,
                     work = emptyList(), captures = emptyList(), requests = emptyList(), workDetails = emptyMap(),
+                    plans = emptyList(), assistant = null,
                 )
             }
         }
@@ -476,6 +494,9 @@ class PaneSession(
                     work = if (s.canCapture) inbox?.work ?: s.work else emptyList(),
                     captures = if (s.canCapture) inbox?.captures ?: s.captures else emptyList(),
                     requests = if (s.canCapture) inbox?.requests ?: s.requests else emptyList(),
+                    plans = if (s.canPlan) inbox?.plans ?: s.plans else emptyList(),
+                    // An absent `assistant` means nobody assists now.
+                    assistant = if (!s.canPlan) null else if (inbox != null) inbox.assistant else s.assistant,
                     workError = null,
                 )
             }
@@ -564,27 +585,40 @@ class PaneSession(
         if (!_state.value.canAnswerItems) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ITEMS_UNSUPPORTED))
         var requestId = 0L
         val worktree = worktreeEnd(action in ENDING_ACTIONS, forceWorktree)
+        // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0047 §4).
+        val proposal = item.kind == ItemKind.SORT || item.kind == ItemKind.DELEGATE
         try {
             request { id ->
                 requestId = id
                 Request.UpdateInbox(id, item.id, action, text = text, option = option, worktree = worktree)
             }
         } catch (e: Failure) {
-            savedItems.remove(requestId)
+            forgetAnswer(requestId)
             loadWork()
-            if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) throw Failure.ItemChanged()
+            if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) {
+                // A proposal's conflict is the host's reason: a Capture sorted meanwhile, or a budget.
+                throw if (proposal) Failure.Refused(e.body) else Failure.ItemChanged()
+            }
             throw e
         }
         val saved = savedItems.remove(requestId)
-            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Inbox item"))
-        // The host moved the item down (ADR 0040): its order is the list's.
-        if (action == InboxAction.LATER) loadWork()
+        forgetAnswer(requestId)
+        if (saved == null) throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Inbox item"))
+        // The host moved the item down (ADR 0040): its order is the list's. An approved proposal made a Work item or a request.
+        if (action == InboxAction.LATER || proposal) loadWork()
         // Accept, Drop, Retry and an approved proposal change a Task or start one.
         if (action in TASK_ACTIONS) {
             runCatching { refresh() }
             runCatching { loadTasks() }
         }
         saved
+    }
+
+    /** What an answer's request left behind: the item, and what an approved proposal wrote. */
+    private fun forgetAnswer(requestId: Long) {
+        savedItems.remove(requestId)
+        savedCaptures.remove(requestId)
+        savedWork.remove(requestId)
     }
 
     /**
@@ -670,10 +704,46 @@ class PaneSession(
         changing(savedCaptures, "the Capture") { id -> Request.SortCapture(id, capture.id, capture.rev, action, work = work?.id) }.entry
     }
 
-    /** Changes [item] at the `rev` this client saw. */
+    /** Changes [item] at the `rev` this client saw. `pin` and `unpin` need `work` level 9. */
     suspend fun updateWork(item: WorkItem, action: WorkAction): WorkItem = withContext(dispatcher) {
         requireCaptures()
+        if (action == WorkAction.PIN || action == WorkAction.UNPIN) requirePlans()
         changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, action) }.entry
+    }
+
+    /** Sets [item]'s deadline, as `edit` with `due` (`work` level 9). Only the user sets it. */
+    suspend fun setDue(item: WorkItem, due: Due): WorkItem = withContext(dispatcher) {
+        requirePlans()
+        changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, WorkAction.EDIT, due = due) }.entry
+    }
+
+    // Plans and notes (`work` level 9, ADR 0047)
+
+    /**
+     * Asks the overall assistant for a plan now; [minutes] is the time the user has. Returns the
+     * `pending` plan. An open plan run or a budget is [Failure.Refused] with the host's message; no
+     * overall workspace is `unsupported`. The Inbox is listed again either way.
+     */
+    suspend fun planNow(minutes: Int? = null): Plan = withContext(dispatcher) {
+        requirePlans()
+        changing(savedPlans, "the plan", conflict = { e -> Failure.Refused(e.body) }) { id -> Request.PlanNow(id, minutes) }
+    }
+
+    /**
+     * Writes [notes], proposed by [source]'s [version] (a request's version or a plan's `rev`), to the
+     * live `NOTES.md`. A live file that changed since the run read it is [Failure.NotesChanged].
+     */
+    suspend fun applyNotes(source: String, version: Long, notes: Notes) = withContext(dispatcher) {
+        requirePlans()
+        val conflict = { _: Failure.Bridge -> Failure.NotesChanged() }
+        val make = { id: Long -> Request.ApplyNotes(id, source, version, notes.base) }
+        // A request's notes come back as `work-saved`, a plan's as `plan-saved`.
+        if (source.startsWith(PLAN_PREFIX)) changing(savedPlans, "the plan", conflict, make) else changing(savedWork, "the Work item", conflict, make)
+        Unit
+    }
+
+    private fun requirePlans() {
+        if (!_state.value.canPlan) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, PLANS_UNSUPPORTED))
     }
 
     /**
@@ -1184,8 +1254,8 @@ class PaneSession(
             is Message.CaptureSaved -> savedCaptures[message.capture] = message
             is Message.WorkSaved -> savedWork[message.work] = message
             is Message.WorkDetail -> workDetailListings[message.work] = message
-            // Plans come with `work` level 9 (ADR 0047); no client asks for them yet.
-            is Message.PlanSaved, is Message.Unknown -> {}
+            is Message.PlanSaved -> savedPlans[message.plan] = message.entry
+            is Message.Unknown -> {}
         }
     }
 
@@ -1240,6 +1310,7 @@ class PaneSession(
         savedItems.clear()
         savedCaptures.clear()
         savedWork.clear()
+        savedPlans.clear()
         workDetailListings.clear()
         startedSessions.clear()
         inputs.clear()
@@ -1287,6 +1358,15 @@ class PaneSession(
         /** Shown when a Capture or Work item changed on another device since it was listed. */
         const val WORK_CHANGED = "This changed on another device. The Inbox shows it as it is now."
 
+        /** Shown when the live notes changed since the run read them (ADR 0047 §1). */
+        const val NOTES_CHANGED = "The notes changed on the host. Ask the assistant again."
+
+        /** Shown when the host has no plans, pins or notes (ADR 0047). */
+        const val PLANS_UNSUPPORTED = "This host has no overall assistant. Update muxa on the host."
+
+        /** A plan's id starts with it; a request's with `q-`. */
+        private const val PLAN_PREFIX = "p-"
+
         /** Shown when the host keeps no Captures or Work items. */
         const val CAPTURE_UNSUPPORTED = "This host cannot save captures. Update muxa on the host."
 
@@ -1304,6 +1384,7 @@ class PaneSession(
             is Failure.LaunchFailed -> "The task was saved, but its agent did not start: ${error.body.message}"
             is Failure.ItemChanged -> ITEM_CHANGED
             is Failure.WorkChanged -> WORK_CHANGED
+            is Failure.NotesChanged -> NOTES_CHANGED
             is Failure.Refused -> error.body.message
             is Failure.ProtocolMismatch ->
                 "The bridge speaks protocol ${error.bridge}; this app speaks $PROTOCOL_VERSION. Update one of them."

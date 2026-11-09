@@ -23,6 +23,11 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
+import tech.xdge.muxa.protocol.WORK_PLANS
+import tech.xdge.muxa.protocol.Due
+import tech.xdge.muxa.protocol.InboxAction
+import tech.xdge.muxa.protocol.ItemKind
+import tech.xdge.muxa.protocol.ItemState
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkState
@@ -30,6 +35,10 @@ import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
 import tech.xdge.muxa.session.forWork
 import tech.xdge.muxa.session.listed
+import tech.xdge.muxa.session.pickable
+import tech.xdge.muxa.session.planIsNew
+import tech.xdge.muxa.session.proposedNotes
+import tech.xdge.muxa.session.shown
 import java.util.concurrent.Executors
 
 /** The demo's Captures and Work items at `work` level 8, as the UI tests use them (ADR 0046). */
@@ -225,5 +234,118 @@ class DemoAssistantTest {
         val a = session.captureAndAsk("client-b", "Idea", "nowhere", AssistSpec(AssistScope.RESEARCH))
         assertEquals(ErrorCode.BAD_REQUEST, (a.refusal as PaneSession.Failure.Bridge).body.code)
         assertTrue(session.state.value.captures.any { it.id == a.capture.id })
+    }
+
+    // `work` level 9 (ADR 0047): plans, proposals, pins, deadlines and notes.
+
+    private fun PaneSession.item(id: String) = state.value.inboxItems.first { it.id == id }
+
+    @Test
+    fun levelNineListsThePlanTheOverallAssistantAndItsProposals() = runBlocking {
+        val s = connected(WORK_PLANS).state.value
+        val plan = s.plans.shown()!!
+        assertEquals("p-0000d001", plan.id)
+        assertEquals(listOf("w-0000b001", "w-0000b002", null), plan.top.map { it.work })
+        assertEquals(listOf("w-0000b003"), plan.dueSoon)
+        // w-0000b003 changed after its Result: the listing derives it stale.
+        assertEquals(listOf("q-0000a001"), plan.stale)
+        assertEquals("secretary", s.assistant?.overall)
+        assertEquals("w-0000b001", s.work.first().id)
+        assertTrue(s.work.first().pinnedAt != null)
+        assertEquals(setOf(ItemKind.SORT, ItemKind.DELEGATE), s.inboxItems.filter { it.workspace == "secretary" }.map { it.kind }.toSet())
+    }
+
+    @Test
+    fun levelEightListsNoPlanAndRefusesAPin() = runBlocking {
+        val session = connected()
+        assertTrue(session.state.value.plans.isEmpty())
+        assertNull(session.state.value.assistant)
+        assertTrue(session.state.value.work.none { it.pinnedAt != null })
+        refused { session.updateWork(session.work("w-0000b002"), WorkAction.PIN) }
+        Unit
+    }
+
+    @Test
+    fun theOverallWorkspaceIsLeftOutOfThePickers() = runBlocking {
+        val session = connected(WORK_PLANS)
+        session.loadTasks()
+        val s = session.state.value
+        val all = s.tasks?.workspaces.orEmpty()
+        assertTrue(all.any { it.name == "secretary" })
+        assertTrue(all.pickable(s.assistant).none { it.name == "secretary" })
+    }
+
+    @Test
+    fun planNowMakesANewerPlanOnTheNextListAndASecondOneConflicts() = runBlocking {
+        val session = connected(WORK_PLANS, AssistPace.NEVER)
+        val pending = session.planNow(30)
+        assertEquals(Delivery.PENDING, pending.delivery)
+        assertEquals(30, pending.minutes)
+        assertTrue(refused { session.planNow() } is PaneSession.Failure.Refused)
+        assertEquals("p-0000d001", session.state.value.plans.shown()?.id)
+
+        val fast = connected(WORK_PLANS)
+        val seen = fast.state.value.plans.shown()?.id
+        val made = fast.planNow()
+        fast.loadWork()
+        val newest = fast.state.value.plans.shown()!!
+        assertEquals(made.id, newest.id)
+        assertTrue(planIsNew(newest, seen))
+        // The pinned item comes first, and nothing moved down is listed.
+        assertEquals("w-0000b001", newest.top.first().work)
+        assertTrue(newest.top.none { it.work == "w-0000b003" })
+    }
+
+    @Test
+    fun approvingADelegateAsksOnceAndRejectAnswersTheSort() = runBlocking {
+        val session = connected(WORK_PLANS, AssistPace.NEVER)
+        val delegate = session.item("i-0000e002")
+        val approved = session.answer(delegate, InboxAction.APPROVE)
+        assertEquals(ItemState.ANSWERED, approved.state)
+        val asked = session.state.value.requests.filter { it.work == "w-0000b001" }
+        assertEquals(listOf("personal"), asked.map { it.workspace })
+        session.answer(delegate, InboxAction.APPROVE)
+        assertEquals(asked.map { it.id to it.version }, session.state.value.requests.filter { it.work == "w-0000b001" }.map { it.id to it.version })
+        val rejected = session.answer(session.item("i-0000e001"), InboxAction.REJECT)
+        assertEquals(InboxAction.REJECT, rejected.answer)
+        assertTrue(session.state.value.captures.any { it.id == "c-0000c001" })
+    }
+
+    @Test
+    fun approvingASortMakesTheWorkItem() = runBlocking {
+        val session = connected(WORK_PLANS)
+        session.answer(session.item("i-0000e001"), InboxAction.APPROVE)
+        assertTrue(session.state.value.work.any { it.title == "Look into the flaky upload test" && it.workspace == "work" })
+        assertTrue(session.state.value.captures.none { it.id == "c-0000c001" })
+    }
+
+    @Test
+    fun pinListsAnItemFirstAndUnpinPutsItBack() = runBlocking {
+        val session = connected(WORK_PLANS)
+        session.updateWork(session.work("w-0000b001"), WorkAction.UNPIN)
+        session.updateWork(session.work("w-0000b003"), WorkAction.PIN)
+        assertEquals(listOf("w-0000b003", "w-0000b001", "w-0000b002"), session.state.value.work.listed().map { it.id })
+        assertNull(session.work("w-0000b003").laterAt)
+        session.updateWork(session.work("w-0000b003"), WorkAction.UNPIN)
+        assertEquals("w-0000b001", session.state.value.work.first().id)
+    }
+
+    @Test
+    fun aDueIsSetWithAKnownZoneOnly() = runBlocking {
+        val session = connected(WORK_PLANS)
+        val due = Due(2_000_000_000, "Asia/Tokyo")
+        assertEquals(due, session.setDue(session.work("w-0000b002"), due).due)
+        refused { session.setDue(session.work("w-0000b002"), Due(2_000_000_000, "Mars/Base")) }
+        Unit
+    }
+
+    @Test
+    fun notesApplyOnceThenTheChangedFileIsAConflict() = runBlocking {
+        val session = connected(WORK_PLANS)
+        val (q, result) = proposedNotes(listOf(session.request("q-0000a001")))!!
+        session.applyNotes(q.id, result.version, result.notes!!)
+        val again = refused { session.applyNotes(q.id, result.version, result.notes!!) }
+        assertTrue(again is PaneSession.Failure.NotesChanged)
+        assertTrue(session.state.value.assistant!!.delegates.first { it.workspace == "personal" }.notesAt!! > 0)
     }
 }
