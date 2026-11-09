@@ -18,8 +18,10 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
+import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WorkspaceChecks
+import tech.xdge.muxa.protocol.WorkspaceInfo
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
 import tech.xdge.muxa.session.Host
@@ -32,6 +34,9 @@ import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.RepoGroup
 import tech.xdge.muxa.session.TaskDraft
 import tech.xdge.muxa.session.TaskRecordDraft
+import tech.xdge.muxa.session.CaptureDraft
+import tech.xdge.muxa.session.UnsentCapture
+import tech.xdge.muxa.session.UnsentCaptures
 import tech.xdge.muxa.session.alerts
 import tech.xdge.muxa.session.containing
 import tech.xdge.muxa.session.counterpart
@@ -64,6 +69,7 @@ class AppModel(
     saved: HostStore,
     private val keys: ClientKeyStore,
     private val modes: ModeStore = ModeStore(null),
+    private val savedUnsent: UnsentCaptures = UnsentCaptures(null),
 ) {
     val session = PaneSession(Dispatchers.Main.immediate)
     private var savedHosts = saved
@@ -95,6 +101,18 @@ class AppModel(
         }
     var storageError by mutableStateOf<String?>(null)
         private set
+
+    /** Captures the host has not confirmed (ADR 0046); during the demo, kept in memory only. */
+    var unsent = savedUnsent
+        private set
+    private var unsentMirror by mutableStateOf<List<UnsentCapture>>(emptyList())
+
+    /** The unsent captures now, read like [state]. */
+    val unsentList: List<UnsentCapture>
+        get() {
+            unsentMirror
+            return unsent.contents.value
+        }
 
     /** The host the session belongs to: connected, connecting, or last tried. */
     var currentHostId by mutableStateOf<String?>(null)
@@ -196,6 +214,18 @@ class AppModel(
     val selectedItem: String? get() = (selection as? Selection.Item)?.id
     val selectedTask: String? get() = (selection as? Selection.Task)?.id
     val selectedRoutine: String? get() = (selection as? Selection.Routine)?.key
+
+    /** The Capture sheet's text and workspace while it is open (ADR 0046). */
+    var captureDraft by mutableStateOf<CaptureDraft?>(null)
+
+    /** Shown once a Save could not reach the host: the capture waits on this device. */
+    var captureNotice by mutableStateOf<String?>(null)
+
+    /** The Work item whose detail is open, by id. */
+    var workDetail by mutableStateOf<String?>(null)
+
+    /** The Work item or Capture a change is on its way for, by id. */
+    var changingWork by mutableStateOf<String?>(null)
 
     /** An Inbox action that asks first: a proposal's approval. */
     var inboxPrompt by mutableStateOf<InboxPrompt?>(null)
@@ -312,6 +342,12 @@ class AppModel(
             }
         }
         watchHosts()
+        watchUnsent()
+    }
+
+    private fun watchUnsent() {
+        val store = unsent
+        scope.launch { store.contents.collect { if (unsent === store) unsentMirror = it } }
     }
 
     private fun watchHosts() {
@@ -324,7 +360,8 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        demoWorkLevel = WORK_WORKTREE_END
+        // Try the Demo shows Captures and Work items (ADR 0046); the UI tests pick their level.
+        demoWorkLevel = WORK_ASSISTANT
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
@@ -392,6 +429,8 @@ class AppModel(
         demoAlerts = alerts
         hosts = HostStore(null)
         watchHosts()
+        unsent = UnsentCaptures(null)
+        watchUnsent()
         demoHostId = host.id
         hosts.upsert(host)
         hosts.markUsed(host.id)
@@ -409,6 +448,8 @@ class AppModel(
         demoHostId = null
         hosts = savedHosts
         watchHosts()
+        unsent = savedUnsent
+        watchUnsent()
         scope.launch { session.disconnect() }
     }
 
@@ -432,6 +473,10 @@ class AppModel(
         itemFocus = null
         inboxPrompt = null
         inboxError = null
+        captureDraft = null
+        captureNotice = null
+        workDetail = null
+        changingWork = null
         itemReplies = emptyMap()
         answeringItem = null
         newTaskRecord = null
@@ -483,6 +528,7 @@ class AppModel(
         suspended = false
         try {
             session.connect(samePanes = sameHost) { open(host) }
+            resendUnsent()
             // Back from the background, what was shown stays; the session watches its pane again.
             if (resuming && (selection != null || paneShown)) return
             // Inbox and Tasks mode stay on their list; Sessions mode shows the pane (ADR 0035).
@@ -951,10 +997,13 @@ class AppModel(
         }
     }
 
-    private fun showRecordSheet(repoDir: String) = scope.launch {
+    private fun showRecordSheet(repoDir: String) = showRecordSheet { TaskRecordDraft.inRepo(repoDir, it) }
+
+    /** The New Task sheet with the draft [make] builds from the host's workspaces. */
+    internal fun showRecordSheet(make: (List<WorkspaceInfo>) -> TaskRecordDraft) = scope.launch {
         // The workspaces come with the task list.
         if (state.tasks == null) runCatching { session.loadTasks() }
-        newTaskRecord = TaskRecordDraft.inRepo(repoDir, state.tasks?.workspaces.orEmpty())
+        newTaskRecord = make(state.tasks?.workspaces.orEmpty())
     }
 
     fun switcherClosed() {

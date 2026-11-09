@@ -41,6 +41,7 @@ import tech.xdge.muxa.app.SidebarMode
 import tech.xdge.muxa.app.paneItem
 import tech.xdge.muxa.app.selectMode
 import tech.xdge.muxa.app.answer
+import tech.xdge.muxa.app.canCapture
 import tech.xdge.muxa.app.openItem
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
@@ -51,7 +52,8 @@ import tech.xdge.muxa.session.isUnread
  * Inbox mode (ADR 0033, 0035), like a mail list: the question, then where it comes from and
  * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe right
  * is ✓, a swipe left is Later: the item moves to the bottom (ADR 0040). The row of what the
- * detail shows is highlighted, also while its pane is shown.
+ * detail shows is highlighted, also while its pane is shown. On a host with `work:8` the items
+ * are the Decisions section, and Work and Unsorted follow (ADR 0046).
  */
 @Composable
 fun ItemList(model: AppModel, modifier: Modifier) {
@@ -60,16 +62,19 @@ fun ItemList(model: AppModel, modifier: Modifier) {
     val highlighted = model.selectedItem ?: model.paneItem?.id ?: model.itemFocus
     // The focused item leaves the list when it is answered, here or on another device.
     LaunchedEffect(ids) { if (model.itemFocus !in ids) model.itemFocus = ids.firstOrNull() }
+    val sections = model.canCapture
     LazyColumn(modifier.fillMaxWidth().testTag("inbox-list")) {
         if (!model.usesItems) {
             item(key = "old-host") { InboxEmpty(model, OLDER_HOST, "inbox") }
-        } else if (items.isEmpty()) {
+        } else if (items.isEmpty() && !model.hasWorkRows) {
             item(key = "empty") { InboxEmpty(model, NOTHING, "inbox") }
         }
+        if (sections && items.isNotEmpty()) item(key = "h-decisions") { InboxSectionHeader("Decisions", "decisions") }
         items(items, key = { it.id }) { item ->
             ItemRowView(model, item, item.id == highlighted)
             HorizontalDivider()
         }
+        if (sections) workSections(model)
     }
 }
 
@@ -123,9 +128,9 @@ private fun ItemRowView(model: AppModel, item: InboxItem, focused: Boolean) {
 
 /** ✓ on green from the start, Later on gray from the end. */
 @Composable
-private fun SwipeBackground(direction: SwipeToDismissBoxValue) {
+internal fun SwipeBackground(direction: SwipeToDismissBoxValue, done: String = "Done") {
     val (alignment, color, icon, label) = when (direction) {
-        SwipeToDismissBoxValue.StartToEnd -> Swipe(Alignment.CenterStart, Theme.done, Icons.check, "Done")
+        SwipeToDismissBoxValue.StartToEnd -> Swipe(Alignment.CenterStart, Theme.done, Icons.check, done)
         SwipeToDismissBoxValue.EndToStart -> Swipe(Alignment.CenterEnd, MaterialTheme.colorScheme.onSurfaceVariant, Icons.later, "Later")
         SwipeToDismissBoxValue.Settled -> return
     }

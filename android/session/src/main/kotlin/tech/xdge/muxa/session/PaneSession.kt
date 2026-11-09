@@ -17,6 +17,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import tech.xdge.muxa.protocol.Bytes
+import tech.xdge.muxa.protocol.Capture
+import tech.xdge.muxa.protocol.CaptureSource
 import tech.xdge.muxa.protocol.CloseMode
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorBody
@@ -32,12 +34,16 @@ import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.RestartRecoveryAction
+import tech.xdge.muxa.protocol.SortAction
+import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
+import tech.xdge.muxa.protocol.WorkAction
+import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorktreeEnd
 import tech.xdge.muxa.protocol.workLevel
 import tech.xdge.muxa.terminal.PaneRenderer
@@ -77,6 +83,9 @@ class PaneSession(
 
         /** The agent's menu changed since the item was made; nothing was sent to the pane. */
         class ItemChanged : Failure("the item changed")
+
+        /** The Capture or Work item changed on another device since it was listed; nothing was written. */
+        class WorkChanged : Failure("the work item changed")
     }
 
     data class State(
@@ -109,6 +118,10 @@ class PaneSession(
         val inboxItems: List<InboxItem> = emptyList(),
         /** Why the Routines or the Inbox could not be listed; the last lists stay. */
         val workError: String? = null,
+        /** The Work items in the host's order, as last listed (`work` level 8, ADR 0046). */
+        val work: List<WorkItem> = emptyList(),
+        /** The unsorted Captures, newest first, as last listed (`work` level 8). */
+        val captures: List<Capture> = emptyList(),
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -140,6 +153,9 @@ class PaneSession(
 
         /** Done and Drop also remove the Task's worktree and branch, and ask first when that could lose work (ADR 0043). */
         val endsWorktrees get() = workLevel >= WORK_WORKTREE_END
+
+        /** `+` saves a Capture, and the Inbox lists Work items and unsorted Captures (ADR 0046). */
+        val canCapture get() = workLevel >= WORK_ASSISTANT
     }
 
     private val _state = MutableStateFlow(State())
@@ -172,6 +188,8 @@ class PaneSession(
     private val inboxListings = mutableMapOf<Long, Message.InboxList>()
     private val savedRoutines = mutableMapOf<Long, RoutineInfo>()
     private val savedItems = mutableMapOf<Long, InboxItem>()
+    private val savedCaptures = mutableMapOf<Long, Capture>()
+    private val savedWork = mutableMapOf<Long, WorkItem>()
     private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
 
@@ -197,6 +215,7 @@ class PaneSession(
                     watchedPane = null, paneGoneReason = null, sessions = emptyList(), chat = null,
                     unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
                     routines = emptyList(), inboxItems = emptyList(), workError = null,
+                    work = emptyList(), captures = emptyList(),
                 )
             }
         }
@@ -282,6 +301,9 @@ class PaneSession(
                 requestId = id
                 Request.CreateTask(
                     id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base, draft.loop, draft.worker,
+                    // An older host would ignore them; this app sends them only at level 8.
+                    work = draft.work.takeIf { _state.value.canCapture },
+                    workRev = draft.workRev.takeIf { draft.work != null && _state.value.canCapture },
                 )
             }
         } catch (e: Failure.Bridge) {
@@ -294,6 +316,8 @@ class PaneSession(
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the new task"))
         keep(saved)
         runCatching { refresh() }
+        // The Work item lists the new Task.
+        if (draft.work != null) loadWork()
         saved
     }
 
@@ -435,6 +459,8 @@ class PaneSession(
                     routines = routines ?: s.routines,
                     // A host below `work` level 3 has no Inbox for this app.
                     inboxItems = if (s.canAnswerItems) inbox?.items ?: s.inboxItems else emptyList(),
+                    work = if (s.canCapture) inbox?.work ?: s.work else emptyList(),
+                    captures = if (s.canCapture) inbox?.captures ?: s.captures else emptyList(),
                     workError = null,
                 )
             }
@@ -579,6 +605,67 @@ class PaneSession(
         if (!_state.value.canAnswerItems || item.readAt != null) return@withContext
         // Read is a hint, not an answer: a failure leaves the dot, and the list is read again.
         runCatching { answer(item, InboxAction.READ) }
+    }
+
+    // Captures and Work items (`work` level 8, ADR 0046)
+
+    /**
+     * Saves the user's input with [clientId]; the host returns the stored Capture for a
+     * [clientId] it has seen, so a resend never makes two. The Inbox is listed again.
+     */
+    suspend fun capture(clientId: String, text: String, workspace: String?): Capture = withContext(dispatcher) {
+        requireCaptures()
+        val saved = written(savedCaptures, "the Capture") { id -> Request.Capture(id, clientId, text, CaptureSource.APP, workspace) }
+        loadWork()
+        saved
+    }
+
+    /** Sorts an unsorted [capture]: a new Work item, a link to [work], or a note. */
+    suspend fun sortCapture(capture: Capture, action: SortAction, work: WorkItem? = null): Capture = withContext(dispatcher) {
+        requireCaptures()
+        changing(savedCaptures, "the Capture") { id -> Request.SortCapture(id, capture.id, capture.rev, action, work = work?.id) }
+    }
+
+    /** Changes [item] at the `rev` this client saw. */
+    suspend fun updateWork(item: WorkItem, action: WorkAction): WorkItem = withContext(dispatcher) {
+        requireCaptures()
+        changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, action) }
+    }
+
+    private fun requireCaptures() {
+        if (!_state.value.canCapture) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, CAPTURE_UNSUPPORTED))
+    }
+
+    /**
+     * A change at a `rev`: on success or refusal the Inbox is listed again, for the host's order
+     * and derived states. A stale `rev` is [Failure.WorkChanged].
+     */
+    private suspend fun <T> changing(saved: MutableMap<Long, T>, what: String, make: (Long) -> Request): T {
+        val result = try {
+            written(saved, what, make)
+        } catch (e: Failure) {
+            if (e is Failure.NotConnected) throw e
+            loadWork()
+            if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) throw Failure.WorkChanged()
+            throw e
+        }
+        loadWork()
+        return result
+    }
+
+    /** Sends a request whose written record arrives just before its `result`, into [saved]. */
+    private suspend fun <T> written(saved: MutableMap<Long, T>, what: String, make: (Long) -> Request): T {
+        var requestId = 0L
+        try {
+            request { id ->
+                requestId = id
+                make(id)
+            }
+        } catch (e: Failure) {
+            saved.remove(requestId)
+            throw e
+        }
+        return saved.remove(requestId) ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send $what"))
     }
 
     /** Shows this pane. Messages for any earlier watch are dropped from now on. */
@@ -996,8 +1083,9 @@ class PaneSession(
                 }
             }
             is Message.SessionStarted -> startedSessions[message.start] = message
-            // Nothing sends the level-8 requests yet (ADR 0046).
-            is Message.CaptureSaved, is Message.WorkSaved, is Message.Unknown -> {}
+            is Message.CaptureSaved -> savedCaptures[message.capture] = message.entry
+            is Message.WorkSaved -> savedWork[message.work] = message.entry
+            is Message.Unknown -> {}
         }
     }
 
@@ -1050,6 +1138,8 @@ class PaneSession(
         inboxListings.clear()
         savedRoutines.clear()
         savedItems.clear()
+        savedCaptures.clear()
+        savedWork.clear()
         startedSessions.clear()
         inputs.clear()
         sentViewport = null
@@ -1093,6 +1183,12 @@ class PaneSession(
         /** Shown when the host keeps no Inbox items. */
         const val ITEMS_UNSUPPORTED = "This host has no Inbox items. Update muxa on the host."
 
+        /** Shown when a Capture or Work item changed on another device since it was listed. */
+        const val WORK_CHANGED = "This changed on another device. The Inbox shows it as it is now."
+
+        /** Shown when the host keeps no Captures or Work items. */
+        const val CAPTURE_UNSUPPORTED = "This host cannot save captures. Update muxa on the host."
+
         /** Shown when the host has no Routines. */
         const val ROUTINES_UNSUPPORTED = "This host has no Routines. Update muxa on the host."
 
@@ -1106,6 +1202,7 @@ class PaneSession(
                 }
             is Failure.LaunchFailed -> "The task was saved, but its agent did not start: ${error.body.message}"
             is Failure.ItemChanged -> ITEM_CHANGED
+            is Failure.WorkChanged -> WORK_CHANGED
             is Failure.ProtocolMismatch ->
                 "The bridge speaks protocol ${error.bridge}; this app speaks $PROTOCOL_VERSION. Update one of them."
             is Failure.NoHello ->

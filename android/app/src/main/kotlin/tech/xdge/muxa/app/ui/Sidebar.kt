@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,10 +36,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.SidebarMode
+import tech.xdge.muxa.app.canCapture
+import tech.xdge.muxa.app.openPlus
 import tech.xdge.muxa.app.selectMode
 
 /**
- * The sidebar shows one mode: Inbox, Tasks or Sessions (ADR 0035). Above it sit New Task,
+ * The sidebar shows one mode: Inbox, Tasks or Sessions (ADR 0035). Above it sit `+` (Capture or New Task),
  * Settings and one status row for the connection; the hosts themselves live in Settings.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,8 +56,11 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                 }
             },
             actions = {
-                if (model.isConnected && model.canCreateTasks) {
-                    IconButton({ model.startNewTask() }, Modifier.testTag("sidebar-new-task")) { Icon(Icons.add, "New Task") }
+                // On a host with `work:8`, `+` is Capture, which can still start a Task (ADR 0046).
+                if (model.isConnected && (model.canCreateTasks || model.canCapture)) {
+                    IconButton(model::openPlus, Modifier.testTag("sidebar-new-task")) {
+                        Icon(Icons.add, if (model.canCapture) "Capture" else "New Task")
+                    }
                 }
                 IconButton({ model.showSettings = true }, Modifier.testTag("open-settings")) { Icon(Icons.settings, "Settings") }
             },
@@ -69,6 +75,7 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
             else -> SessionList(model, body)
         }
         model.storageError?.let { error -> Text(error, Modifier.padding(16.dp), color = Theme.failure) }
+        model.unsent.storageError.collectAsState().value?.let { error -> Text(error, Modifier.padding(16.dp), color = Theme.failure) }
     }
 }
 

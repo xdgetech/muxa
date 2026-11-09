@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import tech.xdge.muxa.session.HostStore
+import tech.xdge.muxa.session.UnsentCaptures
 import java.io.File
 import java.security.Security
 import kotlin.time.Duration.Companion.seconds
@@ -39,7 +40,8 @@ class MuxaApplication : Application() {
         val hosts = HostStore(File(filesDir, "hosts.json"))
         val keys = ClientKeyStore(this)
         val modes = ModeStore(this)
-        windows = Windows { AppModel(MainScope(), hosts, keys, modes) }
+        val unsent = UnsentCaptures(File(filesDir, "unsent-captures.json"))
+        windows = Windows { AppModel(MainScope(), hosts, keys, modes, unsent) }
         ProcessLifecycleOwner.get().lifecycle.addObserver(Foreground())
     }
 

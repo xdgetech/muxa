@@ -183,7 +183,10 @@ fun Root(model: AppModel) {
         }
         TaskDialogs(model)
         if (model.showReader) ReaderScreen(model)
-        // After the Reader, so the sheet opens over it too.
+        // After the Reader, so the sheets open over it too.
+        model.workDetail?.let { WorkDetail(model, it) }
+        model.captureDraft?.let { CaptureSheet(model, it) }
+        CaptureNotice(model)
         model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }
     }
 }

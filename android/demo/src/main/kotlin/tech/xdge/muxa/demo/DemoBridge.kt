@@ -34,6 +34,7 @@ import tech.xdge.muxa.protocol.TaskLoop
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASK
+import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_ASK_AGENT
 import tech.xdge.muxa.protocol.WORK_CAPABILITY
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
@@ -41,6 +42,8 @@ import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
+import tech.xdge.muxa.protocol.WorkItem
+import tech.xdge.muxa.protocol.WorkState
 import tech.xdge.muxa.protocol.WorktreeEnd
 import tech.xdge.muxa.transport.BridgeChannel
 import java.util.UUID
@@ -54,7 +57,7 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; below [WORK_WORKTREE_END] it plays a host whose Done
+ * [workLevel] is the `work` level it advertises; at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0046); below [WORK_WORKTREE_END] it plays a host whose Done
  * keeps the worktree (ADR 0043), below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
  * Inbox items (ADR 0033), below [WORK_ASK] one from before ask sessions and branches named after
  * the title (ADR 0031), and at 0 one without Routines.
@@ -103,6 +106,9 @@ class DemoBridge(
 
     /** The Tasks' Inbox items (ADR 0033). */
     private val items = content.items(now())
+
+    /** Captures and Work items (ADR 0046). */
+    private val assistant = content.assistant(now())
     private var sessions: List<Session> = content.sessions(now()) + work.sessions
     private val capabilities = CAPABILITIES
         .filter { taskRecords || it != "task-records" } +
@@ -203,8 +209,10 @@ class DemoBridge(
             is Request.CloseTask -> closeTask(req.id, req.session, req.mode)
             is Request.Keys -> keys(req)
             is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
-            is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.RequestAssistant,
-            is Request.CancelRequest -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+            is Request.Capture, is Request.SortCapture, is Request.UpdateWork -> serveAssistant(req)
+            // No assistant runs in the demo, as on a host without the daemon.
+            is Request.RequestAssistant, is Request.CancelRequest ->
+                fail(req.id, ErrorCode.UNSUPPORTED, if (workLevel >= WORK_ASSISTANT) NO_ASSISTANT else NO_REQUEST)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }
@@ -222,7 +230,9 @@ class DemoBridge(
             is Request.ListInbox -> {
                 val list = synchronized(lock) {
                     val entries = work.shownEntries
-                    Message.InboxList(req.id, entries, if (workLevel >= WORK_ITEMS) items.list(entries, work.laterAts, workLevel >= WORK_ASK_AGENT) else emptyList())
+                    val shown = if (workLevel >= WORK_ITEMS) items.list(entries, work.laterAts, workLevel >= WORK_ASK_AGENT) else emptyList()
+                    if (workLevel < WORK_ASSISTANT) return@synchronized Message.InboxList(req.id, entries, shown)
+                    Message.InboxList(req.id, entries, shown, assistant.listed(::derivedState), assistant.unsorted)
                 }
                 emit(list)
                 ok(req.id)
@@ -233,6 +243,42 @@ class DemoBridge(
             } else if (workLevel >= WORK_ITEMS && synchronized(lock) { items.has(req.entry) }) answerItem(req, now) else updateEntry(req, now)
             else -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
         }
+    }
+
+    /** Captures and Work items (ADR 0046), refused as a bridge below `work` level 8 refuses them. */
+    private fun serveAssistant(req: Request) {
+        if (workLevel < WORK_ASSISTANT) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        val now = now()
+        try {
+            val saved = synchronized(lock) {
+                when (req) {
+                    is Request.Capture -> Message.CaptureSaved(req.id, assistant.capture(req, now))
+                    is Request.SortCapture -> assistant.sort(req, now).let { (c, w) -> Message.CaptureSaved(req.id, c, w) }
+                    is Request.UpdateWork -> {
+                        val laterAt = maxOf(now, (assistant.lastLaterAt ?: 0) + 1)
+                        assistant.update(req, now, laterAt).let { Message.WorkSaved(req.id, it.copy(state = derivedState(it))) }
+                    }
+                    else -> return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+                }
+            }
+            emit(saved)
+            ok(req.id)
+        } catch (e: DemoWork.Refusal) {
+            fail(req.id, e.code, e.message ?: "")
+        }
+    }
+
+    /**
+     * What the host derives for an open Work item: waiting on a decision while a linked Task has
+     * an open Inbox item, in progress while one runs. The caller holds the lock.
+     */
+    private fun derivedState(w: WorkItem): WorkState {
+        if (w.state != WorkState.OPEN || w.tasks.isEmpty()) return w.state
+        val asking = items.list(work.shownEntries, work.laterAts, askAgent = false)
+            .filter { it.state == ItemState.OPEN }.mapNotNull { it.task }.toSet()
+        if (w.tasks.any { it in asking }) return WorkState.WAITING_DECISION
+        val running = tasks.filter { it.id in w.tasks && it.status == TaskStatus.OPEN }.map { it.id }
+        return if (sessions.any { it.taskId in running }) WorkState.IN_PROGRESS else WorkState.OPEN
     }
 
     /**
@@ -565,6 +611,17 @@ class DemoBridge(
         }
         val now = now()
         val failed = branch == FAILING_BRANCH
+        // One Task per Work item `rev` (ADR 0046); an older host ignores `work`.
+        val work = req.work?.takeIf { workLevel >= WORK_ASSISTANT }
+        val made = try {
+            synchronized(lock) { work?.let { assistant.taskFor(it, req.workRev ?: -1) }?.let { id -> tasks.first { it.id == id } } }
+        } catch (e: DemoWork.Refusal) {
+            return fail(req.id, e.code, e.message ?: "")
+        }
+        if (made != null) {
+            emit(Message.TaskSaved(req.id, made))
+            return ok(req.id)
+        }
         val record = synchronized(lock) {
             val id = "t-new%03d".format(++createdCount)
             val name = slug(req.title)
@@ -574,8 +631,10 @@ class DemoBridge(
                 createdAt = now, updatedAt = now, project = req.project, repo = req.repo, branch = branch,
                 dir = dir, session = name.takeUnless { failed }, loop = req.loop?.let { startedLoop(null, it, reset = true, now) },
                 note = if (failed) "could not create a worktree for $FAILING_BRANCH: a branch named '$FAILING_BRANCH' already exists" else null,
+                work = work,
             )
             tasks = tasks + record
+            if (work != null) assistant.started(work, req.workRev ?: -1, id, now)
             if (!failed) {
                 val n = 20 + sessions.size
                 val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", dir, false, false, Agent(AgentState.RUNNING, now))
@@ -845,6 +904,7 @@ class DemoBridge(
 
         /** What a bridge says to a request it does not know. */
         const val NO_REQUEST = "The demo bridge does not support this request."
+        const val NO_ASSISTANT = "Automatic processing is off in the demo."
         private const val UPDATE_DELAY_MILLIS = 2_000L
 
         private fun now() = System.currentTimeMillis() / 1_000
