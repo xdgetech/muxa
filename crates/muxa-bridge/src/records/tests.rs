@@ -484,6 +484,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         loop_checks: None,
         park_after: None,
         routines: None,
+        assistant: None,
     };
     (dir, ws)
 }

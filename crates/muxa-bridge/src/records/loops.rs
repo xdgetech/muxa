@@ -452,6 +452,7 @@ mod tests {
             loop_checks: Some(Checks::Any),
             park_after: None,
             routines: None,
+            assistant: None,
         };
         assert!(
             ws.may_loop(&record(Some(&repo), Some(&other))).is_ok(),

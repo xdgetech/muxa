@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use super::workspaces::{ROUTINES_DIR, TASKS_DIR, Workspace};
+use super::workspaces::{ASSISTANT_DIR, ROUTINES_DIR, TASKS_DIR, Workspace};
 
 /// Levels below the root: `app` and `group/app`.
 const MAX_DEPTH: usize = 2;
@@ -173,7 +173,8 @@ fn candidate(name: &OsStr, depth: usize) -> bool {
     let Some(name) = name.to_str() else {
         return false;
     };
-    !name.starts_with('.') && !(depth == 1 && (name == TASKS_DIR || name == ROUTINES_DIR))
+    !name.starts_with('.')
+        && !(depth == 1 && [TASKS_DIR, ROUTINES_DIR, ASSISTANT_DIR].contains(&name))
 }
 
 fn is_repo(dir: &Path) -> bool {

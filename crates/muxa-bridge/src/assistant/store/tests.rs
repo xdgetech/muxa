@@ -161,6 +161,40 @@ fn fields_of_a_newer_muxa_survive_a_rewrite() {
 }
 
 #[test]
+fn a_request_keeps_its_own_version_beside_the_format() {
+    let dir = temp();
+    let shelf = Shelf::<AssistantRequest>::open(&dir).unwrap();
+    let made = shelf
+        .create::<StateError>(|id| {
+            Ok(AssistantRequest {
+                id,
+                work: "w-0000000b".into(),
+                version: 3,
+                workspace: "w".into(),
+                scope: muxa_protocol::AssistScope::Draft,
+                delivery: muxa_protocol::Delivery::Pending,
+                delivery_at: 1,
+                created_at: 1,
+                updated_at: 1,
+                purpose: None,
+                run: None,
+                results: Vec::new(),
+            })
+        })
+        .unwrap();
+    let file = dir
+        .join("assistant/requests")
+        .join(format!("{}.json", made.id));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+    assert_eq!(
+        (value["format"].as_u64(), value["version"].as_u64()),
+        (Some(1), Some(3))
+    );
+    assert_eq!(shelf.get(&made.id).unwrap(), Some(made));
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn an_unknown_version_or_a_bad_name_is_not_read() {
     let dir = temp();
     let shelf = Shelf::<WorkItem>::open(&dir).unwrap();

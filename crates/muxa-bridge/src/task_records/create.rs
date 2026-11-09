@@ -376,6 +376,23 @@ async fn start(
                     .map_err(|e| Failure::before(e.message))?;
                     dir
                 }
+                None if record.is_assistant_run() => {
+                    let dir = workspace
+                        .assistant_dir(&record.title, &record.id)
+                        .map_err(Failure::before)?;
+                    let at = dir.clone();
+                    blocking(move || {
+                        crate::assistant::record::prepare(&at).map_err(|e| {
+                            error_body(
+                                ErrorCode::Internal,
+                                format!("cannot create the assistant run folder: {e}"),
+                            )
+                        })
+                    })
+                    .await
+                    .map_err(|e| Failure::before(e.message))?;
+                    dir
+                }
                 None => workspace
                     .task_dir(&record.title, &record.id)
                     .map_err(Failure::before)?,
@@ -465,6 +482,7 @@ async fn linked(
                     current.set_worker(None);
                 }
                 crate::routines::record::arm(r, now);
+                crate::assistant::record::arm(r, now);
                 r.set_pending_prompt(Some(PendingPrompt {
                     kind: PromptKind::Start,
                     since: now,
@@ -574,6 +592,7 @@ async fn create_worker(
                     run,
                 }));
                 crate::routines::record::arm(record, now);
+                crate::assistant::record::arm(record, now);
             })
             .map_err(|error| store_error(&error))?;
         Ok(claim.record().clone())

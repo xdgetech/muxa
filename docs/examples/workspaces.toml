@@ -8,7 +8,8 @@
 # root   the Entity's folder. It must exist. A leading ~/ is your home
 #        directory. The git repos one or two levels below it are this
 #        workspace's repos, e.g. <root>/api or <root>/clients/portal. Dot
-#        folders such as .worktrees/, and tasks/ and routines/, are skipped.
+#        folders such as .worktrees/, and tasks/, routines/ and assistant/,
+#        are skipped.
 #        Tasks without a repo get <root>/tasks/<slug>-<id>/. A client can
 #        name a repo relative to root: api, clients/portal.
 # repos  optional; more repos, usually outside root. They must exist. A
@@ -44,6 +45,24 @@
 #   enabled        required; false or no table: no Routines here
 #   direct_writes  a Routine may change external systems without a proposal
 #                  only when this is true (default false)
+#
+# [workspace.assistant]  optional; lets the assistant work on this
+#   workspace's Work items (ADR 0046). Without it, the workspace keeps
+#   Captures and Work items but takes no requests. Each run gets its own
+#   folder, <root>/assistant/<slug>-<id>/.
+#   delegate          required; false: no requests here
+#   worker            optional; a [[worker]] this workspace may use. Else the
+#                     workspace's agent.
+#   max_open_runs     runs open at once (default 1)
+#   max_runs_per_day  runs started a day (default 10)
+#   run_timeout       "30m", "12h" or "2d": a run with no result by then is
+#                     timed-out; the agent is not stopped (default "30m")
+#
+# [assistant]  optional, at the top level; the host's switch for all
+#   workspaces. Without it, or with enabled = false, no workspace takes
+#   requests.
+#   enabled           required
+#   max_runs_per_day  runs started a day across all workspaces (default 20)
 #
 # Unknown keys are refused, so a typo fails loudly instead of being ignored.
 

@@ -6,8 +6,9 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
 use muxa_protocol::{AssistantRequest, Capture, WorkItem};
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::de::{DeserializeOwned, Error as _};
+use serde::ser::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 use crate::records::store::Lock;
@@ -25,6 +26,8 @@ const ID_TRIES: u32 = 16;
 pub trait Kind: Serialize + DeserializeOwned {
     const DIR: &'static str;
     const PREFIX: &'static str;
+    /// The file's key for its format version.
+    const FORMAT_KEY: &'static str = "version";
     fn id(&self) -> &str;
 }
 
@@ -47,22 +50,64 @@ impl Kind for WorkItem {
 impl Kind for AssistantRequest {
     const DIR: &'static str = "requests";
     const PREFIX: &'static str = "q-";
+    /// A request has a `version` of its own.
+    const FORMAT_KEY: &'static str = "format";
     fn id(&self) -> &str {
         &self.id
     }
 }
 
-/// The file: the wire record, its format version, and fields a newer muxa
-/// wrote, kept on rewrite. The record must come before `extra`: it takes
-/// its own keys first.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(bound = "T: Kind")]
+/// The file: the wire record, its format version under `T::FORMAT_KEY`, and
+/// fields a newer muxa wrote, kept on rewrite.
+#[derive(Debug)]
 struct Stored<T> {
     version: u32,
-    #[serde(flatten)]
     record: T,
-    #[serde(flatten)]
     extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl<T: Kind> Serialize for Stored<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let serde_json::Value::Object(mut map) =
+            serde_json::to_value(&self.record).map_err(S::Error::custom)?
+        else {
+            return Err(S::Error::custom("a record is not a JSON object"));
+        };
+        for (key, value) in &self.extra {
+            if !map.contains_key(key) {
+                map.insert(key.clone(), value.clone());
+            }
+        }
+        map.insert(T::FORMAT_KEY.into(), self.version.into());
+        map.serialize(s)
+    }
+}
+
+impl<'de, T: Kind> Deserialize<'de> for Stored<T> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut map = serde_json::Map::deserialize(d)?;
+        let version = map
+            .remove(T::FORMAT_KEY)
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u32::try_from(v).ok())
+            .ok_or_else(|| D::Error::custom(format!("no format version in {:?}", T::FORMAT_KEY)))?;
+        let value = serde_json::Value::Object(map);
+        let record = T::deserialize(&value).map_err(D::Error::custom)?;
+        // The keys the record does not write back belong to a newer muxa.
+        let known = serde_json::to_value(&record).map_err(D::Error::custom)?;
+        let serde_json::Value::Object(map) = value else {
+            return Err(D::Error::custom("a record is not a JSON object"));
+        };
+        let extra = map
+            .into_iter()
+            .filter(|(key, _)| known.get(key).is_none())
+            .collect();
+        Ok(Self {
+            version,
+            record,
+            extra,
+        })
+    }
 }
 
 /// One kind's folder.
@@ -91,10 +136,6 @@ impl<T: Kind> Shelf<T> {
         })
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
-    )]
     pub fn get(&self, id: &str) -> Result<Option<T>, StateError> {
         check_id::<T>(id)?;
         Ok(self.read(id)?.map(|s| s.record))

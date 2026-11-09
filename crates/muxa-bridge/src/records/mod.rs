@@ -3,6 +3,7 @@
 //! later daemon can link it.
 
 pub mod agent_env;
+pub mod assistant;
 pub mod cron;
 pub mod lifecycle;
 pub mod loops;

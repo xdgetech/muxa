@@ -25,6 +25,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         loop_checks: None,
         park_after: None,
         routines: None,
+        assistant: None,
     }
 }
 
@@ -39,6 +40,7 @@ fn entity(name: &str) -> PathBuf {
     repo(&root, ".hidden/repo");
     repo(&root, "tasks/fix-t-000001");
     repo(&root, "routines/daily-t-000002");
+    repo(&root, "assistant/brief-t-000003");
     repo(&root, "app/nested");
     // A worktree has a `.git` file, not a directory.
     std::fs::create_dir_all(root.join("worktree")).unwrap();
@@ -53,7 +55,7 @@ fn discovery_finds_repos_two_levels_down_and_skips_the_rest() {
     assert_eq!(
         discover(&root),
         [root.join("app"), root.join("group/plan")],
-        "no dot-folder, tasks/, routines/, worktree, inner repo or third level"
+        "no dot-folder, tasks/, routines/, assistant/, worktree, inner repo or third level"
     );
     for (rel, found) in [
         ("app", true),
@@ -64,6 +66,7 @@ fn discovery_finds_repos_two_levels_down_and_skips_the_rest() {
         (".hidden/repo", false),
         ("tasks/fix-t-000001", false),
         ("routines/daily-t-000002", false),
+        ("assistant/brief-t-000003", false),
         ("app/nested", false),
         ("worktree", false),
         ("notes", false),

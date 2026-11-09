@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
+use super::assistant::{self, AssistantHost, Delegate, RawDelegate, RawHost};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
 use super::routines::{self, Routine, RoutineGate, RoutineProblem};
@@ -21,6 +22,7 @@ const MAX_SLUG: usize = 40;
 const SLUG_FALLBACK: &str = "task";
 pub(super) const TASKS_DIR: &str = "tasks";
 pub(super) const ROUTINES_DIR: &str = "routines";
+pub(super) const ASSISTANT_DIR: &str = "assistant";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -60,6 +62,8 @@ pub struct Workspace {
     pub park_after: Option<u64>,
     /// None: this workspace has no Routines (ADR 0036).
     pub routines: Option<RoutineGate>,
+    /// None: it accepts captures but no assistant requests (ADR 0046).
+    pub assistant: Option<Delegate>,
 }
 
 /// The configured workspaces, in file order.
@@ -69,6 +73,7 @@ pub struct Workspaces {
     workers: Vec<Worker>,
     routines: Vec<Routine>,
     problems: Vec<RoutineProblem>,
+    assistant: AssistantHost,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +86,7 @@ struct RawConfig {
     /// Refused: Routines moved to each workspace (ADR 0036).
     #[serde(default)]
     routine: Vec<toml::Value>,
+    assistant: Option<RawHost>,
 }
 
 #[derive(Deserialize)]
@@ -95,6 +101,7 @@ struct RawWorkspace {
     loop_table: Option<RawLoop>,
     park_after: Option<String>,
     routines: Option<RawGate>,
+    assistant: Option<RawDelegate>,
 }
 
 #[derive(Deserialize)]
@@ -213,6 +220,12 @@ impl Workspaces {
             let routines = w.routines.filter(|g| g.enabled).map(|g| RoutineGate {
                 direct_writes: g.direct_writes,
             });
+            let delegate = w
+                .assistant
+                .map(RawDelegate::check)
+                .transpose()
+                .map_err(|r| invalid(format!("workspace {:?}: assistant {r}", w.name)))?
+                .flatten();
             list.push(Workspace {
                 name: w.name,
                 root,
@@ -221,6 +234,7 @@ impl Workspaces {
                 loop_checks,
                 park_after,
                 routines,
+                assistant: delegate,
             });
         }
         let mut worker_names = HashSet::new();
@@ -232,6 +246,18 @@ impl Workspaces {
             }
             workers.push(worker);
         }
+        for w in &list {
+            if let Some(d) = &w.assistant {
+                assistant::check_worker(d, &w.name, &workers)
+                    .map_err(|r| invalid(format!("workspace {:?}: assistant {r}", w.name)))?;
+            }
+        }
+        let host = raw
+            .assistant
+            .map(RawHost::check)
+            .transpose()
+            .map_err(invalid)?
+            .unwrap_or_default();
         let mut all_routines = Vec::new();
         let mut problems = Vec::new();
         for w in &list {
@@ -249,7 +275,29 @@ impl Workspaces {
             workers,
             routines: all_routines,
             problems,
+            assistant: host,
         })
+    }
+
+    /// The host's `[assistant]`; off without the table.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
+    )]
+    pub fn assistant(&self) -> AssistantHost {
+        self.assistant
+    }
+
+    /// The workspace's delegate, when the host and the workspace both allow requests.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
+    )]
+    pub fn delegate(&self, workspace: &str) -> Option<&Delegate> {
+        if !self.assistant.enabled {
+            return None;
+        }
+        self.get(workspace)?.assistant.as_ref()
     }
 
     pub fn routines(&self) -> &[Routine] {
@@ -327,6 +375,19 @@ impl Workspace {
             .root
             .join(ROUTINES_DIR)
             .join(format!("{}-{id}", slug(routine)));
+        self.inside(&dir)
+    }
+
+    /// `<root>/assistant/<slug>-<id>` for an assistant run (ADR 0046 §4),
+    /// checked to stay inside the root. It is not created.
+    pub fn assistant_dir(&self, title: &str, id: &str) -> Result<PathBuf, PathError> {
+        if !is_valid_id(id) {
+            return Err(PathError::InvalidId);
+        }
+        let dir = self
+            .root
+            .join(ASSISTANT_DIR)
+            .join(format!("{}-{id}", slug(title)));
         self.inside(&dir)
     }
 

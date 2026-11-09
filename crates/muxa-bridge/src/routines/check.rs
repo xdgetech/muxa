@@ -31,7 +31,7 @@ pub fn run(config: &Config, record: &Record, attempt: u32) -> CheckEnd {
         }
     }
     if let Some(dir) = &record.dir {
-        if let Err(e) = report(dir, attempt, code == 0, &lines) {
+        if let Err(e) = report(dir, attempt, code == 0, &lines, "the Routine output") {
             tracing::warn!(task = %record.id, error = %e, "cannot write the routine check log");
         }
     }
@@ -81,8 +81,15 @@ enum Failure {
     State(#[from] StateError),
 }
 
-/// `.muxa/checks/<attempt>.log` and `.muxa/CHECK.md`, as a shell check leaves them.
-fn report(dir: &Path, attempt: u32, passed: bool, lines: &[String]) -> std::io::Result<()> {
+/// `.muxa/checks/<attempt>.log` and `.muxa/CHECK.md`, as a shell check
+/// leaves them. `check` names what was checked.
+pub(crate) fn report(
+    dir: &Path,
+    attempt: u32,
+    passed: bool,
+    lines: &[String],
+    check: &str,
+) -> std::io::Result<()> {
     let log = log_path(dir, attempt);
     if let Some(parent) = log.parent() {
         std::fs::create_dir_all(parent)?;
@@ -93,7 +100,7 @@ fn report(dir: &Path, attempt: u32, passed: bool, lines: &[String]) -> std::io::
     std::fs::write(
         dir.join(REPORT),
         format!(
-            "# Check\n\n- Attempt: {attempt}\n- Result: {result}\n- Check: the Routine output\n\n```\n{text}```\n"
+            "# Check\n\n- Attempt: {attempt}\n- Result: {result}\n- Check: {check}\n\n```\n{text}```\n"
         ),
     )
 }

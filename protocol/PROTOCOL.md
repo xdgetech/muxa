@@ -441,6 +441,39 @@ A bridge with `work` level 8 keeps Captures, Work items and assistant requests (
 
 Logs on the host carry ids, sizes and states, never Capture text, purposes, briefs or results.
 
+### Assistant result file
+
+A run of kind `assistant-run` works in `<root>/assistant/<slug>-<id>/`. Its goal ends with the line `muxa-request: <request> v<version>`. The agent writes `.muxa/assistant/result.json` there and ends its turn. The host then checks the file in its own process. A failed check types a fixed prompt, up to 3 times; after the third, the request's `delivery` is `failed`. A passing check stores the result on the request in one write.
+
+```json
+{
+  "version": 1,
+  "request": "q-0a1b2c3d",
+  "requestVersion": 2,
+  "summary": "Two plans fit. Plan A is cheaper.",
+  "findings": [
+    {"text": "Plan A costs less per month.",
+     "sources": [{"url": "https://example.com/pricing", "title": "Pricing", "readAt": 1762700000},
+                 {"path": "/home/me/work/notes/hosting.md"}]}
+  ],
+  "openQuestions": ["Which region?"],
+  "next": ["Ask for a quote."],
+  "files": ["/home/me/work/assistant/hosting-t-1a2b3c/draft.md"],
+  "possibleDuplicates": [{"work": "w-4e5f6a7b", "reason": "Same vendor."}]
+}
+```
+
+- `version` is 1. `request` and `requestVersion` must be the run's own request and version.
+- `summary`: 1 to 4096 bytes. In every text, line breaks and tabs are the only control characters.
+- `findings`: at most 20. `text` is 1 to 1000 bytes. Each has 1 to 10 `sources`. A source has a `url` (`https` or `http`, at most 2048 bytes, without spaces), an absolute `path` (at most 4096 bytes), or both. It may also have `title` (1 to 200 characters, one line) and `readAt` (epoch seconds).
+- `openQuestions` and `next`: at most 10 each, each 1 to 500 bytes.
+- `files`: at most 20 absolute paths.
+- `possibleDuplicates`: at most 5. `work` is another Work item on the host (`w-` and 8 lowercase hex digits). `reason` is 1 to 500 bytes.
+- The whole file is at most 64 KiB of UTF-8 without NUL. It is a regular file, and neither it nor `.muxa` or `.muxa/assistant` is a symlink. Unknown fields are refused.
+- The result is not stored when the request has a newer version, or when it is being cancelled. A second pass for the same version changes nothing. A stored result makes the older ones `stale`, at most 10 are kept, and `delivery` becomes `resulted`. The Work item does not change.
+
+The check's reasons are in `.muxa/checks/<attempt>.log` and name fields and indices, never values.
+
 ## Reading Tasks
 
 A bridge with `work` level 4 has reading Tasks, `branch-task` and `park-task` (ADR 0034). Levels add up: level 4 has everything of level 3. Fixtures: `fixtures/reading/`.

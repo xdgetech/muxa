@@ -26,6 +26,9 @@ use step::{Action, Agent, Check, CheckEnd, Memory, Observation, effects, step};
 const LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const WRITE_ATTEMPTS: usize = 3;
 
+/// A background run's check that muxa runs itself instead of a shell command. Blocking.
+type InProcessCheck = fn(&Config, &Record, u32) -> CheckEnd;
+
 /// What the engine keeps between ticks, per Task with an active loop.
 #[derive(Default)]
 struct Live {
@@ -330,6 +333,8 @@ impl Engine {
                     };
                     let prompt = if record.is_routine_run() {
                         crate::routines::record::fail_prompt(attempt)
+                    } else if record.is_assistant_run() {
+                        crate::assistant::record::fail_prompt(attempt)
                     } else {
                         typing::fail_prompt(attempt)
                     };
@@ -455,22 +460,30 @@ impl Engine {
         env: Vec<(String, String)>,
         claim: crate::records::store::ClaimedTask,
     ) {
-        if record.is_routine_run() {
-            // muxa's own output check, in process (ADR 0026 section 3).
+        // muxa's own checks run in process (ADR 0026 section 3, ADR 0046 §4).
+        let in_process: Option<(InProcessCheck, &'static str)> = if record.is_routine_run() {
+            Some((crate::routines::check::run, "check the routine output of"))
+        } else if record.is_assistant_run() {
+            Some((
+                crate::assistant::check::run,
+                "check the assistant result of",
+            ))
+        } else {
+            None
+        };
+        if let Some((run, action)) = in_process {
             let (config, record) = (Arc::clone(&self.config), record.clone());
             let live = self.live.entry(record.id.clone()).or_default();
             live.check = Some(tokio::spawn(async move {
                 drop(claim);
                 let dir = record.dir.clone().unwrap_or_default();
-                tokio::task::spawn_blocking(move || {
-                    crate::routines::check::run(&config, &record, attempt)
-                })
-                .await
-                .map_err(|e| CheckError::Io {
-                    action: "check the routine output of",
-                    path: dir,
-                    source: std::io::Error::other(e),
-                })
+                tokio::task::spawn_blocking(move || run(&config, &record, attempt))
+                    .await
+                    .map_err(|e| CheckError::Io {
+                        action,
+                        path: dir,
+                        source: std::io::Error::other(e),
+                    })
             }));
             return;
         }
@@ -540,6 +553,9 @@ fn write(dir: &Path, task: &str, old: &Loop, new: &Loop) -> Result<bool, StoreEr
         match result {
             Ok(r) => {
                 tracing::info!(task, rev = r.rev, state = %String::from(new.state.clone()), "loop saved");
+                if r.is_assistant_run() {
+                    crate::assistant::check::stopped(dir, &r, new);
+                }
                 return Ok(true);
             }
             Err(StoreError::Conflict { .. }) => continue,
