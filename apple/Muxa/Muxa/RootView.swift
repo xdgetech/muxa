@@ -78,6 +78,12 @@ struct RootView: View {
             if let draft = model.newTask { NewTaskSheet(draft: draft) }
         }
         .sheet(
+            isPresented: Binding(get: { model.capture != nil }, set: { if !$0 { model.capture = nil } }),
+            onDismiss: model.captureSheetClosed
+        ) {
+            if let draft = model.capture { CaptureSheet(draft: draft) }
+        }
+        .sheet(
             isPresented: Binding(get: { model.newRecord != nil }, set: { if !$0 { model.newRecord = nil } }),
             onDismiss: { Task { await model.recordSheetClosed() } }
         ) {
@@ -159,6 +165,8 @@ struct DetailView: View {
     @ViewBuilder private var selection: some View {
         switch model.detail {
         case .item(let id): ItemDetail(id: id)
+        case .work(let id): WorkDetail(id: id)
+        case .capture(let id): CaptureDetail(id: id)
         case .task(let id): TaskDetail(id: id)
         case .routines: RoutinesScreen()
         case .pane: pane

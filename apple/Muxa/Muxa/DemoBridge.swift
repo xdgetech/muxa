@@ -11,7 +11,7 @@ import UIKit
 final class DemoBridge: BridgeChannel, @unchecked Sendable {
     let lines: AsyncThrowingStream<Data, any Error>
     private let out: AsyncThrowingStream<Data, any Error>.Continuation
-    private let lock = NSLock()
+    let lock = NSLock()
     private var watch: UInt64 = 0
     private var watchedPane: String?
     /// The app's grid at its default font, once it sent one.
@@ -31,8 +31,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private var sessions: [Session]
     /// Grows when a task record is created.
     private var tasks: DemoTasks
-    /// Routines and stored Inbox entries (ADR 0026).
-    private var work: DemoWork
+    /// Routines, stored Inbox entries (ADR 0026), Captures and Work items (ADR 0046).
+    var work: DemoWork
     /// Set until the first watch, when the alert's clock starts.
     private var alertsPending: Bool
     private let content: DemoContent
@@ -106,16 +106,18 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:7",
+            "task-loop", "tasks-changed", "viewport", "history", "work:8",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:7" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:8" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:7" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:8" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:7" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:8" ? "work:3" : $0 } }
+        // A bridge from before Captures (ADR 0046): `+` is New Task.
+        if arguments.contains("-work7") { return all.map { $0 == "work:8" ? "work:7" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -200,11 +202,15 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let tasks = lock.withLock { tasks }
             emit(.taskList(TaskListing(tasks: id, workspaces: tasks.workspaces, entries: tasks.records)))
             ok(id)
-        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop, let worker, _, _):
+        case .createTask(
+            let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop, let worker, let item, let rev):
             guard worker == nil else { unsupported(id); return }
+            // Only a level 8 host knows Work items; an older one ignores the fields.
+            let forWork = Self.workLevel >= workAssistant ? item.flatMap { w in rev.map { (w, $0) } } : nil
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.createTask(
-                    id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch, loop: loop)
+                    id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch, loop: loop,
+                    work: forWork)
             }
         case .listRoutines, .listInbox, .runRoutine, .updateInboxEntry:
             serveWork(req)
@@ -217,10 +223,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
-        // The demo advertises work level 7; it has no assistant yet (ADR 0046).
-        case .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _), .updateWork(let id, _, _, _, _, _, _),
-             .requestAssistant(let id, _, _, _, _, _), .cancelRequest(let id, _, _):
-            unsupported(id, Self.noRequest)
+        case .capture, .sortCapture, .updateWork, .requestAssistant, .cancelRequest:
+            await serveCaptures(req)
         case .restartAgent(let id, let task, let force, let worker, let rev):
             guard worker == nil, rev == nil else { unsupported(id); return }
             restartAgent(id: id, task: task, force: force)
@@ -299,7 +303,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     }
 
     /// The host's `work` level (ADR 0027 §5).
-    private static var workLevel: UInt32 { MuxaProtocol.workLevel(capabilities) }
+    static var workLevel: UInt32 { MuxaProtocol.workLevel(capabilities) }
 
     /// An ask session: the agent in the repo's main checkout, listed as a manual session (ADR 0031).
     private func startSession(id: UInt64, workspace: String, repo: String) {
@@ -375,7 +379,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             ok(id)
         case .listInbox(let id):
             let (entries, items) = lock.withLock { (work.shownEntries, work.shownItems) }
-            emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? items : []))
+            let (listed, captures) = listedWork()
+            emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? items : [],
+                            work: listed, captures: captures))
             ok(id)
         case .runRoutine(let id, let workspace, let routine):
             let outcome = lock.withLock { () -> Result<RoutineInfo, DemoWork.Refusal> in
@@ -533,10 +539,14 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// then the record is kept with a note, as a real bridge does.
     private func createTask(
         id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?, branch: String?,
-        loop: LoopSpec?
+        loop: LoopSpec?, work forWork: (id: String, rev: UInt64)? = nil
     ) {
         let launched = branch != Self.failingBranch
         let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
+            // One Task per Work item `rev`: asking again returns it (ADR 0046 §3).
+            if let forWork, let made = work.assistant.task(for: forWork.id, rev: forWork.rev), let record = tasks.record(made) {
+                return .success(record)
+            }
             let record: TaskRecord
             do throws(DemoTasks.Refusal) {
                 record = try tasks.create(workspace: workspace, title: title, goal: goal, project: project, repo: repo,
@@ -555,6 +565,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                     id: "$\(n)", name: name, repo: repo?.split(separator: "/").last.map(String.init), repoDir: repo,
                     branch: branch, worktree: repo == nil ? nil : record.dir, taskId: record.id, panes: [pane]))
             }
+            if let forWork { work.assistant.taskStarted(record.id, for: forWork.id, rev: forWork.rev) }
             return .success(record)
         }
         guard case .success(let record) = outcome, !launched else {
@@ -673,11 +684,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         return docs
     }
 
-    private func unsupported(_ id: UInt64, _ message: String = "Workers are not implemented in the demo.") {
+    func unsupported(_ id: UInt64, _ message: String = "Workers are not implemented in the demo.") {
         emit(.result(id: id, error: ErrorBody(code: .unsupported, message: message), sessions: nil))
     }
 
-    private func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }
+    func ok(_ id: UInt64) { emit(.result(id: id, error: nil, sessions: nil)) }
 
     /// The demo agent: echoes a prompt. `/wait` makes it wait on a menu it cannot
     /// name, and `/allow`, `/ask` and `/plan` on a permission, a question and a plan.
@@ -886,7 +897,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         emit(.output(watch: w, pane: pane, data: data))
     }
 
-    private func emit(_ m: Message) {
+    func emit(_ m: Message) {
         if let line = try? Wire.encode(m) { out.yield(line) }
     }
 

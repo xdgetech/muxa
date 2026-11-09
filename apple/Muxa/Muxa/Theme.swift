@@ -70,4 +70,10 @@ enum Icon {
     static let openSession = "arrow.up.right.square"
     static let settings = "gearshape"
     static let ask = "questionmark.bubble"
+    /// `+` at `work` level 8: a thought saved on the host (ADR 0046).
+    static let capture = "square.and.pencil"
+    static let work = "list.bullet.rectangle"
+    static let note = "note.text"
+    static let reopen = "arrow.uturn.backward"
+    static let withdraw = "xmark.circle"
 }

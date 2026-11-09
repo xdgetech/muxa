@@ -61,6 +61,15 @@ final class AppModel {
     var newTask: TaskDraft?
     /// The New Task sheet that records the task on the host.
     var newRecord: TaskRecordDraft?
+    /// The Capture sheet that `+` opens on a host with `work` level 8 (ADR 0046).
+    var capture: CaptureDraft?
+    /// "Start a Task instead…": the New Task form shown once the Capture sheet closed.
+    var taskAfterCapture: TaskRecordDraft?
+    /// Captures saved while the connection was down; the demo keeps its own in memory.
+    private(set) var unsent: UnsentCaptures
+    private let savedUnsent: UnsentCaptures
+    /// The host that last connected with Captures: `+` still captures for it offline.
+    var captureHostID: UUID?
     /// Created from that sheet: shown once the sheet has closed.
     private var createdRecord: TaskRecord?
     /// An agent elsewhere that wants attention, shown for a few seconds.
@@ -132,17 +141,23 @@ final class AppModel {
             let showcase = arguments.contains("-showcase")
             (hosts, demoHostID) = Self.demoHosts(showcase ? Host(name: "Mac mini", target: SSHTarget(host: "mac-mini.local", user: "you")) : nil)
             savedHosts = HostStore(file: nil)
+            savedUnsent = UnsentCaptures(file: nil)
+            unsent = savedUnsent
             return
         }
         // The Try the Demo test starts from no hosts, whatever the simulator saved.
         if arguments.contains("-no-saved-hosts") {
             savedHosts = HostStore(file: nil)
             hosts = savedHosts
+            savedUnsent = UnsentCaptures(file: nil)
+            unsent = savedUnsent
             return
         }
         #endif
         savedHosts = HostStore(file: HostStore.defaultFile)
         hosts = savedHosts
+        savedUnsent = UnsentCaptures(file: UnsentCaptures.defaultFile)
+        unsent = savedUnsent
     }
 
     /// One demo host, never written to disk.
@@ -165,6 +180,7 @@ final class AppModel {
         canLeaveDemo = true
         demoContent = .showcase
         demoAlerts = true
+        unsent = UnsentCaptures(file: nil)
         (hosts, demoHostID) = Self.demoHosts()
         guard let id = hosts.lastUsed else { return }
         await connect(to: id)
@@ -178,6 +194,7 @@ final class AppModel {
         canLeaveDemo = false
         demoHostID = nil
         hosts = savedHosts
+        unsent = savedUnsent
     }
 
     /// What belonged to the last host's connection.
@@ -185,6 +202,7 @@ final class AppModel {
         taskInfo = nil
         history = nil
         currentHostID = nil
+        captureHostID = nil
         connectError = nil
         connectFix = nil
         stayDisconnected = false
@@ -217,6 +235,8 @@ final class AppModel {
             suspended = false
             try await session.connect({ try await self.open(host) }, samePanes: sameHost)
             await connected(resuming: resuming)
+            captureHostID = session.canCapture ? id : nil
+            await resendUnsent()
         } catch TransportError.hostKeyMismatch(let presented) {
             afterTrust = .connect
             untrustedKey = presented

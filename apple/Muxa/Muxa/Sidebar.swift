@@ -22,6 +22,9 @@ struct Sidebar: View {
             if let error = model.hosts.storageError {
                 Section { Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure) }
             }
+            if let error = model.unsent.storageError {
+                Section { Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure) }
+            }
         }
         .listStyle(.sidebar)
         .accessibilityIdentifier("sidebar-list")
@@ -31,9 +34,15 @@ struct Sidebar: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button("New Task", systemImage: Icon.add) { model.startNewTask() }
-                    .disabled(!model.canCreateTasks)
-                    .accessibilityIdentifier("sidebar-new-task")
+                // At `work` level 8, `+` saves a thought first (ADR 0046); New Task is one tap further.
+                if model.capturesFirst {
+                    Button("Capture", systemImage: Icon.add) { model.startCapture() }
+                        .accessibilityIdentifier("sidebar-capture")
+                } else {
+                    Button("New Task", systemImage: Icon.add) { model.startNewTask() }
+                        .disabled(!model.canCreateTasks)
+                        .accessibilityIdentifier("sidebar-new-task")
+                }
                 Button("Settings", systemImage: Icon.settings) { model.showSettings = true }
                     .accessibilityIdentifier("open-settings")
             }
@@ -160,6 +169,15 @@ private struct NotConnected: View {
                 }
                 Button("Hosts…", systemImage: Icon.host) { model.showSettings = true }
                     .accessibilityIdentifier("open-hosts")
+            }
+            if !model.unsentHere.isEmpty {
+                Section {
+                    UnsentRows()
+                } header: {
+                    Text("Not Sent")
+                } footer: {
+                    Text("Sent when you connect.")
+                }
             }
         }
     }

@@ -76,6 +76,18 @@ extension XCTestCase {
 
     var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
+    /// The sidebar's `+` up to the New Task form. At `work` level 8 it opens Capture,
+    /// and "Start a Task instead…" opens the form (ADR 0046); an older host opens it at once.
+    @MainActor
+    func openNewTaskFromSidebar(_ app: XCUIApplication, olderHost: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
+        if olderHost {
+            tapWhenReady(app.buttons["sidebar-new-task"], file: file, line: line)
+            return
+        }
+        tapWhenReady(app.buttons["sidebar-capture"], file: file, line: line)
+        tapWhenReady(app.buttons["capture-start-task"], file: file, line: line)
+    }
+
     /// The Reader's list. On a phone the Reader is a stack: it opens on the list, and
     /// a document's list is one Back away. A Max phone in landscape keeps both columns.
     @MainActor

@@ -21,7 +21,8 @@ final class AskTests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.waitForExistence(timeout: 10))
         showSidebar(app)
-        tapWhenReady(app.buttons["sidebar-new-task"])
+        // `-work1` and `-work3` are hosts from before Captures.
+        openNewTaskFromSidebar(app, olderHost: !arguments.isEmpty)
         XCTAssertTrue(app.textFields["record-title"].waitForExistence(timeout: 5))
         return app
     }

@@ -22,6 +22,7 @@ extension PaneSession {
                 inboxEntries = inbox.entries
                 // An older host sends no items; its Inbox is built from the Tasks.
                 inboxItems = canUseItems ? inbox.items : []
+                keepListed(inbox)
             }
             workError = nil
         } catch {
@@ -97,6 +98,15 @@ extension PaneSession {
         guard canUseRoutines else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.routinesUnsupported))
         }
+    }
+
+    /// One `inbox-list`, kept until its result arrives.
+    struct InboxListing {
+        var entries: [InboxEntry]
+        var items: [InboxItem]
+        var work: [WorkItem]
+        var captures: [Capture]
+        var requests: [AssistantRequest]
     }
 
     /// Sends a list request; its list arrives just before the result. Nil when none came.

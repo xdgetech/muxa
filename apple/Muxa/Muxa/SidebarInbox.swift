@@ -23,27 +23,44 @@ struct SidebarInbox: View {
             if let error = model.session.workError {
                 Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure)
             }
-            ForEach(items) { item in
-                Button { model.select(.item(item.id)) } label: { InboxItemRow(item: item) }
-                    .foregroundStyle(.primary)
-                    .sidebarHighlight(model.highlights(item))
-                    .accessibilityIdentifier("item-row-\(item.id)")
-                    // A swipe right is ✓, a swipe left is Later (ADR 0040 §6).
-                    .swipeActions(edge: .leading) {
-                        if ItemAnswers(item).done != nil {
-                            Button("Done", systemImage: Icon.done) { model.done(item) }.tint(Theme.done)
-                        }
-                    }
-                    .swipeActions(edge: .trailing) {
-                        if item.answers.contains(.later) {
-                            Button("Later", systemImage: Icon.later) { model.later(item) }.tint(.gray)
-                        }
-                    }
+            if model.usesWork {
+                // Decisions first, then Work and Unsorted (ADR 0046 §10).
+                Section {
+                    decisions(items)
+                } header: {
+                    Text("Decisions").accessibilityIdentifier("inbox-section-decisions")
+                }
+                SidebarWorkSection()
+                SidebarUnsortedSection()
+            } else {
+                decisions(items)
             }
-            if items.isEmpty {
-                Text("Nothing needs you").foregroundStyle(.secondary)
-                    .accessibilityIdentifier("inbox-empty")
-            }
+        }
+    }
+
+    /// Today's Inbox items, unchanged.
+    @ViewBuilder
+    private func decisions(_ items: [InboxItem]) -> some View {
+        ForEach(items) { item in
+            Button { model.select(.item(item.id)) } label: { InboxItemRow(item: item) }
+                .foregroundStyle(.primary)
+                .sidebarHighlight(model.highlights(item))
+                .accessibilityIdentifier("item-row-\(item.id)")
+                // A swipe right is ✓, a swipe left is Later (ADR 0040 §6).
+                .swipeActions(edge: .leading) {
+                    if ItemAnswers(item).done != nil {
+                        Button("Done", systemImage: Icon.done) { model.done(item) }.tint(Theme.done)
+                    }
+                }
+                .swipeActions(edge: .trailing) {
+                    if item.answers.contains(.later) {
+                        Button("Later", systemImage: Icon.later) { model.later(item) }.tint(.gray)
+                    }
+                }
+        }
+        if items.isEmpty {
+            Text("Nothing needs you").foregroundStyle(.secondary)
+                .accessibilityIdentifier("inbox-empty")
         }
     }
 }

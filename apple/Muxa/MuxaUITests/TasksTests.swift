@@ -163,7 +163,7 @@ final class TasksTests: XCTestCase {
     private func createTask(
         _ app: XCUIApplication, title: String, goal: String, branch: String? = nil, withLoop: Bool = false
     ) {
-        tapWhenReady(app.buttons["sidebar-new-task"])
+        openNewTaskFromSidebar(app)
         fillTask(app, title: title, goal: goal, branch: branch, withLoop: withLoop)
     }
 
@@ -248,7 +248,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Add search"].exists)
     }
 
-    /// The sidebar's `+` is New Task, and its modes are on the first screen (ADR 0035 §5).
+    /// The sidebar's `+` reaches New Task, and its modes are on the first screen (ADR 0035 §5).
     @MainActor
     func testTheSidebarOffersTheModesAndNewTask() throws {
         let app = XCUIApplication()
@@ -261,7 +261,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(modes.isHittable)
         XCTAssertEqual(modes.buttons.count, 3)
         save("sidebar-tasks")
-        tapWhenReady(app.buttons["sidebar-new-task"])
+        openNewTaskFromSidebar(app)
         XCTAssertTrue(app.textFields["record-title"].waitForExistence(timeout: 5))
         XCTAssertTrue(waitFor(app.descendants(matching: .any)["record-workspace"].firstMatch, labelOrValue: "work"))
     }

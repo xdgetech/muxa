@@ -17,6 +17,8 @@ struct DemoWork: Sendable {
     var entryLaters: [String: UInt64] = [:]
     /// The host has `ask-agent` (`work` level 6, ADR 0041).
     var offersAskAgent = true
+    /// Captures and Work items (`work` level 8, ADR 0046).
+    var assistant = DemoAssistant(captures: [], work: [])
 
     struct Refusal: Error {
         var body: ErrorBody
@@ -152,7 +154,8 @@ struct DemoWork: Sendable {
     static let tests = DemoWork(
         routines: routines(running: "t-r00002"), entries: entries,
         sessions: [runSession(routine: "linear-triage", task: "t-r00002", number: 90, state: .waiting, ago: 120)],
-        taskItems: testItems)
+        taskItems: testItems, assistant: .tests)
 
-    static let showcase = DemoWork(routines: routines(running: nil), entries: entries, sessions: [], taskItems: showcaseItems)
+    static let showcase = DemoWork(
+        routines: routines(running: nil), entries: entries, sessions: [], taskItems: showcaseItems, assistant: .showcase)
 }

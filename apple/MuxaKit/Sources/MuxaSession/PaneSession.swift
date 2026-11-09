@@ -64,6 +64,15 @@ public final class PaneSession {
     public internal(set) var inboxItems: [InboxItem] = []
     /// Why the Routines or the stored entries could not be listed; the last lists stay.
     public internal(set) var workError: String?
+    /// The host's Work items in the host's order, as last listed (`work` level 8, ADR 0046).
+    public internal(set) var workList: [WorkItem] = []
+    /// The unsorted Captures, newest first, as last listed.
+    public internal(set) var captures: [Capture] = []
+    /// The requests of the listed Work items.
+    public internal(set) var assistantRequests: [AssistantRequest] = []
+    /// Every Capture seen since connecting, by id: a sorted one is no longer listed,
+    /// but its Work item still shows its text.
+    public internal(set) var knownCaptures: [String: Capture] = [:]
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -91,10 +100,13 @@ public final class PaneSession {
     /// `routine-list`, `inbox-list`, `routine-saved` and `inbox-saved`, by request id,
     /// until the result arrives (`PaneSession+Work.swift`).
     @ObservationIgnored var routineListings: [UInt64: [RoutineInfo]] = [:]
-    @ObservationIgnored var inboxListings: [UInt64: (entries: [InboxEntry], items: [InboxItem])] = [:]
+    @ObservationIgnored var inboxListings: [UInt64: InboxListing] = [:]
     @ObservationIgnored var savedRoutines: [UInt64: RoutineInfo] = [:]
     @ObservationIgnored var savedEntries: [UInt64: InboxEntry] = [:]
     @ObservationIgnored var savedItems: [UInt64: InboxItem] = [:]
+    /// `capture-saved` and `work-saved`, by request id (`PaneSession+Captures.swift`).
+    @ObservationIgnored var savedCaptures: [UInt64: (capture: Capture, work: WorkItem?)] = [:]
+    @ObservationIgnored var savedWork: [UInt64: WorkItem] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
     @ObservationIgnored var startedSessions: [UInt64: StartedSession] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
@@ -134,6 +146,10 @@ public final class PaneSession {
             inboxEntries = []
             inboxItems = []
             workError = nil
+            workList = []
+            captures = []
+            assistantRequests = []
+            knownCaptures = [:]
         }
         phase = .connecting
         do {
@@ -437,7 +453,9 @@ public final class PaneSession {
                 requestId = id
                 return .createTask(
                     id: id, workspace: new.workspace, title: new.title, goal: new.goal, project: new.project,
-                    repo: new.repo, branch: new.branch, base: new.base, loop: new.loop, worker: new.worker)
+                    repo: new.repo, branch: new.branch, base: new.base, loop: new.loop, worker: new.worker,
+                    // An older host ignores them, but they are sent only at level 8 (ADR 0046).
+                    work: canCapture ? new.work : nil, workRev: canCapture ? new.workRev : nil)
             }
         } catch {
             failure = error
@@ -446,6 +464,8 @@ public final class PaneSession {
         let record = savedTasks.removeValue(forKey: requestId)
         try? await refresh()
         await loadTasks()
+        // The Work item now lists the Task, and may be in progress.
+        if new.work != nil, canCapture { await loadWork() }
         if let record { return record }
         throw failure ?? Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the task."))
     }
@@ -779,8 +799,9 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries, let items, _, _, _):
-            inboxListings[id] = (entries, items)
+        case .inboxList(let id, let entries, let items, let work, let captures, let requests):
+            inboxListings[id] = InboxListing(
+                entries: entries, items: items, work: work, captures: captures, requests: requests)
         case .inboxSaved(let id, let entry, let item):
             // A Routine's item comes with its entry; a Task's item has none.
             if let entry {
@@ -791,12 +812,19 @@ public final class PaneSession {
                 savedItems[id] = item
                 keep(item)
             }
+        case .captureSaved(let id, let entry, let work, _):
+            savedCaptures[id] = (entry, work)
+            keep(entry)
+            if let work { keep(work) }
+        case .workSaved(let id, let entry, _):
+            savedWork[id] = entry
+            keep(entry)
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded, .captureSaved, .workSaved:
+            .diffContent, .diffEnded, .imageContent, .imageEnded:
             break
         }
     }
@@ -835,6 +863,8 @@ public final class PaneSession {
         savedRoutines = [:]
         savedEntries = [:]
         savedItems = [:]
+        savedCaptures = [:]
+        savedWork = [:]
         startedSessions = [:]
         inputs = []
         sentViewport = nil

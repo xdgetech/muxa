@@ -20,6 +20,9 @@ enum SidebarMode: String, CaseIterable, Identifiable {
 /// What the detail column shows: the sidebar's selection, or a session's pane.
 enum Detail: Hashable {
     case item(String)
+    /// A Work item or an unsorted Capture (ADR 0046).
+    case work(String)
+    case capture(String)
     case task(String)
     case routines
     case pane
@@ -59,7 +62,7 @@ extension AppModel {
         UserDefaults.standard.set(new.rawValue, forKey: Self.modeKey)
         if showsPane { return }
         switch (new, detail) {
-        case (.inbox, .item?), (.tasks, .task?), (.tasks, .routines?): return
+        case (.inbox, .item?), (.inbox, .work?), (.inbox, .capture?), (.tasks, .task?), (.tasks, .routines?): return
         case (.inbox, _): detail = firstItemBesideTheList
         case (.tasks, _): detail = nil
         case (.sessions, _): detail = session.watchedPane == nil ? nil : .pane
@@ -136,6 +139,7 @@ extension AppModel {
             await openDefaultPane()
         case .inbox:
             if case .item(let id)? = detail, item(id) != nil { return }
+            if case .work? = detail { return }
             if detail != .pane { detail = firstItemBesideTheList }
         case .tasks:
             break
