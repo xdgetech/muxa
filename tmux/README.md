@@ -81,7 +81,7 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 |---|---|
 | `prefix + Tab` | into the tree, and back out |
 | `prefix + b` | show or hide the tree |
-| `prefix + N` | new task: asks for repo and branch |
+| `prefix + N` | new task: asks for repo and branch; with muxa, captures a thought first |
 | `prefix + O` | open the current task in the IDE |
 | `prefix + )` / `prefix + (` | next / previous task, in tree order |
 | `prefix + j`, then `1`–`9` or `a`–`z` | the task with that label in the tree |
@@ -148,6 +148,10 @@ With `muxa-cli` and `muxa-bridge` installed on the host, a task is a muxa task r
 apps show, with a goal and a status.
 
 - `prefix + N` opens a form in a popup: workspace, repo, branch, title and goal.
+  With a muxa that keeps Captures (`work` level 8, ADR 0046), the popup first
+  asks for the text: `s` saves it on the host as an unsorted Capture and starts
+  nothing, `t` takes it into the form as the goal (its first line is the
+  title), and `q` cancels. An empty text opens the form.
   The workspace suggested is the one whose repos hold the current repo.
   The repo is a list to filter: the current repo first, then the workspace's
   repos, by their path under the workspace root (`group/app`), else with `~`.
@@ -187,6 +191,10 @@ apps show, with a goal and a status.
   - `space` and `b` scroll the item a page down and up, `J` and `K` (or
     `Shift`+arrows) a line. `v` shows the whole item in `$PAGER`.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
+  - With `work` level 8, the open Work items (`◆`) and the unsorted Captures
+    (`✎`) follow the items. On a Work item, `l` Later moves it below the others
+    and `d` completes it; its Tasks keep running. On a Capture, `w` makes a
+    Work item from it and `n` keeps it as a note.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

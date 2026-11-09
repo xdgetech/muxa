@@ -20,7 +20,7 @@ print() {
   heading "Anywhere: $p, then"
   row "$(opt @agents_key_focus Tab)" "into the tree, and back out"
   row "$(opt @agents_key_toggle b)" "show or hide the tree"
-  row "$(opt @agents_key_new N)" "new Task: workspace, repo, branch, title, goal"
+  row "$(opt @agents_key_new N)" "capture a thought, or a new Task: workspace, repo, branch, title, goal"
   row "$(opt @agents_key_ask A)" "ask session: an agent in a repo's main checkout"
   row "$(opt @agents_key_inbox T)" "the Inbox"
   row "$(opt @agents_key_ide O)" "open the current session in the IDE"

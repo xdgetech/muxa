@@ -233,3 +233,50 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'Inbox 4'"
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'Allow Bash'"
 }
+
+# A work:8 Inbox (ADR 0046): the contract's Work items and Captures follow the items.
+work_inbox() {
+  jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list") |
+    {work: 8, items: $items[0].items, entries: [], runs: [], workItems: .work, captures}' \
+    "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
+}
+
+@test "on work:8 the list ends with the open Work items, then the unsorted Captures" {
+  work_inbox >"$TMPDIR/w.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | cut -f1 | tail -n 5"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' w-6a7b8c9d w-5f6a7b8c w-7b8c9d0e w-8c9d0e1f c-4e5f6a7b)" ]
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | grep '^w-8c9d0e1f' | sed \$'s/\x1b\\\\[[0-9;]*m//g'"
+  [[ "$output" == *"Read the Rust async book  open · "*" · later"* ]]
+}
+
+@test "a Work item and a Capture show their own keys, and nothing else answers" {
+  work_inbox >"$TMPDIR/w.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' view w-6a7b8c9d '$TMPDIR/w.json' | sed \$'s/\x1b\\\\[[0-9;]*m//g'"
+  [[ "$output" == *"waiting on decision · work"* ]]
+  [[ "$output" == *"l Later   d Complete"* ]]
+  [ "$(inbox key w-6a7b8c9d l "$TMPDIR/w.json")" = work:later ]
+  [ "$(inbox key w-6a7b8c9d d "$TMPDIR/w.json")" = work:done ]
+  [ "$(inbox key w-6a7b8c9d a "$TMPDIR/w.json")" = "" ]
+  [ "$(inbox key c-4e5f6a7b w "$TMPDIR/w.json")" = sort:new ]
+  [ "$(inbox key c-4e5f6a7b n "$TMPDIR/w.json")" = sort:note ]
+  [ "$(inbox key c-4e5f6a7b l "$TMPDIR/w.json")" = "" ]
+}
+
+@test "a Capture's control characters are not shown" {
+  work_inbox | jq -c '.captures[0].text = "Ring \u001b[31mred\u001b[0m\nsecond"' >"$TMPDIR/w.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | grep '^c-' | cut -f2"
+  [[ "$output" == *"Ring [31mred[0m  "* ]]
+  [[ "$output" != *"second"* ]]
+}
+
+@test "prefix+T: l on a Work item moves it down through muxa work later" {
+  fake_cli
+  work_inbox >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  jq -c '.items = []' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key l
+  wait_for 'grep -q "^work later w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
+}

@@ -233,6 +233,37 @@ read_answer() {
   printf '%s' "${answer:-$2}"
 }
 
+# Work level 8 (ADR 0046): the text comes first. s saves it as a Capture and
+# starts nothing; t takes it into the New Task form. Sets SEED for the form.
+# Returns 1 when nothing more is to be done.
+capture_first() {
+  local text choice out
+  SEED=""
+  echo "What is on your mind? It is saved on the host; nothing starts."
+  echo "Leave it empty for the New Task form."
+  text="$(read_answer text "")" || return 1
+  [ -n "$text" ] || return 0
+  printf 's save   t start a Task with it   q cancel: '
+  IFS= read -r -n 1 choice || return 1
+  echo
+  case "$choice" in
+    s | "")
+      # On stdin: the text is never read as a flag.
+      if out="$(printf '%s' "$text" | run_muxa capture - --source tmux --json 2>&1)"; then
+        echo "Saved in Unsorted: $(printf '%s' "$out" | jq -r '.capture.id' 2>/dev/null)"
+        "$S/inbox.sh" cache --force </dev/null >/dev/null 2>&1 &
+        sleep 1
+      else
+        printf '%s\nPress Enter.\n' "$(printf '%s' "$out" | sed 's/^muxa-cli: //' | tail -n 1)"
+        read -r _
+      fi
+      return 1
+      ;;
+    t) SEED="$text" ;;
+    *) return 1 ;;
+  esac
+}
+
 form() {
   local client="$1" repo="$2" json spaces ws branch="" title goal sid w2="" workers worker=""
   json="$(tasks 2>/dev/null)" || json=""
@@ -240,6 +271,10 @@ form() {
   if [ -z "$spaces" ]; then
     plain_form "$client" "$repo"
     return
+  fi
+  SEED=""
+  if printf '%s' "$json" | work_at 8; then
+    capture_first || return 0
   fi
   printf '%s' "$json" | work2 && w2=1
   echo "A muxa task: the same record on every device. Workspaces: $spaces"
@@ -253,9 +288,11 @@ form() {
     branch="$(read_answer branch "")" || return 0
     [ -n "$branch" ] || { echo "A repo task needs a branch: this muxa cannot name one."; sleep 2; return 1; }
   fi
-  title="$(read_answer title "$branch")" || return 0
+  title="$branch"
+  [ -n "$SEED" ] && title="$(printf '%s\n' "$SEED" | head -n 1 | cut -c 1-72)"
+  title="$(read_answer title "$title")" || return 0
   [ -n "$title" ] || { echo "A task needs a title."; sleep 2; return 1; }
-  goal="$(read_answer goal "$title")" || return 0
+  goal="$(read_answer goal "${SEED:-$title}")" || return 0
   workers="$(worker_rows "$json" "$ws")"
   if [ -n "$workers" ]; then
     worker="$(pick_worker "$workers")" || return 0
@@ -283,6 +320,11 @@ ws_names() {
 work2() {
   jq -e '((.capabilities // []) | map(select(type == "string" and test("^work:[0-9]+$")) | ltrimstr("work:") | tonumber) | max // 0) >= 2
          or any((.workspaceInfo // .workspaces // [])[]?; type == "object" and .root != null)' >/dev/null 2>&1
+}
+
+# Whether the host has muxa's work level <n> or higher, by its capabilities.
+work_at() {
+  jq -e --argjson n "$1" '((.capabilities // []) | map(select(type == "string" and test("^work:[0-9]+$")) | ltrimstr("work:") | tonumber) | max // 0) >= $n' >/dev/null 2>&1
 }
 
 # <dir> with symlinks resolved, or nothing when it does not exist.

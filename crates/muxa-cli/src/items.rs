@@ -71,11 +71,11 @@ pub fn shown(item: &InboxItem, all: bool) -> bool {
     all || matches!(item.state, ItemState::Open | ItemState::Later)
 }
 
-fn wire(value: serde_json::Value) -> String {
+pub(crate) fn wire(value: serde_json::Value) -> String {
     value.as_str().unwrap_or("?").to_owned()
 }
 
-fn age(seconds: u64) -> String {
+pub(crate) fn age(seconds: u64) -> String {
     match seconds {
         s if s < 60 => format!("{s}s"),
         s if s < 3600 => format!("{}m", s / 60),

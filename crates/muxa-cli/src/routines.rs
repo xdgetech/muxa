@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     AgentState, Disposition, InboxAction, InboxEntry, InboxEntryKind, Message, Request,
-    RoutineInfo, RoutineProblem, Session, WORK_ROUTINES, work_level,
+    RoutineInfo, RoutineProblem, Session, WORK_ROUTINES, WorkState, work_level,
 };
 use serde_json::json;
 
@@ -198,13 +198,24 @@ fn waiting(routines: &[RoutineInfo], sessions: &[Session]) -> Vec<(String, Strin
 pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, String> {
     let (routines, _) = fetch(conn).await?;
     let messages = conn.call(|id| Request::ListInbox { id }, WAIT).await?;
-    let (entries, items) = messages
+    let (entries, items, work, captures) = messages
         .into_iter()
         .find_map(|m| match m {
-            Message::InboxList { entries, items, .. } => Some((entries, items)),
+            Message::InboxList {
+                entries,
+                items,
+                work,
+                captures,
+                ..
+            } => Some((entries, items, work, captures)),
             _ => None,
         })
         .ok_or("the bridge sent no inbox list")?;
+    // Work items and Captures are listed by `work`; the JSON carries them for tools.
+    let work: Vec<_> = work
+        .into_iter()
+        .filter(|w| all || !matches!(w.state, WorkState::Done | WorkState::Withdrawn))
+        .collect();
     let entries: Vec<InboxEntry> = entries
         .into_iter()
         .filter(|e| all || matches!(e.disposition, Disposition::Open | Disposition::Later))
@@ -225,7 +236,8 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
             .collect();
         println!(
             "{}",
-            json!({"work": work_level(conn.capabilities()), "items": items, "entries": entries, "runs": runs})
+            json!({"work": work_level(conn.capabilities()), "items": items, "entries": entries, "runs": runs,
+                "workItems": work, "captures": captures})
         );
         return Ok(String::new());
     }

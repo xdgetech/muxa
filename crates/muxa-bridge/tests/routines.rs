@@ -488,7 +488,7 @@ async fn without_a_daemon_a_bridge_lists_routines_but_runs_none() {
     };
     // The bridge serves ask sessions (ADR 0031) too, so it advertises the
     // highest level, 7 (ADR 0043). Its daemon answers the item requests a bridge forwards.
-    assert_eq!(work_level(capabilities), muxa_protocol::WORK_END_REMOVES);
+    assert_eq!(work_level(capabilities), muxa_protocol::WORK_ASSISTANT);
     assert!(matches!(
         bridge.request(json!({"type": "list-routines"})).await,
         Message::Result { error: None, .. }

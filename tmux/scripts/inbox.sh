@@ -3,6 +3,7 @@
 # The Inbox of ADR 0033 in tmux: the sidebar's section, and prefix + T with
 # the list above the selected item. muxa owns the items; this only shows them
 # and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3.
+# With level 8, Work items (w-) and unsorted Captures (c-) follow the items.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh ui <client> [item id]
@@ -91,6 +92,12 @@ JQ_DEFS='
      (pick(["approve", "retry"]) | bind("a"; .; "answer")),
      (pick(["reject"]) | bind("r"; .; "answer")),
      (pick(["reply", "ask-agent"]) | bind("s"; .; "answer"))];
+  # Text the user or an agent wrote, without terminal control characters.
+  def plain: gsub("[\\x00-\\x08\\x0b-\\x1f\\x7f]"; "");
+  def work_word: {"in-progress": "in progress", "waiting-decision": "waiting on decision",
+    "done": "done", "withdrawn": "withdrawn"}[.state] // "open";
+  def open_work: (.workItems // [])[] | select(.state != "done" and .state != "withdrawn");
+  def first_line: [.text | plain | split("\n")[] | select(test("\\S"))][0] // "" | sub("^\\s+"; "") | .[:60];
   # Numbered evidence: the changes, docs, images and links.
   def evidence: (.attachments // {}) as $t | [
     ($t.changes // empty | {kind: "diff", ref: (.scope // ""),
@@ -126,17 +133,54 @@ detail() {
   esac
 }
 
-# prefix + T: one row per open or later item: <id> TAB <display>.
+# prefix + T: one row per open or later item, then the open Work items and
+# the unsorted Captures (ADR 0046): <id> TAB <display>.
 list() {
   iq -r "$JQ_DEFS"'
-    .items[] | shown |
-    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .laterAt or .state == "later" then " · later" else "" end)\u001b[0m"
+    (.items[] | shown |
+    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .laterAt or .state == "later" then " · later" else "" end)\u001b[0m"),
+    (open_work |
+    "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word) · \(age)\(if .laterAt then " · later" else "" end)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
+    ((.captures // [])[] | "\(.id)\t  ✎ \(first_line)  \u001b[2munsorted · \(age)\u001b[0m")
   ' "$1"
+}
+
+# A Work item: its title, state, links, and its keys.
+view_work() {
+  iq -r --arg item "$1" "$JQ_DEFS"'
+    .workItems[]? | select(.id == $item) |
+    "◆ \u001b[1m\(.title | plain)\u001b[0m",
+    "\u001b[2m\(work_word)\(if .workspace then " · \(.workspace)" else "" end) · \(age)\(if .laterAt then " · later" else "" end)\u001b[0m",
+    "",
+    "Captures: \((.captures // []) | length)   Tasks: \((.tasks // []) | length)",
+    (if .state == "waiting-decision" then "A Task waits for your decision above." else empty end),
+    "",
+    "l Later   d Complete",
+    "\u001b[2mq close\u001b[0m"
+  ' "$2"
+}
+
+# An unsorted Capture: the whole text, and what sorting it does.
+view_capture() {
+  iq -r --arg item "$1" "$JQ_DEFS"'
+    .captures[]? | select(.id == $item) |
+    "✎ \u001b[1mUnsorted\u001b[0m",
+    "\u001b[2m\(age)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m",
+    "",
+    (.text | plain),
+    "",
+    "w New Work item   n Keep as note",
+    "\u001b[2mspace/b scroll   q close\u001b[0m"
+  ' "$2"
 }
 
 # The preview of one item: question, summary, evidence, options, then the
 # keys: triage on one line, answers on the next.
 view() {
+  case "$1" in
+    w-*) view_work "$@"; return ;;
+    c-*) view_capture "$@"; return ;;
+  esac
   iq -r --arg item "$1" "$JQ_DEFS"'
     .items[] | select(.id == $item) | . as $i |
     "\(icon) \u001b[1m\(.question)\u001b[0m",
@@ -160,6 +204,13 @@ view() {
 
 # What a key does for an item: an action, choose:<n>, open:<n>, or nothing.
 key_action() {
+  case "$1:$2" in
+    w-*:l) echo work:later; return ;;
+    w-*:d) echo work:done; return ;;
+    c-*:w) echo sort:new; return ;;
+    c-*:n) echo sort:note; return ;;
+    [wc]-*:*) return ;;
+  esac
   iq -r --arg item "$1" --arg key "$2" "$JQ_DEFS"'
     .items[] | select(.id == $item) |
     if ($key | test("^[1-9]$")) then
@@ -184,6 +235,8 @@ answer() {
   local id="$1" act="$2" json="$3" text err kind why
   set -- inbox answer "$id"
   case "$act" in
+    work:*) set -- work "${act#work:}" "$id" ;;
+    sort:*) set -- work sort "$id" "${act#sort:}" ;;
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
     reply | ask-agent)
       clear
@@ -287,7 +340,7 @@ ui() {
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
-      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,o,v,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"

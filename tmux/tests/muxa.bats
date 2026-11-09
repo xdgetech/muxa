@@ -45,6 +45,8 @@ case " $* " in
   *" --force "*) ;;
   *" task done "* | *" task drop "*) [ -f "$lose" ] && { echo "muxa-cli: would-lose-work: $(cat "$lose")" >&2; exit 1; } ;;
 esac
+# A capture's text comes on stdin.
+case " $* " in *" capture - "*) cat >"$(dirname "$0")/stdin" ;; esac
 out="$(dirname "$0")/out-$3"
 [ -f "$out" ] || out="$(dirname "$0")/out"
 cat "$out"
@@ -465,4 +467,63 @@ cli_tasks() {
   wait_for '! tx has-session -t =feature-menu 2>/dev/null'
   # The sidebar also polls the Inbox, so look for the call among the others.
   wait_for 'grep -qx "task done t-0000e3 --json" "$TMPDIR/bin/calls" 2>/dev/null'
+}
+
+# A work:8 host (ADR 0046): prefix + N asks for the text first.
+work8_tasks() {
+  printf '{"workspaces":["work"],"workspaceInfo":[{"name":"work","root":"%s/repos","repos":["%s"]}],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}' \
+    "$TMPDIR" "$REPO"
+}
+
+@test "the form on work:8: s saves the text as a Capture and starts nothing" {
+  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}'
+  printf '{"capture":{"id":"c-0000abcd"}}\n' >"$TMPDIR/bin/out-capture"
+  run bash -c "printf '%s\n%s' 'Onboarding could be shorter -v' s | '$ROOT/scripts/muxa.sh' form none ''"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Saved in Unsorted: c-0000abcd"* ]]
+  # The Inbox refreshes after it, so the call list, not the last args.
+  grep -qx -- "capture - --source tmux --json" "$TMPDIR/bin/calls"
+  [ "$(cat "$TMPDIR/bin/stdin")" = "Onboarding could be shorter -v" ]
+  run grep -c "^task new" "$TMPDIR/bin/calls"
+  [ "$output" = 0 ]
+}
+
+@test "the form on work:8: q cancels and saves nothing" {
+  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}'
+  run bash -c "printf '%s\n%s' 'Not this' q | '$ROOT/scripts/muxa.sh' form none ''"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TMPDIR/bin/calls")" = "tasks --json" ]
+}
+
+@test "prefix+N with Work items: t takes the text into the New Task form" {
+  new feature/from-text >/dev/null
+  sid="$(tx display-message -p -t =feature-from-text: '#{session_id}')"
+  fake_cli "$(printf '{"group":"no-agent","record":{"id":"t-0000d3"},"session":{"id":"%s","name":"feature-from-text"}}' "$sid")"
+  work8_tasks >"$TMPDIR/bin/out-tasks"
+  attach
+  tx send-keys -K -c "$C" C-b N
+  sleep 1.5
+  answer "Shorten onboarding"
+  tx send-keys -K -c "$C" t
+  sleep 0.5
+  answer "no repo"       # one workspace: the picker comes first
+  answer ""              # title: the text's first line
+  answer ""              # goal: the text
+  wait_for '[ "$(tx display-message -p -c "$C" "#{session_name}")" = feature-from-text ]'
+  args_are task new --workspace work --title "Shorten onboarding" --goal "Shorten onboarding" --json
+  run grep -c "^capture" "$TMPDIR/bin/calls"
+  [ "$output" = 0 ]
+}
+
+@test "prefix+N with Work items: no text opens the New Task form" {
+  fake_cli "$(work8_tasks)"
+  attach
+  tx send-keys -K -c "$C" C-b N
+  sleep 1.5
+  answer ""              # no text
+  answer "no repo"       # one workspace: the picker comes first
+  answer ""              # title: empty refuses
+  sleep 2.5
+  run grep -cE "^(capture|task new)" "$TMPDIR/bin/calls"
+  [ "$output" = 0 ]
 }

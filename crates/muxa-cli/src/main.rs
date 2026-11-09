@@ -8,6 +8,7 @@ mod routines;
 mod tasks;
 mod view;
 mod when;
+mod work;
 
 use std::process::ExitCode;
 
@@ -43,6 +44,14 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
                 [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
+       muxa-cli [--bridge CMD] capture TEXT [--workspace W] [--source S]
+                [--client-id ID] [--json]
+       muxa-cli [--bridge CMD] work [--all] [--json]
+       muxa-cli [--bridge CMD] work sort CAPTURE (new [--title T] [--workspace W]
+                | link WORK | note) [--json]
+       muxa-cli [--bridge CMD] work (later | done | withdraw | reopen) WORK [--json]
+       muxa-cli [--bridge CMD] work edit WORK [--title T] [--workspace W] [--json]
+       muxa-cli [--bridge CMD] work merge WORK INTO [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -125,7 +134,23 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  permission first. ask-agent sends the item and the text to
                  the workspace's Ask session and leaves the item open
   inbox read ITEM
-                 marks the item read, as inbox answer ITEM read";
+                 marks the item read, as inbox answer ITEM read
+  capture TEXT   saves TEXT on the host as an unsorted Capture; - reads it
+                 from stdin. Nothing starts. --source is cli (default), tmux
+                 or app. Sending the same --client-id again returns the
+                 Capture already saved (ADR 0046)
+  work           open Work items, then unsorted Captures; --all also lists
+                 done and withdrawn items
+  work sort CAPTURE
+                 new makes a Work item (title: the first line, or --title),
+                 link adds the Capture to WORK, note keeps it with no item
+  work later WORK
+                 moves the item below the others; reopen brings it back.
+                 done and withdraw close it; its Tasks keep running
+  work merge WORK INTO
+                 withdraws WORK into INTO; INTO gets its Captures
+  --work WORK    task new: the Task is for this Work item. Starting it again
+                 returns the same Task";
 
 enum Cmd {
     List,
@@ -210,6 +235,22 @@ enum Cmd {
         action: InboxAction,
         json: bool,
     },
+    Capture {
+        new: work::NewCapture,
+        json: bool,
+    },
+    Work {
+        all: bool,
+        json: bool,
+    },
+    Sort {
+        sort: work::Sort,
+        json: bool,
+    },
+    ChangeWork {
+        change: work::Change,
+        json: bool,
+    },
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
@@ -225,6 +266,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let mut new = tasks::NewTask::default();
     let mut check = tasks::LoopFlags::default();
     let (mut text, mut option) = (None, None);
+    let (mut source, mut client_id) = (None, None);
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -259,6 +301,14 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("all") => all = true,
             Long("text") => text = Some(p.value()?.string()?),
             Long("option") => option = Some(p.value()?.parse()?),
+            Long("work") => new.work = Some(p.value()?.string()?),
+            Long("client-id") => client_id = Some(p.value()?.string()?),
+            Long("source") => {
+                let value = p.value()?.string()?;
+                source = Some(work::source(&value).ok_or_else(|| {
+                    lexopt::Error::Custom("--source must be app, tmux or cli".into())
+                })?);
+            }
             Long("version") => {
                 println!("muxa-cli {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
@@ -306,6 +356,15 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         return Err(lexopt::Error::Custom(
             "--text and --option require inbox answer".into(),
         ));
+    }
+    let is_capture = matches!(words.as_slice(), [w, _] if w == "capture");
+    if (source.is_some() || client_id.is_some()) && !is_capture {
+        return Err(lexopt::Error::Custom(
+            "--source and --client-id require capture".into(),
+        ));
+    }
+    if new.work.is_some() && !is_new {
+        return Err(lexopt::Error::Custom("--work requires task new".into()));
     }
     if new.worker.is_some() && !is_new && !is_restart {
         return Err(lexopt::Error::Custom(
@@ -415,6 +474,24 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 json,
             }
         }
+        [w, text] if w == "capture" => Cmd::Capture {
+            new: work::NewCapture {
+                text: capture_text(text)?,
+                workspace: some(new.workspace),
+                source: source.unwrap_or(muxa_protocol::CaptureSource::Cli),
+                client_id: client_id.unwrap_or_else(work::client_id),
+            },
+            json,
+        },
+        [w] if w == "work" => Cmd::Work { all, json },
+        [w, s, capture, rest @ ..] if w == "work" && s == "sort" => Cmd::Sort {
+            sort: sort_args(capture, rest, new.title, new.workspace)?,
+            json,
+        },
+        [w, a, id, rest @ ..] if w == "work" => Cmd::ChangeWork {
+            change: change_args(a, id, rest, new.title, new.workspace)?,
+            json,
+        },
         [w, r, id] if w == "task" && r == "recover" => Cmd::Recover {
             task: id.clone(),
             resolution,
@@ -438,6 +515,79 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
     Ok(Some((bridge, cmd)))
+}
+
+fn some(s: String) -> Option<String> {
+    Some(s).filter(|s| !s.trim().is_empty())
+}
+
+/// `-` reads the text from stdin.
+fn capture_text(arg: &str) -> Result<String, lexopt::Error> {
+    if arg != "-" {
+        return Ok(arg.to_owned());
+    }
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)
+        .map_err(|e| lexopt::Error::Custom(format!("cannot read stdin: {e}").into()))?;
+    Ok(text)
+}
+
+fn sort_args(
+    capture: &str,
+    rest: &[String],
+    title: String,
+    workspace: String,
+) -> Result<work::Sort, lexopt::Error> {
+    let (title, workspace) = (some(title), some(workspace));
+    let (action, work) = match rest {
+        [a] if a == "new" => (muxa_protocol::SortAction::Work, None),
+        [a, id] if a == "link" => (muxa_protocol::SortAction::Link, Some(id.clone())),
+        [a] if a == "note" => (muxa_protocol::SortAction::Note, None),
+        _ => return Err(lexopt::Error::Custom(USAGE.into())),
+    };
+    if action != muxa_protocol::SortAction::Work && (title.is_some() || workspace.is_some()) {
+        return Err(lexopt::Error::Custom(
+            "--title and --workspace require work sort CAPTURE new".into(),
+        ));
+    }
+    Ok(work::Sort {
+        capture: capture.to_owned(),
+        action,
+        work,
+        title,
+        workspace,
+    })
+}
+
+fn change_args(
+    name: &str,
+    work: &str,
+    rest: &[String],
+    title: String,
+    workspace: String,
+) -> Result<work::Change, lexopt::Error> {
+    use muxa_protocol::WorkAction;
+    let action = work::action(name).ok_or_else(|| lexopt::Error::Custom(USAGE.into()))?;
+    let (title, workspace) = (some(title), some(workspace));
+    let into = match (action, rest) {
+        (WorkAction::Merge, [into]) => Some(into.clone()),
+        (WorkAction::Merge, _) => return Err(lexopt::Error::Custom("work merge WORK INTO".into())),
+        (_, []) => None,
+        _ => return Err(lexopt::Error::Custom(USAGE.into())),
+    };
+    let edits = title.is_some() || workspace.is_some();
+    if (action == WorkAction::Edit) != edits {
+        return Err(lexopt::Error::Custom(
+            "work edit needs --title or --workspace, and only edit takes them".into(),
+        ));
+    }
+    Ok(work::Change {
+        work: work.to_owned(),
+        action,
+        title,
+        workspace,
+        into,
+    })
 }
 
 fn main() -> ExitCode {
@@ -535,6 +685,10 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             action,
             json,
         } => routines::act(conn, &entry, action, json).await,
+        Cmd::Capture { new, json } => work::capture(&mut conn, new, json).await,
+        Cmd::Work { all, json } => work::list(&mut conn, all, json).await,
+        Cmd::Sort { sort, json } => work::sort(&mut conn, sort, json).await,
+        Cmd::ChangeWork { change, json } => work::change(&mut conn, change, json).await,
     }
 }
 
