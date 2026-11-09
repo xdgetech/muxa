@@ -60,6 +60,7 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
     let pending_prompt = r.pending_prompt().map(pending_prompt);
     let task_loop = loop_of(&r);
     let worker = r.worker().map(str::to_owned);
+    let work = r.work().map(str::to_owned);
     let read = r.is_read();
     let restart_operation = crate::task_records::restart::summary(&r).map(Box::new);
     wire::TaskRecord {
@@ -88,7 +89,7 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         pending_prompt,
         worker,
         restart_operation,
-        work: None,
+        work,
     }
 }
 

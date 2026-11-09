@@ -3,9 +3,8 @@
 //! fields. Task lists skip it.
 use serde::{Deserialize, Serialize};
 
-use crate::records::{Loop, LoopSpec, Record};
+use crate::records::{KIND_FIELD, Loop, LoopSpec, Record};
 
-pub const KIND_FIELD: &str = "kind";
 pub const ROUTINE_RUN: &str = "routine-run";
 const ROUTINE_FIELD: &str = "routine";
 /// Not a shell command: the engine runs the output check in process for this kind.

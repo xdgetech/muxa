@@ -358,9 +358,10 @@ pub(crate) fn observe(sessions: &[Session], config: &Config, agents: &Registry) 
     linked
 }
 
-/// Open Tasks; a Routine run's items are its entries (ADR 0026).
+/// Open Tasks; a background run makes no items: a Routine run's are its
+/// entries (ADR 0026), an assistant run's its results (ADR 0046).
 pub(crate) fn watched(r: &Record) -> bool {
-    matches!(r.status, Status::Open | Status::Review) && !r.is_routine_run()
+    matches!(r.status, Status::Open | Status::Review) && !r.is_background_run()
 }
 
 /// The Task's agent pane whose adapter supplies a state.

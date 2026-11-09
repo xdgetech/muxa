@@ -526,8 +526,8 @@ fn write(dir: &Path, task: &str, old: &Loop, new: &Loop) -> Result<bool, StoreEr
                 return;
             }
             if fx.review && r.status == crate::records::Status::Open {
-                // A published Routine run is finished; a Task waits for review.
-                r.status = if r.is_routine_run() {
+                // A published background run is finished; a Task waits for review.
+                r.status = if r.is_background_run() {
                     crate::records::Status::Done
                 } else {
                     crate::records::Status::Review

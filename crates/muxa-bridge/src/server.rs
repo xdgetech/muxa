@@ -690,7 +690,9 @@ impl Worker {
             | Request::ParkTask { .. }
             | Request::RecoverRestart { .. }
             | Request::UpdateInbox { .. }
-            | Request::Capture { .. }) => {
+            | Request::Capture { .. }
+            | Request::SortCapture { .. }
+            | Request::UpdateWork { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -722,10 +724,7 @@ impl Worker {
             }
             // The host side comes with `work` level 8 (ADR 0046); until it
             // advertises that level, no client sends these.
-            Request::SortCapture { .. }
-            | Request::UpdateWork { .. }
-            | Request::RequestAssistant { .. }
-            | Request::CancelRequest { .. } => {
+            Request::RequestAssistant { .. } | Request::CancelRequest { .. } => {
                 return Some(Err(error_body(
                     ErrorCode::Unsupported,
                     "this host has no assistant yet: update muxa-bridge",

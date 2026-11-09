@@ -66,8 +66,8 @@ fn parkable(record: &Record) -> Result<std::path::PathBuf, ErrorBody> {
             "a task with a named worker cannot be parked or resumed yet",
         ));
     }
-    if record.is_routine_run() {
-        return Err(bad("a routine run is not parked"));
+    if record.is_background_run() {
+        return Err(bad("a Routine or assistant run is not parked"));
     }
     record.dir.clone().ok_or_else(|| {
         bad(format!(
@@ -265,7 +265,7 @@ fn quiet(r: &Record, items: &ItemStore) -> bool {
     });
     matches!(r.status, Status::Open | Status::Review)
         && r.worker().is_none()
-        && !r.is_routine_run()
+        && !r.is_background_run()
         && r.pending_prompt().is_none()
         && !r.extra.contains_key(crate::records::lifecycle::FIELD)
         && !r.task_loop().ok().flatten().is_some_and(|l| l.active())
@@ -291,6 +291,7 @@ fn bad(message: impl Into<String>) -> ErrorBody {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use muxa_protocol::Message;
 
     #[test]
     fn only_an_open_task_with_a_directory_and_no_worker_parks() {
@@ -308,5 +309,58 @@ mod tests {
         r.extra.remove("worker");
         r.status = Status::Done;
         assert!(parkable(&r).is_err());
+    }
+
+    /// ADR 0046 section 5: only the Task is listed, watched or parked.
+    #[tokio::test]
+    async fn only_a_task_of_each_record_kind_shows_as_a_task() {
+        let base = std::env::temp_dir().join(format!(
+            "muxa-kinds-{}-{:08x}",
+            std::process::id(),
+            getrandom::u32().unwrap()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let config = Config {
+            state_dir: Some(base.clone()),
+            workspaces: None,
+            home: None,
+        };
+        let store = config.store().unwrap();
+        let items = ItemStore::open(&base).unwrap();
+        let mut task = None;
+        for kind in [
+            None,
+            Some("routine-run"),
+            Some("assistant-run"),
+            Some("future-run"),
+        ] {
+            let mut extra = serde_json::Map::new();
+            if let Some(kind) = kind {
+                extra.insert(crate::records::KIND_FIELD.into(), kind.into());
+            }
+            let made = store
+                .create(crate::records::NewRecord {
+                    workspace: "w".into(),
+                    title: "t".into(),
+                    dir: Some(base.join("dir")),
+                    extra,
+                    ..Default::default()
+                })
+                .unwrap();
+            let shown = kind.is_none();
+            assert_eq!(parkable(&made).is_ok(), shown, "{kind:?}");
+            assert_eq!(quiet(&made, &items), shown, "{kind:?}");
+            assert_eq!(crate::items::produce::watched(&made), shown, "{kind:?}");
+            if shown {
+                task = Some(made.id);
+            }
+        }
+        let Message::TaskList { entries, .. } = super::super::list(&config, 1).await.unwrap()
+        else {
+            panic!("not a task-list")
+        };
+        let listed: Vec<String> = entries.into_iter().map(|t| t.id).collect();
+        assert_eq!(listed, vec![task.unwrap()]);
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

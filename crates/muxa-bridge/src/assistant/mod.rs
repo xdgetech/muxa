@@ -1,7 +1,10 @@
 //! Captures, Work items and assistant requests (ADR 0046): the user's input
 //! and unfinished work, kept apart from Tasks and Inbox items.
 pub mod capture;
+mod derive;
+pub mod start;
 pub mod store;
+pub mod work;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -61,6 +64,73 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 Err(e) => (Vec::new(), Some(e)),
             }
         }
+        Request::SortCapture {
+            id,
+            capture,
+            rev,
+            action,
+            work,
+            title,
+            workspace,
+        } => {
+            let config = Arc::clone(&cx.records);
+            let sort = work::Sort {
+                capture,
+                rev,
+                action,
+                work,
+                title,
+                workspace,
+            };
+            let sorted = blocking(move || {
+                let (entry, item) = work::sort(&config, sort)?;
+                Ok((entry, item.map(|i| listed(&config, i))))
+            })
+            .await;
+            match sorted {
+                Ok((entry, item)) => (
+                    vec![Message::CaptureSaved {
+                        capture: id,
+                        entry,
+                        work: item.map(Box::new),
+                        request: None,
+                    }],
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
+        Request::UpdateWork {
+            id,
+            work,
+            rev,
+            action,
+            title,
+            workspace,
+            into,
+        } => {
+            let config = Arc::clone(&cx.records);
+            let update = work::Update {
+                work,
+                rev,
+                action,
+                title,
+                workspace,
+                into,
+            };
+            match blocking(move || work::update(&config, update).map(|i| listed(&config, i))).await
+            {
+                Ok(entry) => (
+                    vec![Message::WorkSaved {
+                        work: id,
+                        entry,
+                        request: None,
+                    }],
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
         _ => (
             Vec::new(),
             Some(error_body(
@@ -69,6 +139,17 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             )),
         ),
     }
+}
+
+/// Blocking. The item as a list shows it, with its derived state.
+fn listed(config: &Config, item: WorkItem) -> WorkItem {
+    let requests = shelf::<AssistantRequest>(config)
+        .and_then(|s| s.all().map_err(|e| state_error(&e)))
+        .unwrap_or_default();
+    let mut one = [item];
+    derive::states(config, &mut one, &requests);
+    let [item] = one;
+    item
 }
 
 /// What `inbox-list` adds at level 8.
@@ -87,7 +168,7 @@ pub fn list(config: &Config) -> Result<Listing, ErrorBody> {
     if !config.state_dir.as_ref().is_some_and(|d| d.is_dir()) {
         return Ok(Default::default());
     }
-    let work = order(
+    let mut work = order(
         shelf::<WorkItem>(config)?
             .all()
             .map_err(|e| state_error(&e))?,
@@ -109,7 +190,8 @@ pub fn list(config: &Config) -> Result<Listing, ErrorBody> {
         .map_err(|e| state_error(&e))?
         .into_iter()
         .filter(|r| wanted.contains(r.id.as_str()))
-        .collect();
+        .collect::<Vec<_>>();
+    derive::states(config, &mut work, &requests);
     Ok(Listing {
         work,
         captures,

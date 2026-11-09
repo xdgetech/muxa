@@ -125,9 +125,27 @@ fn new_id() -> Result<String, getrandom::Error> {
 #[cfg(test)]
 mod tests;
 
+/// The record field that names a background run's kind: `routine-run`
+/// (ADR 0026) or `assistant-run` (ADR 0046). A Task has none.
+pub const KIND_FIELD: &str = "kind";
+/// The Work item a Task was started for (ADR 0046).
+pub const WORK_FIELD: &str = "work";
+
 impl Record {
     /// W1 reads the additive field without changing older-record rewrite behavior.
     pub fn worker(&self) -> Option<&str> {
         self.extra.get("worker").and_then(serde_json::Value::as_str)
+    }
+
+    pub fn work(&self) -> Option<&str> {
+        self.extra
+            .get(WORK_FIELD)
+            .and_then(serde_json::Value::as_str)
+    }
+
+    /// A run muxa started for itself, not a Task (ADR 0046 section 5). A
+    /// kind from a newer muxa counts too: it is never shown as a Task.
+    pub fn is_background_run(&self) -> bool {
+        self.extra.contains_key(KIND_FIELD)
     }
 }

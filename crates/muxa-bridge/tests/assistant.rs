@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use common::daemon::Daemon;
 use common::{Bridge, Server};
-use muxa_protocol::{Capture, CaptureState, ErrorCode, Message};
+use muxa_protocol::{Capture, CaptureState, ErrorCode, Message, TaskRecord, WorkItem, WorkState};
 use serde_json::{Value, json};
 
 /// Must never reach a log.
@@ -183,4 +183,92 @@ async fn the_daemon_saves_a_capture_and_logs_no_text() {
     let log = daemon.log();
     assert!(log.contains("capture saved"), "{log}");
     assert!(!log.contains(SECRET), "the daemon logged the text");
+}
+
+fn work_saved(messages: &[Message]) -> WorkItem {
+    messages
+        .iter()
+        .find_map(|m| match m {
+            Message::WorkSaved { entry, .. } => Some(entry.clone()),
+            Message::CaptureSaved { work: Some(w), .. } => Some((**w).clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no work item: {messages:?}"))
+}
+
+fn task_saved(messages: &[Message]) -> TaskRecord {
+    messages
+        .iter()
+        .find_map(|m| match m {
+            Message::TaskSaved { record, .. } => Some(record.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no task-saved: {messages:?}"))
+}
+
+#[tokio::test]
+async fn a_work_item_is_sorted_changed_and_starts_one_task_per_rev() {
+    let host = Host::new("work");
+    let no_daemon = host.base.join("no-daemon").display().to_string();
+    let mut args = host.args();
+    args.extend([
+        "--daemon-dir".into(),
+        no_daemon,
+        "--task-launcher".into(),
+        "builtin".into(),
+        "--task-command".into(),
+        "cat".into(),
+    ]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (mut bridge, _) = Bridge::start(&host.server, &args).await;
+
+    let c = saved(
+        &call(
+            &mut bridge,
+            capture_req("client-5", "Shorten onboarding\nmore"),
+        )
+        .await,
+    );
+    let sorted = call(
+        &mut bridge,
+        json!({"type": "sort-capture", "capture": c.id, "rev": c.rev, "action": "work", "workspace": "work"}),
+    )
+    .await;
+    assert!(ok(&sorted), "{sorted:?}");
+    let item = work_saved(&sorted);
+    assert_eq!(item.title, "Shorten onboarding");
+
+    let stale = call(
+        &mut bridge,
+        json!({"type": "update-work", "work": item.id, "rev": item.rev + 1, "action": "later"}),
+    )
+    .await;
+    assert!(matches!(
+        stale.last(),
+        Some(Message::Result { error: Some(e), .. }) if e.code == ErrorCode::Conflict
+    ));
+
+    let start = json!({"type": "create-task", "workspace": "work", "title": item.title,
+        "goal": "Shorten the onboarding flow.", "work": item.id, "workRev": item.rev});
+    let first = call(&mut bridge, start.clone()).await;
+    assert!(ok(&first), "{first:?}");
+    let task = task_saved(&first);
+    assert_eq!(task.work.as_deref(), Some(item.id.as_str()));
+    // The client never saw the answer and starts it again: the same Task.
+    let again = call(&mut bridge, start).await;
+    assert!(ok(&again), "{again:?}");
+    assert_eq!(task_saved(&again).id, task.id);
+
+    let listed = call(&mut bridge, json!({"type": "list-inbox"})).await;
+    let work = listed
+        .iter()
+        .find_map(|m| match m {
+            Message::InboxList { work, .. } => Some(work.clone()),
+            _ => None,
+        })
+        .expect("an inbox-list");
+    assert_eq!(work.len(), 1);
+    assert_eq!(work[0].tasks, vec![task.id.clone()]);
+    assert_eq!(work[0].state, WorkState::InProgress);
+    assert_eq!(work[0].rev, item.rev + 1);
 }

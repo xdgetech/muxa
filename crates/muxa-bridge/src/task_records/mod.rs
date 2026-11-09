@@ -168,6 +168,8 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::ListInbox { .. }
             | Request::UpdateInbox { .. }
             | Request::Capture { .. }
+            | Request::SortCapture { .. }
+            | Request::UpdateWork { .. }
     )
 }
 
@@ -215,9 +217,8 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             r#loop,
             worker,
             read,
-            // Linking a Task to a Work item comes with level 8 (ADR 0046).
-            work: _,
-            work_rev: _,
+            work,
+            work_rev,
         } if !(read && r#loop.is_some()) => {
             let new = NewTask {
                 worker,
@@ -230,9 +231,20 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
                 base,
                 read,
                 routine: None,
+                work: None,
             };
             let spec = r#loop.map(convert::loop_spec);
-            match create_with_loop(cx, new, spec).await {
+            let made = match (work, work_rev) {
+                (None, None) => create_with_loop(cx, new, spec).await,
+                (Some(work), Some(rev)) => {
+                    crate::assistant::start::create_task(cx, new, spec, work, rev).await
+                }
+                _ => Err(error_body(
+                    ErrorCode::BadRequest,
+                    "create-task: work and workRev come together",
+                )),
+            };
+            match made {
                 Ok((record, error)) => (saved(id, record).into_iter().collect(), error),
                 Err(e) => (Vec::new(), Some(e)),
             }
@@ -304,7 +316,9 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         | Request::RunRoutine { .. }
         | Request::ListInbox { .. }
         | Request::UpdateInbox { .. }) => crate::routines::handle(cx, req).await,
-        req @ Request::Capture { .. } => crate::assistant::handle(cx, req).await,
+        req @ (Request::Capture { .. }
+        | Request::SortCapture { .. }
+        | Request::UpdateWork { .. }) => crate::assistant::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(
@@ -368,7 +382,7 @@ pub async fn resume_prompts(cx: &Context) {
 
 /// `create-task`, with its loop when it asks for one. The loop is checked
 /// against the workspace first, so a refused loop leaves no Task behind.
-async fn create_with_loop(
+pub(crate) async fn create_with_loop(
     cx: &Context,
     new: NewTask,
     spec: Option<crate::records::LoopSpec>,
@@ -547,8 +561,8 @@ pub async fn list(config: &Config, request: u64) -> Result<Message, ErrorBody> {
     blocking(move || {
         let workspaces = config.load_workspaces()?;
         let mut records = config.store()?.list().map_err(|e| store_error(&e))?;
-        // A Routine run is not a Task (ADR 0026 section 3).
-        records.retain(|r| !r.is_routine_run());
+        // A Routine or assistant run is not a Task (ADR 0046 section 5).
+        records.retain(|r| !r.is_background_run());
         let (records, truncated) = cap(records, MAX_LIST);
         Ok(Message::TaskList {
             tasks: request,

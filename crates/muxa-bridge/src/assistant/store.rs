@@ -93,7 +93,7 @@ impl<T: Kind> Shelf<T> {
 
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "update-work uses it (ADR 0046 slice A3)")
+        expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
     )]
     pub fn get(&self, id: &str) -> Result<Option<T>, StateError> {
         check_id::<T>(id)?;
@@ -134,31 +134,33 @@ impl<T: Kind> Shelf<T> {
     /// Applies `change` to record `id` under its lock and writes the result
     /// atomically. `None` when there is no such record: `change` does not
     /// run. Nothing is written when `change` fails.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "update-work uses it (ADR 0046 slice A3)")
-    )]
     pub fn update<O, E: From<StateError>>(
         &self,
         id: &str,
         change: impl FnOnce(&mut T) -> Result<O, E>,
+    ) -> Result<Option<O>, E> {
+        self.update_with_extra(id, |record, _| change(record))
+    }
+
+    /// [`Shelf::update`], with the file's fields that are not on the wire:
+    /// muxa's own bookkeeping and a newer muxa's fields.
+    pub fn update_with_extra<O, E: From<StateError>>(
+        &self,
+        id: &str,
+        change: impl FnOnce(&mut T, &mut serde_json::Map<String, serde_json::Value>) -> Result<O, E>,
     ) -> Result<Option<O>, E> {
         check_id::<T>(id)?;
         let _lock = Lock::acquire(&self.dir, id, true).map_err(StateError::from)?;
         let Some(mut stored) = self.read(id)? else {
             return Ok(None);
         };
-        let out = change(&mut stored.record)?;
+        let out = change(&mut stored.record, &mut stored.extra)?;
         stored.version = FORMAT_VERSION;
         write_json(&self.dir, id, &stored, MAX_FILE)?;
         Ok(Some(out))
     }
 
     /// Writes a new record under a fresh random id. `make` gets the id.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "update-work uses it (ADR 0046 slice A3)")
-    )]
     pub fn create<E: From<StateError>>(
         &self,
         make: impl FnOnce(String) -> Result<T, E>,

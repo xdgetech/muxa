@@ -43,6 +43,8 @@ pub struct NewTask {
     pub read: bool,
     /// Set when the daemon starts a Routine run (ADR 0026); never from a client.
     pub routine: Option<crate::routines::record::RunOf>,
+    /// The Work item the Task is for, checked by `assistant::start` (ADR 0046).
+    pub work: Option<String>,
 }
 
 /// Why a task did not start, and the session if one was made anyway.
@@ -94,6 +96,9 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
     let mut extra = new.routine.as_ref().map(|r| r.fields()).unwrap_or_default();
     if new.read {
         extra.extend(crate::records::reading::new_fields());
+    }
+    if let Some(work) = &new.work {
+        extra.insert(crate::records::WORK_FIELD.into(), work.clone().into());
     }
     let fields = NewRecord {
         workspace: new.workspace,
