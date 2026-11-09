@@ -727,6 +727,14 @@ impl Worker {
                 }
                 return None;
             }
+            // The host side comes with `work` level 9 (ADR 0047); until it
+            // advertises that level, no client sends these.
+            Request::ApplyNotes { .. } | Request::PlanNow { .. } => {
+                return Some(Err(error_body(
+                    ErrorCode::Unsupported,
+                    "this host has no plans or notes yet: update muxa-bridge",
+                )));
+            }
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))

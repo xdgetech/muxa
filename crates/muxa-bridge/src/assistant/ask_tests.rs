@@ -61,6 +61,8 @@ impl Host {
                     workspace: Some("w".into()),
                     later_at: None,
                     merged_into: None,
+                    pinned_at: None,
+                    due: None,
                     captures: Vec::new(),
                     requests: Vec::new(),
                     tasks: Vec::new(),

@@ -32,6 +32,8 @@ extension ItemKind {
         case .failure: "Failure"
         case .proposal: "Proposal"
         case .briefing: "Briefing"
+        case .sort: "Sort"
+        case .delegate: "Delegate"
         case .other(let raw): raw.capitalized
         }
     }
@@ -43,6 +45,8 @@ extension ItemKind {
         case .failure: Icon.warning
         case .proposal: Icon.proposal
         case .briefing: Icon.briefing
+        case .sort: Icon.capture
+        case .delegate: Icon.assistant
         case .other: "tray"
         }
     }

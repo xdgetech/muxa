@@ -91,6 +91,8 @@ pub fn line(item: &InboxItem, now: u64) -> String {
         ItemKind::Failure => "failure",
         ItemKind::Proposal => "proposal",
         ItemKind::Briefing => "briefing",
+        ItemKind::Sort => "sort",
+        ItemKind::Delegate => "delegate",
     };
     let mut state = wire(json!(item.state));
     if item.state == ItemState::Open && item.later_at.is_some() {

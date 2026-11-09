@@ -129,6 +129,10 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
     public var laterAt: UInt64?
     /// With `withdrawn` after `merge`: the Work item it was merged into.
     public var mergedInto: String?
+    /// Level 9: set by `pin`. Pinned items are listed first, in pin order (ADR 0047).
+    public var pinnedAt: UInt64?
+    /// Level 9: the user's deadline. Only the user sets it.
+    public var due: Due?
     public var captures: [String]
     /// Assistant requests, oldest first.
     public var requests: [String]
@@ -137,8 +141,8 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
 
     public init(
         id: String, rev: UInt64, title: String, state: WorkState, createdAt: UInt64, updatedAt: UInt64,
-        workspace: String? = nil, laterAt: UInt64? = nil, mergedInto: String? = nil,
-        captures: [String] = [], requests: [String] = [], tasks: [String] = []
+        workspace: String? = nil, laterAt: UInt64? = nil, mergedInto: String? = nil, pinnedAt: UInt64? = nil,
+        due: Due? = nil, captures: [String] = [], requests: [String] = [], tasks: [String] = []
     ) {
         self.id = id
         self.rev = rev
@@ -149,6 +153,8 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
         self.workspace = workspace
         self.laterAt = laterAt
         self.mergedInto = mergedInto
+        self.pinnedAt = pinnedAt
+        self.due = due
         self.captures = captures
         self.requests = requests
         self.tasks = tasks
@@ -157,7 +163,8 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
 
 extension WorkItem: Codable {
     private enum Key: String, CodingKey {
-        case id, rev, title, state, createdAt, updatedAt, workspace, laterAt, mergedInto, captures, requests, tasks
+        case id, rev, title, state, createdAt, updatedAt, workspace, laterAt, mergedInto, pinnedAt, due
+        case captures, requests, tasks
     }
 
     public init(from decoder: any Decoder) throws {
@@ -171,6 +178,8 @@ extension WorkItem: Codable {
         workspace = try c.decodeIfPresent(String.self, forKey: .workspace)
         laterAt = try c.decodeIfPresent(UInt64.self, forKey: .laterAt)
         mergedInto = try c.decodeIfPresent(String.self, forKey: .mergedInto)
+        pinnedAt = try c.decodeIfPresent(UInt64.self, forKey: .pinnedAt)
+        due = try c.decodeIfPresent(Due.self, forKey: .due)
         captures = try c.decodeIfPresent([String].self, forKey: .captures) ?? []
         requests = try c.decodeIfPresent([String].self, forKey: .requests) ?? []
         tasks = try c.decodeIfPresent([String].self, forKey: .tasks) ?? []
@@ -187,6 +196,8 @@ extension WorkItem: Codable {
         try c.encodeIfPresent(workspace, forKey: .workspace)
         try c.encodeIfPresent(laterAt, forKey: .laterAt)
         try c.encodeIfPresent(mergedInto, forKey: .mergedInto)
+        try c.encodeIfPresent(pinnedAt, forKey: .pinnedAt)
+        try c.encodeIfPresent(due, forKey: .due)
         if !captures.isEmpty { try c.encode(captures, forKey: .captures) }
         if !requests.isEmpty { try c.encode(requests, forKey: .requests) }
         if !tasks.isEmpty { try c.encode(tasks, forKey: .tasks) }
@@ -425,11 +436,13 @@ public struct AssistResult: Equatable, Sendable {
     /// Paths the run wrote, absolute.
     public var files: [String]
     public var possibleDuplicates: [PossibleDuplicate]
+    /// Level 9: the delegate's proposed notes (ADR 0047 §1).
+    public var notes: Notes?
 
     public init(
         version: UInt64, at: UInt64, summary: String, stale: Bool = false, findings: [Finding] = [],
         openQuestions: [String] = [], next: [String] = [], files: [String] = [],
-        possibleDuplicates: [PossibleDuplicate] = []
+        possibleDuplicates: [PossibleDuplicate] = [], notes: Notes? = nil
     ) {
         self.version = version
         self.at = at
@@ -440,12 +453,13 @@ public struct AssistResult: Equatable, Sendable {
         self.next = next
         self.files = files
         self.possibleDuplicates = possibleDuplicates
+        self.notes = notes
     }
 }
 
 extension AssistResult: Codable {
     private enum Key: String, CodingKey {
-        case version, at, summary, stale, findings, openQuestions, next, files, possibleDuplicates
+        case version, at, summary, stale, findings, openQuestions, next, files, possibleDuplicates, notes
     }
 
     public init(from decoder: any Decoder) throws {
@@ -459,6 +473,7 @@ extension AssistResult: Codable {
         next = try c.decodeIfPresent([String].self, forKey: .next) ?? []
         files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
         possibleDuplicates = try c.decodeIfPresent([PossibleDuplicate].self, forKey: .possibleDuplicates) ?? []
+        notes = try c.decodeIfPresent(Notes.self, forKey: .notes)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -472,6 +487,34 @@ extension AssistResult: Codable {
         if !next.isEmpty { try c.encode(next, forKey: .next) }
         if !files.isEmpty { try c.encode(files, forKey: .files) }
         if !possibleDuplicates.isEmpty { try c.encode(possibleDuplicates, forKey: .possibleDuplicates) }
+        try c.encodeIfPresent(notes, forKey: .notes)
+    }
+}
+
+/// A deadline the user set on a Work item (ADR 0047 §6).
+public struct Due: Codable, Equatable, Sendable {
+    /// Epoch seconds.
+    public var at: UInt64
+    /// IANA name, e.g. `Asia/Tokyo`: the zone the user set it in.
+    public var timezone: String
+
+    public init(at: UInt64, timezone: String) {
+        self.at = at
+        self.timezone = timezone
+    }
+}
+
+/// A run's proposed replacement of the workspace's `.muxa/assistant/NOTES.md`.
+/// `apply-notes` writes it only while the live file still hashes to `base`.
+public struct Notes: Codable, Equatable, Sendable {
+    /// The full new text, at most 16 KiB.
+    public var text: String
+    /// Lowercase hex SHA-256 of the file the run read; of no bytes when there was none.
+    public var base: String
+
+    public init(text: String, base: String) {
+        self.text = text
+        self.base = base
     }
 }
 
@@ -536,9 +579,13 @@ public enum SortAction: String, Codable, Sendable {
 
 /// What `update-work` does.
 public enum WorkAction: String, Codable, Sendable {
-    /// Change `title` or `workspace`.
+    /// Change `title`, `workspace` or, at level 9, `due`.
     case edit
     case later, complete, withdraw, reopen
     /// Withdraw this item into `into`; its Captures and requests move there.
     case merge
+    /// Level 9: list it first, after the items pinned before it.
+    case pin
+    /// Level 9: clear `pinnedAt`.
+    case unpin
 }

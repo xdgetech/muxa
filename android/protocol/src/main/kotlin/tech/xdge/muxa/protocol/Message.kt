@@ -183,6 +183,10 @@ sealed interface Message {
         val captures: List<Capture> = emptyList(),
         /** Level 8: the requests of the listed Work items. */
         val requests: List<AssistantRequest> = emptyList(),
+        /** Level 9: the kept plans, newest first (ADR 0047). */
+        val plans: List<Plan> = emptyList(),
+        /** Level 9: the overall assistant and the delegates. */
+        val assistant: AssistantInfo? = null,
     ) : Message
 
     /** What an `update-inbox` wrote, just before its `result`: the Routine entry, the item, or both for a Routine's item. */
@@ -217,6 +221,10 @@ sealed interface Message {
         val captures: List<Capture> = emptyList(),
         val requests: List<AssistantRequest> = emptyList(),
     ) : Message
+
+    /** What a `plan-now` or `apply-notes` wrote, just before its `result`. */
+    @Serializable
+    data class PlanSaved(val plan: Long, val entry: Plan) : Message
 
     /** The bridge is exiting. */
     @Serializable

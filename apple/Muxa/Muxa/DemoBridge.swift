@@ -223,6 +223,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
+        // The demo has no overall assistant yet (`work` level 9, ADR 0047).
+        case .applyNotes(let id, _, _, _), .planNow(let id, _):
+            unsupported(id, Self.noRequest)
         case .capture, .sortCapture, .updateWork, .requestAssistant, .cancelRequest, .getWork:
             await serveCaptures(req)
         case .restartAgent(let id, let task, let force, let worker, let rev):

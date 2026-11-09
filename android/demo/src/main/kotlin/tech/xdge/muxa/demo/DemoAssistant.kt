@@ -100,6 +100,7 @@ internal class DemoAssistant(
             WorkAction.WITHDRAW -> w.copy(state = WorkState.WITHDRAWN)
             WorkAction.REOPEN -> w.copy(state = WorkState.OPEN, laterAt = null)
             WorkAction.MERGE -> throw DemoWork.Refusal(ErrorCode.UNSUPPORTED, "The demo does not merge Work items.")
+            WorkAction.PIN, WorkAction.UNPIN -> throw DemoWork.Refusal(ErrorCode.UNSUPPORTED, "The demo does not pin Work items.")
         }
         return save(changed, now)
     }

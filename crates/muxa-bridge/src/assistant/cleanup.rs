@@ -127,6 +127,7 @@ mod tests {
                     next: Vec::new(),
                     files: Vec::new(),
                     possible_duplicates: Vec::new(),
+                    notes: None,
                 })
                 .collect(),
         }

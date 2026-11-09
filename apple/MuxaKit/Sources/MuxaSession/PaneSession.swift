@@ -806,7 +806,7 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries, let items, let work, let captures, let requests):
+        case .inboxList(let id, let entries, let items, let work, let captures, let requests, _, _):
             inboxListings[id] = InboxListing(
                 entries: entries, items: items, work: work, captures: captures, requests: requests)
         case .inboxSaved(let id, let entry, let item):
@@ -841,8 +841,9 @@ public final class PaneSession {
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
+        // Plans come with `work` level 9 (ADR 0047); no client asks for them yet.
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded:
+            .diffContent, .diffEnded, .imageContent, .imageEnded, .planSaved:
             break
         }
     }

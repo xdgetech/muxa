@@ -48,7 +48,7 @@ class CaptureBridge: FakeBridge, @unchecked Sendable {
             }
             emit(.captureSaved(capture: id, entry: captures[i], work: made))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .updateWork(let id, let item, let rev, let action, _, _, _):
+        case .updateWork(let id, let item, let rev, let action, _, _, _, _):
             guard let i = work.firstIndex(where: { $0.id == item }), work[i].rev == rev else {
                 return emit(.result(id: id, error: ErrorBody(code: .conflict, message: "stale"), sessions: nil))
             }

@@ -3,15 +3,20 @@
 
 mod assistant;
 mod items;
+mod plans;
 mod restart_recovery;
 mod routines;
 mod workers;
 pub use assistant::{
     AssistResult, AssistScope, AssistSpec, AssistantRequest, Capture, CaptureSource, CaptureState,
-    Delivery, Finding, PossibleDuplicate, ResultSource, SortAction, WORK_ASSISTANT, WorkAction,
-    WorkItem, WorkState,
+    Delivery, Due, Finding, Notes, PossibleDuplicate, ResultSource, SortAction, WORK_ASSISTANT,
+    WorkAction, WorkItem, WorkState,
 };
 pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_ITEMS};
+pub use plans::{
+    AssistantInfo, Basis, BasisKind, ChangeKind, DelegateInfo, DelegateProposal, Minutes,
+    OverallRequests, Plan, PlanChange, PlanRow, Share, SortProposal, WORK_PLANS,
+};
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
@@ -387,6 +392,9 @@ pub enum Request {
         /// With `merge`: the Work item to merge into.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         into: Option<String>,
+        /// With `edit`, at level 9: the user's deadline.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        due: Option<Due>,
     },
     /// Ask a workspace's agent to work on a Work item. Needs the muxa daemon.
     /// The same `work` and `rev` return the request already made. A
@@ -413,6 +421,27 @@ pub enum Request {
     GetWork {
         id: u64,
         work: String,
+    },
+    /// Write a result's or a plan's proposed notes to the live `NOTES.md`
+    /// (`work` level 9, ADR 0047). A live file that no longer hashes to
+    /// `base` is `conflict`. A `work-saved` or `plan-saved` comes before the
+    /// `result`.
+    ApplyNotes {
+        id: u64,
+        /// A request `q-…` or a plan `p-…`.
+        source: String,
+        /// The request's version, or the plan's `rev`.
+        version: u64,
+        /// The proposal's `base`.
+        base: String,
+    },
+    /// Start an overall run now (`work` level 9). A `plan-saved` comes
+    /// before the `result`.
+    PlanNow {
+        id: u64,
+        /// The time the user has.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        minutes: Option<u32>,
     },
     /// The client is leaving; the bridge exits.
     Bye {
@@ -466,6 +495,8 @@ impl Request {
             | Request::RequestAssistant { id, .. }
             | Request::CancelRequest { id, .. }
             | Request::GetWork { id, .. }
+            | Request::ApplyNotes { id, .. }
+            | Request::PlanNow { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -669,6 +700,12 @@ pub enum Message {
         /// Level 8: the requests of the listed Work items.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requests: Vec<AssistantRequest>,
+        /// Level 9: the kept plans, newest first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        plans: Vec<Plan>,
+        /// Level 9: the overall assistant and the delegates.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        assistant: Option<Box<AssistantInfo>>,
     },
     /// What an `update-inbox` wrote, sent just before its `result`: the
     /// Routine entry, the item, or both for a Routine's item.
@@ -716,6 +753,8 @@ pub enum Message {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requests: Vec<AssistantRequest>,
     },
+    /// What a `plan-now` or `apply-notes` wrote, sent just before its `result`.
+    PlanSaved { plan: u64, entry: Box<Plan> },
     /// The bridge is exiting.
     Bye { reason: String },
 }

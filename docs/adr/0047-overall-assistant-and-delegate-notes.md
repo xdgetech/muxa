@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Nothing in this ADR is implemented.
+Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slice B0 (the wire types) is built; hosts do not advertise level 9 yet.
 
 ## Context
 
@@ -67,12 +67,12 @@ A plan is a record `plans/p-<8hex>.json` in the assistant store, made by one ove
 
 | Request | Reply |
 |---|---|
-| `apply-notes {source, version, base}`, `source` a request or a plan | `work-saved {work, entry, request}` or `plan-saved {plan}`; a changed live file is `conflict` |
-| `plan-now {minutes?}` | `plan-saved {plan}`; no overall workspace is `unsupported`, an open plan run `conflict` |
+| `apply-notes {source, version, base}`, `source` a request or a plan | `work-saved {work, entry, request}` or `plan-saved {plan, entry}`; a changed live file is `conflict` |
+| `plan-now {minutes?}` | `plan-saved {plan, entry}`; no overall workspace is `unsupported`, an open plan run `conflict` |
 | `update-work {…, action: pin / unpin, due?}` | `work-saved` |
 | `update-inbox {entry, action}` on a `sort` or `delegate` item | `inbox-saved`, with `capture-saved` or `work-saved` on approve |
 
-`inbox-list` gains `plans[]` (newest first) and `assistant {overall?, delegates[] {workspace, share, overallRequests, notesAt?}}`. A Result gains `notes?`; a Work item `pinnedAt?` and `due?`; the hidden-kind test of ADR 0046 §5 gains a plan run. Fixtures in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:9`; a level 8 host answers them `bad-request`, and old clients ignore the new arrays and kinds.
+`inbox-list` gains `plans[]` (newest first) and `assistant {overall?, delegates[] {workspace, share, overallRequests, notesAt?}}`. A Result gains `notes?`; a Work item `pinnedAt?` and `due?`; the hidden-kind test of ADR 0046 §5 gains a plan run. The full contract is `protocol/PROTOCOL.md`, "Plans and the overall assistant". Fixtures in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:9`; a level 8 host answers them `bad-request`, and old clients ignore the new arrays and kinds.
 
 ### 8. Clients
 

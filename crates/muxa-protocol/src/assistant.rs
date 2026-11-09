@@ -72,6 +72,12 @@ pub struct WorkItem {
     /// With `withdrawn` after `merge`: the Work item it was merged into.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merged_into: Option<String>,
+    /// Level 9: set by `pin`. Pinned items are listed first, in pin order (ADR 0047).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<u64>,
+    /// Level 9: the user's deadline. Only the user sets it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<Due>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub captures: Vec<String>,
     /// Assistant requests, oldest first.
@@ -176,6 +182,30 @@ pub struct AssistResult {
     pub files: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub possible_duplicates: Vec<PossibleDuplicate>,
+    /// Level 9: the delegate's proposed notes (ADR 0047 §1). Never logged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Notes>,
+}
+
+/// A deadline the user set on a Work item (ADR 0047 §6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Due {
+    /// Epoch seconds.
+    pub at: u64,
+    /// IANA name, e.g. `Asia/Tokyo`: the zone the user set it in.
+    pub timezone: String,
+}
+
+/// A run's proposed replacement of the workspace's `.muxa/assistant/NOTES.md`.
+/// `apply-notes` writes it only while the live file still hashes to `base`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Notes {
+    /// The full new text, at most 16 KiB. Never logged.
+    pub text: String,
+    /// Lowercase hex SHA-256 of the file the run read; of no bytes when there was none.
+    pub base: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,7 +261,7 @@ pub enum SortAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkAction {
-    /// Change `title` or `workspace`.
+    /// Change `title`, `workspace` or, at level 9, `due`.
     Edit,
     Later,
     Complete,
@@ -239,4 +269,8 @@ pub enum WorkAction {
     Reopen,
     /// Withdraw this item into `into`; its Captures move there.
     Merge,
+    /// Level 9: list it first, after the items pinned before it.
+    Pin,
+    /// Level 9: clear `pinnedAt`.
+    Unpin,
 }

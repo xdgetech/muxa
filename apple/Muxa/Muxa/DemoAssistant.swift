@@ -95,8 +95,8 @@ struct DemoAssistant: Sendable {
         case .reopen:
             work[i].state = .open
             work[i].laterAt = nil
-        case .edit, .merge:
-            throw Refusal(.unsupported, "The demo bridge does not edit or merge Work items.")
+        case .edit, .merge, .pin, .unpin:
+            throw Refusal(.unsupported, "The demo bridge does not edit, merge or pin Work items.")
         }
         touch(i)
         return work[i]

@@ -125,7 +125,13 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             title,
             workspace,
             into,
+            due,
         } => {
+            // A deadline comes with level 9 (ADR 0047 §6).
+            if due.is_some() {
+                let e = error_body(ErrorCode::BadRequest, "update-work: due needs work level 9");
+                return (Vec::new(), Some(e));
+            }
             let config = Arc::clone(&cx.records);
             let update = work::Update {
                 work,
@@ -354,6 +360,8 @@ mod tests {
             workspace: None,
             later_at: later,
             merged_into: None,
+            pinned_at: None,
+            due: None,
             captures: Vec::new(),
             requests: Vec::new(),
             tasks: Vec::new(),

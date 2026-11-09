@@ -164,7 +164,7 @@ struct FixtureTests {
         #expect(workLevel(capabilities) == workRoutines)
         #expect(workLevel(["work:2", "work:x", "workers"]) == 2)
         #expect(workLevel(["task-records"]) == 0)
-        guard case .inboxList(_, let entries, let items, _, _, _) = try Wire.decodeMessage(messages[3]) else {
+        guard case .inboxList(_, let entries, let items, _, _, _, _, _) = try Wire.decodeMessage(messages[3]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(entries.map(\.disposition) == ["open", "later"])
@@ -187,7 +187,7 @@ struct FixtureTests {
             Issue.record("expected hello"); return
         }
         #expect(workLevel(capabilities) == workItems)
-        guard case .inboxList(_, let entries, let items, _, _, _) = try Wire.decodeMessage(messages[1]) else {
+        guard case .inboxList(_, let entries, let items, _, _, _, _, _) = try Wire.decodeMessage(messages[1]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(entries.isEmpty)
@@ -224,10 +224,10 @@ struct FixtureTests {
 
     @Test func assistantContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl")
-        #expect(requests.count == 18)
+        #expect(requests.count == 27)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("assistant/messages.jsonl")
-        #expect(messages.count == 12)
+        #expect(messages.count == 22)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -242,7 +242,7 @@ struct FixtureTests {
         guard case .sortCapture(_, _, _, .link, _?, _, _) = decoded[4] else {
             Issue.record("expected link with a work item"); return
         }
-        guard case .updateWork(_, _, _, .merge, _, _, _?) = decoded[11] else {
+        guard case .updateWork(_, _, _, .merge, _, _, _?, _) = decoded[11] else {
             Issue.record("expected merge with into"); return
         }
         guard case .createTask(_, _, _, _, _, _, _, _, _, _, "w-6a7b8c9d", 3) = decoded[15] else {
@@ -252,7 +252,7 @@ struct FixtureTests {
             Issue.record("expected hello"); return
         }
         #expect(workLevel(capabilities) == workAssistant)
-        guard case .inboxList(_, _, _, let work, let captures, let listed) = try Wire.decodeMessage(messages[6]) else {
+        guard case .inboxList(_, _, _, let work, let captures, let listed, _, _) = try Wire.decodeMessage(messages[6]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(work.map(\.state) == [.waitingDecision, .inProgress, .open, .open, .done, .withdrawn])
@@ -264,7 +264,7 @@ struct FixtureTests {
         #expect(results[0].findings.allSatisfy { !$0.sources.isEmpty })
         // A client before level 8 reads an inbox-list without the new arrays.
         let old = try Wire.decodeMessage(Data(#"{"type":"inbox-list","inbox":1,"entries":[]}"#.utf8))
-        guard case .inboxList(_, _, _, let none, let noCaptures, let noRequests) = old else {
+        guard case .inboxList(_, _, _, let none, let noCaptures, let noRequests, _, _) = old else {
             Issue.record("expected inbox-list"); return
         }
         #expect(none.isEmpty && noCaptures.isEmpty && noRequests.isEmpty)
@@ -282,6 +282,75 @@ struct FixtureTests {
             Issue.record("expected an error result"); return
         }
         #expect(error.code == .badRequest)
+    }
+
+    @Test func planContractRoundTrips() throws {
+        let requests = try Self.lines("assistant/requests.jsonl").map(Wire.decodeRequest)
+        let messages = try Self.lines("assistant/messages.jsonl").map(Wire.decodeMessage)
+        guard case .applyNotes(_, let fromRequest, 1, _) = requests[18], fromRequest.hasPrefix("q-"),
+            case .applyNotes(_, let fromPlan, 2, _) = requests[19], fromPlan.hasPrefix("p-")
+        else { Issue.record("expected apply-notes from a request and a plan"); return }
+        #expect(requests[20] == .planNow(id: 420, minutes: 45))
+        #expect(requests[21] == .planNow(id: 421))
+        guard case .updateWork(_, _, _, .edit, _, _, _, let due?) = requests[22] else {
+            Issue.record("expected edit with due"); return
+        }
+        #expect(due.timezone == "Asia/Tokyo")
+        guard case .updateWork(_, _, _, .pin, _, _, _, _) = requests[23],
+            case .updateWork(_, _, _, .unpin, _, _, _, _) = requests[24]
+        else { Issue.record("expected pin and unpin"); return }
+
+        guard case .hello(_, _, _, let capabilities) = messages[12] else { Issue.record("expected hello"); return }
+        #expect(workLevel(capabilities) == workPlans)
+        guard case .workSaved(_, _, let request?) = messages[13], let notes = request.results.first?.notes else {
+            Issue.record("expected a result with notes"); return
+        }
+        #expect(notes.base.count == 64)
+        guard case .result(_, let conflict?, _) = messages[14], case .result(_, let unsupported?, _) = messages[16] else {
+            Issue.record("expected error results"); return
+        }
+        #expect(conflict.code == .conflict && unsupported.code == .unsupported)
+        guard case .planSaved(420, let pending) = messages[15] else { Issue.record("expected plan-saved"); return }
+        #expect(pending.delivery == .pending && pending.minutes == 45 && pending.top.isEmpty)
+        guard case .workSaved(_, let pinned, _) = messages[17] else { Issue.record("expected work-saved"); return }
+        #expect(pinned.pinnedAt != nil && pinned.due != nil)
+
+        guard case .inboxList(_, _, let items, let work, _, _, let plans, let assistant?) = messages[18] else {
+            Issue.record("expected inbox-list with plans"); return
+        }
+        #expect(items.map(\.kind) == [.sort, .delegate])
+        #expect(items[0].sort?.action == .work && items[1].delegate?.scope == .compare)
+        #expect(plans.count == 2 && plans[0].at > plans[1].at)
+        let plan = plans[0]
+        #expect(plan.top.count <= 3)
+        #expect(plan.top[0].work == work[0].id && work[0].pinnedAt != nil)
+        // A Later item is never in a plan's top; with a near due it is in dueSoon.
+        let later = work.filter { $0.laterAt != nil }.map(\.id)
+        #expect(plan.top.allSatisfy { row in row.work.map { !later.contains($0) } ?? true })
+        #expect(plan.dueSoon == later)
+        #expect(plan.top.allSatisfy { ($0.work != nil) != ($0.item != nil) })
+        #expect(plan.top.allSatisfy { $0.minutes.low <= $0.minutes.estimated && $0.minutes.estimated <= $0.minutes.high })
+        #expect(plan.top[0].basis.first?.kind == .manual)
+        #expect(plan.changed.map(\.change) == [.moved, .entered, .entered, .left])
+        #expect(!plan.unanswered.isEmpty && !plan.stale.isEmpty)
+        #expect(assistant.overall == "secretary")
+        #expect(assistant.delegates.map(\.share) == [.summaries, .outline])
+        #expect(assistant.delegates.map(\.overallRequests) == [.review, .auto])
+        guard case .inboxSaved(_, _, let answered?) = messages[20] else { Issue.record("expected inbox-saved"); return }
+        #expect(answered.answers.isEmpty && answered.delegate != nil)
+        // A client before level 9 reads an inbox-list without plans.
+        let old = try Wire.decodeMessage(Data(#"{"type":"inbox-list","inbox":1,"entries":[]}"#.utf8))
+        guard case .inboxList(_, _, _, _, _, _, let none, nil) = old else { Issue.record("expected inbox-list"); return }
+        #expect(none.isEmpty)
+    }
+
+    @Test func unknownPlanValuesStillDecode() throws {
+        let decode = { (json: String) in Data(json.utf8) }
+        #expect(try JSONDecoder().decode(BasisKind.self, from: decode(#""habit""#)) == .other("habit"))
+        #expect(try JSONDecoder().decode(ChangeKind.self, from: decode(#""split""#)) == .other("split"))
+        #expect(try JSONDecoder().decode(Share.self, from: decode(#""full""#)) == .other("full"))
+        #expect(try JSONDecoder().decode(OverallRequests.self, from: decode(#""ask""#)) == .other("ask"))
+        #expect(try JSONDecoder().decode(ItemKind.self, from: decode(#""sort""#)) == .sort)
     }
 
     @Test func unknownWorkStatesAndDeliveriesStillDecode() throws {

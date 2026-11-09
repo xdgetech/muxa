@@ -24,6 +24,9 @@ const val WORK_WORKTREE_END = 7
 /** Level 8: Captures, Work items and assistant requests, and `work` on `create-task` (ADR 0046). */
 const val WORK_ASSISTANT = 8
 
+/** Level 9: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0047). */
+const val WORK_PLANS = 9
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }

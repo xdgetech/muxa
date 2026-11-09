@@ -15,6 +15,8 @@ public let workAskAgent: UInt32 = 6
 public let workWorktreeEnd: UInt32 = 7
 /// Level 8: Captures, Work items and assistant requests (ADR 0046).
 public let workAssistant: UInt32 = 8
+/// Level 9: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0047).
+public let workPlans: UInt32 = 9
 
 /// The highest `work` level in `capabilities`; 0 when the host has none.
 public func workLevel(_ capabilities: [String]) -> UInt32 {

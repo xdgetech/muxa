@@ -180,7 +180,10 @@ sealed interface Request {
         val workspace: String? = null,
     ) : Request
 
-    /** Change a Work item. [title] and [workspace] go with `edit`, [into] with `merge`. A stale [rev] is `conflict`. A `work-saved` comes first. */
+    /**
+     * Change a Work item. [title], [workspace] and [due] (level 9) go with `edit`, [into] with `merge`.
+     * A stale [rev] is `conflict`. A `work-saved` comes first.
+     */
     @Serializable
     data class UpdateWork(
         override val id: Long,
@@ -190,6 +193,7 @@ sealed interface Request {
         val title: String? = null,
         val workspace: String? = null,
         val into: String? = null,
+        val due: Due? = null,
     ) : Request
 
     /**
@@ -211,6 +215,17 @@ sealed interface Request {
 
     /** One Work item with every Capture it links, sorted or not, and its requests. A `work-detail` comes first. */
     @Serializable data class GetWork(override val id: Long, val work: String) : Request
+
+    /**
+     * Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 9, ADR 0047). [source]
+     * is a request `q-…` or a plan `p-…`; [version] the request's version or the plan's `rev`; [base] the
+     * proposal's. A changed live file is `conflict`. A `work-saved` or `plan-saved` comes first.
+     */
+    @Serializable
+    data class ApplyNotes(override val id: Long, val source: String, val version: Long, val base: String) : Request
+
+    /** Start an overall run now (`work` level 9); [minutes] is the time the user has. A `plan-saved` comes first. */
+    @Serializable data class PlanNow(override val id: Long, val minutes: Int? = null) : Request
 
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request

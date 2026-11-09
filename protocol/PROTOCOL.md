@@ -332,7 +332,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041), level 7 `worktree` on `update-task` and `update-inbox` (ADR 0043), and level 8 Captures, Work items and assistant requests (ADR 0046). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041), level 7 `worktree` on `update-task` and `update-inbox` (ADR 0043), level 8 Captures, Work items and assistant requests (ADR 0046), and level 9 delegate notes, plans, the overall assistant's proposals, pins and deadlines (ADR 0047). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -389,7 +389,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
 1. `inbox-list` also has `items[]`: every item, a Routine's entries included, in the order to show them. Open items come first, `ask` before the rest, then newest first. Then the open ones with `laterAt`, in the order they were moved down (ADR 0040), then at most 100 answered or resolved ones, newest first. `entries` stays for older clients.
 2. An item has:
    - `id`: `i-` and 8 hex digits for a Task's item; a Routine's entry keeps its `e-` id;
-   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `reply`), `proposal` or `briefing`;
+   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `reply`), `proposal`, `briefing`, or at level 9 `sort` and `delegate` (Plans and the overall assistant below);
    - `state`: `open`, `later`, `answered` or `resolved` (the need ended without an answer from the Inbox);
    - `question` (one line), `workspace`, `title` (the Task's or the entry's) and `createdAt`;
    - optional `readAt`, `laterAt` (epoch seconds: `later` moved it down), `until` (only from a host before ADR 0040, with `later`), `answeredAt`, and `answer` (with `answered`, the action given);
@@ -470,9 +470,70 @@ A run of kind `assistant-run` works in `<root>/assistant/<scope>-<request>-v<ver
 - `openQuestions` and `next`: at most 10 each, each 1 to 500 bytes.
 - `files`: at most 20 absolute paths.
 - `possibleDuplicates`: at most 5. `work` is another Work item on the host (`w-` and 8 lowercase hex digits). `reason` is 1 to 500 bytes.
+- `notes`, with `work` level 9: the full replacement of the workspace's `NOTES.md`, at most 16 KiB. The host stores it on the result as `notes {text, base}`, with `base` from the run's start (Plans and the overall assistant, item 1).
 - The whole file is at most 64 KiB of UTF-8 without NUL. It is a regular file, and neither it nor `.muxa` or `.muxa/assistant` is a symlink. Unknown fields are refused.
 - The result is not stored when the request has a newer version, or when it is being cancelled. A second pass for the same version changes nothing. A stored result makes the older ones `stale`, at most 10 are kept, and `delivery` becomes `resulted`. The Work item does not change.
 - After a stored result, the host closes the run's session; its folder stays until the request's next version stores a result, or for 7 days. A failed run's record is dropped; its session and folder stay for inspection. A timed-out run's agent is not stopped: a later result is still stored.
+
+The check's reasons are in `.muxa/checks/<attempt>.log` and name fields and indices, never values.
+
+## Plans and the overall assistant
+
+A bridge with `work` level 9 adds delegate notes, the overall assistant's plans and proposals, and pins and deadlines on Work items (ADR 0047). Levels add up. Clients send the new requests and actions only at level 9; a level 8 host answers them `bad-request`. Fixtures: `fixtures/assistant/`, from line 19 of `requests.jsonl` and line 13 of `messages.jsonl`.
+
+1. Notes. Each workspace's delegate, and the overall assistant, keeps `<root>/.muxa/assistant/NOTES.md`. A run reads a copy of it. Its result, or its plan, may carry `notes {text, base}`: the full new text (at most 16 KiB) and `base`, the lowercase hex SHA-256 of the file the run read (of no bytes when there was none). Nothing writes the live file until the user applies it:
+   - `apply-notes {source, version, base}`. `source` is a request (`q-…`, with the result's request `version`) or a plan (`p-…`, with the plan's `rev`). `base` is the proposal's. The host writes the text only while the live file still hashes to `base`; else `conflict`: ask again. A source or version without notes is `bad-request`. On success: `work-saved {work, entry, request}` or `plan-saved {plan, entry}`, then `result`.
+2. A Work item also has optional `pinnedAt` (epoch seconds) and `due {at, timezone}` (`at` in epoch seconds, `timezone` an IANA name such as `Asia/Tokyo`). `update-work` takes:
+   - `pin`, which sets `pinnedAt`, and `unpin`, which clears it. `work[]` in `inbox-list` lists pinned items first, in the order pinned, then as at level 8.
+   - `edit` with `due`. Only the user sets `due`; a plan's estimated deadline stays in its `basis`. Clearing a `due` is not specified yet.
+3. A plan is one overall run's answer to "what next". It has `id` (`p-` and 8 hex digits), `rev`, `at` (the schedule's time, or when `plan-now` asked), `inputsAt` (when the host read the brief's inputs), `delivery` and `deliveryAt` (as a request's), and optional `minutes`, `run`, `workspaces[]`, `top[]`, `dueSoon[]`, `unanswered[]`, `stale[]`, `changed[]` and `notes`.
+   - `workspaces`: the workspaces whose data the brief carried.
+   - `top`: at most 3 rows, each `{work | item, why, next, minutes {low, high, estimated}, basis[], missing[]}`. A row names a Work item (`work`) or an Inbox item (`item`), never both. `minutes` is the agent's estimate, `low <= estimated <= high`. `basis[] {kind, text, source?, at?}` gives the reasons: `kind` is `due`, `dependency`, `goal`, `time` or `manual`; `source` is a URL, a path or an id; `at` is epoch seconds. `missing[]` names what the agent would need to rank the row better. Pinned Work items fill the first rows, in pin order. A Work item with `laterAt` is never in `top`.
+   - `dueSoon`: Work items with `laterAt` whose `due` is within 24 hours. Show them in one line under the rows ("Due soon, moved down by you"), not as rows.
+   - The host derives `unanswered`, `stale` and `changed` when it lists the plan, as it derives `delivery`. `unanswered`: requests whose current version has no result. `stale`: requests whose newest result is older than their Work item's last change. `changed[] {id, change}`: the rows that `entered`, `left` or `moved` since the previous plan.
+   - A plan with nothing to rank is `resulted` with no `top`. A plan never changes a Work item, an Inbox item, their order or `laterAt`.
+   - Treat an unknown `kind` or `change` as unknown.
+4. `plan-now {minutes?}` starts an overall run now. `minutes` is the time the user has. On success: `plan-saved {plan, entry}` with a `pending` plan, then `result`. Without an overall workspace it is `unsupported`; while a plan run is open, `conflict`.
+5. The overall assistant's proposals are Inbox items of kind `sort` and `delegate`. Their `workspace` is the overall assistant's, and their answers are `approve`, `reject` and `later`.
+   - `sort {capture, action, workspace?, title?, work?}`: what `sort-capture` takes.
+   - `delegate {work, workspace, scope, purpose, reason}`: what `request-assistant` takes. `workspace` is the receiving one. `purpose` (at most 1 KiB) is the ask; `reason` is why the overall assistant asks.
+   - `approve` runs the action once; a second `approve` returns the same item. On success: `capture-saved` or `work-saved` with what it made, `inbox-saved {inbox, item}`, then `result`. A receiving workspace with `overall_requests = "none"` refuses an approved `delegate` with `unsupported`. `reject` answers the item and does nothing else.
+6. `inbox-list` also has `plans[]` (the kept plans, newest first, at most 7) and `assistant {overall?, delegates[]}`. `overall` names the overall assistant's workspace; clients leave it out of the New Task and Capture workspace pickers. A delegate is `{workspace, share, overallRequests, notesAt?}`: `share` is `none`, `outline` or `summaries` (what the overall assistant reads, ADR 0047 §3); `overallRequests` is `none`, `review` or `auto` (whether the overall assistant may ask it, ADR 0047 §4); `notesAt` is when its `NOTES.md` last changed. Treat an unknown value as unknown. A client before level 9 ignores both fields, and the new item kinds as any unknown kind.
+
+Logs on the host carry ids, counts, hashes, states and schedule times, never notes, plan texts, reasons, purposes or summaries.
+
+### Plan file
+
+An overall run works as an `assistant-run` does, with a plan instead of a request. The agent writes `.muxa/assistant/plan.json` in its run folder and ends its turn. The host checks the file in its own process, as it checks `result.json`, and stores the plan in one write. The agent writes only the rows, the proposals and the notes; the host adds `inputsAt`, `workspaces`, `dueSoon`, `unanswered`, `stale` and `changed`.
+
+```json
+{
+  "version": 1,
+  "plan": "p-0a1b2c3d",
+  "top": [
+    {"work": "w-0b1c2d3e", "why": "Pinned by you, and due Wednesday.", "next": "Fill in the revenue table.",
+     "minutes": {"low": 60, "high": 120, "estimated": 90},
+     "basis": [{"kind": "manual", "text": "Pinned"}, {"kind": "due", "text": "Due Wednesday 16:00", "at": 1762930800}]},
+    {"item": "i-1a2b3c4d", "why": "A capture waits to be sorted.", "next": "Approve or reject the sort.",
+     "minutes": {"low": 1, "high": 5, "estimated": 2}, "missing": []}
+  ],
+  "proposals": [
+    {"kind": "sort", "capture": "c-4e5f6a7b", "action": "work", "workspace": "work", "title": "Try the tool for business B"},
+    {"kind": "delegate", "work": "w-7b8c9d0e", "workspace": "work", "scope": "compare",
+     "purpose": "Prices and contract terms of the two offers", "reason": "Due Friday, and the last request was not confirmed."}
+  ],
+  "notes": "# Overall\n\n- Mornings are for the report.\n"
+}
+```
+
+- `version` is 1. `plan` must be the run's own plan.
+- `top`: 0 to 3 rows. Each has exactly one of `work` (a Work item on the host) or `item` (an open Inbox item), and names it once. `why` and `next` are 1 to 500 bytes. `minutes` are whole numbers with `low <= estimated <= high <= 1440`. `basis`: at most 5, `kind` as above, `text` 1 to 500 bytes, `source` at most 2048 bytes, `at` epoch seconds. `missing`: at most 5, each 1 to 500 bytes.
+- The pinned open Work items fill the first rows, in pin order, as many as fit. A Work item with `laterAt`, or a done or withdrawn one, is refused.
+- `proposals`: at most 10, each with `kind`:
+  - `sort`: `capture` an unsorted Capture, `action` `work`, `link` or `note`, `work` with `link`, optional `workspace` and `title` (at most 200 characters, one line).
+  - `delegate`: `work` an open Work item, `workspace` one with `[workspace.assistant]`, `scope`, `purpose` 1 byte to 1 KiB, `reason` 1 to 500 bytes. At most one per `workspace`.
+- `notes`: optional, at most 16 KiB.
+- In every text, line breaks and tabs are the only control characters. The whole file is at most 64 KiB of UTF-8 without NUL. It is a regular file, and neither it nor `.muxa` or `.muxa/assistant` is a symlink. Unknown fields are refused, so the host's fields cannot be written by the agent.
 
 The check's reasons are in `.muxa/checks/<attempt>.log` and name fields and indices, never values.
 

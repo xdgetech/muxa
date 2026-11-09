@@ -71,6 +71,8 @@ pub fn sort(config: &Config, s: Sort) -> Result<(Capture, Option<WorkItem>), Err
                     workspace: s.workspace.clone().or_else(|| c.workspace.clone()),
                     later_at: None,
                     merged_into: None,
+                    pinned_at: None,
+                    due: None,
                     captures: vec![c.id.clone()],
                     requests: Vec::new(),
                     tasks: Vec::new(),
@@ -170,6 +172,9 @@ pub fn update(config: &Config, u: Update) -> Result<WorkItem, ErrorBody> {
                 w.later_at = None;
                 w.merged_into = None;
             }
+            WorkAction::Pin | WorkAction::Unpin => {
+                return Err(bad("update-work: pin needs work level 9").into());
+            }
             WorkAction::Merge if !open => return Err(is_closed(w).into()),
             WorkAction::Merge => {
                 let into = u.into.as_deref().unwrap_or_default();
@@ -200,6 +205,8 @@ pub fn update(config: &Config, u: Update) -> Result<WorkItem, ErrorBody> {
 fn check_update(config: &Config, u: &Update) -> Result<Option<String>, ErrorBody> {
     let edits = u.title.is_some() || u.workspace.is_some();
     match u.action {
+        // Pins come with level 9 (ADR 0047 §6).
+        WorkAction::Pin | WorkAction::Unpin => Err(bad("update-work: pin needs work level 9")),
         WorkAction::Edit if u.into.is_some() => Err(bad("update-work: edit takes no into")),
         WorkAction::Edit if !edits => Err(bad("update-work: edit needs a title or a workspace")),
         WorkAction::Edit => {

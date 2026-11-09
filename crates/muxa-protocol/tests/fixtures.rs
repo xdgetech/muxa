@@ -443,8 +443,8 @@ fn assistant_fixtures_round_trip() {
     use muxa_protocol::{
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 18);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 12);
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 27);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 22);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -546,4 +546,189 @@ fn assistant_fixtures_round_trip() {
         panic!()
     };
     assert_eq!(e.code, muxa_protocol::ErrorCode::BadRequest);
+}
+
+#[test]
+fn plan_fixtures_round_trip() {
+    use muxa_protocol::{
+        BasisKind, ChangeKind, Delivery, ErrorCode, ItemKind, OverallRequests, Share, SortAction,
+        WORK_PLANS, WorkAction, work_level,
+    };
+    let read = |name: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/assistant/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[18],
+        Request::ApplyNotes { source, version: 1, .. } if source.starts_with("q-")
+    ));
+    assert!(matches!(
+        &requests[19],
+        Request::ApplyNotes { source, version: 2, .. } if source.starts_with("p-")
+    ));
+    assert!(matches!(
+        requests[20],
+        Request::PlanNow {
+            minutes: Some(45),
+            ..
+        }
+    ));
+    assert!(matches!(
+        requests[21],
+        Request::PlanNow { minutes: None, .. }
+    ));
+    assert!(matches!(
+        &requests[22],
+        Request::UpdateWork { action: WorkAction::Edit, due: Some(d), .. } if d.timezone == "Asia/Tokyo"
+    ));
+    assert!(matches!(
+        requests[23],
+        Request::UpdateWork {
+            action: WorkAction::Pin,
+            ..
+        }
+    ));
+    assert!(matches!(
+        requests[24],
+        Request::UpdateWork {
+            action: WorkAction::Unpin,
+            ..
+        }
+    ));
+
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[12] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_PLANS);
+    // apply-notes on a request answers with the request whose result proposed them.
+    let Message::WorkSaved {
+        request: Some(q), ..
+    } = &messages[13]
+    else {
+        panic!()
+    };
+    let notes = q.results[0].notes.as_ref().unwrap();
+    assert_eq!(notes.base.len(), 64);
+    let Message::Result { error: Some(e), .. } = &messages[14] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::Conflict);
+    let Message::PlanSaved { plan: 420, entry } = &messages[15] else {
+        panic!()
+    };
+    assert_eq!(
+        (entry.delivery, entry.minutes),
+        (Delivery::Pending, Some(45))
+    );
+    assert!(entry.top.is_empty());
+    let Message::Result { error: Some(e), .. } = &messages[16] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::Unsupported);
+    let Message::WorkSaved { entry, .. } = &messages[17] else {
+        panic!()
+    };
+    assert!(entry.pinned_at.is_some() && entry.due.is_some());
+
+    let Message::InboxList {
+        items,
+        work,
+        plans,
+        assistant: Some(assistant),
+        ..
+    } = &messages[18]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        items.iter().map(|i| i.kind).collect::<Vec<_>>(),
+        [ItemKind::Sort, ItemKind::Delegate]
+    );
+    assert_eq!(items[0].sort.as_ref().unwrap().action, SortAction::Work);
+    assert!(items[1].delegate.is_some() && items[0].delegate.is_none());
+    // Pinned first; a Later item is never in a plan's top, only in dueSoon.
+    assert!(work[0].pinned_at.is_some());
+    let plan = &plans[0];
+    assert!(plans[0].at > plans[1].at);
+    assert!(plan.top.len() <= 3);
+    assert_eq!(plan.top[0].work.as_deref(), Some(work[0].id.as_str()));
+    let later: Vec<&str> = work
+        .iter()
+        .filter(|w| w.later_at.is_some())
+        .map(|w| w.id.as_str())
+        .collect();
+    assert!(
+        plan.top
+            .iter()
+            .all(|r| r.work.as_deref().is_none_or(|w| !later.contains(&w)))
+    );
+    assert_eq!(plan.due_soon, later);
+    assert!(
+        plan.top
+            .iter()
+            .all(|r| r.work.is_some() != r.item.is_some())
+    );
+    assert!(
+        plan.top
+            .iter()
+            .all(|r| r.minutes.low <= r.minutes.estimated && r.minutes.estimated <= r.minutes.high)
+    );
+    assert_eq!(plan.top[0].basis[0].kind, BasisKind::Manual);
+    assert_eq!(
+        plan.changed.iter().map(|c| c.change).collect::<Vec<_>>(),
+        [
+            ChangeKind::Moved,
+            ChangeKind::Entered,
+            ChangeKind::Entered,
+            ChangeKind::Left
+        ]
+    );
+    assert!(!plan.unanswered.is_empty() && !plan.stale.is_empty());
+    assert_eq!(assistant.overall.as_deref(), Some("secretary"));
+    assert_eq!(
+        assistant
+            .delegates
+            .iter()
+            .map(|d| (d.share, d.overall_requests))
+            .collect::<Vec<_>>(),
+        [
+            (Share::Summaries, OverallRequests::Review),
+            (Share::Outline, OverallRequests::Auto)
+        ]
+    );
+    // Approving a delegate item: the request it made, the answered item, then the result.
+    assert!(matches!(
+        &messages[19],
+        Message::WorkSaved {
+            request: Some(_),
+            ..
+        }
+    ));
+    let Message::InboxSaved {
+        item: Some(item), ..
+    } = &messages[20]
+    else {
+        panic!()
+    };
+    assert!(item.answers.is_empty() && item.delegate.is_some());
+    // A client before level 9 reads an inbox-list without plans.
+    let old: Message =
+        serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
+    assert!(
+        matches!(old, Message::InboxList { plans, assistant, .. } if plans.is_empty() && assistant.is_none())
+    );
 }

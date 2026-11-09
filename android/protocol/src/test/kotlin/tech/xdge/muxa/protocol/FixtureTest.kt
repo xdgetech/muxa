@@ -133,10 +133,10 @@ class FixtureTest {
     @Test
     fun assistantContractRoundTrips() {
         val requests = lines("assistant/requests.jsonl")
-        assertEquals(18, requests.size)
+        assertEquals(27, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(12, messages.size)
+        assertEquals(22, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -180,6 +180,70 @@ class FixtureTest {
         assertTrue(detail.captures.all { it.state == CaptureState.SORTED })
         assertEquals(detail.entry.requests, detail.requests.map { it.id })
         assertEquals(ErrorCode.BAD_REQUEST, (Wire.decodeMessage(messages[11]) as Message.Result).error?.code)
+    }
+
+    @Test
+    fun planContractRoundTrips() {
+        val requests = lines("assistant/requests.jsonl").map(Wire::decodeRequest)
+        val messages = lines("assistant/messages.jsonl").map(Wire::decodeMessage)
+        val fromRequest = requests[18] as Request.ApplyNotes
+        val fromPlan = requests[19] as Request.ApplyNotes
+        assertTrue(fromRequest.source.startsWith("q-") && fromRequest.version == 1L)
+        assertTrue(fromPlan.source.startsWith("p-") && fromPlan.version == 2L)
+        assertEquals(Request.PlanNow(420, 45), requests[20])
+        assertEquals(Request.PlanNow(421), requests[21])
+        val due = requests[22] as Request.UpdateWork
+        assertEquals(WorkAction.EDIT to "Asia/Tokyo", due.action to due.due?.timezone)
+        assertEquals(listOf(WorkAction.PIN, WorkAction.UNPIN), requests.subList(23, 25).map { (it as Request.UpdateWork).action })
+
+        assertEquals(WORK_PLANS, workLevel((messages[12] as Message.Hello).capabilities))
+        val notes = (messages[13] as Message.WorkSaved).request?.results?.first()?.notes
+        assertEquals(64, notes?.base?.length)
+        assertEquals(ErrorCode.CONFLICT, (messages[14] as Message.Result).error?.code)
+        val pending = (messages[15] as Message.PlanSaved).entry
+        assertEquals(Delivery.PENDING to 45, pending.delivery to pending.minutes)
+        assertTrue(pending.top.isEmpty())
+        assertEquals(ErrorCode.UNSUPPORTED, (messages[16] as Message.Result).error?.code)
+        val pinned = (messages[17] as Message.WorkSaved).entry
+        assertTrue(pinned.pinnedAt != null && pinned.due != null)
+
+        val list = messages[18] as Message.InboxList
+        assertEquals(listOf(ItemKind.SORT, ItemKind.DELEGATE), list.items.map { it.kind })
+        assertEquals(SortAction.WORK, list.items[0].sort?.action)
+        assertTrue(list.items[1].delegate != null && list.items[0].delegate == null)
+        assertTrue(list.plans.size == 2 && list.plans[0].at > list.plans[1].at)
+        val plan = list.plans[0]
+        assertTrue(plan.top.size <= 3)
+        assertTrue(list.work[0].pinnedAt != null)
+        assertEquals(list.work[0].id, plan.top[0].work)
+        // A Later item is never in a plan's top; with a near due it is in dueSoon.
+        val later = list.work.filter { it.laterAt != null }.map { it.id }
+        assertTrue(plan.top.none { it.work in later })
+        assertEquals(later, plan.dueSoon)
+        assertTrue(plan.top.all { (it.work != null) != (it.item != null) })
+        assertTrue(plan.top.all { it.minutes.low <= it.minutes.estimated && it.minutes.estimated <= it.minutes.high })
+        assertEquals(BasisKind.MANUAL, plan.top[0].basis.first().kind)
+        assertEquals(listOf(ChangeKind.MOVED, ChangeKind.ENTERED, ChangeKind.ENTERED, ChangeKind.LEFT), plan.changed.map { it.change })
+        assertTrue(plan.unanswered.isNotEmpty() && plan.stale.isNotEmpty())
+        val assistant = list.assistant!!
+        assertEquals("secretary", assistant.overall)
+        assertEquals(
+            listOf(Share.SUMMARIES to OverallRequests.REVIEW, Share.OUTLINE to OverallRequests.AUTO),
+            assistant.delegates.map { it.share to it.overallRequests },
+        )
+        val answered = (messages[20] as Message.InboxSaved).item!!
+        assertTrue(answered.answers.isEmpty() && answered.delegate != null)
+        // A client before level 9 reads an inbox-list without plans.
+        val old = Wire.decodeMessage("""{"type":"inbox-list","inbox":1,"entries":[]}""") as Message.InboxList
+        assertTrue(old.plans.isEmpty() && old.assistant == null)
+        // Unknown plan values keep their names.
+        val odd = """{"type":"plan-saved","plan":1,"entry":{"id":"p-00000001","rev":1,"at":1,"inputsAt":1,""" +
+            """"delivery":"queued","deliveryAt":1,"top":[{"work":"w-1","why":"w","next":"n","minutes":{"low":1,""" +
+            """"high":2,"estimated":1},"basis":[{"kind":"habit","text":"t"}]}],"changed":[{"id":"w-1","change":"split"}]}}"""
+        val saved = Wire.decodeMessage(odd) as Message.PlanSaved
+        assertEquals(BasisKind("habit"), saved.entry.top[0].basis[0].kind)
+        assertEquals(ChangeKind("split"), saved.entry.changed[0].change)
+        assertEquals(tree(odd), tree(Wire.encode(saved)))
     }
 
     @Test

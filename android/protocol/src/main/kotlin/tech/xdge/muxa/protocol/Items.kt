@@ -48,6 +48,10 @@ data class InboxItem(
     val attachments: Attachments = Attachments(),
     val routine: String? = null,
     val proposal: Proposal? = null,
+    /** With kind `sort`: what approve does (`work` level 9, ADR 0047). */
+    val sort: SortProposal? = null,
+    /** With kind `delegate`: what approve does. */
+    val delegate: DelegateProposal? = null,
     /** The answers the host accepts now, in the order to show them. Unknown actions are left out: PROTOCOL.md says to show them as nothing. */
     @Serializable(with = KnownActionsSerializer::class)
     val answers: List<InboxAction> = emptyList(),
@@ -68,6 +72,12 @@ value class ItemKind(val raw: String) {
         val FAILURE = ItemKind("failure")
         val PROPOSAL = ItemKind("proposal")
         val BRIEFING = ItemKind("briefing")
+
+        /** Level 9: the overall assistant proposes to sort a Capture. */
+        val SORT = ItemKind("sort")
+
+        /** Level 9: the overall assistant proposes to ask a workspace's delegate. */
+        val DELEGATE = ItemKind("delegate")
     }
 }
 

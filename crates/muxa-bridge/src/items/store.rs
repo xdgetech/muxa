@@ -215,6 +215,8 @@ pub(crate) fn tests_item(id: &str, state: ItemState) -> InboxItem {
         attachments: Default::default(),
         routine: None,
         proposal: None,
+        sort: None,
+        delegate: None,
         answers: Vec::new(),
     }
 }

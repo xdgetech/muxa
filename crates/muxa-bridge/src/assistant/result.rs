@@ -193,6 +193,8 @@ pub fn validate(bytes: &[u8], run: &RunFor) -> Result<AssistResult, Vec<String>>
                 reason: d.reason,
             })
             .collect(),
+        // Proposed notes come with level 9 (ADR 0047 slice B1).
+        notes: None,
     })
 }
 

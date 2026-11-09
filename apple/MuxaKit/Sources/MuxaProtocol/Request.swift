@@ -102,11 +102,11 @@ public enum Request: Equatable, Sendable {
     case sortCapture(
         id: UInt64, capture: String, rev: UInt64, action: SortAction, work: String? = nil, title: String? = nil,
         workspace: String? = nil)
-    /// Change a Work item. `title` and `workspace` go with `edit`, `into` with `merge`.
-    /// A stale `rev` is `conflict`. A `work-saved` comes first.
+    /// Change a Work item. `title`, `workspace` and `due` (level 9) go with `edit`, `into`
+    /// with `merge`. A stale `rev` is `conflict`. A `work-saved` comes first.
     case updateWork(
         id: UInt64, work: String, rev: UInt64, action: WorkAction, title: String? = nil, workspace: String? = nil,
-        into: String? = nil)
+        into: String? = nil, due: Due? = nil)
     /// Ask a workspace's agent to work on a Work item; nil `workspace` takes the item's.
     /// Needs the host daemon. The same `work` and `rev` return the request already made.
     /// A `work-saved` comes first.
@@ -117,6 +117,14 @@ public enum Request: Equatable, Sendable {
     /// One Work item with every Capture it links, sorted or not, and its requests.
     /// A `work-detail` comes first.
     case getWork(id: UInt64, work: String)
+    /// Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 9,
+    /// ADR 0047). `source` is a request `q-…` or a plan `p-…`; `version` the request's
+    /// version or the plan's `rev`; `base` the proposal's. A changed live file is `conflict`.
+    /// A `work-saved` or `plan-saved` comes first.
+    case applyNotes(id: UInt64, source: String, version: UInt64, base: String)
+    /// Start an overall run now (`work` level 9); `minutes` is the time the user has.
+    /// A `plan-saved` comes first.
+    case planNow(id: UInt64, minutes: UInt32? = nil)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -132,8 +140,8 @@ public enum Request: Equatable, Sendable {
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
             .updateInboxEntry(let id, _, _, _, _, _, _), .startSession(let id, _, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
-            .updateWork(let id, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _),
-            .cancelRequest(let id, _, _), .getWork(let id, _):
+            .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _),
+            .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _), .planNow(let id, _):
             id
         }
     }
@@ -146,6 +154,7 @@ extension Request: Codable {
         case cols, rows, operation, action, lines
         case routine, entry, until, option, worktree
         case clientId, source, assist, capture, work, workRev, into, request, version, purpose
+        case due, minutes
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -253,7 +262,7 @@ extension Request: Codable {
             try c.encodeIfPresent(work, forKey: .work)
             try c.encodeIfPresent(title, forKey: .title)
             try c.encodeIfPresent(workspace, forKey: .workspace)
-        case .updateWork(let id, let work, let rev, let action, let title, let workspace, let into):
+        case .updateWork(let id, let work, let rev, let action, let title, let workspace, let into, let due):
             try c.head("update-work", id)
             try c.encode(work, forKey: .work)
             try c.encode(rev, forKey: .rev)
@@ -261,6 +270,7 @@ extension Request: Codable {
             try c.encodeIfPresent(title, forKey: .title)
             try c.encodeIfPresent(workspace, forKey: .workspace)
             try c.encodeIfPresent(into, forKey: .into)
+            try c.encodeIfPresent(due, forKey: .due)
         case .requestAssistant(let id, let work, let rev, let scope, let workspace, let purpose):
             try c.head("request-assistant", id)
             try c.encode(work, forKey: .work)
@@ -275,6 +285,14 @@ extension Request: Codable {
         case .getWork(let id, let work):
             try c.head("get-work", id)
             try c.encode(work, forKey: .work)
+        case .applyNotes(let id, let source, let version, let base):
+            try c.head("apply-notes", id)
+            try c.encode(source, forKey: .source)
+            try c.encode(version, forKey: .version)
+            try c.encode(base, forKey: .base)
+        case .planNow(let id, let minutes):
+            try c.head("plan-now", id)
+            try c.encodeIfPresent(minutes, forKey: .minutes)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -422,7 +440,8 @@ extension Request: Codable {
                 action: try c.decode(WorkAction.self, forKey: .action),
                 title: try c.decodeIfPresent(String.self, forKey: .title),
                 workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
-                into: try c.decodeIfPresent(String.self, forKey: .into))
+                into: try c.decodeIfPresent(String.self, forKey: .into),
+                due: try c.decodeIfPresent(Due.self, forKey: .due))
         case "request-assistant":
             self = .requestAssistant(
                 id: id, work: try c.decode(String.self, forKey: .work),
@@ -436,6 +455,13 @@ extension Request: Codable {
                 version: try c.decode(UInt64.self, forKey: .version))
         case "get-work":
             self = .getWork(id: id, work: try c.decode(String.self, forKey: .work))
+        case "apply-notes":
+            self = .applyNotes(
+                id: id, source: try c.decode(String.self, forKey: .source),
+                version: try c.decode(UInt64.self, forKey: .version),
+                base: try c.decode(String.self, forKey: .base))
+        case "plan-now":
+            self = .planNow(id: id, minutes: try c.decodeIfPresent(UInt32.self, forKey: .minutes))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

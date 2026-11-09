@@ -214,6 +214,8 @@ class DemoBridge(
             is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
             is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork,
             is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
+            // The demo has no overall assistant yet (`work` level 9, ADR 0047).
+            is Request.ApplyNotes, is Request.PlanNow -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }

@@ -1184,7 +1184,8 @@ class PaneSession(
             is Message.CaptureSaved -> savedCaptures[message.capture] = message
             is Message.WorkSaved -> savedWork[message.work] = message
             is Message.WorkDetail -> workDetailListings[message.work] = message
-            is Message.Unknown -> {}
+            // Plans come with `work` level 9 (ADR 0047); no client asks for them yet.
+            is Message.PlanSaved, is Message.Unknown -> {}
         }
     }
 

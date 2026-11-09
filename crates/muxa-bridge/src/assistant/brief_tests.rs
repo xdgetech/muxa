@@ -13,6 +13,7 @@ fn result(version: u64, stale: bool, summary: &str) -> AssistResult {
         next: Vec::new(),
         files: Vec::new(),
         possible_duplicates: Vec::new(),
+        notes: None,
     }
 }
 
@@ -170,6 +171,8 @@ fn gather_reads_the_captures_and_the_task_titles() {
         workspace: Some("w".into()),
         later_at: None,
         merged_into: None,
+        pinned_at: None,
+        due: None,
         captures: vec![capture.id.clone(), "c-ffffffff".into()],
         requests: vec!["q-0000000a".into()],
         tasks: vec![task.id.clone(), "t-ffffff".into()],

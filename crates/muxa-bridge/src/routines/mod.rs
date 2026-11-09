@@ -77,6 +77,9 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 work: assistant.work,
                 captures: assistant.captures,
                 requests: assistant.requests,
+                // Plans come with level 9 (ADR 0047).
+                plans: Vec::new(),
+                assistant: None,
             })
         }
         Request::UpdateInbox {

@@ -228,6 +228,7 @@ mod tests {
             next: Vec::new(),
             files: Vec::new(),
             possible_duplicates: Vec::new(),
+            notes: None,
         }
     }
 
@@ -283,6 +284,8 @@ mod tests {
             workspace: None,
             later_at: None,
             merged_into: None,
+            pinned_at: None,
+            due: None,
             captures: Vec::new(),
             requests: vec!["q-0000abcd".into(), "q-0000beef".into()],
             tasks: Vec::new(),

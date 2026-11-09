@@ -60,9 +60,12 @@ public enum Message: Equatable, Sendable {
     /// Level 8 also sends `work` (open first, then the ones moved down with Later, then
     /// at most 100 done or withdrawn), the unsorted `captures`, newest first, and the
     /// `requests` of the listed Work items (ADR 0046).
+    /// Level 9 also sends the kept `plans`, newest first, and `assistant`: the overall
+    /// assistant and the delegates (ADR 0047).
     case inboxList(
         inbox: UInt64, entries: [InboxEntry], items: [InboxItem] = [], work: [WorkItem] = [],
-        captures: [Capture] = [], requests: [AssistantRequest] = [])
+        captures: [Capture] = [], requests: [AssistantRequest] = [], plans: [Plan] = [],
+        assistant: AssistantInfo? = nil)
     /// What an `update-inbox` wrote, just before its `result`: the Routine entry,
     /// the item, or both for a Routine's item.
     case inboxSaved(inbox: UInt64, entry: InboxEntry?, item: InboxItem? = nil)
@@ -78,6 +81,8 @@ public enum Message: Equatable, Sendable {
     /// The Work item a `get-work` asked for, with its derived state, just before its
     /// `result`: the Captures `entry.captures` names, sorted or not, in that order, and its requests.
     case workDetail(work: UInt64, entry: WorkItem, captures: [Capture] = [], requests: [AssistantRequest] = [])
+    /// What a `plan-now` or `apply-notes` wrote, just before its `result`.
+    case planSaved(plan: UInt64, entry: Plan)
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -139,7 +144,7 @@ extension Message: Codable {
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
         case routines, routine, entries, entry, problems, inbox, items, item
         case start, name
-        case work, captures, requests, capture, request
+        case work, captures, requests, capture, request, plans, assistant, plan
         case history, truncated
     }
 
@@ -254,7 +259,9 @@ extension Message: Codable {
                 items: try c.decodeIfPresent([InboxItem].self, forKey: .items) ?? [],
                 work: try c.decodeIfPresent([WorkItem].self, forKey: .work) ?? [],
                 captures: try c.decodeIfPresent([Capture].self, forKey: .captures) ?? [],
-                requests: try c.decodeIfPresent([AssistantRequest].self, forKey: .requests) ?? [])
+                requests: try c.decodeIfPresent([AssistantRequest].self, forKey: .requests) ?? [],
+                plans: try c.decodeIfPresent([Plan].self, forKey: .plans) ?? [],
+                assistant: try c.decodeIfPresent(AssistantInfo.self, forKey: .assistant))
         case "inbox-saved":
             self = .inboxSaved(
                 inbox: try c.decode(UInt64.self, forKey: .inbox),
@@ -282,6 +289,9 @@ extension Message: Codable {
                 entry: try c.decode(WorkItem.self, forKey: .entry),
                 captures: try c.decodeIfPresent([Capture].self, forKey: .captures) ?? [],
                 requests: try c.decodeIfPresent([AssistantRequest].self, forKey: .requests) ?? [])
+        case "plan-saved":
+            self = .planSaved(
+                plan: try c.decode(UInt64.self, forKey: .plan), entry: try c.decode(Plan.self, forKey: .entry))
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -397,7 +407,7 @@ extension Message: Codable {
             try c.encode("routine-saved", forKey: .type)
             try c.encode(routine, forKey: .routine)
             try c.encode(entry, forKey: .entry)
-        case .inboxList(let inbox, let entries, let items, let work, let captures, let requests):
+        case .inboxList(let inbox, let entries, let items, let work, let captures, let requests, let plans, let assistant):
             try c.encode("inbox-list", forKey: .type)
             try c.encode(inbox, forKey: .inbox)
             try c.encode(entries, forKey: .entries)
@@ -405,6 +415,8 @@ extension Message: Codable {
             if !work.isEmpty { try c.encode(work, forKey: .work) }
             if !captures.isEmpty { try c.encode(captures, forKey: .captures) }
             if !requests.isEmpty { try c.encode(requests, forKey: .requests) }
+            if !plans.isEmpty { try c.encode(plans, forKey: .plans) }
+            try c.encodeIfPresent(assistant, forKey: .assistant)
         case .inboxSaved(let inbox, let entry, let item):
             try c.encode("inbox-saved", forKey: .type)
             try c.encode(inbox, forKey: .inbox)
@@ -432,6 +444,10 @@ extension Message: Codable {
             try c.encode(entry, forKey: .entry)
             if !captures.isEmpty { try c.encode(captures, forKey: .captures) }
             if !requests.isEmpty { try c.encode(requests, forKey: .requests) }
+        case .planSaved(let plan, let entry):
+            try c.encode("plan-saved", forKey: .type)
+            try c.encode(plan, forKey: .plan)
+            try c.encode(entry, forKey: .entry)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)

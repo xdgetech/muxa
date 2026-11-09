@@ -37,7 +37,7 @@ extension DemoBridge {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .updateWork(let id, let item, let rev, let action, _, _, _):
+        case .updateWork(let id, let item, let rev, let action, _, _, _, _):
             let outcome = lock.withLock { () -> Result<WorkItem, DemoWork.Refusal> in
                 do throws(DemoWork.Refusal) {
                     let laterAt = max(work.nextLaterAt, work.assistant.lastLaterAt + 1)

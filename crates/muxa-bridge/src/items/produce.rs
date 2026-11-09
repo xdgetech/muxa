@@ -232,6 +232,8 @@ pub(crate) fn start_failed(
             attachments: Attachments::default(),
             routine: None,
             proposal: None,
+            sort: None,
+            delegate: None,
             answers: Vec::new(),
         };
         item.answers = super::answers(&item);
@@ -453,6 +455,8 @@ fn make(
         attachments: Attachments::default(),
         routine: None,
         proposal: None,
+        sort: None,
+        delegate: None,
         answers: Vec::new(),
     };
     let since = match need {

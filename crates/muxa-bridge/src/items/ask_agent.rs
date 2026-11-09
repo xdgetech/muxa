@@ -159,6 +159,8 @@ fn prompt(item: &InboxItem, text: &str) -> String {
         ItemKind::Failure => "failure",
         ItemKind::Proposal => "proposal",
         ItemKind::Briefing => "briefing",
+        ItemKind::Sort => "proposal to sort a capture",
+        ItemKind::Delegate => "proposal to ask a delegate",
     };
     let source = match &item.routine {
         Some(r) => format!("Routine {r}"),

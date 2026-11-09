@@ -150,6 +150,7 @@ fn a_result_cancel_or_another_version_is_never_derived_over() {
         next: Vec::new(),
         files: Vec::new(),
         possible_duplicates: Vec::new(),
+        notes: None,
     });
     assert_eq!(
         derive(&q, &facts(&r, None, 2000)),

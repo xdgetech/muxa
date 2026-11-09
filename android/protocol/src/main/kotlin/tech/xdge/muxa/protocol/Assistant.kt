@@ -67,6 +67,10 @@ data class WorkItem(
     val laterAt: Long? = null,
     /** With `withdrawn` after `merge`: the Work item it was merged into. */
     val mergedInto: String? = null,
+    /** Level 9: set by `pin`. Pinned items are listed first, in pin order (ADR 0047). */
+    val pinnedAt: Long? = null,
+    /** Level 9: the user's deadline. Only the user sets it. */
+    val due: Due? = null,
     val captures: List<String> = emptyList(),
     /** Assistant requests, oldest first. */
     val requests: List<String> = emptyList(),
@@ -172,6 +176,24 @@ data class AssistResult(
     /** Paths the run wrote, absolute. */
     val files: List<String> = emptyList(),
     val possibleDuplicates: List<PossibleDuplicate> = emptyList(),
+    /** Level 9: the delegate's proposed notes (ADR 0047 §1). Never logged. */
+    val notes: Notes? = null,
+)
+
+/** A deadline the user set on a Work item (ADR 0047 §6): epoch seconds, and the IANA zone it was set in. */
+@Serializable
+data class Due(val at: Long, val timezone: String)
+
+/**
+ * A run's proposed replacement of the workspace's `.muxa/assistant/NOTES.md`. `apply-notes` writes it only
+ * while the live file still hashes to [base]: lowercase hex SHA-256 of the file the run read, of no bytes
+ * when there was none.
+ */
+@Serializable
+data class Notes(
+    /** The full new text, at most 16 KiB. Never logged. */
+    val text: String,
+    val base: String,
 )
 
 @Serializable
@@ -214,7 +236,7 @@ enum class SortAction {
 /** A change in `update-work`. */
 @Serializable
 enum class WorkAction {
-    /** Change `title` or `workspace`. */
+    /** Change `title`, `workspace` or, at level 9, `due`. */
     @SerialName("edit") EDIT,
     @SerialName("later") LATER,
     @SerialName("complete") COMPLETE,
@@ -223,4 +245,10 @@ enum class WorkAction {
 
     /** Withdraw this item into `into`; its Captures move there. */
     @SerialName("merge") MERGE,
+
+    /** Level 9: list it first, after the items pinned before it. */
+    @SerialName("pin") PIN,
+
+    /** Level 9: clear `pinnedAt`. */
+    @SerialName("unpin") UNPIN,
 }

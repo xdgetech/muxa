@@ -55,6 +55,7 @@ object Wire {
         kind<Message.CaptureSaved>("capture-saved"),
         kind<Message.WorkSaved>("work-saved"),
         kind<Message.WorkDetail>("work-detail"),
+        kind<Message.PlanSaved>("plan-saved"),
         kind<Message.Bye>("bye"),
     )
 
@@ -100,6 +101,8 @@ object Wire {
         kind<Request.RequestAssistant>("request-assistant"),
         kind<Request.CancelRequest>("cancel-request"),
         kind<Request.GetWork>("get-work"),
+        kind<Request.ApplyNotes>("apply-notes"),
+        kind<Request.PlanNow>("plan-now"),
         kind<Request.Bye>("bye"),
     )
 
