@@ -17,3 +17,11 @@ teardown() { teardown_server; }
   [[ "$out" == *"a ask the assistant"* ]]
   [[ "$out" == *"  l d a          on a Work item: Later, Complete, ask its assistant"* ]]
 }
+
+@test "help lists the Today keys of ADR 0047" {
+  run "$ROOT/scripts/help.sh"
+  out="$(printf '%s\n' "$output" | strip_ansi)"
+  [[ "$out" == *"  P              on a Work item: pin it first, or unpin it"* ]]
+  [[ "$out" == *"  p              ask the overall assistant for a plan now"* ]]
+  [[ "$out" == *"  o              on a Today row: go to its Work item or Inbox item"* ]]
+}

@@ -2,7 +2,9 @@
 //! and show its latest Result (ADR 0046). Purposes and Results go to stdout
 //! only, never to stderr or a log.
 
-use muxa_protocol::{AssistResult, AssistScope, AssistantRequest, Message, Request, WorkItem};
+use muxa_protocol::{
+    AssistResult, AssistScope, AssistantRequest, Message, Notes, Request, WorkItem,
+};
 use serde_json::json;
 
 use crate::conn::Conn;
@@ -120,6 +122,104 @@ fn pick<'a>(
         .ok_or_else(|| format!("{target} has no assistant request"))
 }
 
+/// A proposal to replace a `NOTES.md`: a request's Result or a plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Proposal {
+    source: String,
+    /// The Result's request version, or the plan's `rev`.
+    version: u64,
+    notes: Notes,
+}
+
+/// The newest notes proposal of a plan (`p-…`), a request, or a Work item's requests.
+fn proposal(listing: &work::Listing, target: &str) -> Result<Proposal, String> {
+    if let Some(p) = listing.plans.iter().find(|p| p.id == target) {
+        let notes = p
+            .notes
+            .clone()
+            .ok_or_else(|| format!("plan {target} proposes no notes"))?;
+        return Ok(Proposal {
+            source: p.id.clone(),
+            version: p.rev,
+            notes,
+        });
+    }
+    let mine: Vec<&AssistantRequest> = match listing.work.iter().find(|w| w.id == target) {
+        Some(w) => listing
+            .requests
+            .iter()
+            .filter(|q| w.requests.contains(&q.id))
+            .collect(),
+        None => listing.requests.iter().filter(|q| q.id == target).collect(),
+    };
+    if mine.is_empty() {
+        return Err(format!("no Work item, assistant request or plan {target}"));
+    }
+    mine.iter()
+        .flat_map(|q| q.results.iter().map(move |r| (q, r)))
+        .filter_map(|(q, r)| r.notes.clone().map(|notes| (r.at, q, r.version, notes)))
+        .max_by_key(|(at, ..)| *at)
+        .map(|(_, q, version, notes)| Proposal {
+            source: q.id.clone(),
+            version,
+            notes,
+        })
+        .ok_or_else(|| format!("{target} has no notes proposal"))
+}
+
+/// `assist notes (WORK | REQUEST | PLAN) [--apply]`: shows the newest proposed
+/// `NOTES.md`, or writes it on the host with `apply-notes`.
+pub async fn notes(
+    conn: &mut Conn,
+    target: &str,
+    apply: bool,
+    as_json: bool,
+) -> Result<String, String> {
+    crate::plan::require(conn)?;
+    let p = proposal(&work::fetch(conn).await?, target)?;
+    if !apply {
+        if as_json {
+            println!(
+                "{}",
+                json!({"source": p.source, "version": p.version, "notes": p.notes})
+            );
+        } else {
+            let base: String = p.notes.base.chars().take(12).collect();
+            println!(
+                "{} v{} proposes NOTES.md (base {base})",
+                p.source, p.version
+            );
+            println!("{}", plain(&p.notes.text).trim_end());
+        }
+        return Ok(String::new());
+    }
+    let messages = conn
+        .call(
+            |id| Request::ApplyNotes {
+                id,
+                source: p.source,
+                version: p.version,
+                base: p.notes.base,
+            },
+            WAIT,
+        )
+        .await?;
+    let saved = messages.iter().find_map(|m| match m {
+        Message::WorkSaved {
+            request: Some(q), ..
+        } => Some((json!(q), request_line(q))),
+        Message::PlanSaved { entry, .. } => Some((json!(entry), crate::plan::header(entry))),
+        _ => None,
+    });
+    let (value, line) = saved.ok_or("the bridge saved no request or plan")?;
+    if as_json {
+        println!("{value}");
+    } else {
+        println!("notes applied: {line}");
+    }
+    Ok(String::new())
+}
+
 /// `q-… v2 research  processing  [work]`.
 pub fn request_line(q: &AssistantRequest) -> String {
     format!(
@@ -229,6 +329,65 @@ mod tests {
             files: Vec::new(),
             possible_duplicates: Vec::new(),
             notes: None,
+        }
+    }
+
+    #[test]
+    fn notes_come_from_a_plan_or_the_newest_result_with_notes() {
+        let notes = |text: &str| Notes {
+            text: text.into(),
+            base: "ab".repeat(32),
+        };
+        let mut old = result(1, "x");
+        old.notes = Some(notes("old"));
+        old.at = 50;
+        let mut newer = result(2, "y");
+        newer.notes = Some(notes("new"));
+        let plain_result = result(3, "z");
+        let item = WorkItem {
+            requests: vec!["q-0000abcd".into()],
+            ..work_item()
+        };
+        let listing = work::Listing {
+            work: vec![item],
+            captures: Vec::new(),
+            requests: vec![request(vec![plain_result, newer, old])],
+            items: Vec::new(),
+            plans: Vec::new(),
+        };
+        for target in ["w-0000abcd", "q-0000abcd"] {
+            let p = proposal(&listing, target).unwrap();
+            assert_eq!((p.source.as_str(), p.version), ("q-0000abcd", 2));
+            assert_eq!(p.notes.text, "new");
+        }
+        assert!(proposal(&listing, "w-0000ffff").is_err());
+        let none = work::Listing {
+            requests: vec![request(vec![result(3, "z")])],
+            ..listing
+        };
+        assert!(
+            proposal(&none, "q-0000abcd")
+                .unwrap_err()
+                .contains("no notes proposal")
+        );
+    }
+
+    fn work_item() -> WorkItem {
+        WorkItem {
+            id: "w-0000abcd".into(),
+            rev: 1,
+            title: "t".into(),
+            state: muxa_protocol::WorkState::Open,
+            created_at: 0,
+            updated_at: 0,
+            workspace: None,
+            later_at: None,
+            merged_into: None,
+            pinned_at: None,
+            due: None,
+            captures: Vec::new(),
+            requests: Vec::new(),
+            tasks: Vec::new(),
         }
     }
 

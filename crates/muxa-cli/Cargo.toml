@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 crossterm = "0.29.0"
+jiff = "0.2.38"
 lexopt = "0.3.2"
 muxa-protocol = { version = "0.1.0", path = "../muxa-protocol" }
 serde_json = "1.0.154"

@@ -57,6 +57,9 @@ print() {
   heading "The Inbox ($p $(opt @agents_key_inbox T))"
   printf '  %sEach item lists the keys it takes. Enter goes to its session.%s\n' "$D" "$Z"
   row "l d a" "on a Work item: Later, Complete, ask its assistant"
+  row "P" "on a Work item: pin it first, or unpin it"
+  row "o" "on a Today row: go to its Work item or Inbox item"
+  row "p" "ask the overall assistant for a plan now"
 }
 
 case "${1:-print}" in

@@ -178,11 +178,12 @@ impl Conn {
 }
 
 /// An error, and what the bridge kept anyway: a task record after a failed
-/// launch, or the Capture when its assistant could not start.
+/// launch, the Capture when its assistant could not start, or a failed plan.
 fn failure(e: &ErrorBody, before: &[Message]) -> String {
     let kept = before.iter().find_map(|m| match m {
         Message::TaskSaved { record, .. } => Some(format!("task {}", record.id)),
         Message::CaptureSaved { entry, .. } => Some(format!("capture {}", entry.id)),
+        Message::PlanSaved { entry, .. } => Some(format!("plan {}", entry.id)),
         _ => None,
     });
     // The wire name, e.g. `task-failed`.

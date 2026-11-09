@@ -5,6 +5,7 @@ mod assist;
 mod conn;
 mod inbox;
 mod items;
+mod plan;
 mod routines;
 mod tasks;
 mod view;
@@ -53,10 +54,15 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] work (later | done | withdraw | reopen) WORK [--json]
        muxa-cli [--bridge CMD] work edit WORK [--title T] [--workspace W] [--json]
        muxa-cli [--bridge CMD] work merge WORK INTO [--json]
+       muxa-cli [--bridge CMD] work (pin | unpin) WORK [--json]
+       muxa-cli [--bridge CMD] work due WORK --at TIME [--timezone ZONE] [--json]
        muxa-cli [--bridge CMD] assist WORK [--scope S] [--purpose P]
                 [--workspace W] [--json]
        muxa-cli [--bridge CMD] assist cancel REQUEST [--json]
        muxa-cli [--bridge CMD] assist show (WORK | REQUEST) [--json]
+       muxa-cli [--bridge CMD] assist notes (WORK | REQUEST | PLAN) [--apply] [--json]
+       muxa-cli [--bridge CMD] plan [--json]
+       muxa-cli [--bridge CMD] plan now [--minutes N] [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -160,6 +166,12 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  done and withdraw close it; its Tasks keep running
   work merge WORK INTO
                  withdraws WORK into INTO; INTO gets its Captures
+  work pin WORK  lists the item first, and in the first rows of a plan;
+                 unpin undoes it (ADR 0047)
+  work due WORK --at TIME
+                 sets the item's deadline. TIME is RFC 3339
+                 (2026-11-12T16:00:00+09:00) or YYYY-MM-DD HH:MM in
+                 --timezone ZONE, an IANA name (default: this system's)
   --work WORK    task new: the Task is for this Work item. Starting it again
                  returns the same Task
   assist WORK    asks a workspace's assistant to work on the item: its
@@ -173,7 +185,16 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  cancels the request's current version and closes its run
   assist show (WORK | REQUEST)
                  the newest Result: summary, findings with their sources,
-                 open questions, next steps, files and possible duplicates";
+                 open questions, next steps, files and possible duplicates
+  assist notes (WORK | REQUEST | PLAN)
+                 the newest proposed NOTES.md of the item's requests, the
+                 request or the plan; --apply writes it on the host, unless
+                 the file changed since the run read it
+  plan           the overall assistant's newest plan: up to 3 rows with why,
+                 next and minutes, Due soon, and the unanswered and stale
+                 requests. A plan without a result shows its reason
+  plan now       asks the overall assistant for a plan now; --minutes N is
+                 the time you have. Needs an overall workspace and the daemon";
 
 enum Cmd {
     List,
@@ -290,6 +311,18 @@ enum Cmd {
         target: String,
         json: bool,
     },
+    Notes {
+        target: String,
+        apply: bool,
+        json: bool,
+    },
+    Plan {
+        json: bool,
+    },
+    PlanNow {
+        minutes: Option<u32>,
+        json: bool,
+    },
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
@@ -307,6 +340,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut text, mut option) = (None, None);
     let (mut source, mut client_id) = (None, None);
     let (mut assist, mut scope, mut purpose) = (false, None, None);
+    let (mut minutes, mut at, mut timezone, mut apply) = (None, None, None, false);
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -344,6 +378,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("work") => new.work = Some(p.value()?.string()?),
             Long("client-id") => client_id = Some(p.value()?.string()?),
             Long("assist") => assist = true,
+            Long("minutes") => minutes = Some(p.value()?.parse()?),
+            Long("at") => at = Some(p.value()?.string()?),
+            Long("timezone") => timezone = Some(p.value()?.string()?),
+            Long("apply") => apply = true,
             Long("purpose") => purpose = Some(p.value()?.string()?),
             Long("scope") => {
                 let value = p.value()?.string()?;
@@ -411,8 +449,31 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "--source and --client-id require capture".into(),
         ));
     }
-    let is_assist =
-        matches!(words.as_slice(), [w, id] if w == "assist" && id != "cancel" && id != "show");
+    let is_assist = matches!(words.as_slice(),
+        [w, id] if w == "assist" && !["cancel", "show", "notes"].contains(&id.as_str()));
+    let is_plan_now = matches!(words.as_slice(), [w, n] if w == "plan" && n == "now");
+    if minutes.is_some() && !is_plan_now {
+        return Err(lexopt::Error::Custom("--minutes requires plan now".into()));
+    }
+    let is_due = matches!(words.as_slice(), [w, d, _] if w == "work" && d == "due");
+    if (at.is_some() || timezone.is_some()) && !is_due {
+        return Err(lexopt::Error::Custom(
+            "--at and --timezone require work due".into(),
+        ));
+    }
+    let is_notes = matches!(words.as_slice(), [w, n, _] if w == "assist" && n == "notes");
+    if apply && !is_notes {
+        return Err(lexopt::Error::Custom(
+            "--apply requires assist notes".into(),
+        ));
+    }
+    let due = match (is_due, at) {
+        (true, Some(at)) => {
+            Some(work::due(&at, timezone.as_deref()).map_err(|e| lexopt::Error::Custom(e.into()))?)
+        }
+        (true, None) => return Err(lexopt::Error::Custom("work due needs --at".into())),
+        _ => None,
+    };
     if assist && !is_capture {
         return Err(lexopt::Error::Custom("--assist requires capture".into()));
     }
@@ -566,6 +627,13 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             target: target.clone(),
             json,
         },
+        [w, n, target] if w == "assist" && n == "notes" => Cmd::Notes {
+            target: target.clone(),
+            apply,
+            json,
+        },
+        [w] if w == "plan" => Cmd::Plan { json },
+        [w, n] if w == "plan" && n == "now" => Cmd::PlanNow { minutes, json },
         [w, id] if is_assist && w == "assist" => Cmd::Assist {
             ask: assist::Ask {
                 work: id.clone(),
@@ -585,7 +653,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             json,
         },
         [w, a, id, rest @ ..] if w == "work" => Cmd::ChangeWork {
-            change: change_args(a, id, rest, new.title, new.workspace)?,
+            change: change_args(a, id, rest, new.title, new.workspace, due)?,
             json,
         },
         [w, r, id] if w == "task" && r == "recover" => Cmd::Recover {
@@ -661,6 +729,7 @@ fn change_args(
     rest: &[String],
     title: String,
     workspace: String,
+    due: Option<muxa_protocol::Due>,
 ) -> Result<work::Change, lexopt::Error> {
     use muxa_protocol::WorkAction;
     let action = work::action(name).ok_or_else(|| lexopt::Error::Custom(USAGE.into()))?;
@@ -671,7 +740,12 @@ fn change_args(
         (_, []) => None,
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
-    let edits = title.is_some() || workspace.is_some();
+    let edits = title.is_some() || workspace.is_some() || due.is_some();
+    if name == "due" && (title.is_some() || workspace.is_some()) {
+        return Err(lexopt::Error::Custom(
+            "work due takes --at and --timezone only".into(),
+        ));
+    }
     if (action == WorkAction::Edit) != edits {
         return Err(lexopt::Error::Custom(
             "work edit needs --title or --workspace, and only edit takes them".into(),
@@ -683,6 +757,7 @@ fn change_args(
         title,
         workspace,
         into,
+        due,
     })
 }
 
@@ -789,6 +864,13 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Assist { ask, json } => assist::ask(&mut conn, ask, json).await,
         Cmd::CancelRequest { request, json } => assist::cancel(&mut conn, &request, json).await,
         Cmd::ShowResult { target, json } => assist::show(&mut conn, &target, json).await,
+        Cmd::Notes {
+            target,
+            apply,
+            json,
+        } => assist::notes(&mut conn, &target, apply, json).await,
+        Cmd::Plan { json } => plan::show(&mut conn, json).await,
+        Cmd::PlanNow { minutes, json } => plan::now(&mut conn, minutes, json).await,
     }
 }
 

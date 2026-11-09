@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use muxa_protocol::{
-    AssistSpec, AssistantRequest, Capture, CaptureSource, Message, Request, SortAction,
-    WORK_ASSISTANT, WorkAction, WorkItem, WorkState, work_level,
+    AssistSpec, AssistantRequest, Capture, CaptureSource, Due, InboxItem, Message, Plan, Request,
+    SortAction, WORK_ASSISTANT, WorkAction, WorkItem, WorkState, work_level,
 };
 use serde_json::json;
 
@@ -94,6 +94,7 @@ pub async fn list(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, S
         work,
         captures,
         requests,
+        ..
     } = fetch(conn).await?;
     let work: Vec<WorkItem> = work.into_iter().filter(|w| all || !closed(w)).collect();
     if as_json {
@@ -231,7 +232,7 @@ pub async fn sort(conn: &mut Conn, s: Sort, as_json: bool) -> Result<String, Str
     Ok(String::new())
 }
 
-/// `work (edit | later | done | withdraw | reopen | merge) WORK …`.
+/// `work (edit | later | done | withdraw | reopen | merge | pin | unpin | due) WORK …`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Change {
     pub work: String,
@@ -239,19 +240,52 @@ pub struct Change {
     pub title: Option<String>,
     pub workspace: Option<String>,
     pub into: Option<String>,
+    /// With `edit`, from `work due`.
+    pub due: Option<Due>,
 }
 
 pub fn action(name: &str) -> Option<WorkAction> {
     match name {
         "done" => Some(WorkAction::Complete),
-        "edit" | "later" | "withdraw" | "reopen" | "merge" => {
+        "due" => Some(WorkAction::Edit),
+        "edit" | "later" | "withdraw" | "reopen" | "merge" | "pin" | "unpin" => {
             serde_json::from_value(json!(name)).ok()
         }
         _ => None,
     }
 }
 
+/// `work due --at`: an RFC 3339 time, or `YYYY-MM-DD HH:MM` in `timezone`.
+/// The zone defaults to the system's, which must have an IANA name.
+pub fn due(at: &str, timezone: Option<&str>) -> Result<Due, String> {
+    let zone = match timezone {
+        Some(name) => name.to_owned(),
+        None => jiff::tz::TimeZone::system()
+            .iana_name()
+            .map(str::to_owned)
+            .ok_or("this system's time zone has no IANA name; give --timezone, e.g. Asia/Tokyo")?,
+    };
+    let tz = jiff::tz::TimeZone::get(&zone)
+        .map_err(|_| format!("unknown time zone {zone:?}; give an IANA name, e.g. Asia/Tokyo"))?;
+    let stamp = match at.parse::<jiff::Timestamp>() {
+        Ok(stamp) => stamp,
+        Err(_) => at
+            .replacen(' ', "T", 1)
+            .parse::<jiff::civil::DateTime>()
+            .and_then(|local| local.to_zoned(tz))
+            .map(|zoned| zoned.timestamp())
+            .map_err(|_| format!("--at {at:?}: give an RFC 3339 time or YYYY-MM-DD HH:MM"))?,
+    };
+    match u64::try_from(stamp.as_second()) {
+        Ok(at) if at > 0 => Ok(Due { at, timezone: zone }),
+        _ => Err(format!("--at {at:?} is before 1970")),
+    }
+}
+
 pub async fn change(conn: &mut Conn, c: Change, as_json: bool) -> Result<String, String> {
+    if matches!(c.action, WorkAction::Pin | WorkAction::Unpin) || c.due.is_some() {
+        crate::plan::require(conn)?;
+    }
     let rev = rev_of(conn, &c.work).await?;
     let messages = conn
         .call(
@@ -263,7 +297,7 @@ pub async fn change(conn: &mut Conn, c: Change, as_json: bool) -> Result<String,
                 title: c.title,
                 workspace: c.workspace,
                 into: c.into,
-                due: None,
+                due: c.due,
             },
             WAIT,
         )
@@ -294,11 +328,14 @@ pub async fn rev_of(conn: &mut Conn, work: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("no Work item {work}"))
 }
 
-/// The level 8 part of `inbox-list`.
+/// The level 8 and 9 parts of `inbox-list`, and its items.
 pub struct Listing {
     pub work: Vec<WorkItem>,
     pub captures: Vec<Capture>,
     pub requests: Vec<AssistantRequest>,
+    pub items: Vec<InboxItem>,
+    /// Newest first.
+    pub plans: Vec<Plan>,
 }
 
 pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
@@ -311,11 +348,15 @@ pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
                 work,
                 captures,
                 requests,
+                items,
+                plans,
                 ..
             } => Some(Listing {
                 work,
                 captures,
                 requests,
+                items,
+                plans,
             }),
             _ => None,
         })
@@ -352,13 +393,21 @@ pub fn work_line(w: &WorkItem, now: u64) -> String {
     if w.later_at.is_some() && !closed(w) {
         state.push_str(" later");
     }
+    if w.pinned_at.is_some() {
+        state.push_str(" pinned");
+    }
     let workspace = w
         .workspace
         .as_deref()
         .map(|s| format!("  [{s}]"))
         .unwrap_or_default();
+    let due = w
+        .due
+        .as_ref()
+        .map(|d| format!("  due {}", crate::when::format(d.at)))
+        .unwrap_or_default();
     format!(
-        "{}  {state}  {}  {}{workspace}",
+        "{}  {state}  {}  {}{due}{workspace}",
         w.id,
         crate::items::age(now.saturating_sub(w.created_at)),
         w.title
@@ -465,10 +514,41 @@ mod tests {
     }
 
     #[test]
+    fn due_takes_rfc3339_or_a_local_time_in_the_zone() {
+        let tokyo = Some("Asia/Tokyo");
+        let want = Due {
+            at: 1_762_930_800,
+            timezone: "Asia/Tokyo".into(),
+        };
+        assert_eq!(due("2025-11-12T16:00:00+09:00", tokyo), Ok(want.clone()));
+        assert_eq!(due("2025-11-12 16:00", tokyo), Ok(want.clone()));
+        assert_eq!(due("2025-11-12T16:00", tokyo), Ok(want));
+        assert!(due("2025-11-12 16:00", Some("Mars/Base")).is_err());
+        assert!(due("Wednesday", tokyo).is_err());
+        assert!(due("1960-01-01 00:00", tokyo).is_err());
+    }
+
+    #[test]
+    fn a_pinned_item_with_a_due_says_so() {
+        let mut w = item(WorkState::Open, None);
+        w.pinned_at = Some(150);
+        w.due = Some(Due {
+            at: 1_762_930_800,
+            timezone: "Asia/Tokyo".into(),
+        });
+        assert_eq!(
+            work_line(&w, 160),
+            "w-0000abcd  open pinned  1m  Shorten onboarding  due 2025-11-12T07:00Z  [work]"
+        );
+    }
+
+    #[test]
     fn names_map_to_the_wire_and_client_ids_differ() {
         assert_eq!(action("done"), Some(WorkAction::Complete));
         assert_eq!(action("later"), Some(WorkAction::Later));
         assert_eq!(action("complete"), None);
+        assert_eq!(action("pin"), Some(WorkAction::Pin));
+        assert_eq!(action("due"), Some(WorkAction::Edit));
         assert_eq!(source("tmux"), Some(CaptureSource::Tmux));
         assert_eq!(source("phone"), None);
         let (a, b) = (client_id(), client_id());

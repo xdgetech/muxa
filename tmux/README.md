@@ -204,6 +204,18 @@ apps show, with a goal and a status.
     shows the request and the newest Result's summary; `muxa-cli assist show
     WORK` prints all of it. On a Capture, `w` makes a Work item from it and `n`
     keeps it as a note.
+  - With `work` level 9 and an overall assistant (ADR 0047), a Today section
+    (`☀`) comes first: up to 3 rows of the newest plan with a result, each with
+    its time estimate and `new` or `moved` since the plan before, then one
+    line of the items you moved down with Later that are due soon. The heading
+    says when the plan was made, or that the newest plan failed. The item below
+    the list shows a row's why, next step, time and basis. `o` or `Enter` on a
+    row goes to its Work item or Inbox item in the list. `p` anywhere asks the
+    overall assistant for a plan now (`muxa-cli plan now`); it asks for the
+    minutes you have first, and `Enter` gives no limit. `P` on a Work item pins
+    it, so it is listed first and fills the first plan rows, or unpins it. The
+    overall assistant's proposals are items too: `🗂` sorts a Capture and `🤝`
+    asks a workspace's assistant; `a` approves, `r` rejects, `l` is Later.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

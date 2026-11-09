@@ -198,7 +198,7 @@ fn waiting(routines: &[RoutineInfo], sessions: &[Session]) -> Vec<(String, Strin
 pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, String> {
     let (routines, _) = fetch(conn).await?;
     let messages = conn.call(|id| Request::ListInbox { id }, WAIT).await?;
-    let (entries, items, work, captures, requests) = messages
+    let (entries, items, work, captures, requests, plans, assistant) = messages
         .into_iter()
         .find_map(|m| match m {
             Message::InboxList {
@@ -207,12 +207,15 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
                 work,
                 captures,
                 requests,
+                plans,
+                assistant,
                 ..
-            } => Some((entries, items, work, captures, requests)),
+            } => Some((entries, items, work, captures, requests, plans, assistant)),
             _ => None,
         })
         .ok_or("the bridge sent no inbox list")?;
-    // Work items, Captures and requests are listed by `work`; the JSON carries them for tools.
+    // Work items, Captures, requests and plans are listed by `work` and `plan`;
+    // the JSON carries them for tools.
     let work: Vec<_> = work
         .into_iter()
         .filter(|w| all || !matches!(w.state, WorkState::Done | WorkState::Withdrawn))
@@ -242,7 +245,8 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
         println!(
             "{}",
             json!({"work": work_level(conn.capabilities()), "items": items, "entries": entries, "runs": runs,
-                "workItems": work, "captures": captures, "requests": requests})
+                "workItems": work, "captures": captures, "requests": requests,
+                "plans": plans, "assistant": assistant})
         );
         return Ok(String::new());
     }

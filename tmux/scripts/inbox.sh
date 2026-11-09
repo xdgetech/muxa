@@ -4,8 +4,10 @@
 # the list above the selected item. muxa owns the items; this only shows them
 # and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3.
 # With level 8, Work items (w-) and unsorted Captures (c-) follow the items;
-# `a` on a Work item asks its workspace's assistant.
+# `a` on a Work item asks its workspace's assistant. With level 9, Today rows
+# (today:) of the newest plan come first (ADR 0047); `p` asks for a plan.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
+#        inbox.sh target <today row> <json>  (the item a Today row opens)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh ui <client> [item id]
 set -u
@@ -64,10 +66,12 @@ EOF
 }
 
 JQ_DEFS='
-  def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰"}[.kind] // "•";
-  def age: ($now - .createdAt) as $s |
+  def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰",
+    "sort": "🗂", "delegate": "🤝"}[.kind] // "•";
+  def since($t): ($now - $t) as $s |
     if $s < 60 then "\($s)s" elif $s < 3600 then "\($s / 60 | floor)m"
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
+  def age: since(.createdAt);
   def dot: if .readAt then " " else "●" end;
   def shown: select(.state == "open" or .state == "later");
   # Labels name the result as the apps do (ADR 0033 §4a, ADR 0040): ✓ closes only
@@ -103,6 +107,21 @@ JQ_DEFS='
   def delivery_word: if (.delivery | IN("pending", "received", "processing", "unconfirmed",
     "resulted", "failed", "timed-out", "cancel-requested", "cancelled"))
     then .delivery | gsub("-"; " ") else "unknown" end;
+  def pin_due: (if .pinnedAt then " · pinned" else "" end) +
+    (if .due then " · due \(.due.at | strftime("%Y-%m-%d %H:%MZ"))" else "" end);
+  # Today (ADR 0047 §5): the newest plan says how planning went; the rows come
+  # from the newest plan with a result.
+  def latest_plan: (.plans // [])[0] // empty;
+  def shown_plan: [(.plans // [])[] | select(.delivery == "resulted")][0] // empty;
+  def has_today: (.work // 0) >= 9 and (((.plans // []) | length) > 0 or .assistant.overall != null);
+  def title_of($root; $id): ([($root.workItems // [])[], ($root.items // [])[] | select(.id == $id) | .title][0] // $id) | plain;
+  def mins: "\(.minutes.low)–\(.minutes.high) min";
+  def mark($p): (.work // .item) as $t |
+    {"entered": " · new", "moved": " · moved"}[[($p.changed // [])[] | select(.id == $t) | .change][0] // ""] // "";
+  def plan_status: if ((.plans // []) | length) == 0 then "no plan yet · p Plan Now" else latest_plan |
+    if .delivery == "resulted" then "planned \(since(.at)) ago"
+    elif (.delivery | IN("pending", "received", "processing")) then "planning…"
+    else "last plan \(delivery_word)" end end;
   def first_line: [.text | plain | split("\n")[] | select(test("\\S"))][0] // "" | sub("^\\s+"; "") | .[:60];
   # Numbered evidence: the changes, docs, images and links.
   def evidence: (.attachments // {}) as $t | [
@@ -143,11 +162,17 @@ detail() {
 # the unsorted Captures (ADR 0046): <id> TAB <display>.
 list() {
   iq -r "$JQ_DEFS"'
-    (.requests // []) as $reqs |
+    . as $root | (.requests // []) as $reqs |
+    (select(has_today) |
+      "today:\t☀ \u001b[1mToday\u001b[0m  \u001b[2m\(plan_status)\u001b[0m",
+      (shown_plan | . as $p | .top // [] | to_entries[] | .value as $r |
+        "today:\(.key + 1)\t  \(.key + 1). \(title_of($root; $r.work // $r.item))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"),
+      (shown_plan | select((.dueSoon // []) | length > 0) |
+        "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
     (.items[] | shown |
     "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .laterAt or .state == "later" then " · later" else "" end)\u001b[0m"),
     (open_work |
-    "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
+    "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
     ((.captures // [])[] | "\(.id)\t  ✎ \(first_line)  \u001b[2munsorted · \(age)\u001b[0m")
   ' "$1"
 }
@@ -156,12 +181,12 @@ list() {
 # summary, and its keys.
 view_work() {
   iq -r --arg item "$1" "$JQ_DEFS"'
-    (.requests // []) as $reqs |
+    ((.work // 0) >= 9) as $pins | (.requests // []) as $reqs |
     .workItems[]? | select(.id == $item) |
     (.requests // []) as $mine |
     ([$reqs[] | select(.id | IN($mine[])) | .results[0]? // empty] | max_by(.at)) as $result |
     "◆ \u001b[1m\(.title | plain)\u001b[0m",
-    "\u001b[2m\(work_word)\(if .workspace then " · \(.workspace)" else "" end) · \(age)\(if .laterAt then " · later" else "" end)\u001b[0m",
+    "\u001b[2m\(work_word)\(if .workspace then " · \(.workspace)" else "" end) · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\u001b[0m",
     "",
     "Captures: \((.captures // []) | length)   Tasks: \((.tasks // []) | length)",
     (if .state == "waiting-decision" then "A Task waits for your decision above." else empty end),
@@ -171,7 +196,48 @@ view_work() {
       ($result.summary | plain), "\u001b[2mAll of it: muxa-cli assist show \($item)\u001b[0m"
      else empty end),
     "",
-    "l Later   d Complete   a Ask Assistant",
+    "l Later   d Complete   a Ask Assistant\(if $pins then "   P \(if .pinnedAt then "Unpin" else "Pin" end)" else "" end)",
+    "\u001b[2mq close\u001b[0m"
+  ' "$2"
+}
+
+# A Today row: the plan's reason, next step, minutes and basis; the heading:
+# how planning went; the Due soon line: the items moved down that are due.
+view_today() {
+  iq -r --arg row "${1#today:}" "$JQ_DEFS"'
+    . as $root |
+    if $row == "" then
+      "☀ \u001b[1mToday\u001b[0m", "\u001b[2m\(plan_status)\u001b[0m", "",
+      (latest_plan | select(.delivery != "resulted") |
+        "\(.id) · \(delivery_word)\(if .minutes then " · \(.minutes) min" else "" end)",
+        (.reason // empty | plain), ""),
+      (shown_plan |
+        "\(.id) · \((.workspaces // []) | join(", "))",
+        (if (.unanswered // []) | length > 0 then "Unanswered requests: \(.unanswered | join(" "))" else empty end),
+        (if (.stale // []) | length > 0 then "Stale results: \(.stale | join(" "))" else empty end),
+        ([(.changed // [])[] | select(.change == "left") | .id] | select(length > 0) |
+          "Left the plan: \(join(" "))"),
+        (if (.top // []) | length == 0 then "Nothing to rank." else empty end), ""),
+      "p Plan Now"
+    elif $row == "due" then
+      shown_plan |
+      "⏰ \u001b[1mDue soon, moved down by you\u001b[0m", "",
+      (.dueSoon[] as $d | ([($root.workItems // [])[] | select(.id == $d)][0] // {id: $d, title: $d}) |
+        "◆ \(.title | plain)\(pin_due)"),
+      "", "o Open   p Plan Now"
+    else
+      shown_plan | . as $p | (.top // [])[$row | tonumber - 1] // empty |
+      "\($row). \u001b[1m\(title_of($root; .work // .item))\u001b[0m",
+      "\u001b[2m\(.work // .item)\(mark($p))\u001b[0m", "",
+      "Why: \(.why | plain)", "Next: \(.next | plain)",
+      "Time: \(mins), about \(.minutes.estimated)",
+      (if (.basis // []) | length > 0 then "", "\u001b[1mBasis\u001b[0m",
+        (.basis[] | "  \(.kind): \(.text | plain)\(if .source then "  \(.source | plain)" else "" end)")
+       else empty end),
+      (if (.missing // []) | length > 0 then "", "\u001b[1mWould help\u001b[0m", (.missing[] | "  \(plain)")
+       else empty end),
+      "", "o Open   p Plan Now"
+    end,
     "\u001b[2mq close\u001b[0m"
   ' "$2"
 }
@@ -196,6 +262,7 @@ view() {
   case "$1" in
     w-*) view_work "$@"; return ;;
     c-*) view_capture "$@"; return ;;
+    today:*) view_today "$@"; return ;;
   esac
   iq -r --arg item "$1" "$JQ_DEFS"'
     .items[] | select(.id == $item) | . as $i |
@@ -203,6 +270,10 @@ view() {
     "\u001b[2m\(.title) · \(.workspace) · \(age)\(if .readAt then "" else " · unread" end)\u001b[0m",
     "",
     (.summary // empty), (if .summary then "" else empty end),
+    (.delegate // empty |
+      "To: \(.workspace | plain) · \(.scope)", "Ask: \(.purpose | plain)", "Why: \(.reason | plain)", ""),
+    (.sort // empty |
+      "\(.capture): \({"work": "a new Work item", "link": "add to \(.work // "")", "note": "keep as a note"}[.action] // .action)\(if .workspace then " in \(.workspace | plain)" else "" end)\(if .title then ": \(.title | plain)" else "" end)", ""),
     (evidence as $e | if ($e | length) > 0 then
       "\u001b[1mEvidence\u001b[0m", ($e | to_entries[] | "  \(.key + 1)  \(.value.label)"), ""
      else empty end),
@@ -220,7 +291,17 @@ view() {
 
 # What a key does for an item: an action, choose:<n>, open:<n>, or nothing.
 key_action() {
+  if [ "$2" = p ] && [ "$(jq -r '.work // 0' "$3")" -ge 9 ]; then
+    echo plan:now
+    return
+  fi
   case "$1:$2" in
+    w-*:P)
+      jq -r --arg item "$1" 'select((.work // 0) >= 9) | .workItems[]? | select(.id == $item) |
+        if .pinnedAt then "work:unpin" else "work:pin" end' "$3"
+      return
+      ;;
+    today:*) return ;;
     w-*:l) echo work:later; return ;;
     w-*:d) echo work:done; return ;;
     w-*:a) echo assist; return ;;
@@ -256,6 +337,17 @@ answer() {
     # The item's workspace, scope research: the apps' Ask Assistant.
     assist) set -- assist "$id" ;;
     sort:*) set -- work sort "$id" "${act#sort:}" ;;
+    plan:now)
+      clear
+      printf 'A plan now from the overall assistant.\n\n'
+      IFS= read -r -e -p 'Minutes you have (Enter: no limit) > ' text || return 0
+      set -- plan now
+      case "$text" in
+        "") ;;
+        *[!0-9]*) printf '\nNot a number of minutes.\n'; pause; return 0 ;;
+        *) set -- plan now --minutes "$text" ;;
+      esac
+      ;;
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
     reply | ask-agent)
       clear
@@ -286,6 +378,16 @@ item_dir() {
   pane="$(jq -r --arg item "$1" '.items[] | select(.id == $item) | .pane // empty' "$2")"
   [ -n "$pane" ] || return 1
   t display-message -p -t "$pane" '#{pane_current_path}' 2>/dev/null
+}
+
+# What a Today row opens: the Work item or Inbox item its plan row names, or
+# the first item due soon.
+today_target() {
+  jq -r --arg row "${1#today:}" '
+    [(.plans // [])[] | select(.delivery == "resulted")][0] // empty |
+    if $row == "due" then (.dueSoon // [])[0] // empty
+    elif $row == "" then empty
+    else (.top // [])[$row | tonumber - 1] // empty | .work // .item end' "$2"
 }
 
 # The whole item in the pager, for a screen too small for the preview.
@@ -333,7 +435,7 @@ EOF
 }
 
 ui() {
-  local client="$1" focus="${2:-}" json rows pos picked key id act sid
+  local client="$1" focus="${2:-}" json rows pos picked key id act sid target
   json="$(agents_run_dir)/inbox-ui-$$.json"
   trap 'rm -f "$json"' EXIT
   while :; do
@@ -359,7 +461,7 @@ ui() {
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
-      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
@@ -368,6 +470,16 @@ ui() {
       ctrl-r) continue ;;
       v) read_item "$id" "$json" ;;
       enter | o)
+        case "$id" in
+          today:*)
+            # Moves to the row of the target; a target not listed stays put.
+            target="$(today_target "$id" "$json")"
+            if [ -n "$target" ] && printf '%s\n' "$rows" | cut -f1 | grep -qxF -- "$target"; then
+              focus="$target"
+            fi
+            continue
+            ;;
+        esac
         sid="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .session // empty' "$json")"
         if [ -n "$sid" ] && t has-session -t "$sid" 2>/dev/null; then
           muxa inbox read "$id" </dev/null >/dev/null 2>&1
@@ -396,7 +508,8 @@ case "${1:-}" in
   detail) detail "${2:?target}" ;;
   list) list "${2:?json}" ;;
   view) view "${2:?item id}" "${3:?json}" ;;
+  target) today_target "${2:?today row}" "${3:?json}" ;;
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
   ui) ui "${2:?client}" "${3:-}" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | key <id> <key> <json> | ui <client> [item id]" >&2; exit 2 ;;
+  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | ui <client> [item id]" >&2; exit 2 ;;
 esac

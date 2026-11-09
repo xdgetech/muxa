@@ -234,9 +234,10 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'Allow Bash'"
 }
 
-# A work:8 Inbox (ADR 0046): the contract's Work items and Captures follow the items.
+# A work:8 Inbox (ADR 0046): the contract's Work items and Captures follow the
+# items. The fixture's level 9 list (with plans) is plan_inbox's.
 work_inbox() {
-  jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list") |
+  jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list" and .plans == null) |
     {work: 8, items: $items[0].items, entries: [], runs: [], workItems: .work, captures, requests}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }
@@ -316,4 +317,108 @@ work_inbox() {
   sleep 1
   key a
   wait_for 'grep -q "^assist w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
+}
+
+# A work:9 Inbox (ADR 0047): the contract's plans, overall assistant, and sort
+# and delegate items.
+plan_inbox() {
+  jq -c 'select(.type == "inbox-list" and .plans) |
+    {work: 9, items, entries: [], runs: [], workItems: .work, captures, requests, plans, assistant}' \
+    "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
+}
+
+plain_list() { inbox list "$1" | sed $'s/\x1b\\[[0-9;]*m//g'; }
+plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
+
+@test "on work:9 Today comes first: the plan's rows, then the Due soon line" {
+  plan_inbox >"$TMPDIR/p.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 7"
+  [ "$output" = "$(printf '%s\n' today: today:1 today:2 today:3 today:due i-1a2b3c4d i-2b3c4d5e)" ]
+  out="$(plain_list "$TMPDIR/p.json")"
+  [[ "$out" == *$'today:1\t  1. Prepare the quarterly report  60–120 min · moved'* ]]
+  [[ "$out" == *$'today:3\t  3. Try the tool for business B  1–5 min · new'* ]]
+  [[ "$out" == *"Due soon, moved down by you: Renew the passport"* ]]
+  [[ "$out" == *"Prepare the quarterly report  open · "*" · pinned · due 2025-11-12 07:00Z · work"* ]]
+}
+
+@test "a Today row shows why, next, time and basis, and opens its target" {
+  plan_inbox >"$TMPDIR/p.json"
+  out="$(plain_view today:2 "$TMPDIR/p.json")"
+  [[ "$out" == *"2. Compare vendor offers"* ]]
+  [[ "$out" == *"Why: The offers end Friday."* ]]
+  [[ "$out" == *"Next: Approve the request to work."* ]]
+  [[ "$out" == *"Time: 5–15 min, about 10"* ]]
+  [[ "$out" == *"due: The offer ends Friday  https://example.com/offer"* ]]
+  [[ "$out" == *"Which region the contract covers"* ]]
+  [[ "$out" == *"o Open   p Plan Now"* ]]
+  [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
+  [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
+  [ "$(inbox target today:due "$TMPDIR/p.json")" = w-8c9d0e1f ]
+  out="$(plain_view today: "$TMPDIR/p.json")"
+  [[ "$out" == *"Unanswered requests: q-2c3d4e5f"* ]]
+  [[ "$out" == *"Stale results: q-1b2c3d4e"* ]]
+  [[ "$out" == *"Left the plan: w-5f6a7b8c"* ]]
+}
+
+@test "a failed newest plan shows its reason, and the rows stay the last result's" {
+  plan_inbox | jq -c --slurpfile m "$ROOT/../protocol/fixtures/assistant/messages.jsonl" \
+    '.plans = [($m[] | select(.type == "plan-saved" and .entry.delivery == "failed") | .entry)] + .plans' \
+    >"$TMPDIR/p.json"
+  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  last plan failed"* ]]
+  [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
+  out="$(plain_view today: "$TMPDIR/p.json")"
+  [[ "$out" == *"p-2c3d4e5f · failed"* ]]
+  [[ "$out" == *"The run did not start: cannot reach tmux on the host"* ]]
+}
+
+@test "Today is absent below work:9, and without plans or an overall assistant" {
+  plan_inbox | jq -c '.work = 8' >"$TMPDIR/p.json"
+  [[ "$(inbox list "$TMPDIR/p.json" | cut -f1)" != *today* ]]
+  [ "$(inbox key w-0b1c2d3e P "$TMPDIR/p.json")" = "" ]
+  [ "$(inbox key w-0b1c2d3e p "$TMPDIR/p.json")" = "" ]
+  plan_inbox | jq -c '.plans = [] | del(.assistant)' >"$TMPDIR/p.json"
+  [[ "$(inbox list "$TMPDIR/p.json" | cut -f1)" != *today* ]]
+  plan_inbox | jq -c '.plans = []' >"$TMPDIR/p.json"
+  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  no plan yet · p Plan Now"* ]]
+}
+
+@test "p plans now from any row, P pins or unpins a Work item" {
+  plan_inbox >"$TMPDIR/p.json"
+  [ "$(inbox key today:1 p "$TMPDIR/p.json")" = plan:now ]
+  [ "$(inbox key i-1a2b3c4d p "$TMPDIR/p.json")" = plan:now ]
+  [ "$(inbox key w-0b1c2d3e P "$TMPDIR/p.json")" = work:unpin ]
+  [ "$(inbox key w-7b8c9d0e P "$TMPDIR/p.json")" = work:pin ]
+  [ "$(inbox key today:1 a "$TMPDIR/p.json")" = "" ]
+  [[ "$(plain_view w-0b1c2d3e "$TMPDIR/p.json")" == *"a Ask Assistant   P Unpin"* ]]
+  [[ "$(plain_view w-7b8c9d0e "$TMPDIR/p.json")" == *"a Ask Assistant   P Pin"* ]]
+}
+
+@test "sort and delegate items show their proposal and take approve, reject and later" {
+  plan_inbox >"$TMPDIR/p.json"
+  for id in i-1a2b3c4d i-2b3c4d5e; do
+    [ "$(inbox key "$id" a "$TMPDIR/p.json")" = approve ]
+    [ "$(inbox key "$id" r "$TMPDIR/p.json")" = reject ]
+    [ "$(inbox key "$id" l "$TMPDIR/p.json")" = later ]
+    [[ "$(plain_view "$id" "$TMPDIR/p.json")" == *$'l Later\na Approve   r Reject'* ]]
+  done
+  out="$(plain_view i-2b3c4d5e "$TMPDIR/p.json")"
+  [[ "$out" == *"To: work · compare"* ]]
+  [[ "$out" == *"Ask: Prices and contract terms of the two offers"* ]]
+  [[ "$out" == *"Why: Due Friday, and the last request was not confirmed."* ]]
+  [[ "$(plain_view i-1a2b3c4d "$TMPDIR/p.json")" == *"c-4e5f6a7b: a new Work item in work: Try the tool for business B"* ]]
+}
+
+@test "prefix+T: p asks for the minutes and plans now; o on a Today row moves to it, P pins" {
+  fake_cli
+  plan_inbox >"$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key p
+  key 4 5 Enter
+  wait_for 'grep -q "^plan now --minutes 45 --json$" "$TMPDIR/bin/calls"'
+  sleep 1
+  key j j o
+  key P
+  wait_for 'grep -q "^work pin w-7b8c9d0e --json$" "$TMPDIR/bin/calls"'
 }
