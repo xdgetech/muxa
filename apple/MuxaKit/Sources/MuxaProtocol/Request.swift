@@ -114,6 +114,9 @@ public enum Request: Equatable, Sendable {
         id: UInt64, work: String, rev: UInt64, scope: AssistScope, workspace: String? = nil, purpose: String? = nil)
     /// Stop a request's `version`. A `work-saved` comes first.
     case cancelRequest(id: UInt64, request: String, version: UInt64)
+    /// One Work item with every Capture it links, sorted or not, and its requests.
+    /// A `work-detail` comes first.
+    case getWork(id: UInt64, work: String)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -130,7 +133,7 @@ public enum Request: Equatable, Sendable {
             .updateInboxEntry(let id, _, _, _, _, _, _), .startSession(let id, _, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
             .updateWork(let id, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _),
-            .cancelRequest(let id, _, _):
+            .cancelRequest(let id, _, _), .getWork(let id, _):
             id
         }
     }
@@ -269,6 +272,9 @@ extension Request: Codable {
             try c.head("cancel-request", id)
             try c.encode(request, forKey: .request)
             try c.encode(version, forKey: .version)
+        case .getWork(let id, let work):
+            try c.head("get-work", id)
+            try c.encode(work, forKey: .work)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -428,6 +434,8 @@ extension Request: Codable {
             self = .cancelRequest(
                 id: id, request: try c.decode(String.self, forKey: .request),
                 version: try c.decode(UInt64.self, forKey: .version))
+        case "get-work":
+            self = .getWork(id: id, work: try c.decode(String.self, forKey: .work))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

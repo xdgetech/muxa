@@ -75,6 +75,9 @@ public enum Message: Equatable, Sendable {
     /// What an `update-work`, `request-assistant` or `cancel-request` wrote, just before
     /// its `result`.
     case workSaved(work: UInt64, entry: WorkItem, request: AssistantRequest? = nil)
+    /// The Work item a `get-work` asked for, with its derived state, just before its
+    /// `result`: the Captures `entry.captures` names, sorted or not, in that order, and its requests.
+    case workDetail(work: UInt64, entry: WorkItem, captures: [Capture] = [], requests: [AssistantRequest] = [])
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -273,6 +276,12 @@ extension Message: Codable {
                 work: try c.decode(UInt64.self, forKey: .work),
                 entry: try c.decode(WorkItem.self, forKey: .entry),
                 request: try c.decodeIfPresent(AssistantRequest.self, forKey: .request))
+        case "work-detail":
+            self = .workDetail(
+                work: try c.decode(UInt64.self, forKey: .work),
+                entry: try c.decode(WorkItem.self, forKey: .entry),
+                captures: try c.decodeIfPresent([Capture].self, forKey: .captures) ?? [],
+                requests: try c.decodeIfPresent([AssistantRequest].self, forKey: .requests) ?? [])
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -417,6 +426,12 @@ extension Message: Codable {
             try c.encode(work, forKey: .work)
             try c.encode(entry, forKey: .entry)
             try c.encodeIfPresent(request, forKey: .request)
+        case .workDetail(let work, let entry, let captures, let requests):
+            try c.encode("work-detail", forKey: .type)
+            try c.encode(work, forKey: .work)
+            try c.encode(entry, forKey: .entry)
+            if !captures.isEmpty { try c.encode(captures, forKey: .captures) }
+            if !requests.isEmpty { try c.encode(requests, forKey: .requests) }
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)

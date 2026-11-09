@@ -712,7 +712,8 @@ impl Worker {
             req @ (Request::ListTasks { .. }
             | Request::UpdateTask { .. }
             | Request::ListRoutines { .. }
-            | Request::ListInbox { .. }) => {
+            | Request::ListInbox { .. }
+            | Request::GetWork { .. }) => {
                 let answer = task_records::remote::serve(
                     &self.records_context(),
                     self.daemon_dir.as_deref(),

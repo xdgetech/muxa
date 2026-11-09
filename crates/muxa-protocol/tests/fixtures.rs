@@ -440,9 +440,11 @@ fn reading_fixtures_round_trip() {
 
 #[test]
 fn assistant_fixtures_round_trip() {
-    use muxa_protocol::{Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level};
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 16);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 9);
+    use muxa_protocol::{
+        CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
+    };
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 18);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 12);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -483,6 +485,7 @@ fn assistant_fixtures_round_trip() {
         &requests[15],
         Request::CreateTask { work: Some(w), work_rev: Some(3), .. } if w == "w-6a7b8c9d"
     ));
+    assert!(matches!(&requests[16], Request::GetWork { work, .. } if work == "w-6a7b8c9d"));
     let messages: Vec<Message> = read("messages.jsonl")
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
@@ -523,4 +526,24 @@ fn assistant_fixtures_round_trip() {
     let old: Message =
         serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
     assert!(matches!(old, Message::InboxList { work, .. } if work.is_empty()));
+    // get-work: every linked Capture, sorted ones included, in the item's order.
+    let Message::WorkDetail {
+        entry,
+        captures,
+        requests,
+        ..
+    } = &messages[9]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        captures.iter().map(|c| &c.id).collect::<Vec<_>>(),
+        entry.captures.iter().collect::<Vec<_>>()
+    );
+    assert!(captures.iter().all(|c| c.state == CaptureState::Sorted));
+    assert_eq!(requests[0].id, entry.requests[0]);
+    let Message::Result { error: Some(e), .. } = &messages[11] else {
+        panic!()
+    };
+    assert_eq!(e.code, muxa_protocol::ErrorCode::BadRequest);
 }

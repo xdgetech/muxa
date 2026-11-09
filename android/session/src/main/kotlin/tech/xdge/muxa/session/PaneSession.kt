@@ -1085,7 +1085,7 @@ class PaneSession(
             is Message.SessionStarted -> startedSessions[message.start] = message
             is Message.CaptureSaved -> savedCaptures[message.capture] = message.entry
             is Message.WorkSaved -> savedWork[message.work] = message.entry
-            is Message.Unknown -> {}
+            is Message.WorkDetail, is Message.Unknown -> {}
         }
     }
 

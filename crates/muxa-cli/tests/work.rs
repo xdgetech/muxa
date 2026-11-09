@@ -60,7 +60,8 @@ impl Bridge {
             .lines()
             .map(|line| serde_json::from_str::<Value>(line).unwrap())
             .filter(|r| {
-                !["list-inbox", "list", "list-routines"].contains(&r["type"].as_str().unwrap())
+                !["list-inbox", "list", "list-routines", "get-work"]
+                    .contains(&r["type"].as_str().unwrap())
             })
             .collect()
     }
@@ -99,6 +100,13 @@ for line in sys.stdin:
         send({'type':'inbox-list','inbox':ident,'entries':[],'items':[],
               'work':[work, dict(work, id='w-0000dead', state='done', requests=[])],'captures':[capture],
               'requests':[request]})
+    elif kind == 'get-work' and req['work'] != work['id']:
+        send({'type':'result','id':ident,'error':{'code':'bad-request','message':'no Work item ' + req['work']}})
+        continue
+    elif kind == 'get-work':
+        sorted_capture = dict(capture, state='sorted', text='Ring the bank\n\x1b[31mabout fees\x1b[0m', work=[work['id']])
+        send({'type':'work-detail','work':ident,'entry':dict(work, captures=[capture['id']], tasks=['t-0000aa']),
+              'captures':[sorted_capture],'requests':[request]})
     elif kind == 'list-routines':
         send({'type':'routine-list','routines':ident,'entries':[]})
     elif kind == 'capture':
@@ -395,4 +403,37 @@ fn wrong_assist_arguments_and_an_older_host_send_nothing() {
         assert!(String::from_utf8_lossy(&out.stderr).contains("update muxa-bridge"));
     }
     assert!(old.changes().is_empty());
+}
+
+#[test]
+fn work_show_prints_every_captures_full_text() {
+    let bridge = Bridge::new(8);
+    let text = ok(&bridge.run(&["work", "show", "w-0000abcd"], ""));
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(lines[0].starts_with("w-0000abcd  open  "), "{text}");
+    assert!(lines[0].ends_with("Shorten onboarding  [work]"), "{text}");
+    assert!(
+        text.contains("\nc-0000abcd  ")
+            && text.contains("\n  Ring the bank\n  [31mabout fees[0m\n"),
+        "the full text, without the escape: {text}"
+    );
+    assert!(text.contains("\nTasks  t-0000aa\n"), "{text}");
+    assert!(
+        text.ends_with("Asked  q-0000abcd v3 research  processing  [work]\n"),
+        "{text}"
+    );
+    let json = ok(&bridge.run(&["work", "show", "w-0000abcd", "--json"], ""));
+    let json: Value = serde_json::from_str(json.trim()).unwrap();
+    assert_eq!(json["work"]["id"], "w-0000abcd");
+    assert_eq!(json["captures"][0]["state"], "sorted");
+    assert_eq!(json["requests"][0]["delivery"], "processing");
+    let out = bridge.run(&["work", "show", "w-0000ffff"], "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no Work item w-0000ffff"));
+    assert!(bridge.changes().is_empty());
+    let sent = std::fs::read_to_string(bridge.0.join("requests")).unwrap();
+    assert!(sent.contains(r#""type": "get-work""#), "{sent}");
+    let old = Bridge::new(7);
+    let out = old.run(&["work", "show", "w-0000abcd"], "");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("update muxa-bridge"));
 }

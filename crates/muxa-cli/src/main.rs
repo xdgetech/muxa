@@ -149,6 +149,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   work           open Work items, then unsorted Captures; --all also lists
                  done and withdrawn items. An item that was asked shows its
                  newest request's delivery, e.g. asked: processing
+  work show WORK
+                 the item, every Capture's full text, sorted or not, its
+                 Tasks and its newest request's delivery
   work sort CAPTURE
                  new makes a Work item (title: the first line, or --title),
                  link adds the Capture to WORK, note keeps it with no item
@@ -269,6 +272,10 @@ enum Cmd {
     },
     ChangeWork {
         change: work::Change,
+        json: bool,
+    },
+    ShowWork {
+        work: String,
         json: bool,
     },
     Assist {
@@ -569,6 +576,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             json,
         },
         [w] if w == "work" => Cmd::Work { all, json },
+        [w, s, id] if w == "work" && s == "show" => Cmd::ShowWork {
+            work: id.clone(),
+            json,
+        },
         [w, s, capture, rest @ ..] if w == "work" && s == "sort" => Cmd::Sort {
             sort: sort_args(capture, rest, new.title, new.workspace)?,
             json,
@@ -774,6 +785,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Work { all, json } => work::list(&mut conn, all, json).await,
         Cmd::Sort { sort, json } => work::sort(&mut conn, sort, json).await,
         Cmd::ChangeWork { change, json } => work::change(&mut conn, change, json).await,
+        Cmd::ShowWork { work, json } => work::show(&mut conn, &work, json).await,
         Cmd::Assist { ask, json } => assist::ask(&mut conn, ask, json).await,
         Cmd::CancelRequest { request, json } => assist::cancel(&mut conn, &request, json).await,
         Cmd::ShowResult { target, json } => assist::show(&mut conn, &target, json).await,

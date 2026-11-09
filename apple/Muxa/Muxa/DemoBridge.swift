@@ -223,7 +223,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
-        case .capture, .sortCapture, .updateWork, .requestAssistant, .cancelRequest:
+        case .capture, .sortCapture, .updateWork, .requestAssistant, .cancelRequest, .getWork:
             await serveCaptures(req)
         case .restartAgent(let id, let task, let force, let worker, let rev):
             guard worker == nil, rev == nil else { unsupported(id); return }

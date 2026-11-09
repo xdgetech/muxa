@@ -14,3 +14,5 @@
 {"type":"request-assistant","id":413,"work":"w-0a1b2c3d","rev":6,"scope":"draft","workspace":"work","purpose":"A shorter first page"}
 {"type":"cancel-request","id":414,"request":"q-0a1b2c3d","version":2}
 {"type":"create-task","id":415,"workspace":"work","title":"Draft the merged onboarding page","goal":"Merge steps 3 to 5 of the onboarding guide.","repo":"docs","work":"w-6a7b8c9d","workRev":3}
+{"type":"get-work","id":416,"work":"w-6a7b8c9d"}
+{"type":"get-work","id":417,"work":"w-0000ffff"}

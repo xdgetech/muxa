@@ -54,6 +54,7 @@ object Wire {
         kind<Message.SessionStarted>("session-started"),
         kind<Message.CaptureSaved>("capture-saved"),
         kind<Message.WorkSaved>("work-saved"),
+        kind<Message.WorkDetail>("work-detail"),
         kind<Message.Bye>("bye"),
     )
 
@@ -98,6 +99,7 @@ object Wire {
         kind<Request.UpdateWork>("update-work"),
         kind<Request.RequestAssistant>("request-assistant"),
         kind<Request.CancelRequest>("cancel-request"),
+        kind<Request.GetWork>("get-work"),
         kind<Request.Bye>("bye"),
     )
 

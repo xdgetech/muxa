@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Level 8: `capture`, `sort-capture`, `update-work`, `request-assistant`,
-/// `cancel-request`, and `work`, `captures` and `requests` in `inbox-list`.
+/// `cancel-request`, `get-work`, and `work`, `captures` and `requests` in
+/// `inbox-list`.
 pub const WORK_ASSISTANT: u32 = 8;
 
 /// The user's original input. Its `text` is never rewritten. Never logged.

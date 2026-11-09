@@ -224,10 +224,10 @@ struct FixtureTests {
 
     @Test func assistantContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl")
-        #expect(requests.count == 16)
+        #expect(requests.count == 18)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("assistant/messages.jsonl")
-        #expect(messages.count == 9)
+        #expect(messages.count == 12)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -268,6 +268,20 @@ struct FixtureTests {
             Issue.record("expected inbox-list"); return
         }
         #expect(none.isEmpty && noCaptures.isEmpty && noRequests.isEmpty)
+        guard case .getWork(_, "w-6a7b8c9d") = decoded[16] else {
+            Issue.record("expected get-work"); return
+        }
+        // get-work: every linked Capture, sorted ones included, in the item's order.
+        guard case .workDetail(_, let entry, let linked, let asked) = try Wire.decodeMessage(messages[9]) else {
+            Issue.record("expected work-detail"); return
+        }
+        #expect(linked.map(\.id) == entry.captures)
+        #expect(linked.allSatisfy { $0.state == .sorted })
+        #expect(asked.map(\.id) == entry.requests)
+        guard case .result(_, let error?, _) = try Wire.decodeMessage(messages[11]) else {
+            Issue.record("expected an error result"); return
+        }
+        #expect(error.code == .badRequest)
     }
 
     @Test func unknownWorkStatesAndDeliveriesStillDecode() throws {

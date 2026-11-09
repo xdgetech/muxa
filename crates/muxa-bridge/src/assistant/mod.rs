@@ -9,6 +9,7 @@ pub mod check;
 mod cleanup;
 pub mod delivery;
 mod derive;
+pub mod detail;
 pub mod policy;
 pub mod record;
 pub mod result;
@@ -203,6 +204,21 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 Err(e) => (Vec::new(), Some(e)),
             }
         }
+        Request::GetWork { id, work } => {
+            let config = Arc::clone(&cx.records);
+            match blocking(move || detail::detail(&config, &work)).await {
+                Ok(d) => (
+                    vec![Message::WorkDetail {
+                        work: id,
+                        entry: d.entry,
+                        captures: d.captures,
+                        requests: d.requests,
+                    }],
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
         _ => (
             Vec::new(),
             Some(error_body(
@@ -215,13 +231,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
 
 /// Blocking. The item as a list shows it, with its derived state.
 fn listed(config: &Config, item: WorkItem) -> WorkItem {
-    let mut requests: Vec<AssistantRequest> = shelf::<AssistantRequest>(config)
-        .and_then(|s| s.all().map_err(|e| state_error(&e)))
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|q| item.requests.contains(&q.id))
-        .collect();
-    delivery::refresh(config, &mut requests, crate::records::now());
+    let requests = detail::requests_of(config, &item).unwrap_or_default();
     let mut one = [item];
     derive::states(config, &mut one, &requests);
     let [item] = one;

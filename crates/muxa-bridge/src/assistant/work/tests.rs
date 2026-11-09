@@ -383,3 +383,43 @@ fn a_linked_task_makes_an_item_in_progress_or_waiting_on_a_decision() {
     // A Task's end never completes the Work item.
     assert_eq!(h.listed()[0].state, WorkState::Open);
 }
+
+#[test]
+fn get_work_returns_every_linked_capture_in_the_items_order() {
+    use crate::assistant::detail::detail;
+    let h = host();
+    let first = h.capture("client-1", "Shorten onboarding\nsteps 3 to 5");
+    let (_, item) = h.sort(&first, SortAction::Work, None).unwrap();
+    let item = item.unwrap();
+    let second = h.capture("client-2", "Also the FAQ");
+    h.sort(&second, SortAction::Link, Some(&item.id)).unwrap();
+    // An id whose file is gone is left out.
+    let works = super::super::shelf::<WorkItem>(&h.config).unwrap();
+    works
+        .update::<_, StateError>(&item.id, |w| {
+            w.captures.insert(1, "c-0000dead".into());
+            Ok(())
+        })
+        .unwrap();
+
+    let got = detail(&h.config, &item.id).unwrap();
+    assert_eq!(got.entry.id, item.id);
+    assert_eq!(got.entry.state, WorkState::Open);
+    let texts: Vec<&str> = got.captures.iter().map(|c| c.text.as_str()).collect();
+    assert_eq!(texts, ["Shorten onboarding\nsteps 3 to 5", "Also the FAQ"]);
+    assert!(got.captures.iter().all(|c| c.state == CaptureState::Sorted));
+    assert!(got.requests.is_empty());
+    // inbox-list has none of them: both are sorted.
+    assert!(
+        crate::assistant::list(&h.config)
+            .unwrap()
+            .captures
+            .is_empty()
+    );
+
+    for unknown in ["w-0000ffff", "w-zz", "../w-00000001"] {
+        let e = detail(&h.config, unknown).unwrap_err();
+        assert_eq!(e.code, ErrorCode::BadRequest, "{unknown}");
+        assert_eq!(e.message, format!("no Work item {unknown}"));
+    }
+}

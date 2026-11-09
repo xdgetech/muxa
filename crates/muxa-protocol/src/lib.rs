@@ -408,6 +408,12 @@ pub enum Request {
         request: String,
         version: u64,
     },
+    /// One Work item with all its Captures' texts and its requests. A
+    /// `work-detail` comes before the `result`.
+    GetWork {
+        id: u64,
+        work: String,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -459,6 +465,7 @@ impl Request {
             | Request::UpdateWork { id, .. }
             | Request::RequestAssistant { id, .. }
             | Request::CancelRequest { id, .. }
+            | Request::GetWork { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -696,6 +703,18 @@ pub enum Message {
         entry: WorkItem,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         request: Option<Box<AssistantRequest>>,
+    },
+    /// The Work item a `get-work` asked for, sent just before its `result`.
+    WorkDetail {
+        work: u64,
+        /// With its derived state, as `inbox-list` lists it.
+        entry: WorkItem,
+        /// The Captures `entry.captures` names, in that order, sorted or not.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        captures: Vec<Capture>,
+        /// The item's requests, in `entry.requests` order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requests: Vec<AssistantRequest>,
     },
     /// The bridge is exiting.
     Bye { reason: String },

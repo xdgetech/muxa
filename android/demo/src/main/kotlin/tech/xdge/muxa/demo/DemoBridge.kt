@@ -209,7 +209,7 @@ class DemoBridge(
             is Request.CloseTask -> closeTask(req.id, req.session, req.mode)
             is Request.Keys -> keys(req)
             is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
-            is Request.Capture, is Request.SortCapture, is Request.UpdateWork -> serveAssistant(req)
+            is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork -> serveAssistant(req)
             // No assistant runs in the demo, as on a host without the daemon.
             is Request.RequestAssistant, is Request.CancelRequest ->
                 fail(req.id, ErrorCode.UNSUPPORTED, if (workLevel >= WORK_ASSISTANT) NO_ASSISTANT else NO_REQUEST)

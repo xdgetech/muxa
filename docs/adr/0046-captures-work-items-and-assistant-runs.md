@@ -77,6 +77,7 @@ Before `create()`: open `assistant-run` records per workspace ≤ `max_open_runs
 | `create-task {…, work?, workRev?}` | `task-saved`; the record keeps `work` |
 | `request-assistant {work, rev, scope, workspace?, purpose?}` | `work-saved {work, entry, request}` |
 | `cancel-request {request, version}` | `work-saved {work, entry, request}` |
+| `get-work {work}` | `work-detail {work, entry, captures, requests}`: every Capture the item links, sorted or not; an unknown item is `bad-request` |
 
 `inbox-list` gains `work[]`, `captures[]` (unsorted only) and `requests[]` (those of the listed Work items). The full contract is `protocol/PROTOCOL.md`, "Captures and Work items". Old clients ignore both. `update-inbox` keeps its `i-` / `e-` ids only. Fixtures go in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:8`. Branches that also raise the level renumber on merge.
 

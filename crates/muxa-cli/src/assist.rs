@@ -187,8 +187,9 @@ fn section(out: &mut String, title: &str, lines: &[String]) {
     }
 }
 
-/// An agent's text without terminal control characters; line breaks and tabs stay.
-fn plain(s: &str) -> String {
+/// An agent's or the user's text without terminal control characters; line
+/// breaks and tabs stay.
+pub fn plain(s: &str) -> String {
     s.chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
         .collect()

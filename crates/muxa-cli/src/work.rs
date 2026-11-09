@@ -119,6 +119,75 @@ pub async fn list(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, S
     Ok(String::new())
 }
 
+/// `work show WORK`: the item with every Capture's full text, its Tasks and
+/// its newest request. Capture texts go to stdout only.
+pub async fn show(conn: &mut Conn, work: &str, as_json: bool) -> Result<String, String> {
+    require(conn)?;
+    let messages = conn
+        .call(
+            |id| Request::GetWork {
+                id,
+                work: work.to_owned(),
+            },
+            WAIT,
+        )
+        .await?;
+    let (entry, captures, requests) = messages
+        .into_iter()
+        .find_map(|m| match m {
+            Message::WorkDetail {
+                entry,
+                captures,
+                requests,
+                ..
+            } => Some((entry, captures, requests)),
+            _ => None,
+        })
+        .ok_or("the bridge sent no Work item")?;
+    if as_json {
+        println!(
+            "{}",
+            json!({"work": entry, "captures": captures, "requests": requests})
+        );
+    } else {
+        print!(
+            "{}",
+            detail_text(&entry, &captures, &requests, crate::when::now())
+        );
+    }
+    Ok(String::new())
+}
+
+/// The item's line, each Capture's full text indented, then its Tasks and newest request.
+fn detail_text(
+    w: &WorkItem,
+    captures: &[Capture],
+    requests: &[AssistantRequest],
+    now: u64,
+) -> String {
+    let mut out = format!("{}\n", crate::assist::plain(&work_line(w, now)));
+    for c in captures {
+        out.push_str(&format!(
+            "\n{}  {}\n",
+            c.id,
+            crate::items::age(now.saturating_sub(c.created_at))
+        ));
+        for line in crate::assist::plain(&c.text).lines() {
+            out.push_str(&format!("  {line}\n"));
+        }
+    }
+    if !w.tasks.is_empty() || !w.requests.is_empty() {
+        out.push('\n');
+    }
+    if !w.tasks.is_empty() {
+        out.push_str(&format!("Tasks  {}\n", w.tasks.join(" ")));
+    }
+    if let Some(q) = latest_request(w, requests) {
+        out.push_str(&format!("Asked  {}\n", crate::assist::request_line(q)));
+    }
+    out
+}
+
 /// `work sort CAPTURE …`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sort {
@@ -364,6 +433,31 @@ mod tests {
         assert_eq!(
             line,
             format!("c-0000abcd  unsorted  30s  {}", "a".repeat(PREVIEW))
+        );
+    }
+
+    #[test]
+    fn detail_shows_every_capture_in_full_without_control_characters() {
+        let mut w = item(WorkState::InProgress, None);
+        w.captures = vec!["c-0000abcd".into()];
+        w.tasks = vec!["t-0000aa".into(), "t-0000bb".into()];
+        let c = Capture {
+            id: "c-0000abcd".into(),
+            rev: 2,
+            client_id: "x".into(),
+            text: "Ring the bank\n\tabout \u{1b}[31mfees\u{1b}[0m".into(),
+            source: CaptureSource::App,
+            state: muxa_protocol::CaptureState::Sorted,
+            created_at: 40,
+            updated_at: 40,
+            workspace: None,
+            work: vec![w.id.clone()],
+        };
+        assert_eq!(
+            detail_text(&w, &[c], &[], 100),
+            "w-0000abcd  in-progress  0s  Shorten onboarding  [work]\n\
+             \nc-0000abcd  1m\n  Ring the bank\n  \tabout [31mfees[0m\n\
+             \nTasks  t-0000aa t-0000bb\n"
         );
     }
 

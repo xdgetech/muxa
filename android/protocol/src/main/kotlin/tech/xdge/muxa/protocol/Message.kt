@@ -206,6 +206,18 @@ sealed interface Message {
     @Serializable
     data class WorkSaved(val work: Long, val entry: WorkItem, val request: AssistantRequest? = null) : Message
 
+    /**
+     * The Work item a `get-work` asked for, with its derived state, just before its `result`: the Captures
+     * [WorkItem.captures] names, sorted or not, in that order, and its requests.
+     */
+    @Serializable
+    data class WorkDetail(
+        val work: Long,
+        val entry: WorkItem,
+        val captures: List<Capture> = emptyList(),
+        val requests: List<AssistantRequest> = emptyList(),
+    ) : Message
+
     /** The bridge is exiting. */
     @Serializable
     data class Bye(val reason: String) : Message

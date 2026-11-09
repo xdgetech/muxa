@@ -209,6 +209,9 @@ sealed interface Request {
     /** Stop a request's [version]. A `work-saved` comes first. */
     @Serializable data class CancelRequest(override val id: Long, val request: String, val version: Long) : Request
 
+    /** One Work item with every Capture it links, sorted or not, and its requests. A `work-detail` comes first. */
+    @Serializable data class GetWork(override val id: Long, val work: String) : Request
+
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request
 }

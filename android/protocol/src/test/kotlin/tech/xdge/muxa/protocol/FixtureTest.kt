@@ -133,10 +133,10 @@ class FixtureTest {
     @Test
     fun assistantContractRoundTrips() {
         val requests = lines("assistant/requests.jsonl")
-        assertEquals(16, requests.size)
+        assertEquals(18, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(9, messages.size)
+        assertEquals(12, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -173,6 +173,13 @@ class FixtureTest {
         // An older client's create-task has no work keys at all.
         val plain = Wire.encode(Request.CreateTask(1, "w", "t", "g"))
         assertFalse("\"work\"" in plain || "workRev" in plain)
+        assertEquals(Request.GetWork(416, "w-6a7b8c9d"), Wire.decodeRequest(requests[16]))
+        // get-work: every linked Capture, sorted ones included, in the item's order.
+        val detail = Wire.decodeMessage(messages[9]) as Message.WorkDetail
+        assertEquals(detail.entry.captures, detail.captures.map { it.id })
+        assertTrue(detail.captures.all { it.state == CaptureState.SORTED })
+        assertEquals(detail.entry.requests, detail.requests.map { it.id })
+        assertEquals(ErrorCode.BAD_REQUEST, (Wire.decodeMessage(messages[11]) as Message.Result).error?.code)
     }
 
     @Test

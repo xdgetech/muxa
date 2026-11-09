@@ -271,4 +271,63 @@ async fn a_work_item_is_sorted_changed_and_starts_one_task_per_rev() {
     assert_eq!(work[0].tasks, vec![task.id.clone()]);
     assert_eq!(work[0].state, WorkState::InProgress);
     assert_eq!(work[0].rev, item.rev + 1);
+
+    // A bridge without the daemon answers get-work itself.
+    let got = call(&mut bridge, json!({"type": "get-work", "work": item.id})).await;
+    assert!(ok(&got), "{got:?}");
+    assert!(
+        got.iter().any(|m| matches!(m, Message::WorkDetail { entry, captures, .. }
+            if entry.state == WorkState::InProgress && captures[0].text == "Shorten onboarding\nmore")),
+        "{got:?}"
+    );
+}
+
+#[tokio::test]
+async fn get_work_returns_a_sorted_captures_text_and_logs_none() {
+    let host = Host::new("get-work");
+    let args = host.args();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let daemon = Daemon::start(&host.server, &args).await;
+    let mut conn = daemon.connect().await;
+    let text = format!("Shorten onboarding\nsteps 3 to 5 {SECRET}");
+    let c = saved(&conn.request(capture_req("client-6", &text)).await);
+    let sorted = conn
+        .request(
+            json!({"type": "sort-capture", "capture": c.id, "rev": c.rev,
+            "action": "work", "workspace": "work"}),
+        )
+        .await;
+    assert!(ok(&sorted), "{sorted:?}");
+    let item = work_saved(&sorted);
+    // inbox-list no longer has it: it is sorted.
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    assert!(listed_captures(&listed).is_empty());
+
+    let got = conn
+        .request(json!({"type": "get-work", "work": item.id}))
+        .await;
+    assert!(ok(&got), "{got:?}");
+    let Some(Message::WorkDetail {
+        entry, captures, ..
+    }) = got.iter().find(|m| matches!(m, Message::WorkDetail { .. }))
+    else {
+        panic!("no work-detail: {got:?}");
+    };
+    assert_eq!(entry.id, item.id);
+    assert_eq!(captures.len(), 1);
+    assert_eq!(
+        (captures[0].text.as_str(), captures[0].state),
+        (text.as_str(), CaptureState::Sorted)
+    );
+
+    let unknown = conn
+        .request(json!({"type": "get-work", "work": "w-0000ffff"}))
+        .await;
+    assert!(matches!(
+        unknown.last(),
+        Some(Message::Result { error: Some(e), .. })
+            if e.code == ErrorCode::BadRequest && e.message == "no Work item w-0000ffff"
+    ));
+    let log = daemon.log();
+    assert!(!log.contains(SECRET), "the daemon logged the text");
 }
