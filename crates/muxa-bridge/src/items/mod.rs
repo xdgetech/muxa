@@ -1,8 +1,10 @@
 //! Inbox items (ADR 0033): one stored question for the user each. `produce`
 //! makes and resolves a Task's items from adapter states, `answer` carries
-//! out `update-inbox` on them. A Routine's entries are listed as items too.
+//! out `update-inbox` on them, `delete` `delete-inbox`. A Routine's entries
+//! are listed as items too.
 pub mod answer;
 pub mod ask_agent;
+pub mod delete;
 pub mod produce;
 pub mod store;
 
@@ -89,6 +91,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
             .later_at
             .or((entry.disposition == Disposition::Later).then_some(entry.created_at)),
         until: entry.until,
+        protected_at: entry.protected_at,
         answered_at: None,
         answer,
         summary: Some(entry.body.clone()).filter(|b| !b.is_empty()),

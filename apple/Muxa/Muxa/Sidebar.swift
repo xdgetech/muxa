@@ -38,6 +38,7 @@ struct Sidebar: View {
                     .accessibilityIdentifier("open-settings")
             }
         }
+        .modifier(DeleteOldItems())
         .background { if model.isConnected, model.mode == .inbox { ReturnOpensItem() } }
         .onChange(of: model.session.openItems.map(\.id)) { old, new in model.itemsChanged(from: old, to: new) }
         .refreshable { await reload() }

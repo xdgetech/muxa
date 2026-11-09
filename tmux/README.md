@@ -171,7 +171,7 @@ apps show, with a goal and a status.
   - `j`/`k` move. The keys sit on two lines, as on the apps' item screen
     (ADR 0040). The first line is triage: `l` Later (the item moves below the
     others and stays there until you answer it), `d` ✓ Done (closes only the
-    item), `c` Complete Task, `x` Drop Task and `o` Open Session.
+    item), `c` Complete Task, `x` Drop Task, `p` Protect and `o` Open Session.
   - The second line answers the agent: `a` its first decision (Allow, Approve
     or Retry; never Complete Task), `r` Deny or Reject, and `s` the reply box.
     `s` asks for the text. With a session it is Send: the text goes to the agent
@@ -187,6 +187,10 @@ apps show, with a goal and a status.
   - `space` and `b` scroll the item a page down and up, `J` and `K` (or
     `Shift`+arrows) a line. `v` shows the whole item in `$PAGER`.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
+  - With muxa's `work` level 8 (ADR 0046), `p` protects the item or removes the
+    protection, and `D` deletes old items: pick 1, 3 or 5 days, then confirm the
+    count. It deletes every item older than that, open or closed, except
+    protected ones. A protected item still takes `l`, `d` and every answer.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

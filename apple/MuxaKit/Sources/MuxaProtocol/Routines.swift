@@ -13,6 +13,8 @@ public let workCloseAsk: UInt32 = 5
 public let workAskAgent: UInt32 = 6
 /// Level 7: `worktree` on `update-task` and `update-inbox`, and `would-lose-work` (ADR 0043).
 public let workWorktreeEnd: UInt32 = 7
+/// Level 8: `protect`, `unprotect` and `delete-inbox` (ADR 0046).
+public let workDeleteInbox: UInt32 = 8
 
 /// The highest `work` level in `capabilities`; 0 when the host has none.
 public func workLevel(_ capabilities: [String]) -> UInt32 {
@@ -140,6 +142,8 @@ public struct InboxEntry: Codable, Equatable, Sendable, Identifiable {
     public var disposition: String
     /// With `later`: epoch seconds.
     public var until: UInt64?
+    /// Set by `protect`: `delete-inbox` keeps the entry (ADR 0046).
+    public var protectedAt: UInt64?
     public var proposal: Proposal?
     /// After approval: the Task that performs it.
     public var task: String?
@@ -147,7 +151,7 @@ public struct InboxEntry: Codable, Equatable, Sendable, Identifiable {
     public init(
         id: String, workspace: String, routine: String, key: String, kind: String, title: String, body: String,
         links: [SourceLink]? = nil, createdAt: UInt64, run: String, occurrence: String, disposition: String,
-        until: UInt64? = nil, proposal: Proposal? = nil, task: String? = nil
+        until: UInt64? = nil, protectedAt: UInt64? = nil, proposal: Proposal? = nil, task: String? = nil
     ) {
         self.id = id
         self.workspace = workspace
@@ -162,6 +166,7 @@ public struct InboxEntry: Codable, Equatable, Sendable, Identifiable {
         self.occurrence = occurrence
         self.disposition = disposition
         self.until = until
+        self.protectedAt = protectedAt
         self.proposal = proposal
         self.task = task
     }
@@ -203,4 +208,6 @@ public enum InboxAction: String, Codable, Sendable {
     case reply
     /// Sends the item and the text to the workspace's Ask session; the item stays open (ADR 0041).
     case askAgent = "ask-agent"
+    /// Set or clear `protectedAt` on any item (level 8, ADR 0046). Like `read`, never in `answers`.
+    case protect, unprotect
 }

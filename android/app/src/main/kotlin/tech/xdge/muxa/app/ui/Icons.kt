@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 
 /** One icon per concept, used everywhere that concept appears (as `Icon` on iOS). */
 object Icons {
@@ -86,4 +88,7 @@ object Icons {
     val settings = Material.Filled.Settings
     val moveUp = Material.Filled.ArrowUpward
     val moveDown = Material.Filled.ArrowDownward
+    /** Protected: Delete Old keeps the item (ADR 0046). */
+    val protect = Material.Filled.Lock
+    val unprotect = Material.Filled.LockOpen
 }

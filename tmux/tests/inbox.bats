@@ -233,3 +233,57 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'Inbox 4'"
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'Allow Bash'"
 }
+
+@test "with work level 8, p protects or unprotects and the item shows it" {
+  [ "$(inbox key i-2c3d4e5f p "$ITEMS")" = "" ]
+  jq -c '.work = 8 | .items[2].protectedAt = 1762160000' "$ITEMS" >"$TMPDIR/w7.json"
+  [ "$(inbox key i-2c3d4e5f p "$TMPDIR/w7.json")" = protect ]
+  [ "$(inbox key i-3d4e5f6a p "$TMPDIR/w7.json")" = unprotect ]
+  plain() { inbox view "$1" "$TMPDIR/w7.json" | sed $'s/\x1b\\[[0-9;]*m//g'; }
+  [[ "$(plain i-2c3d4e5f)" == *"l Later   d ✓ Done   c Complete Task   p Protect   o Open Session"* ]]
+  [[ "$(plain i-3d4e5f6a)" == *"· protected"* ]]
+  [[ "$(plain i-3d4e5f6a)" == *"p Unprotect"* ]]
+  [[ "$(plain i-3d4e5f6a)" == *"D delete old"* ]]
+  [[ "$(inbox list "$TMPDIR/w7.json" | grep i-3d4e5f6a)" == *"· later · protected"* ]]
+}
+
+@test "prefix+T: p protects the selected item" {
+  fake_cli
+  jq -c '.work = 8' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key p
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f protect --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: D deletes items older than the days picked, after a confirmation" {
+  fake_cli
+  jq -c '.work = 8' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key D
+  key 3
+  key n
+  sleep 1
+  run grep -q "^inbox delete" "$TMPDIR/bin/calls"
+  [ "$status" -ne 0 ]
+  key D
+  key 3
+  key y
+  wait_for 'grep -q "^inbox delete --older-than 3 --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: D on an older muxa deletes nothing" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key D
+  key Enter
+  sleep 1
+  run grep -q "^inbox delete" "$TMPDIR/bin/calls"
+  [ "$status" -ne 0 ]
+}

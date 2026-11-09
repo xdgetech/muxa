@@ -56,6 +56,7 @@ print() {
 
   heading "The Inbox ($p $(opt @agents_key_inbox T))"
   printf '  %sEach item lists the keys it takes. Enter goes to its session.%s\n' "$D" "$Z"
+  printf '  %sp protects an item, D deletes items older than 1, 3 or 5 days.%s\n' "$D" "$Z"
 }
 
 case "${1:-print}" in

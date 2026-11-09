@@ -75,6 +75,7 @@ sequenceDiagram
 | `run-routine` | `id`, `workspace`, `routine` | start a run of an enabled Routine now; needs the muxa daemon; a `routine-saved` comes before the `result` |
 | `list-inbox` | `id` | list the stored Inbox entries (capability `work` level 1); an `inbox-list` comes before the `result` |
 | `update-inbox` | `id`, `entry`, `action`, optional `text`, `option`, `worktree` (`work` level 7) | approve, dismiss or move down a stored entry; an `inbox-saved` comes before the `result` |
+| `delete-inbox` | `id`, `olderThanDays` | remove the Inbox items made more than that many days ago, except protected ones (capability `work` level 8); an `inbox-deleted` comes before the `result` |
 | `start-session` | `id`, `workspace`, `repo` | start an ask session: the workspace's agent in the repo's main checkout, with no Task (capability `work` level 2, Ask sessions below); a `session-started` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
@@ -110,6 +111,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `routine-saved` | `routine`, `entry` (a Routine) |
 | `inbox-list` | `inbox`, `entries[]` (stored Inbox entries, newest first) |
 | `inbox-saved` | `inbox`, `entry` (a stored Inbox entry) |
+| `inbox-deleted` | `inbox`, `deleted` (how many items a `delete-inbox` removed) |
 | `session-started` | `start`, `session`, `name` |
 | `bye` | `reason` |
 
@@ -332,7 +334,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041), and level 7 `worktree` on `update-task` and `update-inbox` (ADR 0043). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041), level 7 `worktree` on `update-task` and `update-inbox` (ADR 0043), and level 8 `protect`, `unprotect` and `delete-inbox` (ADR 0046). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -392,7 +394,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `reply`), `proposal` or `briefing`;
    - `state`: `open`, `later`, `answered` or `resolved` (the need ended without an answer from the Inbox);
    - `question` (one line), `workspace`, `title` (the Task's or the entry's) and `createdAt`;
-   - optional `readAt`, `laterAt` (epoch seconds: `later` moved it down), `until` (only from a host before ADR 0040, with `later`), `answeredAt`, and `answer` (with `answered`, the action given);
+   - optional `readAt`, `laterAt` (epoch seconds: `later` moved it down), `until` (only from a host before ADR 0040, with `later`), `protectedAt` (epoch seconds: `protect` set it), `answeredAt`, and `answer` (with `answered`, the action given);
    - optional `summary`: the agent's last message for the turn, or the entry's body, at most 4096 bytes;
    - optional `task`, `session` (`$n`) and `pane` (`%n`). Open the pane's `changes`, `docs` and `images` with `pane` for the attachments;
    - optional `prompt`, with `ask`: the menu, as in Chat's `prompt`;
@@ -416,7 +418,11 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
    - `branch` and `keep`, with `work` level 4: a reading Task's `proposal` about its main checkout (Reading Tasks below). `branch` does `branch-task` with a branch from the title; `keep` answers it and changes nothing.
    - `dismiss` answers the item and does nothing else. `later` sets `laterAt` and leaves the item open; it ignores `until`. `read` sets `readAt` and leaves the item open.
    - `ask-agent` with `text` (1 to 4096 bytes), with `work` level 6: sends the item and the text to the workspace's Ask session (Ask sessions below) and leaves the item open. It is in `answers` of every open item without `session`, before `later`; an item with a session takes `reply`. On success: `session-started {start, session, name}`, `inbox-saved {inbox, item}`, then `result`.
+   - `protect` and `unprotect`, with `work` level 8: set or clear `protectedAt`, on any item, open or closed, and on a Routine's entry (its `entry` gets `protectedAt` too). Like `read`, they are never in `answers`. A protected item takes every answer as before; only `delete-inbox` keeps it.
    - An action not in `answers` is `bad-request`. An `ask` whose prompt changed since the item was made is `conflict`: list again. Nothing is sent to the pane then.
+5. `delete-inbox {olderThanDays}`, with `work` level 8 (ADR 0046), removes every item whose `createdAt` is more than `olderThanDays` × 86400 seconds ago: open or closed, a Task's item or a Routine's entry. It keeps an item with `protectedAt`, and a proposal whose approval is creating its Task. `olderThanDays` is 1 to 3650; another value is `bad-request`. On success: `inbox-deleted {inbox, deleted}`, then `result`. List again to show the result.
+   - The host keeps each removed item's need, so the same need does not make the item again: an agent still waiting on the same menu, or a Routine publishing the same key. A new need (a new turn, a new menu, a new key) makes a new item.
+   - Fixtures: `fixtures/inbox-delete/`.
 
 ## Reading Tasks
 

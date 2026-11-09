@@ -108,9 +108,10 @@ where
         capabilities.push("tasks-changed".into());
         capabilities.push("workers".into());
         // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034),
-        // 5 closes ask sessions (ADR 0039), 6 asks the workspace's agent from an item (ADR 0041).
+        // 5 closes ask sessions (ADR 0039), 6 asks the workspace's agent from an item (ADR 0041),
+        // 7 removes a Task's worktree at its end (ADR 0043), 8 protects and deletes items (ADR 0046).
         capabilities.push(muxa_protocol::work_capability(
-            muxa_protocol::WORK_END_REMOVES,
+            muxa_protocol::WORK_DELETE_INBOX,
         ));
     }
     // Checked once per session (ADR 0019); each record request looks again.
@@ -705,7 +706,8 @@ impl Worker {
             req @ (Request::ListTasks { .. }
             | Request::UpdateTask { .. }
             | Request::ListRoutines { .. }
-            | Request::ListInbox { .. }) => {
+            | Request::ListInbox { .. }
+            | Request::DeleteInbox { .. }) => {
                 let answer = task_records::remote::serve(
                     &self.records_context(),
                     self.daemon_dir.as_deref(),

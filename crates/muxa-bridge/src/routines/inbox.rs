@@ -82,6 +82,12 @@ pub async fn update(
         let at = now();
         match action {
             InboxAction::Read => Ok(Step::Done(read(&store, &state, &entry, at)?)),
+            InboxAction::Protect | InboxAction::Unprotect => {
+                let on = action == InboxAction::Protect;
+                let saved = protect(&store, &state, &entry, on, at)?;
+                tracing::info!(entry, action = ?action, "inbox entry updated");
+                Ok(Step::Done(saved))
+            }
             InboxAction::Dismiss | InboxAction::Later => {
                 let saved = close(&store, &state, &entry, action, at)?;
                 tracing::info!(entry, action = ?action, "inbox entry updated");
@@ -95,7 +101,7 @@ pub async fn update(
                 Ok(Step::Done(saved))
             }
             other => Err(bad(format!(
-                "{other:?} does not answer a Routine's entry; approve, reject, dismiss, later or read do"
+                "{other:?} does not answer a Routine's entry; approve, reject, dismiss, later, read, protect or unprotect do"
             ))),
         }
     })
@@ -197,6 +203,45 @@ fn read(
         s.entry.read_at.get_or_insert(at);
         Ok(shown(&s.entry))
     })
+}
+
+/// Sets or clears `protectedAt` on an entry in any state (ADR 0046).
+fn protect(
+    store: &RoutineStore,
+    state: &RoutineState,
+    entry: &str,
+    on: bool,
+    at: u64,
+) -> Result<InboxEntry, ErrorBody> {
+    with_entry(store, state, entry, |s| {
+        if on {
+            s.entry.protected_at.get_or_insert(at);
+        } else {
+            s.entry.protected_at = None;
+        }
+        Ok(shown(&s.entry))
+    })
+}
+
+/// Blocking. Deletes every Routine's unprotected entries made before
+/// `cutoff` (epoch seconds). Returns how many.
+pub fn delete_before(config: &Config, cutoff: u64) -> Result<u32, ErrorBody> {
+    let Some(dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
+        return Ok(0);
+    };
+    let store = RoutineStore::open(dir).map_err(|e| state_error(&e))?;
+    let mut deleted = 0;
+    for state in store.all().map_err(|e| state_error(&e))? {
+        if !state.entries.iter().any(|s| s.entry.created_at < cutoff) {
+            continue;
+        }
+        deleted += store
+            .update::<_, StateError>(&state.workspace, &state.name, |s| {
+                Ok(s.delete_before(cutoff))
+            })
+            .map_err(|e| state_error(&e))?;
+    }
+    Ok(deleted)
 }
 
 /// The marker line in an approved Task's goal.
@@ -358,6 +403,7 @@ mod tests {
             read_at: None,
             later_at: None,
             until,
+            protected_at: None,
             proposal: Some(Proposal {
                 action: "Close".into(),
                 target: "linear:ENG-12".into(),

@@ -1,4 +1,5 @@
-//! `inbox` and `inbox answer` against a fake bridge at `work` level 3.
+//! `inbox`, `inbox answer` and `inbox delete` against a fake bridge at
+//! `work` level 3, or the level in `MUXA_TEST_WORK`.
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -23,6 +24,10 @@ impl Bridge {
     }
 
     fn run(&self, args: &[&str]) -> Output {
+        self.run_at("work:3", args)
+    }
+
+    fn run_at(&self, work: &str, args: &[&str]) -> Output {
         let quote =
             |path: PathBuf| format!("'{}'", path.display().to_string().replace('\'', "'\\''"));
         let command = format!(
@@ -31,6 +36,7 @@ impl Bridge {
             quote(self.0.join("requests"))
         );
         Command::new(env!("CARGO_BIN_EXE_muxa-cli"))
+            .env("MUXA_TEST_WORK", work)
             .args(["--bridge", &command])
             .args(args)
             .output()
@@ -53,7 +59,7 @@ impl Drop for Bridge {
 }
 
 const BRIDGE: &str = r#"
-import json, sys
+import json, os, sys
 log = open(sys.argv[1], 'w')
 def send(value):
     print(json.dumps(value), flush=True)
@@ -61,7 +67,7 @@ item = lambda i, state, **kw: dict({'id':i,'kind':'review','state':state,'questi
     'workspace':'work','title':'Title '+i,'createdAt':1,'answers':['accept']}, **kw)
 entry = json.loads('{"id": "e-1a2b3c4d", "workspace": "work", "routine": "Morning brief", "key": "linear:ENG-12:stale", "kind": "proposal", "title": "Old entry", "body": "No activity for 30 days.", "links": [{"url": "https://linear.app/example/issue/ENG-12", "title": "ENG-12"}], "createdAt": 1762157000, "run": "t-00a001", "occurrence": "2026-11-03T09:00", "disposition": "open", "proposal": {"action": "Close the issue", "target": "linear:ENG-12", "content": "Closing: no activity for 30 days.", "hash": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"}}')
 send({'type':'hello','protocol':1,'bridge':'fixture','tmux':'fixture',
-      'capabilities':['task-records','work:1','work:3']})
+      'capabilities':['task-records','work:1',os.environ['MUXA_TEST_WORK']]})
 for line in sys.stdin:
     req = json.loads(line)
     log.write(json.dumps(req) + '\n'); log.flush()
@@ -71,6 +77,8 @@ for line in sys.stdin:
     elif kind == 'list-inbox':
         send({'type':'inbox-list','inbox':ident,'entries':[entry],
               'items':[item('i-00000001','open'), item('i-00000002','answered',answer='accept')]})
+    elif kind == 'delete-inbox':
+        send({'type':'inbox-deleted','inbox':ident,'deleted':2})
     elif kind == 'update-inbox':
         send({'type':'inbox-saved','inbox':ident,
               'item':item(req['entry'],'answered',answer=req['action'],answers=[])})
@@ -163,4 +171,38 @@ fn invalid_answers_exit_2_before_any_request() {
         assert_eq!(out.status.code(), Some(2), "{args:?} {out:?}");
         assert!(bridge.requests().is_empty(), "{args:?}");
     }
+}
+
+#[test]
+fn inbox_delete_and_protect_need_work_level_7() {
+    let bridge = Bridge::new();
+    let out = bridge.run(&["inbox", "delete", "--older-than", "3"]);
+    assert!(!out.status.success(), "{out:?}");
+    let out = bridge.run(&["inbox", "answer", "i-00000001", "protect"]);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("update muxa-bridge"),
+        "{out:?}"
+    );
+    assert!(bridge.requests().is_empty());
+
+    let out = bridge.run_at("work:8", &["inbox", "delete", "--older-than", "3"]);
+    assert!(out.status.success(), "{out:?}");
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        text.contains("deleted 2 Inbox items older than 3 days"),
+        "{text}"
+    );
+    let req = bridge.requests().pop().unwrap();
+    assert_eq!(
+        (req["type"].as_str(), req["olderThanDays"].as_u64()),
+        (Some("delete-inbox"), Some(3))
+    );
+
+    let out = bridge.run_at(
+        "work:8",
+        &["inbox", "answer", "i-00000001", "protect", "--json"],
+    );
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(bridge.requests().pop().unwrap()["action"], "protect");
 }

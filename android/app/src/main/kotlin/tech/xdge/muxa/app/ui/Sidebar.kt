@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.SidebarMode
+import tech.xdge.muxa.app.canDeleteInbox
 import tech.xdge.muxa.app.selectMode
 
 /**
@@ -57,6 +58,7 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                     IconButton({ model.startNewTask() }, Modifier.testTag("sidebar-new-task")) { Icon(Icons.add, "New Task") }
                 }
                 IconButton({ model.showSettings = true }, Modifier.testTag("open-settings")) { Icon(Icons.settings, "Settings") }
+                if (model.mode == SidebarMode.INBOX && model.canDeleteInbox) InboxMenu(model)
             },
         )
         if (model.isConnected) ModePicker(model)

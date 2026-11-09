@@ -70,4 +70,8 @@ enum Icon {
     static let openSession = "arrow.up.right.square"
     static let settings = "gearshape"
     static let ask = "questionmark.bubble"
+    /// A protected Inbox item, which Delete Old keeps (ADR 0046).
+    static let protected = "lock.fill"
+    static let protect = "lock"
+    static let unprotect = "lock.open"
 }

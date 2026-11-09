@@ -437,3 +437,39 @@ fn reading_fixtures_round_trip() {
     .unwrap();
     assert!(!old.read);
 }
+
+#[test]
+fn inbox_delete_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, WORK_DELETE_INBOX, work_level};
+    assert_eq!(round_trip::<Request>("inbox-delete/requests.jsonl"), 5);
+    assert_eq!(round_trip::<Message>("inbox-delete/messages.jsonl"), 6);
+    let path = format!(
+        "{}/../../protocol/fixtures/inbox-delete/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let lines: Vec<Message> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &lines[0] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_DELETE_INBOX);
+    let Message::InboxSaved {
+        item: Some(item), ..
+    } = &lines[1]
+    else {
+        panic!()
+    };
+    // Protect is accepted on any item and never listed.
+    assert!(item.protected_at.is_some());
+    assert!(!item.answers.contains(&InboxAction::Protect));
+    assert!(matches!(
+        lines[3],
+        Message::InboxDeleted {
+            inbox: 403,
+            deleted: 12
+        }
+    ));
+}

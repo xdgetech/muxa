@@ -231,6 +231,41 @@ async fn later_moves_the_item_down_and_it_stays_open() {
 }
 
 #[tokio::test]
+async fn a_protected_item_stays_open_and_still_takes_done_and_later() {
+    let f = fixture(review("i-00000001"));
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::Protect))
+        .await
+        .unwrap();
+    assert_eq!(saved.state, ItemState::Open);
+    let at = saved.protected_at.expect("protected");
+    assert!(
+        !saved.answers.contains(&InboxAction::Protect),
+        "never listed"
+    );
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::Later))
+        .await
+        .unwrap();
+    assert_eq!(
+        (saved.protected_at, saved.later_at.is_some()),
+        (Some(at), true)
+    );
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::KeepOpen))
+        .await
+        .unwrap();
+    assert_eq!(
+        (saved.state, saved.protected_at),
+        (ItemState::Answered, Some(at))
+    );
+    let saved = update(&f.cx, answer("i-00000001", InboxAction::Unprotect))
+        .await
+        .unwrap();
+    assert_eq!(
+        (saved.state, saved.protected_at),
+        (ItemState::Answered, None)
+    );
+}
+
+#[tokio::test]
 async fn a_failed_answer_leaves_the_item_open() {
     // Approve needs tmux to read the menu again, and there is none.
     let f = fixture(ask("i-00000001"));
