@@ -1,0 +1,186 @@
+//! Captures (ADR 0046 slice A2), end to end: a bridge or a daemon on a
+//! throwaway tmux server saves the user's input, returns the same Capture
+//! for a resend, lists it, and starts nothing.
+#![cfg(feature = "tmux-integration")]
+
+mod common;
+
+use std::path::PathBuf;
+
+use common::daemon::Daemon;
+use common::{Bridge, Server};
+use muxa_protocol::{Capture, CaptureState, ErrorCode, Message};
+use serde_json::{Value, json};
+
+/// Must never reach a log.
+const SECRET: &str = "SECRET-c4pture-7f3a";
+
+struct Host {
+    server: Server,
+    base: PathBuf,
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
+impl Host {
+    fn new(name: &str) -> Host {
+        let server = Server::start();
+        let base =
+            std::env::temp_dir().join(format!("muxa-assistant-it-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("state")).unwrap();
+        std::fs::create_dir_all(base.join("home")).unwrap();
+        let root = base.join("home/work");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            base.join("workspaces.toml"),
+            format!(
+                "[[workspace]]\nname = \"work\"\nroot = \"{}\"\n",
+                root.display()
+            ),
+        )
+        .unwrap();
+        Host { server, base }
+    }
+
+    fn args(&self) -> Vec<String> {
+        vec![
+            "--state-dir".into(),
+            self.base.join("state").display().to_string(),
+            "--workspaces".into(),
+            self.base.join("workspaces.toml").display().to_string(),
+        ]
+    }
+
+    fn sessions(&self) -> String {
+        self.server.tmux(&["list-sessions", "-F", "#{session_id}"])
+    }
+}
+
+fn capture_req(client_id: &str, text: &str) -> Value {
+    json!({"type": "capture", "clientId": client_id, "text": text, "source": "app"})
+}
+
+fn saved(messages: &[Message]) -> Capture {
+    messages
+        .iter()
+        .find_map(|m| match m {
+            Message::CaptureSaved { entry, .. } => Some(entry.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no capture-saved: {messages:?}"))
+}
+
+fn ok(messages: &[Message]) -> bool {
+    matches!(messages.last(), Some(Message::Result { error: None, .. }))
+}
+
+/// Everything a bridge sends for one request, up to its result.
+async fn call(bridge: &mut Bridge, req: Value) -> Vec<Message> {
+    let result = bridge.request(req).await;
+    let mut out = Vec::new();
+    while let Some(m) = bridge.event(std::time::Duration::from_millis(100)).await {
+        out.push(m);
+    }
+    out.push(result);
+    out
+}
+
+fn listed_captures(messages: &[Message]) -> Vec<Capture> {
+    messages
+        .iter()
+        .find_map(|m| match m {
+            Message::InboxList { captures, .. } => Some(captures.clone()),
+            _ => None,
+        })
+        .expect("an inbox-list")
+}
+
+#[tokio::test]
+async fn a_capture_is_saved_once_and_starts_nothing() {
+    let host = Host::new("bridge");
+    let (sessions, layout) = (host.sessions(), host.server.layout());
+    let no_daemon = host.base.join("no-daemon").display().to_string();
+    let mut args = host.args();
+    args.extend(["--daemon-dir".into(), no_daemon]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let text = format!("Onboarding could be shorter {SECRET}");
+
+    let (mut bridge, _) = Bridge::start(&host.server, &args).await;
+    let first = call(&mut bridge, capture_req("client-1", &text)).await;
+    assert!(ok(&first), "{first:?}");
+    let entry = saved(&first);
+    assert!(entry.id.starts_with("c-"));
+    assert_eq!(
+        (entry.text.as_str(), entry.state),
+        (text.as_str(), CaptureState::Received)
+    );
+    assert_eq!(entry.workspace, None);
+    drop(bridge);
+
+    // A client that never saw the answer sends the capture again.
+    let (mut bridge, _) = Bridge::start(&host.server, &args).await;
+    let again = call(&mut bridge, capture_req("client-1", &text)).await;
+    assert!(ok(&again), "{again:?}");
+    assert_eq!(saved(&again), entry);
+    let listed = call(&mut bridge, json!({"type": "list-inbox"})).await;
+    assert_eq!(listed_captures(&listed), vec![entry]);
+
+    // Saving starts no agent and changes no layout (invariant 2).
+    assert_eq!(host.sessions(), sessions);
+    assert_eq!(host.server.layout(), layout);
+}
+
+#[tokio::test]
+async fn a_bad_capture_is_refused_and_assist_keeps_the_input() {
+    let host = Host::new("refused");
+    let no_daemon = host.base.join("no-daemon").display().to_string();
+    let mut args = host.args();
+    args.extend(["--daemon-dir".into(), no_daemon]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (mut bridge, _) = Bridge::start(&host.server, &args).await;
+
+    let mut unknown = capture_req("client-2", "x");
+    unknown["workspace"] = json!("nowhere");
+    let refused = call(&mut bridge, unknown).await;
+    assert!(matches!(
+        refused.last(),
+        Some(Message::Result { error: Some(e), .. }) if e.code == ErrorCode::BadRequest
+    ));
+
+    let mut assist = capture_req("client-3", "Compare the vendors");
+    assist["workspace"] = json!("work");
+    assist["assist"] = json!({"scope": "compare"});
+    let answer = call(&mut bridge, assist).await;
+    let entry = saved(&answer);
+    assert_eq!(entry.workspace.as_deref(), Some("work"));
+    assert!(matches!(
+        answer.last(),
+        Some(Message::Result { error: Some(e), .. }) if e.code == ErrorCode::Unsupported
+    ));
+    let listed = call(&mut bridge, json!({"type": "list-inbox"})).await;
+    assert_eq!(listed_captures(&listed), vec![entry]);
+}
+
+#[tokio::test]
+async fn the_daemon_saves_a_capture_and_logs_no_text() {
+    let host = Host::new("daemon");
+    let args = host.args();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let daemon = Daemon::start(&host.server, &args).await;
+    let mut conn = daemon.connect().await;
+    let text = format!("Renew the visa {SECRET}");
+    let first = conn.request(capture_req("client-4", &text)).await;
+    assert!(ok(&first), "{first:?}");
+    let again = conn.request(capture_req("client-4", &text)).await;
+    assert_eq!(saved(&again), saved(&first));
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    assert_eq!(listed_captures(&listed).len(), 1);
+    let log = daemon.log();
+    assert!(log.contains("capture saved"), "{log}");
+    assert!(!log.contains(SECRET), "the daemon logged the text");
+}

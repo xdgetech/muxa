@@ -66,16 +66,17 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             blocking(move || {
                 let entries = inbox::list(&config)?;
                 let items = crate::items::list(&config, &entries)?;
-                Ok((entries, items))
+                let assistant = crate::assistant::list(&config)?;
+                Ok((entries, items, assistant))
             })
             .await
-            .map(|(entries, items)| Message::InboxList {
+            .map(|(entries, items, assistant)| Message::InboxList {
                 inbox: id,
                 entries,
                 items,
-                work: Vec::new(),
-                captures: Vec::new(),
-                requests: Vec::new(),
+                work: assistant.work,
+                captures: assistant.captures,
+                requests: assistant.requests,
             })
         }
         Request::UpdateInbox {

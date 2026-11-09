@@ -689,7 +689,8 @@ impl Worker {
             | Request::BranchTask { .. }
             | Request::ParkTask { .. }
             | Request::RecoverRestart { .. }
-            | Request::UpdateInbox { .. }) => {
+            | Request::UpdateInbox { .. }
+            | Request::Capture { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -721,8 +722,7 @@ impl Worker {
             }
             // The host side comes with `work` level 8 (ADR 0046); until it
             // advertises that level, no client sends these.
-            Request::Capture { .. }
-            | Request::SortCapture { .. }
+            Request::SortCapture { .. }
             | Request::UpdateWork { .. }
             | Request::RequestAssistant { .. }
             | Request::CancelRequest { .. } => {

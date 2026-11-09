@@ -167,6 +167,7 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::RunRoutine { .. }
             | Request::ListInbox { .. }
             | Request::UpdateInbox { .. }
+            | Request::Capture { .. }
     )
 }
 
@@ -303,6 +304,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         | Request::RunRoutine { .. }
         | Request::ListInbox { .. }
         | Request::UpdateInbox { .. }) => crate::routines::handle(cx, req).await,
+        req @ Request::Capture { .. } => crate::assistant::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(
