@@ -1,14 +1,24 @@
 //! Captures, Work items and assistant requests (ADR 0046): the user's input
 //! and unfinished work, kept apart from Tasks and Inbox items.
+pub mod ask;
+mod assist;
 pub mod brief;
+mod cancel;
 pub mod capture;
 pub mod check;
+mod cleanup;
+pub mod delivery;
 mod derive;
+pub mod policy;
 pub mod record;
 pub mod result;
 pub mod start;
 pub mod store;
+mod tick;
 pub mod work;
+
+pub use assist::NO_DAEMON;
+pub use tick::tick;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -40,7 +50,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             assist,
         } => {
             let config = Arc::clone(&cx.records);
-            let wants_assist = assist.is_some();
+            let spec = assist.clone();
             let new = capture::NewCapture {
                 client_id,
                 text,
@@ -48,25 +58,27 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 workspace,
                 assist,
             };
-            match blocking(move || capture::save(&config, new)).await {
-                Ok((entry, _)) => {
-                    let saved = Message::CaptureSaved {
-                        capture: id,
-                        entry,
-                        work: None,
-                        request: None,
-                    };
-                    // The input is kept; only the start is refused (ADR 0046 §8).
-                    let error = wants_assist.then(|| {
-                        error_body(
-                            ErrorCode::Unsupported,
-                            "the Capture is saved; this host cannot ask the assistant yet",
-                        )
-                    });
-                    (vec![saved], error)
-                }
-                Err(e) => (Vec::new(), Some(e)),
-            }
+            let entry = match blocking(move || capture::save(&config, new)).await {
+                Ok((entry, _)) => entry,
+                Err(e) => return (Vec::new(), Some(e)),
+            };
+            // The input is kept even when the start is refused (ADR 0046 §8).
+            let done = match spec {
+                Some(spec) => assist::assist(cx, entry, spec).await,
+                None => assist::Assisted {
+                    capture: entry,
+                    work: None,
+                    request: None,
+                    error: None,
+                },
+            };
+            let saved = Message::CaptureSaved {
+                capture: id,
+                entry: done.capture,
+                work: done.work.map(Box::new),
+                request: done.request.map(Box::new),
+            };
+            (vec![saved], done.error)
         }
         Request::SortCapture {
             id,
@@ -135,6 +147,62 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 Err(e) => (Vec::new(), Some(e)),
             }
         }
+        Request::RequestAssistant {
+            id,
+            work,
+            rev,
+            scope,
+            workspace,
+            purpose,
+        } => {
+            if !cx.daemon {
+                return (
+                    Vec::new(),
+                    Some(error_body(ErrorCode::Unsupported, NO_DAEMON)),
+                );
+            }
+            let a = ask::Ask {
+                work,
+                rev,
+                scope,
+                workspace,
+                purpose,
+            };
+            match ask::ask(cx, a).await {
+                Ok((entry, request, error)) => (
+                    vec![Message::WorkSaved {
+                        work: id,
+                        entry,
+                        request: Some(Box::new(request)),
+                    }],
+                    error,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
+        Request::CancelRequest {
+            id,
+            request,
+            version,
+        } => {
+            if !cx.daemon {
+                return (
+                    Vec::new(),
+                    Some(error_body(ErrorCode::Unsupported, NO_DAEMON)),
+                );
+            }
+            match cancel::cancel(cx, request, version).await {
+                Ok((entry, request)) => (
+                    vec![Message::WorkSaved {
+                        work: id,
+                        entry,
+                        request: Some(Box::new(request)),
+                    }],
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
         _ => (
             Vec::new(),
             Some(error_body(
@@ -147,9 +215,13 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
 
 /// Blocking. The item as a list shows it, with its derived state.
 fn listed(config: &Config, item: WorkItem) -> WorkItem {
-    let requests = shelf::<AssistantRequest>(config)
+    let mut requests: Vec<AssistantRequest> = shelf::<AssistantRequest>(config)
         .and_then(|s| s.all().map_err(|e| state_error(&e)))
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|q| item.requests.contains(&q.id))
+        .collect();
+    delivery::refresh(config, &mut requests, crate::records::now());
     let mut one = [item];
     derive::states(config, &mut one, &requests);
     let [item] = one;
@@ -189,12 +261,13 @@ pub fn list(config: &Config) -> Result<Listing, ErrorBody> {
         .iter()
         .flat_map(|w| w.requests.iter().map(String::as_str))
         .collect();
-    let requests = shelf::<AssistantRequest>(config)?
+    let mut requests = shelf::<AssistantRequest>(config)?
         .all()
         .map_err(|e| state_error(&e))?
         .into_iter()
         .filter(|r| wanted.contains(r.id.as_str()))
         .collect::<Vec<_>>();
+    delivery::refresh(config, &mut requests, crate::records::now());
     derive::states(config, &mut work, &requests);
     Ok(Listing {
         work,

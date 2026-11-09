@@ -47,6 +47,22 @@ tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
   [ "${lines[10]}" = "s:base	 5    base" ]
 }
 
+@test "an assistant run is never a Task: it lists under Assistant (ADR 0046)" {
+  mkdir -p "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001" "$BATS_TEST_TMPDIR/w/assistant/hosting-t-000004"
+  tx new-session -d -s fix -c "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001"
+  tx set-option -t =fix: @muxa_task t-000001
+  tx new-session -d -s hosting -c "$BATS_TEST_TMPDIR/w/assistant/hosting-t-000004"
+  tx set-option -t =hosting: @muxa_task t-000004
+  run tree
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "g:tasks	▾ Tasks 1" ]
+  [ "${lines[1]}" = "s:fix	 1    fix" ]
+  [ "${lines[2]}" = "g:assistant	▾ Assistant 1" ]
+  [ "${lines[3]}" = "s:hosting	 2    hosting" ]
+  [ "${lines[4]}" = "g:sessions	▾ Sessions 1" ]
+  [ "${lines[5]}" = "s:base	 3    base" ]
+}
+
 @test "a folded section hides its sessions and their labels, and shows their state" {
   tx new-session -d -s ask-app-1
   tx set-option -t =ask-app-1: @muxa_ask work

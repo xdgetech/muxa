@@ -86,7 +86,9 @@ fn a_hash_collision_takes_the_next_id() {
     // Another client's capture already sits on this client's first id.
     let taken = capture_id("client-1", 0);
     let squatter = capture(taken.clone(), "someone-else", "x");
-    shelf.write_new::<StateError>(&taken, squatter).unwrap();
+    shelf
+        .write_new::<StateError>(&taken, squatter, Extra::new())
+        .unwrap();
     let Captured::New(made) = shelf
         .capture::<StateError>("client-1", |id| Ok(capture(id, "client-1", "mine")))
         .unwrap()

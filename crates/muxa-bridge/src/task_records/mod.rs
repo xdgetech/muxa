@@ -12,7 +12,7 @@ mod facts;
 pub(crate) mod handoff;
 pub(crate) mod observation;
 pub(crate) mod park;
-mod reading;
+pub(crate) mod reading;
 pub mod remote;
 pub(crate) mod reply;
 pub(crate) mod restart;
@@ -127,6 +127,8 @@ pub struct Context {
     pub records: Arc<Config>,
     pub agents: Arc<Registry>,
     pub pending: Pending,
+    /// This process is the host daemon: only it runs assistant requests (ADR 0046 §8).
+    pub daemon: bool,
 }
 
 impl Context {
@@ -170,6 +172,8 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::Capture { .. }
             | Request::SortCapture { .. }
             | Request::UpdateWork { .. }
+            | Request::RequestAssistant { .. }
+            | Request::CancelRequest { .. }
     )
 }
 
@@ -231,6 +235,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
                 base,
                 read,
                 routine: None,
+                assistant: None,
                 work: None,
             };
             let spec = r#loop.map(convert::loop_spec);
@@ -318,7 +323,9 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         | Request::UpdateInbox { .. }) => crate::routines::handle(cx, req).await,
         req @ (Request::Capture { .. }
         | Request::SortCapture { .. }
-        | Request::UpdateWork { .. }) => crate::assistant::handle(cx, req).await,
+        | Request::UpdateWork { .. }
+        | Request::RequestAssistant { .. }
+        | Request::CancelRequest { .. }) => crate::assistant::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(

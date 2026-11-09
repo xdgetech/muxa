@@ -20,17 +20,20 @@ AGENTS_AWK_STATE='
 '
 
 # The tree's sections (ADR 0038): muxa Tasks, Routine runs (a repo-less Task
-# whose folder is <root>/routines/...), ask sessions (@muxa_ask), then every
-# other session. Tasks and Sessions group by repo; "~" is no repo, last in byte order.
+# whose folder is <root>/routines/...), assistant runs (<root>/assistant/...,
+# ADR 0046 §5: never Tasks), ask sessions (@muxa_ask), then every other
+# session. Tasks and Sessions group by repo; "~" is no repo, last in byte order.
 # shellcheck disable=SC2034  # used by scripts that source this file
 AGENTS_AWK_GROUP='
   function section(repo, task, ask, path) {
-    if (task != "") return (repo == "" && path ~ /\/routines\/[^\/]+$/ ? "routines" : "tasks")
+    if (task != "" && repo == "" && path ~ /\/routines\/[^\/]+$/) return "routines"
+    if (task != "" && repo == "" && path ~ /\/assistant\/[^\/]+$/) return "assistant"
+    if (task != "") return "tasks"
     return (ask != "" ? "ask" : "sessions")
   }
-  function sorder(sec) { return sec == "tasks" ? 1 : sec == "routines" ? 2 : sec == "ask" ? 3 : 4 }
-  function repogroup(sec, repo) { return (sec == "routines" || sec == "ask" || repo == "") ? "~" : repo }
-  function slabel(sec) { return sec == "tasks" ? "Tasks" : sec == "routines" ? "Routines" : sec == "ask" ? "Ask" : "Sessions" }
+  function sorder(sec) { return sec == "tasks" ? 1 : sec == "routines" ? 2 : sec == "assistant" ? 3 : sec == "ask" ? 4 : 5 }
+  function repogroup(sec, repo) { return (sec == "routines" || sec == "assistant" || sec == "ask" || repo == "") ? "~" : repo }
+  function slabel(sec) { return sec == "tasks" ? "Tasks" : sec == "routines" ? "Routines" : sec == "assistant" ? "Assistant" : sec == "ask" ? "Ask" : "Sessions" }
   function rlabel(r) { return r == "~" ? "no repo" : r }
 '
 

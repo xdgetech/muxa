@@ -22,6 +22,9 @@ const MAX_FILE: u64 = 1 << 20;
 /// Ids tried before giving up on a free one.
 const ID_TRIES: u32 = 16;
 
+/// A file's fields that are not on the wire: muxa's own bookkeeping and a newer muxa's fields.
+pub type Extra = serde_json::Map<String, serde_json::Value>;
+
 /// A record kind: its folder and its id prefix.
 pub trait Kind: Serialize + DeserializeOwned {
     const DIR: &'static str;
@@ -141,6 +144,12 @@ impl<T: Kind> Shelf<T> {
         Ok(self.read(id)?.map(|s| s.record))
     }
 
+    /// [`Shelf::get`], with the file's fields that are not on the wire.
+    pub fn get_with_extra(&self, id: &str) -> Result<Option<(T, Extra)>, StateError> {
+        check_id::<T>(id)?;
+        Ok(self.read(id)?.map(|s| (s.record, s.extra)))
+    }
+
     /// Every readable record. An unreadable file is logged by id and skipped.
     pub fn all(&self) -> Result<Vec<T>, StateError> {
         let entries = fs::read_dir(&self.dir).map_err(|source| StateError::Io {
@@ -206,6 +215,14 @@ impl<T: Kind> Shelf<T> {
         &self,
         make: impl FnOnce(String) -> Result<T, E>,
     ) -> Result<T, E> {
+        self.create_with_extra(|id| make(id).map(|r| (r, Extra::new())))
+    }
+
+    /// [`Shelf::create`], with fields that are not on the wire, in the same write.
+    pub fn create_with_extra<E: From<StateError>>(
+        &self,
+        make: impl FnOnce(String) -> Result<(T, Extra), E>,
+    ) -> Result<T, E> {
         for _ in 0..ID_TRIES {
             let id = format!(
                 "{}{:08x}",
@@ -216,14 +233,14 @@ impl<T: Kind> Shelf<T> {
             if self.read(&id)?.is_some() {
                 continue;
             }
-            let record = make(id.clone())?;
-            return self.write_new(&id, record);
+            let (record, extra) = make(id.clone())?;
+            return self.write_new(&id, record, extra);
         }
         Err(StateError::Unreadable(T::DIR.to_owned(), "no free id".into()).into())
     }
 
     /// Writes `record` as the new file `id`; the caller holds `id`'s lock.
-    fn write_new<E: From<StateError>>(&self, id: &str, record: T) -> Result<T, E> {
+    fn write_new<E: From<StateError>>(&self, id: &str, record: T, extra: Extra) -> Result<T, E> {
         if record.id() != id {
             return Err(
                 StateError::Unreadable(id.to_owned(), "a record under another id".into()).into(),
@@ -232,7 +249,7 @@ impl<T: Kind> Shelf<T> {
         let stored = Stored {
             version: FORMAT_VERSION,
             record,
-            extra: serde_json::Map::new(),
+            extra,
         };
         write_json(&self.dir, id, &stored, MAX_FILE)?;
         Ok(stored.record)
@@ -280,7 +297,7 @@ impl Shelf<Capture> {
                 Some(_) => continue,
                 None => {
                     let record = make(id.clone())?;
-                    return self.write_new(&id, record).map(Captured::New);
+                    return self.write_new(&id, record, Extra::new()).map(Captured::New);
                 }
             }
         }

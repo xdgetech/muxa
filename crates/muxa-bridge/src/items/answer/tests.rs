@@ -82,6 +82,7 @@ fn fixture(item: InboxItem) -> Fixture {
         }),
         agents: Arc::new(Registry::new(Vec::new())),
         pending: Pending::default(),
+        daemon: false,
     };
     Fixture { dir, cx, task }
 }

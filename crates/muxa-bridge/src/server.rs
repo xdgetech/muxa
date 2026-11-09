@@ -669,13 +669,16 @@ impl Worker {
                 Ok(p) => timed(muxa_tmux::paste(client, p, &text)).await,
                 Err(e) => Err(e),
             },
-            // Only the daemon runs loops (ADR 0019). A create takes seconds.
+            // Only the daemon runs loops (ADR 0019) and assistant requests
+            // (ADR 0046 §8). A create takes seconds.
             req @ (Request::CreateTask {
                 r#loop: Some(_), ..
             }
             | Request::StartLoop { .. }
             | Request::StopLoop { .. }
-            | Request::RunRoutine { .. }) => {
+            | Request::RunRoutine { .. }
+            | Request::RequestAssistant { .. }
+            | Request::CancelRequest { .. }) => {
                 let (dir, out) = (self.daemon_dir.clone(), self.out.clone());
                 self.pending.spawn(async move {
                     for msg in task_records::remote::serve_loop(dir.as_deref(), req).await {
@@ -723,14 +726,6 @@ impl Worker {
                 }
                 return None;
             }
-            // The host side comes with `work` level 8 (ADR 0046); until it
-            // advertises that level, no client sends these.
-            Request::RequestAssistant { .. } | Request::CancelRequest { .. } => {
-                return Some(Err(error_body(
-                    ErrorCode::Unsupported,
-                    "this host has no assistant yet: update muxa-bridge",
-                )));
-            }
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))
@@ -751,6 +746,7 @@ impl Worker {
             records: Arc::clone(&self.records),
             agents: Arc::clone(&self.agents),
             pending: self.pending.clone(),
+            daemon: false,
         }
     }
 

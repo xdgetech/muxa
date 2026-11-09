@@ -132,6 +132,7 @@ impl Daemon {
         drop(items);
         self.park(idle).await;
         crate::routines::tick(&self.records).await;
+        crate::assistant::tick(&self.records).await;
         self.sweep();
     }
 
@@ -233,6 +234,7 @@ fn run(args: args::Args) -> ExitCode {
             records: setup.records,
             agents: setup.agents,
             pending: Pending::default(),
+            daemon: true,
         },
         loops: tokio::sync::Mutex::new(engine),
         items: tokio::sync::Mutex::new(items::Watch::default()),

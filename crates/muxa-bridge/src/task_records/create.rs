@@ -43,6 +43,8 @@ pub struct NewTask {
     pub read: bool,
     /// Set when the daemon starts a Routine run (ADR 0026); never from a client.
     pub routine: Option<crate::routines::record::RunOf>,
+    /// Set when the daemon starts an assistant run (ADR 0046); never from a client.
+    pub assistant: Option<crate::assistant::record::RunFor>,
     /// The Work item the Task is for, checked by `assistant::start` (ADR 0046).
     pub work: Option<String>,
 }
@@ -93,7 +95,11 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
         Target::Read(_, main) => (Some(main.clone()), None),
         Target::Dir(_) => (None, None),
     };
-    let mut extra = new.routine.as_ref().map(|r| r.fields()).unwrap_or_default();
+    let mut extra = match (&new.routine, &new.assistant) {
+        (Some(r), _) => r.fields(),
+        (None, Some(a)) => a.fields(),
+        (None, None) => serde_json::Map::new(),
+    };
     if new.read {
         extra.extend(crate::records::reading::new_fields());
     }
@@ -152,8 +158,9 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
             new.workspace
         ))
     })?;
-    if new.routine.is_some() && (new.repo.is_some() || new.branch.is_some() || new.base.is_some()) {
-        return Err(bad("a routine run has no repo".into()));
+    let background = new.routine.is_some() || new.assistant.is_some();
+    if background && (new.repo.is_some() || new.branch.is_some() || new.base.is_some()) {
+        return Err(bad("a background run has no repo".into()));
     }
     if new.read {
         return read_target(new, workspace, &workspaces)

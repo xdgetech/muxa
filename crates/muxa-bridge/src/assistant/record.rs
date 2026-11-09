@@ -28,10 +28,6 @@ pub struct RunFor {
 
 impl RunFor {
     /// The record fields that make a record an assistant run.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
-    )]
     pub fn fields(&self) -> serde_json::Map<String, serde_json::Value> {
         let mut extra = serde_json::Map::new();
         extra.insert(KIND_FIELD.into(), ASSISTANT_RUN.into());

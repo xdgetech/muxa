@@ -24,9 +24,9 @@ its own git worktree, with the AI pane on the left and a terminal on the right.
 ```
 
 A finished turn shows 🏁 until you look at its window, then 💤.
-The tree has four sections (ADR 0038): **Tasks** (muxa Tasks, by repo),
-**Routines** (running Routine runs), **Ask** (ask sessions) and **Sessions**
-(every other session, by repo). `Enter` or `space` on a section's heading folds
+The tree has five sections (ADR 0038): **Tasks** (muxa Tasks, by repo),
+**Routines** (running Routine runs), **Assistant** (running assistant runs,
+ADR 0046), **Ask** (ask sessions) and **Sessions** (every other session, by repo). `Enter` or `space` on a section's heading folds
 it in every sidebar. A folded heading shows its count and its most urgent state.
 One line per session, labelled `1`–`9` then `a`–`z` for the jump keys; sessions
 in a folded section get no label. `▎`
@@ -124,7 +124,7 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_sidebar` | `on` | |
 | `@agents_sidebar_width` | `28` | |
 | `@agents_min_width` | `100` | narrower clients (a phone) get no tree |
-| `@agents_folded` | | the folded sections of the tree, space-separated: `tasks routines ask sessions`. `Enter` and `space` set it |
+| `@agents_folded` | | the folded sections of the tree, space-separated: `tasks routines assistant ask sessions`. `Enter` and `space` set it |
 | `@agents_inbox_rows` | `3` | Inbox items the tree shows above the sessions |
 | `@agents_inbox_refresh` | `5` | seconds between two `muxa-cli inbox --json` calls for the tree |
 | `@agents_split` | `50` | terminal pane width, % of a new task window. Showing, hiding or resizing the tree keeps the current split |

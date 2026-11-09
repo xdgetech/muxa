@@ -280,19 +280,11 @@ impl Workspaces {
     }
 
     /// The host's `[assistant]`; off without the table.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
-    )]
     pub fn assistant(&self) -> AssistantHost {
         self.assistant
     }
 
     /// The workspace's delegate, when the host and the workspace both allow requests.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
-    )]
     pub fn delegate(&self, workspace: &str) -> Option<&Delegate> {
         if !self.assistant.enabled {
             return None;

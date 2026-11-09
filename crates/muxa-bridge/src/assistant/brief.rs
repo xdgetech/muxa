@@ -1,10 +1,6 @@
 //! The goal of an assistant run (ADR 0046 §4): the Work item, the user's
 //! Captures as data, the scope, earlier work to continue from, and the
 //! result schema. It lands in `.muxa/TASK.md`; its last line is the request marker.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "request-assistant uses it (ADR 0046 slice A8)")
-)]
 use muxa_protocol::{AssistResult, AssistScope, AssistantRequest, Capture, ErrorBody, WorkItem};
 
 use crate::records::MAX_GOAL;
@@ -144,7 +140,7 @@ pub fn marker(request: &str, version: u64) -> String {
     format!("muxa-request: {request} v{version}")
 }
 
-fn scope_name(scope: AssistScope) -> &'static str {
+pub fn scope_name(scope: AssistScope) -> &'static str {
     match scope {
         AssistScope::Research => "research",
         AssistScope::Compare => "compare",

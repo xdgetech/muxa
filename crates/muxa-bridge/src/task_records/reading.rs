@@ -13,10 +13,16 @@ const FILE: &str = "settings.local.json";
 /// Whether `command` starts Claude Code: its program, after leading `VAR=value`
 /// words and `env` or `exec`, is `claude`. A wrapper script is not recognised.
 pub fn is_claude_code(command: &LaunchCommand) -> bool {
+    program(command) == Some(CLAUDE)
+}
+
+/// The file name of the program `command` starts, read as [`is_claude_code`] does.
+pub fn program(command: &LaunchCommand) -> Option<&str> {
     match command {
-        LaunchCommand::Native { program, .. } => *program == CLAUDE,
-        LaunchCommand::Shell(line) => shell_program(line)
-            .is_some_and(|p| Path::new(p).file_name().and_then(|n| n.to_str()) == Some(CLAUDE)),
+        LaunchCommand::Native { program, .. } => Some(program),
+        LaunchCommand::Shell(line) => {
+            shell_program(line).and_then(|p| Path::new(p).file_name().and_then(|n| n.to_str()))
+        }
     }
 }
 

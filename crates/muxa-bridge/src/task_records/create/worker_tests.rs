@@ -830,6 +830,7 @@ async fn named_start_waits_for_process_bound_readiness_and_delivers_once() {
                 records: Arc::clone(&env.records),
                 agents: Arc::clone(&env.agents),
                 pending: env.pending.clone(),
+                daemon: false,
             };
             // Independent waiters resume the same durable, still-unclaimed prompt.
             super::super::resume_prompts(&context).await;
