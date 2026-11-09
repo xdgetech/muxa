@@ -3,7 +3,8 @@
 # The Inbox of ADR 0033 in tmux: the sidebar's section, and prefix + T with
 # the list above the selected item. muxa owns the items; this only shows them
 # and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3.
-# With level 8, Work items (w-) and unsorted Captures (c-) follow the items.
+# With level 8, Work items (w-) and unsorted Captures (c-) follow the items;
+# `a` on a Work item asks its workspace's assistant.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh ui <client> [item id]
@@ -97,6 +98,11 @@ JQ_DEFS='
   def work_word: {"in-progress": "in progress", "waiting-decision": "waiting on decision",
     "done": "done", "withdrawn": "withdrawn"}[.state] // "open";
   def open_work: (.workItems // [])[] | select(.state != "done" and .state != "withdrawn");
+  # The newest request of an item, from the requests[] of the list.
+  def asked($reqs): (.requests // [])[-1] as $q | [$reqs[] | select(.id == $q)][0] // empty;
+  def delivery_word: if (.delivery | IN("pending", "received", "processing", "unconfirmed",
+    "resulted", "failed", "timed-out", "cancel-requested", "cancelled"))
+    then .delivery | gsub("-"; " ") else "unknown" end;
   def first_line: [.text | plain | split("\n")[] | select(test("\\S"))][0] // "" | sub("^\\s+"; "") | .[:60];
   # Numbered evidence: the changes, docs, images and links.
   def evidence: (.attachments // {}) as $t | [
@@ -137,25 +143,35 @@ detail() {
 # the unsorted Captures (ADR 0046): <id> TAB <display>.
 list() {
   iq -r "$JQ_DEFS"'
+    (.requests // []) as $reqs |
     (.items[] | shown |
     "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .laterAt or .state == "later" then " · later" else "" end)\u001b[0m"),
     (open_work |
-    "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word) · \(age)\(if .laterAt then " · later" else "" end)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
+    "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
     ((.captures // [])[] | "\(.id)\t  ✎ \(first_line)  \u001b[2munsorted · \(age)\u001b[0m")
   ' "$1"
 }
 
-# A Work item: its title, state, links, and its keys.
+# A Work item: its title, state, links, its newest request and Result
+# summary, and its keys.
 view_work() {
   iq -r --arg item "$1" "$JQ_DEFS"'
+    (.requests // []) as $reqs |
     .workItems[]? | select(.id == $item) |
+    (.requests // []) as $mine |
+    ([$reqs[] | select(.id | IN($mine[])) | .results[0]? // empty] | max_by(.at)) as $result |
     "◆ \u001b[1m\(.title | plain)\u001b[0m",
     "\u001b[2m\(work_word)\(if .workspace then " · \(.workspace)" else "" end) · \(age)\(if .laterAt then " · later" else "" end)\u001b[0m",
     "",
     "Captures: \((.captures // []) | length)   Tasks: \((.tasks // []) | length)",
     (if .state == "waiting-decision" then "A Task waits for your decision above." else empty end),
+    (asked($reqs) | "Assistant: \(.scope) v\(.version) · \(delivery_word) · \(.workspace | plain)"),
+    (if $result then
+      "", "\u001b[1mResult v\($result.version)\(if $result.stale then " (stale)" else "" end)\u001b[0m",
+      ($result.summary | plain), "\u001b[2mAll of it: muxa-cli assist show \($item)\u001b[0m"
+     else empty end),
     "",
-    "l Later   d Complete",
+    "l Later   d Complete   a Ask Assistant",
     "\u001b[2mq close\u001b[0m"
   ' "$2"
 }
@@ -207,6 +223,7 @@ key_action() {
   case "$1:$2" in
     w-*:l) echo work:later; return ;;
     w-*:d) echo work:done; return ;;
+    w-*:a) echo assist; return ;;
     c-*:w) echo sort:new; return ;;
     c-*:n) echo sort:note; return ;;
     [wc]-*:*) return ;;
@@ -236,6 +253,8 @@ answer() {
   set -- inbox answer "$id"
   case "$act" in
     work:*) set -- work "${act#work:}" "$id" ;;
+    # The item's workspace, scope research: the apps' Ask Assistant.
+    assist) set -- assist "$id" ;;
     sort:*) set -- work sort "$id" "${act#sort:}" ;;
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
     reply | ask-agent)

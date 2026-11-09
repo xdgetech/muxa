@@ -20,7 +20,7 @@ print() {
   heading "Anywhere: $p, then"
   row "$(opt @agents_key_focus Tab)" "into the tree, and back out"
   row "$(opt @agents_key_toggle b)" "show or hide the tree"
-  row "$(opt @agents_key_new N)" "capture a thought, or a new Task: workspace, repo, branch, title, goal"
+  row "$(opt @agents_key_new N)" "capture a thought (s save, a ask the assistant), or a new Task"
   row "$(opt @agents_key_ask A)" "ask session: an agent in a repo's main checkout"
   row "$(opt @agents_key_inbox T)" "the Inbox"
   row "$(opt @agents_key_ide O)" "open the current session in the IDE"
@@ -56,6 +56,7 @@ print() {
 
   heading "The Inbox ($p $(opt @agents_key_inbox T))"
   printf '  %sEach item lists the keys it takes. Enter goes to its session.%s\n' "$D" "$Z"
+  row "l d a" "on a Work item: Later, Complete, ask its assistant"
 }
 
 case "${1:-print}" in

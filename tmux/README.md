@@ -81,7 +81,7 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 |---|---|
 | `prefix + Tab` | into the tree, and back out |
 | `prefix + b` | show or hide the tree |
-| `prefix + N` | new task: asks for repo and branch; with muxa, captures a thought first |
+| `prefix + N` | new task: asks for repo and branch; with muxa, captures a thought first and can ask the assistant |
 | `prefix + O` | open the current task in the IDE |
 | `prefix + )` / `prefix + (` | next / previous task, in tree order |
 | `prefix + j`, then `1`–`9` or `a`–`z` | the task with that label in the tree |
@@ -150,8 +150,12 @@ apps show, with a goal and a status.
 - `prefix + N` opens a form in a popup: workspace, repo, branch, title and goal.
   With a muxa that keeps Captures (`work` level 8, ADR 0046), the popup first
   asks for the text: `s` saves it on the host as an unsorted Capture and starts
-  nothing, `t` takes it into the form as the goal (its first line is the
-  title), and `q` cancels. An empty text opens the form.
+  nothing, `a` saves it and asks a workspace's assistant to research it
+  (`muxa-cli capture - --assist --workspace W`; with several workspaces it asks
+  which one), `t` takes it into the form as the goal (its first line is the
+  title), and `q` cancels. An empty text opens the form. Asking needs the muxa
+  daemon and `[workspace.assistant]`; else muxa's reason is shown, and the
+  text is still saved.
   The workspace suggested is the one whose repos hold the current repo.
   The repo is a list to filter: the current repo first, then the workspace's
   repos, by their path under the workspace root (`group/app`), else with `~`.
@@ -193,8 +197,13 @@ apps show, with a goal and a status.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
   - With `work` level 8, the open Work items (`◆`) and the unsorted Captures
     (`✎`) follow the items. On a Work item, `l` Later moves it below the others
-    and `d` completes it; its Tasks keep running. On a Capture, `w` makes a
-    Work item from it and `n` keeps it as a note.
+    and `d` completes it; its Tasks keep running. `a` asks its workspace's
+    assistant (`muxa-cli assist WORK`, scope research); asking again adds a
+    version and ends the older run. A Work row that was asked shows its newest
+    request's delivery, such as `asked: processing`. The item below the list
+    shows the request and the newest Result's summary; `muxa-cli assist show
+    WORK` prints all of it. On a Capture, `w` makes a Work item from it and `n`
+    keeps it as a note.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

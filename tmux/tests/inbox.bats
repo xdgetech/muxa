@@ -237,7 +237,7 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
 # A work:8 Inbox (ADR 0046): the contract's Work items and Captures follow the items.
 work_inbox() {
   jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list") |
-    {work: 8, items: $items[0].items, entries: [], runs: [], workItems: .work, captures}' \
+    {work: 8, items: $items[0].items, entries: [], runs: [], workItems: .work, captures, requests}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }
 
@@ -254,10 +254,12 @@ work_inbox() {
   work_inbox >"$TMPDIR/w.json"
   run bash -c "'$ROOT/scripts/inbox.sh' view w-6a7b8c9d '$TMPDIR/w.json' | sed \$'s/\x1b\\\\[[0-9;]*m//g'"
   [[ "$output" == *"waiting on decision · work"* ]]
-  [[ "$output" == *"l Later   d Complete"* ]]
+  [[ "$output" == *"l Later   d Complete   a Ask Assistant"* ]]
   [ "$(inbox key w-6a7b8c9d l "$TMPDIR/w.json")" = work:later ]
   [ "$(inbox key w-6a7b8c9d d "$TMPDIR/w.json")" = work:done ]
-  [ "$(inbox key w-6a7b8c9d a "$TMPDIR/w.json")" = "" ]
+  [ "$(inbox key w-6a7b8c9d a "$TMPDIR/w.json")" = assist ]
+  [ "$(inbox key w-6a7b8c9d r "$TMPDIR/w.json")" = "" ]
+  [ "$(inbox key c-4e5f6a7b a "$TMPDIR/w.json")" = "" ]
   [ "$(inbox key c-4e5f6a7b w "$TMPDIR/w.json")" = sort:new ]
   [ "$(inbox key c-4e5f6a7b n "$TMPDIR/w.json")" = sort:note ]
   [ "$(inbox key c-4e5f6a7b l "$TMPDIR/w.json")" = "" ]
@@ -279,4 +281,39 @@ work_inbox() {
   sleep 1
   key l
   wait_for 'grep -q "^work later w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "a Work row shows its newest request's delivery, and nothing when never asked" {
+  work_inbox >"$TMPDIR/w.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | grep '^w-' | cut -f2 | sed \$'s/\x1b\\\\[[0-9;]*m//g'"
+  [[ "${lines[0]}" == *"waiting on decision · asked: resulted · "* ]]
+  [[ "${lines[1]}" == *"in progress · asked: processing · "* ]]
+  # Its newest request is the last it lists.
+  [[ "${lines[2]}" == *"open · asked: timed out · "* ]]
+  [[ "${lines[3]}" != *"asked"* ]]
+}
+
+@test "a Work item shows its newest Result's summary, as plain text" {
+  work_inbox | jq -c '.requests[0].results[0].summary = "Merge \u001b[31msteps\u001b[0m 3 to 5."' >"$TMPDIR/w.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' view w-6a7b8c9d '$TMPDIR/w.json'"
+  [[ "$output" == *"Assistant: compare v2 · resulted · work"* ]]
+  [[ "$output" == *"Result v2"* ]]
+  [[ "$output" == *"Merge [31msteps[0m 3 to 5."* ]]
+  [[ "$output" != *$'\x1b[31m'* ]]
+  [[ "$output" == *"muxa-cli assist show w-6a7b8c9d"* ]]
+  [[ "$output" != *"The guide has 9 steps."* ]]
+  run bash -c "'$ROOT/scripts/inbox.sh' view w-8c9d0e1f '$TMPDIR/w.json'"
+  [[ "$output" != *"Assistant:"* ]]
+  [[ "$output" != *"Result"* ]]
+}
+
+@test "prefix+T: a on a Work item asks its assistant through muxa assist" {
+  fake_cli
+  work_inbox >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  jq -c '.items = []' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key a
+  wait_for 'grep -q "^assist w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
 }

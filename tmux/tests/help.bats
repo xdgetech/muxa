@@ -14,4 +14,6 @@ teardown() { teardown_server; }
   [[ "$out" == *"ask sessions (C-b Q)"* ]]
   [[ "$out" == *"new -s NAME -c DIR"* ]]
   [[ "$out" == *"  space          fold or unfold a section"* ]]
+  [[ "$out" == *"a ask the assistant"* ]]
+  [[ "$out" == *"  l d a          on a Work item: Later, Complete, ask its assistant"* ]]
 }

@@ -234,34 +234,50 @@ read_answer() {
 }
 
 # Work level 8 (ADR 0046): the text comes first. s saves it as a Capture and
-# starts nothing; t takes it into the New Task form. Sets SEED for the form.
+# starts nothing; a saves it and asks a workspace's assistant (scope research);
+# t takes it into the New Task form. Sets SEED for the form.
 # Returns 1 when nothing more is to be done.
 capture_first() {
-  local text choice out
+  local json="$1" spaces="$2" repo="$3" text choice ws out=""
   SEED=""
-  echo "What is on your mind? It is saved on the host; nothing starts."
+  echo "What is on your mind? It is saved on the host; nothing starts unless you ask."
   echo "Leave it empty for the New Task form."
   text="$(read_answer text "")" || return 1
   [ -n "$text" ] || return 0
-  printf 's save   t start a Task with it   q cancel: '
+  printf 's save   a save and ask the assistant   t start a Task with it   q cancel: '
   IFS= read -r -n 1 choice || return 1
   echo
   case "$choice" in
     s | "")
-      # On stdin: the text is never read as a flag.
-      if out="$(printf '%s' "$text" | run_muxa capture - --source tmux --json 2>&1)"; then
+      out="$(save_capture "$text")" &&
         echo "Saved in Unsorted: $(printf '%s' "$out" | jq -r '.capture.id' 2>/dev/null)"
-        "$S/inbox.sh" cache --force </dev/null >/dev/null 2>&1 &
-        sleep 1
-      else
-        printf '%s\nPress Enter.\n' "$(printf '%s' "$out" | sed 's/^muxa-cli: //' | tail -n 1)"
-        read -r _
-      fi
-      return 1
+      ;;
+    a)
+      ws="$(choose_ws "$spaces" "$(default_ws "$json" "$repo")")" || return 1
+      [ -n "$ws" ] || return 1
+      out="$(save_capture "$text" --assist --workspace "$ws")" &&
+        printf 'Asked the assistant in %s: %s\n' "$ws" \
+          "$(printf '%s' "$out" | jq -r '"\(.request.id // "no request") (\(.request.delivery // "unknown"))"' 2>/dev/null)"
       ;;
     t) SEED="$text" ;;
-    *) return 1 ;;
   esac
+  [ -n "$SEED" ] || { [ -z "$out" ] || sleep 1; return 1; }
+}
+
+# Sends <text> as a Capture with the flags after it and prints muxa's JSON.
+# On an error, shows it and waits for Enter.
+save_capture() {
+  local text="$1" out
+  shift
+  # On stdin: the text is never read as a flag.
+  if out="$(printf '%s' "$text" | run_muxa capture - --source tmux "$@" --json 2>&1)"; then
+    printf '%s' "$out"
+    "$S/inbox.sh" cache --force </dev/null >/dev/null 2>&1 &
+  else
+    printf '%s\nPress Enter.\n' "$(printf '%s' "$out" | sed 's/^muxa-cli: //' | tail -n 1)" >&2
+    read -r _
+    return 1
+  fi
 }
 
 form() {
@@ -274,7 +290,7 @@ form() {
   fi
   SEED=""
   if printf '%s' "$json" | work_at 8; then
-    capture_first || return 0
+    capture_first "$json" "$spaces" "$repo" || return 0
   fi
   printf '%s' "$json" | work2 && w2=1
   echo "A muxa task: the same record on every device. Workspaces: $spaces"

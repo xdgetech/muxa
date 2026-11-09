@@ -1,17 +1,17 @@
 //! `capture` and `work`: the user's input and Work items (ADR 0046), behind
-//! the host's `work` level 8. Saving never starts an agent.
+//! the host's `work` level 8. Saving starts an agent only with `--assist`.
 
 use std::time::Duration;
 
 use muxa_protocol::{
-    Capture, CaptureSource, Message, Request, SortAction, WORK_ASSISTANT, WorkAction, WorkItem,
-    WorkState, work_level,
+    AssistSpec, AssistantRequest, Capture, CaptureSource, Message, Request, SortAction,
+    WORK_ASSISTANT, WorkAction, WorkItem, WorkState, work_level,
 };
 use serde_json::json;
 
 use crate::conn::Conn;
 
-const WAIT: Duration = Duration::from_secs(10);
+pub const WAIT: Duration = Duration::from_secs(10);
 /// Characters of a Capture's first line in a list.
 const PREVIEW: usize = 60;
 
@@ -31,6 +31,8 @@ pub struct NewCapture {
     pub source: CaptureSource,
     /// A resend with the same id returns the stored Capture.
     pub client_id: String,
+    /// Also make a Work item in `workspace` and ask its assistant.
+    pub assist: Option<AssistSpec>,
 }
 
 pub fn source(name: &str) -> Option<CaptureSource> {
@@ -58,31 +60,55 @@ pub async fn capture(conn: &mut Conn, new: NewCapture, as_json: bool) -> Result<
                 text: new.text,
                 source: Some(new.source),
                 workspace: new.workspace,
-                assist: None,
+                assist: new.assist,
             },
             WAIT,
         )
         .await?;
     let (entry, item) = saved_capture(&messages)?;
+    let request = messages.iter().find_map(|m| match m {
+        Message::CaptureSaved { request, .. } => request.as_deref().cloned(),
+        _ => None,
+    });
     if as_json {
-        println!("{}", json!({"capture": entry, "work": item}));
-    } else {
-        println!("{}", capture_line(&entry, crate::when::now()));
+        println!(
+            "{}",
+            json!({"capture": entry, "work": item, "request": request})
+        );
+        return Ok(String::new());
+    }
+    let now = crate::when::now();
+    match &item {
+        Some(item) => println!("{}", work_line(item, now)),
+        None => println!("{}", capture_line(&entry, now)),
+    }
+    if let Some(request) = &request {
+        println!("{}", crate::assist::request_line(request));
     }
     Ok(String::new())
 }
 
 /// The Work items, newest open first, and the unsorted Captures.
 pub async fn list(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, String> {
-    let (work, captures) = fetch(conn).await?;
+    let Listing {
+        work,
+        captures,
+        requests,
+    } = fetch(conn).await?;
     let work: Vec<WorkItem> = work.into_iter().filter(|w| all || !closed(w)).collect();
     if as_json {
-        println!("{}", json!({"work": work, "captures": captures}));
+        println!(
+            "{}",
+            json!({"work": work, "captures": captures, "requests": requests})
+        );
         return Ok(String::new());
     }
     let now = crate::when::now();
     for w in &work {
-        println!("{}", work_line(w, now));
+        let asked = latest_request(w, &requests)
+            .map(|q| format!("  asked: {}", crate::items::wire(json!(q.delivery))))
+            .unwrap_or_default();
+        println!("{}{asked}", work_line(w, now));
     }
     for c in &captures {
         println!("{}", capture_line(c, now));
@@ -104,8 +130,9 @@ pub struct Sort {
 }
 
 pub async fn sort(conn: &mut Conn, s: Sort, as_json: bool) -> Result<String, String> {
-    let (_, captures) = fetch(conn).await?;
-    let rev = captures
+    let rev = fetch(conn)
+        .await?
+        .captures
         .iter()
         .find(|c| c.id == s.capture)
         .map(|c| c.rev)
@@ -188,24 +215,50 @@ pub async fn change(conn: &mut Conn, c: Change, as_json: bool) -> Result<String,
 
 /// The `rev` of Work item `work` now, for a change or a Task start.
 pub async fn rev_of(conn: &mut Conn, work: &str) -> Result<u64, String> {
-    let (items, _) = fetch(conn).await?;
-    items
+    fetch(conn)
+        .await?
+        .work
         .iter()
         .find(|w| w.id == work)
         .map(|w| w.rev)
         .ok_or_else(|| format!("no Work item {work}"))
 }
 
-async fn fetch(conn: &mut Conn) -> Result<(Vec<WorkItem>, Vec<Capture>), String> {
+/// The level 8 part of `inbox-list`.
+pub struct Listing {
+    pub work: Vec<WorkItem>,
+    pub captures: Vec<Capture>,
+    pub requests: Vec<AssistantRequest>,
+}
+
+pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
     require(conn)?;
     let messages = conn.call(|id| Request::ListInbox { id }, WAIT).await?;
     messages
         .into_iter()
         .find_map(|m| match m {
-            Message::InboxList { work, captures, .. } => Some((work, captures)),
+            Message::InboxList {
+                work,
+                captures,
+                requests,
+                ..
+            } => Some(Listing {
+                work,
+                captures,
+                requests,
+            }),
             _ => None,
         })
         .ok_or_else(|| "the bridge sent no inbox list".into())
+}
+
+/// The item's newest request: the last one it lists.
+pub fn latest_request<'a>(
+    w: &WorkItem,
+    requests: &'a [AssistantRequest],
+) -> Option<&'a AssistantRequest> {
+    let id = w.requests.last()?;
+    requests.iter().find(|q| &q.id == id)
 }
 
 fn saved_capture(messages: &[Message]) -> Result<(Capture, Option<WorkItem>), String> {

@@ -1,6 +1,7 @@
 //! `muxa-cli`: a terminal client for the muxa protocol, the reference client.
 
 mod ask;
+mod assist;
 mod conn;
 mod inbox;
 mod items;
@@ -45,13 +46,17 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
        muxa-cli [--bridge CMD] capture TEXT [--workspace W] [--source S]
-                [--client-id ID] [--json]
+                [--client-id ID] [--assist [--scope S] [--purpose P]] [--json]
        muxa-cli [--bridge CMD] work [--all] [--json]
        muxa-cli [--bridge CMD] work sort CAPTURE (new [--title T] [--workspace W]
                 | link WORK | note) [--json]
        muxa-cli [--bridge CMD] work (later | done | withdraw | reopen) WORK [--json]
        muxa-cli [--bridge CMD] work edit WORK [--title T] [--workspace W] [--json]
        muxa-cli [--bridge CMD] work merge WORK INTO [--json]
+       muxa-cli [--bridge CMD] assist WORK [--scope S] [--purpose P]
+                [--workspace W] [--json]
+       muxa-cli [--bridge CMD] assist cancel REQUEST [--json]
+       muxa-cli [--bridge CMD] assist show (WORK | REQUEST) [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -139,8 +144,11 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  from stdin. Nothing starts. --source is cli (default), tmux
                  or app. Sending the same --client-id again returns the
                  Capture already saved (ADR 0046)
+  --assist       capture: also makes a Work item in --workspace (required)
+                 and asks that workspace's assistant, as assist does
   work           open Work items, then unsorted Captures; --all also lists
-                 done and withdrawn items
+                 done and withdrawn items. An item that was asked shows its
+                 newest request's delivery, e.g. asked: processing
   work sort CAPTURE
                  new makes a Work item (title: the first line, or --title),
                  link adds the Capture to WORK, note keeps it with no item
@@ -150,7 +158,19 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   work merge WORK INTO
                  withdraws WORK into INTO; INTO gets its Captures
   --work WORK    task new: the Task is for this Work item. Starting it again
-                 returns the same Task";
+                 returns the same Task
+  assist WORK    asks a workspace's assistant to work on the item: its
+                 workspace, or --workspace. Prints the request id, version
+                 and delivery. Asking again adds a version and ends the run
+                 of the older one. Needs the muxa daemon
+  --scope S      research (default), compare or draft
+  --purpose P    what to find out or make, at most 4096 bytes; - reads it
+                 from stdin
+  assist cancel REQUEST
+                 cancels the request's current version and closes its run
+  assist show (WORK | REQUEST)
+                 the newest Result: summary, findings with their sources,
+                 open questions, next steps, files and possible duplicates";
 
 enum Cmd {
     List,
@@ -251,6 +271,18 @@ enum Cmd {
         change: work::Change,
         json: bool,
     },
+    Assist {
+        ask: assist::Ask,
+        json: bool,
+    },
+    CancelRequest {
+        request: String,
+        json: bool,
+    },
+    ShowResult {
+        target: String,
+        json: bool,
+    },
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
@@ -267,6 +299,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let mut check = tasks::LoopFlags::default();
     let (mut text, mut option) = (None, None);
     let (mut source, mut client_id) = (None, None);
+    let (mut assist, mut scope, mut purpose) = (false, None, None);
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -303,6 +336,14 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("option") => option = Some(p.value()?.parse()?),
             Long("work") => new.work = Some(p.value()?.string()?),
             Long("client-id") => client_id = Some(p.value()?.string()?),
+            Long("assist") => assist = true,
+            Long("purpose") => purpose = Some(p.value()?.string()?),
+            Long("scope") => {
+                let value = p.value()?.string()?;
+                scope = Some(assist::scope(&value).ok_or_else(|| {
+                    lexopt::Error::Custom("--scope must be research, compare or draft".into())
+                })?);
+            }
             Long("source") => {
                 let value = p.value()?.string()?;
                 source = Some(work::source(&value).ok_or_else(|| {
@@ -361,6 +402,21 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     if (source.is_some() || client_id.is_some()) && !is_capture {
         return Err(lexopt::Error::Custom(
             "--source and --client-id require capture".into(),
+        ));
+    }
+    let is_assist =
+        matches!(words.as_slice(), [w, id] if w == "assist" && id != "cancel" && id != "show");
+    if assist && !is_capture {
+        return Err(lexopt::Error::Custom("--assist requires capture".into()));
+    }
+    if (scope.is_some() || purpose.is_some()) && !(is_assist || (is_capture && assist)) {
+        return Err(lexopt::Error::Custom(
+            "--scope and --purpose require assist WORK or capture --assist".into(),
+        ));
+    }
+    if assist && some(new.workspace.clone()).is_none() {
+        return Err(lexopt::Error::Custom(
+            "capture --assist needs --workspace: the workspace whose assistant to ask".into(),
         ));
     }
     if new.work.is_some() && !is_new {
@@ -474,12 +530,41 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 json,
             }
         }
-        [w, text] if w == "capture" => Cmd::Capture {
-            new: work::NewCapture {
-                text: capture_text(text)?,
+        [w, text] if w == "capture" => {
+            if text == "-" && purpose.as_deref() == Some("-") {
+                return Err(lexopt::Error::Custom(
+                    "only one of the text and --purpose can come from stdin".into(),
+                ));
+            }
+            let purpose = purpose.as_deref().map(stdin_or).transpose()?;
+            Cmd::Capture {
+                new: work::NewCapture {
+                    text: stdin_or(text)?,
+                    workspace: some(new.workspace),
+                    source: source.unwrap_or(muxa_protocol::CaptureSource::Cli),
+                    client_id: client_id.unwrap_or_else(work::client_id),
+                    assist: assist.then(|| muxa_protocol::AssistSpec {
+                        scope: scope.unwrap_or(muxa_protocol::AssistScope::Research),
+                        purpose,
+                    }),
+                },
+                json,
+            }
+        }
+        [w, c, request] if w == "assist" && c == "cancel" => Cmd::CancelRequest {
+            request: request.clone(),
+            json,
+        },
+        [w, s, target] if w == "assist" && s == "show" => Cmd::ShowResult {
+            target: target.clone(),
+            json,
+        },
+        [w, id] if is_assist && w == "assist" => Cmd::Assist {
+            ask: assist::Ask {
+                work: id.clone(),
+                scope: scope.unwrap_or(muxa_protocol::AssistScope::Research),
                 workspace: some(new.workspace),
-                source: source.unwrap_or(muxa_protocol::CaptureSource::Cli),
-                client_id: client_id.unwrap_or_else(work::client_id),
+                purpose: purpose.as_deref().map(stdin_or).transpose()?,
             },
             json,
         },
@@ -522,7 +607,7 @@ fn some(s: String) -> Option<String> {
 }
 
 /// `-` reads the text from stdin.
-fn capture_text(arg: &str) -> Result<String, lexopt::Error> {
+fn stdin_or(arg: &str) -> Result<String, lexopt::Error> {
     if arg != "-" {
         return Ok(arg.to_owned());
     }
@@ -689,6 +774,9 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Work { all, json } => work::list(&mut conn, all, json).await,
         Cmd::Sort { sort, json } => work::sort(&mut conn, sort, json).await,
         Cmd::ChangeWork { change, json } => work::change(&mut conn, change, json).await,
+        Cmd::Assist { ask, json } => assist::ask(&mut conn, ask, json).await,
+        Cmd::CancelRequest { request, json } => assist::cancel(&mut conn, &request, json).await,
+        Cmd::ShowResult { target, json } => assist::show(&mut conn, &target, json).await,
     }
 }
 
