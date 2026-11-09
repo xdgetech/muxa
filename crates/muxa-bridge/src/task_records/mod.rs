@@ -214,6 +214,9 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             r#loop,
             worker,
             read,
+            // Linking a Task to a Work item comes with level 8 (ADR 0046).
+            work: _,
+            work_rev: _,
         } if !(read && r#loop.is_some()) => {
             let new = NewTask {
                 worker,

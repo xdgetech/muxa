@@ -34,12 +34,15 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
     public var pendingPrompt: PendingPrompt?
     public var worker: String?
     public var restartOperation: RestartOperation?
+    /// The Work item the Task was started for (ADR 0046).
+    public var work: String?
 
     public init(
         id: String, rev: UInt64, workspace: String, title: String, goal: String, status: TaskStatus,
         createdAt: UInt64, updatedAt: UInt64, project: String? = nil, repo: String? = nil,
         branch: String? = nil, dir: String? = nil, session: String? = nil, note: String? = nil,
-        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil, worker: String? = nil, restartOperation: RestartOperation? = nil
+        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil, worker: String? = nil, restartOperation: RestartOperation? = nil,
+        work: String? = nil
     ) {
         self.id = id
         self.rev = rev
@@ -60,11 +63,12 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         self.pendingPrompt = pendingPrompt
         self.worker = worker
         self.restartOperation = restartOperation
+        self.work = work
     }
 
     private enum Key: String, CodingKey {
         case id, rev, workspace, title, goal, status, createdAt, updatedAt
-        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt, worker, restartOperation
+        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt, worker, restartOperation, work
     }
 
     public init(from decoder: any Decoder) throws {
@@ -88,6 +92,7 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         pendingPrompt = try c.decodeIfPresent(PendingPrompt.self, forKey: .pendingPrompt)
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
         restartOperation = try c.decodeIfPresent(RestartOperation.self, forKey: .restartOperation)
+        work = try c.decodeIfPresent(String.self, forKey: .work)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -111,6 +116,7 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         try c.encodeIfPresent(pendingPrompt, forKey: .pendingPrompt)
         try c.encodeIfPresent(worker, forKey: .worker)
         try c.encodeIfPresent(restartOperation, forKey: .restartOperation)
+        try c.encodeIfPresent(work, forKey: .work)
     }
 }
 

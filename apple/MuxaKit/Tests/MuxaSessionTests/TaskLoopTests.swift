@@ -108,7 +108,7 @@ struct TaskLoopTests {
         let saved = try await session.createTask(try #require(draft.request))
         #expect(saved.loop?.state == .armed)
         #expect(bridge.received.contains {
-            if case .createTask(_, _, _, _, _, _, _, _, LoopSpec(check: "make check", maxAttempts: 4), nil) = $0 { true } else { false }
+            if case .createTask(_, _, _, _, _, _, _, _, LoopSpec(check: "make check", maxAttempts: 4), nil, nil, nil) = $0 { true } else { false }
         })
     }
 

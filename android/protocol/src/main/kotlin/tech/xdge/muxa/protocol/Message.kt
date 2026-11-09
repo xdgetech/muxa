@@ -173,7 +173,17 @@ sealed interface Message {
      * Routine entries included, in the order to show them.
      */
     @Serializable
-    data class InboxList(val inbox: Long, val entries: List<InboxEntry>, val items: List<InboxItem> = emptyList()) : Message
+    data class InboxList(
+        val inbox: Long,
+        val entries: List<InboxEntry>,
+        val items: List<InboxItem> = emptyList(),
+        /** Level 8: open Work items first, then the ones moved down with Later, then at most 100 done or withdrawn, newest first. */
+        val work: List<WorkItem> = emptyList(),
+        /** Level 8: unsorted Captures, newest first. */
+        val captures: List<Capture> = emptyList(),
+        /** Level 8: the requests of the listed Work items. */
+        val requests: List<AssistantRequest> = emptyList(),
+    ) : Message
 
     /** What an `update-inbox` wrote, just before its `result`: the Routine entry, the item, or both for a Routine's item. */
     @Serializable
@@ -182,6 +192,19 @@ sealed interface Message {
     /** The session a `start-session` made, just before its `result`. [start] is the request id, [session] the `$n` id. */
     @Serializable
     data class SessionStarted(val start: Long, val session: String, val name: String) : Message
+
+    /** What a `capture` or `sort-capture` wrote, just before its `result`. */
+    @Serializable
+    data class CaptureSaved(
+        val capture: Long,
+        val entry: Capture,
+        val work: WorkItem? = null,
+        val request: AssistantRequest? = null,
+    ) : Message
+
+    /** What an `update-work`, `request-assistant` or `cancel-request` wrote, just before its `result`. */
+    @Serializable
+    data class WorkSaved(val work: Long, val entry: WorkItem, val request: AssistantRequest? = null) : Message
 
     /** The bridge is exiting. */
     @Serializable

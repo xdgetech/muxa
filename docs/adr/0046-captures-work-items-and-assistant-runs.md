@@ -28,16 +28,18 @@ A workspace without `[workspace.assistant]` accepts captures but no requests.
 
 | Record | File | Holds |
 |---|---|---|
-| Capture | `captures/c-<8hex>.json` | `clientId`, original text (≤ 16 KiB, never rewritten), source (`app`, `tmux`, `cli`), optional workspace, append-only notes, state `received` / `sorting` / `sorted`, linked Work items |
-| Work item | `work/w-<8hex>.json` | title, purpose, candidate workspace, state `unsorted` / `open` / `in-progress` / `waiting-other` / `waiting-decision` / `done` / `withdrawn` with reason, `laterAt`, due, next action, linked Captures, requests and Tasks, `rev` |
+| Capture | `captures/c-<8hex>.json` | `clientId`, original text (≤ 16 KiB, never rewritten), source (`app`, `tmux`, `cli`), optional workspace, state `received` (unsorted) / `sorted`, linked Work items, `rev` |
+| Work item | `work/w-<8hex>.json` | title, workspace, state `open` / `done` / `withdrawn`, `laterAt`, `mergedInto`, linked Captures, requests and Tasks, `rev`. `in-progress` and `waiting-decision` are derived from the linked Tasks and requests when listed. |
 | Assistant request | `requests/q-<8hex>.json` | Work item, `version`, workspace, scope `research` / `compare` / `draft`, purpose, run (`t-…`), delivery state with its time, results (≤ 10 kept) |
+
+User notes on a Capture, a due date and a stored next action come later; PA0 and PA1 do not need them.
 
 A Capture and a Work item link many-to-many. Nothing merges or discards them without the user. Captures are never pruned automatically. Lists cap at 200 Captures and 100 closed Work items. Retention and audit are PA3.
 
 ### 3. Duplicates
 
-- **Repeated actions.** A capture carries a client `clientId` (UUID); the same `clientId` returns the stored Capture and writes nothing. One `(work, rev)` makes one request. One `(request, version)` makes one run, found again after a crash by the goal line `muxa-request: q-… v<n>`. A time-limited `creating` claim stops two processes from both creating. `start-task` makes one Task, found again by `muxa-work: w-… <rev>`, as Routine approval does.
-- **The same work captured twice.** `update-work link` joins a Capture to a Work item, or folds one Work item into another, keeping both texts. A Result may list `possibleDuplicates` with a reason; the client offers Link or Keep separate. Nothing links by itself.
+- **Repeated actions.** A capture carries a client `clientId` (UUID); the same `clientId` returns the stored Capture and writes nothing. One `(work, rev)` makes one request. One `(request, version)` makes one run, found again after a crash by the goal line `muxa-request: q-… v<n>`. A time-limited `creating` claim stops two processes from both creating. `create-task {work, workRev}` makes one Task per Work item `rev`, found again by `muxa-work: w-… <rev>`, as Routine approval does. Starting a Task reuses the New Task form.
+- **The same work captured twice.** `sort-capture link` joins a Capture to a Work item. `update-work merge` folds one Work item into another: it is withdrawn with `mergedInto`, and both texts stay. A Result may list `possibleDuplicates` with a reason; the client offers Link or Keep separate. Nothing links by itself.
 
 ### 4. A request runs as a hidden record of kind `assistant-run`
 
@@ -69,12 +71,14 @@ Before `create()`: open `assistant-run` records per workspace ≤ `max_open_runs
 
 | Request | Reply |
 |---|---|
-| `capture {clientId, text, source?, workspace?, assist?}` | `capture-saved {entry, work?, request?}` |
-| `update-work {work, rev, action, …}`, action `later` / `complete` / `withdraw` / `reopen` / `set-workspace` / `link` / `start-task` | `work-saved {work, entry}`; a stale `rev` is `conflict` |
-| `request-assistant {work, rev, workspace, scope, purpose?}` | `work-saved` |
-| `cancel-request {request, rev}` | `work-saved` |
+| `capture {clientId, text, source?, workspace?, assist?}` | `capture-saved {capture, entry, work?, request?}` |
+| `sort-capture {capture, rev, action, work?, title?, workspace?}`, action `work` / `link` / `note` | `capture-saved`; a stale `rev` is `conflict` |
+| `update-work {work, rev, action, title?, workspace?, into?}`, action `edit` / `later` / `complete` / `withdraw` / `reopen` / `merge` | `work-saved {work, entry}`; a stale `rev` is `conflict` |
+| `create-task {…, work?, workRev?}` | `task-saved`; the record keeps `work` |
+| `request-assistant {work, rev, scope, workspace?, purpose?}` | `work-saved {work, entry, request}` |
+| `cancel-request {request, version}` | `work-saved {work, entry, request}` |
 
-`inbox-list` gains `work[]` and `captures[]` (unsorted only). Old clients ignore both. `update-inbox` keeps its `i-` / `e-` ids only. Fixtures go in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:8`. Branches that also raise the level renumber on merge.
+`inbox-list` gains `work[]`, `captures[]` (unsorted only) and `requests[]` (those of the listed Work items). The full contract is `protocol/PROTOCOL.md`, "Captures and Work items". Old clients ignore both. `update-inbox` keeps its `i-` / `e-` ids only. Fixtures go in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:8`. Branches that also raise the level renumber on merge.
 
 ### 10. Clients
 

@@ -251,6 +251,8 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
                 branch: new.branch,
                 base: new.base,
                 r#loop: new.r#loop,
+                work: None,
+                work_rev: None,
             },
             LAUNCH_WAIT,
         )
@@ -656,6 +658,7 @@ mod tests {
     #[test]
     fn a_line_shows_status_session_and_note() {
         let r = TaskRecord {
+            work: None,
             restart_operation: None,
             worker: None,
             read: false,

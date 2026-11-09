@@ -719,6 +719,18 @@ impl Worker {
                 }
                 return None;
             }
+            // The host side comes with `work` level 8 (ADR 0046); until it
+            // advertises that level, no client sends these.
+            Request::Capture { .. }
+            | Request::SortCapture { .. }
+            | Request::UpdateWork { .. }
+            | Request::RequestAssistant { .. }
+            | Request::CancelRequest { .. } => {
+                return Some(Err(error_body(
+                    ErrorCode::Unsupported,
+                    "this host has no assistant yet: update muxa-bridge",
+                )));
+            }
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))

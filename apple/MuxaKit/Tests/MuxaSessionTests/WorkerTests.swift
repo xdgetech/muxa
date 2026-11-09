@@ -38,7 +38,7 @@ struct WorkerRequestTests {
         #expect(session.workers == bridge.workers)
         _ = try await session.createTask(NewTaskRecord(workspace: "work", title: "Title", goal: "Goal", worker: "Reviewer"))
         #expect(bridge.received.contains {
-            if case .createTask(_, "work", "Title", "Goal", _, _, _, _, _, "Reviewer") = $0 { true } else { false }
+            if case .createTask(_, "work", "Title", "Goal", _, _, _, _, _, "Reviewer", nil, nil) = $0 { true } else { false }
         })
     }
 

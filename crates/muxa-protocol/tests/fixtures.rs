@@ -437,3 +437,90 @@ fn reading_fixtures_round_trip() {
     .unwrap();
     assert!(!old.read);
 }
+
+#[test]
+fn assistant_fixtures_round_trip() {
+    use muxa_protocol::{Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level};
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 16);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 9);
+    let read = |name: &str| {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/assistant/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    };
+    let requests: Vec<Request> = read("requests.jsonl")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    // A resent capture carries the same clientId; the host keeps one.
+    let ids: Vec<&str> = requests[..2]
+        .iter()
+        .map(|r| match r {
+            Request::Capture { client_id, .. } => client_id.as_str(),
+            _ => panic!(),
+        })
+        .collect();
+    assert_eq!(ids[0], ids[1]);
+    assert!(matches!(
+        requests[4],
+        Request::SortCapture {
+            action: SortAction::Link,
+            work: Some(_),
+            ..
+        }
+    ));
+    assert!(matches!(
+        requests[11],
+        Request::UpdateWork {
+            action: WorkAction::Merge,
+            into: Some(_),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &requests[15],
+        Request::CreateTask { work: Some(w), work_rev: Some(3), .. } if w == "w-6a7b8c9d"
+    ));
+    let messages: Vec<Message> = read("messages.jsonl")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[0] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_ASSISTANT);
+    let Message::InboxList {
+        work,
+        captures,
+        requests,
+        ..
+    } = &messages[6]
+    else {
+        panic!()
+    };
+    use WorkState::*;
+    assert_eq!(
+        work.iter().map(|w| w.state).collect::<Vec<_>>(),
+        [WaitingDecision, InProgress, Open, Open, Done, Withdrawn]
+    );
+    assert!(work[3].later_at.is_some() && work[5].merged_into.is_some());
+    assert_eq!(captures.len(), 1);
+    assert_eq!(
+        requests.iter().map(|r| r.delivery).collect::<Vec<_>>(),
+        [
+            Delivery::Resulted,
+            Delivery::Processing,
+            Delivery::Unconfirmed,
+            Delivery::TimedOut
+        ]
+    );
+    let results = &requests[0].results;
+    assert!(!results[0].stale && results[1].stale);
+    assert!(results[0].findings.iter().all(|f| !f.sources.is_empty()));
+    // A client before level 8 reads an inbox-list without the new arrays.
+    let old: Message =
+        serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
+    assert!(matches!(old, Message::InboxList { work, .. } if work.is_empty()));
+}

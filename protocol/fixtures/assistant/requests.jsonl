@@ -1,0 +1,16 @@
+{"type":"capture","id":400,"clientId":"5b0e8c1e-3f7a-4d2b-9a61-0c2f4e8b7d10","text":"Onboarding could be shorter","source":"app"}
+{"type":"capture","id":401,"clientId":"5b0e8c1e-3f7a-4d2b-9a61-0c2f4e8b7d10","text":"Onboarding could be shorter","source":"app"}
+{"type":"capture","id":402,"clientId":"a3c94f02-61d8-4b7e-8e25-7f9b1d0c4a66","text":"Check what the visa renewal needs","source":"tmux","workspace":"personal","assist":{"scope":"research","purpose":"Deadline and documents"}}
+{"type":"sort-capture","id":403,"capture":"c-0a1b2c3d","rev":1,"action":"work","title":"Shorten onboarding","workspace":"work"}
+{"type":"sort-capture","id":404,"capture":"c-1b2c3d4e","rev":1,"action":"link","work":"w-0a1b2c3d"}
+{"type":"sort-capture","id":405,"capture":"c-2c3d4e5f","rev":1,"action":"note"}
+{"type":"update-work","id":406,"work":"w-0a1b2c3d","rev":2,"action":"edit","title":"Shorten the onboarding guide","workspace":"work"}
+{"type":"update-work","id":407,"work":"w-0a1b2c3d","rev":3,"action":"later"}
+{"type":"update-work","id":408,"work":"w-0a1b2c3d","rev":4,"action":"complete"}
+{"type":"update-work","id":409,"work":"w-0a1b2c3d","rev":5,"action":"reopen"}
+{"type":"update-work","id":410,"work":"w-3d4e5f6a","rev":1,"action":"withdraw"}
+{"type":"update-work","id":411,"work":"w-4e5f6a7b","rev":2,"action":"merge","into":"w-0a1b2c3d"}
+{"type":"request-assistant","id":412,"work":"w-0a1b2c3d","rev":6,"scope":"compare"}
+{"type":"request-assistant","id":413,"work":"w-0a1b2c3d","rev":6,"scope":"draft","workspace":"work","purpose":"A shorter first page"}
+{"type":"cancel-request","id":414,"request":"q-0a1b2c3d","version":2}
+{"type":"create-task","id":415,"workspace":"work","title":"Draft the merged onboarding page","goal":"Merge steps 3 to 5 of the onboarding guide.","repo":"docs","work":"w-6a7b8c9d","workRev":3}

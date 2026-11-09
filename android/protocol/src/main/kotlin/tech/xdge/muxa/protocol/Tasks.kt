@@ -35,6 +35,8 @@ data class TaskRecord(
     val pendingPrompt: PendingPrompt? = null,
     val worker: String? = null,
     val restartOperation: RestartOperation? = null,
+    /** The Work item the Task was started for (ADR 0046). */
+    val work: String? = null,
 )
 
 /** One agent that worked on a task, as the bridge started or restarted it (ADR 0018). */

@@ -69,7 +69,7 @@ struct TaskWriteTests {
         #expect(record.note == nil)
         #expect(session.taskRecords.contains(record))
         #expect(bridge.received.contains {
-            if case .createTask(_, "work", "Write", "Draft it", nil, nil, nil, nil, nil, nil) = $0 { true } else { false }
+            if case .createTask(_, "work", "Write", "Draft it", nil, nil, nil, nil, nil, nil, nil, nil) = $0 { true } else { false }
         })
     }
 

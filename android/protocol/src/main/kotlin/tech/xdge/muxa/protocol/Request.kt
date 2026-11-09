@@ -82,6 +82,10 @@ sealed interface Request {
         /** Also start a Task Loop (capability `task-loop`, ADR 0019). */
         val loop: LoopSpec? = null,
         val worker: String? = null,
+        /** The Work item the Task is for (`work` level 8, ADR 0046). The same [work] and [workRev] return the Task already made. */
+        val work: String? = null,
+        /** With [work]: the item's `rev` the client saw. */
+        val workRev: Long? = null,
     ) : Request
 
     /**
@@ -145,6 +149,65 @@ sealed interface Request {
      * A `session-started` comes first.
      */
     @Serializable data class StartSession(override val id: Long, val workspace: String, val repo: String) : Request
+
+    /**
+     * Save the user's input (`work` level 8, ADR 0046). The same [clientId] returns the stored Capture and
+     * writes nothing. [assist] also makes a Work item and asks the assistant; it needs [workspace].
+     * A `capture-saved` comes first.
+     */
+    @Serializable
+    data class Capture(
+        override val id: Long,
+        val clientId: String,
+        val text: String,
+        val source: CaptureSource? = null,
+        val workspace: String? = null,
+        val assist: AssistSpec? = null,
+    ) : Request
+
+    /**
+     * Sort an unsorted Capture. [work] goes with `link`; [title] with `work`, where null takes the text's
+     * first line. A stale [rev] is `conflict`. A `capture-saved` comes first.
+     */
+    @Serializable
+    data class SortCapture(
+        override val id: Long,
+        val capture: String,
+        val rev: Long,
+        val action: SortAction,
+        val work: String? = null,
+        val title: String? = null,
+        val workspace: String? = null,
+    ) : Request
+
+    /** Change a Work item. [title] and [workspace] go with `edit`, [into] with `merge`. A stale [rev] is `conflict`. A `work-saved` comes first. */
+    @Serializable
+    data class UpdateWork(
+        override val id: Long,
+        val work: String,
+        val rev: Long,
+        val action: WorkAction,
+        val title: String? = null,
+        val workspace: String? = null,
+        val into: String? = null,
+    ) : Request
+
+    /**
+     * Ask a workspace's agent to work on a Work item; needs the host daemon. [workspace] null takes the item's.
+     * The same [work] and [rev] return the request already made. A `work-saved` comes first.
+     */
+    @Serializable
+    data class RequestAssistant(
+        override val id: Long,
+        val work: String,
+        val rev: Long,
+        val scope: AssistScope,
+        val workspace: String? = null,
+        val purpose: String? = null,
+    ) : Request
+
+    /** Stop a request's [version]. A `work-saved` comes first. */
+    @Serializable data class CancelRequest(override val id: Long, val request: String, val version: Long) : Request
 
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request

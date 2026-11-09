@@ -996,7 +996,8 @@ class PaneSession(
                 }
             }
             is Message.SessionStarted -> startedSessions[message.start] = message
-            is Message.Unknown -> {}
+            // Nothing sends the level-8 requests yet (ADR 0046).
+            is Message.CaptureSaved, is Message.WorkSaved, is Message.Unknown -> {}
         }
     }
 

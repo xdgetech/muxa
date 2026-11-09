@@ -54,9 +54,12 @@ public enum Request: Equatable, Sendable {
     /// Record a new task and start an agent for it; a `task-saved` comes first.
     /// Without `repo` the task gets a directory in its workspace.
     /// With `loop`, the host also starts a Task Loop (capability `task-loop`).
+    /// `work` is the Work item the Task is for and `workRev` its `rev` the client saw
+    /// (`work` level 8, ADR 0046); the same pair returns the Task already made.
     case createTask(
         id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?,
-        branch: String?, base: String?, loop: LoopSpec? = nil, worker: String? = nil)
+        branch: String?, base: String?, loop: LoopSpec? = nil, worker: String? = nil, work: String? = nil,
+        workRev: UInt64? = nil)
     /// Set a task record's status. `rev` is the one the client saw; a stale one
     /// fails with `conflict`. A `task-saved` comes first. `worktree` (`work` level 7)
     /// goes with `done` and `dropped`; nil keeps the worktree.
@@ -88,6 +91,29 @@ public enum Request: Equatable, Sendable {
     /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as
     /// `createTask`'s. A `session-started` comes first.
     case startSession(id: UInt64, workspace: String, repo: String)
+    /// Save the user's input (`work` level 8, ADR 0046). The same `clientId` returns the
+    /// stored Capture and writes nothing. `assist` also makes a Work item and asks the
+    /// assistant; it needs `workspace`. A `capture-saved` comes first.
+    case capture(
+        id: UInt64, clientId: String, text: String, source: CaptureSource? = nil, workspace: String? = nil,
+        assist: AssistSpec? = nil)
+    /// Sort a `received` Capture. `work` goes with `link`; `title` (absent: the text's
+    /// first line) with `work`. A stale `rev` is `conflict`. A `capture-saved` comes first.
+    case sortCapture(
+        id: UInt64, capture: String, rev: UInt64, action: SortAction, work: String? = nil, title: String? = nil,
+        workspace: String? = nil)
+    /// Change a Work item. `title` and `workspace` go with `edit`, `into` with `merge`.
+    /// A stale `rev` is `conflict`. A `work-saved` comes first.
+    case updateWork(
+        id: UInt64, work: String, rev: UInt64, action: WorkAction, title: String? = nil, workspace: String? = nil,
+        into: String? = nil)
+    /// Ask a workspace's agent to work on a Work item; nil `workspace` takes the item's.
+    /// Needs the host daemon. The same `work` and `rev` return the request already made.
+    /// A `work-saved` comes first.
+    case requestAssistant(
+        id: UInt64, work: String, rev: UInt64, scope: AssistScope, workspace: String? = nil, purpose: String? = nil)
+    /// Stop a request's `version`. A `work-saved` comes first.
+    case cancelRequest(id: UInt64, request: String, version: UInt64)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -98,10 +124,13 @@ public enum Request: Equatable, Sendable {
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
-            .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _, _),
+            .createTask(let id, _, _, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
-            .updateInboxEntry(let id, _, _, _, _, _, _), .startSession(let id, _, _):
+            .updateInboxEntry(let id, _, _, _, _, _, _), .startSession(let id, _, _),
+            .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
+            .updateWork(let id, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _),
+            .cancelRequest(let id, _, _):
             id
         }
     }
@@ -113,6 +142,7 @@ extension Request: Codable {
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
         case cols, rows, operation, action, lines
         case routine, entry, until, option, worktree
+        case clientId, source, assist, capture, work, workRev, into, request, version, purpose
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -147,7 +177,8 @@ extension Request: Codable {
             try c.encode(mode, forKey: .mode)
         case .listTasks(let id): try c.head("list-tasks", id)
         case .createTask(
-            let id, let workspace, let title, let goal, let project, let repo, let branch, let base, let loop, let worker):
+            let id, let workspace, let title, let goal, let project, let repo, let branch, let base, let loop, let worker,
+            let work, let workRev):
             try c.head("create-task", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(title, forKey: .title)
@@ -158,6 +189,8 @@ extension Request: Codable {
             try c.encodeIfPresent(base, forKey: .base)
             try c.encodeIfPresent(loop, forKey: .loop)
             try c.encodeIfPresent(worker, forKey: .worker)
+            try c.encodeIfPresent(work, forKey: .work)
+            try c.encodeIfPresent(workRev, forKey: .workRev)
         case .updateTask(let id, let task, let rev, let status, let worktree):
             try c.head("update-task", id)
             try c.encode(task, forKey: .task)
@@ -202,6 +235,40 @@ extension Request: Codable {
             try c.encodeIfPresent(text, forKey: .text)
             try c.encodeIfPresent(option, forKey: .option)
             try c.encodeIfPresent(worktree, forKey: .worktree)
+        case .capture(let id, let clientId, let text, let source, let workspace, let assist):
+            try c.head("capture", id)
+            try c.encode(clientId, forKey: .clientId)
+            try c.encode(text, forKey: .text)
+            try c.encodeIfPresent(source, forKey: .source)
+            try c.encodeIfPresent(workspace, forKey: .workspace)
+            try c.encodeIfPresent(assist, forKey: .assist)
+        case .sortCapture(let id, let capture, let rev, let action, let work, let title, let workspace):
+            try c.head("sort-capture", id)
+            try c.encode(capture, forKey: .capture)
+            try c.encode(rev, forKey: .rev)
+            try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(work, forKey: .work)
+            try c.encodeIfPresent(title, forKey: .title)
+            try c.encodeIfPresent(workspace, forKey: .workspace)
+        case .updateWork(let id, let work, let rev, let action, let title, let workspace, let into):
+            try c.head("update-work", id)
+            try c.encode(work, forKey: .work)
+            try c.encode(rev, forKey: .rev)
+            try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(title, forKey: .title)
+            try c.encodeIfPresent(workspace, forKey: .workspace)
+            try c.encodeIfPresent(into, forKey: .into)
+        case .requestAssistant(let id, let work, let rev, let scope, let workspace, let purpose):
+            try c.head("request-assistant", id)
+            try c.encode(work, forKey: .work)
+            try c.encode(rev, forKey: .rev)
+            try c.encode(scope, forKey: .scope)
+            try c.encodeIfPresent(workspace, forKey: .workspace)
+            try c.encodeIfPresent(purpose, forKey: .purpose)
+        case .cancelRequest(let id, let request, let version):
+            try c.head("cancel-request", id)
+            try c.encode(request, forKey: .request)
+            try c.encode(version, forKey: .version)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -284,7 +351,9 @@ extension Request: Codable {
                 branch: try c.decodeIfPresent(String.self, forKey: .branch),
                 base: try c.decodeIfPresent(String.self, forKey: .base),
                 loop: try c.decodeIfPresent(LoopSpec.self, forKey: .loop),
-                worker: try c.decodeIfPresent(String.self, forKey: .worker))
+                worker: try c.decodeIfPresent(String.self, forKey: .worker),
+                work: try c.decodeIfPresent(String.self, forKey: .work),
+                workRev: try c.decodeIfPresent(UInt64.self, forKey: .workRev))
         case "update-task":
             self = .updateTask(
                 id: id, task: try c.decode(String.self, forKey: .task),
@@ -325,6 +394,40 @@ extension Request: Codable {
                 text: try c.decodeIfPresent(String.self, forKey: .text),
                 option: try c.decodeIfPresent(UInt32.self, forKey: .option),
                 worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree))
+        case "capture":
+            self = .capture(
+                id: id, clientId: try c.decode(String.self, forKey: .clientId),
+                text: try c.decode(String.self, forKey: .text),
+                source: try c.decodeIfPresent(CaptureSource.self, forKey: .source),
+                workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
+                assist: try c.decodeIfPresent(AssistSpec.self, forKey: .assist))
+        case "sort-capture":
+            self = .sortCapture(
+                id: id, capture: try c.decode(String.self, forKey: .capture),
+                rev: try c.decode(UInt64.self, forKey: .rev),
+                action: try c.decode(SortAction.self, forKey: .action),
+                work: try c.decodeIfPresent(String.self, forKey: .work),
+                title: try c.decodeIfPresent(String.self, forKey: .title),
+                workspace: try c.decodeIfPresent(String.self, forKey: .workspace))
+        case "update-work":
+            self = .updateWork(
+                id: id, work: try c.decode(String.self, forKey: .work),
+                rev: try c.decode(UInt64.self, forKey: .rev),
+                action: try c.decode(WorkAction.self, forKey: .action),
+                title: try c.decodeIfPresent(String.self, forKey: .title),
+                workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
+                into: try c.decodeIfPresent(String.self, forKey: .into))
+        case "request-assistant":
+            self = .requestAssistant(
+                id: id, work: try c.decode(String.self, forKey: .work),
+                rev: try c.decode(UInt64.self, forKey: .rev),
+                scope: try c.decode(AssistScope.self, forKey: .scope),
+                workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
+                purpose: try c.decodeIfPresent(String.self, forKey: .purpose))
+        case "cancel-request":
+            self = .cancelRequest(
+                id: id, request: try c.decode(String.self, forKey: .request),
+                version: try c.decode(UInt64.self, forKey: .version))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

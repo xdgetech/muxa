@@ -1,10 +1,16 @@
 //! The muxa client/bridge wire format: one JSON object per line. See
 //! `protocol/PROTOCOL.md`; the shared fixtures in `protocol/fixtures` are the contract.
 
+mod assistant;
 mod items;
 mod restart_recovery;
 mod routines;
 mod workers;
+pub use assistant::{
+    AssistResult, AssistScope, AssistSpec, AssistantRequest, Capture, CaptureSource, CaptureState,
+    Delivery, Finding, PossibleDuplicate, ResultSource, SortAction, WORK_ASSISTANT, WorkAction,
+    WorkItem, WorkState,
+};
 pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_ITEMS};
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
@@ -205,6 +211,14 @@ pub enum Request {
         /// Task's own folder and reads the repo (`work` level 4, ADR 0034).
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         read: bool,
+        /// The Work item the Task is for (`work` level 8, ADR 0046). The host
+        /// links them, and a second request for the same item and `rev`
+        /// returns the Task it already made.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work: Option<String>,
+        /// With `work`: the item's `rev` the client saw.
+        #[serde(default, rename = "workRev", skip_serializing_if = "Option::is_none")]
+        work_rev: Option<u64>,
     },
     /// Turn a reading Task into a repo Task: a worktree, then a restart of
     /// the agent there (`work` level 4, ADR 0034 §3). A `task-saved` comes
@@ -326,6 +340,74 @@ pub enum Request {
         /// As `create-task`'s `repo`.
         repo: String,
     },
+    /// Save the user's input (`work` level 8, ADR 0046). The same `clientId`
+    /// returns the stored Capture and writes nothing. A `capture-saved` comes
+    /// before the `result`.
+    Capture {
+        id: u64,
+        #[serde(rename = "clientId")]
+        client_id: String,
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<CaptureSource>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace: Option<String>,
+        /// Also make a Work item and ask the assistant; needs `workspace`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        assist: Option<AssistSpec>,
+    },
+    /// Sort an unsorted Capture. A `capture-saved` comes before the `result`.
+    SortCapture {
+        id: u64,
+        capture: String,
+        rev: u64,
+        action: SortAction,
+        /// With `link`: the Work item.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work: Option<String>,
+        /// With `work`: the new item's title; absent takes the text's first line.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace: Option<String>,
+    },
+    /// Change a Work item. A stale `rev` is `conflict`. A `work-saved` comes
+    /// before the `result`.
+    UpdateWork {
+        id: u64,
+        work: String,
+        rev: u64,
+        action: WorkAction,
+        /// With `edit`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// With `edit`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace: Option<String>,
+        /// With `merge`: the Work item to merge into.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        into: Option<String>,
+    },
+    /// Ask a workspace's agent to work on a Work item. Needs the muxa daemon.
+    /// The same `work` and `rev` return the request already made. A
+    /// `work-saved` comes before the `result`.
+    RequestAssistant {
+        id: u64,
+        work: String,
+        rev: u64,
+        scope: AssistScope,
+        /// Absent: the Work item's workspace.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        purpose: Option<String>,
+    },
+    /// Stop a request's `version`. A `work-saved` comes before the `result`.
+    CancelRequest {
+        id: u64,
+        request: String,
+        version: u64,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -372,6 +454,11 @@ impl Request {
             | Request::ListInbox { id }
             | Request::UpdateInbox { id, .. }
             | Request::StartSession { id, .. }
+            | Request::Capture { id, .. }
+            | Request::SortCapture { id, .. }
+            | Request::UpdateWork { id, .. }
+            | Request::RequestAssistant { id, .. }
+            | Request::CancelRequest { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -565,6 +652,16 @@ pub enum Message {
         /// Level 3: every item, Routine entries included, open ones first (ADR 0033).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         items: Vec<InboxItem>,
+        /// Level 8: Work items, open ones first, then the ones moved down
+        /// with Later, then at most 100 done or withdrawn, newest first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        work: Vec<WorkItem>,
+        /// Level 8: unsorted Captures, newest first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        captures: Vec<Capture>,
+        /// Level 8: the requests of the listed Work items.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        requests: Vec<AssistantRequest>,
     },
     /// What an `update-inbox` wrote, sent just before its `result`: the
     /// Routine entry, the item, or both for a Routine's item.
@@ -582,6 +679,23 @@ pub enum Message {
         /// `$n`
         session: String,
         name: String,
+    },
+    /// What a `capture` or `sort-capture` wrote, sent just before its `result`.
+    CaptureSaved {
+        capture: u64,
+        entry: Capture,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work: Option<Box<WorkItem>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request: Option<Box<AssistantRequest>>,
+    },
+    /// What an `update-work`, `request-assistant` or `cancel-request` wrote,
+    /// sent just before its `result`.
+    WorkSaved {
+        work: u64,
+        entry: WorkItem,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request: Option<Box<AssistantRequest>>,
     },
     /// The bridge is exiting.
     Bye { reason: String },
@@ -637,6 +751,9 @@ pub struct TaskRecord {
     pub worker: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restart_operation: Option<Box<RestartOperation>>,
+    /// The Work item the Task was started for (ADR 0046).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<String>,
 }
 
 /// What a client asks for when it starts a Task Loop. The host fills in the

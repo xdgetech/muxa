@@ -81,7 +81,7 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
         case .listTasks(let id):
             emit(.taskList(TaskListing(tasks: id, workspaces: workspaces, entries: taskRecords, workers: workers)))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .createTask(let id, let workspace, let title, let goal, _, _, let branch, _, let loop, _):
+        case .createTask(let id, let workspace, let title, let goal, _, _, let branch, _, let loop, _, _, _):
             guard workspaces.contains(where: { $0.name == workspace }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "no such workspace"), sessions: nil))
                 return

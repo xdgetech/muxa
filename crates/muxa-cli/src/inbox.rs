@@ -150,6 +150,7 @@ mod tests {
 
     fn record(id: &str, status: TaskStatus, updated_at: u64) -> TaskRecord {
         TaskRecord {
+            work: None,
             restart_operation: None,
             worker: None,
             read: false,

@@ -73,6 +73,9 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 inbox: id,
                 entries,
                 items,
+                work: Vec::new(),
+                captures: Vec::new(),
+                requests: Vec::new(),
             })
         }
         Request::UpdateInbox {

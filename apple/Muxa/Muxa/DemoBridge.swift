@@ -200,7 +200,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let tasks = lock.withLock { tasks }
             emit(.taskList(TaskListing(tasks: id, workspaces: tasks.workspaces, entries: tasks.records)))
             ok(id)
-        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop, let worker):
+        case .createTask(let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop, let worker, _, _):
             guard worker == nil else { unsupported(id); return }
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.createTask(
@@ -217,6 +217,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
+        // The demo advertises work level 7; it has no assistant yet (ADR 0046).
+        case .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _), .updateWork(let id, _, _, _, _, _, _),
+             .requestAssistant(let id, _, _, _, _, _), .cancelRequest(let id, _, _):
+            unsupported(id, Self.noRequest)
         case .restartAgent(let id, let task, let force, let worker, let rev):
             guard worker == nil, rev == nil else { unsupported(id); return }
             restartAgent(id: id, task: task, force: force)

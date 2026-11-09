@@ -164,7 +164,7 @@ struct FixtureTests {
         #expect(workLevel(capabilities) == workRoutines)
         #expect(workLevel(["work:2", "work:x", "workers"]) == 2)
         #expect(workLevel(["task-records"]) == 0)
-        guard case .inboxList(_, let entries, let items) = try Wire.decodeMessage(messages[3]) else {
+        guard case .inboxList(_, let entries, let items, _, _, _) = try Wire.decodeMessage(messages[3]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(entries.map(\.disposition) == ["open", "later"])
@@ -187,7 +187,7 @@ struct FixtureTests {
             Issue.record("expected hello"); return
         }
         #expect(workLevel(capabilities) == workItems)
-        guard case .inboxList(_, let entries, let items) = try Wire.decodeMessage(messages[1]) else {
+        guard case .inboxList(_, let entries, let items, _, _, _) = try Wire.decodeMessage(messages[1]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(entries.isEmpty)
@@ -220,6 +220,64 @@ struct FixtureTests {
             if case .updateInboxEntry(_, _, .reply, nil, let text?, nil, nil) = $0 { !text.isEmpty } else { false }
         }
         #expect(replies.count == 3)
+    }
+
+    @Test func assistantContractRoundTrips() throws {
+        let requests = try Self.lines("assistant/requests.jsonl")
+        #expect(requests.count == 16)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("assistant/messages.jsonl")
+        #expect(messages.count == 9)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        let decoded = try requests.map(Wire.decodeRequest)
+        // A resent capture carries the same clientId; the host keeps one.
+        let clientIds = decoded[..<2].map { request -> String? in
+            if case .capture(_, let clientId, _, _, _, _) = request { clientId } else { nil }
+        }
+        #expect(clientIds[0] != nil && clientIds[0] == clientIds[1])
+        guard case .sortCapture(_, _, _, .link, _?, _, _) = decoded[4] else {
+            Issue.record("expected link with a work item"); return
+        }
+        guard case .updateWork(_, _, _, .merge, _, _, _?) = decoded[11] else {
+            Issue.record("expected merge with into"); return
+        }
+        guard case .createTask(_, _, _, _, _, _, _, _, _, _, "w-6a7b8c9d", 3) = decoded[15] else {
+            Issue.record("expected create-task with work and workRev"); return
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workAssistant)
+        guard case .inboxList(_, _, _, let work, let captures, let listed) = try Wire.decodeMessage(messages[6]) else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(work.map(\.state) == [.waitingDecision, .inProgress, .open, .open, .done, .withdrawn])
+        #expect(work[3].laterAt != nil && work[5].mergedInto != nil)
+        #expect(captures.count == 1)
+        #expect(listed.map(\.delivery) == [.resulted, .processing, .unconfirmed, .timedOut])
+        let results = listed[0].results
+        #expect(!results[0].stale && results[1].stale)
+        #expect(results[0].findings.allSatisfy { !$0.sources.isEmpty })
+        // A client before level 8 reads an inbox-list without the new arrays.
+        let old = try Wire.decodeMessage(Data(#"{"type":"inbox-list","inbox":1,"entries":[]}"#.utf8))
+        guard case .inboxList(_, _, _, let none, let noCaptures, let noRequests) = old else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(none.isEmpty && noCaptures.isEmpty && noRequests.isEmpty)
+    }
+
+    @Test func unknownWorkStatesAndDeliveriesStillDecode() throws {
+        let decode = { (json: String) in Data(json.utf8) }
+        #expect(try JSONDecoder().decode(WorkState.self, from: decode(#""blocked""#)) == .other("blocked"))
+        #expect(try JSONDecoder().decode(Delivery.self, from: decode(#""queued""#)) == .other("queued"))
+        #expect(try JSONDecoder().decode(CaptureState.self, from: decode(#""archived""#)) == .other("archived"))
+        #expect(try JSONDecoder().decode(CaptureSource.self, from: decode(#""watch""#)) == .other("watch"))
+        #expect(try JSONDecoder().decode(AssistScope.self, from: decode(#""summarize""#)) == .other("summarize"))
+        #expect(try JSONEncoder().encode(Delivery.other("queued")) == decode(#""queued""#))
     }
 
     @Test func unknownItemKindsStatesAndAnswersStillDecode() throws {

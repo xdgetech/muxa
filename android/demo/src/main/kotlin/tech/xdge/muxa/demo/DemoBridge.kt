@@ -203,6 +203,8 @@ class DemoBridge(
             is Request.CloseTask -> closeTask(req.id, req.session, req.mode)
             is Request.Keys -> keys(req)
             is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
+            is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.RequestAssistant,
+            is Request.CancelRequest -> fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }

@@ -88,6 +88,7 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         pending_prompt,
         worker,
         restart_operation,
+        work: None,
     }
 }
 

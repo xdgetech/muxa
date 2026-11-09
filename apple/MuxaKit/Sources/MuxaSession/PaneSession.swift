@@ -779,7 +779,7 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries, let items):
+        case .inboxList(let id, let entries, let items, _, _, _):
             inboxListings[id] = (entries, items)
         case .inboxSaved(let id, let entry, let item):
             // A Routine's item comes with its entry; a Task's item has none.
@@ -796,7 +796,7 @@ public final class PaneSession {
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded:
+            .diffContent, .diffEnded, .imageContent, .imageEnded, .captureSaved, .workSaved:
             break
         }
     }

@@ -52,6 +52,8 @@ object Wire {
         kind<Message.InboxList>("inbox-list"),
         kind<Message.InboxSaved>("inbox-saved"),
         kind<Message.SessionStarted>("session-started"),
+        kind<Message.CaptureSaved>("capture-saved"),
+        kind<Message.WorkSaved>("work-saved"),
         kind<Message.Bye>("bye"),
     )
 
@@ -91,6 +93,11 @@ object Wire {
         kind<Request.ListInbox>("list-inbox"),
         kind<Request.UpdateInbox>("update-inbox"),
         kind<Request.StartSession>("start-session"),
+        kind<Request.Capture>("capture"),
+        kind<Request.SortCapture>("sort-capture"),
+        kind<Request.UpdateWork>("update-work"),
+        kind<Request.RequestAssistant>("request-assistant"),
+        kind<Request.CancelRequest>("cancel-request"),
         kind<Request.Bye>("bye"),
     )
 

@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -127,6 +128,65 @@ class FixtureTest {
         )
         // An older client's request has no `worktree` key at all.
         assertFalse("worktree" in Wire.encode(Request.UpdateTask(1, "t-1", 1, TaskStatus.DONE)))
+    }
+
+    @Test
+    fun assistantContractRoundTrips() {
+        val requests = lines("assistant/requests.jsonl")
+        assertEquals(16, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("assistant/messages.jsonl")
+        assertEquals(9, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        // A resent capture carries the same clientId; the host keeps one.
+        val (first, resent) = requests.take(2).map { (Wire.decodeRequest(it) as Request.Capture).clientId }
+        assertEquals(first, resent)
+        val link = Wire.decodeRequest(requests[4]) as Request.SortCapture
+        assertEquals(SortAction.LINK to "w-0a1b2c3d", link.action to link.work)
+        val merge = Wire.decodeRequest(requests[11]) as Request.UpdateWork
+        assertEquals(WorkAction.MERGE to "w-0a1b2c3d", merge.action to merge.into)
+        val task = Wire.decodeRequest(requests[15]) as Request.CreateTask
+        assertEquals("w-6a7b8c9d" to 3L, task.work to task.workRev)
+
+        assertEquals(WORK_ASSISTANT, workLevel((Wire.decodeMessage(messages[0]) as Message.Hello).capabilities))
+        val list = Wire.decodeMessage(messages[6]) as Message.InboxList
+        assertEquals(
+            listOf(WorkState.WAITING_DECISION, WorkState.IN_PROGRESS, WorkState.OPEN, WorkState.OPEN, WorkState.DONE, WorkState.WITHDRAWN),
+            list.work.map { it.state },
+        )
+        assertTrue(list.work[3].laterAt != null && list.work[5].mergedInto != null)
+        assertEquals(1, list.captures.size)
+        assertEquals(
+            listOf(Delivery.RESULTED, Delivery.PROCESSING, Delivery.UNCONFIRMED, Delivery.TIMED_OUT),
+            list.requests.map { it.delivery },
+        )
+        val results = list.requests[0].results
+        assertEquals(listOf(false, true), results.map { it.stale })
+        assertTrue(results[0].findings.all { it.sources.isNotEmpty() })
+        // A client before level 8 reads an inbox-list without the new arrays.
+        val old = Wire.decodeMessage("""{"type":"inbox-list","inbox":1,"entries":[]}""") as Message.InboxList
+        assertEquals(Triple(emptyList<WorkItem>(), emptyList<Capture>(), emptyList<AssistantRequest>()), Triple(old.work, old.captures, old.requests))
+        // An older client's create-task has no work keys at all.
+        val plain = Wire.encode(Request.CreateTask(1, "w", "t", "g"))
+        assertFalse("\"work\"" in plain || "workRev" in plain)
+    }
+
+    @Test
+    fun unknownWorkStatesAndDeliveriesStillDecode() {
+        val line = """{"type":"work-saved","work":1,"entry":{"id":"w-00000001","rev":1,"title":"t","state":"blocked",""" +
+            """"createdAt":1,"updatedAt":1},"request":{"id":"q-00000001","work":"w-00000001","version":1,"workspace":"w",""" +
+            """"scope":"plan","delivery":"queued","deliveryAt":1,"createdAt":1,"updatedAt":1}}"""
+        val saved = Wire.decodeMessage(line) as Message.WorkSaved
+        assertEquals(WorkState("blocked"), saved.entry.state)
+        assertEquals(WorkState.OPEN, saved.entry.state.shown)
+        assertEquals(WorkState.DONE, WorkState.DONE.shown)
+        assertEquals(Delivery("queued"), saved.request?.delivery)
+        assertEquals(AssistScope("plan"), saved.request?.scope)
+        assertEquals(tree(line), tree(Wire.encode(saved)))
     }
 
     @Test
