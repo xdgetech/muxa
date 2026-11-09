@@ -34,6 +34,8 @@ pub struct Answer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Plan {
     Read,
+    /// Sets or clears `protectedAt` (ADR 0046). Any item, open or closed.
+    Protect(bool),
     /// Moves the item down (ADR 0040).
     Later,
     Status(TaskStatus),
@@ -95,11 +97,10 @@ async fn find(cx: &Context, id: &str) -> Result<(String, InboxItem), ErrorBody> 
 /// Pure. `item` is as shown.
 fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
     use InboxAction::*;
-    if answer.action == Read {
-        return Ok(Plan::Read);
-    }
+    // Accepted on any item and never listed in `answers`.
+    let always = matches!(answer.action, Read | Protect | Unprotect);
     let allowed = answers(item);
-    if !allowed.contains(&answer.action) {
+    if !always && !allowed.contains(&answer.action) {
         return Err(not_allowed(item, answer.action, &allowed));
     }
     Ok(match answer.action {
@@ -128,7 +129,10 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
                 other => other,
             }
         }
-        KeepOpen | Keep | Dismiss | Read => Plan::Nothing,
+        Read => Plan::Read,
+        Protect => Plan::Protect(true),
+        Unprotect => Plan::Protect(false),
+        KeepOpen | Keep | Dismiss => Plan::Nothing,
         // `routines::handle` sends it to `items::ask_agent` first.
         AskAgent => return Err(bad("ask-agent is not an answer to the Task")),
     })
@@ -249,7 +253,7 @@ async fn act(
             prompt::wait_taken(cx, pane, &asked).await?;
             reply::send_after_deny(&cx.env().await?, task, &text).await
         }
-        Plan::Read | Plan::Later | Plan::Nothing => Ok(()),
+        Plan::Read | Plan::Protect(_) | Plan::Later | Plan::Nothing => Ok(()),
     }
 }
 
@@ -295,6 +299,10 @@ fn apply(
         Plan::Read => {
             item.read_at.get_or_insert(at);
         }
+        Plan::Protect(true) => {
+            item.protected_at.get_or_insert(at);
+        }
+        Plan::Protect(false) => item.protected_at = None,
         Plan::Later => {
             item.state = ItemState::Open;
             item.later_at = Some(at);

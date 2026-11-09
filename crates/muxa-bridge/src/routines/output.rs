@@ -316,7 +316,7 @@ pub fn publish(
     }
     let mut published = 0;
     for item in output.items {
-        if state.entries.iter().any(|s| s.entry.key == item.key) {
+        if state.has_key(&item.key) {
             continue;
         }
         let id = loop {
@@ -342,6 +342,7 @@ pub fn publish(
                 read_at: None,
                 later_at: None,
                 until: None,
+                protected_at: None,
                 proposal: item.proposal,
                 task: None,
             },

@@ -45,7 +45,9 @@ final class ItemBridge: FakeBridge, @unchecked Sendable {
                 emit(.result(id: id, error: nil, sessions: nil))
                 return
             }
-            if action == .read {
+            if action == .protect || action == .unprotect {
+                items[i].protectedAt = action == .protect ? 70 : nil
+            } else if action == .read {
                 if refusesRead { return refuse(id, .badRequest, "Read does not answer a Routine's entry") }
                 items[i].readAt = 50
             } else {
@@ -58,10 +60,21 @@ final class ItemBridge: FakeBridge, @unchecked Sendable {
             }
             emit(.inboxSaved(inbox: id, entry: nil, item: items[i]))
             emit(.result(id: id, error: nil, sessions: nil))
+        case .deleteInbox(let id, let days):
+            record(req)
+            guard (1...3650).contains(days) else { return refuse(id, .badRequest, "olderThanDays must be 1 to 3650") }
+            let cutoff = now - UInt64(days) * 86_400
+            let before = items.count
+            items.removeAll { $0.createdAt < cutoff && $0.protectedAt == nil }
+            emit(.inboxDeleted(inbox: id, deleted: UInt32(before - items.count)))
+            emit(.result(id: id, error: nil, sessions: nil))
         default:
             try await super.send(line)
         }
     }
+
+    /// The host's clock for `delete-inbox`, epoch seconds.
+    var now: UInt64 = 10 * 86_400
 
     private let lock = NSLock()
     private var _sent: [Request] = []

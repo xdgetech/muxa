@@ -18,7 +18,7 @@ import tech.xdge.muxa.protocol.Role
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
-import tech.xdge.muxa.protocol.WORK_WORKTREE_END
+import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.session.AgentAlert
 import tech.xdge.muxa.session.ChatLog
@@ -293,7 +293,8 @@ class AppModel(
     private val lastDocs = mutableMapOf<String, String>()
     private var demoAlerts = false
     private var demoTaskRecords = true
-    private var demoWorkLevel = WORK_WORKTREE_END
+    private var demoWorkLevel = WORK_DELETE_INBOX
+    private var demoOldItems = false
     private var demoSet = DemoBridge.Content.SHOWCASE
 
     /** The demo bridge serves this host only; a host added during the demo uses SSH. */
@@ -324,7 +325,8 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        demoWorkLevel = WORK_WORKTREE_END
+        demoWorkLevel = WORK_DELETE_INBOX
+        demoOldItems = false
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
     }
@@ -334,10 +336,12 @@ class AppModel(
         set: DemoBridge.Content,
         alerts: Boolean,
         taskRecords: Boolean = true,
-        workLevel: Int = WORK_WORKTREE_END,
+        workLevel: Int = WORK_DELETE_INBOX,
+        oldItems: Boolean = false,
     ) {
         demoTaskRecords = taskRecords
         demoWorkLevel = workLevel
+        demoOldItems = oldItems
         // The store screenshots show the list: a machine's name there, not the demo's.
         val host = if (set == DemoBridge.Content.SHOWCASE) {
             Host(name = "Mac mini", target = SshTarget(host = "mac-mini.local", user = "you"))
@@ -354,7 +358,7 @@ class AppModel(
             val alerts: Boolean,
             val taskRecords: Boolean,
             val canLeave: Boolean,
-            val workLevel: Int = WORK_WORKTREE_END,
+            val workLevel: Int = WORK_DELETE_INBOX,
         )
     }
 
@@ -508,7 +512,7 @@ class AppModel(
     }
 
     private suspend fun open(host: Host): BridgeChannel {
-        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords, demoWorkLevel)
+        if (demo && host.id == demoHostId) return DemoBridge(demoSet, demoAlerts, demoTaskRecords, demoWorkLevel, demoOldItems)
         return SshBridge.connect(host.target, keys.loadOrCreate())
     }
 

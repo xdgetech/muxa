@@ -24,6 +24,21 @@ fun List<InboxItem>.waiting(now: Long = System.currentTimeMillis() / 1000): List
 
 val InboxItem.isUnread: Boolean get() = readAt == null
 
+/** Delete Old keeps it (ADR 0046). */
+val InboxItem.isProtected: Boolean get() = protectedAt != null
+
+/** The seconds in one of Delete Old's days, as the host counts them. */
+private const val DAY_SECONDS = 86_400L
+
+/**
+ * The items `delete-inbox` with [olderThanDays] removes, open or closed: made before the host's
+ * cutoff and not protected. The confirmation names their count (docs/inbox.md).
+ */
+fun List<InboxItem>.deletable(olderThanDays: Int, now: Long = System.currentTimeMillis() / 1000): List<InboxItem> {
+    val cutoff = now - olderThanDays * DAY_SECONDS
+    return filter { !it.isProtected && it.createdAt < cutoff }
+}
+
 /** An agent is blocked on it, or it stopped: what a phone opens on after connecting. */
 val InboxItem.isUrgent: Boolean get() = kind == ItemKind.ASK || kind == ItemKind.FAILURE
 

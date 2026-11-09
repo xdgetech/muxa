@@ -21,6 +21,9 @@ const val WORK_ASK_AGENT = 6
 /** Level 7: `worktree` on `update-task` and `update-inbox`, and `would-lose-work` (ADR 0043). */
 const val WORK_WORKTREE_END = 7
 
+/** Level 8: `protect` and `unprotect` on an Inbox item, and `delete-inbox` (ADR 0046). */
+const val WORK_DELETE_INBOX = 8
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }
@@ -81,6 +84,8 @@ data class InboxEntry(
     val disposition: String,
     /** With `later`: epoch seconds. */
     val until: Long? = null,
+    /** Set by `protect`: `delete-inbox` keeps the entry (ADR 0046). */
+    val protectedAt: Long? = null,
     val proposal: Proposal? = null,
     /** After approval: the Task that performs it. */
     val task: String? = null,
@@ -112,4 +117,8 @@ enum class InboxAction {
 
     /** Sends the item and its text to the workspace's Ask session; the item stays open (ADR 0041). */
     @SerialName("ask-agent") ASK_AGENT,
+
+    /** Any item, open or closed: `delete-inbox` keeps it. Never in `answers` (ADR 0046). */
+    @SerialName("protect") PROTECT,
+    @SerialName("unprotect") UNPROTECT,
 }

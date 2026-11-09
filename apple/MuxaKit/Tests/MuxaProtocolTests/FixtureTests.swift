@@ -222,6 +222,41 @@ struct FixtureTests {
         #expect(replies.count == 3)
     }
 
+    @Test func deleteInboxContractRoundTrips() throws {
+        let requests = try Self.lines("inbox-delete/requests.jsonl")
+        #expect(requests.count == 5)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("inbox-delete/messages.jsonl")
+        #expect(messages.count == 6)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workDeleteInbox)
+        guard case .inboxSaved(_, nil, let item?) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected inbox-saved with an item only"); return
+        }
+        #expect(item.protectedAt == 1_762_160_000)
+        #expect(!item.answers.contains(.protect), "protect is never an answer")
+        guard case .inboxSaved(_, let entry?, let both?) = try Wire.decodeMessage(messages[2]) else {
+            Issue.record("expected inbox-saved with an entry and an item"); return
+        }
+        #expect(entry.protectedAt == 1_762_160_000 && both.protectedAt == 1_762_160_000)
+        guard case .inboxDeleted(403, 12) = try Wire.decodeMessage(messages[3]) else {
+            Issue.record("expected inbox-deleted 12"); return
+        }
+        guard case .updateInboxEntry(_, _, .protect, nil, nil, nil, nil) = try Wire.decodeRequest(requests[0]),
+              case .updateInboxEntry(_, _, .unprotect, nil, nil, nil, nil) = try Wire.decodeRequest(requests[2]),
+              case .deleteInbox(403, 3) = try Wire.decodeRequest(requests[3])
+        else {
+            Issue.record("expected protect, unprotect and delete-inbox 3"); return
+        }
+    }
+
     @Test func unknownItemKindsStatesAndAnswersStillDecode() throws {
         let json = #"{"id":"i-00000001","kind":"handoff","state":"snoozed","question":"q","workspace":"w","title":"t","#
             + #""createdAt":1,"answer":"escalate","answers":["accept","escalate","later"]}"#

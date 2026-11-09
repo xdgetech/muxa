@@ -21,6 +21,8 @@ Inbox (3)
 - Order: `ask` items first, then newest first. Items moved down with Later come last, in the order they were moved (ADR 0040).
 - A swipe right is ✓ (the item closes), a swipe left is Later: the item moves to the bottom at once and stays there until it is answered (ADR 0040 §6). A full swipe acts at once.
 - Empty: "Nothing needs you", and a link to All Tasks.
+- A protected item shows a lock (`lock.fill`, "Protected" for VoiceOver and TalkBack) after its age (ADR 0046).
+- **Delete Old** (`trash`), in the list's toolbar menu: **Older than 1 day**, **3 days** or **5 days**. A confirmation names the count: "Delete 12 items older than 3 days? Protected items stay." with a destructive **Delete** and **Cancel**. The count is the listed items older than that, not protected. With none, it says "No unprotected items are older than 3 days." with only **OK**. After the delete the list loads again. A host below `work:8` shows no Delete Old.
 
 ### The item screen
 
@@ -42,16 +44,16 @@ Inbox (3)
 1. The question, and the source. With a session, the source opens it: its Chat where the agent has one, else its pane, which switches between Chat, Agent and Shell.
 2. The summary: the agent's last message for the turn, as Markdown.
 3. Attachments as a list with file names. Each opens in the Reader and returns to the item; a link opens in the browser.
-4. The top bar is triage, the same on every item (ADR 0040 §3): **Later** (gray, the "Play Last" symbol) moves the item to the bottom; **✓** (green) closes only the item; **…** holds **Complete Task**, **Drop Task** and **Open Session**.
+4. The top bar is triage, the same on every item (ADR 0040 §3): **Later** (gray, the "Play Last" symbol) moves the item to the bottom; **✓** (green) closes only the item; **…** holds **Complete Task**, **Drop Task**, **Protect** or **Unprotect** (`lock` / `lock.open`, with `work:8`, ADR 0046) and **Open Session**. A protected item still takes ✓, Later and every answer; only Delete Old keeps it.
 5. The bottom answers the agent: its decisions, then one reply box with a send arrow.
 
 | Kind | Bottom | … |
 |---|---|---|
-| `ask` | Allow, Deny; a question shows its options; reply box: Deny & Send | Open Session |
-| `review` | reply box: Send | Complete Task, Open Session |
-| `failure` | Retry; reply box: Send | Drop Task, Open Session |
-| `proposal` | Approve, Reject; reply box: Ask Agent | — |
-| `briefing` | reply box: Ask Agent | — |
+| `ask` | Allow, Deny; a question shows its options; reply box: Deny & Send | Protect, Open Session |
+| `review` | reply box: Send | Complete Task, Protect, Open Session |
+| `failure` | Retry; reply box: Send | Drop Task, Protect, Open Session |
+| `proposal` | Approve, Reject; reply box: Ask Agent | Protect |
+| `briefing` | reply box: Ask Agent | Protect |
 
 The reply box sends **Send** on an item with a session: the text goes to its agent as it is. On one without a session it sends **Ask Agent**: the item and the text go to the workspace's Ask session, `ask-<workspace>`, which the host starts on the first request; the item stays open and the session's Chat opens (ADR 0041). The placeholder says where the text goes. Complete Task and Drop Task ask for no confirmation, because they only set the Task's status; Approve on a proposal still shows the action, target and content first. An answer returns to the list.
 
@@ -77,7 +79,8 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 
 - The sidebar shows the Inbox section above the session tree: the count and the first open items. `Enter` on one opens it in `prefix + T`.
 - `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
-- The keys follow the apps' item screen (ADR 0040), on two lines. Triage: `l` Later (moves the item down, with no time), `d` ✓ Done (only the item), `c` Complete Task, `x` Drop Task, `o` Open Session. Answers: `a` the first decision (Allow, Approve or Retry; never Complete Task), `r` Deny or Reject, `1`–`9` a question's option, `s` the reply box (Send with a session, Deny & Send on a permission, Ask Agent without a session; it asks for the text). Otherwise `1`–`9` open evidence (the diff first). `Enter` also opens the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Only the keys the item takes are listed.
+- The keys follow the apps' item screen (ADR 0040), on two lines. Triage: `l` Later (moves the item down, with no time), `d` ✓ Done (only the item), `c` Complete Task, `x` Drop Task, `p` Protect or Unprotect (`work:8`), `o` Open Session. Answers: `a` the first decision (Allow, Approve or Retry; never Complete Task), `r` Deny or Reject, `1`–`9` a question's option, `s` the reply box (Send with a session, Deny & Send on a permission, Ask Agent without a session; it asks for the text). Otherwise `1`–`9` open evidence (the diff first). `Enter` also opens the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Only the keys the item takes are listed.
+- `D` is Delete Old (`work:8`): it asks for 1, 3 or 5 days, then confirms with the count, as the apps do. A row and an item show "protected".
 - Labels are the apps' labels (ADR 0033 §4a, ADR 0040): `accept` is "Complete Task", `drop` "Drop Task", `keep-open` and `dismiss` "✓ Done", `later` "Later", `ask-agent` "Ask Agent", `reply` is "Send" ("Deny & Send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
 
 ## Tasks and Sessions modes

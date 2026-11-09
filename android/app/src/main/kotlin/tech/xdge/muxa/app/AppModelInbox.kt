@@ -12,6 +12,9 @@ import tech.xdge.muxa.session.key
 sealed interface InboxPrompt {
     /** A proposal item's action, target and content, before approval. */
     data class ApproveItem(val item: InboxItem) : InboxPrompt
+
+    /** Delete Old's confirmation: [count] listed items older than [days], not protected (ADR 0046). */
+    data class DeleteOld(val days: Int, val count: Int) : InboxPrompt
 }
 
 // The Routines' actions (ADR 0026). A failure lands in `inboxError` with the host's reason.

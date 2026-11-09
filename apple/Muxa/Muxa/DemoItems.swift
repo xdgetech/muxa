@@ -47,7 +47,7 @@ extension DemoWork {
         return InboxItem(
             id: entry.id, kind: kind, state: state, question: entry.title, workspace: entry.workspace, title: entry.title,
             createdAt: entry.createdAt, readAt: entryReads[entry.id], laterAt: entryLaters[entry.id],
-            answer: entry.disposition == "approved" ? .approve : (state == .answered ? .dismiss : nil),
+            protectedAt: entry.protectedAt, answer: entry.disposition == "approved" ? .approve : (state == .answered ? .dismiss : nil),
             summary: entry.body, task: entry.task, attachments: Attachments(links: entry.links ?? []),
             routine: entry.routine, proposal: entry.proposal, answers: answers)
     }
@@ -84,6 +84,42 @@ extension DemoWork {
         taskItems[i].until = nil
         return (taskItems[i], effect)
     }
+
+    /// Protect and Unprotect, on any item, open or closed. A Routine's item returns
+    /// its entry too.
+    mutating func protect(_ id: String, _ on: Bool) throws(Refusal) -> (InboxEntry?, InboxItem) {
+        let at = on ? Self.now : nil
+        if let i = entries.firstIndex(where: { $0.id == id }) {
+            entries[i].protectedAt = at
+            let entry = shownEntries[i]
+            return (entry, item(for: entry))
+        }
+        guard let i = taskItems.firstIndex(where: { $0.id == id }) else { throw Refusal(.badRequest, "\(id) is not an item") }
+        taskItems[i].protectedAt = at
+        return (nil, taskItems[i])
+    }
+
+    /// Delete Old removes every unprotected item made more than `days` days ago, open
+    /// or closed, as the host does. Returns how many.
+    mutating func delete(olderThanDays days: UInt32) throws(Refusal) -> UInt32 {
+        guard (1...3650).contains(days) else { throw Refusal(.badRequest, "olderThanDays must be 1 to 3650") }
+        let span = UInt64(days) * 86_400
+        let cutoff = Self.now > span ? Self.now - span : 0
+        let before = taskItems.count + entries.count
+        taskItems.removeAll { $0.createdAt < cutoff && $0.protectedAt == nil }
+        entries.removeAll { $0.createdAt < cutoff && $0.protectedAt == nil }
+        return UInt32(before - taskItems.count - entries.count)
+    }
+
+    #if DEBUG
+    /// `-old-items`: the failure and the last proposal were made four days ago, for
+    /// Delete Old's UI test. Their order in the list stays.
+    mutating func ageForDeleteOld() {
+        let fourDays: UInt64 = 4 * 86_400
+        if let i = taskItems.firstIndex(where: { $0.id == "i-0000a003" }) { taskItems[i].createdAt = Self.now - fourDays }
+        if let i = entries.firstIndex(where: { $0.id == "e-000000a3" }) { entries[i].createdAt = Self.now - fourDays - 60 }
+    }
+    #endif
 
     private static func effect(
         of action: InboxAction, on item: InboxItem, worktree: WorktreeEnd?, tasks: inout DemoTasks

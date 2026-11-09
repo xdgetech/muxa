@@ -61,7 +61,8 @@ struct ReturnOpensItem: View {
     }
 }
 
-/// One row: the question, then the source and the age. The dot marks unread.
+/// One row: the question, then the source and the age, and a lock when it is
+/// protected. The dot marks unread.
 struct InboxItemRow: View {
     let item: InboxItem
 
@@ -73,7 +74,14 @@ struct InboxItemRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.question).font(item.isUnread ? .headline : .body).lineLimit(2)
-                Text(item.source()).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(item.source())
+                    if item.isProtected {
+                        Image(systemName: Icon.protected).accessibilityLabel("Protected")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }

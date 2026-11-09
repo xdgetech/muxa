@@ -17,9 +17,9 @@ final class InboxItemTests: XCTestCase {
 
     /// The demo starts in Inbox mode, and connect stays on the list.
     @MainActor
-    private func launchOnInbox() -> XCUIApplication {
+    private func launchOnInbox(_ more: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-mode", "inbox"]
+        app.launchArguments = ["-demo", "-mode", "inbox"] + more
         app.launch()
         XCTAssertTrue(row(app, "i-0000a001").waitForExistence(timeout: 10))
         return app
@@ -315,6 +315,79 @@ final class InboxItemTests: XCTestCase {
         let button = app.collectionViews["sidebar-list"].buttons["Done"]
         if button.waitForExistence(timeout: 2), button.isHittable { button.tap() }
         XCTAssertTrue(briefing.waitForNonExistence(timeout: 5))
+    }
+
+    /// Protect in the … menu shows a lock on the row; the item stays open and keeps
+    /// its answers. Unprotect takes the lock away (ADR 0046).
+    @MainActor
+    func testProtectShowsTheLock() throws {
+        let app = launchOnInbox()
+        XCTAssertFalse(row(app, "i-0000a002").label.contains("Protected"))
+        open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
+        tapWhenReady(app.buttons["item-more"])
+        tapWhenReady(app.buttons["item-protect"])
+        XCTAssertTrue(answer(app, "keep-open").waitForExistence(timeout: 5), "the item stays, with ✓")
+        tapWhenReady(app.buttons["item-more"])
+        XCTAssertTrue(app.buttons["item-unprotect"].waitForExistence(timeout: 5))
+        dismissPopover(app)
+        if isPhone { tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch) }
+        let locked = NSPredicate(format: "label CONTAINS 'Protected'")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: locked, object: row(app, "i-0000a002"))],
+                                      timeout: 5), .completed, row(app, "i-0000a002").label)
+        save("inbox-protected")
+    }
+
+    /// Delete Old asks with the count, then removes the old items but keeps a protected
+    /// one. With nothing to delete it only says so (ADR 0046). `-old-items` makes the
+    /// failure and the last proposal four days old.
+    @MainActor
+    func testDeleteOldKeepsProtectedItems() throws {
+        let app = launchOnInbox(["-old-items"])
+        open(app, "i-0000a003", question: "The agent stopped with an error")
+        tapWhenReady(app.buttons["item-more"])
+        tapWhenReady(app.buttons["item-protect"])
+        if isPhone {
+            tapWhenReady(app.navigationBars.buttons["BackButton"].firstMatch)
+        }
+        let old = row(app, "e-000000a3")
+        reveal(app, old)
+        XCTAssertTrue(old.waitForExistence(timeout: 5))
+        XCTAssertTrue(row(app, "i-0000a003").label.contains("Protected"), row(app, "i-0000a003").label)
+
+        deleteOld(app, days: 3)
+        let ask = app.alerts.firstMatch
+        XCTAssertTrue(ask.waitForExistence(timeout: 5))
+        XCTAssertTrue(ask.staticTexts["Delete 1 item older than 3 days? Protected items stay."].exists, ask.debugDescription)
+        tapWhenReady(ask.buttons["Delete"])
+        XCTAssertTrue(old.waitForNonExistence(timeout: 5), "the old proposal is gone")
+        reveal(app, row(app, "i-0000a003"))
+        XCTAssertTrue(row(app, "i-0000a003").exists, "the protected item stays")
+        XCTAssertTrue(row(app, "i-0000a002").exists, "a new item stays")
+
+        deleteOld(app, days: 5)
+        XCTAssertTrue(ask.waitForExistence(timeout: 5))
+        XCTAssertTrue(ask.staticTexts["No unprotected items are older than 5 days."].exists, ask.debugDescription)
+        XCTAssertFalse(ask.buttons["Delete"].exists)
+        tapWhenReady(ask.buttons["OK"])
+    }
+
+    /// A host below `work:8` offers neither Protect nor Delete Old.
+    @MainActor
+    func testAnOlderHostOffersNoProtectOrDeleteOld() throws {
+        let app = launchOnInbox(["-work7"])
+        XCTAssertFalse(app.buttons["inbox-more"].exists, "no Delete Old")
+        open(app, "i-0000a002", question: "Ready for review: Fix the login redirect")
+        tapWhenReady(app.buttons["item-more"])
+        XCTAssertTrue(answer(app, "accept").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["item-protect"].exists, "no Protect")
+    }
+
+    /// The list's toolbar menu: Delete Old, then the age.
+    @MainActor
+    private func deleteOld(_ app: XCUIApplication, days: Int) {
+        tapWhenReady(app.buttons["inbox-more"])
+        tapWhenReady(app.buttons["Delete Old"])
+        tapWhenReady(app.buttons[days == 1 ? "Older than 1 day" : "Older than \(days) days"])
     }
 
     /// From the pane, Cmd+T, Cmd+L and Cmd+Shift+S pick the modes and show the sidebar;

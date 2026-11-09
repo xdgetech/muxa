@@ -95,6 +95,8 @@ public final class PaneSession {
     @ObservationIgnored var savedRoutines: [UInt64: RoutineInfo] = [:]
     @ObservationIgnored var savedEntries: [UInt64: InboxEntry] = [:]
     @ObservationIgnored var savedItems: [UInt64: InboxItem] = [:]
+    /// `inbox-deleted` counts, by request id, until the result arrives (`PaneSession+Items.swift`).
+    @ObservationIgnored var deletedCounts: [UInt64: UInt32] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
     @ObservationIgnored var startedSessions: [UInt64: StartedSession] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
@@ -791,6 +793,8 @@ public final class PaneSession {
                 savedItems[id] = item
                 keep(item)
             }
+        case .inboxDeleted(let id, let deleted):
+            deletedCounts[id] = deleted
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
@@ -835,6 +839,7 @@ public final class PaneSession {
         savedRoutines = [:]
         savedEntries = [:]
         savedItems = [:]
+        deletedCounts = [:]
         startedSessions = [:]
         inputs = []
         sentViewport = nil

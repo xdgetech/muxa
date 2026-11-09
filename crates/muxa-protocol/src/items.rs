@@ -32,6 +32,9 @@ pub struct InboxItem {
     /// Only on an item stored before ADR 0040: when a hidden item was open again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<u64>,
+    /// Set by `protect`: `delete-inbox` keeps the item (ADR 0046).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_at: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answered_at: Option<u64>,
     /// With `answered`: the answer given.

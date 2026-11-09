@@ -236,6 +236,33 @@ class FixtureTest {
         assertEquals(listOf(SourceLink("https://example.com/runs/42")), failure.links)
     }
 
+    /** ADR 0046: `protect`, `unprotect` and `delete-inbox`. */
+    @Test
+    fun deleteContractRoundTrips() {
+        val requests = lines("inbox-delete/requests.jsonl")
+        assertEquals(5, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("inbox-delete/messages.jsonl")
+        assertEquals(6, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        assertEquals(WORK_DELETE_INBOX, workLevel((Wire.decodeMessage(messages[0]) as Message.Hello).capabilities))
+        val item = (Wire.decodeMessage(messages[1]) as Message.InboxSaved).item!!
+        assertEquals(1_762_160_000L, item.protectedAt)
+        assertFalse(InboxAction.PROTECT in item.answers)
+        val both = Wire.decodeMessage(messages[2]) as Message.InboxSaved
+        assertEquals(both.entry?.protectedAt, both.item?.protectedAt)
+        assertEquals(Message.InboxDeleted(inbox = 403, deleted = 12), Wire.decodeMessage(messages[3]))
+        assertEquals(
+            listOf(InboxAction.PROTECT, InboxAction.PROTECT, InboxAction.UNPROTECT),
+            requests.take(3).map { (Wire.decodeRequest(it) as Request.UpdateInbox).action },
+        )
+        assertEquals(Request.DeleteInbox(id = 403, olderThanDays = 3), Wire.decodeRequest(requests[3]))
+    }
+
     @Test
     fun unknownItemKindsStatesAndAnswersStillDecode() {
         val line = """{"type":"inbox-list","inbox":1,"entries":[],"items":[{"id":"i-00000001","kind":"handoff",""" +

@@ -47,7 +47,7 @@ extension PaneSession {
             throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the Inbox item."))
         }
         switch action {
-        case .read: break
+        case .read, .protect, .unprotect: break
         // The host moved the item down (ADR 0040): its order is the list's.
         case .later: await loadWork()
         // Accept, Drop, Retry and an approved proposal change a Task.

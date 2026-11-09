@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.InboxPrompt
 import tech.xdge.muxa.app.answer
+import tech.xdge.muxa.app.deleteOld
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.Proposal
 
@@ -28,6 +30,7 @@ fun InboxDialogs(model: AppModel) {
         is InboxPrompt.ApproveItem -> prompt.item.proposal?.let { p ->
             ProposalDialog(model, prompt.item.title, prompt.item.workspace, p) { model.answer(prompt.item, InboxAction.APPROVE) }
         }
+        is InboxPrompt.DeleteOld -> DeleteOldDialog(model, prompt)
         null -> {}
     }
     model.inboxError?.let { error ->
@@ -38,6 +41,32 @@ fun InboxDialogs(model: AppModel) {
             confirmButton = { TextButton({ model.inboxError = null }) { Text("OK") } },
         )
     }
+}
+
+/** Names the count first; with none, there is nothing to confirm (docs/inbox.md). */
+@Composable
+private fun DeleteOldDialog(model: AppModel, prompt: InboxPrompt.DeleteOld) {
+    val older = dayCount(prompt.days)
+    if (prompt.count == 0) {
+        AlertDialog(
+            onDismissRequest = { model.inboxPrompt = null },
+            text = { Text("No unprotected items are older than $older.", Modifier.testTag("delete-old-message")) },
+            confirmButton = { TextButton({ model.inboxPrompt = null }, Modifier.testTag("delete-old-ok")) { Text("OK") } },
+        )
+        return
+    }
+    val items = if (prompt.count == 1) "1 item" else "${prompt.count} items"
+    AlertDialog(
+        onDismissRequest = { model.inboxPrompt = null },
+        text = { Text("Delete $items older than $older? Protected items stay.", Modifier.testTag("delete-old-message")) },
+        confirmButton = {
+            TextButton(
+                { model.deleteOld(prompt.days) }, Modifier.testTag("delete-old-confirm"),
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Delete") }
+        },
+        dismissButton = { TextButton({ model.inboxPrompt = null }, Modifier.testTag("delete-old-cancel")) { Text("Cancel") } },
+    )
 }
 
 /** The proposal exactly as the Task will get it. Approval creates one Task. */

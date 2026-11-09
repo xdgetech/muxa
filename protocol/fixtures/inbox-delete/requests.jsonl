@@ -1,0 +1,5 @@
+{"type":"update-inbox","id":400,"entry":"i-2c3d4e5f","action":"protect"}
+{"type":"update-inbox","id":401,"entry":"e-1a2b3c4d","action":"protect"}
+{"type":"update-inbox","id":402,"entry":"i-2c3d4e5f","action":"unprotect"}
+{"type":"delete-inbox","id":403,"olderThanDays":3}
+{"type":"delete-inbox","id":404,"olderThanDays":0}

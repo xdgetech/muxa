@@ -2,7 +2,8 @@
 # shellcheck disable=SC2016  # jq programs: $ is jq's, not the shell's
 # The Inbox of ADR 0033 in tmux: the sidebar's section, and prefix + T with
 # the list above the selected item. muxa owns the items; this only shows them
-# and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3.
+# and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3;
+# Protect and Delete old need level 8 (ADR 0046).
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh ui <client> [item id]
@@ -13,6 +14,8 @@ S="$AGENTS_SCRIPTS"
 CACHE="$(agents_run_dir)/inbox.json"
 # A lock older than this, in seconds, belongs to a refresh that died.
 LOCK_LIMIT=60
+# muxa's work level with protect and delete-inbox.
+WORK_DELETE=8
 
 muxa() { "$S/muxa.sh" cli "$@"; }
 
@@ -68,6 +71,10 @@ JQ_DEFS='
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
   def dot: if .readAt then " " else "●" end;
   def shown: select(.state == "open" or .state == "later");
+  def marks: (if .laterAt or .state == "later" then " · later" else "" end) +
+    (if .protectedAt then " · protected" else "" end);
+  # p toggles Protect; only a host with work level 8 takes it (ADR 0046).
+  def protect_act($w): if $w < 8 then empty elif .protectedAt then "unprotect" else "protect" end;
   # Labels name the result as the apps do (ADR 0033 §4a, ADR 0040): ✓ closes only
   # the item, and an answer that changes the Task names it. A proposal keeps
   # Approve and Reject.
@@ -130,7 +137,7 @@ detail() {
 list() {
   iq -r "$JQ_DEFS"'
     .items[] | shown |
-    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .laterAt or .state == "later" then " · later" else "" end)\u001b[0m"
+    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(marks)\u001b[0m"
   ' "$1"
 }
 
@@ -138,9 +145,9 @@ list() {
 # keys: triage on one line, answers on the next.
 view() {
   iq -r --arg item "$1" "$JQ_DEFS"'
-    .items[] | select(.id == $item) | . as $i |
+    (.work // 0) as $w | .items[] | select(.id == $item) | . as $i |
     "\(icon) \u001b[1m\(.question)\u001b[0m",
-    "\u001b[2m\(.title) · \(.workspace) · \(age)\(if .readAt then "" else " · unread" end)\u001b[0m",
+    "\u001b[2m\(.title) · \(.workspace) · \(age)\(if .readAt then "" else " · unread" end)\(if .protectedAt then " · protected" else "" end)\u001b[0m",
     "",
     (.summary // empty), (if .summary then "" else empty end),
     (evidence as $e | if ($e | length) > 0 then
@@ -151,18 +158,20 @@ view() {
       (.prompt.options | to_entries[] | "  \(.key + 1)  \(.value.label)"), ""
      else empty end),
     ([keymap[] | select(.group == "triage") | . as $k | "\($k.key) \($i | answer_label($k.act))"] +
+      [protect_act($w) | if . == "protect" then "p Protect" else "p Unprotect" end] +
       (if .session then ["o Open Session"] else [] end) | select(length > 0) | join("   ")),
     ([keymap[] | select(.group == "answer") | . as $k | "\($k.key) \($i | answer_label($k.act))"]
       | select(length > 0) | join("   ")),
-    "\u001b[2mspace/b scroll   v read all   q close\u001b[0m"
+    "\u001b[2mspace/b scroll   v read all   \(if $w >= 8 then "D delete old   " else "" end)q close\u001b[0m"
   ' "$2"
 }
 
 # What a key does for an item: an action, choose:<n>, open:<n>, or nothing.
 key_action() {
   iq -r --arg item "$1" --arg key "$2" "$JQ_DEFS"'
-    .items[] | select(.id == $item) |
-    if ($key | test("^[1-9]$")) then
+    (.work // 0) as $w | .items[] | select(.id == $item) |
+    if $key == "p" then protect_act($w) // ""
+    elif ($key | test("^[1-9]$")) then
       if .prompt.kind == "question" and ((.answers // []) | index("choose"))
       then "choose:\($key | tonumber - 1)" else "open:\($key)" end
     else (keymap[] | select(.key == $key) | .act) // "" end
@@ -204,6 +213,35 @@ answer() {
       err="$(muxa "$@" --force --json 2>&1 >/dev/null)" && return 0
     fi
     printf '\nmuxa could not answer: %s\n' "$(printf '%s' "$err" | sed 's/^muxa-cli: //' | tail -n 1)"
+    pause
+  fi
+}
+
+# How many listed items delete_old removes: older than <days>, not protected.
+old_count() {
+  iq -r --argjson days "$2" \
+    '[.items[] | select(.createdAt < ($now - $days * 86400) and (.protectedAt | not))] | length' "$1"
+}
+
+# D: deletes the items older than 1, 3 or 5 days, after a confirmation that
+# names how many (ADR 0046). Protected items stay.
+delete_old() {
+  local json="$1" days ok n err
+  clear
+  if [ "$(jq -r '.work // 0' "$json")" -lt "$WORK_DELETE" ]; then
+    echo "This host cannot delete Inbox items; update muxa-bridge on the host."
+    pause
+    return 0
+  fi
+  printf 'Delete Inbox items older than how many days? Protected items stay.\n\n'
+  IFS= read -r -n 1 -p '1, 3 or 5 (any other key cancels): ' days || return 0
+  case "$days" in 1 | 3 | 5) ;; *) return 0 ;; esac
+  n="$(old_count "$json" "$days")"
+  printf '\n\nDelete %s items older than %s days? [y/N] ' "$n" "$days"
+  IFS= read -r -n 1 ok || return 0
+  [ "$ok" = y ] || return 0
+  if ! err="$(muxa inbox delete --older-than "$days" --json 2>&1 >/dev/null)"; then
+    printf '\nmuxa could not delete: %s\n' "$(printf '%s' "$err" | sed 's/^muxa-cli: //' | tail -n 1)"
     pause
   fi
 }
@@ -287,7 +325,7 @@ ui() {
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
-      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,o,v,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,o,p,v,D,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
@@ -295,6 +333,7 @@ ui() {
     case "$key" in
       ctrl-r) continue ;;
       v) read_item "$id" "$json" ;;
+      D) delete_old "$json" ;;
       enter | o)
         sid="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .session // empty' "$json")"
         if [ -n "$sid" ] && t has-session -t "$sid" 2>/dev/null; then

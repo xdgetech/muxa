@@ -5,6 +5,7 @@ import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.session.PaneSession
+import tech.xdge.muxa.session.deletable
 import tech.xdge.muxa.session.mainAnswer
 import tech.xdge.muxa.session.needsText
 
@@ -127,6 +128,43 @@ fun AppModel.sendMainAnswer() {
     val item = selectedItem?.let(::item) ?: focusedItem ?: return
     val action = item.mainAnswer(reply(item)) ?: return
     tap(item, action)
+}
+
+/** The host protects items and deletes old ones (ADR 0046). */
+val AppModel.canDeleteInbox: Boolean get() = usesItems && state.canDeleteInbox
+
+/** Protect or Unprotect: no confirmation (ADR 0046 §7). The item stays where it is and takes every answer. */
+fun AppModel.protect(item: InboxItem, protected: Boolean) {
+    if (answeringItem != null) return
+    answeringItem = item.id
+    scope.launch {
+        try {
+            session.protect(item, protected)
+        } catch (e: PaneSession.Failure) {
+            inboxError = PaneSession.describe(e)
+        } finally {
+            answeringItem = null
+        }
+    }
+}
+
+/** Delete Old asks first, with the count of listed items, open or closed, that the host removes. */
+fun AppModel.askDeleteOld(days: Int) {
+    inboxPrompt = InboxPrompt.DeleteOld(days, state.inboxItems.deletable(days).size)
+}
+
+/** Removes the old unprotected items; the session lists the Inbox again. An open item that went closes. */
+fun AppModel.deleteOld(days: Int) {
+    inboxPrompt = null
+    scope.launch {
+        try {
+            session.deleteInbox(days)
+        } catch (e: PaneSession.Failure) {
+            inboxError = PaneSession.describe(e)
+        }
+        val left = inboxItems.map { it.id }
+        if (selectedItem != null && selectedItem !in left) selection = null
+    }
 }
 
 /** The item's Task session, at its agent pane; null when it has none any more. */

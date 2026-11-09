@@ -24,7 +24,7 @@ public struct ItemAnswers: Equatable, Sendable {
 
     /// `replying`: the reply box has text.
     public init(_ item: InboxItem, replying: Bool = false) {
-        let answers = item.answers.filter { $0 != .read }
+        let answers = item.answers.filter { $0 != .read && $0 != .protect && $0 != .unprotect }
         chooses = answers.contains(.choose)
         done = answers.first { $0 == .keepOpen || $0 == .dismiss }
         later = answers.contains(.later)
@@ -60,12 +60,22 @@ extension InboxAction {
         case .later: "Later"
         case .read: "Mark Read"
         case .askAgent: "Ask Agent"
+        case .protect: "Protect"
+        case .unprotect: "Unprotect"
         }
     }
 }
 
 extension InboxItem {
     public var isUnread: Bool { readAt == nil }
+    public var isProtected: Bool { protectedAt != nil }
+
+    /// Delete Old removes it: made more than `days` days before `now`, and not
+    /// protected (ADR 0046). The host's cutoff is whole days before now.
+    public func isDeletable(olderThanDays days: UInt32, now: UInt64 = UInt64(Date().timeIntervalSince1970)) -> Bool {
+        let cutoff = now > UInt64(days) * 86_400 ? now - UInt64(days) * 86_400 : 0
+        return !isProtected && createdAt < cutoff
+    }
 
     /// "45s", "4m", "1h" or "3d" since the item was made.
     public func age(now: UInt64 = UInt64(Date().timeIntervalSince1970)) -> String {
