@@ -5,6 +5,7 @@
 use muxa_protocol::{OverallRequests, Share};
 use serde::Deserialize;
 
+use super::routines::{Trigger, scheduled};
 use super::workers::Worker;
 use super::workspaces::parse_duration;
 
@@ -21,6 +22,11 @@ pub const OVERALL_OPEN_RUNS: u32 = 1;
 pub const OVERALL_RUNS_PER_DAY: u32 = 8;
 /// Seconds: `"15m"`.
 pub const OVERALL_RUN_TIMEOUT: u64 = 15 * 60;
+/// The overall assistant's plan without `plans`: weekday mornings at 07:30,
+/// in `timezone` or the host's own zone (ADR 0047 §5).
+pub const DEFAULT_PLAN: &str = "30 7 * * 1-5";
+/// Schedules in `plans`.
+pub const MAX_PLANS: usize = 3;
 
 /// The host's switch and budget (`[assistant]`). No table: off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +58,8 @@ pub struct Delegate {
     pub run_timeout: u64,
     /// Who writes a run's proposed notes to the live file (ADR 0047 §1).
     pub notes: NotesMode,
+    /// When the overall assistant plans (ADR 0047 §5); empty for a delegate.
+    pub plans: Vec<Trigger>,
 }
 
 /// What a workspace is to the overall assistant (ADR 0047 §2–§4).
@@ -147,6 +155,8 @@ pub(super) struct RawDelegate {
     max_runs_per_day: Option<i64>,
     run_timeout: Option<String>,
     notes: Option<String>,
+    plans: Option<Vec<String>>,
+    timezone: Option<String>,
 }
 
 impl RawDelegate {
@@ -173,6 +183,7 @@ impl RawDelegate {
                 .map_err(|r| format!("run_timeout {r}"))?
                 .unwrap_or(timeout),
             notes: NotesMode::parse(self.notes.as_deref())?,
+            plans: Vec::new(),
         };
         let share = self.share.as_deref().map(parse_share).transpose()?;
         let overall_requests = parse_overall_requests(self.overall_requests.as_deref())?;
@@ -189,7 +200,11 @@ impl RawDelegate {
                         .into(),
                 );
             }
-            return Ok((Some(settings), Role::Overall));
+            let plans = plans(self.plans.as_deref(), self.timezone.as_deref())?;
+            return Ok((Some(Delegate { plans, ..settings }), Role::Overall));
+        }
+        if self.plans.is_some() || self.timezone.is_some() {
+            return Err("plans and timezone apply only to the overall workspace".into());
         }
         let delegate = self.delegate.ok_or("delegate is required: true or false")?;
         let default_share = if delegate {
@@ -203,6 +218,25 @@ impl RawDelegate {
         };
         Ok((delegate.then_some(settings), role))
     }
+}
+
+/// `plans` and `timezone`: at most [`MAX_PLANS`] schedules, [`DEFAULT_PLAN`]
+/// without the field. An empty list plans on demand only.
+fn plans(texts: Option<&[String]>, zone: Option<&str>) -> Result<Vec<Trigger>, String> {
+    let default = [DEFAULT_PLAN.to_owned()];
+    let texts = texts.unwrap_or(&default);
+    if texts.len() > MAX_PLANS {
+        return Err(format!("plans has more than {MAX_PLANS} schedules"));
+    }
+    let mut out: Vec<Trigger> = Vec::with_capacity(texts.len());
+    for (i, text) in texts.iter().enumerate() {
+        let t = scheduled(text, zone).map_err(|r| format!("plans[{i}]: {r}"))?;
+        if out.iter().any(|o| o.schedule == t.schedule) {
+            return Err(format!("plans[{i}] appears twice"));
+        }
+        out.push(t);
+    }
+    Ok(out)
 }
 
 /// The delegate's `worker` must be a configured `[[worker]]` this workspace may use.

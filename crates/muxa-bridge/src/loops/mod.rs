@@ -334,7 +334,7 @@ impl Engine {
                     let prompt = if record.is_routine_run() {
                         crate::routines::record::fail_prompt(attempt)
                     } else if record.is_assistant_run() {
-                        crate::assistant::record::fail_prompt(attempt)
+                        crate::assistant::record::fail_prompt(record, attempt)
                     } else {
                         typing::fail_prompt(attempt)
                     };

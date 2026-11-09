@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0 (the wire types), B1 (notes), B2 (the overall workspace and the brief's filter) and B6 (pins and deadlines) are built; hosts do not advertise level 9 yet.
+Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0046, and gives a delegate memory across runs. It adds to ADR 0046 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0 (the wire types), B1 (notes), B2 (the overall workspace and the brief's filter), B3 (plans and their check), B4 (plan schedules, `plan-now` and budgets) and B6 (pins and deadlines) are built; hosts do not advertise level 9 yet.
 
 ## Context
 
@@ -53,7 +53,7 @@ The host stores each as an Inbox item of kind `sort` or `delegate` with answers 
 
 A plan is a record `plans/p-<8hex>.json` in the assistant store, made by one overall run. The run is an `assistant-run` whose record names the plan instead of a request (`RunFor` gains the variant); delivery, check, fail prompt, timeout, cleanup and the hidden-kind helper are ADR 0046 §4–§6, unchanged.
 
-- **Trigger:** `[workspace.assistant] plans = ["30 7 * * 1-5"]` with `timezone`: at most 3 schedules, each parsed and scheduled as a Routine's `schedule` (ADR 0036 §3), one catch-up, DST once. The default is one morning plan; a user who wants a midday or evening plan adds a line. `plan-now {minutes?}` starts one on demand; `minutes` is the time the user has. One open plan run at a time; a second is `conflict`.
+- **Trigger:** `[workspace.assistant] plans = ["30 7 * * 1-5"]` with `timezone`: at most 3 schedules, each parsed and scheduled as a Routine's `schedule` (ADR 0036 §3), one catch-up, DST once. The default is one morning plan, `"30 7 * * 1-5"` in the host's own zone when `timezone` is absent; a user who wants a midday or evening plan adds a line, and `plans = []` plans on demand only. Schedules due at once make one plan. `plan-now {minutes?}` starts one on demand; `minutes` is the time the user has. One open plan run at a time; a second is `conflict`.
 - **Inputs:** §3's brief, the open Inbox items, the previous plan, and nothing about the calendar unless the overall workspace's own tools supply it.
 - **Output:** `top[]`, at most 3, each `{work | item, why, next, minutes {low, high, estimated}, basis[] {kind: due | dependency | goal | time | manual, text, source?, at?}, missing[]}`; fewer than 3 is fine. `unanswered[]` and `stale[]` are not the agent's to say: the host derives them when listing, from delivery states and from Results older than their Work item's `rev`, as it derives delivery (ADR 0046 §6). The host also derives `changed[]` against the previous plan (entered, left, moved) and stamps `inputsAt` and the workspaces included.
 - **Rules the host enforces:** a pinned Work item (§6) takes the first slots in pin order; the agent fills the rest. An item with `laterAt` is never listed: Later means the user moved it down. A Later item with a `due` within 24 hours shows in a one-line "Due soon, moved down by you" note under the top rows, not in them. The plan never changes a Work item, an Inbox item, their order, or `laterAt`. A plan with no candidates publishes empty and says so.
@@ -82,13 +82,13 @@ A plan is a record `plans/p-<8hex>.json` in the assistant store, made by one ove
 
 ### 9. Logs and budgets
 
-Logs carry ids, counts, hashes, states and schedule times; never notes, plan texts, reasons, purposes or summaries. Overall runs count against `[assistant] max_runs_per_day` and the overall workspace's own limits (defaults: `max_open_runs` 1, `max_runs_per_day` 8, `run_timeout` 15m). A reached limit stops automatic plans with a visible reason and a resume, as spec §8 asks.
+Logs carry ids, counts, hashes, states and schedule times; never notes, plan texts, reasons, purposes or summaries. Overall runs count against `[assistant] max_runs_per_day` and the overall workspace's own limits (defaults: `max_open_runs` 1, `max_runs_per_day` 8, `run_timeout` 15m). A reached limit stops automatic plans with a visible reason and a resume, as spec §8 asks: the occurrence is kept as a `failed` plan with the reason, and the next occurrence runs again. Until the wire carries the reason, it is in the plan's file and the host log names the limit.
 
 ## Not decided
 
 - Whether the check scans `notes` and `purpose` for secret shapes (key prefixes, PEM headers). This ADR: size and encoding only; the brief carries the rule.
 - Whether an unsorted Capture whose text names a workspace may be sorted by `auto`. This ADR: sorting is always reviewed.
-- The plan's default time and weekdays, and whether a plan run also reads the calendar through the overall workspace's tools.
+- Whether a plan run also reads the calendar through the overall workspace's tools. (The default time is weekdays at 07:30, §5.)
 - Whether the `minutes` of `plan-now` persists as the user's stated free time for the day.
 - A hosted (cloud) overall assistant reading filtered summaries over MCP was considered and deferred: work data would leave the host, and its output would need the same checks.
 - PA3 (policies, hypotheses, correction history) is out of scope. PA2 leaves room: a plan's `basis` has a `kind`, `changed[]` records what moved, and `plans[]` is history; a later ADR adds the user's corrections to it.

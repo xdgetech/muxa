@@ -74,6 +74,13 @@
 #                     its notes and runs. It takes no requests, so delegate,
 #                     share and overall_requests are refused. Its defaults:
 #                     max_open_runs 1, max_runs_per_day 8, run_timeout "15m".
+#   plans             overall workspace only: when it plans, at most 3
+#                     schedules of five cron fields, as a Routine's
+#                     (default ["30 7 * * 1-5"]: weekday mornings at 07:30;
+#                     [] plans only when you ask). A missed time runs once
+#                     on wake-up; a budget reached skips it with a reason.
+#   timezone          overall workspace only: the IANA zone of plans
+#                     (default the host's own zone)
 #
 # [assistant]  optional, at the top level; the host's switch for all
 #   workspaces. Without it, or with enabled = false, no workspace takes

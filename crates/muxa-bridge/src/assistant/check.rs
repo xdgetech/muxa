@@ -1,5 +1,6 @@
 //! The Loop check of an assistant run (ADR 0046 §4): muxa's own validation
-//! of the result file, and its store on the request when it passes. It runs
+//! of the result file, and its store on the request when it passes; a plan
+//! run's goes to `plan::check` (ADR 0047 §5). It runs
 //! in the daemon's process. Reasons go to `.muxa/checks/<attempt>.log` for the
 //! agent; host logs get ids and counts only.
 use std::path::Path;
@@ -7,7 +8,7 @@ use std::time::Instant;
 
 use muxa_protocol::{AssistantRequest, Delivery, WorkItem};
 
-use super::record::RunFor;
+use super::record::{RequestRun, RunFor};
 use super::result::{self, Refused, Stored};
 use super::store::Shelf;
 use crate::loops::step::CheckEnd;
@@ -19,26 +20,26 @@ use crate::task_records::Config;
 /// Blocking. Exit 0 once the result is stored (also when it was already).
 pub fn run(config: &Config, record: &Record, attempt: u32) -> CheckEnd {
     let started = Instant::now();
-    let outcome = publish(config, record);
+    let (outcome, what) = match record.assistant_run() {
+        Some(RunFor::Plan(run)) => (super::plan::check::publish(config, record, &run), "plan"),
+        _ => (publish(config, record), "assistant result"),
+    };
     let seconds = started.elapsed().as_secs();
     let (code, lines) = match &outcome {
-        Ok(Stored::New) => (0, vec!["passed: the result is stored.".to_owned()]),
-        Ok(Stored::Already) => (
-            0,
-            vec!["passed: this version's result was stored before.".to_owned()],
-        ),
+        Ok(Stored::New) => (0, vec![format!("passed: the {what} is stored.")]),
+        Ok(Stored::Already) => (0, vec![format!("passed: this {what} was stored before.")]),
         Err(reasons) => (1, reasons.clone()),
     };
     match &outcome {
         Ok(stored) => {
-            tracing::info!(task = %record.id, attempt, stored = ?stored, "assistant result stored")
+            tracing::info!(task = %record.id, attempt, stored = ?stored, what, "assistant result stored")
         }
         Err(r) => {
-            tracing::info!(task = %record.id, attempt, reasons = r.len(), "assistant result refused")
+            tracing::info!(task = %record.id, attempt, reasons = r.len(), what, "assistant result refused")
         }
     }
     if let Some(dir) = &record.dir {
-        if let Err(e) = report(dir, attempt, code == 0, &lines, "the assistant result") {
+        if let Err(e) = report(dir, attempt, code == 0, &lines, &format!("the {what}")) {
             tracing::warn!(task = %record.id, error = %e, "cannot write the assistant check log");
         }
     }
@@ -48,7 +49,7 @@ pub fn run(config: &Config, record: &Record, attempt: u32) -> CheckEnd {
 fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
     let one = |r: String| vec![r];
     let run = record
-        .assistant_run()
+        .request_run()
         .ok_or_else(|| one("This record is not a readable assistant run.".into()))?;
     let dir = record
         .dir
@@ -81,7 +82,7 @@ fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
     match stored {
         Ok(Some(s)) => {
             if let (Stored::New, Some(notes)) = (s, &notes) {
-                super::apply::auto_apply(config, record, &run, notes);
+                super::apply::auto_apply(config, record, &run.request, run.version, notes);
             }
             Ok(s)
         }
@@ -152,8 +153,10 @@ pub fn stopped(state_dir: &Path, record: &Record, lp: &Loop) {
     if lp.state != LoopState::Stopped || !failing {
         return;
     }
-    let Some(run) = record.assistant_run() else {
-        return;
+    let run = match record.assistant_run() {
+        Some(RunFor::Request(run)) => run,
+        Some(RunFor::Plan(_)) => return super::plan::check::stopped(state_dir, record, lp),
+        None => return,
     };
     match Shelf::open(state_dir).and_then(|s| fail(&s, &run, now())) {
         Ok(true) => {
@@ -168,7 +171,11 @@ pub fn stopped(state_dir: &Path, record: &Record, lp: &Loop) {
 
 /// Marks `run`'s version failed, unless the request moved on, has its
 /// result, or is being cancelled. True when it changed.
-pub fn fail(requests: &Shelf<AssistantRequest>, run: &RunFor, at: u64) -> Result<bool, StateError> {
+pub fn fail(
+    requests: &Shelf<AssistantRequest>,
+    run: &RequestRun,
+    at: u64,
+) -> Result<bool, StateError> {
     let changed = requests.update::<_, StateError>(&run.request, |q| {
         let settled = matches!(
             q.delivery,

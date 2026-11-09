@@ -2,11 +2,6 @@
 //! share, its own notes, and the plan file's schema and rules. Only the host
 //! builds it. It is longer than a Task's goal may be, so the run reads it
 //! from a file in its folder.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the overall run starts in ADR 0047 slice B3")
-)]
-
 use super::share::Shared;
 
 /// What one overall run is told.

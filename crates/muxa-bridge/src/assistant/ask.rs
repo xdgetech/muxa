@@ -9,7 +9,7 @@ use serde_json::json;
 
 use super::brief::{Brief, marker};
 use super::policy::{self, Delegated, Starting};
-use super::record::RunFor;
+use super::record::{RequestRun, RunFor};
 use super::store::{Extra, Shelf};
 use super::work::{Fail, check_rev, closed};
 use crate::convert::error_body;
@@ -25,9 +25,10 @@ const ASKED_FIELD: &str = "askedRev";
 /// Bytes, as the brief keeps.
 const MAX_PURPOSE: usize = 4096;
 
-/// Budgets are counted and claims taken one at a time. Only the daemon runs
-/// requests, so a lock in its process covers every writer.
-static CLAIMS: Mutex<()> = Mutex::new(());
+/// Budgets are counted and claims taken one at a time, for requests and
+/// plans. Only the daemon runs them, so a lock in its process covers every
+/// writer.
+pub(super) static CLAIMS: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone)]
 pub struct Ask {
@@ -104,7 +105,7 @@ pub fn precheck(config: &Config, workspace: &str, fallback: &str) -> Result<(), 
     let _one = CLAIMS
         .lock()
         .map_err(|_| error_body(ErrorCode::Internal, "the assistant claim lock broke"))?;
-    budget(config, &delegated, None, crate::records::now())
+    budget(config, &delegated, &[], crate::records::now())
 }
 
 /// Blocking. Under the Work item's lock: the version this `rev` made, or a
@@ -129,7 +130,7 @@ fn begin(config: &Config, a: &Ask, d: &Delegated, at: u64) -> Result<Step, Error
             .into());
         }
         let replacing = found.as_ref().map(|(q, _)| q.id.as_str());
-        budget(config, d, replacing, at)?;
+        budget(config, d, replacing.as_slice(), at)?;
         let q = match found {
             Some((q, _)) => next_version(&requests, &q.id, a, at)?,
             None => new_request(&requests, w, d, a, at)?,
@@ -263,7 +264,7 @@ fn claim_run(
             )
             .into());
         }
-        budget(config, d, Some(&q.id), at)?;
+        budget(config, d, &[q.id.as_str()], at)?;
         extra.insert(CREATING_FIELD.into(), json!([version, at]));
         Ok(Some(q.clone()))
     })?;
@@ -281,22 +282,22 @@ pub fn creating(extra: &Extra, version: u64) -> Option<u64> {
 pub fn existing<'a>(records: &'a [Record], request: &str, version: u64) -> Option<&'a Record> {
     let mark = marker(request, version);
     records.iter().find(|r| {
-        r.assistant_run()
+        r.request_run()
             .is_some_and(|run| run.request == request && run.version == version)
             && r.goal.lines().next_back() == Some(mark.as_str())
     })
 }
 
-/// Blocking. Refuses a run past a budget. `replacing` is a request whose
-/// current run the new version ends.
-fn budget(
+/// Blocking. Refuses a run past a budget. `replacing` are the requests or
+/// plans whose current runs the new run ends.
+pub(super) fn budget(
     config: &Config,
     d: &Delegated,
-    replacing: Option<&str>,
+    replacing: &[&str],
     at: u64,
 ) -> Result<(), ErrorBody> {
     let requests = super::shelf::<AssistantRequest>(config)?;
-    let mut starting = Vec::new();
+    let mut starting = super::plan::start::starting(config, at)?;
     for q in requests
         .all()
         .map_err(|e| super::state_error(&e))?
@@ -347,12 +348,12 @@ async fn start_run(cx: &Context, q: AssistantRequest, d: &Delegated) -> Option<E
                 worker: d.worker.clone(),
                 title: title(&q),
                 goal,
-                assistant: Some(RunFor {
+                assistant: Some(RunFor::Request(RequestRun {
                     request: q.id.clone(),
                     version: q.version,
                     work: q.work.clone(),
                     notes_base: Some(notes_base),
-                }),
+                })),
                 ..NewTask::default()
             };
             match cx.env().await {

@@ -93,7 +93,7 @@ impl Host {
             .unwrap()
     }
 
-    fn record(&self, run: &RunFor) -> Record {
+    fn record(&self, run: &RequestRun) -> Record {
         Record {
             version: 1,
             id: "t-00000a".into(),
@@ -132,7 +132,7 @@ impl Host {
     }
 }
 
-fn good(run: &RunFor, duplicate: Option<&str>) -> serde_json::Value {
+fn good(run: &RequestRun, duplicate: Option<&str>) -> serde_json::Value {
     let mut v = json!({
         "version": 1,
         "request": run.request,
@@ -153,8 +153,8 @@ fn exit(end: CheckEnd) -> i32 {
     }
 }
 
-fn run_for(work: &WorkItem, q: &AssistantRequest) -> RunFor {
-    RunFor {
+fn run_for(work: &WorkItem, q: &AssistantRequest) -> RequestRun {
+    RequestRun {
         request: q.id.clone(),
         version: q.version,
         work: work.id.clone(),

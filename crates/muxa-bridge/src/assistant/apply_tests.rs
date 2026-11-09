@@ -4,6 +4,7 @@ use muxa_protocol::{AssistScope, Delivery, WorkState};
 use serde_json::json;
 
 use super::*;
+use crate::assistant::record::RequestRun;
 use crate::assistant::store::Shelf;
 use crate::loops::step::CheckEnd;
 use crate::records::Status;
@@ -128,7 +129,7 @@ impl Host {
                 Ok(())
             })
             .unwrap();
-        let run = RunFor {
+        let run = RequestRun {
             request: q.id.clone(),
             version: 1,
             work: work.id.clone(),
@@ -193,9 +194,12 @@ fn review_stores_the_proposal_and_apply_writes_it_while_the_base_holds() {
     let no_version = apply_notes(&h.config, &q.id, 2, &notes.base).unwrap_err();
     assert_eq!(no_version.code, ErrorCode::BadRequest);
     let plan = apply_notes(&h.config, "p-00000001", 1, &notes.base).unwrap_err();
-    assert_eq!(plan.code, ErrorCode::Unsupported);
+    assert_eq!(plan.code, ErrorCode::BadRequest, "no such plan");
 
-    let (item, request) = apply_notes(&h.config, &q.id, 1, &notes.base).unwrap();
+    let Applied::Request(item, request) = apply_notes(&h.config, &q.id, 1, &notes.base).unwrap()
+    else {
+        panic!("a request's notes reply with the request")
+    };
     assert_eq!(
         (item.id.as_str(), request.id.as_str()),
         (q.work.as_str(), q.id.as_str())

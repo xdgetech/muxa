@@ -77,6 +77,41 @@ pub fn delegated(
     })
 }
 
+/// The overall assistant, as a plan run starts it (ADR 0047 §2, §5), or why
+/// this host makes no plans.
+pub fn overall(workspaces: &Workspaces, fallback: &str) -> Result<Delegated, ErrorBody> {
+    if !workspaces.assistant().enabled {
+        return Err(error_body(
+            ErrorCode::Unsupported,
+            "this host makes no plans: set [assistant] enabled = true in workspaces.toml on the host",
+        ));
+    }
+    let (w, delegate) = workspaces
+        .overall()
+        .and_then(|w| Some((w, w.assistant.clone()?)))
+        .ok_or_else(|| {
+            error_body(
+                ErrorCode::Unsupported,
+                "this host has no overall assistant: set [workspace.assistant] overall = true \
+                 for one workspace in workspaces.toml on the host",
+            )
+        })?;
+    let choice = match delegate.worker.as_deref() {
+        Some(name) => WorkerChoice::Named(name),
+        None => WorkerChoice::WorkspaceDefault,
+    };
+    let resolved = workspaces
+        .resolve_worker(&w.name, choice, None, fallback)
+        .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))?;
+    check_agent(&w.name, &resolved.command)?;
+    Ok(Delegated {
+        workspace: w.name.clone(),
+        worker: resolved.worker,
+        delegate,
+        host: workspaces.assistant(),
+    })
+}
+
 /// A run needs automatic prompt delivery and a finished turn: Claude Code today.
 fn check_agent(workspace: &str, command: &LaunchCommand) -> Result<(), ErrorBody> {
     match reading::program(command) {
@@ -110,21 +145,23 @@ pub struct Usage {
     pub today_host: u32,
 }
 
-/// A run being created: a request's fresh claim, before its record exists.
+/// A run being created: a request's or a plan's fresh claim, before its
+/// record exists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Starting {
+    /// `q-…` or `p-…`.
     pub request: String,
     pub workspace: String,
     pub since: u64,
 }
 
-/// Counts runs from `day_start`. The runs of `replacing`, a request getting a
-/// new version, are not open: the new version ends them.
+/// Counts runs from `day_start`. The runs of `replacing`, requests getting a
+/// new version or plans a new plan replaces, are not open: the new run ends them.
 pub fn usage(
     records: &[Record],
     starting: &[Starting],
     workspace: &str,
-    replacing: Option<&str>,
+    replacing: &[&str],
     day_start: u64,
 ) -> Usage {
     let mut u = Usage::default();
@@ -143,12 +180,16 @@ pub fn usage(
         let Some(run) = r.assistant_run() else {
             continue;
         };
-        let open = matches!(r.status, Status::Open | Status::Review)
-            && replacing != Some(run.request.as_str());
+        let open =
+            matches!(r.status, Status::Open | Status::Review) && !replacing.contains(&run.source());
         count(&r.workspace, open, r.created_at);
     }
     for s in starting {
-        count(&s.workspace, replacing != Some(s.request.as_str()), s.since);
+        count(
+            &s.workspace,
+            !replacing.contains(&s.request.as_str()),
+            s.since,
+        );
     }
     u
 }

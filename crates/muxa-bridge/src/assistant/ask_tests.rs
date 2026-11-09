@@ -105,7 +105,7 @@ impl Host {
         .unwrap();
         if kind {
             r.extra.extend(
-                RunFor {
+                RequestRun {
                     request: request.into(),
                     version,
                     work: "w-00000000".into(),

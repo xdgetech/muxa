@@ -11,7 +11,9 @@ STEER_DIR/turns.log. Files in STEER_DIR steer it:
   stall       present at the start prompt: the turn stays running until
               release appears, then writes first.json
 A result's "request": "@" and "requestVersion": 0 are filled in from the
-goal's last line in .muxa/TASK.md, `muxa-request: q-... v<n>`.
+goal's last line in .muxa/TASK.md, `muxa-request: q-... v<n>`. An overall
+run's goal ends with `muxa-plan: p-...`: the file is written to
+.muxa/assistant/plan.json instead, with "plan": "@" filled in.
 """
 
 import json
@@ -23,6 +25,7 @@ import time
 PANE = os.environ["TMUX_PANE"]
 STEER = sys.argv[1]
 RESULT = ".muxa/assistant/result.json"
+PLAN = ".muxa/assistant/plan.json"
 
 
 def tmux(*args):
@@ -52,14 +55,22 @@ def write(name):
     with open(src) as f:
         result = json.load(f)
     with open(".muxa/TASK.md") as f:
-        line = [l for l in f.read().splitlines() if l.startswith("muxa-request: ")][-1]
-    _, request, version = line.split(" ")
-    if result.get("request") == "@":
-        result["request"] = request
-    if result.get("requestVersion") == 0:
-        result["requestVersion"] = int(version[1:])
-    os.makedirs(os.path.dirname(RESULT), exist_ok=True)
-    with open(RESULT, "w") as f:
+        lines = f.read().splitlines()
+    plans = [l for l in lines if l.startswith("muxa-plan: ")]
+    if plans:
+        target = PLAN
+        if result.get("plan") == "@":
+            result["plan"] = plans[-1].split(" ")[1]
+    else:
+        target = RESULT
+        line = [l for l in lines if l.startswith("muxa-request: ")][-1]
+        _, request, version = line.split(" ")
+        if result.get("request") == "@":
+            result["request"] = request
+        if result.get("requestVersion") == 0:
+            result["requestVersion"] = int(version[1:])
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w") as f:
         json.dump(result, f)
 
 

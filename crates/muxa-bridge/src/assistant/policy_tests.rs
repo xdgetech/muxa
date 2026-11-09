@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::*;
-use crate::assistant::record::RunFor;
+use crate::assistant::record::RequestRun;
 
 const ON: &str = "[assistant]\nenabled = true\nmax_runs_per_day = 3\n";
 
@@ -127,7 +127,7 @@ fn run(id: &str, ws: &str, request: &str, status: Status, created: u64) -> Recor
     .unwrap();
     r.status = status;
     r.extra.extend(
-        RunFor {
+        RequestRun {
             request: request.into(),
             version: 1,
             work: "w-00000001".into(),
@@ -157,7 +157,7 @@ fn usage_counts_open_runs_claims_and_today_and_skips_a_replaced_request() {
         workspace: "w".into(),
         since: 800,
     }];
-    let u = usage(&records, &starting, "w", None, 100);
+    let u = usage(&records, &starting, "w", &[], 100);
     assert_eq!(
         u,
         Usage {
@@ -166,7 +166,7 @@ fn usage_counts_open_runs_claims_and_today_and_skips_a_replaced_request() {
             today_host: 4
         }
     );
-    let replacing = usage(&records, &starting, "w", Some("q-00000001"), 100);
+    let replacing = usage(&records, &starting, "w", &["q-00000001"], 100);
     assert_eq!((replacing.open, replacing.today), (1, 3));
 }
 

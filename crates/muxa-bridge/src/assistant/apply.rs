@@ -3,10 +3,9 @@
 //! base. Logs carry ids, sizes and hashes, never the text.
 use std::path::PathBuf;
 
-use muxa_protocol::{AssistantRequest, ErrorBody, ErrorCode, Notes, WorkItem};
+use muxa_protocol::{AssistantRequest, ErrorBody, ErrorCode, Notes, Plan, WorkItem};
 
 use super::notes::{self, NotesError};
-use super::record::RunFor;
 use crate::convert::error_body;
 use crate::records::Record;
 use crate::records::assistant::NotesMode;
@@ -15,23 +14,29 @@ use crate::task_records::Config;
 /// Hex digits of a hash a log line shows.
 const SHOWN_HASH: usize = 12;
 
-/// Blocking. Applies the notes `source`'s result of `version` proposed; the
-/// Work item and the request, as a list shows them.
+/// What `apply-notes` replies with.
+#[derive(Debug)]
+pub enum Applied {
+    /// The Work item and the request, as a list shows them.
+    Request(WorkItem, AssistantRequest),
+    /// The plan, as `plans[]` lists it.
+    Plan(Plan),
+}
+
+/// Blocking. Applies the notes that `source` proposed: a request's result
+/// of `version`, or a plan at `rev` `version`.
 pub fn apply_notes(
     config: &Config,
     source: &str,
     version: u64,
     base: &str,
-) -> Result<(WorkItem, AssistantRequest), ErrorBody> {
-    if source.starts_with("p-") {
-        return Err(error_body(
-            ErrorCode::Unsupported,
-            "this host keeps no plans yet; apply-notes takes a request (q-…) only",
-        ));
+) -> Result<Applied, ErrorBody> {
+    if is_id(source, "p-") {
+        return apply_plan(config, source, version, base).map(Applied::Plan);
     }
-    if !is_request_id(source) {
+    if !is_id(source, "q-") {
         return Err(bad(
-            "apply-notes: source must be a request id, q- and 8 hex digits",
+            "apply-notes: source must be a request (q-…) or a plan (p-…) id",
         ));
     }
     let q = super::shelf::<AssistantRequest>(config)?
@@ -59,12 +64,53 @@ pub fn apply_notes(
         refused(&e)
     })?;
     tracing::info!(request = %q.id, version, base = shown(base), bytes = proposal.text.len(), "notes applied");
-    super::ask::reply(config, &q.work, &q.id)
+    super::ask::reply(config, &q.work, &q.id).map(|(w, q)| Applied::Request(w, q))
+}
+
+/// The overall notes a plan proposed, written to the overall workspace's root.
+fn apply_plan(config: &Config, id: &str, rev: u64, base: &str) -> Result<Plan, ErrorBody> {
+    let (plan, extra) = super::plan::shelf(config)?
+        .get_with_extra(id)
+        .map_err(|e| super::state_error(&e))?
+        .ok_or_else(|| bad(format!("no plan {id}")))?;
+    if plan.rev != rev {
+        return Err(error_body(
+            ErrorCode::Conflict,
+            format!("plan {id} is at rev {}; list it again", plan.rev),
+        ));
+    }
+    let proposal = plan
+        .notes
+        .clone()
+        .ok_or_else(|| bad(format!("plan {id} has no proposed notes")))?;
+    if proposal.base != base {
+        return Err(bad(
+            "apply-notes: base is not the proposal's; list the plan again",
+        ));
+    }
+    let workspace = extra
+        .get(super::plan::WORKSPACE_FIELD)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| bad(format!("plan {id} names no overall workspace")))?;
+    let root = workspace_root(config, workspace)?;
+    notes::apply(&root, &proposal.text, &proposal.base).map_err(|e| {
+        tracing::info!(plan = id, rev, base = shown(base), error = %e, "notes not applied");
+        refused(&e)
+    })?;
+    tracing::info!(
+        plan = id,
+        rev,
+        base = shown(base),
+        bytes = proposal.text.len(),
+        "notes applied"
+    );
+    Ok(super::plan::listed(config, plan))
 }
 
 /// Blocking. After a result with notes is stored: with `notes = "auto"`,
 /// the host applies them. A changed base keeps the proposal for the user.
-pub fn auto_apply(config: &Config, record: &Record, run: &RunFor, proposal: &Notes) {
+/// `source` and `version` are the request and its version, or the plan and its `rev`.
+pub fn auto_apply(config: &Config, record: &Record, source: &str, version: u64, proposal: &Notes) {
     let workspaces = match config.load_workspaces() {
         Ok(w) => w,
         Err(_) => return,
@@ -79,7 +125,7 @@ pub fn auto_apply(config: &Config, record: &Record, run: &RunFor, proposal: &Not
     if !auto {
         return;
     }
-    let (request, version, base) = (&run.request, run.version, shown(&proposal.base));
+    let (request, base) = (source, shown(&proposal.base));
     match notes::apply(&workspace.root, &proposal.text, &proposal.base) {
         Ok(()) => tracing::info!(
             task = %record.id, request = %request, version, base,
@@ -119,8 +165,8 @@ fn shown(hash: &str) -> &str {
     hash.get(..SHOWN_HASH).unwrap_or(hash)
 }
 
-fn is_request_id(id: &str) -> bool {
-    id.strip_prefix("q-")
+fn is_id(id: &str, prefix: &str) -> bool {
+    id.strip_prefix(prefix)
         .is_some_and(|h| h.len() == 8 && h.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 

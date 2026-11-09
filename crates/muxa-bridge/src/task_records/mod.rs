@@ -176,6 +176,7 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::CancelRequest { .. }
             | Request::GetWork { .. }
             | Request::ApplyNotes { .. }
+            | Request::PlanNow { .. }
     )
 }
 
@@ -329,7 +330,8 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         | Request::RequestAssistant { .. }
         | Request::CancelRequest { .. }
         | Request::GetWork { .. }
-        | Request::ApplyNotes { .. }) => crate::assistant::handle(cx, req).await,
+        | Request::ApplyNotes { .. }
+        | Request::PlanNow { .. }) => crate::assistant::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(

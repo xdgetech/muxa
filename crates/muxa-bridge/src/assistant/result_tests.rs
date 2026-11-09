@@ -8,8 +8,8 @@ use super::*;
 /// Agent text that must never be echoed into a reason.
 const SENTINEL: &str = "SENTINEL-7f3a";
 
-fn run() -> RunFor {
-    RunFor {
+fn run() -> RequestRun {
+    RequestRun {
         request: "q-0000000a".into(),
         version: 2,
         work: "w-0000000b".into(),
@@ -321,7 +321,7 @@ fn at_most_ten_results_are_kept() {
 #[test]
 fn notes_are_kept_with_the_runs_base_and_checked_for_size_and_nul() {
     let read = crate::assistant::notes::base_of(b"# Old\n");
-    let with_base = RunFor {
+    let with_base = RequestRun {
         notes_base: Some(read.clone()),
         ..run()
     };

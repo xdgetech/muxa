@@ -1,11 +1,11 @@
-//! One JSON file per record in `<state dir>/assistant/{captures,work,requests}/`
-//! (ADR 0046 §2), with the item store's lock and atomic write.
+//! One JSON file per record in `<state dir>/assistant/{captures,work,requests,plans}/`
+//! (ADR 0046 §2, ADR 0047 §5), with the item store's lock and atomic write.
 use std::fs::{self, DirBuilder};
 use std::marker::PhantomData;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
-use muxa_protocol::{AssistantRequest, Capture, WorkItem};
+use muxa_protocol::{AssistantRequest, Capture, Plan, WorkItem};
 use serde::de::{DeserializeOwned, Error as _};
 use serde::ser::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -55,6 +55,14 @@ impl Kind for AssistantRequest {
     const PREFIX: &'static str = "q-";
     /// A request has a `version` of its own.
     const FORMAT_KEY: &'static str = "format";
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl Kind for Plan {
+    const DIR: &'static str = "plans";
+    const PREFIX: &'static str = "p-";
     fn id(&self) -> &str {
         &self.id
     }
@@ -208,6 +216,22 @@ impl<T: Kind> Shelf<T> {
         stored.version = FORMAT_VERSION;
         write_json(&self.dir, id, &stored, MAX_FILE)?;
         Ok(Some(out))
+    }
+
+    /// Deletes record `id` under its lock; a missing one is no error.
+    pub fn remove(&self, id: &str) -> Result<(), StateError> {
+        check_id::<T>(id)?;
+        let _lock = Lock::acquire(&self.dir, id, true)?;
+        let path = self.dir.join(format!("{id}.json"));
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(StateError::Io {
+                action: "remove",
+                path,
+                source,
+            }),
+        }
     }
 
     /// Writes a new record under a fresh random id. `make` gets the id.

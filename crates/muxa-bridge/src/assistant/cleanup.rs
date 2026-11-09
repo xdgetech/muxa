@@ -25,7 +25,7 @@ pub fn leftovers(
     };
     let mut out = Vec::new();
     for r in runs {
-        let Some(run) = r.assistant_run() else {
+        let Some(run) = r.request_run() else {
             continue;
         };
         if r.status != Status::Done || r.session.is_some() {
@@ -64,7 +64,7 @@ pub async fn remove(dirs: Vec<PathBuf>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assistant::record::RunFor;
+    use crate::assistant::record::{RequestRun, RunFor};
     use muxa_protocol::{AssistResult, AssistScope, Delivery};
 
     fn setup(name: &str) -> (PathBuf, Workspaces) {
@@ -83,12 +83,12 @@ mod tests {
     }
 
     fn run(ws: &Workspaces, id: &str, version: u64, status: Status, updated: u64) -> Record {
-        let fields = RunFor {
+        let fields = RunFor::Request(RequestRun {
             request: "q-0000000a".into(),
             version,
             work: "w-0000000b".into(),
             notes_base: None,
-        }
+        })
         .fields();
         let dir = ws.get("w").unwrap().assistant_dir("Plan", id).unwrap();
         std::fs::create_dir_all(&dir).unwrap();

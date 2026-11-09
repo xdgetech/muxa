@@ -53,9 +53,9 @@ pub async fn serve_loop(daemon_dir: Option<&Path>, req: Request) -> Vec<Message>
     };
     let absent = match req {
         Request::RunRoutine { .. } => NO_DAEMON_ROUTINES,
-        Request::RequestAssistant { .. } | Request::CancelRequest { .. } => {
-            crate::assistant::NO_DAEMON
-        }
+        Request::RequestAssistant { .. }
+        | Request::CancelRequest { .. }
+        | Request::PlanNow { .. } => crate::assistant::NO_DAEMON,
         _ => NO_DAEMON,
     };
     let Some(dir) = daemon_dir else {

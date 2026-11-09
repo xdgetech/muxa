@@ -1,7 +1,8 @@
 //! The daemon's tick for assistant requests (ADR 0046 §4–§6): finds a run
 //! again after a crash, keeps each version's delivery, ends what a version
 //! no longer needs, and closes finished runs' sessions as for Routine runs
-//! (ADR 0037). It never stops a timed-out agent.
+//! (ADR 0037). It never stops a timed-out agent. Plans have their own scan
+//! (`plan::tick`) and schedule, and share the sessions it lists.
 use std::sync::Arc;
 
 use muxa_protocol::{AssistantRequest, Delivery};
@@ -18,7 +19,7 @@ const WRITE_ATTEMPTS: usize = 3;
 
 /// What one scan found to do outside the store.
 #[derive(Debug, Default)]
-pub(super) struct Plan {
+pub(super) struct Todo {
     /// `(request, run)` whose delivery needs the adapter.
     watch: Vec<(String, String)>,
     /// Runs whose session closes: published, replaced or cancelled.
@@ -30,24 +31,46 @@ pub(super) struct Plan {
 pub async fn tick(cx: &Context) {
     let config = Arc::clone(&cx.records);
     let now = crate::records::now();
-    let plan = tokio::task::spawn_blocking(move || scan(&config, now))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "the assistant scan stopped");
-            Plan::default()
-        });
-    if !plan.watch.is_empty() || !plan.close.is_empty() {
+    let scanned = tokio::task::spawn_blocking(move || {
+        let workspaces = config.load_workspaces().unwrap_or_default();
+        let plans = super::plan::tick::scan(&config, &workspaces, now);
+        (scan(&config, now), plans)
+    })
+    .await;
+    let (mut plan, plans) = scanned.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "the assistant scan stopped");
+        Default::default()
+    });
+    plan.close.extend(plans.close);
+    plan.dirs.extend(plans.dirs);
+    let busy = !plan.watch.is_empty() || !plans.watch.is_empty() || !plan.close.is_empty();
+    if busy {
         if let Some(sessions) = sessions(cx).await {
             watch(cx, &plan.watch, &sessions).await;
+            watch_plans(cx, plans.watch, &sessions).await;
             close(cx, &plan.close, &sessions).await;
         }
     }
     super::cleanup::remove(plan.dirs).await;
+    super::plan::schedule::tick(cx).await;
+}
+
+async fn watch_plans(cx: &Context, watched: Vec<(String, String)>, sessions: &[Session]) {
+    if watched.is_empty() {
+        return;
+    }
+    let (config, sessions) = (Arc::clone(&cx.records), sessions.to_vec());
+    let done = tokio::task::spawn_blocking(move || {
+        super::plan::tick::watch(&config, &watched, &sessions);
+    });
+    if let Err(e) = done.await {
+        tracing::warn!(error = %e, "the plan delivery update stopped");
+    }
 }
 
 /// Blocking. Every request once: writes what the store alone decides.
-fn scan(config: &Config, now: u64) -> Plan {
-    let mut plan = Plan::default();
+fn scan(config: &Config, now: u64) -> Todo {
+    let mut plan = Todo::default();
     let Some(state_dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
         return plan;
     };
@@ -73,10 +96,10 @@ fn scan(config: &Config, now: u64) -> Plan {
         one(config, &shelf, &q, &records, timeout, now, &mut plan);
         let runs: Vec<&Record> = records
             .iter()
-            .filter(|r| r.assistant_run().is_some_and(|run| run.request == q.id))
+            .filter(|r| r.request_run().is_some_and(|run| run.request == q.id))
             .collect();
         // A run of the current version may still be starting: only older ones end.
-        let older = |r: &&&Record| r.assistant_run().is_some_and(|run| run.version < q.version);
+        let older = |r: &&&Record| r.request_run().is_some_and(|run| run.version < q.version);
         for r in runs.iter().filter(older) {
             if super::ask::open(r) {
                 drop_run(
@@ -103,7 +126,7 @@ fn one(
     records: &[Record],
     timeout: u64,
     now: u64,
-    plan: &mut Plan,
+    plan: &mut Todo,
 ) {
     let Some(task) = q.run.clone() else {
         unstarted(shelf, q, records, now);
@@ -189,7 +212,7 @@ fn unstarted(shelf: &Shelf<AssistantRequest>, q: &AssistantRequest, records: &[R
 
 /// A session to close. A send or restart awaiting recovery holds its record:
 /// closing waits for `recover-restart` (ADR 0024) instead of failing each tick.
-fn closable(r: &Record) -> bool {
+pub(super) fn closable(r: &Record) -> bool {
     r.session.is_some() && !r.extra.contains_key(crate::records::lifecycle::FIELD)
 }
 
@@ -245,7 +268,7 @@ async fn sessions(cx: &Context) -> Option<Vec<Session>> {
 }
 
 /// The adapter's word on `task`'s agent; None without one (invariant 6).
-fn agent_of(sessions: &[Session], task: &str) -> Option<Agent> {
+pub(super) fn agent_of(sessions: &[Session], task: &str) -> Option<Agent> {
     let s = sessions
         .iter()
         .find(|s| s.task_id.as_deref() == Some(task))?;

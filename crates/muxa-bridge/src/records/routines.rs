@@ -316,20 +316,36 @@ fn trigger(
             (text.split_whitespace().collect::<Vec<_>>().join(" "), zone)
         }
     };
+    scheduled(&text, Some(zone)).map(Some)
+}
+
+/// Five cron fields in an IANA time zone; without `zone`, the host's own
+/// (the overall assistant's plans, ADR 0047 §5). Errors never quote the schedule.
+pub(crate) fn scheduled(text: &str, zone: Option<&str>) -> Result<Trigger, String> {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let parsed = cron::parse(&text)?;
-    if zone.is_empty() || zone.chars().any(char::is_control) || zone.len() > 64 {
-        return Err("timezone must be an IANA name such as Europe/Berlin".into());
-    }
-    let tz = jiff::tz::TimeZone::get(zone)
-        .map_err(|_| format!("timezone {zone:?} is not a known IANA time zone"))?;
-    Ok(Some(Trigger {
+    let (timezone, tz) = match zone {
+        Some(zone) => {
+            if zone.is_empty() || zone.chars().any(char::is_control) || zone.len() > 64 {
+                return Err("timezone must be an IANA name such as Europe/Berlin".into());
+            }
+            let tz = jiff::tz::TimeZone::get(zone)
+                .map_err(|_| format!("timezone {zone:?} is not a known IANA time zone"))?;
+            (zone.to_owned(), tz)
+        }
+        None => {
+            let tz = jiff::tz::TimeZone::system();
+            (tz.iana_name().unwrap_or("local").to_owned(), tz)
+        }
+    };
+    Ok(Trigger {
         hour: parsed.hour,
         minute: parsed.minute,
         days: parsed.days,
         schedule: text,
-        timezone: zone.to_owned(),
+        timezone,
         tz,
-    }))
+    })
 }
 
 /// `HH:MM`.

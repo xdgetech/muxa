@@ -4,7 +4,7 @@
 //! adapter, and only the tick writes it.
 use std::collections::HashMap;
 
-use muxa_protocol::{AssistantRequest, Delivery};
+use muxa_protocol::{AssistantRequest, Delivery, Plan};
 
 use crate::records::assistant::DEFAULT_RUN_TIMEOUT;
 use crate::records::lifecycle::Phase;
@@ -52,25 +52,44 @@ pub fn derive(q: &AssistantRequest, f: &Facts<'_>) -> (Delivery, u64) {
         return (Delivery::Resulted, r.at);
     }
     let Some(record) = f.record.filter(|r| {
-        r.assistant_run()
+        r.request_run()
             .is_some_and(|run| run.request == q.id && run.version == q.version)
     }) else {
         return (q.delivery, q.delivery_at);
     };
-    let (state, at) = from_record(q, record, f);
-    if state == q.delivery {
-        (state, q.delivery_at)
-    } else {
-        (state, at)
-    }
+    keep_time(
+        (q.delivery, q.delivery_at),
+        from_record((q.delivery, q.delivery_at), record, f),
+    )
 }
 
-fn from_record(q: &AssistantRequest, r: &Record, f: &Facts<'_>) -> (Delivery, u64) {
+/// A plan's delivery, as a request's (ADR 0047 §5): only its own run counts.
+pub fn derive_plan(p: &Plan, f: &Facts<'_>) -> (Delivery, u64) {
+    let seen = (p.delivery, p.delivery_at);
+    if settled(p.delivery) {
+        return seen;
+    }
+    let Some(record) = f
+        .record
+        .filter(|r| r.plan_run().is_some_and(|run| run.plan == p.id))
+    else {
+        return seen;
+    };
+    keep_time(seen, from_record(seen, record, f))
+}
+
+/// The time is kept while the state stays.
+fn keep_time(seen: (Delivery, u64), new: (Delivery, u64)) -> (Delivery, u64) {
+    if new.0 == seen.0 { seen } else { new }
+}
+
+/// `seen` is the stored delivery and its time.
+fn from_record(seen: (Delivery, u64), r: &Record, f: &Facts<'_>) -> (Delivery, u64) {
     match r.restart_operation() {
         Ok(None) => {}
         Ok(Some(op)) if op.phase == Phase::Delivering => {
             if f.now.saturating_sub(op.since) < SEND_GRACE {
-                return (q.delivery, q.delivery_at);
+                return seen;
             }
             return (Delivery::Unconfirmed, op.since);
         }
@@ -116,9 +135,7 @@ fn from_record(q: &AssistantRequest, r: &Record, f: &Facts<'_>) -> (Delivery, u6
     match f.agent {
         Some(Agent::Busy(since)) => (Delivery::Processing, since),
         Some(Agent::NotBusy) => (Delivery::Received, f.now),
-        None if matches!(q.delivery, Delivery::Received | Delivery::Processing) => {
-            (q.delivery, q.delivery_at)
-        }
+        None if matches!(seen.0, Delivery::Received | Delivery::Processing) => seen,
         None => (Delivery::Received, f.now),
     }
 }

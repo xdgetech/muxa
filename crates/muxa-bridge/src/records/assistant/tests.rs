@@ -238,6 +238,42 @@ fn the_overall_workspace_gets_its_own_defaults_and_takes_no_requests() {
 }
 
 #[test]
+fn the_overall_workspace_plans_weekday_mornings_unless_told_otherwise() {
+    let w = two(
+        "[workspace.assistant]\noverall = true",
+        "[workspace.assistant]\ndelegate = true",
+    )
+    .unwrap();
+    let plans = &w.overall().unwrap().assistant.as_ref().unwrap().plans;
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].schedule, super::DEFAULT_PLAN);
+    assert_eq!(plans[0].tz, jiff::tz::TimeZone::system());
+    assert!(w.delegate("w2").unwrap().plans.is_empty());
+
+    let set = two(
+        "[workspace.assistant]\noverall = true\nplans = [\"30 7 * * 1-5\", \"0 13 * * *\"]\n\
+         timezone = \"Asia/Tokyo\"",
+        "",
+    )
+    .unwrap();
+    let plans = &set.overall().unwrap().assistant.as_ref().unwrap().plans;
+    let shown: Vec<String> = plans.iter().map(|t| format!("{t:?}")).collect();
+    assert_eq!(shown, ["30 7 * * 1-5 Asia/Tokyo", "0 13 * * * Asia/Tokyo"]);
+
+    let none = two("[workspace.assistant]\noverall = true\nplans = []", "").unwrap();
+    assert!(
+        none.overall()
+            .unwrap()
+            .assistant
+            .as_ref()
+            .unwrap()
+            .plans
+            .is_empty(),
+        "an empty list plans on demand only"
+    );
+}
+
+#[test]
 fn overall_counterexamples_are_refused_by_field() {
     let cases = [
         (
@@ -284,6 +320,37 @@ fn overall_counterexamples_are_refused_by_field() {
             "[workspace.assistant]\noverall = true\nrun_timeout = \"soon\"",
             "",
             "run_timeout",
+        ),
+        (
+            "[workspace.assistant]\noverall = true\nplans = [\"30 7 * * 1-5\", \"0 12 * * *\", \
+             \"0 17 * * *\", \"0 20 * * *\"]",
+            "",
+            "more than 3 schedules",
+        ),
+        (
+            "[workspace.assistant]\noverall = true\nplans = [\"0 9 * * *\", \"0 25 * * *\"]",
+            "",
+            "plans[1]: schedule hour",
+        ),
+        (
+            "[workspace.assistant]\noverall = true\nplans = [\"0 9 * * *\", \"0  9 * * *\"]",
+            "",
+            "plans[1] appears twice",
+        ),
+        (
+            "[workspace.assistant]\noverall = true\ntimezone = \"Mars/Base\"",
+            "",
+            "not a known IANA time zone",
+        ),
+        (
+            "[workspace.assistant]\ndelegate = true\nplans = [\"0 9 * * *\"]",
+            "",
+            "only to the overall workspace",
+        ),
+        (
+            "[workspace.assistant]\ndelegate = true\ntimezone = \"UTC\"",
+            "",
+            "only to the overall workspace",
         ),
     ];
     for (ws, w2, needle) in cases {

@@ -2,7 +2,7 @@ use muxa_protocol::{AssistResult, AssistScope};
 use serde_json::json;
 
 use super::*;
-use crate::assistant::record::RunFor;
+use crate::assistant::record::RequestRun;
 use crate::records::{Loop, LoopSpec};
 
 const RUN: &str = "t-00000a";
@@ -33,7 +33,7 @@ fn record() -> Record {
     }))
     .unwrap();
     r.extra.extend(
-        RunFor {
+        RequestRun {
             request: "q-0000000a".into(),
             version: 2,
             work: "w-0000000b".into(),

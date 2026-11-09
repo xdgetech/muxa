@@ -678,7 +678,8 @@ impl Worker {
             | Request::StopLoop { .. }
             | Request::RunRoutine { .. }
             | Request::RequestAssistant { .. }
-            | Request::CancelRequest { .. }) => {
+            | Request::CancelRequest { .. }
+            | Request::PlanNow { .. }) => {
                 let (dir, out) = (self.daemon_dir.clone(), self.out.clone());
                 self.pending.spawn(async move {
                     for msg in task_records::remote::serve_loop(dir.as_deref(), req).await {
@@ -727,14 +728,6 @@ impl Worker {
                     }
                 }
                 return None;
-            }
-            // Plans come with `work` level 9 (ADR 0047 slice B3); until the
-            // host advertises that level, no client sends this.
-            Request::PlanNow { .. } => {
-                return Some(Err(error_body(
-                    ErrorCode::Unsupported,
-                    "this host has no plans yet: update muxa-bridge",
-                )));
             }
             Request::Bye { .. } => Ok(()),
         };

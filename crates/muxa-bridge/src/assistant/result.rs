@@ -13,7 +13,7 @@ use rustix::fs::{Mode, OFlags};
 use serde::Deserialize;
 
 use super::notes::{MAX_NOTES, base_of};
-use super::record::RunFor;
+use super::record::RequestRun;
 use crate::routines::output::valid_url;
 
 /// The result folder, relative to the run's directory.
@@ -28,10 +28,10 @@ const MAX_SUMMARY: usize = 4096;
 const MAX_FINDINGS: usize = 20;
 const MAX_FINDING: usize = 1000;
 const MAX_SOURCES: usize = 10;
-const MAX_TITLE: usize = 200;
+pub(super) const MAX_TITLE: usize = 200;
 const MAX_PATH: usize = 4096;
 const MAX_LIST: usize = 10;
-const MAX_LINE: usize = 500;
+pub(super) const MAX_LINE: usize = 500;
 const MAX_FILES: usize = 20;
 const MAX_DUPLICATES: usize = 5;
 
@@ -79,42 +79,58 @@ struct RawDuplicate {
 }
 
 /// Reads the result in `dir` for `run`. The reasons are for the agent's check log.
-pub fn read(dir: &Path, run: &RunFor) -> Result<AssistResult, Vec<String>> {
-    let bytes = read_file(dir).map_err(|r| vec![r])?;
+pub fn read(dir: &Path, run: &RequestRun) -> Result<AssistResult, Vec<String>> {
+    let bytes = read_file(dir, "result.json").map_err(|r| vec![r])?;
     validate(&bytes, run)
 }
 
-/// Opens each folder below `dir` without following a symlink, so the agent
-/// cannot point the host at another file.
-fn read_file(dir: &Path) -> Result<Vec<u8>, String> {
+/// Reads `.muxa/assistant/<name>` in `dir`, at most 64 KiB. Each folder is
+/// opened without following a symlink, so the agent cannot point the host
+/// at another file.
+pub(super) fn read_file(dir: &Path, name: &str) -> Result<Vec<u8>, String> {
+    let file_path = format!("{STAGE_DIR}/{name}");
+    let shown = file_path.as_str();
     let folder = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
     let run = rustix::fs::open(dir, folder, Mode::empty())
         .map_err(|e| format!("cannot open the run folder: {e}"))?;
-    let muxa = step(&run, ".muxa", folder | OFlags::NOFOLLOW, ".muxa")?;
-    let stage = step(&muxa, "assistant", folder | OFlags::NOFOLLOW, STAGE_DIR)?;
+    let muxa = step(&run, ".muxa", folder | OFlags::NOFOLLOW, ".muxa", shown)?;
+    let stage = step(
+        &muxa,
+        "assistant",
+        folder | OFlags::NOFOLLOW,
+        STAGE_DIR,
+        shown,
+    )?;
     let file_flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
-    let fd = step(&stage, "result.json", file_flags, RESULT)?;
+    let fd = step(&stage, name, file_flags, shown, shown)?;
     let file = File::from(fd);
     let meta = file
         .metadata()
-        .map_err(|e| format!("cannot read {RESULT}: {e}"))?;
+        .map_err(|e| format!("cannot read {shown}: {e}"))?;
     if !meta.is_file() {
-        return Err(format!("{RESULT} is not a regular file."));
+        return Err(format!("{shown} is not a regular file."));
     }
     let mut bytes = Vec::new();
     file.take(MAX_FILE + 1)
         .read_to_end(&mut bytes)
-        .map_err(|e| format!("cannot read {RESULT}: {e}"))?;
+        .map_err(|e| format!("cannot read {shown}: {e}"))?;
     if bytes.len() as u64 > MAX_FILE {
-        return Err(format!("{RESULT} is larger than 64 KiB."));
+        return Err(format!("{shown} is larger than 64 KiB."));
     }
     Ok(bytes)
 }
 
-fn step(at: &OwnedFd, name: &str, flags: OFlags, shown: &str) -> Result<OwnedFd, String> {
+/// `wanted` is the file the agent writes.
+fn step(
+    at: &OwnedFd,
+    name: &str,
+    flags: OFlags,
+    shown: &str,
+    wanted: &str,
+) -> Result<OwnedFd, String> {
     rustix::fs::openat(at.as_fd(), name, flags, Mode::empty()).map_err(|e| match e {
         rustix::io::Errno::NOENT => {
-            format!("{shown} does not exist. Write {RESULT}, then end your turn.")
+            format!("{shown} does not exist. Write {wanted}, then end your turn.")
         }
         rustix::io::Errno::LOOP | rustix::io::Errno::NOTDIR => {
             format!("{shown} is a symlink or not of the right type; write a regular file in a plain folder.")
@@ -124,14 +140,15 @@ fn step(at: &OwnedFd, name: &str, flags: OFlags, shown: &str) -> Result<OwnedFd,
 }
 
 /// Every reason the result fails, or the result for `run`'s version.
-pub fn validate(bytes: &[u8], run: &RunFor) -> Result<AssistResult, Vec<String>> {
+pub fn validate(bytes: &[u8], run: &RequestRun) -> Result<AssistResult, Vec<String>> {
     if bytes.contains(&0) {
         return Err(vec![format!("{RESULT} contains a NUL byte.")]);
     }
     if std::str::from_utf8(bytes).is_err() {
         return Err(vec![format!("{RESULT} is not UTF-8.")]);
     }
-    let raw: RawResult = serde_json::from_slice(bytes).map_err(|e| vec![parse_reason(&e)])?;
+    let raw: RawResult = serde_json::from_slice(bytes)
+        .map_err(|e| vec![parse_reason(&e, RESULT, "Captures and Work items")])?;
     let mut reasons = Vec::new();
     if raw.version != VERSION {
         reasons.push(format!("version must be {VERSION}."));
@@ -175,7 +192,9 @@ pub fn validate(bytes: &[u8], run: &RunFor) -> Result<AssistResult, Vec<String>>
             &mut reasons,
         );
     }
-    let notes = raw.notes.and_then(|text| proposal(text, run, &mut reasons));
+    let notes = raw
+        .notes
+        .and_then(|text| proposal(text, run.notes_base.as_deref(), &mut reasons));
     if !reasons.is_empty() {
         return Err(reasons);
     }
@@ -202,23 +221,28 @@ pub fn validate(bytes: &[u8], run: &RunFor) -> Result<AssistResult, Vec<String>>
 
 /// The proposed notes, stored with the base the run read (ADR 0047 §1).
 /// None when the text is the copy's own: nothing to apply.
-fn proposal(text: String, run: &RunFor, reasons: &mut Vec<String>) -> Option<Notes> {
+pub(super) fn proposal(
+    text: String,
+    base: Option<&str>,
+    reasons: &mut Vec<String>,
+) -> Option<Notes> {
     if text.len() > MAX_NOTES || text.contains('\0') {
         reasons.push("notes must be at most 16 KiB of text, without NUL.".into());
         return None;
     }
-    let Some(base) = &run.notes_base else {
+    let Some(base) = base else {
         reasons.push("notes: this run read no notes; leave notes out.".into());
         return None;
     };
-    (base_of(text.as_bytes()) != *base).then(|| Notes {
+    (base_of(text.as_bytes()) != base).then(|| Notes {
         text,
-        base: base.clone(),
+        base: base.to_owned(),
     })
 }
 
-/// serde's own message can quote a value, so only its kind and place are kept.
-fn parse_reason(e: &serde_json::Error) -> String {
+/// serde's own message can quote a value, so only its kind and place are
+/// kept. `section` is where PROTOCOL.md describes the file.
+pub(super) fn parse_reason(e: &serde_json::Error, file: &str, section: &str) -> String {
     let what = match e.classify() {
         serde_json::error::Category::Data => {
             "does not match the schema (an unknown or missing field, or a wrong type)"
@@ -227,7 +251,7 @@ fn parse_reason(e: &serde_json::Error) -> String {
         _ => "is not valid JSON",
     };
     format!(
-        "{RESULT} {what} at line {}, column {}. The schema is in muxa's PROTOCOL.md, \"Captures and Work items\".",
+        "{file} {what} at line {}, column {}. The schema is in muxa's PROTOCOL.md, \"{section}\".",
         e.line(),
         e.column()
     )
@@ -287,14 +311,14 @@ fn lines(field: &str, values: &[String], reasons: &mut Vec<String>) {
     }
 }
 
-fn count(field: &str, n: usize, max: usize, reasons: &mut Vec<String>) {
+pub(super) fn count(field: &str, n: usize, max: usize, reasons: &mut Vec<String>) {
     if n > max {
         reasons.push(format!("{field} has more than {max} entries."));
     }
 }
 
 /// 1 to `max` bytes; line breaks and tabs are the only control characters.
-fn text(field: &str, value: &str, max: usize, reasons: &mut Vec<String>) {
+pub(super) fn text(field: &str, value: &str, max: usize, reasons: &mut Vec<String>) {
     let bad_control = value
         .chars()
         .any(|c| c.is_control() && c != '\n' && c != '\t');
@@ -305,7 +329,7 @@ fn text(field: &str, value: &str, max: usize, reasons: &mut Vec<String>) {
     }
 }
 
-fn one_line(field: &str, value: &str, max: usize, reasons: &mut Vec<String>) {
+pub(super) fn one_line(field: &str, value: &str, max: usize, reasons: &mut Vec<String>) {
     let n = value.chars().count();
     if value.trim().is_empty() || n > max || value.chars().any(char::is_control) {
         reasons.push(format!(
@@ -314,7 +338,7 @@ fn one_line(field: &str, value: &str, max: usize, reasons: &mut Vec<String>) {
     }
 }
 
-fn path(field: &str, value: &str, reasons: &mut Vec<String>) {
+pub(super) fn path(field: &str, value: &str, reasons: &mut Vec<String>) {
     if !value.starts_with('/') || value.len() > MAX_PATH || value.chars().any(char::is_control) {
         reasons.push(format!(
             "{field} must be an absolute path of at most {MAX_PATH} bytes, without control characters."
@@ -323,7 +347,7 @@ fn path(field: &str, value: &str, reasons: &mut Vec<String>) {
 }
 
 /// `w-` and 8 lowercase hex digits, as the store makes them.
-fn is_work_id(id: &str) -> bool {
+pub(super) fn is_work_id(id: &str) -> bool {
     id.strip_prefix("w-").is_some_and(|h| {
         h.len() == 8
             && h.bytes()

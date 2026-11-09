@@ -388,8 +388,9 @@ async fn start(
                         .assistant_dir(&record.title, &record.id)
                         .map_err(Failure::before)?;
                     let (at, root, saved) = (dir.clone(), workspace.root.clone(), record.clone());
+                    let config = Arc::clone(&env.records);
                     blocking(move || {
-                        crate::assistant::record::prepare_run(&saved, &root, &at)
+                        crate::assistant::record::prepare_run(&config, &saved, &root, &at)
                             .map_err(|m| error_body(ErrorCode::Internal, m))
                     })
                     .await

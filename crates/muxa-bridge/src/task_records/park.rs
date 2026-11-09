@@ -328,16 +328,26 @@ mod tests {
         let store = config.store().unwrap();
         let items = ItemStore::open(&base).unwrap();
         let mut task = None;
-        for kind in [
-            None,
-            Some("routine-run"),
-            Some("assistant-run"),
-            Some("future-run"),
-        ] {
+        let kind = |k: &str| {
             let mut extra = serde_json::Map::new();
-            if let Some(kind) = kind {
-                extra.insert(crate::records::KIND_FIELD.into(), kind.into());
-            }
+            extra.insert(crate::records::KIND_FIELD.into(), k.into());
+            Some(extra)
+        };
+        // ADR 0047 §5: an overall run is an assistant run that names a plan.
+        let plan = crate::assistant::record::RunFor::Plan(crate::assistant::record::PlanRun {
+            plan: "p-0000000a".into(),
+            notes_base: "e3b0".into(),
+        });
+        for extra in [
+            None,
+            kind("routine-run"),
+            kind("assistant-run"),
+            Some(plan.fields()),
+            kind("future-run"),
+        ] {
+            let shown = extra.is_none();
+            let extra = extra.unwrap_or_default();
+            let kind = extra.get(crate::records::KIND_FIELD).cloned();
             let made = store
                 .create(crate::records::NewRecord {
                     workspace: "w".into(),
@@ -347,7 +357,6 @@ mod tests {
                     ..Default::default()
                 })
                 .unwrap();
-            let shown = kind.is_none();
             assert_eq!(parkable(&made).is_ok(), shown, "{kind:?}");
             assert_eq!(quiet(&made, &items), shown, "{kind:?}");
             assert_eq!(crate::items::produce::watched(&made), shown, "{kind:?}");

@@ -1,11 +1,6 @@
 //! What the overall assistant reads of each workspace (ADR 0047 §3): a pure
 //! filter from store data to the shared part of its brief. Never: findings'
 //! text or sources, a workspace's Capture text, paths, Result files or notes.
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the overall run starts in ADR 0047 slice B3")
-)]
-
 use std::collections::HashMap;
 
 use muxa_protocol::{

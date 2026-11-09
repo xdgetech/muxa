@@ -67,25 +67,28 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 let entries = inbox::list(&config)?;
                 let items = crate::items::list(&config, &entries)?;
                 let assistant = crate::assistant::list(&config)?;
+                let plans =
+                    crate::assistant::plan::list(&config, &assistant.work, &assistant.requests)?;
                 // A broken workspaces file is logged by the load; the list still answers.
                 let info = config
                     .load_workspaces()
                     .ok()
                     .and_then(|w| crate::assistant::info::info(&w));
-                Ok((entries, items, assistant, info))
+                Ok((entries, items, assistant, plans, info))
             })
             .await
-            .map(|(entries, items, assistant, info)| Message::InboxList {
-                inbox: id,
-                entries,
-                items,
-                work: assistant.work,
-                captures: assistant.captures,
-                requests: assistant.requests,
-                // Plans come with ADR 0047 slice B3.
-                plans: Vec::new(),
-                assistant: info.map(Box::new),
-            })
+            .map(
+                |(entries, items, assistant, plans, info)| Message::InboxList {
+                    inbox: id,
+                    entries,
+                    items,
+                    work: assistant.work,
+                    captures: assistant.captures,
+                    requests: assistant.requests,
+                    plans,
+                    assistant: info.map(Box::new),
+                },
+            )
         }
         Request::UpdateInbox {
             id,

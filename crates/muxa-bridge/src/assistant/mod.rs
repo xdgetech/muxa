@@ -14,6 +14,7 @@ pub mod detail;
 pub mod info;
 pub mod notes;
 pub mod overall_brief;
+pub mod plan;
 pub mod policy;
 pub mod record;
 pub mod result;
@@ -234,7 +235,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
         } => {
             let config = Arc::clone(&cx.records);
             match blocking(move || apply::apply_notes(&config, &source, version, &base)).await {
-                Ok((entry, request)) => (
+                Ok(apply::Applied::Request(entry, request)) => (
                     vec![Message::WorkSaved {
                         work: id,
                         entry,
@@ -242,8 +243,24 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     }],
                     None,
                 ),
+                Ok(apply::Applied::Plan(entry)) => (
+                    vec![Message::PlanSaved {
+                        plan: id,
+                        entry: Box::new(entry),
+                    }],
+                    None,
+                ),
                 Err(e) => (Vec::new(), Some(e)),
             }
+        }
+        Request::PlanNow { id, minutes } => {
+            if !cx.daemon {
+                return (
+                    Vec::new(),
+                    Some(error_body(ErrorCode::Unsupported, NO_DAEMON)),
+                );
+            }
+            plan::now(cx, id, minutes).await
         }
         _ => (
             Vec::new(),
