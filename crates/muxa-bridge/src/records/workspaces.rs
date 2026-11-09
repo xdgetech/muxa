@@ -6,10 +6,11 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use muxa_protocol::{OverallRequests, Share};
 use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
-use super::assistant::{self, AssistantHost, Delegate, RawDelegate, RawHost};
+use super::assistant::{self, AssistantHost, Delegate, RawDelegate, RawHost, Role};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
 use super::routines::{self, Routine, RoutineGate, RoutineProblem};
@@ -62,8 +63,11 @@ pub struct Workspace {
     pub park_after: Option<u64>,
     /// None: this workspace has no Routines (ADR 0036).
     pub routines: Option<RoutineGate>,
-    /// None: it accepts captures but no assistant requests (ADR 0046).
+    /// How its assistant runs start: a delegate's or the overall
+    /// assistant's. None: it runs none (ADR 0046, 0047).
     pub assistant: Option<Delegate>,
+    /// What it is to the overall assistant (ADR 0047 §2–§4).
+    pub role: Role,
 }
 
 /// The configured workspaces, in file order.
@@ -220,12 +224,12 @@ impl Workspaces {
             let routines = w.routines.filter(|g| g.enabled).map(|g| RoutineGate {
                 direct_writes: g.direct_writes,
             });
-            let delegate = w
+            let (delegate, role) = w
                 .assistant
                 .map(RawDelegate::check)
                 .transpose()
                 .map_err(|r| invalid(format!("workspace {:?}: assistant {r}", w.name)))?
-                .flatten();
+                .unwrap_or_default();
             list.push(Workspace {
                 name: w.name,
                 root,
@@ -235,7 +239,16 @@ impl Workspaces {
                 park_after,
                 routines,
                 assistant: delegate,
+                role,
             });
+        }
+        let mut overall = list.iter().filter(|w| w.role == Role::Overall);
+        if let (Some(first), Some(second)) = (overall.next(), overall.next()) {
+            return Err(invalid(format!(
+                "workspaces {:?} and {:?} both set [workspace.assistant] overall = true; \
+                 at most one workspace may",
+                first.name, second.name
+            )));
         }
         let mut worker_names = HashSet::new();
         let mut workers = Vec::with_capacity(raw.worker.len());
@@ -289,7 +302,42 @@ impl Workspaces {
         if !self.assistant.enabled {
             return None;
         }
-        self.get(workspace)?.assistant.as_ref()
+        let w = self.get(workspace)?;
+        if w.role == Role::Overall {
+            return None;
+        }
+        w.assistant.as_ref()
+    }
+
+    /// The overall assistant's workspace, when the host allows assistant runs.
+    pub fn overall(&self) -> Option<&Workspace> {
+        if !self.assistant.enabled {
+            return None;
+        }
+        self.list.iter().find(|w| w.role == Role::Overall)
+    }
+
+    /// What `workspace` shares with the overall assistant; `none` for an
+    /// unknown workspace and for the overall one.
+    pub fn share(&self, workspace: &str) -> Share {
+        match self.get(workspace).map(|w| w.role) {
+            Some(Role::Member { share, .. }) => share,
+            _ => Share::None,
+        }
+    }
+
+    /// Whether the overall assistant may ask `workspace`: `none` unless it
+    /// takes requests now.
+    pub fn overall_requests(&self, workspace: &str) -> OverallRequests {
+        if self.delegate(workspace).is_none() {
+            return OverallRequests::None;
+        }
+        match self.get(workspace).map(|w| w.role) {
+            Some(Role::Member {
+                overall_requests, ..
+            }) => overall_requests,
+            _ => OverallRequests::None,
+        }
     }
 
     pub fn routines(&self) -> &[Routine] {

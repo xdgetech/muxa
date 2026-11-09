@@ -64,6 +64,24 @@ pub fn read(root: &Path) -> Result<Snapshot, NotesError> {
     }
 }
 
+/// Blocking. When the live notes of the workspace at `root` last changed,
+/// in epoch seconds; None without a file. Reads no content.
+pub fn modified(root: &Path) -> Result<Option<u64>, NotesError> {
+    let Some(dir) = folder(root, false)? else {
+        return Ok(None);
+    };
+    let path = root.join(NOTES);
+    let stat = match rustix::fs::statat(dir.as_fd(), NAME, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(Errno::NOENT) => return Ok(None),
+        Err(e) => return Err(io("read", &path)(e)),
+    };
+    if rustix::fs::FileType::from_raw_mode(stat.st_mode) != rustix::fs::FileType::RegularFile {
+        return Err(not_regular(&path));
+    }
+    Ok(Some(u64::try_from(stat.st_mtime).unwrap_or(0)))
+}
+
 /// Blocking. Copies the live notes into the run folder `dir`, as long as
 /// they are still the ones whose hash the run recorded as `base`.
 pub fn copy_into(root: &Path, dir: &Path, base: &str) -> Result<(), NotesError> {

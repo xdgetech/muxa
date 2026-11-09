@@ -485,6 +485,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         park_after: None,
         routines: None,
         assistant: None,
+        role: Default::default(),
     };
     (dir, ws)
 }

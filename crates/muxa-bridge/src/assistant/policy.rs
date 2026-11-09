@@ -43,6 +43,15 @@ pub fn delegated(
              workspaces.toml on the host",
         ));
     }
+    if workspaces.overall().is_some_and(|w| w.name == workspace) {
+        return Err(error_body(
+            ErrorCode::Unsupported,
+            format!(
+                "workspace {workspace:?} is the overall assistant's; it takes no requests. \
+                 Ask another workspace"
+            ),
+        ));
+    }
     let delegate = workspaces.delegate(workspace).cloned().ok_or_else(|| {
         error_body(
             ErrorCode::Unsupported,

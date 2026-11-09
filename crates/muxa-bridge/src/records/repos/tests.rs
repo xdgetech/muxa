@@ -26,6 +26,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         park_after: None,
         routines: None,
         assistant: None,
+        role: Default::default(),
     }
 }
 

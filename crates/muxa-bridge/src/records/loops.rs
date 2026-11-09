@@ -453,6 +453,7 @@ mod tests {
             park_after: None,
             routines: None,
             assistant: None,
+            role: Default::default(),
         };
         assert!(
             ws.may_loop(&record(Some(&repo), Some(&other))).is_ok(),

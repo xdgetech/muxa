@@ -122,3 +122,20 @@ fn the_copy_is_the_snapshot_the_base_names() {
     let e = copy_into(&root.0, &run.0, &base).unwrap_err();
     assert!(matches!(e, NotesError::Changed { .. }), "{e}");
 }
+
+#[test]
+fn modified_is_the_files_time_and_never_follows_a_symlink() {
+    let d = temp();
+    assert_eq!(modified(&d.0).unwrap(), None);
+    live(&d.0, b"# Notes\n");
+    let at = modified(&d.0).unwrap().unwrap();
+    let now = crate::records::now();
+    assert!(at <= now && now - at < 60, "{at} {now}");
+
+    let other = temp();
+    std::fs::write(other.0.join("elsewhere.md"), SENTINEL).unwrap();
+    std::fs::create_dir_all(other.0.join(".muxa/assistant")).unwrap();
+    std::os::unix::fs::symlink(other.0.join("elsewhere.md"), other.0.join(NOTES)).unwrap();
+    let e = modified(&other.0).unwrap_err();
+    assert!(matches!(e, NotesError::NotRegular { .. }), "{e}");
+}

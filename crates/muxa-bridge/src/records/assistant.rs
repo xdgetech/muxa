@@ -1,6 +1,8 @@
 //! `[assistant]` and `[workspace.assistant]` in `workspaces.toml` (ADR 0046
-//! §1): whether a workspace takes assistant requests, which agent runs them,
-//! and how many runs it may have. Parsing only; `assistant/` runs them.
+//! §1, ADR 0047 §2–§4): whether a workspace takes requests, which agent runs
+//! them, what it shares with the overall assistant, and how many runs it may
+//! have. Parsing only; `assistant/` runs them.
+use muxa_protocol::{OverallRequests, Share};
 use serde::Deserialize;
 
 use super::workers::Worker;
@@ -8,16 +10,24 @@ use super::workspaces::parse_duration;
 
 /// Runs a day across all workspaces when `[assistant]` gives no number.
 pub const DEFAULT_HOST_RUNS_PER_DAY: u32 = 20;
+/// Requests the overall assistant sends without approval, across all workspaces.
+pub const DEFAULT_AUTO_REQUESTS_PER_DAY: u32 = 5;
 pub const DEFAULT_OPEN_RUNS: u32 = 1;
 pub const DEFAULT_RUNS_PER_DAY: u32 = 10;
 /// Seconds: `"30m"`.
 pub const DEFAULT_RUN_TIMEOUT: u64 = 30 * 60;
+/// The overall workspace's own defaults (ADR 0047 §9).
+pub const OVERALL_OPEN_RUNS: u32 = 1;
+pub const OVERALL_RUNS_PER_DAY: u32 = 8;
+/// Seconds: `"15m"`.
+pub const OVERALL_RUN_TIMEOUT: u64 = 15 * 60;
 
 /// The host's switch and budget (`[assistant]`). No table: off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AssistantHost {
     pub enabled: bool,
     pub max_runs_per_day: u32,
+    pub max_auto_requests_per_day: u32,
 }
 
 impl Default for AssistantHost {
@@ -25,11 +35,13 @@ impl Default for AssistantHost {
         Self {
             enabled: false,
             max_runs_per_day: DEFAULT_HOST_RUNS_PER_DAY,
+            max_auto_requests_per_day: DEFAULT_AUTO_REQUESTS_PER_DAY,
         }
     }
 }
 
-/// A workspace that takes requests (`[workspace.assistant]` with `delegate = true`).
+/// How a workspace's assistant runs start and stop: a delegate's
+/// (`delegate = true`) or the overall assistant's (`overall = true`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Delegate {
     /// None: the workspace's default agent (ADR 0046 §7).
@@ -40,6 +52,21 @@ pub struct Delegate {
     pub run_timeout: u64,
     /// Who writes a run's proposed notes to the live file (ADR 0047 §1).
     pub notes: NotesMode,
+}
+
+/// What a workspace is to the overall assistant (ADR 0047 §2–§4).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Role {
+    /// No `[workspace.assistant]`: it shares nothing and is never asked.
+    #[default]
+    Absent,
+    /// It has `[workspace.assistant]` without `overall`.
+    Member {
+        share: Share,
+        overall_requests: OverallRequests,
+    },
+    /// The overall assistant's own workspace. It takes no requests.
+    Overall,
 }
 
 /// `notes = "review" | "auto"`.
@@ -63,11 +90,30 @@ impl NotesMode {
     }
 }
 
+fn parse_share(value: &str) -> Result<Share, String> {
+    match value {
+        "none" => Ok(Share::None),
+        "outline" => Ok(Share::Outline),
+        "summaries" => Ok(Share::Summaries),
+        _ => Err("share must be \"none\", \"outline\" or \"summaries\"".into()),
+    }
+}
+
+fn parse_overall_requests(value: Option<&str>) -> Result<OverallRequests, String> {
+    match value {
+        None | Some("review") => Ok(OverallRequests::Review),
+        Some("none") => Ok(OverallRequests::None),
+        Some("auto") => Ok(OverallRequests::Auto),
+        Some(_) => Err("overall_requests must be \"none\", \"review\" or \"auto\"".into()),
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawHost {
     enabled: bool,
     max_runs_per_day: Option<i64>,
+    max_auto_requests_per_day: Option<i64>,
 }
 
 impl RawHost {
@@ -79,6 +125,11 @@ impl RawHost {
                 self.max_runs_per_day,
                 DEFAULT_HOST_RUNS_PER_DAY,
             )?,
+            max_auto_requests_per_day: positive(
+                "[assistant] max_auto_requests_per_day",
+                self.max_auto_requests_per_day,
+                DEFAULT_AUTO_REQUESTS_PER_DAY,
+            )?,
         })
     }
 }
@@ -86,7 +137,11 @@ impl RawHost {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawDelegate {
-    delegate: bool,
+    delegate: Option<bool>,
+    #[serde(default)]
+    overall: bool,
+    share: Option<String>,
+    overall_requests: Option<String>,
     worker: Option<String>,
     max_open_runs: Option<i64>,
     max_runs_per_day: Option<i64>,
@@ -95,29 +150,58 @@ pub(super) struct RawDelegate {
 }
 
 impl RawDelegate {
-    /// None when `delegate` is false. The other fields are checked anyway,
-    /// so a typo fails before the day it is switched on.
-    pub(super) fn check(self) -> Result<Option<Delegate>, String> {
-        let delegate = Delegate {
+    /// The run settings, None when the workspace runs nothing, and its role.
+    /// Every field is checked anyway, so a typo fails before the day it is
+    /// switched on.
+    pub(super) fn check(self) -> Result<(Option<Delegate>, Role), String> {
+        let (open, per_day, timeout) = if self.overall {
+            (OVERALL_OPEN_RUNS, OVERALL_RUNS_PER_DAY, OVERALL_RUN_TIMEOUT)
+        } else {
+            (DEFAULT_OPEN_RUNS, DEFAULT_RUNS_PER_DAY, DEFAULT_RUN_TIMEOUT)
+        };
+        let settings = Delegate {
             worker: self
                 .worker
                 .filter(|name| name != muxa_protocol::DEFAULT_WORKER),
-            max_open_runs: positive("max_open_runs", self.max_open_runs, DEFAULT_OPEN_RUNS)?,
-            max_runs_per_day: positive(
-                "max_runs_per_day",
-                self.max_runs_per_day,
-                DEFAULT_RUNS_PER_DAY,
-            )?,
+            max_open_runs: positive("max_open_runs", self.max_open_runs, open)?,
+            max_runs_per_day: positive("max_runs_per_day", self.max_runs_per_day, per_day)?,
             run_timeout: self
                 .run_timeout
                 .as_deref()
                 .map(parse_duration)
                 .transpose()
                 .map_err(|r| format!("run_timeout {r}"))?
-                .unwrap_or(DEFAULT_RUN_TIMEOUT),
+                .unwrap_or(timeout),
             notes: NotesMode::parse(self.notes.as_deref())?,
         };
-        Ok(self.delegate.then_some(delegate))
+        let share = self.share.as_deref().map(parse_share).transpose()?;
+        let overall_requests = parse_overall_requests(self.overall_requests.as_deref())?;
+        if self.overall {
+            // The overall assistant reads the others; nobody reads or asks it.
+            if self.delegate == Some(true) {
+                return Err(
+                    "overall: the overall workspace takes no requests; remove delegate".into(),
+                );
+            }
+            if self.share.is_some() || self.overall_requests.is_some() {
+                return Err(
+                    "overall: share and overall_requests do not apply to the overall workspace"
+                        .into(),
+                );
+            }
+            return Ok((Some(settings), Role::Overall));
+        }
+        let delegate = self.delegate.ok_or("delegate is required: true or false")?;
+        let default_share = if delegate {
+            Share::Summaries
+        } else {
+            Share::None
+        };
+        let role = Role::Member {
+            share: share.unwrap_or(default_share),
+            overall_requests,
+        };
+        Ok((delegate.then_some(settings), role))
     }
 }
 
@@ -152,152 +236,4 @@ fn positive(field: &str, value: Option<i64>, default: u32) -> Result<u32, String
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use crate::records::Workspaces;
-
-    fn parse(extra: &str, ws_extra: &str) -> Result<Workspaces, String> {
-        let root = std::env::temp_dir();
-        let root = root.to_string_lossy();
-        let text = format!(
-            "{extra}\n[[workspace]]\nname = \"w\"\nroot = \"{root}\"\n{ws_extra}\n\
-             [[worker]]\nname = \"Elsewhere\"\nagent = \"claude-code\"\nworkspaces = [\"w2\"]\n\
-             [[worker]]\nname = \"Researcher\"\nagent = \"claude-code\"\n\
-             [[workspace]]\nname = \"w2\"\nroot = \"{root}\"\n"
-        );
-        Workspaces::parse(&text, Path::new("w.toml"), None).map_err(|e| e.to_string())
-    }
-
-    #[test]
-    fn without_tables_the_host_is_off_and_no_workspace_delegates() {
-        let w = parse("", "").unwrap();
-        assert!(!w.assistant().enabled);
-        assert_eq!(w.assistant().max_runs_per_day, 20);
-        assert_eq!(w.all()[0].assistant, None);
-        assert_eq!(w.delegate("w"), None);
-    }
-
-    #[test]
-    fn a_delegate_gets_the_defaults() {
-        let w = parse(
-            "[assistant]\nenabled = true",
-            "[workspace.assistant]\ndelegate = true",
-        )
-        .unwrap();
-        let d = w.delegate("w").unwrap();
-        assert_eq!(
-            (d.worker.as_deref(), d.max_open_runs, d.max_runs_per_day),
-            (None, 1, 10)
-        );
-        assert_eq!(d.run_timeout, 1800);
-        assert_eq!(d.notes, super::NotesMode::Review);
-        assert_eq!(w.delegate("w2"), None);
-    }
-
-    #[test]
-    fn values_are_kept_and_the_host_switch_gates_delegates() {
-        let ws = "[workspace.assistant]\ndelegate = true\nworker = \"Researcher\"\n\
-                  max_open_runs = 2\nmax_runs_per_day = 4\nrun_timeout = \"2h\"\nnotes = \"auto\"";
-        let w = parse("[assistant]\nenabled = true\nmax_runs_per_day = 7", ws).unwrap();
-        assert_eq!(w.assistant().max_runs_per_day, 7);
-        let d = w.delegate("w").unwrap();
-        assert_eq!(d.worker.as_deref(), Some("Researcher"));
-        assert_eq!(
-            (d.max_open_runs, d.max_runs_per_day, d.run_timeout),
-            (2, 4, 7200)
-        );
-        assert_eq!(d.notes, super::NotesMode::Auto);
-        let off = parse("[assistant]\nenabled = false", ws).unwrap();
-        assert!(off.all()[0].assistant.is_some());
-        assert_eq!(off.delegate("w"), None);
-        let no = parse(
-            "[assistant]\nenabled = true",
-            "[workspace.assistant]\ndelegate = false",
-        )
-        .unwrap();
-        assert_eq!(no.delegate("w"), None);
-    }
-
-    #[test]
-    fn counterexamples_are_refused_by_field() {
-        let on = "[assistant]\nenabled = true";
-        let cases = [
-            ("[assistant]\nenabled = true\nlimit = 3", "", "limit"),
-            ("[assistant]\nmax_runs_per_day = 3", "", "enabled"),
-            (
-                "[assistant]\nenabled = true\nmax_runs_per_day = 0",
-                "",
-                "max_runs_per_day",
-            ),
-            (on, "[workspace.assistant]\nmax_open_runs = 1", "delegate"),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nworkers = \"x\"",
-                "workers",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nmax_open_runs = 0",
-                "max_open_runs",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nmax_open_runs = -1",
-                "max_open_runs",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nmax_runs_per_day = 0",
-                "max_runs_per_day",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nrun_timeout = \"soon\"",
-                "run_timeout",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nrun_timeout = \"0m\"",
-                "run_timeout",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = false\nrun_timeout = \"30\"",
-                "run_timeout",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nnotes = \"always\"",
-                "notes must be",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nworker = \"Nobody\"",
-                "not configured",
-            ),
-            (
-                on,
-                "[workspace.assistant]\ndelegate = true\nworker = \"Elsewhere\"",
-                "not allowed",
-            ),
-        ];
-        for (host, ws, needle) in cases {
-            let err = parse(host, ws).unwrap_err();
-            assert!(err.contains(needle), "{host:?} {ws:?}: {err}");
-        }
-    }
-
-    #[test]
-    fn the_default_worker_name_means_the_workspace_agent() {
-        let w = parse(
-            "[assistant]\nenabled = true",
-            &format!(
-                "[workspace.assistant]\ndelegate = true\nworker = \"{}\"",
-                muxa_protocol::DEFAULT_WORKER
-            ),
-        )
-        .unwrap();
-        assert_eq!(w.delegate("w").unwrap().worker, None);
-    }
-}
+mod tests;

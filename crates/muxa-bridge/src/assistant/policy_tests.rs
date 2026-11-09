@@ -53,6 +53,13 @@ fn a_workspace_needs_the_host_switch_and_its_own_delegate() {
         ErrorCode::BadRequest
     );
     let _ = std::fs::remove_dir_all(root);
+    let overall = refused(ON, "[workspace.assistant]\noverall = true");
+    assert_eq!(overall.code, ErrorCode::Unsupported);
+    assert!(
+        overall.message.contains("overall assistant's"),
+        "{}",
+        overall.message
+    );
 }
 
 #[test]

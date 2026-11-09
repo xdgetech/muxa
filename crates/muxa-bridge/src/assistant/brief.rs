@@ -286,7 +286,7 @@ fn fenced(text: &str, max: usize) -> Option<String> {
 }
 
 /// The longest prefix of `text` of at most `max` bytes that ends on a character boundary.
-fn cut(text: &str, max: usize) -> &str {
+pub(super) fn cut(text: &str, max: usize) -> &str {
     if text.len() <= max {
         return text;
     }
@@ -297,7 +297,7 @@ fn cut(text: &str, max: usize) -> &str {
     &text[..end]
 }
 
-fn longest_run(text: &str) -> usize {
+pub(super) fn longest_run(text: &str) -> usize {
     let (mut best, mut run) = (0, 0);
     for c in text.chars() {
         run = if c == '`' { run + 1 } else { 0 };
