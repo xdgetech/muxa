@@ -68,6 +68,9 @@ final class AppModel {
     /// Captures saved while the connection was down; the demo keeps its own in memory.
     private(set) var unsent: UnsentCaptures
     private let savedUnsent: UnsentCaptures
+    /// The assistant Results shown on this device; the demo keeps its own in memory.
+    private(set) var seenResults: SeenResults
+    private let savedSeen: SeenResults
     /// The host that last connected with Captures: `+` still captures for it offline.
     var captureHostID: UUID?
     /// Created from that sheet: shown once the sheet has closed.
@@ -143,6 +146,8 @@ final class AppModel {
             savedHosts = HostStore(file: nil)
             savedUnsent = UnsentCaptures(file: nil)
             unsent = savedUnsent
+            savedSeen = SeenResults(file: nil)
+            seenResults = savedSeen
             return
         }
         // The Try the Demo test starts from no hosts, whatever the simulator saved.
@@ -151,6 +156,8 @@ final class AppModel {
             hosts = savedHosts
             savedUnsent = UnsentCaptures(file: nil)
             unsent = savedUnsent
+            savedSeen = SeenResults(file: nil)
+            seenResults = savedSeen
             return
         }
         #endif
@@ -158,6 +165,8 @@ final class AppModel {
         hosts = savedHosts
         savedUnsent = UnsentCaptures(file: UnsentCaptures.defaultFile)
         unsent = savedUnsent
+        savedSeen = SeenResults(file: SeenResults.defaultFile)
+        seenResults = savedSeen
     }
 
     /// One demo host, never written to disk.
@@ -181,6 +190,7 @@ final class AppModel {
         demoContent = .showcase
         demoAlerts = true
         unsent = UnsentCaptures(file: nil)
+        seenResults = SeenResults(file: nil)
         (hosts, demoHostID) = Self.demoHosts()
         guard let id = hosts.lastUsed else { return }
         await connect(to: id)
@@ -195,6 +205,7 @@ final class AppModel {
         demoHostID = nil
         hosts = savedHosts
         unsent = savedUnsent
+        seenResults = savedSeen
     }
 
     /// What belonged to the last host's connection.

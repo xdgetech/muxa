@@ -73,6 +73,8 @@ public final class PaneSession {
     /// Every Capture seen since connecting, by id: a sorted one is no longer listed,
     /// but its Work item still shows its text.
     public internal(set) var knownCaptures: [String: Capture] = [:]
+    /// Work items as `get-work` last read them, by id: every Capture they link and their requests.
+    public internal(set) var workDetails: [String: LoadedWork] = [:]
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -107,6 +109,10 @@ public final class PaneSession {
     /// `capture-saved` and `work-saved`, by request id (`PaneSession+Captures.swift`).
     @ObservationIgnored var savedCaptures: [UInt64: (capture: Capture, work: WorkItem?)] = [:]
     @ObservationIgnored var savedWork: [UInt64: WorkItem] = [:]
+    /// The request a `work-saved` or `capture-saved` carried, and `work-detail`, by request
+    /// id (`PaneSession+Assistant.swift`).
+    @ObservationIgnored var savedRequests: [UInt64: AssistantRequest] = [:]
+    @ObservationIgnored var readWorks: [UInt64: LoadedWork] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
     @ObservationIgnored var startedSessions: [UInt64: StartedSession] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
@@ -150,6 +156,7 @@ public final class PaneSession {
             captures = []
             assistantRequests = []
             knownCaptures = [:]
+            workDetails = [:]
         }
         phase = .connecting
         do {
@@ -812,19 +819,30 @@ public final class PaneSession {
                 savedItems[id] = item
                 keep(item)
             }
-        case .captureSaved(let id, let entry, let work, _):
+        case .captureSaved(let id, let entry, let work, let request):
             savedCaptures[id] = (entry, work)
             keep(entry)
             if let work { keep(work) }
-        case .workSaved(let id, let entry, _):
+            if let request {
+                savedRequests[id] = request
+                keep(request)
+            }
+        case .workSaved(let id, let entry, let request):
             savedWork[id] = entry
             keep(entry)
+            // A run that did not start comes as a `failed` request before the error.
+            if let request {
+                savedRequests[id] = request
+                keep(request)
+            }
+        case .workDetail(let id, let entry, let captures, let requests):
+            readWorks[id] = LoadedWork(entry: entry, captures: captures, requests: requests)
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded, .workDetail:
+            .diffContent, .diffEnded, .imageContent, .imageEnded:
             break
         }
     }
@@ -865,6 +883,8 @@ public final class PaneSession {
         savedItems = [:]
         savedCaptures = [:]
         savedWork = [:]
+        savedRequests = [:]
+        readWorks = [:]
         startedSessions = [:]
         inputs = []
         sentViewport = nil
@@ -891,6 +911,7 @@ public final class PaneSession {
     public nonisolated static func describe(_ error: any Error) -> String {
         switch error {
         case Failure.bridge(let body): body.message
+        case let e as AssistNotStarted: e.reason.message
         case Failure.protocolMismatch(let v): "The bridge speaks protocol \(v); this app speaks \(protocolVersion). Update one of them."
         case Failure.noHello: "The bridge did not start. Check that muxa-bridge is installed on the host and that the bridge command points to it."
         case Failure.notConnected: "Not connected."

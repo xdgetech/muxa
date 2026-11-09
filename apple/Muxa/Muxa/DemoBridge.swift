@@ -17,7 +17,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// The app's grid at its default font, once it sent one.
     private var viewport: (cols: UInt16, rows: UInt16)?
     /// Panes whose window follows the device in use.
-    private var followers: Set<String>
+    var followers: Set<String>
     private var chat: (id: UInt64, seq: UInt64, count: Int)?
     private var openDoc: UInt64?
     private var openDiff: UInt64?
@@ -28,7 +28,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// Texts the Inbox sent to the chat's agent, after its conversation.
     private var itemTexts: [ChatEntry] = []
     /// Grows when a task starts.
-    private var sessions: [Session]
+    var sessions: [Session]
     /// Grows when a task record is created.
     private var tasks: DemoTasks
     /// Routines, stored Inbox entries (ADR 0026), Captures and Work items (ADR 0046).
@@ -379,9 +379,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             ok(id)
         case .listInbox(let id):
             let (entries, items) = lock.withLock { (work.shownEntries, work.shownItems) }
-            let (listed, captures) = listedWork()
+            let (listed, captures, requests) = listedWork()
             emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? items : [],
-                            work: listed, captures: captures))
+                            work: listed, captures: captures, requests: requests))
             ok(id)
         case .runRoutine(let id, let workspace, let routine):
             let outcome = lock.withLock { () -> Result<RoutineInfo, DemoWork.Refusal> in

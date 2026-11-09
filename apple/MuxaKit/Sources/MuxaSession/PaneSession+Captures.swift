@@ -15,20 +15,28 @@ extension PaneSession {
     public var openWork: [WorkItem] { workList.filter(\.isOpen) }
 
     /// Saves the user's text on the host. The same `clientId` returns the stored Capture
-    /// and writes nothing, so a capture kept unsent is safe to send again.
+    /// and writes nothing, so a capture kept unsent is safe to send again. With `assist`
+    /// the host also makes a Work item in `workspace` and asks its assistant; when the
+    /// assistant cannot start, the Capture is still saved and `AssistNotStarted` says why.
     @discardableResult
-    public func capture(clientId: String, text: String, workspace: String?) async throws -> Capture {
+    public func capture(clientId: String, text: String, workspace: String?, assist: AssistSpec? = nil) async throws -> Capture {
         try requireCaptures()
         var requestId: UInt64 = 0
         do {
             try await request { id in
                 requestId = id
-                return .capture(id: id, clientId: clientId, text: text, source: .app, workspace: workspace)
+                return .capture(id: id, clientId: clientId, text: text, source: .app, workspace: workspace, assist: assist)
             }
+        } catch Failure.bridge(let body) where assist != nil {
+            savedRequests[requestId] = nil
+            guard let kept = savedCaptures.removeValue(forKey: requestId) else { throw Failure.bridge(body) }
+            throw AssistNotStarted(capture: kept.capture, reason: body)
         } catch {
             savedCaptures[requestId] = nil
+            savedRequests[requestId] = nil
             throw error
         }
+        savedRequests[requestId] = nil
         guard let saved = savedCaptures.removeValue(forKey: requestId) else {
             throw Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the capture."))
         }
@@ -94,7 +102,7 @@ extension PaneSession {
         }
     }
 
-    private func requireCaptures() throws {
+    func requireCaptures() throws {
         guard canCapture else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.capturesUnsupported))
         }
@@ -112,6 +120,7 @@ extension PaneSession {
         captures = inbox.captures
         assistantRequests = inbox.requests
         for c in inbox.captures { knownCaptures[c.id] = c }
+        for r in inbox.requests { keepRead(r) }
     }
 
     /// An unsorted Capture is listed, newest first; a sorted one leaves the list.

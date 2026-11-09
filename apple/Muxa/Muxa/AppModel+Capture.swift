@@ -23,15 +23,20 @@ extension AppModel {
     func startCapture() {
         guard capturesFirst else { return startNewTask() }
         capture = CaptureDraft()
+        // Ask Assistant needs a workspace to pick.
+        if isConnected, session.workspaces.isEmpty { Task { await session.loadTasks() } }
     }
 
     /// Saves the capture on the host. While the connection is down it stays on this
     /// device as Not sent, with the same `clientId`. Throws what the host refused.
-    func save(_ draft: CaptureDraft) async throws {
+    /// With `assist` the host also asks its assistant; that needs the connection, and a
+    /// refusal throws `AssistNotStarted` with the Capture kept in Unsorted.
+    func save(_ draft: CaptureDraft, assist: AssistSpec? = nil) async throws {
         guard draft.problem == nil, let host = currentHostID else { return }
         do {
-            try await session.capture(clientId: draft.clientId, text: draft.trimmed, workspace: draft.workspace)
-        } catch let error where PaneSession.isConnectionLoss(error) {
+            try await session.capture(
+                clientId: draft.clientId, text: draft.trimmed, workspace: draft.workspace, assist: assist)
+        } catch let error where assist == nil && PaneSession.isConnectionLoss(error) {
             unsent.add(UnsentCapture(clientId: draft.clientId, host: host, text: draft.trimmed, workspace: draft.workspace))
         }
         capture = nil

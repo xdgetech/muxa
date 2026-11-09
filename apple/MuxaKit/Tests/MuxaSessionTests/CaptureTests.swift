@@ -5,7 +5,7 @@ import Testing
 @testable import MuxaSession
 
 /// A bridge with Captures and Work items (`work` level 8, ADR 0046), as the host answers them.
-final class CaptureBridge: FakeBridge, @unchecked Sendable {
+class CaptureBridge: FakeBridge, @unchecked Sendable {
     var captures: [Capture] = [CaptureTests.capture("c-00000001", "Look at the flaky test\nIt failed twice.")]
     var work: [WorkItem] = [CaptureTests.work("w-00000001", "Plan the migration")]
     /// The connection drops on the next `capture`, before any answer.

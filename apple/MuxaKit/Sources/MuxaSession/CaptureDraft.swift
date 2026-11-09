@@ -9,6 +9,10 @@ public struct CaptureDraft: Equatable, Sendable {
     public var text: String
     /// Nil: no workspace yet.
     public var workspace: String?
+    /// What Ask Assistant asks for.
+    public var scope: AssistScope = .research
+    /// What the assistant should look at; empty sends none.
+    public var purpose: String = ""
 
     /// The host keeps at most 16 KiB of text.
     public static let maxBytes = 16 * 1024
@@ -31,6 +35,24 @@ public struct CaptureDraft: Equatable, Sendable {
         if text.utf8.count > Self.maxBytes { return "This is too long. Keep it under 16 KB." }
         return nil
     }
+
+    /// What to fix before Ask Assistant can send it; nil when it can. The host needs a
+    /// workspace to ask (PROTOCOL.md, `capture {assist}`).
+    public var assistProblem: String? {
+        if let problem { return problem }
+        if workspace == nil { return "Pick a workspace for the assistant." }
+        if purpose.utf8.count > Self.maxPurposeBytes { return "The purpose is too long. Keep it under 4 KB." }
+        return nil
+    }
+
+    /// `assist` as Ask Assistant sends it.
+    public var assist: AssistSpec {
+        let p = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
+        return AssistSpec(scope: scope, purpose: p.isEmpty ? nil : p)
+    }
+
+    /// The host keeps at most 4096 bytes of purpose.
+    public static let maxPurposeBytes = 4096
 
     /// "Start a Task instead…": the first line as the title, the whole text as the goal.
     public func taskDraft(_ base: TaskRecordDraft) -> TaskRecordDraft {

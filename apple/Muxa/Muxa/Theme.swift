@@ -76,4 +76,8 @@ enum Icon {
     static let note = "note.text"
     static let reopen = "arrow.uturn.backward"
     static let withdraw = "xmark.circle"
+    /// A workspace's assistant working on a Work item (ADR 0046).
+    static let assistant = "sparkles"
+    static let cancel = "stop.circle"
+    static let result = "doc.text.magnifyingglass"
 }

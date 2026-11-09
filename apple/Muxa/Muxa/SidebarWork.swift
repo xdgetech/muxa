@@ -12,7 +12,9 @@ struct SidebarWorkSection: View {
         if !items.isEmpty {
             Section {
                 ForEach(items) { item in
-                    Button { model.select(.work(item.id)) } label: { WorkRow(item: item) }
+                    Button { model.select(.work(item.id)) } label: {
+                        WorkRow(item: item, request: model.latestRequest(of: item), resultReady: model.hasNewResult(item))
+                    }
                         .foregroundStyle(.primary)
                         .sidebarHighlight(model.detail == .work(item.id))
                         .accessibilityIdentifier("work-row-\(item.id)")
@@ -30,16 +32,28 @@ struct SidebarWorkSection: View {
     }
 }
 
-/// The title, then its state, workspace and Later. A Work item that waits on a
-/// decision has no answer of its own: the decision is in Decisions.
+/// The title, then its state, workspace and Later, and its assistant's delivery or a
+/// Result not read yet. A Work item that waits on a decision has no answer of its own:
+/// the decision is in Decisions.
 struct WorkRow: View {
     let item: WorkItem
+    /// The newest assistant request, if any.
+    var request: AssistantRequest?
+    /// The newest Result is not shown on this device yet.
+    var resultReady = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(item.title).lineLimit(2)
             Text(details).font(.caption)
                 .foregroundStyle(item.state == .waitingDecision ? Theme.attention : .secondary)
+            if resultReady {
+                Label("Result ready", systemImage: Icon.result).font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+            } else if let request, request.delivery != .resulted {
+                Text("Assistant: \(request.delivery.shown)").font(.caption)
+                    .foregroundStyle(request.delivery == .failed || request.delivery == .timedOut ? Theme.attention : .secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())

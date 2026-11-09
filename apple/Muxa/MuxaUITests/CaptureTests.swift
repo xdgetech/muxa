@@ -1,8 +1,9 @@
 import XCTest
 
 /// Captures and Work items on a `work` level 8 host (ADR 0046), against the demo's
-/// fixtures: Work items w-0000b001 to b003, unsorted Captures c-0000c001 and c002.
-/// The demo numbers new Captures from c-00000102 and new Work items from w-00000103.
+/// fixtures: Work items w-0000b001 to b003, unsorted Captures c-0000c001 and c002, and
+/// c-0000c003 sorted into b002. The demo numbers new Captures from c-00000103 and new
+/// Work items from w-00000103.
 final class CaptureTests: XCTestCase {
     override class func setUp() {
         super.setUp()
@@ -12,50 +13,6 @@ final class CaptureTests: XCTestCase {
     override func setUp() {
         super.setUp()
         XCUIDevice.shared.orientation = .portrait
-    }
-
-    @MainActor
-    private func launchOnInbox(_ arguments: [String] = []) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-mode", "inbox"] + arguments
-        app.launch()
-        XCTAssertTrue(app.buttons["item-row-i-0000a001"].waitForExistence(timeout: 10))
-        return app
-    }
-
-    @MainActor
-    private func workRow(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.buttons["work-row-\(id)"] }
-
-    @MainActor
-    private func section(_ app: XCUIApplication, _ name: String) -> XCUIElement {
-        app.descendants(matching: .any)["inbox-section-\(name)"].firstMatch
-    }
-
-    @MainActor
-    private func captureRow(_ app: XCUIApplication, _ id: String) -> XCUIElement { app.buttons["capture-row-\(id)"] }
-
-    /// Scrolls the sidebar until `element` is clear of the screen's bottom edge, where a
-    /// drag would reach the home indicator instead of the row.
-    @MainActor
-    private func reveal(_ app: XCUIApplication, _ element: XCUIElement) {
-        let bottom = app.windows.firstMatch.frame.maxY - 80
-        for _ in 0..<4 where !(element.isHittable && element.frame.maxY < bottom) {
-            app.collectionViews["sidebar-list"].swipeUp()
-        }
-    }
-
-    /// Waits for a row that is still to come, scrolling: a phone's list makes rows
-    /// below the screen only once they scroll into view.
-    @MainActor
-    private func waitForRow(_ app: XCUIApplication, _ row: XCUIElement) -> Bool {
-        for _ in 0..<5 {
-            if row.waitForExistence(timeout: 2) {
-                reveal(app, row)
-                return true
-            }
-            app.collectionViews["sidebar-list"].swipeUp()
-        }
-        return row.exists
     }
 
     /// The Inbox segment's label, which counts the decisions.
@@ -90,12 +47,12 @@ final class CaptureTests: XCTestCase {
     /// on an answer says so, with no answer of its own.
     @MainActor
     func testTheInboxHasDecisionsWorkAndUnsorted() throws {
-        let app = launchOnInbox()
-        let decisions = section(app, "decisions")
-        let work = section(app, "work")
-        let unsorted = section(app, "unsorted")
+        let app = launchWorkInbox()
+        let decisions = inboxSection(app, "decisions")
+        let work = inboxSection(app, "work")
+        let unsorted = inboxSection(app, "unsorted")
         XCTAssertTrue(decisions.exists)
-        reveal(app, captureRow(app, "c-0000c002"))
+        revealInSidebar(app, captureRow(app, "c-0000c002"))
         XCTAssertTrue(work.exists)
         XCTAssertTrue(unsorted.exists)
         XCTAssertLessThan(work.frame.minY, unsorted.frame.minY)
@@ -109,11 +66,11 @@ final class CaptureTests: XCTestCase {
     /// `+` saves a Capture into Unsorted. The badge counts decisions only.
     @MainActor
     func testACaptureIsSavedInUnsorted() throws {
-        let app = launchOnInbox()
+        let app = launchWorkInbox()
         let before = badge(app)
         capture(app, "Call the bank\nAbout the new card")
-        let row = captureRow(app, "c-00000102")
-        XCTAssertTrue(waitForRow(app, row))
+        let row = captureRow(app, "c-00000103")
+        XCTAssertTrue(waitForSidebarRow(app, row))
         XCTAssertTrue(row.label.contains("Call the bank"), row.label)
         XCTAssertEqual(badge(app), before)
     }
@@ -122,23 +79,21 @@ final class CaptureTests: XCTestCase {
     /// with no Work item. Both leave Unsorted.
     @MainActor
     func testSortingMovesCapturesOutOfUnsorted() throws {
-        let app = launchOnInbox()
+        let app = launchWorkInbox()
         let flaky = captureRow(app, "c-0000c001")
-        reveal(app, flaky)
+        revealInSidebar(app, flaky)
         tapWhenReady(flaky)
         XCTAssertTrue(app.staticTexts["capture-full-text"].waitForExistence(timeout: 5))
         tapWhenReady(app.buttons["capture-make-work"])
         let title = app.staticTexts["work-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertEqual(title.label, "Look into the flaky CI job")
-        // Back to the list: a phone pushed the detail, a portrait iPad hid the sidebar.
-        let modes = app.segmentedControls["sidebar-mode"]
-        if !(modes.exists && modes.isHittable) { showSidebar(app) }
+        showInboxList(app)
         XCTAssertTrue(workRow(app, "w-00000103").waitForExistence(timeout: 5))
         XCTAssertFalse(flaky.exists)
 
         let idea = captureRow(app, "c-0000c002")
-        reveal(app, idea)
+        revealInSidebar(app, idea)
         swipe(app, idea, right: false, action: "Note")
         XCTAssertTrue(idea.waitForNonExistence(timeout: 5))
     }
@@ -146,9 +101,9 @@ final class CaptureTests: XCTestCase {
     /// Later moves a Work item below the others and keeps it; Complete removes it.
     @MainActor
     func testLaterAndCompleteBySwipe() throws {
-        let app = launchOnInbox()
+        let app = launchWorkInbox()
         let first = workRow(app, "w-0000b001")
-        reveal(app, workRow(app, "w-0000b003"))
+        revealInSidebar(app, workRow(app, "w-0000b003"))
         XCTAssertNotEqual(lowestWorkRow(app), first.identifier)
         swipe(app, first, right: false, action: "Later")
         let moved = expectation(for: NSPredicate { _, _ in self.lowestWorkRow(app) == first.identifier }, evaluatedWith: nil)
@@ -156,7 +111,7 @@ final class CaptureTests: XCTestCase {
         XCTAssertTrue(first.label.contains("later"), first.label)
 
         let domain = workRow(app, "w-0000b003")
-        reveal(app, domain)
+        revealInSidebar(app, domain)
         swipe(app, domain, right: true, action: "Complete")
         XCTAssertTrue(domain.waitForNonExistence(timeout: 5))
     }
@@ -171,10 +126,11 @@ final class CaptureTests: XCTestCase {
     /// Start a Task from a Work item opens New Task with its title; the Task is listed on it.
     @MainActor
     func testAWorkItemStartsATask() throws {
-        let app = launchOnInbox()
+        let app = launchWorkInbox()
         let row = workRow(app, "w-0000b001")
-        reveal(app, row)
+        revealInSidebar(app, row)
         tapWhenReady(row)
+        scrollWorkDetail(app, to: app.buttons["work-start-task"])
         tapWhenReady(app.buttons["work-start-task"])
         let title = app.textFields["record-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
@@ -184,7 +140,7 @@ final class CaptureTests: XCTestCase {
         // Its session opens; the Work item is in progress now.
         XCTAssertTrue(app.descendants(matching: .any)["pane"].firstMatch.waitForExistence(timeout: 10))
         showSidebar(app)
-        reveal(app, row)
+        revealInSidebar(app, row)
         let progress = expectation(for: NSPredicate(format: "label CONTAINS 'in progress'"), evaluatedWith: row)
         wait(for: [progress], timeout: 5)
     }
@@ -193,15 +149,15 @@ final class CaptureTests: XCTestCase {
     /// is sent when the app connects again.
     @MainActor
     func testACaptureMadeOfflineIsSentOnConnect() throws {
-        let app = launchOnInbox(["-demo-drop-capture"])
+        let app = launchWorkInbox(["-demo-drop-capture"])
         capture(app, "Buy stamps")
         let unsent = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'unsent-row-'")).firstMatch
         XCTAssertTrue(unsent.waitForExistence(timeout: 10))
         XCTAssertTrue(unsent.label.contains("Not sent"), unsent.label)
         tapWhenReady(app.buttons["connect-last"])
-        let row = captureRow(app, "c-00000102")
+        let row = captureRow(app, "c-00000103")
         XCTAssertTrue(app.segmentedControls["sidebar-mode"].waitForExistence(timeout: 10), "connected again")
-        XCTAssertTrue(waitForRow(app, row))
+        XCTAssertTrue(waitForSidebarRow(app, row))
         XCTAssertTrue(row.label.contains("Buy stamps"), row.label)
         XCTAssertTrue(unsent.waitForNonExistence(timeout: 5))
     }
@@ -209,10 +165,10 @@ final class CaptureTests: XCTestCase {
     /// A host before `work` level 8 keeps New Task behind `+`, and its Inbox has no Work.
     @MainActor
     func testAnOlderHostKeepsNewTask() throws {
-        let app = launchOnInbox(["-work7"])
+        let app = launchWorkInbox(["-work7"])
         XCTAssertFalse(app.buttons["sidebar-capture"].exists)
-        XCTAssertFalse(section(app, "unsorted").exists)
-        XCTAssertFalse(section(app, "decisions").exists, "the Inbox as before")
+        XCTAssertFalse(inboxSection(app, "unsorted").exists)
+        XCTAssertFalse(inboxSection(app, "decisions").exists, "the Inbox as before")
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'work-row-'")).firstMatch.exists)
         tapWhenReady(app.buttons["sidebar-new-task"])
         XCTAssertTrue(app.textFields["record-title"].waitForExistence(timeout: 5))

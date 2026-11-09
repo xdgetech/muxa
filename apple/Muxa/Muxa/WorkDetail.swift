@@ -2,53 +2,81 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// A Work item (ADR 0046): its title, state, what was captured for it, its Tasks, and
-/// what the user can do. Only the user completes or withdraws it; a Task never does.
+/// A Work item (ADR 0046): Capture, then the assistant's request and Result, the
+/// Tasks, and the decision it waits on; then what the user can do. Only the user
+/// completes or withdraws it; a Task or a Result never does.
 struct WorkDetail: View {
     @Environment(AppModel.self) private var model
     let id: String
+    /// Why `get-work` failed: the texts this device has seen show instead.
+    @State private var readError: String?
 
     var body: some View {
-        if let item = model.workItem(id) {
+        if let item = model.workItem(id) ?? model.session.workDetails[id]?.entry {
+            let requests = model.session.requests(of: item)
             List {
-                Section {
-                    Text(item.title).font(.title3.weight(.semibold))
-                        .accessibilityIdentifier("work-title")
-                    LabeledContent("State", value: item.state.shown)
-                        .accessibilityIdentifier("work-state")
-                    if let workspace = item.workspace { LabeledContent("Workspace", value: workspace) }
-                    if item.laterAt != nil {
-                        Label("Moved down with Later", systemImage: Icon.later).foregroundStyle(.secondary)
-                    }
-                    if item.state == .waitingDecision {
+                header(item)
+                captures(item)
+                ForEach(requests) { request in
+                    RequestSection(request: request)
+                    ResultSections(request: request)
+                }
+                tasks(item)
+                if item.state == .waitingDecision {
+                    Section {
                         Label("A Task waits on your decision in Decisions.", systemImage: Icon.waiting)
                             .foregroundStyle(Theme.attention)
                     }
                 }
-                captures(item)
-                tasks(item)
+                if item.isOpen, !(requests.last.map { $0.delivery.isActive || $0.delivery == .cancelRequested } ?? false) {
+                    AskSection(item: item, again: !requests.isEmpty)
+                }
                 actions(item)
             }
+            .accessibilityIdentifier("work-detail")
             .navigationTitle("Work")
             .navigationBarTitleDisplayMode(.inline)
+            // A new request raises the rev: read the item again for its Captures and requests.
+            .task(id: item.rev) { readError = await model.readWork(id) }
+            .onChange(of: requests.map { $0.currentResult?.version }, initial: true) { model.markResultsSeen(item) }
         } else {
             ContentUnavailableView("Not in the Inbox", systemImage: Icon.work,
                                    description: Text("This Work item is no longer listed."))
         }
     }
 
-    /// The texts this device has seen; a Capture sorted elsewhere shows as a count.
+    @ViewBuilder
+    private func header(_ item: WorkItem) -> some View {
+        Section {
+            Text(item.title).font(.title3.weight(.semibold))
+                .accessibilityIdentifier("work-title")
+            LabeledContent("State", value: item.state.shown)
+                .accessibilityIdentifier("work-state")
+            if let workspace = item.workspace { LabeledContent("Workspace", value: workspace) }
+            if item.laterAt != nil {
+                Label("Moved down with Later", systemImage: Icon.later).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Every Capture the item links, as `get-work` read them. Until then, or when the
+    /// host could not read it, the texts this device has seen and a count of the rest.
     @ViewBuilder
     private func captures(_ item: WorkItem) -> some View {
         if !item.captures.isEmpty {
-            let known = item.captures.compactMap { model.session.knownCaptures[$0] }
+            let read = model.session.workDetails[item.id]?.captures
+            let known = read ?? item.captures.compactMap { model.session.knownCaptures[$0] }
             Section("Captured") {
                 ForEach(known) { c in
                     Text(c.text).textSelection(.enabled)
+                        .accessibilityIdentifier("work-capture-\(c.id)")
                 }
-                if known.count < item.captures.count {
+                if read == nil, known.count < item.captures.count {
                     Text(item.captures.count - known.count == 1 ? "1 more capture" : "\(item.captures.count - known.count) more captures")
                         .foregroundStyle(.secondary)
+                }
+                if let readError {
+                    Label(readError, systemImage: Icon.warning).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -86,7 +114,7 @@ struct WorkDetail: View {
                     .accessibilityIdentifier("work-reopen")
             }
         } footer: {
-            Text("Complete and Withdraw leave its Tasks as they are.")
+            Text("Complete and Withdraw leave its Tasks and requests as they are.")
         }
     }
 }
