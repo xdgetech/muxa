@@ -15,6 +15,8 @@ struct InboxItemScreen: View {
     @State private var rejecting: InboxItem?
     /// A write whose Approve waits on the confirmation that names its target once more.
     @State private var confirmingWrite: InboxItem?
+    /// A memory proposal whose Approve waits on the confirmation that names its workspace once more.
+    @State private var confirmingMemory: InboxItem?
     @State private var sending = false
     @State private var failure: String?
     @State private var lostWork: LostWork?
@@ -38,8 +40,9 @@ struct InboxItemScreen: View {
                         .accessibilityIdentifier("item-question")
                     sourceLine(item)
                 }
-                // A write's reason is plain text in its block: nothing of a write renders Markdown.
-                if let summary = item.summary, !summary.isEmpty, item.kind != .write {
+                // A write's reason and a memory item's summary are plain text in their block:
+                // nothing of either renders Markdown.
+                if let summary = item.summary, !summary.isEmpty, item.kind != .write, item.kind != .memory {
                     ItemSummaryText(item: item, summary: summary)
                 }
                 if let question = item.prompt?.question {
@@ -66,6 +69,11 @@ struct InboxItemScreen: View {
                 }
                 if item.kind == .write, let write = item.write {
                     WriteProposalView(item: item, write: write)
+                        .padding(12)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                }
+                if item.kind == .memory, let memory = item.memory {
+                    MemoryProposalView(item: item, memory: memory)
                         .padding(12)
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
@@ -101,6 +109,16 @@ struct InboxItemScreen: View {
         } message: { item in
             Text(verbatim: "The writer writes it to \(item.write?.target ?? "")")
         }
+        .confirmationDialog(
+            "Add to the workspace memory?",
+            isPresented: Binding(get: { confirmingMemory != nil }, set: { if !$0 { confirmingMemory = nil } }),
+            titleVisibility: .visible, presenting: confirmingMemory
+        ) { item in
+            Button("Approve") { approveMemory(item) }.accessibilityIdentifier("memory-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { item in
+            Text(verbatim: "It goes into the memory of \(item.workspace). Every later Task there reads it.")
+        }
         .lostWorkAlert($lostWork)
         .alert("Can't Answer", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
@@ -108,7 +126,7 @@ struct InboxItemScreen: View {
             Text(failure ?? "")
         }
         .background {
-            let main = ItemAnswers(item, replying: hasReply, showsWrite: model.showsWrite(item)).main
+            let main = ItemAnswers(item, replying: hasReply, showsWhole: model.showsWhole(item)).main
             Button("Send the Main Answer") { if let main { perform(item, main) } }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(main == nil || sending)
@@ -147,7 +165,7 @@ struct InboxItemScreen: View {
     /// does with the item, apart from what the agent asked.
     @ViewBuilder
     private func topBar(_ item: InboxItem) -> some View {
-        let answers = ItemAnswers(item, showsWrite: model.showsWrite(item))
+        let answers = ItemAnswers(item, showsWhole: model.showsWhole(item))
         if answers.later {
             Button(InboxAction.later.title(for: item.kind), systemImage: Icon.later) { perform(item, .later) }
                 .tint(Theme.later)
@@ -190,7 +208,7 @@ struct InboxItemScreen: View {
     /// The answers to what the agent asked, then the reply box.
     @ViewBuilder
     private func answerBar(_ item: InboxItem) -> some View {
-        let answers = ItemAnswers(item, replying: hasReply, showsWrite: model.showsWrite(item))
+        let answers = ItemAnswers(item, replying: hasReply, showsWhole: model.showsWhole(item))
         let options = answers.chooses ? item.prompt?.options ?? [] : []
         if !options.isEmpty || !answers.decisions.isEmpty || answers.text != nil {
             VStack(spacing: 8) {
@@ -257,6 +275,8 @@ struct InboxItemScreen: View {
         case .approve where item.kind == .proposal: approving = item
         // Only a write shown whole has Approve; its confirmation names the target once more.
         case .approve where item.kind == .write: if model.showsWrite(item) { confirmingWrite = item }
+        // The same for a memory proposal; its confirmation names the workspace once more.
+        case .approve where item.kind == .memory: if model.showsMemory(item) { confirmingMemory = item }
         // A reason is offered, never required (ADR 0050 §2).
         case .reject where model.rejectTakesReason(item): rejecting = item
         case _ where action.needsText && !hasReply: replying = true
@@ -272,6 +292,20 @@ struct InboxItemScreen: View {
             defer { sending = false }
             do {
                 answered(try await model.session.approveWrite(item, shown: shown))
+            } catch {
+                failure = PaneSession.describe(error)
+            }
+        }
+    }
+
+    /// Sends the hash of the text this screen shows (ADR 0053): the listed item's proposal.
+    private func approveMemory(_ item: InboxItem) {
+        guard let shown = item.memory else { return }
+        sending = true
+        Task {
+            defer { sending = false }
+            do {
+                answered(try await model.session.approveMemory(item, shown: shown))
             } catch {
                 failure = PaneSession.describe(error)
             }

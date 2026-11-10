@@ -98,6 +98,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         work.keepsMemory = Self.workLevel >= workPolicies
         if Self.workLevel < workStaff { work.forgetStaff() }
         if Self.workLevel < workWrites { work.forgetWrites() }
+        if Self.workLevel < workMemory {
+            work.forgetMemory()
+            tasks.forgetMemory()
+        }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-old-items") { work.ageForDeleteOld() }
         #endif
@@ -112,26 +116,28 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:13",
+            "task-loop", "tasks-changed", "viewport", "history", "work:14",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:13" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:14" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:13" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:14" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:13" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:14" ? "work:3" : $0 } }
         // A bridge from before Protect and Delete Old (ADR 0046) and Captures (ADR 0048): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:13" ? "work:7" : $0 } }
+        if arguments.contains("-work7") { return all.map { $0 == "work:14" ? "work:7" : $0 } }
         // A bridge from before the overall assistant (ADR 0049): no Today, pins or notes.
-        if arguments.contains("-work9") { return all.map { $0 == "work:13" ? "work:9" : $0 } }
+        if arguments.contains("-work9") { return all.map { $0 == "work:14" ? "work:9" : $0 } }
         // A bridge from before policies (ADR 0050): no Policies, Not today or hypotheses.
-        if arguments.contains("-work10") { return all.map { $0 == "work:13" ? "work:10" : $0 } }
+        if arguments.contains("-work10") { return all.map { $0 == "work:14" ? "work:10" : $0 } }
         // A bridge from before staff and hand-offs (ADR 0051): one assistant per workspace.
-        if arguments.contains("-work11") { return all.map { $0 == "work:13" ? "work:11" : $0 } }
+        if arguments.contains("-work11") { return all.map { $0 == "work:14" ? "work:11" : $0 } }
         // A bridge from before write proposals (ADR 0052): no writer and no write items.
-        if arguments.contains("-work12") { return all.map { $0 == "work:13" ? "work:12" : $0 } }
+        if arguments.contains("-work12") { return all.map { $0 == "work:14" ? "work:12" : $0 } }
+        // A bridge from before workspace memory (ADR 0053): no memory items and no modes.
+        if arguments.contains("-work13") { return all.map { $0 == "work:14" ? "work:13" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -413,6 +419,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 case .hypothesis: Self.workLevel >= workPolicies
                 case .handoff: Self.workLevel >= workStaff
                 case .write: Self.workLevel >= workWrites
+                case .memory: Self.workLevel >= workMemory
                 default: true
                 }
             }
@@ -444,6 +451,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             deleteOld(id: id, days: days)
         case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, let hash) where isWriteItem(entry):
             approveWrite(id: id, item: entry, hash: hash)
+        case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, let hash) where isMemoryItem(entry):
+            approveMemory(id: id, item: entry, hash: hash)
         // `until` is ignored: Later moves an item down (ADR 0040).
         case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, _) where isOverallProposal(entry):
             approveProposal(id: id, item: entry)
@@ -546,6 +555,30 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             emit(.inboxSaved(inbox: id, entry: nil, item: saved))
             ok(id)
             if made { emit(.sessionsChanged) }
+        case .failure(let refusal):
+            emit(.result(id: id, error: refusal.body, sessions: nil))
+        }
+    }
+
+    /// A `memory` item (ADR 0053): approve needs its hash.
+    private func isMemoryItem(_ id: String) -> Bool {
+        lock.withLock { work.taskItems.contains { $0.id == id && $0.kind == .memory } }
+    }
+
+    /// Approve on a memory item appends its text to the workspace's WORKSPACE.md once.
+    /// Without the proposal's hash it is `bad-request`, as the host answers, and nothing is written.
+    private func approveMemory(id: UInt64, item: String, hash: String?) {
+        let outcome = lock.withLock { () -> Result<InboxItem, DemoWork.Refusal> in
+            do throws(DemoWork.Refusal) {
+                let (saved, appended) = try work.approveMemory(item, hash: hash)
+                if appended { tasks.memoryChanged(saved.workspace) }
+                return .success(saved)
+            } catch { return .failure(error) }
+        }
+        switch outcome {
+        case .success(let saved):
+            emit(.inboxSaved(inbox: id, entry: nil, item: saved))
+            ok(id)
         case .failure(let refusal):
             emit(.result(id: id, error: refusal.body, sessions: nil))
         }

@@ -26,10 +26,12 @@ struct DemoContent: Sendable {
     /// The UI tests' launch argument `-showcase` picks the showcase; `-demo-plans` adds
     /// the overall assistant to the tests' fixtures (ADR 0049), `-demo-policies` also
     /// what the user told it (ADR 0050), `-demo-staff` also the staff (ADR 0051), and
-    /// `-demo-writes` also the writer and its write items (ADR 0052).
+    /// `-demo-writes` also the writer and its write items (ADR 0052). `-demo-memory` adds
+    /// the workspaces' memory and a Task that proposes to it to the fixtures (ADR 0053).
     static var current: DemoContent {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-showcase") { return .showcase }
+        if arguments.contains("-demo-memory") { return .testsMemory }
         if arguments.contains("-demo-writes") { return testsPlanned(.testsWriting) }
         if arguments.contains("-demo-staff") { return testsPlanned(.testsStaffed) }
         if arguments.contains("-demo-policies") { return testsPlanned(.testsRemembered) }

@@ -119,8 +119,8 @@ struct DemoTasks: Sendable {
     ])
 
     private static let showcaseWorkspaces = [
-        WorkspaceInfo(name: "work", checks: .list(["make test", "make lint"])),
-        WorkspaceInfo(name: "personal"),
+        WorkspaceInfo(name: "work", checks: .list(["make test", "make lint"]), memory: .review, memoryAt: now - 2 * 86_400),
+        WorkspaceInfo(name: "personal", memory: .review),
         // The overall assistant's (ADR 0049 §2): pickers leave it out.
         WorkspaceInfo(name: DemoPlans.overall),
     ]

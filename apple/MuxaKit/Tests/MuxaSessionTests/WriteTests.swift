@@ -194,11 +194,11 @@ struct WriteTests {
         #expect(generic.main != .approve)
         #expect(generic.decisions == [.reject])
         #expect(generic.later)
-        let shown = ItemAnswers(Self.item, showsWrite: true)
+        let shown = ItemAnswers(Self.item, showsWhole: true)
         #expect(shown.decisions == [.approve, .reject])
         var bare = Self.item
         bare.write = nil
-        #expect(!ItemAnswers(bare, showsWrite: true).decisions.contains(.approve))
+        #expect(!ItemAnswers(bare, showsWhole: true).decisions.contains(.approve))
         // Other kinds keep Approve.
         #expect(ItemAnswers(StaffTests.handoffItem).decisions.contains(.approve))
     }

@@ -19,7 +19,8 @@ extension PaneSession {
     /// again, because another device or the terminal may have answered first.
     /// Complete Task and Drop Task take `worktree` as `updateTask` does.
     /// Approve on a `write` item goes through `approveWrite(_:shown:)`, which sends the hash
-    /// of the write the screen showed whole (ADR 0052); here it is refused.
+    /// of the write the screen showed whole (ADR 0052); here it is refused. So is approve on
+    /// a `memory` item, which goes through `approveMemory(_:shown:)` (ADR 0053).
     @discardableResult
     public func answer(
         _ item: InboxItem, _ action: InboxAction, text: String? = nil, option: UInt32? = nil,
@@ -27,6 +28,9 @@ extension PaneSession {
     ) async throws -> InboxItem {
         if action == .approve, item.kind == .write {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.writeNotShown))
+        }
+        if action == .approve, item.kind == .memory {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.memoryNotShown))
         }
         return try await respond(item, action, text: text, option: option, worktree: worktree, hash: nil)
     }
@@ -60,12 +64,13 @@ extension PaneSession {
                     id: id, entry: item.id, action: action, until: nil, text: text, option: option, worktree: end,
                     hash: hash)
             }
-        } catch Failure.bridge(let body) where body.code == .conflict && !proposes {
+        } catch Failure.bridge(let body) where body.code == .conflict && !proposes && item.kind != .memory {
             savedItems[requestId] = nil
             await loadWork()
             throw Failure.bridge(ErrorBody(code: .conflict, message: Self.itemConflict))
         } catch {
             // A proposal's refusal keeps the host's reason: a sorted Capture, a budget, no daemon.
+            // So does a memory item's: the workspace file's cap, with the sizes.
             savedItems[requestId] = nil
             await loadWork()
             throw error
@@ -84,7 +89,8 @@ extension PaneSession {
         // An approved proposal sorted a Capture, made a request or started a step: the Work list changed.
         // A rejected or confirmed one made a correction or a policy.
         case _ where proposes: await loadWork()
-        // Accept, Drop, Retry and an approved proposal change a Task.
+        // Accept, Drop, Retry and an approved proposal change a Task; an approved memory
+        // item the workspace's `memoryAt`.
         default: await loadTasks()
         }
         return saved

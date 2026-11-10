@@ -22,10 +22,15 @@ public struct ItemAnswers: Equatable, Sendable {
     /// `choose` is offered: the prompt's options are the decisions.
     public var chooses: Bool
 
-    /// `replying`: the reply box has text. `showsWrite`: the screen shows a `write` item's
-    /// content whole and approves it with its hash (ADR 0052); elsewhere a write has no Approve.
-    public init(_ item: InboxItem, replying: Bool = false, showsWrite: Bool = false) {
-        let approves = item.kind != .write || (showsWrite && item.write != nil)
+    /// `replying`: the reply box has text. `showsWhole`: the screen shows a `write` item's
+    /// content (ADR 0052) or a `memory` item's text (ADR 0053) whole and approves it with
+    /// its hash; elsewhere neither has Approve.
+    public init(_ item: InboxItem, replying: Bool = false, showsWhole: Bool = false) {
+        let approves = switch item.kind {
+        case .write: showsWhole && item.write != nil
+        case .memory: showsWhole && item.memory != nil
+        default: true
+        }
         let answers = item.answers.filter {
             $0 != .read && $0 != .protect && $0 != .unprotect && (approves || $0 != .approve)
         }

@@ -68,11 +68,16 @@ struct TaskDetail: View {
                     } else { Text("none") }
                 }
                 LabeledContent("Workspace", value: r.workspace)
+                if let memory = model.memoryShown(of: r.workspace) {
+                    LabeledContent("Workspace Memory", value: memory)
+                        .accessibilityIdentifier("task-workspace-memory")
+                }
                 if model.session.canUseWorkers || r.worker != nil {
                     LabeledContent("Worker", value: r.worker ?? "Workspace default")
                 }
                 if let project = r.project { LabeledContent("Project", value: project) }
             }
+            TaskMemorySection(task: r.id)
             Section("Where") {
                 if let session = item.session?.name ?? r.session { LabeledContent("Session", value: session) }
                 if let repo = r.repo { LabeledContent("Repository", value: repo) }
