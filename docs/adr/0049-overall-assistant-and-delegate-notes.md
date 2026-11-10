@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0048, and gives a delegate memory across runs. It adds to ADR 0048 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0–B10 are implemented.
+Proposed on 2026-11-09. It implements stage PA2 of ADR 0045 ([specification](../personal-assistant.md) §6, §7, §9, §11) on top of ADR 0048, and gives a delegate memory across runs. It adds to ADR 0048 §2, §4, §9 and §10 without changing them. It does not implement ADR 0022 release M or ADR 0027 §6 (WORKSPACE.md); delegate notes are a different file with a different reader. Slices B0–B10 are implemented. [ADR 0053](0053-workspace-memory.md) changes §1: the lead's notes are `.muxa/WORKSPACE.md`, read by every run.
 
 ## Context
 

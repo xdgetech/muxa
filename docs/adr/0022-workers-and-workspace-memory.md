@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Implementation plan: `docs/workers.md`. Reviewed with GPT-6 Astra (`docs/findings/workers-design-review.md`). This ADR proposes two independent releases: **W, Workers and handoff**, then **M, workspace memory and close-out**. W1 contract/type/fixture work is authorized while W0 gates remain open. Named create and restart are implemented, and `workers` is advertised since 2026-11-06; M is not implemented. Per-worker environment/account overrides are deferred; workspace environments continue to follow ADR 0016. ADR 0027 simplifies the worker selection contract to a name with reserved `default`, and replaces release M with a Routine.
+Proposed. Implementation plan: `docs/workers.md`. Reviewed with GPT-6 Astra (`docs/findings/workers-design-review.md`). This ADR proposes two independent releases: **W, Workers and handoff**, then **M, workspace memory and close-out**. W1 contract/type/fixture work is authorized while W0 gates remain open. Named create and restart are implemented, and `workers` is advertised since 2026-11-06; M is not implemented. Per-worker environment/account overrides are deferred; workspace environments continue to follow ADR 0016. ADR 0027 simplifies the worker selection contract to a name with reserved `default`, and replaces release M with a Routine. Release M (M1, M2 and the `workspace-memory` capability) is replaced by [ADR 0053](0053-workspace-memory.md).
 
 ## Context
 

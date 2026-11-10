@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-11; its questions were answered with the recommended values the same day. It replaces release M of ADR 0022 (M1, M2 and the `workspace-memory` capability) and ADR 0027 §6 (memory as a Routine). It changes ADR 0049 §1 and ADR 0051 §5: the lead's `.muxa/assistant/NOTES.md` becomes `.muxa/WORKSPACE.md`; a member's notes stay. It adds a section to `TASK.md` on both sides of the marker (ADR 0015) and one Inbox item kind (ADR 0033). It does not change ADR 0050 (policies are not memory) or ADR 0052. Slice M0 (the wire types) is built; hosts do not advertise level 14 yet.
+Proposed on 2026-11-11; its questions were answered with the recommended values the same day. It replaces release M of ADR 0022 (M1, M2 and the `workspace-memory` capability) and ADR 0027 §6 (memory as a Routine). It changes ADR 0049 §1 and ADR 0051 §5: the lead's `.muxa/assistant/NOTES.md` becomes `.muxa/WORKSPACE.md`; a member's notes stay. It adds a section to `TASK.md` on both sides of the marker (ADR 0015) and one Inbox item kind (ADR 0033). It does not change ADR 0050 (policies are not memory) or ADR 0052. Slices M0–M7 are implemented; hosts advertise level 14.
 
 ## Context
 

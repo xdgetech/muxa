@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. The developer chose "the simplest shape with the lowest maintenance and change cost" after a plan review. It changes parts of ADR 0022, 0023, 0024 and 0025, listed below. ADR 0033 (proposed) replaces §4's Move down and Later on the Task record; the rest of §4 (manual Sessions, no All Sessions filter) stays.
+Proposed. The developer chose "the simplest shape with the lowest maintenance and change cost" after a plan review. It changes parts of ADR 0022, 0023, 0024 and 0025, listed below. ADR 0033 (proposed) replaces §4's Move down and Later on the Task record; the rest of §4 (manual Sessions, no All Sessions filter) stays. §6 (memory as a Routine) is replaced by [ADR 0053](0053-workspace-memory.md).
 
 ## Context
 
