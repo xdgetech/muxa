@@ -134,12 +134,15 @@ final class PlanTests: XCTestCase {
     }
 
     /// Reject answers a sort proposal and sorts nothing: the Capture stays in Unsorted.
+    /// A level 11 host offers a reason (ADR 0050); none is needed.
     @MainActor
     func testRejectingASortKeepsTheCapture() throws {
         let app = launchPlans()
         openItem(app, "i-0000f002")
         XCTAssertEqual(element(app, "item-sort-action").label.contains("Make a Work item"), true)
         tapWhenReady(app.buttons["item-answer-reject"])
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5), "the optional reason")
+        tapWhenReady(app.alerts.buttons["Reject"].firstMatch)
         showInboxList(app)
         XCTAssertTrue(app.buttons["item-row-i-0000f002"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(waitForSidebarRow(app, captureRow(app, "c-0000c001")), "still unsorted")

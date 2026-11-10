@@ -118,6 +118,7 @@ extension PaneSession {
             assistantRequests = []
             plans = []
             assistantInfo = nil
+            keepMemory(of: inbox)
             return
         }
         workList = inbox.work
@@ -126,6 +127,7 @@ extension PaneSession {
         // An older host sends neither; a level 9 host is not asked for plans.
         plans = canPlan ? inbox.plans : []
         assistantInfo = canPlan ? inbox.assistant : nil
+        keepMemory(of: inbox)
         for c in inbox.captures { knownCaptures[c.id] = c }
         for r in inbox.requests { keepRead(r) }
     }

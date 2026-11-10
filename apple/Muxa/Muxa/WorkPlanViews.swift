@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Why the current plan lists this Work item in Today (ADR 0049 §8).
 struct PlanReasonSection: View {
+    @Environment(AppModel.self) private var model
     let row: PlanRow
 
     var body: some View {
@@ -12,7 +13,7 @@ struct PlanReasonSection: View {
             LabeledContent("Next", value: row.next)
             LabeledContent("Time", value: row.minutes.shown)
             ForEach(Array(row.basis.enumerated()), id: \.offset) { _, basis in
-                LabeledContent(basis.kind.shown, value: basis.text)
+                LabeledContent(basis.kind.shown, value: model.session.cited(basis).map(model.shown) ?? basis.text)
             }
             ForEach(Array(row.missing.enumerated()), id: \.offset) { _, missing in
                 Label(missing, systemImage: "questionmark.circle").foregroundStyle(.secondary)

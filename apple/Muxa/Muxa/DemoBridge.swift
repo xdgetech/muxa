@@ -95,6 +95,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         tasks = content.tasks
         work = content.work
         work.offersAskAgent = Self.workLevel >= workAskAgent
+        work.keepsMemory = Self.workLevel >= workPolicies
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-old-items") { work.ageForDeleteOld() }
         #endif
@@ -109,20 +110,22 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:10",
+            "task-loop", "tasks-changed", "viewport", "history", "work:11",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:10" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:11" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:10" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:11" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:10" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:11" ? "work:3" : $0 } }
         // A bridge from before Protect and Delete Old (ADR 0046) and Captures (ADR 0048): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:10" ? "work:7" : $0 } }
+        if arguments.contains("-work7") { return all.map { $0 == "work:11" ? "work:7" : $0 } }
         // A bridge from before the overall assistant (ADR 0049): no Today, pins or notes.
-        if arguments.contains("-work9") { return all.map { $0 == "work:10" ? "work:9" : $0 } }
+        if arguments.contains("-work9") { return all.map { $0 == "work:11" ? "work:9" : $0 } }
+        // A bridge from before policies (ADR 0050): no Policies, Not today or hypotheses.
+        if arguments.contains("-work10") { return all.map { $0 == "work:11" ? "work:10" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -228,9 +231,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
-        // The demo has no policies yet (`work` level 11, ADR 0050).
         case .addPolicy, .updatePolicy, .updatePlan, .forget:
-            unsupported(req.id, Self.noRequest)
+            servePolicies(req)
         case .applyNotes, .planNow:
             servePlans(req)
         case .capture, .sortCapture, .updateWork, .requestAssistant, .cancelRequest, .getWork:
@@ -315,6 +317,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     /// The host's `work` level (ADR 0027 §5).
     static var workLevel: UInt32 { MuxaProtocol.workLevel(capabilities) }
 
+    /// The scopes a policy may name besides `all`: every workspace but the overall one.
+    var policyScopes: [String] {
+        lock.withLock { tasks.workspaces.map(\.name).filter { $0 != DemoPlans.overall } }
+    }
+
     /// An ask session: the agent in the repo's main checkout, listed as a manual session (ADR 0031).
     private func startSession(id: UInt64, workspace: String, repo: String) {
         guard Self.workLevel >= workAsk else { return unsupported(id, Self.noRequest) }
@@ -391,10 +398,19 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let (entries, items) = lock.withLock { (work.shownEntries, work.shownItems) }
             let (listed, captures, requests) = listedWork()
             let (plans, assistant) = listedPlans()
-            // A host below level 10 has no overall assistant, so none of its proposals.
-            let shown = Self.workLevel >= workPlans ? items : items.filter { $0.kind != .sort && $0.kind != .delegate }
+            let (policies, hypotheses, corrections) = listedMemory()
+            // A host below level 10 has no overall assistant, so none of its proposals;
+            // below level 11 none of its hypotheses.
+            let shown = items.filter { item in
+                switch item.kind {
+                case .sort, .delegate: Self.workLevel >= workPlans
+                case .hypothesis: Self.workLevel >= workPolicies
+                default: true
+                }
+            }
             emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? shown : [],
-                            work: listed, captures: captures, requests: requests, plans: plans, assistant: assistant))
+                            work: listed, captures: captures, requests: requests, plans: plans, assistant: assistant,
+                            policies: policies, hypotheses: hypotheses, corrections: corrections))
             ok(id)
         case .runRoutine(let id, let workspace, let routine):
             let outcome = lock.withLock { () -> Result<RoutineInfo, DemoWork.Refusal> in
@@ -421,6 +437,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         // `until` is ignored: Later moves an item down (ADR 0040).
         case .updateInboxEntry(let id, let entry, .approve, _, _, _, _) where isOverallProposal(entry):
             approveProposal(id: id, item: entry)
+        case .updateInboxEntry(let id, let entry, .confirm, _, _, _, _):
+            confirmHypothesis(id: id, item: entry)
         case .updateInboxEntry(let id, let entry, let action, _, let text, let option, let worktree):
             let isEntry = lock.withLock { work.entries.contains { $0.id == entry } }
             if Self.workLevel >= workItems, !isEntry || action == .read {

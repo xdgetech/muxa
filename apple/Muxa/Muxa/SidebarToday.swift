@@ -5,7 +5,9 @@ import SwiftUI
 /// The Inbox's Today section (ADR 0049 §5): the newest plan's rows, each with its
 /// reason, its minutes and a Why disclosure, then the Due soon line and Plan Now. A new
 /// plan replaces the rows and shows New until a row is opened; it never changes the
-/// selection, which only a tap on a row does.
+/// selection, which only a tap on a row does. At `work` level 11 the user drags rows
+/// into another order and removes one with Not today (ADR 0050 §7); a removed row
+/// collapses to one line.
 struct SidebarTodaySection: View {
     @Environment(AppModel.self) private var model
 
@@ -17,9 +19,7 @@ struct SidebarTodaySection: View {
                 PlanStatusRow(plan: newest)
             }
             if let plan {
-                ForEach(plan.top, id: \.target) { row in
-                    TodayRow(row: row)
-                }
+                rows(plan)
                 if plan.top.isEmpty {
                     Text("Nothing to rank right now.").foregroundStyle(.secondary)
                         .accessibilityIdentifier("today-empty")
@@ -31,6 +31,10 @@ struct SidebarTodaySection: View {
             }
             if model.session.assistantInfo?.overall != nil {
                 PlanNowRow()
+            }
+            if model.usesPolicies {
+                Button("Policies", systemImage: Icon.policy) { model.showPolicies = true }
+                    .accessibilityIdentifier("today-policies")
             }
         } header: {
             // One element: a list's header does not keep a control of its own. A row's tap clears New.
@@ -44,6 +48,35 @@ struct SidebarTodaySection: View {
             .accessibilityIdentifier("inbox-section-today")
         }
         .task(id: plan?.id) { model.notePlanShown() }
+    }
+
+    /// The rows in the user's order, if any. Only a level 11 host takes a new order.
+    @ViewBuilder
+    private func rows(_ plan: Plan) -> some View {
+        let edits = model.usesPolicies
+        let rows = edits ? model.session.todayRows(of: plan) : plan.top
+        ForEach(Array(rows.enumerated()), id: \.element.target) { index, row in
+            if edits, model.session.isDismissed(row, in: plan) {
+                DismissedTodayRow(row: row)
+            } else if edits, let id = row.rowId {
+                TodayRow(row: row)
+                    .contextMenu {
+                        if index > 0 {
+                            Button("Move Up", systemImage: Icon.moveUp) { model.moveToday(plan, row: id, by: -1) }
+                        }
+                        if index < rows.count - 1 {
+                            Button("Move Down", systemImage: Icon.moveDown) { model.moveToday(plan, row: id, by: 1) }
+                        }
+                        Button("Not Today…", systemImage: Icon.notToday) { model.notTodayRow = row }
+                    }
+                    .swipeActions(edge: .trailing) {
+                        Button("Not Today", systemImage: Icon.notToday) { model.notTodayRow = row }.tint(.gray)
+                    }
+            } else {
+                TodayRow(row: row)
+            }
+        }
+        .onMove(perform: edits ? { model.moveToday(plan, from: $0, to: $1) } : nil)
     }
 
     /// Work items moved down with Later that are due soon: one line, never rows.
@@ -96,22 +129,97 @@ struct TodayRow: View {
 
     private var why: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(row.basis.enumerated()), id: \.offset) { _, basis in
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(basis.kind.shown): \(basis.text)").font(.caption)
-                    let detail = [basis.at?.shownDate, basis.source].compactMap { $0 }
-                    if !detail.isEmpty {
-                        Text(detail.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(row.basis.enumerated()), id: \.offset) { _, basis in
+                    VStack(alignment: .leading, spacing: 1) {
+                        if let cited = model.session.cited(basis) {
+                            Text("\(basis.kind.shown): \(model.shown(cited))").font(.caption)
+                        } else {
+                            Text("\(basis.kind.shown): \(basis.text)").font(.caption)
+                            let detail = [basis.at?.shownDate, basis.source].compactMap { $0 }
+                            if !detail.isEmpty {
+                                Text(detail.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
                     }
                 }
+                ForEach(Array(row.missing.enumerated()), id: \.offset) { _, missing in
+                    Text("Missing: \(missing)").font(.caption).foregroundStyle(.secondary)
+                }
             }
-            ForEach(Array(row.missing.enumerated()), id: \.offset) { _, missing in
-                Text("Missing: \(missing)").font(.caption).foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("today-basis-\(row.target)")
+            CitedRecordActions(basis: row.basis)
+        }
+    }
+}
+
+/// Edit on a cited policy, Forget on a cited hypothesis or correction, with what Forget
+/// leaves (ADR 0050 §5).
+private struct CitedRecordActions: View {
+    @Environment(AppModel.self) private var model
+    let basis: [Basis]
+    @State private var editing: EditedPolicy?
+    @State private var forgetting: String?
+    @State private var error: String?
+
+    var body: some View {
+        let cited = basis.compactMap(model.session.cited)
+        let forgettable = cited.filter(\.isForgettable)
+        if !cited.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(cited.enumerated()), id: \.offset) { _, record in
+                    switch record {
+                    case .policy(let policy):
+                        Button("Edit Policy: \(policy.text)") { editing = EditedPolicy(policy: policy) }
+                            .lineLimit(1)
+                            .accessibilityIdentifier("today-edit-\(policy.id)")
+                    case .hypothesis(let h):
+                        Button("Forget: \(h.text)") { forgetting = h.id }
+                            .lineLimit(1)
+                            .accessibilityIdentifier("today-forget-\(h.id)")
+                    case .correction(let c):
+                        Button("Forget: \(model.shown(c))") { forgetting = c.id }
+                            .lineLimit(1)
+                            .accessibilityIdentifier("today-forget-\(c.id)")
+                    case .forgotten:
+                        EmptyView()
+                    }
+                }
+                if !forgettable.isEmpty {
+                    Text(PaneSession.forgetNote).font(.caption2).foregroundStyle(.secondary)
+                }
+                if let error {
+                    Label(error, systemImage: Icon.warning).font(.caption).foregroundStyle(Theme.failure)
+                }
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+            .sheet(item: $editing) { edited in PolicyEditor(policy: edited.policy) }
+            .forgetConfirmation(record: $forgetting) { record in
+                Task { error = await model.forget(record) }
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("today-basis-\(row.target)")
+    }
+}
+
+/// A row the user removed from Today: one line, still opening its item.
+private struct DismissedTodayRow: View {
+    @Environment(AppModel.self) private var model
+    let row: PlanRow
+
+    var body: some View {
+        Button { model.open(row) } label: {
+            Label("Not today: \(model.title(of: row))", systemImage: Icon.notToday)
+                .font(.caption)
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("today-dismissed-\(row.target)")
     }
 }
 
@@ -175,4 +283,20 @@ private struct PlanNowRow: View {
 extension PlanRow {
     /// The Work item or the Inbox item the row names: unique within a plan.
     var target: String { work ?? item ?? why }
+}
+
+/// Not today's optional reason, on the sidebar's list: a row's own alert would go with
+/// the row when it scrolls away.
+struct NotTodayPrompt: ViewModifier {
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        @Bindable var model = model
+        content.modifier(ReasonPrompt(
+            title: "Not Today", button: "Not Today", subject: $model.notTodayRow, identifier: "not-today",
+            message: "Why, if you want to say. The assistant reads it next time.") { row, reason in
+                guard let id = row.rowId else { return }
+                model.notToday(id, reason: reason)
+            })
+    }
 }

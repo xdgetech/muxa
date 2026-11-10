@@ -24,17 +24,19 @@ struct DemoContent: Sendable {
 
     #if DEBUG
     /// The UI tests' launch argument `-showcase` picks the showcase; `-demo-plans` adds
-    /// the overall assistant to the tests' fixtures (ADR 0049).
+    /// the overall assistant to the tests' fixtures (ADR 0049), and `-demo-policies` also
+    /// what the user told it (ADR 0050).
     static var current: DemoContent {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-showcase") { return .showcase }
-        return arguments.contains("-demo-plans") ? .testsPlanned : .tests
+        if arguments.contains("-demo-policies") { return testsPlanned(.testsRemembered) }
+        return arguments.contains("-demo-plans") ? testsPlanned(.testsPlanned) : .tests
     }
 
-    static var testsPlanned: DemoContent {
+    static func testsPlanned(_ work: DemoWork) -> DemoContent {
         var content = tests
         content.tasks = content.tasks.planned()
-        content.work = .testsPlanned
+        content.work = work
         return content
     }
     #endif

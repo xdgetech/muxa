@@ -6,7 +6,7 @@ import Testing
 
 /// A bridge with the overall assistant (`work` level 10, ADR 0049), as the host answers:
 /// plans, notes, pins and due dates, and the `sort` and `delegate` items.
-final class PlanBridge: AssistantBridge, @unchecked Sendable {
+class PlanBridge: AssistantBridge, @unchecked Sendable {
     var plans: [Plan] = [PlanTests.plan("p-00000001", .resulted, top: [
         PlanRow(work: "w-00000001", why: "Due Friday.", next: "Fill in the table.",
                 minutes: Minutes(low: 30, high: 60, estimated: 45)),

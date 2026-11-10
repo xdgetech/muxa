@@ -74,9 +74,12 @@ extension DemoWork {
         }
         if action == .later {
             taskItems[i].laterAt = nextLaterAt
+            noteAnswer(item, action, text: text)
             return (taskItems[i], .none)
         }
         let effect = try Self.effect(of: action, on: item, worktree: worktree, tasks: &tasks)
+        // The host observes Reject on a proposal and Later on a row of the plan (ADR 0050 §2).
+        noteAnswer(item, action, text: text)
         taskItems[i].state = .answered
         taskItems[i].answer = action
         taskItems[i].answeredAt = Self.now

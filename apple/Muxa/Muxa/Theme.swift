@@ -89,4 +89,10 @@ enum Icon {
     static let protected = "lock.fill"
     static let protect = "lock"
     static let unprotect = "lock.open"
+    /// What the user told the overall assistant (ADR 0050).
+    static let policy = "text.book.closed"
+    static let notToday = "moon.zzz"
+    static let forget = "eraser"
+    static let moveUp = "arrow.up"
+    static let moveDown = "arrow.down"
 }

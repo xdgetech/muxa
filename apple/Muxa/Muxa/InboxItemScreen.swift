@@ -12,6 +12,7 @@ struct InboxItemScreen: View {
     var answered: (InboxItem) -> Void
     @State private var reply = ""
     @State private var approving: InboxItem?
+    @State private var rejecting: InboxItem?
     @State private var sending = false
     @State private var failure: String?
     @State private var lostWork: LostWork?
@@ -55,6 +56,11 @@ struct InboxItemScreen: View {
                         .padding(12)
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
+                if let hypothesis = item.hypothesis {
+                    HypothesisProposalView(proposal: hypothesis)
+                        .padding(12)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                }
                 ItemEvidence(item: item)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -72,6 +78,7 @@ struct InboxItemScreen: View {
                 send(item, .approve)
             }
         }
+        .rejectReason(item: $rejecting) { item, reason in send(item, .reject, reason: reason) }
         .lostWorkAlert($lostWork)
         .alert("Can't Answer", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
@@ -226,6 +233,8 @@ struct InboxItemScreen: View {
     private func perform(_ item: InboxItem, _ action: InboxAction) {
         switch action {
         case .approve where item.kind == .proposal: approving = item
+        // A reason is offered, never required (ADR 0050 §2).
+        case .reject where model.rejectTakesReason(item): rejecting = item
         case _ where action.needsText && !hasReply: replying = true
         default: send(item, action)
         }
@@ -245,7 +254,9 @@ struct InboxItemScreen: View {
     }
 
     /// Complete Task and Drop Task remove the worktree; when that could lose work, the user decides.
-    private func send(_ item: InboxItem, _ action: InboxAction, option: UInt32? = nil, worktree: WorktreeEnd = .remove) {
+    private func send(
+        _ item: InboxItem, _ action: InboxAction, option: UInt32? = nil, worktree: WorktreeEnd = .remove, reason: String? = nil
+    ) {
         let text = action.needsText ? reply.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         sending = true
         Task {
@@ -258,7 +269,11 @@ struct InboxItemScreen: View {
                     replying = false
                     return
                 }
-                let saved = try await model.session.answer(item, action, text: text, option: option, worktree: worktree)
+                let saved = if let reason, action == .reject {
+                    try await model.session.reject(item, reason: reason)
+                } else {
+                    try await model.session.answer(item, action, text: text, option: option, worktree: worktree)
+                }
                 reply = ""
                 replying = false
                 answered(saved)
@@ -301,6 +316,27 @@ private struct OverallProposal: View {
                         .accessibilityIdentifier("item-sort-capture")
                 }
             }
+        }
+    }
+}
+
+/// What Confirm keeps as a policy: the overall assistant's guess, its scope, and how many
+/// of your corrections it rests on (ADR 0050 §7).
+private struct HypothesisProposalView: View {
+    @Environment(AppModel.self) private var model
+    let proposal: HypothesisProposal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(proposal.text).textSelection(.enabled)
+                .accessibilityIdentifier("item-hypothesis-text")
+            LabeledContent("Applies To", value: model.scopeShown(proposal.scope))
+            Text("\(proposal.confidence.shown) · \(Correction.basedOn(proposal.evidence))")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("item-hypothesis-evidence")
+            Text("Confirm keeps it as your policy. Reject tells the assistant not to use it again.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }

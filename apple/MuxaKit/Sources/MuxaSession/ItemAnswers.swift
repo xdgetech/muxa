@@ -5,7 +5,7 @@ import MuxaProtocol
 /// Triage (✓, Later, and the … menu) is the same on every item; the bottom answers
 /// the agent: its decisions, then one reply box. Only actions the host listed appear.
 public struct ItemAnswers: Equatable, Sendable {
-    /// Under the body, in the host's order: Allow, Deny, Approve, Reject, Retry.
+    /// Under the body, in the host's order: Allow, Deny, Approve, Confirm, Reject, Retry.
     public var decisions: [InboxAction]
     /// What the reply box's text does: Send to the item's agent, or Ask Agent where
     /// the item has no session (ADR 0041).
@@ -28,7 +28,7 @@ public struct ItemAnswers: Equatable, Sendable {
         chooses = answers.contains(.choose)
         done = answers.first { $0 == .keepOpen || $0 == .dismiss }
         later = answers.contains(.later)
-        decisions = answers.filter { $0 == .approve || $0 == .reject || $0 == .retry }
+        decisions = answers.filter { $0 == .approve || $0 == .confirm || $0 == .reject || $0 == .retry }
         text = answers.first(where: \.needsText)
         menu = answers.filter { $0 == .accept || $0 == .drop }
         if replying, let text {

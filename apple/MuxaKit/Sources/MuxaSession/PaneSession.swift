@@ -79,6 +79,12 @@ public final class PaneSession {
     public internal(set) var plans: [Plan] = []
     /// The overall assistant and the delegates, as last listed. Nil below level 10.
     public internal(set) var assistantInfo: AssistantInfo?
+    /// The user's policies, active then expired, as last listed (`work` level 11, ADR 0050).
+    public internal(set) var policies: [Policy] = []
+    /// The overall assistant's `proposed` and `rejected` hypotheses, newest first.
+    public internal(set) var hypotheses: [Hypothesis] = []
+    /// The host's newest corrections on plans, newest first, at most 50.
+    public internal(set) var corrections: [Correction] = []
     /// Notes proposals applied from this device, by `source version`: the live file now
     /// differs from their base, so applying again would only conflict.
     public internal(set) var appliedNotes: Set<String> = []
@@ -122,6 +128,8 @@ public final class PaneSession {
     @ObservationIgnored var readWorks: [UInt64: LoadedWork] = [:]
     /// `plan-saved`, by request id (`PaneSession+Plans.swift`).
     @ObservationIgnored var savedPlans: [UInt64: Plan] = [:]
+    /// `policy-saved`, by request id (`PaneSession+Policies.swift`).
+    @ObservationIgnored var savedPolicies: [UInt64: Policy] = [:]
     /// `inbox-deleted` counts, by request id, until the result arrives (`PaneSession+Items.swift`).
     @ObservationIgnored var deletedCounts: [UInt64: UInt32] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
@@ -170,6 +178,9 @@ public final class PaneSession {
             workDetails = [:]
             plans = []
             assistantInfo = nil
+            policies = []
+            hypotheses = []
+            corrections = []
             appliedNotes = []
         }
         phase = .connecting
@@ -820,10 +831,12 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries, let items, let work, let captures, let requests, let plans, let assistant, _, _, _):
+        case .inboxList(
+            let id, let entries, let items, let work, let captures, let requests, let plans, let assistant, let policies,
+            let hypotheses, let corrections):
             inboxListings[id] = InboxListing(
                 entries: entries, items: items, work: work, captures: captures, requests: requests, plans: plans,
-                assistant: assistant)
+                assistant: assistant, policies: policies, hypotheses: hypotheses, corrections: corrections)
         case .inboxSaved(let id, let entry, let item):
             // A Routine's item comes with its entry; a Task's item has none.
             if let entry {
@@ -856,15 +869,17 @@ public final class PaneSession {
             // A run that did not start comes as a `failed` plan before the error.
             savedPlans[id] = entry
             keep(entry)
+        case .policySaved(let id, let entry):
+            savedPolicies[id] = entry
+            keep(entry)
         case .inboxDeleted(let id, let deleted):
             deletedCounts[id] = deleted
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
-        // Policies come with `work` level 11 (ADR 0050); no client asks for them yet.
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded, .policySaved:
+            .diffContent, .diffEnded, .imageContent, .imageEnded:
             break
         }
     }
@@ -908,6 +923,7 @@ public final class PaneSession {
         savedRequests = [:]
         readWorks = [:]
         savedPlans = [:]
+        savedPolicies = [:]
         deletedCounts = [:]
         startedSessions = [:]
         inputs = []

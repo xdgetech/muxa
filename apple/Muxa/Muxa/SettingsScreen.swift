@@ -12,6 +12,18 @@ struct SettingsScreen: View {
         NavigationStack {
             List {
                 hosts
+                if model.usesPolicies {
+                    Section {
+                        NavigationLink {
+                            PoliciesList()
+                        } label: {
+                            Label("Policies", systemImage: Icon.policy)
+                        }
+                        .accessibilityIdentifier("settings-policies")
+                    } footer: {
+                        Text("What you told the overall assistant on this host.")
+                    }
+                }
                 demo
                 Section {
                     LabeledContent("Version", value: Self.version)

@@ -21,6 +21,10 @@ struct DemoWork: Sendable {
     var assistant = DemoAssistant(captures: [], work: [])
     /// The overall assistant's plans and the delegates' notes (`work` level 10, ADR 0049).
     var plans = DemoPlans()
+    /// The host records corrections and keeps policies (`work` level 11, ADR 0050).
+    var keepsMemory = false
+    /// Policies, corrections and hypotheses (`DemoPolicies.swift`).
+    var memory = DemoPolicies()
 
     struct Refusal: Error {
         var body: ErrorBody
@@ -158,8 +162,9 @@ struct DemoWork: Sendable {
         sessions: [runSession(routine: "linear-triage", task: "t-r00002", number: 90, state: .waiting, ago: 120)],
         taskItems: testItems, assistant: .tests)
 
-    /// Try the Demo and the store screenshots, with the overall assistant (`DemoPlans.swift`).
-    static let showcase = showcasePlanned
+    /// Try the Demo and the store screenshots, with the overall assistant (`DemoPlans.swift`)
+    /// and what the user told it (`DemoPolicies.swift`).
+    static let showcase = showcaseRemembered
 
     static let showcaseBase = DemoWork(
         routines: routines(running: nil), entries: entries, sessions: [], taskItems: showcaseItems, assistant: .showcase)

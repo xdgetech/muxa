@@ -109,6 +109,9 @@ extension PaneSession {
         var requests: [AssistantRequest]
         var plans: [Plan]
         var assistant: AssistantInfo?
+        var policies: [Policy] = []
+        var hypotheses: [Hypothesis] = []
+        var corrections: [Correction] = []
     }
 
     /// Sends a list request; its list arrives just before the result. Nil when none came.

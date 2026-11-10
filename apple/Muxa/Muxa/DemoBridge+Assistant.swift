@@ -45,8 +45,11 @@ extension DemoBridge {
             let outcome = lock.withLock { () -> Result<WorkItem, DemoWork.Refusal> in
                 do throws(DemoWork.Refusal) {
                     let laterAt = max(work.nextLaterAt, work.assistant.lastLaterAt + 1)
-                    return .success(try work.assistant.update(
-                        item, rev: rev, action: action, laterAt: laterAt, title: title, workspace: workspace, due: due))
+                    let before = work.assistant.work.first { $0.id == item }
+                    let saved = try work.assistant.update(
+                        item, rev: rev, action: action, laterAt: laterAt, title: title, workspace: workspace, due: due)
+                    work.observe(action, before: before, after: saved)
+                    return .success(saved)
                 } catch { return .failure(error) }
             }
             switch outcome {

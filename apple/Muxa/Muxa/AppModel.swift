@@ -115,6 +115,10 @@ final class AppModel {
     /// opened from an item or a Task, so Back returns to it.
     var detailPath: [DetailRoute] = []
     var showSettings = false
+    /// The Policies screen, opened from Today (ADR 0050 §7).
+    var showPolicies = false
+    /// The Today row whose Not today asks for an optional reason.
+    var notTodayRow: PlanRow?
     /// Bumped to show the sidebar: on a phone, the list.
     var sidebarRequest = 0
     /// Bumped by `⌘0`: shows or hides the sidebar.

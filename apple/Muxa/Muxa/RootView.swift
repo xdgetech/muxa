@@ -60,6 +60,9 @@ struct RootView: View {
         .sheet(isPresented: $model.showSettings, onDismiss: model.refocusPane) {
             SettingsScreen()
         }
+        .sheet(isPresented: $model.showPolicies, onDismiss: model.refocusPane) {
+            PoliciesScreen()
+        }
         .sheet(item: $editing, onDismiss: model.refocusPane) { draft in
             HostEditor(draft: draft)
         }

@@ -28,13 +28,15 @@ extension PaneSession {
         }
         let end = action == .accept || action == .drop ? worktreeEnd(worktree) : nil
         // The overall assistant's proposals (ADR 0049 §4): approve sorts a Capture or asks a
-        // delegate, and a `capture-saved` or `work-saved` comes before `inbox-saved`.
-        let proposes = item.kind == .sort || item.kind == .delegate
+        // delegate, and a `capture-saved` or `work-saved` comes before `inbox-saved`. Confirm
+        // on a hypothesis sends `policy-saved` first (ADR 0050).
+        let proposes = item.kind == .sort || item.kind == .delegate || item.kind == .hypothesis
         var requestId: UInt64 = 0
         defer {
             savedCaptures[requestId] = nil
             savedWork[requestId] = nil
             savedRequests[requestId] = nil
+            savedPolicies[requestId] = nil
         }
         do {
             try await request { id in
@@ -60,6 +62,7 @@ extension PaneSession {
         // The host moved the item down (ADR 0040): its order is the list's.
         case .later: await loadWork()
         // An approved proposal sorted a Capture or made a request: the Work list changed.
+        // A rejected or confirmed one made a correction or a policy.
         case _ where proposes: await loadWork()
         // Accept, Drop, Retry and an approved proposal change a Task.
         default: await loadTasks()
