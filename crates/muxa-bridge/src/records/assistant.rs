@@ -9,6 +9,7 @@ use super::routines::{Trigger, scheduled};
 use super::staff::{self, DEFAULT_AUTO_HANDOFFS_PER_DAY, RawStaff, Staff};
 use super::workers::Worker;
 use super::workspaces::parse_duration;
+use super::writer::{self, Writer};
 
 /// Runs a day across all workspaces when `[assistant]` gives no number.
 pub const DEFAULT_HOST_RUNS_PER_DAY: u32 = 20;
@@ -66,6 +67,8 @@ pub struct Delegate {
     pub plans: Vec<Trigger>,
     /// Who answers its requests (ADR 0051 §1); a staff of one without `staff`.
     pub staff: Staff,
+    /// Who performs its approved writes (ADR 0052 §3); none by default.
+    pub writer: Writer,
 }
 
 impl Delegate {
@@ -181,6 +184,8 @@ pub(super) struct RawDelegate {
     lead: Option<String>,
     handoffs: Option<String>,
     max_steps: Option<i64>,
+    writer: Option<String>,
+    writes: Option<String>,
 }
 
 impl RawDelegate {
@@ -203,6 +208,13 @@ impl RawDelegate {
             max_steps: self.max_steps,
         }
         .parse(self.overall, worker.as_deref())?;
+        let writer = writer::parse(
+            self.writer,
+            self.writes.as_deref(),
+            self.overall,
+            &staff,
+            worker.as_deref(),
+        )?;
         let settings = Delegate {
             worker,
             max_open_runs: positive("max_open_runs", self.max_open_runs, open)?,
@@ -217,6 +229,7 @@ impl RawDelegate {
             notes: NotesMode::parse(self.notes.as_deref())?,
             plans: Vec::new(),
             staff,
+            writer,
         };
         let share = self.share.as_deref().map(parse_share).transpose()?;
         let overall_requests = parse_overall_requests(self.overall_requests.as_deref())?;
@@ -272,7 +285,7 @@ fn plans(texts: Option<&[String]>, zone: Option<&str>) -> Result<Vec<Trigger>, S
     Ok(out)
 }
 
-/// The delegate's `worker`, and each staff member, must be a configured
+/// The delegate's `worker`, each staff member and the writer must be a configured
 /// `[[worker]]` this workspace may use.
 pub(super) fn check_worker(
     delegate: &Delegate,
@@ -280,6 +293,7 @@ pub(super) fn check_worker(
     workers: &[Worker],
 ) -> Result<(), String> {
     staff::check(&delegate.staff, workspace, workers)?;
+    writer::check(&delegate.writer, workspace, workers)?;
     let Some(name) = &delegate.worker else {
         return Ok(());
     };

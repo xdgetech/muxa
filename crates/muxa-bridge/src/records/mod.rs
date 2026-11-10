@@ -18,6 +18,7 @@ pub mod staff;
 pub mod store;
 pub mod workers;
 pub mod workspaces;
+pub mod writer;
 
 use std::path::PathBuf;
 

@@ -33,7 +33,7 @@ pub enum How {
 }
 
 enum Claimed {
-    Run(Plan, Delegated),
+    Run(Plan, Box<Delegated>),
     /// A scheduled plan past a budget: kept `failed`, with no run.
     Skipped(Plan),
 }
@@ -46,7 +46,7 @@ pub async fn start(cx: &Context, how: How) -> Result<(Plan, Option<ErrorBody>), 
             .await?;
     let (plan, d) = match claimed {
         Claimed::Skipped(plan) => return Ok((plan, None)),
-        Claimed::Run(plan, d) => (plan, d),
+        Claimed::Run(plan, d) => (plan, *d),
     };
     let error = run(cx, &plan, &d).await;
     let (config, id) = (Arc::clone(&cx.records), plan.id.clone());
@@ -90,7 +90,7 @@ fn claim(config: &Config, how: &How, fallback: &str, now: u64) -> Result<Claimed
     }
     let plan = new_plan(&shelf, how, &d, now, None)?;
     prune(&shelf);
-    Ok(Claimed::Run(plan, d))
+    Ok(Claimed::Run(plan, Box::new(d)))
 }
 
 /// The plans without an answer.
