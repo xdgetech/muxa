@@ -44,6 +44,9 @@ import tech.xdge.muxa.protocol.WORK_CAPABILITY
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
+import tech.xdge.muxa.protocol.WORK_POLICIES
+import tech.xdge.muxa.protocol.CorrectionKind
+import tech.xdge.muxa.protocol.PlanAction
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
@@ -64,7 +67,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
+ * [workLevel] is the `work` level it advertises; at [WORK_POLICIES] it keeps policies, corrections and hypotheses
+ * (ADR 0050); at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
  * at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0048); below [WORK_DELETE_INBOX] it plays a host from before
  * Protect and Delete Old (ADR 0046), below [WORK_WORKTREE_END] one whose Done keeps the worktree (ADR 0043),
  * below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing
@@ -135,6 +139,14 @@ class DemoBridge(
         assistant.seed(p.pins, p.dues)
         items.add(p.proposals)
         p.planMillis = assistPace.pendingMillis + assistPace.processingMillis
+    }
+
+    /** Policies, corrections and hypotheses (ADR 0050): the plan's rows cite them, and the hypotheses ask in the Inbox at level 11. */
+    private val policies: DemoPolicies? = plans?.let { p ->
+        content.policies(now())?.takeIf { workLevel >= WORK_POLICIES }?.also { m ->
+            p.cite(m.cites)
+            items.add(m.items(p.overall))
+        }
     }
 
     /** The workspaces `list-tasks` names: the overall assistant's is one of them. */
@@ -243,9 +255,7 @@ class DemoBridge(
             is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork,
             is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
             is Request.ApplyNotes, is Request.PlanNow -> servePlans(req)
-            // The demo has no policies yet (`work` level 11, ADR 0050).
-            is Request.AddPolicy, is Request.UpdatePolicy, is Request.UpdatePlan, is Request.Forget ->
-                fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+            is Request.AddPolicy, is Request.UpdatePolicy, is Request.UpdatePlan, is Request.Forget -> servePolicies(req)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }
@@ -273,6 +283,7 @@ class DemoBridge(
                     Message.InboxList(
                         req.id, entries, shown, listed, assistant.unsorted, assistant.requestsOf(listed),
                         p.listed(unanswered, stale), p.info,
+                        policies?.listedPolicies(now).orEmpty(), policies?.listedHypotheses.orEmpty(), policies?.listedCorrections.orEmpty(),
                     )
                 }
                 emit(list)
@@ -284,6 +295,8 @@ class DemoBridge(
                 askAgent(req)
             } else if (req.action in PROTECT_ACTIONS) {
                 protect(req, now)
+            } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.HYPOTHESIS) {
+                answerHypothesis(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind }.let { it == ItemKind.SORT || it == ItemKind.DELEGATE }) {
                 answerProposal(req, now)
             } else if (workLevel >= WORK_ITEMS && synchronized(lock) { items.has(req.entry) }) answerItem(req, now) else updateEntry(req, now)
@@ -305,7 +318,10 @@ class DemoBridge(
                             return fail(req.id, ErrorCode.BAD_REQUEST, "pin, unpin and due need work level 10")
                         }
                         val laterAt = maxOf(now, (assistant.lastLaterAt ?: 0) + 1)
-                        Message.WorkSaved(req.id, derived(assistant.update(req, now, laterAt)))
+                        val saved = assistant.update(req, now, laterAt)
+                        // Later, Pin and Unpin are the host's own observations; one that changes nothing records nothing.
+                        WORK_CORRECTIONS[req.action]?.takeIf { saved.rev != req.rev }?.let { observe(it, saved.id, saved.workspace, now) }
+                        Message.WorkSaved(req.id, derived(saved))
                     }
                     is Request.GetWork -> assistant.detail(req.work).let { (w, captures, requests) ->
                         Message.WorkDetail(req.id, derived(w), captures, requests)
@@ -377,6 +393,92 @@ class DemoBridge(
         if (req is Request.PlanNow) planStarted(p.planMillis)
     }
 
+    /**
+     * `add-policy`, `update-policy`, `update-plan` and `forget` (ADR 0050), refused as a bridge below
+     * `work` level 11 refuses them.
+     */
+    private fun servePolicies(req: Request) {
+        val m = policies ?: return fail(req.id, ErrorCode.BAD_REQUEST, "unknown request for work level $workLevel")
+        val p = plans ?: return fail(req.id, ErrorCode.BAD_REQUEST, NO_REQUEST)
+        val now = now()
+        try {
+            val saved = synchronized(lock) {
+                when (req) {
+                    is Request.AddPolicy -> Message.PolicySaved(req.id, m.add(req, now, workspaceNames))
+                    is Request.UpdatePolicy -> m.update(req, now, workspaceNames)?.let { Message.PolicySaved(req.id, it) }
+                    is Request.UpdatePlan -> updatePlan(p, m, req, now)
+                    is Request.Forget -> {
+                        val gone = m.forget(req.record)
+                        items.remove(gone.map { DemoPolicies.itemId(it) }.toSet())
+                        null
+                    }
+                    else -> null
+                }
+            }
+            saved?.let(::emit)
+            ok(req.id)
+        } catch (e: DemoWork.Refusal) {
+            fail(req.id, e.code, e.message ?: "")
+        }
+    }
+
+    /** Reorder or Not today on the current plan; a change records one correction. The caller holds the lock. */
+    private fun updatePlan(p: DemoPlans, m: DemoPolicies, req: Request.UpdatePlan, now: Long): Message {
+        req.text?.let(m::checkReason)
+        val before = p.current?.let { c -> c.userOrder.ifEmpty { c.top.mapNotNull { it.work ?: it.item } } }.orEmpty()
+        val (plan, changed) = p.update(req)
+        if (changed) {
+            when (req.action) {
+                PlanAction.REORDER -> m.record(CorrectionKind.REORDERED, plan.id, null, true, null, now, before = before, after = req.order)
+                PlanAction.DISMISS -> {
+                    val row = req.row.orEmpty()
+                    m.record(CorrectionKind.DISMISSED, plan.id, row, true, workspaceOf(row), now, req.text)
+                }
+            }
+        }
+        return Message.PlanSaved(req.id, plan)
+    }
+
+    /** The workspace of a Work item or Inbox item; null for nobody's. The caller holds the lock. */
+    private fun workspaceOf(row: String): String? = assistant.workItem(row)?.workspace ?: items.item(row)?.workspace
+
+    /** Records a correction while a plan is current (ADR 0050 §2); nothing below level 11. The caller holds the lock. */
+    private fun observe(kind: CorrectionKind, row: String, workspace: String?, now: Long, reason: String? = null) {
+        val m = policies ?: return
+        val plan = plans?.current ?: return
+        m.record(kind, plan.id, row, plan.top.any { (it.work ?: it.item) == row }, workspace, now, reason)
+    }
+
+    /**
+     * Confirm, Reject or Later on a `hypothesis` item (ADR 0050 §3). Confirm makes a policy first, then
+     * answers the item; a second confirm returns the same policy. Reject records a correction with the reason.
+     */
+    private fun answerHypothesis(req: Request.UpdateInbox, now: Long) {
+        val m = policies ?: return fail(req.id, ErrorCode.BAD_REQUEST, NO_REQUEST)
+        try {
+            val (policy, item) = synchronized(lock) {
+                val item = items.item(req.entry) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item ${req.entry}")
+                val h = item.hypothesis?.hypothesis ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${item.id} has no hypothesis")
+                if (item.answer != InboxAction.CONFIRM && req.action != InboxAction.READ && req.action !in item.answers) {
+                    throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${req.action} does not answer Inbox item ${item.id} now")
+                }
+                if (req.action == InboxAction.REJECT) req.text?.let(m::checkReason)
+                val policy = if (req.action == InboxAction.CONFIRM) m.confirm(h, now) else null
+                val answered = if (item.answer == InboxAction.CONFIRM) item else items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item
+                if (req.action == InboxAction.REJECT) {
+                    m.reject(h, now)
+                    observe(CorrectionKind.REJECTED, item.id, item.workspace, now, req.text)
+                }
+                policy to answered
+            }
+            policy?.let { emit(Message.PolicySaved(req.id, it)) }
+            emit(Message.InboxSaved(req.id, item = item))
+            ok(req.id)
+        } catch (e: DemoWork.Refusal) {
+            fail(req.id, e.code, e.message ?: "")
+        }
+    }
+
     /** The app lists again once the plan should be made, as the host's `tasks-changed` makes it. */
     private fun planStarted(after: Long) {
         if (assistPaceNever) return
@@ -399,7 +501,10 @@ class DemoBridge(
             if (req.action != InboxAction.APPROVE || item.answer == InboxAction.APPROVE) {
                 if (item.answer == InboxAction.APPROVE) return@synchronized ProposalOutcome(item, emptyList(), null)
                 return@synchronized try {
-                    ProposalOutcome(items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item, emptyList(), null)
+                    if (req.action == InboxAction.REJECT) req.text?.let { policies?.checkReason(it) }
+                    val answered = items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item
+                    if (req.action == InboxAction.REJECT) observe(CorrectionKind.REJECTED, item.id, item.workspace, now, req.text)
+                    ProposalOutcome(answered, emptyList(), null)
                 } catch (e: DemoWork.Refusal) {
                     ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))
                 }
@@ -614,6 +719,10 @@ class DemoBridge(
                     lostWork(items.task(req.entry), req.worktree)?.let { throw DemoWork.Refusal(ErrorCode.WOULD_LOSE_WORK, it) }
                 }
                 val answer = items.answer(req.entry, req.action, req.text, req.option, now, nextLaterAt(now))
+                // Later on an item the plan listed is a correction; it means "not now" only.
+                if (req.action == InboxAction.LATER && plans?.current?.top?.any { it.item == req.entry } == true) {
+                    observe(CorrectionKind.DEFERRED, req.entry, answer.item.workspace, now)
+                }
                 val status = answer.status
                 if (status != null) {
                     tasks = tasks.map { if (it.id == answer.item.task) it.copy(rev = it.rev + 1, status = status, updatedAt = now) else it }
@@ -1124,6 +1233,13 @@ class DemoBridge(
         /** The Inbox answers whose text goes to the agent as its next prompt. */
         private val PROMPT_ACTIONS = setOf(InboxAction.REPLY)
         private val PROTECT_ACTIONS = setOf(InboxAction.PROTECT, InboxAction.UNPROTECT)
+
+        /** The Work item actions a level 11 host records as corrections (ADR 0050 §2). */
+        private val WORK_CORRECTIONS = mapOf(
+            WorkAction.LATER to CorrectionKind.DEFERRED,
+            WorkAction.PIN to CorrectionKind.PINNED,
+            WorkAction.UNPIN to CorrectionKind.UNPINNED,
+        )
         private const val MAX_DELETE_DAYS = 3650
         private const val DAY_SECONDS = 86_400L
         private const val OLD_ITEM_AGE = 4 * DAY_SECONDS

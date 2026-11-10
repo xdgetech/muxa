@@ -42,6 +42,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.BuildConfig
+import tech.xdge.muxa.app.canKeepPolicies
 import tech.xdge.muxa.session.Host
 
 /**
@@ -87,6 +88,12 @@ private fun SettingsList(model: AppModel, onEdit: (HostDraft) -> Unit, close: ()
         if (model.isConnected) {
             item(key = "disconnect") {
                 SettingsAction("Disconnect", Icons.disconnect, "settings-disconnect", Theme.failure) { model.disconnect() }
+            }
+        }
+        if (model.canKeepPolicies) {
+            item(key = "assistant") { SectionHeader("Assistant") }
+            item(key = "policies") {
+                SettingsAction("Policies", Icons.policies, "settings-policies") { model.policiesShown = true }
             }
         }
         item(key = "demo") { SectionHeader("Demo") }

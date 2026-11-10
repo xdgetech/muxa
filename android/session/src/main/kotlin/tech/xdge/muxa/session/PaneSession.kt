@@ -36,6 +36,9 @@ import tech.xdge.muxa.protocol.Message
 import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.PROTOCOL_VERSION
 import tech.xdge.muxa.protocol.Plan
+import tech.xdge.muxa.protocol.PlanAction
+import tech.xdge.muxa.protocol.Policy
+import tech.xdge.muxa.protocol.PolicyAction
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.RoutineInfo
 import tech.xdge.muxa.protocol.Session
@@ -50,6 +53,7 @@ import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
+import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.WorkAction
@@ -149,6 +153,8 @@ class PaneSession(
         val plans: List<Plan> = emptyList(),
         /** Who assists on the host, as last listed (`work` level 10); null when nobody does. */
         val assistant: AssistantInfo? = null,
+        /** Policies, hypotheses and corrections, as last listed (`work` level 11, ADR 0050). Never logged. */
+        val memory: Memory = Memory(),
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -189,6 +195,9 @@ class PaneSession(
 
         /** The host protects items and deletes old ones (ADR 0046). */
         val canDeleteInbox get() = workLevel >= WORK_DELETE_INBOX
+
+        /** The host keeps policies, corrections and hypotheses; Today takes reorder and Not today (ADR 0050). */
+        val canKeepPolicies get() = workLevel >= WORK_POLICIES
     }
 
     private val _state = MutableStateFlow(State())
@@ -224,6 +233,7 @@ class PaneSession(
     private val savedCaptures = mutableMapOf<Long, Message.CaptureSaved>()
     private val savedWork = mutableMapOf<Long, Message.WorkSaved>()
     private val savedPlans = mutableMapOf<Long, Plan>()
+    private val savedPolicies = mutableMapOf<Long, Policy>()
     private val workDetailListings = mutableMapOf<Long, Message.WorkDetail>()
     private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
     private val deletedCounts = mutableMapOf<Long, Int>()
@@ -252,7 +262,7 @@ class PaneSession(
                     unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
                     routines = emptyList(), inboxItems = emptyList(), workError = null,
                     work = emptyList(), captures = emptyList(), requests = emptyList(), workDetails = emptyMap(),
-                    plans = emptyList(), assistant = null,
+                    plans = emptyList(), assistant = null, memory = Memory(),
                 )
             }
         }
@@ -502,6 +512,7 @@ class PaneSession(
                     plans = if (s.canPlan) inbox?.plans ?: s.plans else emptyList(),
                     // An absent `assistant` means nobody assists now.
                     assistant = if (!s.canPlan) null else if (inbox != null) inbox.assistant else s.assistant,
+                    memory = if (!s.canKeepPolicies) Memory() else inbox?.let { Memory(it.policies, it.hypotheses, it.corrections) } ?: s.memory,
                     workError = null,
                 )
             }
@@ -590,8 +601,9 @@ class PaneSession(
         if (!_state.value.canAnswerItems) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ITEMS_UNSUPPORTED))
         var requestId = 0L
         val worktree = worktreeEnd(action in ENDING_ACTIONS, forceWorktree)
-        // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0049 §4).
-        val proposal = item.kind == ItemKind.SORT || item.kind == ItemKind.DELEGATE
+        // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0049 §4); a
+        // confirmed `hypothesis` writes a policy, and a reject a correction (ADR 0050 §3).
+        val proposal = item.kind in OVERALL_KINDS
         try {
             request { id ->
                 requestId = id
@@ -624,6 +636,7 @@ class PaneSession(
         savedItems.remove(requestId)
         savedCaptures.remove(requestId)
         savedWork.remove(requestId)
+        savedPolicies.remove(requestId)
     }
 
     /**
@@ -773,6 +786,66 @@ class PaneSession(
 
     private fun requirePlans() {
         if (!_state.value.canPlan) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, PLANS_UNSUPPORTED))
+    }
+
+    // Policies, corrections and hypotheses (`work` level 11, ADR 0050). A conflict is the host's
+    // reason: the limit of 50, a stale `rev`, or a plan that is no longer the newest.
+
+    /** Keeps a policy in the user's words; [from] and [until] are epoch seconds. */
+    suspend fun addPolicy(text: String, scope: String, from: Long? = null, until: Long? = null): Policy = withContext(dispatcher) {
+        requirePolicies()
+        changing(savedPolicies, "the policy", ::refused) { id -> Request.AddPolicy(id, text, scope, from, until) }
+    }
+
+    /** Sets the fields given on [policy], at the `rev` this client saw. */
+    suspend fun editPolicy(policy: Policy, text: String? = null, scope: String? = null, from: Long? = null, until: Long? = null): Policy =
+        withContext(dispatcher) {
+            requirePolicies()
+            changing(savedPolicies, "the policy", ::refused) { id ->
+                Request.UpdatePolicy(id, policy.id, policy.rev, PolicyAction.EDIT, text, scope, from, until)
+            }
+        }
+
+    /** Deletes [policy]: the next brief no longer has it. */
+    suspend fun deletePolicy(policy: Policy) = withContext(dispatcher) {
+        requirePolicies()
+        answeredOnly { id -> Request.UpdatePolicy(id, policy.id, policy.rev, PolicyAction.DELETE) }
+    }
+
+    /** Sets Today's order on [plan]: [order] names every row of `top` once. */
+    suspend fun reorderPlan(plan: Plan, order: List<String>): Plan = withContext(dispatcher) {
+        requirePolicies()
+        changing(savedPlans, "the plan", ::refused) { id -> Request.UpdatePlan(id, plan.id, plan.rev, PlanAction.REORDER, order = order) }
+    }
+
+    /** Not today: removes [row] from Today on [plan], with the user's optional [reason]. */
+    suspend fun dismissRow(plan: Plan, row: String, reason: String? = null): Plan = withContext(dispatcher) {
+        requirePolicies()
+        changing(savedPlans, "the plan", ::refused) { id -> Request.UpdatePlan(id, plan.id, plan.rev, PlanAction.DISMISS, row = row, text = reason) }
+    }
+
+    /** Removes a correction `x-…` or a hypothesis `h-…`; forgetting a correction also removes the hypotheses it grounds. */
+    suspend fun forget(record: String) = withContext(dispatcher) {
+        requirePolicies()
+        answeredOnly { id -> Request.Forget(id, record) }
+    }
+
+    /** A request answered with `result` only; the Inbox is listed again either way. */
+    private suspend fun answeredOnly(make: (Long) -> Request) {
+        try {
+            request(make)
+        } catch (e: Failure) {
+            if (e is Failure.NotConnected) throw e
+            loadWork()
+            throw if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) refused(e) else e
+        }
+        loadWork()
+    }
+
+    private fun refused(e: Failure.Bridge): Failure = Failure.Refused(e.body)
+
+    private fun requirePolicies() {
+        if (!_state.value.canKeepPolicies) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, POLICIES_UNSUPPORTED))
     }
 
     /**
@@ -1285,8 +1358,7 @@ class PaneSession(
             is Message.WorkSaved -> savedWork[message.work] = message
             is Message.WorkDetail -> workDetailListings[message.work] = message
             is Message.PlanSaved -> savedPlans[message.plan] = message.entry
-            // Policies come with `work` level 11 (ADR 0050); no client asks for them yet.
-            is Message.PolicySaved -> {}
+            is Message.PolicySaved -> savedPolicies[message.policy] = message.entry
             is Message.Unknown -> {}
         }
     }
@@ -1343,6 +1415,7 @@ class PaneSession(
         savedCaptures.clear()
         savedWork.clear()
         savedPlans.clear()
+        savedPolicies.clear()
         workDetailListings.clear()
         startedSessions.clear()
         deletedCounts.clear()
@@ -1399,6 +1472,12 @@ class PaneSession(
 
         /** Shown when the host has no plans, pins or notes (ADR 0049). */
         const val PLANS_UNSUPPORTED = "This host has no overall assistant. Update muxa on the host."
+
+        /** Shown when the host keeps no policies (ADR 0050). */
+        const val POLICIES_UNSUPPORTED = "This host keeps no policies. Update muxa on the host."
+
+        /** The overall assistant's items: answering one may write a Capture, a Work item, a policy or a correction. */
+        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS)
 
         /** A plan's id starts with it; a request's with `q-`. */
         private const val PLAN_PREFIX = "p-"

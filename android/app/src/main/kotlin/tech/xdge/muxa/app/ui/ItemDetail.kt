@@ -309,5 +309,6 @@ val InboxItem.kindTitle: String
         ItemKind.BRIEFING -> "Briefing"
         ItemKind.SORT -> "Sort"
         ItemKind.DELEGATE -> "Request"
+        ItemKind.HYPOTHESIS -> "Hypothesis"
         else -> kind.raw
     }

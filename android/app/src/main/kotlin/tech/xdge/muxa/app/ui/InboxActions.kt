@@ -20,6 +20,13 @@ import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.InboxPrompt
 import tech.xdge.muxa.app.answer
 import tech.xdge.muxa.app.deleteOld
+import tech.xdge.muxa.app.reject
+import tech.xdge.muxa.protocol.InboxItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.Proposal
 
@@ -31,6 +38,7 @@ fun InboxDialogs(model: AppModel) {
             ProposalDialog(model, prompt.item.title, prompt.item.workspace, p) { model.answer(prompt.item, InboxAction.APPROVE) }
         }
         is InboxPrompt.DeleteOld -> DeleteOldDialog(model, prompt)
+        is InboxPrompt.RejectItem -> RejectDialog(model, prompt.item)
         null -> {}
     }
     model.inboxError?.let { error ->
@@ -41,6 +49,34 @@ fun InboxDialogs(model: AppModel) {
             confirmButton = { TextButton({ model.inboxError = null }) { Text("OK") } },
         )
     }
+}
+
+/** Reject with an optional reason: the host keeps it with the correction (ADR 0050 §2). Nothing asks for one. */
+@Composable
+private fun RejectDialog(model: AppModel, item: InboxItem) {
+    var reason by rememberSaveable(item.id) { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { model.inboxPrompt = null },
+        title = { Text("Reject") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(item.question, maxLines = 3)
+                ReasonField(reason, "reject-reason") { reason = it }
+            }
+        },
+        confirmButton = { TextButton({ model.reject(item, reason) }, Modifier.testTag("reject-confirm")) { Text("Reject") } },
+        dismissButton = { TextButton({ model.inboxPrompt = null }) { Text("Cancel") } },
+    )
+}
+
+/** The optional reason the assistant reads with a correction. */
+@Composable
+internal fun ReasonField(reason: String, tag: String, change: (String) -> Unit) {
+    OutlinedTextField(
+        reason, change, Modifier.fillMaxWidth().testTag(tag),
+        label = { Text("Reason (optional)") }, maxLines = 3,
+        supportingText = { Text("The overall assistant reads it with the next plan.") },
+    )
 }
 
 /** Names the count first; with none, there is nothing to confirm (docs/inbox.md). */

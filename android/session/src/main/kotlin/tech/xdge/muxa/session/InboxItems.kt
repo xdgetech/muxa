@@ -51,7 +51,7 @@ val InboxAction.needsText: Boolean get() = this == InboxAction.REPLY || this == 
  * its [decisions], then one reply box that sends [text].
  */
 data class ItemButtons(
-    /** Under the body, in the host's order: Allow, Deny, Approve, Reject, Retry. */
+    /** Under the body, in the host's order: Allow, Deny, Approve, Confirm, Reject, Retry. */
     val decisions: List<InboxAction>,
     /** What the reply box's text does: Send to the item's agent, or Ask Agent where it has no session (ADR 0041). */
     val text: InboxAction?,
@@ -68,13 +68,15 @@ data class ItemButtons(
 /** The item's answers by place, each in the host's order. Only actions the host listed appear. */
 val InboxItem.buttons: ItemButtons
     get() = ItemButtons(
-        decisions = answers.filter { it == InboxAction.APPROVE || it == InboxAction.REJECT || it == InboxAction.RETRY },
+        decisions = answers.filter { it in DECISIONS },
         text = answers.firstOrNull { it.needsText },
         menu = answers.filter { it == InboxAction.ACCEPT || it == InboxAction.DROP },
         done = answers.firstOrNull { it == InboxAction.KEEP_OPEN || it == InboxAction.DISMISS },
         later = InboxAction.LATER in answers,
         chooses = InboxAction.CHOOSE in answers,
     )
+
+private val DECISIONS = setOf(InboxAction.APPROVE, InboxAction.CONFIRM, InboxAction.REJECT, InboxAction.RETRY)
 
 /** The options a `choose` answers with, by index; empty when the item takes no `choose`. */
 val InboxItem.choices: List<ChatPrompt.Option>

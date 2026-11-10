@@ -61,6 +61,9 @@ val Basis.line: String
             BasisKind.GOAL -> "Goal"
             BasisKind.TIME -> "Time"
             BasisKind.MANUAL -> "Your pin"
+            BasisKind.POLICY -> "Your policy"
+            BasisKind.HYPOTHESIS -> "Hypothesis"
+            BasisKind.CORRECTION -> "Your correction"
             else -> kind.raw
         }
         return listOfNotNull("$kindLabel: $text", source).joinToString(" · ")

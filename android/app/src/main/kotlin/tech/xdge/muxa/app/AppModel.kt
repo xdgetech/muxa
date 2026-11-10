@@ -20,7 +20,7 @@ import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
-import tech.xdge.muxa.protocol.WORK_PLANS
+import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.protocol.WorkspaceInfo
@@ -238,6 +238,12 @@ class AppModel(
     /** Plan now's sheet is open. */
     var planNowShown by mutableStateOf(false)
 
+    /** The Policies screen is open (ADR 0050 §7). */
+    var policiesShown by mutableStateOf(false)
+
+    /** The correction or hypothesis whose Forget waits on the user's confirmation, by id. */
+    var forgetting by mutableStateOf<String?>(null)
+
     /** The notes applied from this device, as `source:version`, so the Notes section says so. */
     var appliedNotes by mutableStateOf<Set<String>>(emptySet())
 
@@ -376,8 +382,8 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        // Try the Demo shows Captures, Work items (ADR 0048) and Today (ADR 0049); the UI tests pick their level.
-        demoWorkLevel = WORK_PLANS
+        // Try the Demo shows Captures, Work items (ADR 0048), Today (ADR 0049) and policies (ADR 0050); the UI tests pick their level.
+        demoWorkLevel = WORK_POLICIES
         demoOldItems = false
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true
@@ -499,6 +505,8 @@ class AppModel(
         changingWork = null
         seenPlan = null
         planNowShown = false
+        policiesShown = false
+        forgetting = null
         appliedNotes = emptySet()
         itemReplies = emptyMap()
         answeringItem = null

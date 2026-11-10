@@ -16,6 +16,7 @@ import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_PLANS
+import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_ROUTINES
@@ -52,8 +53,9 @@ class MainActivity : ComponentActivity() {
                 taskRecords = !intent.getBooleanExtra(EXTRA_NO_TASK_RECORDS, false),
                 // A host from before ask sessions (ADR 0031), Inbox items (ADR 0033) or
                 // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0048),
-                // or with the overall assistant's plans (ADR 0049).
+                // with the overall assistant's plans (ADR 0049), or with policies (ADR 0050).
                 workLevel = when {
+                    intent.getBooleanExtra(EXTRA_WORK11, false) -> WORK_POLICIES
                     intent.getBooleanExtra(EXTRA_WORK10, false) -> WORK_PLANS
                     intent.getBooleanExtra(EXTRA_WORK9, false) -> WORK_ASSISTANT
                     intent.getBooleanExtra(EXTRA_WORK1, false) -> WORK_ROUTINES
@@ -153,6 +155,9 @@ class MainActivity : ComponentActivity() {
 
         /** A bridge with the overall assistant: Today in the Inbox, pins, deadlines and notes. */
         const val EXTRA_WORK10 = "work10"
+
+        /** A bridge with policies, corrections and hypotheses: Policies, Today's reorder and Not today. */
+        const val EXTRA_WORK11 = "work11"
 
         /** The failure and the last proposal are four days old, for Delete Old (ADR 0046). */
         const val EXTRA_OLD_ITEMS = "old-items"

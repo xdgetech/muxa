@@ -19,7 +19,9 @@ import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.OverallRequests
 import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanChange
+import tech.xdge.muxa.protocol.PlanAction
 import tech.xdge.muxa.protocol.PlanRow
+import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Share
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.SortProposal
@@ -108,6 +110,45 @@ internal class DemoPlans(
         if (plan.rev != rev) throw DemoWork.Refusal(ErrorCode.CONFLICT, "plan $id is at rev ${plan.rev}")
         applyNotes(overall, plan.notes, base, now)
         return plan
+    }
+
+    /** The plan Today shows: the newest `resulted` one. */
+    val current: Plan? get() = plans.firstOrNull { it.delivery == Delivery.RESULTED }
+
+    /** Adds [cites] to the current plan's rows (`work` level 11): the records a row's reasons name. */
+    fun cite(cites: Map<String, List<Basis>>) {
+        val plan = current ?: return
+        val cited = plan.copy(top = plan.top.map { row -> row.copy(basis = row.basis + cites[row.work ?: row.item].orEmpty()) })
+        plans = plans.map { if (it.id == plan.id) cited else it }
+    }
+
+    /**
+     * `update-plan` (ADR 0050 §6) on the current plan. Returns the plan, and whether it changed: a
+     * reorder to the order shown, or a dismiss of a dismissed row, keeps its `rev`.
+     */
+    fun update(req: Request.UpdatePlan): Pair<Plan, Boolean> {
+        val plan = current?.takeIf { it.id == req.plan }
+            ?: throw DemoWork.Refusal(ErrorCode.CONFLICT, "plan ${req.plan} is not the newest resulted plan; list the Inbox again")
+        if (plan.rev != req.rev) throw DemoWork.Refusal(ErrorCode.CONFLICT, "plan ${plan.id} is at rev ${plan.rev}; list the Inbox again")
+        val rows = plan.top.mapNotNull { it.work ?: it.item }
+        val updated = when (req.action) {
+            PlanAction.REORDER -> {
+                if (req.row != null || req.text != null || req.order.sorted() != rows.sorted()) {
+                    throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "update-plan: reorder needs order, every row once")
+                }
+                plan.copy(userOrder = req.order)
+            }
+            PlanAction.DISMISS -> {
+                val row = req.row
+                if (req.order.isNotEmpty() || row == null || row !in rows) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "update-plan: dismiss needs a row of top")
+                if (row in plan.dismissed) plan else plan.copy(dismissed = plan.dismissed + row)
+            }
+        }
+        val shown = plan.userOrder.ifEmpty { rows }
+        if (updated == plan || (req.action == PlanAction.REORDER && req.order == shown)) return plan to false
+        val saved = updated.copy(rev = plan.rev + 1)
+        plans = plans.map { if (it.id == plan.id) saved else it }
+        return saved to true
     }
 
     private fun workRow(w: WorkItem) = if (w.pinnedAt != null) {

@@ -45,6 +45,11 @@ internal class DemoItems(private var items: List<InboxItem>) {
         items = items + more
     }
 
+    /** Removes the items with [ids]: a forgotten hypothesis's (ADR 0050 §5). */
+    fun remove(ids: Set<String>) {
+        items = items.filterNot { it.id in ids }
+    }
+
     /** Stores [item] as it is now: an approved proposal's, written by the bridge. */
     fun save(item: InboxItem) {
         items = items.map { if (it.id == item.id) item else it }

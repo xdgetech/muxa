@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
+import tech.xdge.muxa.app.canKeepPolicies
 import tech.xdge.muxa.app.hasToday
 import tech.xdge.muxa.app.item
 import tech.xdge.muxa.app.openPlanRow
@@ -42,8 +43,9 @@ import tech.xdge.muxa.app.workItem
 import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanRow
 import tech.xdge.muxa.session.dueSoonLine
+import tech.xdge.muxa.session.isDismissed
+import tech.xdge.muxa.session.todayRows
 import tech.xdge.muxa.session.label
-import tech.xdge.muxa.session.line
 import tech.xdge.muxa.session.marks
 import tech.xdge.muxa.session.planStatus
 import tech.xdge.muxa.session.planning
@@ -63,10 +65,12 @@ fun LazyListScope.todaySection(model: AppModel) {
         plan == null && status == null -> item(key = "today-empty") { TodayNote("No plan yet. Plan now asks the overall assistant.", "today-empty") }
         plan != null && plan.top.isEmpty() -> item(key = "today-empty") { TodayNote("Nothing to rank in the newest plan.", "today-empty") }
     }
-    val rows = plan?.top.orEmpty()
+    // The user's order when they set one (ADR 0050 §6); a row they removed stays as one line.
+    val rows = plan?.todayRows.orEmpty()
     rows.forEachIndexed { i, row ->
         item(key = "today-$i") {
-            TodayRow(model, plan ?: return@item, row)
+            val shown = plan ?: return@item
+            if (shown.isDismissed(row)) DismissedRow(model, row) else TodayRow(model, shown, row, i, rows.size)
             HorizontalDivider()
         }
     }
@@ -89,6 +93,9 @@ private fun TodayHeader(model: AppModel) {
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
+            if (model.canKeepPolicies) {
+                TextButton({ model.policiesShown = true }, Modifier.testTag("today-policies")) { Text("Policies") }
+            }
             TextButton({ model.planNowShown = true }, Modifier.testTag("today-plan-now"), enabled = !planning) { Text("Plan now") }
         }
     }
@@ -102,9 +109,12 @@ private fun TodayNote(text: String, tag: String) = Text(
     color = MaterialTheme.colorScheme.onSurfaceVariant,
 )
 
-/** The target's title, why, the minutes and the host's marks; Why opens the basis and what is missing. */
+/**
+ * The target's title, why, the minutes and the host's marks; Why opens the basis and what is missing.
+ * At `work:11` the … menu moves the row and removes it for today. [index] of [count] rows.
+ */
 @Composable
-private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow) {
+private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, count: Int) {
     val target = row.target ?: return
     var why by remember(plan.id, target) { mutableStateOf(false) }
     val work = row.work?.let(model::workItem)
@@ -125,11 +135,12 @@ private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow) {
                 )
             }
             TextButton({ why = !why }, Modifier.testTag("today-why-$target")) { Text(if (why) "Hide" else "Why") }
+            if (model.canKeepPolicies) TodayRowMenu(model, target, index, count)
         }
         if (why) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp).testTag("today-why-text-$target"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 DetailNote("Next: ${row.next}")
-                for (b in row.basis) DetailNote("• ${b.line}")
+                for (b in row.basis) BasisLine(model, b)
                 for (m in row.missing) DetailNote("Would help: $m")
             }
         }

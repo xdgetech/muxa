@@ -112,10 +112,15 @@ fun AppModel.askAgent(item: InboxItem) {
     }
 }
 
-/** Approve on a proposal shows its action, target and content first; every other answer goes now. */
+/**
+ * Approve on a proposal shows its action, target and content first, and Reject on the overall assistant's
+ * items asks for an optional reason (ADR 0050); every other answer goes now.
+ */
 fun AppModel.tap(item: InboxItem, action: InboxAction) {
     if (action == InboxAction.APPROVE && item.kind == ItemKind.PROPOSAL && item.proposal != null) {
         inboxPrompt = InboxPrompt.ApproveItem(item)
+    } else if (action == InboxAction.REJECT && asksRejectReason(item)) {
+        inboxPrompt = InboxPrompt.RejectItem(item)
     } else if (action == InboxAction.ASK_AGENT) {
         askAgent(item)
     } else {

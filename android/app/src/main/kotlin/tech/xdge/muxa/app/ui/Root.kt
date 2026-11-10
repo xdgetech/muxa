@@ -187,6 +187,9 @@ fun Root(model: AppModel) {
         model.workDetail?.let { WorkDetail(model, it) }
         model.captureDraft?.let { CaptureSheet(model, it) }
         PlanNowDialog(model)
+        PoliciesScreen(model)
+        // The Policies screen shows its own, over itself.
+        if (!model.policiesShown) ForgetDialog(model)
         CaptureNotice(model)
         AssistNotice(model)
         model.newTaskRecord?.let { NewTaskRecordSheet(model, it) }
