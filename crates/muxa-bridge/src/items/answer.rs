@@ -13,6 +13,7 @@ use muxa_tmux::PaneId;
 
 use super::store::{ItemStore, TaskItems};
 use super::{answers, shown};
+use crate::assistant::corrections;
 use crate::convert::error_body;
 use crate::records::now;
 use crate::routines::store::StateError;
@@ -62,10 +63,32 @@ enum Plan {
 pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody> {
     let (task, item) = find(cx, &answer.item).await?;
     let plan = plan(&shown(&item), &answer)?;
+    let reason = reason(&item, &answer)?;
     act(cx, &task, plan.clone(), answer.worktree).await?;
     let saved = close(cx, &task, &answer.item, answer.action, plan).await?;
     tracing::info!(item = %answer.item, task, action = ?answer.action, "inbox item answered");
+    let (config, item, action) = (Arc::clone(&cx.records), saved.clone(), answer.action);
+    // The item is written; the correction is a signal on top (ADR 0048 §2).
+    let recorded = blocking(move || {
+        corrections::after_answer(&config, &item, action, reason, now());
+        Ok(())
+    })
+    .await;
+    if let Err(e) = recorded {
+        tracing::warn!(item = %saved.id, error = %e.message, "cannot record a correction");
+    }
     Ok(saved)
+}
+
+/// A correction's reason: `text` with `later`, and with `reject` on a
+/// `sort` or `delegate` item (ADR 0048 §2).
+fn reason(item: &InboxItem, answer: &Answer) -> Result<Option<String>, ErrorBody> {
+    let proposal = matches!(item.kind, ItemKind::Sort | ItemKind::Delegate);
+    match answer.action {
+        InboxAction::Later => corrections::check_reason(answer.text.as_deref()),
+        InboxAction::Reject if proposal => corrections::check_reason(answer.text.as_deref()),
+        _ => Ok(None),
+    }
 }
 
 /// The Task that holds the item, and the item as stored.

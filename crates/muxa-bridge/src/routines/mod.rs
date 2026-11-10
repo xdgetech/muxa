@@ -87,24 +87,36 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     .load_workspaces()
                     .ok()
                     .and_then(|w| crate::assistant::info::info(&w));
-                let policies = crate::assistant::policies::list(&config, crate::records::now())?;
-                Ok((entries, items, assistant, plans, info, policies))
+                let now = crate::records::now();
+                let policies = crate::assistant::policies::list(&config, now)?;
+                let corrections = crate::assistant::corrections::list(&config, now)?;
+                Ok((
+                    entries,
+                    items,
+                    assistant,
+                    plans,
+                    info,
+                    policies,
+                    corrections,
+                ))
             })
             .await
             .map(
-                |(entries, items, assistant, plans, info, policies)| Message::InboxList {
-                    inbox: id,
-                    entries,
-                    items,
-                    work: assistant.work,
-                    captures: assistant.captures,
-                    requests: assistant.requests,
-                    plans,
-                    assistant: info.map(Box::new),
-                    policies,
-                    // Hypotheses and corrections come with later slices (ADR 0048).
-                    hypotheses: Vec::new(),
-                    corrections: Vec::new(),
+                |(entries, items, assistant, plans, info, policies, corrections)| {
+                    Message::InboxList {
+                        inbox: id,
+                        entries,
+                        items,
+                        work: assistant.work,
+                        captures: assistant.captures,
+                        requests: assistant.requests,
+                        plans,
+                        assistant: info.map(Box::new),
+                        policies,
+                        // Hypotheses come with a later slice (ADR 0048).
+                        hypotheses: Vec::new(),
+                        corrections,
+                    }
                 },
             )
         }

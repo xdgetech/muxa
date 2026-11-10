@@ -395,23 +395,28 @@ async fn reject_answers_the_item_and_makes_nothing() {
     h.plan(10, &[delegate_to(&w, "w")]);
     inbox::publish(h.config());
     let item = h.item(ItemKind::Delegate);
-    let rejected = answer::update(
-        &h.cx,
-        Answer {
-            item: item.id.clone(),
-            action: InboxAction::Reject,
-            text: None,
-            option: None,
-            worktree: None,
-        },
-    )
-    .await
-    .unwrap();
+    let reject = |text: String| Answer {
+        item: item.id.clone(),
+        action: InboxAction::Reject,
+        text: Some(text),
+        option: None,
+        worktree: None,
+    };
+    let oversize = answer::update(&h.cx, reject("x".repeat(501))).await;
+    assert_eq!(oversize.unwrap_err().code, ErrorCode::BadRequest);
+    let reason = format!("Not this week. {MARK}");
+    let rejected = answer::update(&h.cx, reject(reason.clone())).await.unwrap();
     assert_eq!(
         (rejected.state, rejected.answer),
         (ItemState::Answered, Some(InboxAction::Reject))
     );
     assert!(h.requests().is_empty());
+    // ADR 0048 §2: one correction, with the reason.
+    let now = crate::records::now();
+    let recorded = crate::assistant::corrections::live(h.config(), now).unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].row.as_deref(), Some(item.id.as_str()));
+    assert_eq!(recorded[0].reason.as_deref(), Some(reason.as_str()));
     let (_, error) = h.approve(&item.id).await;
     assert_eq!(error.map(|e| e.code), Some(ErrorCode::BadRequest));
     assert!(h.requests().is_empty());

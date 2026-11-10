@@ -699,7 +699,8 @@ impl Worker {
             | Request::UpdateWork { .. }
             | Request::ApplyNotes { .. }
             | Request::AddPolicy { .. }
-            | Request::UpdatePolicy { .. }) => {
+            | Request::UpdatePolicy { .. }
+            | Request::UpdatePlan { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -732,10 +733,10 @@ impl Worker {
             }
             // Later slices of `work` level 10 (ADR 0048); until the host
             // advertises that level, no client sends these.
-            Request::UpdatePlan { .. } | Request::Forget { .. } => {
+            Request::Forget { .. } => {
                 return Some(Err(error_body(
                     ErrorCode::Unsupported,
-                    "this host has no corrections or hypotheses yet: update muxa-bridge",
+                    "this host has no forget yet: update muxa-bridge",
                 )));
             }
             Request::Bye { .. } => Ok(()),

@@ -1,6 +1,6 @@
 //! Captures, Work items and assistant requests (ADR 0046): the user's input
 //! and unfinished work, kept apart from Tasks and Inbox items. Plans
-//! (ADR 0047) and the user's policies (ADR 0048) live here too.
+//! (ADR 0047), the user's policies and corrections (ADR 0048) live here too.
 pub mod apply;
 pub mod ask;
 mod assist;
@@ -9,6 +9,7 @@ mod cancel;
 pub mod capture;
 pub mod check;
 mod cleanup;
+pub mod corrections;
 pub mod delivery;
 mod derive;
 pub mod detail;
@@ -146,8 +147,14 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 into,
                 due,
             };
-            match blocking(move || work::update(&config, update).map(|i| listed(&config, i))).await
-            {
+            let saved = blocking(move || {
+                let item = work::update(&config, update)?;
+                let changed = item.rev != rev;
+                corrections::after_work(&config, &item, action, changed, crate::records::now());
+                Ok(listed(&config, item))
+            })
+            .await;
+            match saved {
                 Ok(entry) => (
                     vec![Message::WorkSaved {
                         work: id,
@@ -314,6 +321,41 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                         .map(|entry| Message::PolicySaved { policy: id, entry })
                         .into_iter()
                         .collect(),
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
+        Request::UpdatePlan {
+            id,
+            plan,
+            rev,
+            action,
+            order,
+            row,
+            text,
+        } => {
+            let config = Arc::clone(&cx.records);
+            let change = plan::update::Change {
+                plan,
+                rev,
+                action,
+                order,
+                row,
+                text,
+            };
+            let now = crate::records::now();
+            let saved = blocking(move || {
+                let entry = plan::update::update(&config, change, now)?;
+                Ok(plan::listed(&config, entry))
+            })
+            .await;
+            match saved {
+                Ok(entry) => (
+                    vec![Message::PlanSaved {
+                        plan: id,
+                        entry: Box::new(entry),
+                    }],
                     None,
                 ),
                 Err(e) => (Vec::new(), Some(e)),

@@ -9,6 +9,7 @@ pub mod file;
 pub mod schedule;
 pub mod start;
 pub(super) mod tick;
+pub mod update;
 
 use std::collections::HashMap;
 use std::sync::Arc;

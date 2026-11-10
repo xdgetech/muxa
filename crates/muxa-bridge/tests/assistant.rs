@@ -498,3 +498,100 @@ async fn the_daemon_keeps_a_policy_and_logs_no_text() {
     assert!(log.contains("policy added"), "{log}");
     assert!(!log.contains(SECRET), "the daemon logged the policy's text");
 }
+
+fn plan_saved(messages: &[Message]) -> muxa_protocol::Plan {
+    messages
+        .iter()
+        .find_map(|m| match m {
+            Message::PlanSaved { entry, .. } => Some((**entry).clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no plan-saved: {messages:?}"))
+}
+
+/// ADR 0048 slice C2, through the daemon: each action on the current plan
+/// records one correction, and a reason never reaches the log.
+#[tokio::test]
+async fn the_daemon_records_corrections_and_logs_no_reason() {
+    let host = Host::new("corrections");
+    let args = host.args();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let daemon = Daemon::start(&host.server, &args).await;
+    let mut conn = daemon.connect().await;
+    let mut items = Vec::new();
+    for client in ["client-x1", "client-x2"] {
+        let c = saved(
+            &conn
+                .request(capture_req(client, "Prepare the report"))
+                .await,
+        );
+        let sorted = conn
+            .request(
+                json!({"type": "sort-capture", "capture": c.id, "rev": c.rev, "action": "work"}),
+            )
+            .await;
+        items.push(work_saved(&sorted));
+    }
+    let (a, b) = (&items[0], &items[1]);
+    let plan = "p-0a1b2c3d";
+    let row = |w: &WorkItem| {
+        json!({"work": w.id, "why": "w", "next": "n",
+               "minutes": {"low": 1, "high": 2, "estimated": 1}})
+    };
+    let dir = host.base.join("state/assistant/plans");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = json!({"version": 1, "id": plan, "rev": 2, "at": 100, "inputsAt": 100,
+                      "delivery": "resulted", "deliveryAt": 100, "top": [row(a), row(b)]});
+    std::fs::write(dir.join(format!("{plan}.json")), file.to_string()).unwrap();
+
+    let pin = json!({"type": "update-work", "work": a.id, "rev": a.rev, "action": "pin"});
+    assert!(ok(&conn.request(pin).await));
+    let reorder = json!({"type": "update-plan", "plan": plan, "rev": 2, "action": "reorder",
+                         "order": [b.id, a.id]});
+    let reordered = plan_saved(&conn.request(reorder).await);
+    assert_eq!(
+        (reordered.rev, reordered.user_order.clone()),
+        (3, vec![b.id.clone(), a.id.clone()])
+    );
+    let reason = format!("Waiting for the vendor {SECRET}");
+    let dismiss = |rev: u64| {
+        json!({"type": "update-plan", "plan": plan, "rev": rev, "action": "dismiss",
+               "row": a.id, "text": reason})
+    };
+    let dismissed = plan_saved(&conn.request(dismiss(3)).await);
+    assert_eq!(dismissed.dismissed, [a.id.clone()]);
+    assert_eq!(
+        error_of(&conn.request(dismiss(3)).await),
+        Some(ErrorCode::Conflict)
+    );
+
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    let corrections = listed
+        .iter()
+        .find_map(|m| match m {
+            Message::InboxList { corrections, .. } => Some(corrections.clone()),
+            _ => None,
+        })
+        .expect("an inbox-list");
+    let mut kinds: Vec<String> = corrections
+        .iter()
+        .map(|c| format!("{:?} {} {}", c.kind, c.plan, c.in_top))
+        .collect();
+    kinds.sort();
+    assert_eq!(
+        kinds,
+        [
+            format!("Dismissed {plan} true"),
+            format!("Pinned {plan} true"),
+            format!("Reordered {plan} true")
+        ]
+    );
+    let with_reason: Vec<_> = corrections
+        .iter()
+        .filter_map(|c| c.reason.as_ref())
+        .collect();
+    assert_eq!(with_reason, [&reason]);
+    let log = daemon.log();
+    assert!(log.contains("correction recorded"), "{log}");
+    assert!(!log.contains(SECRET), "the daemon logged a reason");
+}

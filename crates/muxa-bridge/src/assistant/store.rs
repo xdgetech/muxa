@@ -1,11 +1,11 @@
-//! One JSON file per record in `<state dir>/assistant/{captures,work,requests,plans,policies}/`
-//! (ADR 0046 §2, ADR 0047 §5, ADR 0048 §1), with the item store's lock and atomic write.
+//! One JSON file per record in `<state dir>/assistant/<kind>/` (ADR 0046 §2,
+//! ADR 0047 §5, ADR 0048 §1–§2), with the item store's lock and atomic write.
 use std::fs::{self, DirBuilder};
 use std::marker::PhantomData;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
-use muxa_protocol::{AssistantRequest, Capture, Plan, Policy, WorkItem};
+use muxa_protocol::{AssistantRequest, Capture, Correction, Plan, Policy, WorkItem};
 use serde::de::{DeserializeOwned, Error as _};
 use serde::ser::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -71,6 +71,14 @@ impl Kind for Plan {
 impl Kind for Policy {
     const DIR: &'static str = "policies";
     const PREFIX: &'static str = "y-";
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl Kind for Correction {
+    const DIR: &'static str = "corrections";
+    const PREFIX: &'static str = "x-";
     fn id(&self) -> &str {
         &self.id
     }
