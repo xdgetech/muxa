@@ -104,6 +104,14 @@ fn begin(config: &Config, work: &str, rev: u64, at: u64) -> Result<Step, ErrorBo
     step.ok_or_else(|| error_body(ErrorCode::BadRequest, format!("no Work item {work}")))
 }
 
+/// Blocking. Lists `task` on Work item `work`, as a Task made for it: the
+/// writer's Task of an approved write (ADR 0052 §3).
+pub fn link_task(config: &Config, work: &str, task: &str) {
+    if let Err(e) = finish(config, work, Some(task)) {
+        tracing::warn!(work, task, error = %e.message, "cannot list a task on its work item");
+    }
+}
+
 /// Blocking. Ends the claim and lists the Task, if one was made.
 fn finish(config: &Config, work: &str, task: Option<&str>) -> Result<(), ErrorBody> {
     let works = super::shelf::<WorkItem>(config)?;

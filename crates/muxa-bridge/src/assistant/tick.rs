@@ -37,6 +37,7 @@ pub async fn tick(cx: &Context) {
         super::policies::prune(&config, now);
         super::corrections::prune(&config, now);
         super::hypotheses::tick(&config, now);
+        super::write_items::scan(&config);
         (scan(&config, now), plans)
     })
     .await;

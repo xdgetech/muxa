@@ -46,6 +46,8 @@ pub struct Found {
 pub enum Made {
     Sorted(Capture, Option<WorkItem>),
     Asked(WorkItem, AssistantRequest),
+    /// The writer's Task an approved write made (ADR 0052 §3).
+    Task(Box<crate::records::Record>),
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +110,7 @@ pub async fn approve(cx: &Context, found: Found, by: By) -> Result<Approved, Err
     match found.item.kind {
         ItemKind::Sort => blocking(move || sort(&config, found, by, now())).await,
         ItemKind::Handoff => super::handoff::approve(cx, found).await,
+        ItemKind::Write => super::write::approve(cx, found).await,
         _ => delegate(cx, found, by).await,
     }
 }
@@ -127,6 +130,13 @@ pub(super) fn again(config: &Config, f: &Found) -> Result<Approved, ErrorBody> {
             .as_deref()
             .and_then(|c| shelf::<Capture>(config).ok()?.get(c).ok().flatten())
             .map(|c| Made::Sorted(c, a.work.as_deref().and_then(work_item))),
+        ItemKind::Write => a.task.as_deref().and_then(|t| {
+            config
+                .records_if_any()
+                .into_iter()
+                .find(|r| r.id == t)
+                .map(|r| Made::Task(Box::new(r)))
+        }),
         _ => match (&a.work, &a.request) {
             (Some(w), Some(q)) => ask::reply(config, w, q)
                 .ok()
@@ -433,7 +443,7 @@ fn resolve(config: &Config, f: &Found, why: &str) -> Result<InboxItem, ErrorBody
     })
 }
 
-fn stored<'a>(items: &'a mut TaskItems, id: &str) -> Result<&'a mut InboxItem, Fail> {
+pub(super) fn stored<'a>(items: &'a mut TaskItems, id: &str) -> Result<&'a mut InboxItem, Fail> {
     items
         .items
         .iter_mut()
@@ -442,7 +452,7 @@ fn stored<'a>(items: &'a mut TaskItems, id: &str) -> Result<&'a mut InboxItem, F
         .ok_or_else(|| bad(format!("Inbox item {id} was removed")).into())
 }
 
-fn with_items<T>(
+pub(super) fn with_items<T>(
     config: &Config,
     task: &str,
     change: impl FnOnce(&mut TaskItems) -> Result<T, Fail>,

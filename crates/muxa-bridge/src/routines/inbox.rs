@@ -314,20 +314,38 @@ fn begin_approval(
 /// The approved Task's goal: the proposal unchanged, its hash, and the marker.
 pub fn task_goal(entry: &InboxEntry) -> Option<String> {
     let p = entry.proposal.as_ref()?;
-    Some(format!(
+    let origin = format!(
+        "Approved in Inbox from the Routine \"{}\" in workspace \"{}\".",
+        entry.routine, entry.workspace
+    );
+    Some(approved_goal(
+        &p.action,
+        &p.target,
+        &p.content,
+        &origin,
+        &p.hash,
+        &marker(entry)?,
+    ))
+}
+
+/// The goal of a Task that performs an approved action: the action, the
+/// target and the content unchanged, where it was approved (`origin`), the
+/// hash, and `marker` as the last line, by which a second approval finds
+/// the Task (ADR 0026 §5, ADR 0052 §3).
+pub fn approved_goal(
+    action: &str,
+    target: &str,
+    content: &str,
+    origin: &str,
+    hash: &str,
+    marker: &str,
+) -> String {
+    format!(
         "Perform this approved action. Do exactly this and nothing else.\n\n\
          Action: {action}\nTarget: {target}\n\n\
          Content, approved unchanged:\n\n{content}\n\n\
-         Approved in Inbox from the Routine \"{routine}\" in workspace \"{workspace}\".\n\
-         Content hash: {hash}\n{marker}\n",
-        action = p.action,
-        target = p.target,
-        content = p.content,
-        routine = entry.routine,
-        workspace = entry.workspace,
-        hash = p.hash,
-        marker = marker(entry)?,
-    ))
+         {origin}\nContent hash: {hash}\n{marker}\n"
+    )
 }
 
 async fn approve(

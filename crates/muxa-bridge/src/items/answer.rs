@@ -85,7 +85,10 @@ pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody
 /// A correction's reason: `text` with `later`, and with `reject` on a
 /// `sort` or `delegate` item (ADR 0050 §2).
 fn reason(item: &InboxItem, answer: &Answer) -> Result<Option<String>, ErrorBody> {
-    let proposal = matches!(item.kind, ItemKind::Sort | ItemKind::Delegate);
+    let proposal = matches!(
+        item.kind,
+        ItemKind::Sort | ItemKind::Delegate | ItemKind::Write
+    );
     match answer.action {
         InboxAction::Later => corrections::check_reason(answer.text.as_deref()),
         InboxAction::Reject if proposal => corrections::check_reason(answer.text.as_deref()),
@@ -140,11 +143,12 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
             return Err(bad("reject on a hypothesis runs through the assistant"));
         }
         // Approve runs in `assistant::proposals`, which `routines::handle` calls first.
-        // Reject on a hand-off ends the chain with the results it has (ADR 0051 §3).
+        // Reject on a hand-off ends the chain with the results it has (ADR 0051 §3);
+        // on a write it makes no Task (ADR 0052 §2).
         Reject
             if matches!(
                 item.kind,
-                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff
+                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff | ItemKind::Write
             ) =>
         {
             Plan::Nothing
@@ -152,7 +156,7 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Approve
             if matches!(
                 item.kind,
-                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff
+                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff | ItemKind::Write
             ) =>
         {
             return Err(bad("approve on a proposal item runs through the assistant"));

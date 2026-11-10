@@ -13,6 +13,8 @@ use super::writer::{self, Writer};
 
 /// Runs a day across all workspaces when `[assistant]` gives no number.
 pub const DEFAULT_HOST_RUNS_PER_DAY: u32 = 20;
+/// Writes the user may approve in a day, across all workspaces (ADR 0052 §6).
+pub const DEFAULT_WRITES_PER_DAY: u32 = 10;
 /// Requests the overall assistant sends without approval, across all workspaces.
 pub const DEFAULT_AUTO_REQUESTS_PER_DAY: u32 = 5;
 pub const DEFAULT_OPEN_RUNS: u32 = 1;
@@ -38,6 +40,9 @@ pub struct AssistantHost {
     pub max_auto_requests_per_day: u32,
     /// Steps started by `handoffs = "auto"` across the host (ADR 0051 §3).
     pub max_auto_handoffs_per_day: u32,
+    /// Approved writes across the host: each makes a Task of a worker with
+    /// write tools (ADR 0052 §6).
+    pub max_writes_per_day: u32,
 }
 
 impl Default for AssistantHost {
@@ -47,6 +52,7 @@ impl Default for AssistantHost {
             max_runs_per_day: DEFAULT_HOST_RUNS_PER_DAY,
             max_auto_requests_per_day: DEFAULT_AUTO_REQUESTS_PER_DAY,
             max_auto_handoffs_per_day: DEFAULT_AUTO_HANDOFFS_PER_DAY,
+            max_writes_per_day: DEFAULT_WRITES_PER_DAY,
         }
     }
 }
@@ -140,6 +146,7 @@ pub(super) struct RawHost {
     max_runs_per_day: Option<i64>,
     max_auto_requests_per_day: Option<i64>,
     max_auto_handoffs_per_day: Option<i64>,
+    max_writes_per_day: Option<i64>,
 }
 
 impl RawHost {
@@ -160,6 +167,11 @@ impl RawHost {
                 "[assistant] max_auto_handoffs_per_day",
                 self.max_auto_handoffs_per_day,
                 DEFAULT_AUTO_HANDOFFS_PER_DAY,
+            )?,
+            max_writes_per_day: positive(
+                "[assistant] max_writes_per_day",
+                self.max_writes_per_day,
+                DEFAULT_WRITES_PER_DAY,
             )?,
         })
     }

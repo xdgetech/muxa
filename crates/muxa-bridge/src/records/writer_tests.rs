@@ -114,3 +114,23 @@ fn counterexamples_name_the_workspace_and_the_writer() {
         );
     }
 }
+
+#[test]
+fn the_host_approves_10_writes_a_day_unless_it_says_otherwise() {
+    use crate::records::assistant::DEFAULT_WRITES_PER_DAY;
+    let with = |host: &str| {
+        let root = std::env::temp_dir();
+        let root = root.to_string_lossy();
+        let text = format!(
+            "[assistant]\nenabled = true\n{host}\n\
+             [[workspace]]\nname = \"lisk\"\nroot = \"{root}\"\n\
+             [[workspace]]\nname = \"other\"\nroot = \"{root}\"\n{WORKERS}"
+        );
+        Workspaces::parse(&text, Path::new("w.toml"), None).map_err(|e| e.to_string())
+    };
+    let limit = |host: &str| with(host).unwrap().assistant().max_writes_per_day;
+    assert_eq!(limit(""), DEFAULT_WRITES_PER_DAY);
+    assert_eq!(limit("max_writes_per_day = 3"), 3);
+    let err = with("max_writes_per_day = 0").unwrap_err();
+    assert!(err.contains("[assistant] max_writes_per_day"), "{err}");
+}

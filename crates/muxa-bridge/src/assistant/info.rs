@@ -18,8 +18,12 @@ pub fn info(workspaces: &Workspaces) -> Option<AssistantInfo> {
         .iter()
         .filter(|w| matches!(w.role, Role::Member { .. }))
         .map(|w| DelegateInfo {
-            writer: None,
-            writes: None,
+            writer: writer(workspaces, w),
+            writes: Some(
+                w.assistant
+                    .as_ref()
+                    .map_or(muxa_protocol::Writes::None, |d| d.writer.writes),
+            ),
             workspace: w.name.clone(),
             share: workspaces.share(&w.name),
             overall_requests: workspaces.overall_requests(&w.name),
@@ -28,6 +32,19 @@ pub fn info(workspaces: &Workspaces) -> Option<AssistantInfo> {
         })
         .collect();
     (overall.is_some() || !delegates.is_empty()).then_some(AssistantInfo { overall, delegates })
+}
+
+/// The worker that performs the workspace's approved writes, with its job.
+fn writer(workspaces: &Workspaces, w: &Workspace) -> Option<muxa_protocol::WriterInfo> {
+    let name = w.assistant.as_ref()?.writer.worker.clone()?;
+    let description = workspaces
+        .worker(&name)
+        .and_then(|k| k.description.clone())
+        .unwrap_or_default();
+    Some(muxa_protocol::WriterInfo {
+        worker: name,
+        description,
+    })
 }
 
 /// An unusable notes file shows as none; a run's start reports it in full.

@@ -133,8 +133,8 @@ pub fn after_work(config: &Config, item: &WorkItem, action: WorkAction, changed:
 }
 
 /// Blocking. After `update-inbox` on an item: `reject` of a `sort`,
-/// `delegate` or `hypothesis` item, and `later` on an item the current
-/// plan listed.
+/// `delegate` or `hypothesis` item, and `reject` of a `write` item or
+/// `later` on any item, when the current plan listed it (ADR 0052 §2).
 pub fn after_answer(
     config: &Config,
     item: &InboxItem,
@@ -147,14 +147,15 @@ pub fn after_answer(
         ItemKind::Sort | ItemKind::Delegate | ItemKind::Hypothesis
     );
     let kind = match action {
-        InboxAction::Reject if proposal => CorrectionKind::Rejected,
+        InboxAction::Reject if proposal || item.kind == ItemKind::Write => CorrectionKind::Rejected,
         InboxAction::Later => CorrectionKind::Deferred,
         _ => return,
     };
     let Some(plan) = current_plan(config) else {
         return;
     };
-    if kind == CorrectionKind::Deferred && !listed(&plan, &item.id) {
+    let only_listed = kind == CorrectionKind::Deferred || item.kind == ItemKind::Write;
+    if only_listed && !listed(&plan, &item.id) {
         return;
     }
     let seen = Seen {

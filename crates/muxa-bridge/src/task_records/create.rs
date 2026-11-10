@@ -448,7 +448,9 @@ async fn start(
     })
     .await
     .map_err(|e| Failure::after(&launched, e.message))?;
-    tracing::info!(task = %record.id, session = %launched.id, dir = %launched.dir.display(), "task linked");
+    // The folder is named from the title, which can be an approved write's
+    // action (ADR 0052 §6): the record keeps it, the log does not.
+    tracing::info!(task = %record.id, session = %launched.id, "task linked");
     Ok(Started { launched, initial })
 }
 

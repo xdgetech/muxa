@@ -37,6 +37,13 @@ pub struct Approval {
     pub work: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<String>,
+    /// The writer's Task an approved write made (ADR 0052 §3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    /// Epoch seconds: a write's approval began. It counts against
+    /// `max_writes_per_day` while it runs and once it made its Task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write_at: Option<u64>,
 }
 
 impl Approval {
@@ -49,7 +56,13 @@ impl Approval {
 
     /// The action ran and made what it records.
     pub fn done(&self) -> bool {
-        self.capture.is_some() || self.request.is_some()
+        self.capture.is_some() || self.request.is_some() || self.task.is_some()
+    }
+
+    /// Counts against `max_writes_per_day` from `day_start`: approved, or being approved.
+    pub fn write_since(&self, day_start: u64) -> bool {
+        self.write_at.is_some_and(|at| at >= day_start)
+            && (self.task.is_some() || self.since.is_some())
     }
 
     /// Counts against `max_auto_requests_per_day` from `day_start`: sent, or being sent.
@@ -58,9 +71,11 @@ impl Approval {
     }
 }
 
-/// The proposal's hash: its kind and its fields as stored on the item.
+/// The proposal's hash: its kind and its fields as stored on the item. A
+/// write's is its own, the hash its approval binds to (ADR 0052 §2).
 pub fn hash(item: &InboxItem) -> Option<String> {
     let (kind, body) = match item.kind {
+        ItemKind::Write => return item.write.as_ref().map(|w| w.hash.clone()),
         ItemKind::Sort => ("sort", serde_json::to_vec(item.sort.as_ref()?)),
         ItemKind::Delegate => ("delegate", serde_json::to_vec(item.delegate.as_ref()?)),
         ItemKind::Handoff => ("handoff", serde_json::to_vec(item.handoff.as_ref()?)),

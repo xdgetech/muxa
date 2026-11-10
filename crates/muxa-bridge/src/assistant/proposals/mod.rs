@@ -3,11 +3,13 @@
 //! Inbox item, and `update-inbox approve` runs the action once. A delegate
 //! to a workspace with `overall_requests = "auto"` is approved by the host
 //! itself: the item is kept, answered `approve`, so the user sees what was
-//! sent. Sorting is always reviewed.
+//! sent. Sorting is always reviewed. A `write` item's approve makes one
+//! Task of the workspace's writer (ADR 0052 §3, in `write.rs`).
 mod approval;
 pub mod approve;
 mod handoff;
 pub mod inbox;
+mod write;
 
 use std::sync::Arc;
 
@@ -16,9 +18,9 @@ use muxa_protocol::{ErrorBody, Message};
 use crate::task_records::Context;
 use approve::{Approved, By, Made};
 
-/// `update-inbox approve` on a `sort`, `delegate` or `handoff` item: `capture-saved` or
-/// `work-saved` with what it made, then `inbox-saved`, and the error for
-/// `result`. None for any other item.
+/// `update-inbox approve` on a `sort`, `delegate`, `handoff` or `write` item:
+/// `capture-saved`, `work-saved` or `task-saved` with what it made, then
+/// `inbox-saved`, and the error for `result`. None for any other item.
 pub async fn answer(
     cx: &Context,
     id: u64,
@@ -52,6 +54,10 @@ fn messages(id: u64, approved: Approved) -> Vec<Message> {
             work: id,
             entry,
             request: Some(Box::new(request)),
+        }),
+        Some(Made::Task(record)) => out.push(Message::TaskSaved {
+            task: id,
+            record: crate::convert::task_record(*record),
         }),
         None => {}
     }
