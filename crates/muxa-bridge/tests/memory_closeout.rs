@@ -122,7 +122,7 @@ fn panes(server: &Server, before: &str) -> String {
 async fn done_and_drop_make_one_item_and_nothing_yet_makes_none() {
     let server = Server::start();
     let before = server.layout();
-    let mut host = Host::new("items", "");
+    let mut host = Host::new("items", "memory = \"review\"");
     let mut bridge = host.bridge(&server, true).await;
     let text = format!("- Decided: one queue per tenant, because {SENTINEL}.");
 
@@ -177,7 +177,7 @@ async fn done_and_drop_make_one_item_and_nothing_yet_makes_none() {
 #[tokio::test]
 async fn approve_appends_once_also_after_a_crash_and_reject_writes_nothing() {
     let server = Server::start();
-    let mut host = Host::new("approve", "");
+    let mut host = Host::new("approve", "memory = \"review\"");
     host.write_memory("# Lisk\n");
     let mut bridge = host.bridge(&server, true).await;
     let text = format!("- Staging is eu-west-1 ({SENTINEL}).");
@@ -252,9 +252,9 @@ async fn approve_appends_once_also_after_a_crash_and_reject_writes_nothing() {
 }
 
 #[tokio::test]
-async fn auto_appends_at_done_and_falls_back_to_an_item_past_the_cap() {
+async fn auto_is_the_default_and_appends_at_done_and_falls_back_to_an_item_past_the_cap() {
     let server = Server::start();
-    let mut host = Host::new("auto", "memory = \"auto\"");
+    let mut host = Host::new("auto", "");
     let mut bridge = host.bridge(&server, true).await;
     let r = task(
         &mut bridge,
@@ -293,7 +293,7 @@ fn log_has(host: &Host, needle: &str) -> bool {
 #[tokio::test]
 async fn an_oversize_section_has_no_approve_and_a_full_file_is_conflict() {
     let server = Server::start();
-    let mut host = Host::new("caps", "");
+    let mut host = Host::new("caps", "memory = \"review\"");
     let mut bridge = host.bridge(&server, true).await;
     let big = "y".repeat((4 << 10) + 1);
     let r = task(&mut bridge, "Write a lot", Some(&big)).await;
@@ -350,7 +350,7 @@ async fn an_oversize_section_has_no_approve_and_a_full_file_is_conflict() {
 #[tokio::test]
 async fn the_section_is_read_before_the_worktree_goes_and_off_reads_nothing() {
     let server = Server::start();
-    let mut host = Host::new("worktree", "");
+    let mut host = Host::new("worktree", "memory = \"review\"");
     let mut bridge = host.bridge(&server, true).await;
     let (r, result) = create(&mut bridge, json!({"repo": "app", "branch": "memory-end"})).await;
     ok(&result);

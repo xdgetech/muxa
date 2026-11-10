@@ -74,7 +74,7 @@ async fn a_start_copies_the_file_and_a_resume_refreshes_it() {
             _ => None,
         })
         .expect("task-list");
-    assert_eq!(workspaces[0].memory, Some(MemoryMode::Review));
+    assert_eq!(workspaces[0].memory, Some(MemoryMode::Auto));
     assert!(workspaces[0].memory_at.is_some());
 
     let log = host.log();

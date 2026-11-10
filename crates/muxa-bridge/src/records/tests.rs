@@ -339,7 +339,7 @@ fn memory_is_review_by_default_and_refuses_another_word() {
         )
     };
     let mode = |extra: &str| ws(extra).unwrap().all()[0].memory;
-    assert_eq!(mode(""), MemoryMode::Review);
+    assert_eq!(mode(""), MemoryMode::Auto);
     assert_eq!(mode("memory = \"review\""), MemoryMode::Review);
     assert_eq!(mode("memory = \"auto\""), MemoryMode::Auto);
     assert_eq!(mode("memory = \"off\""), MemoryMode::Off);
@@ -495,7 +495,7 @@ fn the_wire_workspace_lists_its_repos_and_omits_none() {
     ws.repos.clear();
     let json = serde_json::to_value(crate::convert::workspace(&ws)).unwrap();
     assert!(json.get("repos").is_none(), "{json}");
-    assert_eq!(json["memory"], "review");
+    assert_eq!(json["memory"], "auto");
     assert!(json.get("memoryAt").is_none(), "no file: {json}");
     std::fs::create_dir_all(ws.root.join(".muxa")).unwrap();
     std::fs::write(ws.root.join(".muxa/WORKSPACE.md"), "# Learned\n").unwrap();
@@ -517,7 +517,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         routines: None,
         assistant: None,
         role: Default::default(),
-        memory: muxa_protocol::MemoryMode::Review,
+        memory: muxa_protocol::MemoryMode::Auto,
     };
     (dir, ws)
 }

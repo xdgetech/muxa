@@ -22,9 +22,9 @@
 # memory  optional; "review", "auto" or "off" (ADR 0053). <root>/.muxa/
 #        WORKSPACE.md is what this workspace has learned: every Task, staff
 #        and Routine run reads a copy of it. At a Task's end, its agent's
-#        "For the workspace" section in TASK.md is proposed for it. "review"
-#        (the default): you approve each addition in the Inbox. "auto": muxa
-#        appends it at once. "off": muxa proposes nothing.
+#        "For the workspace" section in TASK.md is added to it. "auto" (the
+#        default): muxa appends it at once. "review": you approve each
+#        addition in the Inbox. "off": muxa proposes nothing.
 #
 # [workspace.agent]  optional; how this workspace's agents start (ADR 0016).
 #   command  the agent command; else the bridge's --task-command (claude).

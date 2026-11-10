@@ -180,7 +180,7 @@ muxa for tmux (`prefix + T`): the preview shows a `write` item's target and cont
 
 ## Workspace memory (ADR 0053)
 
-With `work:14`, a Task that ends with text under "For the workspace" in its `TASK.md` proposes it for the workspace memory, `<root>/.muxa/WORKSPACE.md`. Each Task makes at most one Decisions item of kind `memory`; it stays open after the Task closed.
+With `work:14`, a Task that ends with text under "For the workspace" in its `TASK.md` proposes it for the workspace memory, `<root>/.muxa/WORKSPACE.md`. By default (`memory = "auto"`, ADR 0053 Revision 1) the host appends it at once and makes no item. Under `memory = "review"`, or when `auto` cannot append, each Task makes at most one Decisions item of kind `memory`; it stays open after the Task closed.
 
 1. **The item.** The title is the Task's title. The question is "`<title>` proposes to add to the workspace memory". It links the Task.
 2. **The text** is shown whole, above Approve, Reject and Later: plain text in a fixed-width font, no rendered Markdown, no active links. Approve names the workspace once more to confirm.

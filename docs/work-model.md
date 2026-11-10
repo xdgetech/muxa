@@ -80,7 +80,7 @@ A Session is not inherently manual, and a Task is not a renamed tmux Session. A 
 |---|---|---|
 | Workspace memory | What has this workspace learned? | `<root>/.muxa/WORKSPACE.md`, at most 16 KiB. Every Task, staff and Routine run reads a copy as data. People edit it; Task close-outs add to it, the lead rewrites it |
 | For the workspace | What did this Task learn that every later Task should know? | The fourth section of the agent's part of a Task's `TASK.md`, at most 4 KiB. Read once, at Done or Drop, before the session closes |
-| Memory proposal | May this text join the workspace memory? | One Inbox item of kind `memory` per Task, `memory:<task>` in the Task's item file, with `{task, title, text, hash}`. The one item a closed Task may keep open |
+| Memory proposal | May this text join the workspace memory? | Under `review`, or when `auto` cannot append: one Inbox item of kind `memory` per Task, `memory:<task>` in the Task's item file, with `{task, title, text, hash}`. The one item a closed Task may keep open |
 
 - The memory is not a policy (ADR 0050). A policy is the user's word with a scope and an end; the memory is what the work showed.
 - An approved proposal is appended under `## <title> (<task>, <YYYY-MM-DD>)`, once. Nothing shortens the file but the user or the lead.

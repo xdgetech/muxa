@@ -122,11 +122,11 @@ struct RawWorkspace {
     memory: Option<String>,
 }
 
-/// `review` (the default), `auto` or `off`.
+/// `auto` (the default, ADR 0053 Revision 1), `review` or `off`.
 fn memory_mode(raw: Option<&str>) -> Result<MemoryMode, String> {
     match raw {
-        None | Some("review") => Ok(MemoryMode::Review),
-        Some("auto") => Ok(MemoryMode::Auto),
+        Some("review") => Ok(MemoryMode::Review),
+        None | Some("auto") => Ok(MemoryMode::Auto),
         Some("off") => Ok(MemoryMode::Off),
         Some(_) => Err("memory must be \"review\", \"auto\" or \"off\"".into()),
     }

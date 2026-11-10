@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-11; its questions were answered with the recommended values the same day. It replaces release M of ADR 0022 (M1, M2 and the `workspace-memory` capability) and ADR 0027 §6 (memory as a Routine). It changes ADR 0049 §1 and ADR 0051 §5: the lead's `.muxa/assistant/NOTES.md` becomes `.muxa/WORKSPACE.md`; a member's notes stay. It adds a section to `TASK.md` on both sides of the marker (ADR 0015) and one Inbox item kind (ADR 0033). It does not change ADR 0050 (policies are not memory) or ADR 0052. Slices M0–M7 are implemented; hosts advertise level 14.
+Proposed on 2026-11-11; its questions were answered with the recommended values the same day. It replaces release M of ADR 0022 (M1, M2 and the `workspace-memory` capability) and ADR 0027 §6 (memory as a Routine). It changes ADR 0049 §1 and ADR 0051 §5: the lead's `.muxa/assistant/NOTES.md` becomes `.muxa/WORKSPACE.md`; a member's notes stay. It adds a section to `TASK.md` on both sides of the marker (ADR 0015) and one Inbox item kind (ADR 0033). It does not change ADR 0050 (policies are not memory) or ADR 0052. Slices M0–M7 are implemented; hosts advertise level 14. Revision 1 (2026-11-11) makes `auto` the default.
 
 ## Context
 
@@ -58,7 +58,7 @@ Nothing yet.
 
 When a Task becomes `done` or `dropped` (`update-task`, an Inbox answer, `end()` with its worktree), the host reads that section from `<dir>/.muxa/TASK.md` under the Task's claim, **before** the session closes and the worktree goes. The text between the heading `## For the workspace` and the next `## ` heading, trimmed, is the proposal; empty or "Nothing yet." makes nothing. The host checks: at most 4 KiB, UTF-8, line breaks and tabs the only control characters. Over the limit, the item below is made with no Approve and a summary that names the size: the user reads it and copies by hand.
 
-`[[workspace]] memory` decides what happens next, default `review`:
+`[[workspace]] memory` decides what happens next, default `auto` (Revision 1):
 
 | `memory` | At the Task's end |
 |---|---|
@@ -83,9 +83,22 @@ The Task's agent read the web, the repo and documents; a planted line can land i
 | the check | size and control characters only; no second file, no path |
 | the item | the exact text in full, as plain text, under one `hash`; approve binds to it |
 | the reader's rule | `TASK.md`, the brief and the Routine goal say the copy is data, and that `TASK.md` and the repo's instructions decide what to do |
-| the default | `review`: somebody reads the text before it reaches every later run, because an `auto` workspace has no second look (ADR 0049 §1, the same reasoning) |
+| the default | `auto` since Revision 1: the text reaches later runs without a look. `review` keeps the look per workspace |
+| the writes | a planted line can steer later runs, but it cannot send, publish or buy: every external write still needs the user's hash-bound approve (ADR 0052) |
 
 What the host cannot check, and says so: that the text is true, and that an agent treats the copy as data.
+
+### Revision 1 (2026-11-11): `auto` is the default
+
+The developer decided that reading every proposal is not realistic: a look that is asked for after every Task becomes a tap without reading, and then it guards nothing. Agents that learn without a stop matter more. So:
+
+1. An unset `memory` is `auto`. `review` and `off` stay, per workspace.
+2. The guard moves from the way in to the way out. A planted line in the memory can change what later runs think, but every external write still waits for the user's approve of its exact text (ADR 0052), and the writer stays Claude Code.
+3. Every append keeps its heading with the Task's id and date, so the user can see which Task wrote what in the file and delete one block. The Task detail says "Added to the workspace memory".
+4. What `auto` cannot append still becomes a `memory` item, as before: a text over 4 KiB, a control character, or a file over its cap.
+5. The agents' own memory (Claude Code auto memory under `~/.claude/projects/`, Codex Memories) stays as each user set it. muxa does not turn it off: with `auto` it is no longer a way around a look that muxa asks for.
+
+Third-party memory systems (mem0, Letta, Zep and Graphiti, Basic Memory, Cognee, Supermemory; checked 2026-11-11) were not taken. Each writes through a model or its own agent and needs a service. A plain file is what both CLIs read without setup. A read-only search over approved files stays an option for when one file is not enough.
 
 ### 5. What ADR 0022 and 0027 deferred, and what stays deferred
 
@@ -127,13 +140,13 @@ Logs carry Task ids, item ids, workspace names, sizes, hashes and states; never 
 - Whether the host moves `.muxa/assistant/NOTES.md` itself. This ADR: no; a `problem` names the move, and the user does it in git.
 - Whether a `memory` item from a Codex Task should be made at all when the user ended the Task from the pane by hand. This ADR: the end is `update-task`, whoever sends it; the item is made.
 - A `write`-style target allowlist has no counterpart here; the file is one target.
-- The 4 KiB section, 16 KiB file and `review` default are initial values.
+- The 4 KiB section and 16 KiB file are initial values.
 
 ## Consequences
 
 - A Task's agent starts with the company's handbook and leaves a note in it; the staff read the same handbook and keep their own notebooks; the secretary keeps its own. One file per workspace for "what we know", with the user's tap between a web-exposed run and every later one.
 - No new memory model. The file, the copy, the hash, the lock and the temp-and-rename are `assistant/notes.rs`; the item, approve-once and the hash-bound approve are ADR 0052's; the end hook is where `task_closed` already runs.
-- Lost against ADR 0022: a reviewed diff of a full rewrite from the Task's end, and the transaction guarantees. Kept: the user sees every byte before it is written, no truncation, no silent rebase, no content in logs.
+- Lost against ADR 0022: a reviewed diff of a full rewrite from the Task's end, and the transaction guarantees. Kept: no truncation, no silent rebase, no content in logs.
 - Codex Tasks work without owned threads: nothing is typed at close-out.
 - A Task that never writes its section teaches nothing. The HOW_TO text asks for it; the user sees whether a Task did in the items that follow.
 - Costs: one file read per run start, one more tap per Task that learned something, one more item kind in every client, and one `git mv` per workspace with notes today.
