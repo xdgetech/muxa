@@ -32,9 +32,11 @@ import tech.xdge.muxa.app.canPlan
 import tech.xdge.muxa.app.notesKey
 import tech.xdge.muxa.app.setDue
 import tech.xdge.muxa.app.todayRow
+import tech.xdge.muxa.protocol.AssistResult
 import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.session.DueDraft
+import tech.xdge.muxa.session.NOTES_FILE
 import tech.xdge.muxa.session.delegateName
 import tech.xdge.muxa.session.proposedNotes
 import java.time.Instant
@@ -59,19 +61,25 @@ internal fun TodayReason(model: AppModel, item: WorkItem) {
 internal fun NotesSection(model: AppModel, requests: List<AssistantRequest>) {
     if (!model.canPlan) return
     val (request, result) = proposedNotes(requests) ?: return
+    NotesProposal(model, request, result, "${delegateName(request.workspace)} proposes these notes for later runs. They replace $NOTES_FILE.", "work-notes")
+}
+
+/** One Result's proposed notes with Update notes; [tag] names the section and, with a suffix, its parts. */
+@Composable
+internal fun NotesProposal(model: AppModel, request: AssistantRequest, result: AssistResult, intro: String, tag: String) {
     val notes = result.notes ?: return
-    var error by remember(request.id, result.version) { mutableStateOf<String?>(null) }
-    var sending by remember(request.id, result.version) { mutableStateOf(false) }
+    var error by remember(request.id, result.version, result.step) { mutableStateOf<String?>(null) }
+    var sending by remember(request.id, result.version, result.step) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val applied = notesKey(request, result) in model.appliedNotes
-    Column(Modifier.fillMaxWidth().testTag("work-notes"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.fillMaxWidth().testTag(tag), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         DetailHeader("Notes")
-        DetailNote("${delegateName(request.workspace)} proposes these notes for later runs. They replace .muxa/assistant/NOTES.md.")
+        DetailNote(intro)
         SelectionContainer {
-            Text(notes.text, Modifier.testTag("work-notes-text"), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+            Text(notes.text, Modifier.testTag("$tag-text"), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
         }
         if (applied) {
-            Text("Notes updated.", Modifier.testTag("work-notes-applied"), color = Theme.connected)
+            Text("Notes updated.", Modifier.testTag("$tag-applied"), color = Theme.connected)
         } else {
             TextButton({
                 sending = true
@@ -79,9 +87,9 @@ internal fun NotesSection(model: AppModel, requests: List<AssistantRequest>) {
                     error = model.applyNotes(request, result)
                     sending = false
                 }
-            }, Modifier.testTag("work-notes-apply"), enabled = !sending) { Text("Update notes") }
+            }, Modifier.testTag("$tag-apply"), enabled = !sending) { Text("Update notes") }
         }
-        error?.let { Text(it, Modifier.testTag("work-notes-error"), color = Theme.failure) }
+        error?.let { Text(it, Modifier.testTag("$tag-error"), color = Theme.failure) }
     }
 }
 

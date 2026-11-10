@@ -84,8 +84,10 @@ fun CaptureSheet(model: AppModel, initial: CaptureDraft) {
                     placeholder = { Text("An idea, a to-do, a question…") }, minLines = 4,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                 )
-                CaptureWorkspace(model, draft.workspace) { edit(draft.copy(workspace = it)) }
+                // A member belongs to one workspace's staff: another workspace starts with its lead again.
+                CaptureWorkspace(model, draft.workspace) { edit(draft.copy(workspace = it, worker = null)) }
                 ScopePicker(draft.scope, "capture-scope") { edit(draft.copy(scope = it)) }
+                StaffPicker(model, draft.workspace, draft.worker, "capture-staff") { edit(draft.copy(worker = it)) }
                 Text(
                     "Save keeps it in the Inbox under Unsorted. Nothing starts. " +
                         "Ask Assistant makes a Work item and asks the workspace's assistant.",

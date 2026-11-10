@@ -8,7 +8,11 @@ import tech.xdge.muxa.protocol.CaptureState
 import tech.xdge.muxa.protocol.Delivery
 import tech.xdge.muxa.protocol.Due
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.HandoffProposal
 import tech.xdge.muxa.protocol.Request
+import tech.xdge.muxa.protocol.RequestStep
+import tech.xdge.muxa.protocol.StaffMember
+import tech.xdge.muxa.protocol.StepBy
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
@@ -38,6 +42,9 @@ internal class DemoAssistant(
     private var made = 0
 
     var pace: AssistPace = AssistPace.DEMO
+
+    /** Each workspace's staff (`work` level 12, ADR 0051); empty: a workspace without `staff`, whose requests have no steps. */
+    var staff: (String) -> List<StaffMember> = { emptyList() }
 
     /** What `request-assistant` did; [ended] is the older version's run, whose session closes. */
     class Asked(val work: WorkItem, val request: AssistantRequest, val run: String?, val ended: String?)
@@ -191,7 +198,14 @@ internal class DemoAssistant(
      * that workspace's request and ends the older version's run. [run] starts the new run in a session
      * named after its scope, request and version, and returns the run's id.
      */
-    fun ask(req: Request.RequestAssistant, now: Long, nowMillis: Long, workspaces: Set<String>, run: (String) -> String): Asked {
+    fun ask(
+        req: Request.RequestAssistant,
+        now: Long,
+        nowMillis: Long,
+        workspaces: Set<String>,
+        run: (String) -> String,
+        by: StepBy? = null,
+    ): Asked {
         asked[req.work to req.rev]?.let { id ->
             val q = requests.first { it.id == id }
             return Asked(work.first { it.id == req.work }, q, null, null)
@@ -203,6 +217,8 @@ internal class DemoAssistant(
         val ws = req.workspace ?: w.workspace ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "Work item ${w.id} has no workspace; send one")
         if (ws !in workspaces) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no workspace \"$ws\"")
         if ((req.purpose?.toByteArray()?.size ?: 0) > MAX_PURPOSE) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "purpose is over 4096 bytes")
+        val members = staff(ws)
+        val worker = memberFor(ws, members, req.worker)
         val existing = requests.firstOrNull { it.work == w.id && it.workspace == ws }
         val open = requests.count { it.workspace == ws && it.id != existing?.id && it.delivery in OPEN_RUN }
         if (open >= MAX_OPEN_RUNS) {
@@ -214,15 +230,60 @@ internal class DemoAssistant(
         val id = existing?.id ?: nextId("q")
         val version = (existing?.version ?: 0) + 1
         val runId = run("${req.scope.raw}-$id-v$version")
+        // A new version starts again at step 1.
+        val steps = listOfNotNull(worker?.let { RequestStep(1, it, by ?: if (req.worker != null) StepBy.USER else StepBy.LEAD, Delivery.PENDING, now, runId) })
         val q = existing?.copy(
             version = version, scope = req.scope, purpose = req.purpose, delivery = Delivery.PENDING,
-            deliveryAt = now, updatedAt = now, run = runId,
-        ) ?: AssistantRequest(id, w.id, version, ws, req.scope, Delivery.PENDING, now, now, now, req.purpose, runId)
+            deliveryAt = now, updatedAt = now, run = runId, steps = steps,
+        ) ?: AssistantRequest(id, w.id, version, ws, req.scope, Delivery.PENDING, now, now, now, req.purpose, runId, steps = steps)
         requests = if (existing != null) requests.map { if (it.id == q.id) q else it } else requests + q
         started[q.id] = nowMillis
         asked[w.id to req.rev] = q.id
         val saved = save(w.copy(requests = if (q.id in w.requests) w.requests else w.requests + q.id), now)
         return Asked(saved, q, runId, existing?.run?.takeIf { existing.delivery in OPEN_RUN })
+    }
+
+    /**
+     * The member who answers in [ws]: [named], which must be on [members], else the lead. Null for a
+     * workspace without staff, which takes no named member.
+     */
+    private fun memberFor(ws: String, members: List<StaffMember>, named: String?): String? {
+        if (named != null && members.none { it.worker == named }) {
+            val names = members.joinToString(", ") { it.worker }.ifEmpty { "none" }
+            throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "worker \"$named\" is not on the staff of \"$ws\" (staff: $names)")
+        }
+        return named ?: (members.firstOrNull { it.lead } ?: members.firstOrNull())?.worker
+    }
+
+    /**
+     * Approve on a `handoff` item (ADR 0051 §3): starts step `step + 1` at the request's current version,
+     * once. A second approve returns the request with nothing new. One open run per workspace, as for
+     * any request; past it the item stays open.
+     */
+    fun handOn(h: HandoffProposal, now: Long, nowMillis: Long, run: (String) -> String): Asked {
+        val q = requests.firstOrNull { it.id == h.request } ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no request ${h.request}")
+        val item = work.first { it.id == q.work }
+        if (q.version != h.version) throw DemoWork.Refusal(ErrorCode.CONFLICT, "request ${q.id} is at version ${q.version}; the chain ended")
+        if (q.steps.any { it.step == h.step + 1 }) return Asked(item, q, null, null)
+        val from = q.steps.lastOrNull()?.takeIf { it.step == h.step } ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "step ${h.step} is not the chain's last")
+        val handoff = from.handoff ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "step ${h.step} asks for no hand-off")
+        val open = requests.count { it.workspace == q.workspace && it.delivery in OPEN_RUN }
+        if (open >= MAX_OPEN_RUNS) {
+            throw DemoWork.Refusal(ErrorCode.CONFLICT, "workspace \"${q.workspace}\" has $open open assistant runs, its max_open_runs")
+        }
+        val next = h.step + 1
+        val runId = run("${q.scope.raw}-${q.id}-v${q.version}-s$next")
+        val step = RequestStep(next, handoff.worker, StepBy.HANDOFF, Delivery.PENDING, now, runId)
+        val moved = q.copy(delivery = Delivery.PENDING, deliveryAt = now, updatedAt = now, run = runId, steps = q.steps + step)
+        requests = requests.map { if (it.id == q.id) moved else it }
+        started[q.id] = nowMillis
+        return Asked(item, moved, runId, null)
+    }
+
+    /** The fixtures' chain at level 12 (ADR 0051): a Work item with its request, already worked on. */
+    fun add(item: WorkItem, request: AssistantRequest) {
+        work = work + item
+        requests = requests + request
     }
 
     /** `cancel-request`: `cancel-requested` until the next list, then `cancelled`. Returns the item, the request and the run that ends. */
@@ -232,7 +293,7 @@ internal class DemoAssistant(
         if (q.results.any { it.version == req.version }) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "request ${q.id} v${q.version} has its result")
         val item = work.first { it.id == q.work }
         if (q.delivery !in CANCELLABLE) return Triple(item, q, null)
-        val c = q.copy(delivery = Delivery.CANCEL_REQUESTED, deliveryAt = now, updatedAt = now)
+        val c = q.moved(Delivery.CANCEL_REQUESTED, now)
         requests = requests.map { if (it.id == c.id) c else it }
         started.remove(c.id)
         return Triple(item, c, q.run)
@@ -244,27 +305,37 @@ internal class DemoAssistant(
         requests = requests.map { q ->
             val since = started[q.id]
             when {
-                q.delivery == Delivery.CANCEL_REQUESTED -> q.copy(delivery = Delivery.CANCELLED, deliveryAt = now, updatedAt = now)
+                q.delivery == Delivery.CANCEL_REQUESTED -> q.moved(Delivery.CANCELLED, now)
                 since == null || q.delivery !in MOVING -> q
                 nowMillis - since >= pace.pendingMillis + pace.processingMillis -> {
                     started.remove(q.id)
                     q.run?.let { ended += it }
                     resulted(q, now)
                 }
-                q.delivery == Delivery.PENDING && nowMillis - since >= pace.pendingMillis ->
-                    q.copy(delivery = Delivery.PROCESSING, deliveryAt = now, updatedAt = now)
+                q.delivery == Delivery.PENDING && nowMillis - since >= pace.pendingMillis -> q.moved(Delivery.PROCESSING, now)
                 else -> q
             }
         }
         return ended
     }
 
-    /** The canned Result; it may name another open item as a possible duplicate. A stored result makes the older ones stale. */
+    /**
+     * The canned Result, with its step's member; it may name another open item as a possible duplicate.
+     * A stored result makes the older versions' results stale; inside a version none is (ADR 0051 §3).
+     */
     private fun resulted(q: AssistantRequest, now: Long): AssistantRequest {
         val other = work.firstOrNull { it.id != q.work && it.state != WorkState.DONE && it.state != WorkState.WITHDRAWN }?.id
-        val results = listOf(DemoResults.canned(q, now, other)) + q.results.map { it.copy(stale = true) }
-        return q.copy(delivery = Delivery.RESULTED, deliveryAt = now, updatedAt = now, results = results.take(MAX_RESULTS))
+        val step = q.steps.lastOrNull()
+        val result = DemoResults.canned(q, now, other).copy(worker = step?.worker, step = step?.step)
+        val results = listOf(result) + q.results.map { if (it.version == q.version) it else it.copy(stale = true) }
+        return q.moved(Delivery.RESULTED, now).copy(results = results.take(MAX_RESULTS))
     }
+
+    /** [delivery] on the request and on its newest step, whose run it is. */
+    private fun AssistantRequest.moved(delivery: Delivery, now: Long): AssistantRequest = copy(
+        delivery = delivery, deliveryAt = now, updatedAt = now,
+        steps = steps.dropLast(1) + steps.takeLast(1).map { it.copy(delivery = delivery, deliveryAt = now) },
+    )
 
     /**
      * `capture {assist}`: the Capture becomes a Work item in its workspace and is asked about. When the
@@ -282,7 +353,7 @@ internal class DemoAssistant(
         val (sorted, w) = sort(Request.SortCapture(0, c.id, c.rev, SortAction.WORK, workspace = ws), now)
         val item = w ?: return Assisted(sorted, null, null, DemoWork.Refusal(ErrorCode.INTERNAL, "the Capture made no Work item"))
         return try {
-            val a = ask(Request.RequestAssistant(0, item.id, item.rev, spec.scope, ws, spec.purpose), now, nowMillis, workspaces, run)
+            val a = ask(Request.RequestAssistant(0, item.id, item.rev, spec.scope, ws, spec.purpose, spec.worker), now, nowMillis, workspaces, run)
             Assisted(sorted, a.work, a, null)
         } catch (e: DemoWork.Refusal) {
             Assisted(sorted, item, null, e)

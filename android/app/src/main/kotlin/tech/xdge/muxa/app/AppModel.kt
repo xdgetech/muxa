@@ -20,7 +20,7 @@ import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
-import tech.xdge.muxa.protocol.WORK_POLICIES
+import tech.xdge.muxa.protocol.WORK_STAFF
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.protocol.WorkspaceInfo
@@ -244,7 +244,7 @@ class AppModel(
     /** The correction or hypothesis whose Forget waits on the user's confirmation, by id. */
     var forgetting by mutableStateOf<String?>(null)
 
-    /** The notes applied from this device, as `source:version`, so the Notes section says so. */
+    /** The notes applied from this device, as `source:version:step`, so the Notes section says so. */
     var appliedNotes by mutableStateOf<Set<String>>(emptySet())
 
     /** An Inbox action that asks first: a proposal's approval. */
@@ -382,8 +382,9 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        // Try the Demo shows Captures, Work items (ADR 0048), Today (ADR 0049) and policies (ADR 0050); the UI tests pick their level.
-        demoWorkLevel = WORK_POLICIES
+        // Try the Demo shows Captures, Work items (ADR 0048), Today (ADR 0049), policies (ADR 0050) and staff
+        // (ADR 0051); the UI tests pick their level.
+        demoWorkLevel = WORK_STAFF
         demoOldItems = false
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true

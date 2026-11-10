@@ -25,6 +25,7 @@ import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.Share
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.SortProposal
+import tech.xdge.muxa.protocol.StaffMember
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
 import java.security.MessageDigest
@@ -95,13 +96,42 @@ internal class DemoPlans(
 
     /**
      * `apply-notes` for a request's Result: writes while the live file still hashes to the proposal's
-     * base, else `conflict`. [notes] is the Result's proposal; [workspace] the request's.
+     * base, else `conflict`. [notes] is the Result's proposal; [workspace] the request's. [member] (level 12)
+     * is a staff member other than the lead, whose own file it is (ADR 0051 §5); null is `NOTES.md`.
      */
-    fun applyNotes(workspace: String, notes: Notes?, base: String, now: Long) {
+    fun applyNotes(workspace: String, notes: Notes?, base: String, now: Long, member: String? = null) {
         if (notes == null || notes.base != base) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "this version has no notes with that base")
-        if ((live[workspace] ?: EMPTY) != base) throw DemoWork.Refusal(ErrorCode.CONFLICT, "NOTES.md of $workspace changed; ask again")
-        live[workspace] = sha256(notes.text)
-        delegates = delegates.map { if (it.workspace == workspace) it.copy(notesAt = now) else it }
+        val file = member?.let { "$workspace/staff/$it" } ?: workspace
+        if ((live[file] ?: EMPTY) != base) throw DemoWork.Refusal(ErrorCode.CONFLICT, "the notes of ${member ?: workspace} changed; ask again")
+        live[file] = sha256(notes.text)
+        delegates = delegates.map { d ->
+            when {
+                d.workspace != workspace -> d
+                member == null -> d.copy(notesAt = now)
+                else -> d.copy(staff = d.staff.map { if (it.worker == member) it.copy(notesAt = now) else it })
+            }
+        }
+    }
+
+    /** Each workspace's staff joins its delegate (`work` level 12, ADR 0051 §1). */
+    fun staff(members: Map<String, List<StaffMember>>) {
+        delegates = delegates.map { it.copy(staff = members[it.workspace].orEmpty()) }
+    }
+
+    /** [workspace]'s lead: the member marked lead, else the first; null without staff. */
+    fun leadOf(workspace: String): String? =
+        delegates.firstOrNull { it.workspace == workspace }?.staff?.let { s -> (s.firstOrNull { it.lead } ?: s.firstOrNull())?.worker }
+
+    /** The current plan's last row becomes [row]: the fixtures' `delegate` row at level 12. */
+    fun replaceLastRow(row: PlanRow) {
+        val plan = current ?: return
+        val old = plan.top.lastOrNull()?.let { it.work ?: it.item }
+        val id = row.work ?: row.item ?: return
+        val swapped = plan.copy(
+            top = plan.top.dropLast(1) + row,
+            changed = plan.changed.map { if (it.id == old) it.copy(id = id) else it },
+        )
+        plans = plans.map { if (it.id == plan.id) swapped else it }
     }
 
     /** `apply-notes` for a plan's notes: the overall workspace's. */

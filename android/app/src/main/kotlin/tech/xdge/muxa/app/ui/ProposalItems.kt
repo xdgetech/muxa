@@ -10,7 +10,7 @@ import tech.xdge.muxa.app.workItem
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.SortProposal
-import tech.xdge.muxa.session.delegateName
+import tech.xdge.muxa.session.addressee
 import tech.xdge.muxa.session.firstLine
 import tech.xdge.muxa.session.basedOn
 import tech.xdge.muxa.session.label
@@ -18,7 +18,8 @@ import tech.xdge.muxa.session.scopeLabel
 
 // The overall assistant's `sort` and `delegate` items (ADR 0049 §4): what Approve would do. Approve
 // runs it once on the host; Reject and Later change nothing else. A `hypothesis` item (ADR 0050 §3)
-// shows what Confirm keeps as a policy, and its evidence by count.
+// shows what Confirm keeps as a policy, and its evidence by count. A `handoff` item (ADR 0051 §3)
+// names both staff members; Approve starts the next step once.
 
 /** The proposed sort or request, with the receiving workspace, its scope and purpose. */
 @Composable
@@ -32,7 +33,7 @@ internal fun OverallProposal(model: AppModel, item: InboxItem) {
     }
     item.delegate?.let { d ->
         Text("Proposed request", Modifier.testTag("item-delegate"), style = MaterialTheme.typography.titleSmall)
-        Field("To", delegateName(d.workspace))
+        Field("To", d.addressee)
         Field("Work item", model.workItem(d.work)?.title ?: d.work)
         Field("Scope", d.scope.label)
         Field("Purpose", d.purpose)
@@ -45,6 +46,14 @@ internal fun OverallProposal(model: AppModel, item: InboxItem) {
         Field("Confidence", h.confidence.label)
         DetailNote(basedOn(h.evidence.size), Modifier.testTag("item-hypothesis-evidence"))
         DetailNote("Confirm keeps it as your policy. Reject tells the assistant not to use or propose it again.")
+    }
+    item.handoff?.let { h ->
+        Text("Proposed hand-off", Modifier.testTag("item-handoff"), style = MaterialTheme.typography.titleSmall)
+        Field("From", "${h.from} (step ${h.step})")
+        Field("To", "${h.worker} (step ${h.step + 1})")
+        Field("Work item", model.workItem(h.work)?.title ?: h.work)
+        Field("Purpose", h.purpose)
+        DetailNote("Approve starts ${h.worker}'s step. Reject ends the chain with the Results it has.")
     }
 }
 

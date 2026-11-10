@@ -74,7 +74,8 @@ internal fun RequestSection(model: AppModel, item: WorkItem, request: AssistantR
             }
         }
         error?.let { Text(it, Modifier.testTag("request-error-${request.id}"), color = Theme.failure) }
-        for (result in request.currentResults) ResultView(model, request, result)
+        // A chain (ADR 0051) shows each step with its own Result; a request without steps is one.
+        if (request.steps.isEmpty()) for (result in request.currentResults) ResultView(model, request, result) else ChainSection(model, request)
         val earlier = request.earlierResults
         if (earlier.isNotEmpty()) {
             DetailHeader("Earlier")
@@ -95,13 +96,13 @@ internal fun deliveryColor(d: Delivery) = when (d) {
     else -> Theme.attention
 }
 
-/** Summary, findings with their sources, open questions, next actions, files and possible duplicates. */
+/** Summary, findings with their sources, open questions, next actions, files and possible duplicates. [tag] names it. */
 @Composable
-private fun ResultView(model: AppModel, request: AssistantRequest, result: AssistResult) {
+internal fun ResultView(model: AppModel, request: AssistantRequest, result: AssistResult, tag: String = "result-${request.id}-${result.version}") {
     SelectionContainer {
-        Column(Modifier.testTag("result-${request.id}-${result.version}"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.testTag(tag), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             DetailNote("Result · v${result.version} · ${AgentSummary.age(result.at)}")
-            Text(result.summary, Modifier.testTag("result-summary-${request.id}"))
+            Text(result.summary, Modifier.testTag(if (result.step == null) "result-summary-${request.id}" else "$tag-summary"))
             if (result.findings.isNotEmpty()) {
                 DetailHeader("Findings")
                 for (f in result.findings) {
@@ -151,6 +152,8 @@ internal fun AskPanel(model: AppModel, item: WorkItem, requests: List<AssistantR
     var error by remember(item.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val workspace = picked ?: newest?.workspace ?: item.workspace
+    // A member belongs to one workspace's staff: another workspace starts with its lead again.
+    var worker by remember(item.id, workspace) { mutableStateOf<String?>(null) }
     val problem = assistProblem(workspace, purpose)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         DetailHeader(if (newest == null) "Ask the assistant" else "Ask again")
@@ -158,6 +161,7 @@ internal fun AskPanel(model: AppModel, item: WorkItem, requests: List<AssistantR
         if (item.workspace == null && newest == null) {
             WorkspacePicker(model, picked, "Workspace", "ask-workspace") { picked = it }
         }
+        StaffPicker(model, workspace, worker, "ask-staff") { worker = it }
         OutlinedTextField(
             purpose, {
                 purpose = it
@@ -169,7 +173,7 @@ internal fun AskPanel(model: AppModel, item: WorkItem, requests: List<AssistantR
         TextButton(
             {
                 scope.launch {
-                    error = model.askAssistant(item, scopeChoice, purpose.trim().ifEmpty { null }, workspace.takeIf { it != item.workspace })
+                    error = model.askAssistant(item, scopeChoice, purpose.trim().ifEmpty { null }, workspace.takeIf { it != item.workspace }, worker)
                     if (error == null) purpose = ""
                 }
             },

@@ -96,10 +96,12 @@ fun delegateName(workspace: String): String = "$workspace's assistant"
 
 /**
  * The newest current Result among [requests] when it proposes notes, with its request: the Notes
- * section's source. Null when the newest Result has none.
+ * section's source. Null when the newest Result has none. A request with steps (ADR 0051) is left
+ * out: each step's notes show on its own row of the chain.
  */
 fun proposedNotes(requests: List<AssistantRequest>): Pair<AssistantRequest, AssistResult>? {
-    val newest = requests.mapNotNull { q -> q.currentResults.firstOrNull()?.let { q to it } }.maxByOrNull { it.second.at }
+    val newest = requests.filter { it.steps.isEmpty() }
+        .mapNotNull { q -> q.currentResults.firstOrNull()?.let { q to it } }.maxByOrNull { it.second.at }
     return newest?.takeIf { it.second.notes != null }
 }
 

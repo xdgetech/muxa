@@ -99,9 +99,9 @@ suspend fun AppModel.loadWorkDetail(id: String): String? = try {
     PaneSession.describe(e)
 }
 
-/** Ask Assistant or Ask again on the detail. Returns the host's reason when it refused. */
-suspend fun AppModel.askAssistant(item: WorkItem, scope: AssistScope, purpose: String?, workspace: String?): String? =
-    busyWith(item.id) { session.requestAssistant(item, scope, purpose, workspace) }
+/** Ask Assistant or Ask again on the detail; [worker] null lets the lead decide. Returns the host's reason when it refused. */
+suspend fun AppModel.askAssistant(item: WorkItem, scope: AssistScope, purpose: String?, workspace: String?, worker: String? = null): String? =
+    busyWith(item.id) { session.requestAssistant(item, scope, purpose, workspace, worker) }
 
 /** Cancel on a request whose run has no result yet. Returns the host's reason when it refused. */
 suspend fun AppModel.cancelRequest(item: WorkItem, request: AssistantRequest): String? =

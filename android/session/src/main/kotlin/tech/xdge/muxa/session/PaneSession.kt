@@ -54,6 +54,7 @@ import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
+import tech.xdge.muxa.protocol.WORK_STAFF
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.WorkAction
@@ -198,6 +199,9 @@ class PaneSession(
 
         /** The host keeps policies, corrections and hypotheses; Today takes reorder and Not today (ADR 0050). */
         val canKeepPolicies get() = workLevel >= WORK_POLICIES
+
+        /** The host asks a named staff member and runs a request as a chain of steps (ADR 0051). */
+        val canAskStaff get() = workLevel >= WORK_STAFF
     }
 
     private val _state = MutableStateFlow(State())
@@ -602,7 +606,8 @@ class PaneSession(
         var requestId = 0L
         val worktree = worktreeEnd(action in ENDING_ACTIONS, forceWorktree)
         // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0049 §4); a
-        // confirmed `hypothesis` writes a policy, and a reject a correction (ADR 0050 §3).
+        // confirmed `hypothesis` writes a policy, and a reject a correction (ADR 0050 §3); an
+        // approved `handoff` starts the next step (ADR 0051 §3).
         val proposal = item.kind in OVERALL_KINDS
         try {
             request { id ->
@@ -718,6 +723,7 @@ class PaneSession(
      */
     suspend fun captureAndAsk(clientId: String, text: String, workspace: String, assist: AssistSpec): Assisted = withContext(dispatcher) {
         requireCaptures()
+        if (assist.worker != null) requireStaff()
         var requestId = 0L
         val refusal = try {
             request { id ->
@@ -773,12 +779,14 @@ class PaneSession(
 
     /**
      * Writes [notes], proposed by [source]'s [version] (a request's version or a plan's `rev`), to the
-     * live `NOTES.md`. A live file that changed since the run read it is [Failure.NotesChanged].
+     * live `NOTES.md`. [step] (`work` level 12) is the step whose Result proposed them: the host writes
+     * that step's staff member's file. A live file that changed since the run read it is [Failure.NotesChanged].
      */
-    suspend fun applyNotes(source: String, version: Long, notes: Notes) = withContext(dispatcher) {
+    suspend fun applyNotes(source: String, version: Long, notes: Notes, step: Int? = null) = withContext(dispatcher) {
         requirePlans()
+        if (step != null) requireStaff()
         val conflict = { _: Failure.Bridge -> Failure.NotesChanged() }
-        val make = { id: Long -> Request.ApplyNotes(id, source, version, notes.base) }
+        val make = { id: Long -> Request.ApplyNotes(id, source, version, notes.base, step) }
         // A request's notes come back as `work-saved`, a plan's as `plan-saved`.
         if (source.startsWith(PLAN_PREFIX)) changing(savedPlans, "the plan", conflict, make) else changing(savedWork, "the Work item", conflict, make)
         Unit
@@ -848,6 +856,11 @@ class PaneSession(
         if (!_state.value.canKeepPolicies) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, POLICIES_UNSUPPORTED))
     }
 
+    /** A level 11 host answers `worker` and `step` with `bad-request`; nothing is sent to it (ADR 0051 §6). */
+    private fun requireStaff() {
+        if (!_state.value.canAskStaff) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, STAFF_UNSUPPORTED))
+    }
+
     /**
      * Reads [work] with every Capture it links, sorted or not, for its detail. The result is kept in
      * `workDetails`. An unknown item is the host's `bad-request`.
@@ -863,6 +876,7 @@ class PaneSession(
 
     /**
      * Asks [workspace]'s agent (null: the item's) to work on [item] at the `rev` this client saw.
+     * [worker] (`work` level 12) names a staff member; null lets the workspace's lead take it.
      * Asking again at the item's new `rev` adds a version to that workspace's request. A stale `rev`
      * is [Failure.WorkChanged]; a limit or a run already starting is [Failure.Refused] with the host's
      * message; no daemon is `unsupported` with the host's message.
@@ -872,10 +886,12 @@ class PaneSession(
         scope: AssistScope,
         purpose: String? = null,
         workspace: String? = null,
+        worker: String? = null,
     ): AssistantRequest = withContext(dispatcher) {
         requireCaptures()
+        if (worker != null) requireStaff()
         val saved = changing(savedWork, "the request", conflict = { e -> if (changedSince(item)) Failure.WorkChanged() else Failure.Refused(e.body) }) { id ->
-            Request.RequestAssistant(id, item.id, item.rev, scope, workspace, purpose?.takeIf { it.isNotBlank() })
+            Request.RequestAssistant(id, item.id, item.rev, scope, workspace, purpose?.takeIf { it.isNotBlank() }, worker)
         }
         saved.request ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the request"))
     }
@@ -1476,8 +1492,11 @@ class PaneSession(
         /** Shown when the host keeps no policies (ADR 0050). */
         const val POLICIES_UNSUPPORTED = "This host keeps no policies. Update muxa on the host."
 
-        /** The overall assistant's items: answering one may write a Capture, a Work item, a policy or a correction. */
-        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS)
+        /** Shown when the host has no staff (ADR 0051). */
+        const val STAFF_UNSUPPORTED = "This host does not ask staff members. Update muxa-bridge on the host."
+
+        /** The assistants' items: answering one may write a Capture, a Work item, a request's step, a policy or a correction. */
+        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF)
 
         /** A plan's id starts with it; a request's with `q-`. */
         private const val PLAN_PREFIX = "p-"

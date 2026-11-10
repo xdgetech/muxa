@@ -45,6 +45,8 @@ import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
+import tech.xdge.muxa.protocol.WORK_STAFF
+import tech.xdge.muxa.protocol.StepBy
 import tech.xdge.muxa.protocol.CorrectionKind
 import tech.xdge.muxa.protocol.PlanAction
 import tech.xdge.muxa.protocol.WORK_ROUTINES
@@ -67,8 +69,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_POLICIES] it keeps policies, corrections and hypotheses
- * (ADR 0050); at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
+ * [workLevel] is the `work` level it advertises; at [WORK_STAFF] each workspace has staff and a request runs as a
+ * chain of steps (ADR 0051); at [WORK_POLICIES] it keeps policies, corrections and hypotheses (ADR 0050); at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
  * at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0048); below [WORK_DELETE_INBOX] it plays a host from before
  * Protect and Delete Old (ADR 0046), below [WORK_WORKTREE_END] one whose Done keeps the worktree (ADR 0043),
  * below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing
@@ -146,6 +148,23 @@ class DemoBridge(
         content.policies(now())?.takeIf { workLevel >= WORK_POLICIES }?.also { m ->
             p.cite(m.cites)
             items.add(m.items(p.overall))
+        }
+    }
+
+    /**
+     * Staff and hand-offs (ADR 0051) at level 12: each delegate lists its staff, a Work item's chain waits on a
+     * `handoff` item, the `delegate` items name a member, and Today's last row is one of them.
+     */
+    init {
+        plans?.let { p ->
+            content.staff(now())?.takeIf { workLevel >= WORK_STAFF }?.let { s ->
+                p.staff(s.members)
+                assistant.staff = { ws -> s.members[ws].orEmpty() }
+                assistant.add(s.work, s.request)
+                items.add(listOf(s.handoff))
+                s.named.forEach { (id, worker) -> items.item(id)?.let { items.save(naming(it, worker)) } }
+                p.replaceLastRow(s.todayRow)
+            }
         }
     }
 
@@ -295,6 +314,8 @@ class DemoBridge(
                 askAgent(req)
             } else if (req.action in PROTECT_ACTIONS) {
                 protect(req, now)
+            } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.HANDOFF) {
+                answerHandoff(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.HYPOTHESIS) {
                 answerHypothesis(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind }.let { it == ItemKind.SORT || it == ItemKind.DELEGATE }) {
@@ -307,6 +328,8 @@ class DemoBridge(
     /** Captures, Work items and assistant requests (ADR 0048), refused as a bridge below `work` level 9 refuses them. */
     private fun serveAssistant(req: Request) {
         if (workLevel < WORK_ASSISTANT) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        val named = (req as? Request.RequestAssistant)?.worker ?: (req as? Request.Capture)?.assist?.worker
+        if (named != null && workLevel < WORK_STAFF) return fail(req.id, ErrorCode.BAD_REQUEST, "unknown field worker for work level $workLevel")
         val now = now()
         try {
             val saved = synchronized(lock) {
@@ -330,6 +353,7 @@ class DemoBridge(
                     is Request.CancelRequest -> {
                         val (w, q, ended) = assistant.cancel(req, now)
                         ended?.let(::endRun)
+                        endChain(q.id, keep = null)
                         Message.WorkSaved(req.id, derived(w), q)
                     }
                     else -> return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
@@ -360,6 +384,7 @@ class DemoBridge(
     private fun ask(req: Request.RequestAssistant, now: Long) {
         val a = assistant.ask(req, now, System.currentTimeMillis(), workspaceNames, ::startRun)
         a.ended?.let(::endRun)
+        endChain(a.request.id, keep = a.request.version)
         emitAll(Message.WorkSaved(req.id, derived(a.work), a.request), Message.Result(req.id))
         if (a.run != null) runStarted()
     }
@@ -378,9 +403,12 @@ class DemoBridge(
                     is Request.ApplyNotes -> if (req.source.startsWith("p-")) {
                         Message.PlanSaved(req.id, p.applyPlanNotes(req.source, req.version, req.base, now))
                     } else {
+                        if (req.step != null && workLevel < WORK_STAFF) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "unknown field step for work level $workLevel")
                         val q = assistant.request(req.source) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no request ${req.source}")
-                        val result = q.results.firstOrNull { it.version == req.version && !it.stale }
-                        p.applyNotes(q.workspace, result?.notes, req.base, now)
+                        // Without `step`, the version's last step: its Result is the newest (ADR 0051 §5).
+                        val current = q.results.filter { it.version == req.version && !it.stale }
+                        val result = if (req.step == null) current.firstOrNull() else current.firstOrNull { (it.step ?: 1) == req.step }
+                        p.applyNotes(q.workspace, result?.notes, req.base, now, member = result?.worker?.takeIf { it != p.leadOf(q.workspace) })
                         Message.WorkSaved(req.id, derived(assistant.workItem(q.work) ?: return@synchronized null), q)
                     }
                     else -> null
@@ -511,10 +539,59 @@ class DemoBridge(
             }
             approve(item, now, req.id)
         }
+        finish(req.id, outcome)
+    }
+
+    /** What an answered proposal wrote, then the item, then the result; a started run's session shows. */
+    private fun finish(id: Long, outcome: ProposalOutcome) {
         outcome.written.forEach(::emit)
-        outcome.item?.let { emit(Message.InboxSaved(req.id, item = it)) }
-        outcome.error?.let { fail(req.id, it.code, it.message) } ?: ok(req.id)
+        outcome.item?.let { emit(Message.InboxSaved(id, item = it)) }
+        outcome.error?.let { fail(id, it.code, it.message) } ?: ok(id)
         if (outcome.started) runStarted()
+    }
+
+    /**
+     * Approve, Reject or Later on a `handoff` item (ADR 0051 §3). Approve starts the next step once; a
+     * second approve returns the same request. A refusal, such as a budget's `conflict`, leaves the item
+     * open. Reject ends the chain with the Results it has.
+     */
+    private fun answerHandoff(req: Request.UpdateInbox, now: Long) {
+        val outcome = synchronized(lock) {
+            try {
+                val item = items.item(req.entry) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item ${req.entry}")
+                val h = item.handoff ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${item.id} has no hand-off")
+                if (req.action != InboxAction.APPROVE || (item.state != ItemState.OPEN && item.answer != InboxAction.APPROVE)) {
+                    return@synchronized ProposalOutcome(items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item, emptyList(), null)
+                }
+                val a = assistant.handOn(h, now, System.currentTimeMillis(), ::startRun)
+                val answered = if (item.answer == InboxAction.APPROVE) {
+                    item
+                } else {
+                    item.copy(state = ItemState.ANSWERED, answer = InboxAction.APPROVE, answeredAt = now, laterAt = null, answers = emptyList())
+                        .also(items::save)
+                }
+                ProposalOutcome(answered, listOf(Message.WorkSaved(req.id, derived(a.work), a.request)), null, started = a.run != null)
+            } catch (e: DemoWork.Refusal) {
+                ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))
+            }
+        }
+        finish(req.id, outcome)
+    }
+
+    /**
+     * A new version or a cancel ends the chain: a `handoff` item that waits on [request] is resolved,
+     * except one about version [keep]. The caller holds the lock.
+     */
+    private fun endChain(request: String, keep: Long?) {
+        for (item in items.waitingHandoffs(request)) {
+            if (item.handoff?.version != keep) items.save(item.copy(state = ItemState.RESOLVED, answers = emptyList(), summary = "The chain ended."))
+        }
+    }
+
+    /** A `delegate` item that names [worker] (level 12): the question names it too. */
+    private fun naming(item: InboxItem, worker: String): InboxItem {
+        val d = item.delegate ?: return item
+        return item.copy(question = "Ask $worker in ${d.workspace} to ${d.scope.raw}: ${item.title}", delegate = d.copy(worker = worker))
     }
 
     private class ProposalOutcome(val item: InboxItem?, val written: List<Message>, val error: ErrorBody?, val started: Boolean = false)
@@ -537,8 +614,10 @@ class DemoBridge(
         val d = item.delegate ?: return ProposalOutcome(null, emptyList(), ErrorBody(ErrorCode.BAD_REQUEST, "${item.id} has no action"))
         val w = assistant.workItem(d.work) ?: return ProposalOutcome(null, emptyList(), ErrorBody(ErrorCode.BAD_REQUEST, "no Work item ${d.work}"))
         return try {
-            val a = assistant.ask(Request.RequestAssistant(0, w.id, w.rev, d.scope, d.workspace, d.purpose), now, System.currentTimeMillis(), workspaceNames, ::startRun)
+            val ask = Request.RequestAssistant(0, w.id, w.rev, d.scope, d.workspace, d.purpose, d.worker)
+            val a = assistant.ask(ask, now, System.currentTimeMillis(), workspaceNames, ::startRun, by = StepBy.OVERALL.takeIf { d.worker != null })
             a.ended?.let(::endRun)
+            endChain(a.request.id, keep = a.request.version)
             ProposalOutcome(answered(null), listOf(Message.WorkSaved(id, derived(a.work), a.request)), null, started = a.run != null)
         } catch (e: DemoWork.Refusal) {
             ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))

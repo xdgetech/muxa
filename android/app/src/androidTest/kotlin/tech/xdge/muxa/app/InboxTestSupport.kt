@@ -28,6 +28,9 @@ fun planDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActivi
 /** The demo in Inbox mode at `work` level 11: policies, hypotheses, corrections, reorder and Not today (ADR 0050). */
 fun policyDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK11, true)
 
+/** The demo in Inbox mode at `work` level 12: staff, a chain waiting on a hand-off, and `handoff` items (ADR 0051). */
+fun staffDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK12, true)
+
 /** Waits for the pane that Sessions mode shows at connect: Chat's composer, or the terminal. */
 @OptIn(ExperimentalTestApi::class)
 fun ComposeTestRule.waitForInitialPane() {

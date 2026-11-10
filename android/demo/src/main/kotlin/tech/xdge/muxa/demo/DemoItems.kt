@@ -40,6 +40,10 @@ internal class DemoItems(private var items: List<InboxItem>) {
 
     fun item(id: String): InboxItem? = items.firstOrNull { it.id == id }
 
+    /** The open `handoff` items about [request] (ADR 0051). */
+    fun waitingHandoffs(request: String): List<InboxItem> =
+        items.filter { it.kind == ItemKind.HANDOFF && it.state == ItemState.OPEN && it.handoff?.request == request }
+
     /** The overall assistant's proposal items join the list (ADR 0049). */
     fun add(more: List<InboxItem>) {
         items = items + more

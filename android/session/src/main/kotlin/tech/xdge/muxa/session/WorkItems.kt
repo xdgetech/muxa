@@ -53,6 +53,8 @@ data class CaptureDraft(
     val clientId: String = UUID.randomUUID().toString(),
     /** What Ask Assistant asks for. */
     val scope: AssistScope = AssistScope.RESEARCH,
+    /** The staff member Ask Assistant asks (`work` level 12); null lets the workspace's lead decide. */
+    val worker: String? = null,
 ) {
     /** What to fix before Save; null when it can be sent. */
     val problem: String?
@@ -66,7 +68,7 @@ data class CaptureDraft(
     val askProblem: String? get() = problem ?: assistProblem(workspace, null)
 
     /** `capture {assist}`. */
-    val assist: AssistSpec get() = AssistSpec(scope)
+    val assist: AssistSpec get() = AssistSpec(scope, worker = worker)
 
     /** "Start a Task instead…": the text is the goal, its first line the title. */
     fun taskDraft(workspaces: List<WorkspaceInfo>): TaskRecordDraft = TaskRecordDraft(

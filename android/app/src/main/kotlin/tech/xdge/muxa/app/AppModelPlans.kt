@@ -65,14 +65,17 @@ suspend fun AppModel.setDue(item: WorkItem, due: Due): String? = try {
     PaneSession.describe(e)
 }
 
-/** The key [appliedNotes] keeps for [result]'s notes. */
-fun notesKey(request: AssistantRequest, result: AssistResult) = "${request.id}:${result.version}"
+/** The key [appliedNotes] keeps for [result]'s notes: each step of a version proposes its own (ADR 0051 §5). */
+fun notesKey(request: AssistantRequest, result: AssistResult) = "${request.id}:${result.version}:${result.step ?: 1}"
 
-/** Update notes: writes [result]'s proposal to the workspace's live notes. Returns the host's reason when it could not. */
+/**
+ * Update notes: writes [result]'s proposal to its live notes file, the workspace's or, for a step's
+ * staff member, the member's own. Returns the host's reason when it could not.
+ */
 suspend fun AppModel.applyNotes(request: AssistantRequest, result: AssistResult): String? {
     val notes = result.notes ?: return null
     return try {
-        session.applyNotes(request.id, result.version, notes)
+        session.applyNotes(request.id, result.version, notes, result.step)
         appliedNotes = appliedNotes + notesKey(request, result)
         null
     } catch (e: PaneSession.Failure) {
