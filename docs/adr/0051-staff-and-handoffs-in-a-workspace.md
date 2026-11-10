@@ -83,7 +83,7 @@ A request gains `steps[]`; a Result `worker?` and `step?`; `inbox-list`'s `assis
 - **Work detail:** the chain as rows "`lisk-research` → `lisk-delivery` → `lisk-meetings`", each with its delivery, Result and Update notes; a `handoff` waiting for approval shows as the next row, greyed, with Approve and Reject.
 - **Inbox:** `handoff` items with Approve, Reject, Later; the title names both workers.
 - **Today:** a `delegate` row names the worker when the plan picked one.
-- **muxa for tmux:** `a` on a Work row asks for the worker (`Enter` for the lead); the Inbox shows `handoff` rows with `y` / `n`. CLI: `assist WORK --worker NAME`, `assist staff WORKSPACE`, `inbox answer ITEM approve`.
+- **muxa for tmux:** `a` on a Work row asks for the worker (`Enter` for the lead); the Inbox shows `handoff` rows with `a` approve, `r` reject and `l` later, as other items (`y` opens Policies, ADR 0050). CLI: `assist WORK --worker NAME`, `assist staff WORKSPACE`, `inbox answer ITEM approve`.
 
 ## Not decided
 
