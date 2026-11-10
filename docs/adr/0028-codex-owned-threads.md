@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. It answers the open item of ADR 0027 section 2 and the Codex gate of ADR 0024 and 0026. Slices S1 to S7 are built behind `[codex] owned_threads` in `workspaces.toml`, which is off by default. Keep it off until the developer's checklist at the end passes with a real login. Only fakes (`tests/data/codex-fake.py`) and no-login probes of Codex 0.167.0 (`scripts/codex-app-server-probe.sh`, facts 6, 7, 9 and 10) have checked the code. The developer's first real-login run failed at checklist step 2 (fact 8). Revision 1 below changes how the thread is created because of it.
+Proposed. It answers the open item of ADR 0027 section 2 and the Codex gate of ADR 0024 and 0026. Slices S1 to S7 are built behind `[codex] owned_threads` in `workspaces.toml`, which is off by default. Checklist steps 1–5 and 10 passed with a real login on 2026-11-10 (Codex CLI 0.167.0, macOS; see Checklist run); the switch may be turned on per host. Before that run, only fakes (`tests/data/codex-fake.py`) and no-login probes of Codex 0.167.0 (`scripts/codex-app-server-probe.sh`, facts 6, 7, 9 and 10) have checked the code. The developer's first real-login run failed at checklist step 2 (fact 8). Revision 1 below changes how the thread is created because of it.
 
 ## Context
 
@@ -122,6 +122,22 @@ All seven slices are built.
 - New threads default to paginated history. Option C may request `legacy` so the rollout reader keeps working. Manual sessions may already use paginated history; the Codex Chat reader needs a separate check for that.
 - Nothing copies authentication, adds credentials or edits the user's Codex config.
 
+## Checklist run (2026-11-10)
+
+The developer ran the checklist with a real login, Codex CLI 0.167.0, macOS, through `muxa-bridge codex-rpc` built at 59c9f3f/e41bc56.
+
+| Step | Result |
+|---|---|
+| 1 | Pass. `thread/start` and `thread/name/set` on a held connection: `idle`, `legacy`, rollout first line `session_meta`; a read on a new connection said `idle`. |
+| 2 | Pass. `codex resume <id>` opened the empty thread with the name in its footer; the pane stayed alive. The thread stayed loaded after the hold ended (step 3 later ran on it). |
+| 3 | Pass. `turn/start` gave `"inProgress"`; the read said `active`, then `idle`; the rollout had one `task_complete`. The first `capture-pane` right after showed only the prompt line. A later check (a new empty thread in a viewer, two turns by id) showed both turns in the viewer. It was redraw timing, not a missing subscription. |
+| 4 | Pass. `{"activeFlags":["waitingOnApproval"],"type":"active"}`. A re-opened viewer showed the full history and the approval prompt (Yes / don't ask again / No), so the user can answer in the pane. |
+| 5 | Pass. After `/new` in the TUI, a turn by id landed in the original thread (`task_complete` count grew). `/new` aborted the turn that waited on approval (rollout `turn_aborted`, TUI "Conversation interrupted"). 90 s later the thread still read `idle`, not `notLoaded`: the viewer that ran `/new` still held it. |
+| 6–9 | Not run. |
+| 10 | Pass after the command fixes below. A Codex Routine through `muxa-bridge daemon run` with `[codex] owned_threads = true`: the record had `codexThread`; the pane ran `codex resume <id>` and stayed alive. The run waited on an approval because the workspace's Codex sandbox was read-only (the agent asked to write `.muxa/routine/output.json` and `.muxa/TASK.md`). Inbox showed "run of w/check waits for an answer in session …". After the approval in the pane, the thread went `idle`, the briefing "codex check" was published and the daemon closed the session. The daemon log held 0 occurrences of the briefing text. |
+
+**Sandbox for owned runs.** A workspace whose Codex config is read-only stops every unattended run on an approval. Set `sandbox_mode = "workspace-write"` in that Codex home's `config.toml`, with an approval policy that does not ask for writes inside the run folder.
+
 ## Developer checklist
 
 Run it with your real Codex login, before you set `owned_threads = true` on a host you use. Use a scratch repo, a disposable prompt and a throwaway tmux server; never the default server. Record only the Codex version, thread ids, statuses and pass or fail.
@@ -174,7 +190,18 @@ mkdir -p "$CHECK/repo" "$CHECK/root/.muxa" "$CHECK/state" && cd "$CHECK/repo"
 
 Then muxa end to end, on the same throwaway server:
 
-10. Write `$CHECK/workspaces.toml` with `[codex]` `owned_threads = true`, one workspace `w` with `root = "$CHECK/root"`, `[workspace.agent] command = "codex"`, `[workspace.routines] enabled = true`, and a Routine in `$CHECK/root/.muxa/routines.toml` as in `docs/examples/routines.toml`. Run `"$MUXA_BRIDGE" daemon run --socket muxa-test-codex --daemon-dir /tmp/mxd-codex --state-dir "$CHECK/state" --workspaces "$CHECK/workspaces.toml"`, and in another shell `muxa-cli --bridge "$MUXA_BRIDGE --socket muxa-test-codex --daemon-dir /tmp/mxd-codex --state-dir $CHECK/state --workspaces $CHECK/workspaces.toml" routine run w/<name>`. Expected: the run's record in `$CHECK/state` has `codexThread` with `run` 1; its pane runs `codex resume <that id>`; the start prompt arrives as one turn in that thread; the Routine publishes; `/tmp/mxd-codex/daemon.log` holds ids and no prompt or instruction text.
+10. Write `$CHECK/workspaces.toml` with `[codex]` `owned_threads = true`, one workspace `w` with `root = "$CHECK/root"`, `[workspace.agent] command = "codex"`, `[workspace.routines] enabled = true`, and a Routine in `$CHECK/root/.muxa/routines.toml` as in `docs/examples/routines.toml`. A Routine with `schedule` needs `timezone`. Give that Codex home `sandbox_mode = "workspace-write"` (Checklist run), or the run stops on an approval. The bridge needs a running tmux server on its socket, and `daemon run` takes its flags after `daemon run`. zsh does not split `$VAR`, so the client's bridge command is an array:
+
+   ```sh
+   tmux -L muxa-test-codex -f /dev/null new-session -d -s base   # skip if step 2's server still runs
+   "$MUXA_BRIDGE" daemon run --socket muxa-test-codex --daemon-dir /tmp/mxd-codex \
+     --state-dir "$CHECK/state" --workspaces "$CHECK/workspaces.toml"
+   # in another shell, after the setup exports:
+   BRIDGE=("$MUXA_BRIDGE" --socket muxa-test-codex --daemon-dir /tmp/mxd-codex --state-dir "$CHECK/state" --workspaces "$CHECK/workspaces.toml")
+   muxa-cli --bridge "${BRIDGE[*]}" routine run w/<name>
+   ```
+
+   Expected: the run's record in `$CHECK/state` has `codexThread` with `run` 1; its pane runs `codex resume <that id>`; the start prompt arrives as one turn in that thread; the Routine publishes; `/tmp/mxd-codex/daemon.log` holds ids and no prompt or instruction text.
 
 If 1, 2, 3 or 5 fails, keep the switch off.
 

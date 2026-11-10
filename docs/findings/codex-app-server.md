@@ -39,6 +39,10 @@ ADR 0028's order (revision 1) relies on these. "Empty" means no turn and no roll
 | After `thread/name/set`, `codex resume <id>` opens the empty thread and shows the name. While the TUI runs, the thread reads `idle` (checked at 5, 30, 60 and 90 s), and `turn/start` on a new connection runs in it. The TUI shows the turn. | probe+TUI |
 | A saved thread (it has a rollout) that nothing holds reads `notLoaded`, not an error. `turn/start` on it gets -32600 `thread not found: <id>`. `thread/resume` loads it again, and `turn/start` then works. | probe |
 | The first `turn/start` writes the rollout within 1 s, before any model answer. `codex resume` then opens the thread. A turn whose model request fails stays `active` and keeps the thread loaded. | probe+TUI |
+| A turn sent by id shows in a viewer that holds the thread. A `capture-pane` right after the turn may show only the prompt line; a later capture shows the turns. It is redraw timing. | *login* |
+| A viewer opened again on a thread shows its full history, and a pending approval prompt (Yes / don't ask again / No) that can be answered in the pane. | *login* |
+| `/new` in the TUI aborts the thread's turn that waits on approval: the rollout gets `turn_aborted`, the TUI shows "Conversation interrupted". A turn by id then still lands in the original thread. | *login* |
+| A viewer that ran `/new` still holds the original thread: it read `idle` 90 s later, not `notLoaded`. | *login* |
 | A held connection receives `thread/started`, `thread/status/changed`, `turn/started`, `item/started`, `item/completed`, `warning` and `error` notifications for its thread. | probe |
 
 `muxa-bridge codex-rpc --hold SECONDS` keeps a connection open after the answer and prints each notification's method and ids, so the *login* rows can be re-checked by hand (ADR 0028, developer checklist). `scripts/codex-app-server-probe.sh` re-checks `thread/resume` and `thread/name/set`. With `MUXA_PROBE_TUI=1` it also runs `codex resume` on a throwaway tmux server, and with `MUXA_PROBE_UNLOAD=1` it re-checks the unload rows (about 3 minutes).
