@@ -15,6 +15,7 @@ State lives under $CODEX_HOME/fake/, so every connection sees the same threads:
 Steering files there:
   status-<id>        overrides the status: idle, active, approval, notLoaded,
                      systemError, missing (no status field) or bogus
+  status             the same, for every thread without its own file
   drop-turn          turn/start is recorded, then the connection drops unanswered
   silent-turn        turn/start is recorded and never answered
   refuse-turn        turn/start gets a JSON-RPC error
@@ -65,11 +66,14 @@ def save(thread):
 
 
 def status_of(thread):
-    try:
-        with open(path("status-" + thread["id"])) as f:
-            word = f.read().strip()
-    except OSError:
-        word = thread["status"]
+    word = thread["status"]
+    for name in ("status-" + thread["id"], "status"):
+        try:
+            with open(path(name)) as f:
+                word = f.read().strip()
+            break
+        except OSError:
+            continue
     if word == "approval":
         return {"type": "active", "activeFlags": ["waitingOnApproval"]}
     if word == "active":
