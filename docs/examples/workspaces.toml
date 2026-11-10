@@ -118,6 +118,13 @@
 #   description       what it does, at most 1 KiB; required for a staff
 #                     member or a writer, and shown to you as its job
 #
+# [codex]  optional, at the top level (ADR 0028).
+#   owned_threads  true lets a Codex worker or command run Routines and
+#                  assistant runs: muxa creates the Codex thread and sends
+#                  prompts to it by id (default false). Turn it on only after
+#                  the developer checklist in docs/adr/0028 passes. The writer
+#                  stays Claude Code.
+#
 # Unknown keys are refused, so a typo fails loudly instead of being ignored.
 
 # ~/work/company holds api/, web/ and clients/portal/: all three are its repos.

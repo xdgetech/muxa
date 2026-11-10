@@ -93,7 +93,7 @@ A Routine (ADR 0026, `src/routines/`) is a `[[routine]]` in a workspace's `<root
 - **After it publishes** (ADR 0037). The daemon closes the run's session on its next tick. The folder stays until the Routine's next run publishes, then goes. A failed run keeps both.
 - **How the agent writes output.** It writes `.muxa/routine/output.json` (the schema is in `protocol/PROTOCOL.md`, "Routine output"), then ends its turn. The state the last successful run committed is in `.muxa/routine/state.json`. The folder is the run's private stage; nothing outside the run reads it before the check.
 - **The check.** The Loop's check for this kind runs in the daemon's process, not as a shell command (`routines/check.rs`). It validates kinds, the item limit, sizes and links. On a pass, one locked write of `<state dir>/routines/r-<hash>.json` stores the new entries, skips keys the Routine already stored, commits the state and closes the run; the record becomes `done`. On a fail, the reasons go to `.muxa/checks/<attempt>.log`, and the loop types: `The Routine output did not pass the check. The reasons are in .muxa/checks/<attempt>.log. Fix .muxa/routine/output.json, then end your turn.` After 3 fails, the run is dropped and the Routine shows the failure. When the agent does not become idle within 30 s, for example on a folder trust dialog, the start prompt is not typed: the run fails the same way, keeps its session, and the agent never gets the fail prompt.
-- **What needs an adapter.** The same as the Task Loop: a finished turn with its `since`. A Routine has no person to type the start prompt, so it needs automatic delivery. Codex does not have it yet (ADR 0028); a Routine whose worker or default command is Codex is refused before it starts.
+- **What needs an adapter.** The same as the Task Loop: a finished turn with its `since`. A Routine has no person to type the start prompt, so it needs automatic delivery. Codex has it only on a thread muxa owns (ADR 0028, "Owned Codex threads" below); without `[codex] owned_threads = true`, a Routine whose worker or default command is Codex is refused before it starts.
 - **Approval.** `update-inbox approve` creates one Task through `create-task`'s path. Its goal holds the proposal unchanged, its hash, and a last line `muxa-proposal: <entry> <hash>`. A second approval, also after a crash, finds that Task by the line instead of making another.
 - **Logs.** Ids, counts and outcomes only. Never instructions, titles, bodies, links or state.
 
@@ -104,7 +104,7 @@ An assistant request (ADR 0048, `src/assistant/`) asks one workspace's agent, it
 - **Configuration.** In `workspaces.toml` (`docs/examples/workspaces.toml`):
   - `[assistant]` at the top level is the host's switch: `enabled`, and `max_runs_per_day` across all workspaces (default 20). Without it, no workspace takes requests.
   - `[workspace.assistant]` allows requests to one workspace: `delegate = true`, an optional `worker`, `max_open_runs` (default 1), `max_runs_per_day` (default 10) and `run_timeout` (default `"30m"`). Without it, the workspace keeps Captures and Work items but takes no requests.
-- **Claude Code only.** The delegate is `[workspace.assistant].worker`, else the workspace's agent. A request needs automatic delivery and a finished turn. A Codex delegate (ADR 0028), or a command with no muxa adapter, is refused before any run folder exists, and the message says to set a Claude Code worker.
+- **Claude Code, or Codex on owned threads.** The delegate is `[workspace.assistant].worker`, else the workspace's agent. A request needs automatic delivery and a finished turn. A Codex delegate or staff member runs only with `[codex] owned_threads = true` (ADR 0028); without it, and for a command with no muxa adapter, the request is refused before any run folder exists, and the message names the fix. The writer (ADR 0052) is always a Claude Code worker.
 - **Budgets.** Before a run starts: the workspace's open runs stay within `max_open_runs`, and the runs started today within both `max_runs_per_day`. A refusal is `conflict` with the limit and when it resets.
 - **The daemon.** Requests run only in the daemon. Without it, `request-assistant` is `unsupported` and clients say automatic processing is off. Captures and lists work in the bridge alone.
 - **Where it runs.** A new directory `<root>/assistant/<scope>-<request>-v<version>-<id>` in the workspace, and a session of the same name tagged `@muxa_task`. Neither name holds Capture text. The goal ends with `muxa-request: <request> v<version>`; after a crash, one request version still makes one run.
@@ -299,6 +299,19 @@ Checked with Codex CLI 0.160.0.
 - Limits:
   - Two Codex instances in one directory are not told apart. Both panes follow the newest rollout.
   - A resumed conversation from an older day directory is not found.
+  - Neither limit applies to an owned thread, below.
+
+### Owned Codex threads (ADR 0028)
+
+With `[codex] owned_threads = true` in `workspaces.toml` (off by default), a Routine run or an assistant run whose agent is Codex runs on a thread muxa creates. Keep it off until the developer checklist in ADR 0028 passes with a real login.
+
+- **App Server** (`agents/codex/app_server.rs`). One JSON-RPC connection per call: `codex app-server proxy` with the run's `CODEX_HOME`, `initialize` with `experimentalApi`, then `thread/start`, `thread/read` or `turn/start`. Every error is unknown. The server's error message is not logged: it may echo what was sent.
+- **Launch** (`task_records/owned.rs`, `create.rs`). Under the creation claim: `codex app-server daemon start`, `thread/start` in the run folder with `historyMode: "legacy"` and the workspace's agent env, then `codexThread` on the record for the run about to start. Only then does the pane start, with `codex resume <id> <worker args>`. The startup identity is recorded as for a named worker.
+- **Not owned:** `--no-daemon` or `--remote` in the args, or a workspace `command` that is not plain words starting with a `codex` program. Such a run is refused as without the switch.
+- **State** (`agents/codex/owned.rs`). `thread/read` on the stored id: `idle`, `active` (running), `active` with `waitingOnApproval` or `waitingOnUserInput` (waiting); `notLoaded`, `systemError` and errors are unknown. The time is the rollout's last turn event, when it agrees. `process_bound` is true only here; the pane's process must still be the recorded one.
+- **Chat** reads the rollout at the stored path, by id. It is empty until the first turn writes it.
+- **Delivery.** The start prompt and the Loop's fail prompt go by `turn/start`, never as keys: a fresh `idle` read under the claim, then `delivering`, then the turn. An error answer ends the start wait with its note, or stops the Loop. No answer is uncertain and is never sent again.
+- **Not yet:** `restart-agent` on an owned run gets no thread, so it reads unknown and gets the Terminal fallback. A person may still type into the TUI; that is the person's input, not muxa's.
 
 ## Recovering an interrupted restart
 

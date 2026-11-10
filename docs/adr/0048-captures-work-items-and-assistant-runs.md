@@ -61,7 +61,7 @@ A request's delivery state comes from the run record and the adapter on every li
 
 ### 7. Agents
 
-A request needs automatic delivery and a finished turn, as a Routine does. The delegate is `[workspace.assistant].worker`, else the workspace's default agent. A Codex agent (ADR 0028) and a Worker whose command has no adapter are refused before any run folder exists, with a message that names the reason.
+A request needs automatic delivery and a finished turn, as a Routine does. The delegate is `[workspace.assistant].worker`, else the workspace's default agent. A Codex agent (ADR 0028) and a Worker whose command has no adapter are refused before any run folder exists, with a message that names the reason. ADR 0028 allows Codex with `[codex] owned_threads = true`.
 
 ### 8. Budgets
 

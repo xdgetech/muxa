@@ -78,7 +78,7 @@ A Routine can write directly, without a proposal, only when its output policy ex
 - Adding a new source is configuration of an agent and its native tools, not muxa code.
 - One record type, one Loop engine and one recovery model serve Tasks and Routine runs.
 - Routine runs do not fill Tasks or Sessions. The user sees only decisions in Inbox and the Tasks they approve.
-- A Routine run needs automatic prompt delivery. It depends on the Workers release for named workers. A Codex agent can run a Routine only after Codex session ownership is solved (`docs/findings/workers-w0.md`), because a Routine has no person to type the fallback prompt.
+- A Routine run needs automatic prompt delivery. It depends on the Workers release for named workers. A Codex agent can run a Routine only after Codex session ownership is solved (`docs/findings/workers-w0.md`), because a Routine has no person to type the fallback prompt. ADR 0028 provides it behind `[codex] owned_threads`.
 - An agent can deviate from an approved proposal. Native tool permissions limit the damage; muxa does not verify the external result.
 - Direct writes skip the user's review. They are opt-in per Routine.
 - Renaming a Routine in `workspaces.toml` starts a new history. That is accepted for configuration a single developer edits.
