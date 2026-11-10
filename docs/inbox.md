@@ -190,6 +190,8 @@ With `work:14`, a Task that ends with text under "For the workspace" in its `TAS
 
 A client below `work:14` shows a `memory` item as an unknown kind, without Approve.
 
+muxa for tmux (`prefix + T`): `🧠` rows show the Task and the text whole in the preview. `a` approves after the workspace is shown once more and confirmed with `y`. `r` rejects, `l` moves it down. `muxa-cli inbox show ITEM` prints the text, and `muxa-cli memory WORKSPACE` prints the live file.
+
 ## Tasks and Sessions modes
 
 - Tasks mode lists Routines first, then every Task grouped by what it needs: Needs attention, Ready for review, Running, No agent, Closed (`protocol/fixtures/inbox/groups.jsonl`). Closed lists a Task for a day after its last change; an item can still open an older one. A Task with a session opens its pane, as a Sessions row does; its detail is Task Info in the pane's More menu (ADR 0044). A Task without a session, or a closed one, shows its detail. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.

@@ -192,7 +192,8 @@ pub async fn answer(
     if protects && !has_delete(&conn) {
         return Err(NEEDS_DELETE.into());
     }
-    // A write is approved only with the hash of the text the user saw (ADR 0052 §2).
+    // A write or a memory item is approved only with the hash of the text the
+    // user saw (ADR 0052 §2, ADR 0053 §3).
     let hash = crate::writes::approve_hash(&mut conn, item, &answer, as_json).await?;
     // Ask Agent may start the workspace's Ask session and wait for its agent.
     let launches = matches!(

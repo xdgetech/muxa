@@ -14,6 +14,8 @@
 # items take Approve and Reject as the other proposals do.
 # With level 13 (ADR 0052), write items show their target and content whole;
 # Approve asks once more with the target, and Reject takes a reason.
+# With level 14 (ADR 0053), memory items show a Task's text for the workspace
+# memory whole; Approve asks once more with the workspace.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
@@ -80,7 +82,7 @@ EOF
 JQ_DEFS='
   def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰",
     "sort": "🗂", "delegate": "🤝", "hypothesis": "💡", "handoff": "👥",
-    "write": "📤"}[.kind] // "•";
+    "write": "📤", "memory": "🧠"}[.kind] // "•";
   def since($t): ($now - $t) as $s |
     if $s < 60 then "\($s)s" elif $s < 3600 then "\($s / 60 | floor)m"
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
@@ -318,6 +320,10 @@ view() {
       "From: \(.worker // "the assistant" | plain) · v\(.version)\(if .version < $current then " · from an older result" else "" end)",
       "", "Content, written exactly as below:", (.content | plain), "",
       "Approve starts one Task of the writer with this text; muxa does not check the result.", ""),
+    (.memory // empty |
+      "From: Task \(.task)",
+      "", "Added to the workspace memory exactly as below:", (.text | plain), "",
+      "Approve appends it to .muxa/WORKSPACE.md under the Task'"'"'s title; every later run reads it.", ""),
     (.hypothesis // empty |
       "Scope: \(.scope | plain) · confidence \(.confidence)",
       "Based on \((.evidence // []) | length) correction\(if ((.evidence // []) | length) == 1 then "" else "s" end): \((.evidence // []) | join(" "))",
@@ -437,6 +443,16 @@ confirm_write() {
   [ "$yes" = y ]
 }
 
+# Asks once more before a Task's text joins the workspace memory (ADR 0053 §7).
+confirm_memory() {
+  local yes
+  clear
+  printf 'Add to the memory of %s?\n\nEvery later Task and staff run of it reads the text exactly as the item shows it.\n\n' \
+    "$(printf '%s' "$1" | tr -d '\000-\037\177')"
+  IFS= read -r -n 1 -p 'y approve, n cancel > ' yes || return 1
+  [ "$yes" = y ]
+}
+
 # Asks for an optional reason. Prints it; Enter prints nothing.
 ask_reason() {
   local text
@@ -503,6 +519,12 @@ EOF
         confirm_write "$text" || return 0
         # The host approves only the write whose hash this view showed (ADR 0052 §2).
         set -- "$@" --hash "$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .write.hash' "$json")"
+      fi
+      text="$(jq -r --arg item "$id" '.items[] | select(.id == $item and .kind == "memory") | .workspace' "$json")"
+      if [ -n "$text" ]; then
+        confirm_memory "$text" || return 0
+        # The host appends only the text whose hash this view showed (ADR 0053 §3).
+        set -- "$@" --hash "$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .memory.hash' "$json")"
       fi
       ;;
     reject)

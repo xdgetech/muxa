@@ -252,6 +252,14 @@ apps show, with a goal and a status.
     with an optional reason, `l` is Later. `muxa-cli inbox show ITEM` prints
     the same, and `muxa-cli assist writes WORKSPACE` lists the writer and
     each write with its state.
+  - With `work` level 14 (ADR 0053), `🧠` items are a closed Task's proposal
+    for the workspace memory: what its agent wrote under "For the workspace"
+    in its `TASK.md`. The item shows the Task and the text whole, as plain
+    text. `a` asks once more with the workspace, and `y` appends the text to
+    `<root>/.muxa/WORKSPACE.md` under the Task's title; it sends the hash of
+    the text it showed. `r` rejects it, `l` is Later. A text over 4 KiB has no
+    approve: copy what you need by hand. `muxa-cli inbox show ITEM` prints
+    the same, and `muxa-cli memory WORKSPACE` prints the live file.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

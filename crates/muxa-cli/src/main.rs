@@ -5,6 +5,7 @@ mod assist;
 mod conn;
 mod inbox;
 mod items;
+mod memory;
 mod plan;
 mod policy;
 mod routines;
@@ -220,6 +221,11 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  the workspace's writer, and each write its Results proposed:
                  its item, action, target, and whether it is proposed,
                  rejected or became a Task (work level 13)
+  memory WORKSPACE
+                 the workspace's memory mode, when .muxa/WORKSPACE.md
+                 changed, and the file itself, read on this machine: run it
+                 on the host (work level 14). Approve a Task's proposal with
+                 inbox answer ITEM approve, after its text is shown whole
   assist cancel REQUEST
                  cancels the request's current version and closes its run;
                  on a chain that waits on a hand-off, it ends the chain
@@ -372,6 +378,10 @@ enum Cmd {
         json: bool,
     },
     Writes {
+        workspace: String,
+        json: bool,
+    },
+    Memory {
         workspace: String,
         json: bool,
     },
@@ -730,6 +740,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         [w] if w == "routines" => Cmd::Routines { json },
         [w, r, name] if w == "routine" && r == "run" => Cmd::RunRoutine {
             target: name.clone(),
+            json,
+        },
+        [w, workspace] if w == "memory" => Cmd::Memory {
+            workspace: workspace.clone(),
             json,
         },
         [w] if w == "inbox" => Cmd::Inbox { all, json },
@@ -1096,6 +1110,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::CancelRequest { request, json } => assist::cancel(&mut conn, &request, json).await,
         Cmd::Staff { workspace, json } => staff::list(&mut conn, &workspace, json).await,
         Cmd::Writes { workspace, json } => writes::list(&mut conn, &workspace, json).await,
+        Cmd::Memory { workspace, json } => memory::show(&mut conn, &workspace, json).await,
         Cmd::ShowItem { item, json } => writes::show(conn, &item, json).await,
         Cmd::ShowResult { target, json } => assist::show(&mut conn, &target, json).await,
         Cmd::Notes {

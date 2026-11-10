@@ -521,7 +521,7 @@ async fn print_record(
     Ok(String::new())
 }
 
-async fn fetch(
+pub(crate) async fn fetch(
     conn: &mut Conn,
 ) -> Result<(Vec<WorkspaceInfo>, Vec<TaskRecord>, bool, Vec<WorkerInfo>), String> {
     let messages = conn.call(|id| Request::ListTasks { id }, WAIT).await?;

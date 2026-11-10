@@ -60,6 +60,7 @@ print() {
   row "P" "on a Work item: pin it first, or unpin it"
   row "o" "on a Today row: go to its Work item or Inbox item"
   row "a" "on a write item: approve, after the target once more (y)"
+  row "a" "on a memory item: approve, after the workspace once more (y)"
   row "t" "ask the overall assistant for a plan now"
   row "K J" "on a Today row: move it up or down"
   row "x" "on a Today row: Not today, with an optional reason"

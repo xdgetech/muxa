@@ -23,7 +23,7 @@ pub fn has_writes(conn: &Conn) -> bool {
 }
 
 /// Every Inbox item, for `inbox show` and the check before an approve.
-async fn items(conn: &mut Conn) -> Result<Vec<InboxItem>, String> {
+pub(crate) async fn items(conn: &mut Conn) -> Result<Vec<InboxItem>, String> {
     if !crate::items::has_items(conn) {
         return Err("this host has no Inbox items; update muxa-bridge on the host".into());
     }
@@ -38,8 +38,8 @@ async fn items(conn: &mut Conn) -> Result<Vec<InboxItem>, String> {
 }
 
 /// The hash an `approve` sends (ADR 0052 §2): `--hash` as given, or, for a
-/// `write` item, its hash once its write is printed whole, so the user saw
-/// the text it approves. On a host below level 13 nothing is sent.
+/// `write` or `memory` item (ADR 0053), its hash once its text is printed whole, so the user saw
+/// the text it approves. On a host below level 13, or 14 for memory, nothing is sent.
 pub async fn approve_hash(
     conn: &mut Conn,
     item: &str,
@@ -57,6 +57,14 @@ pub async fn approve_hash(
         };
     }
     let found = items(conn).await?;
+    // A memory item's text, shown the same way (ADR 0053 §3).
+    if let Some(m) = found
+        .iter()
+        .find(|i| i.id == item && i.kind == ItemKind::Memory)
+        .and_then(|i| i.memory.as_ref())
+    {
+        return crate::memory::shown_hash(conn, m, as_json).map(Some);
+    }
     let Some(w) = found
         .iter()
         .find(|i| i.id == item && i.kind == ItemKind::Write)
@@ -95,6 +103,9 @@ fn item_text(i: &InboxItem, now: u64) -> String {
     let mut out = format!("{}\n", crate::items::line(i, now));
     if let Some(s) = &i.summary {
         out.push_str(&format!("{}\n", plain(s)));
+    }
+    if let Some(m) = &i.memory {
+        out.push_str(&crate::memory::memory_text(m));
     }
     if let Some(w) = &i.write {
         out.push_str(&write_text(w));
