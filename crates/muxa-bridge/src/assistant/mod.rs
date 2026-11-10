@@ -13,6 +13,7 @@ pub mod corrections;
 pub mod delivery;
 mod derive;
 pub mod detail;
+pub mod forget;
 pub mod hypotheses;
 pub mod info;
 pub mod memory;
@@ -362,6 +363,12 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 ),
                 Err(e) => (Vec::new(), Some(e)),
             }
+        }
+        Request::Forget { record, .. } => {
+            let config = Arc::clone(&cx.records);
+            let now = crate::records::now();
+            let forgot = blocking(move || forget::forget(&config, &record, now)).await;
+            (Vec::new(), forgot.err())
         }
         _ => (
             Vec::new(),

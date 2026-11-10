@@ -180,6 +180,7 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::AddPolicy { .. }
             | Request::UpdatePolicy { .. }
             | Request::UpdatePlan { .. }
+            | Request::Forget { .. }
     )
 }
 
@@ -337,7 +338,8 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         | Request::PlanNow { .. }
         | Request::AddPolicy { .. }
         | Request::UpdatePolicy { .. }
-        | Request::UpdatePlan { .. }) => crate::assistant::handle(cx, req).await,
+        | Request::UpdatePlan { .. }
+        | Request::Forget { .. }) => crate::assistant::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(

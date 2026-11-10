@@ -700,7 +700,8 @@ impl Worker {
             | Request::ApplyNotes { .. }
             | Request::AddPolicy { .. }
             | Request::UpdatePolicy { .. }
-            | Request::UpdatePlan { .. }) => {
+            | Request::UpdatePlan { .. }
+            | Request::Forget { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -730,14 +731,6 @@ impl Worker {
                     }
                 }
                 return None;
-            }
-            // Later slices of `work` level 10 (ADR 0048); until the host
-            // advertises that level, no client sends these.
-            Request::Forget { .. } => {
-                return Some(Err(error_body(
-                    ErrorCode::Unsupported,
-                    "this host has no forget yet: update muxa-bridge",
-                )));
             }
             Request::Bye { .. } => Ok(()),
         };

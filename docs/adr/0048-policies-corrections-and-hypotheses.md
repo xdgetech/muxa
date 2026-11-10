@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`), C3 (the brief's memory section), C4 (hypotheses and citations in the plan file) and C5 (`hypothesis` items, `confirm` and `reject`) are built; hosts do not advertise level 10 yet.
+Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`), C3 (the brief's memory section), C4 (hypotheses and citations in the plan file), C5 (`hypothesis` items, `confirm` and `reject`) and C6 (`forget`) are built; hosts do not advertise level 10 yet.
 
 ## Context
 
@@ -130,3 +130,4 @@ Logs carry ids, kinds, counts, scopes and states; never policy text, reasons, hy
 - C4: the ids a run's brief carried (policies, `proposed` hypotheses, corrections) and its free slots are kept on the plan record in the state directory (`carried`), written with `inputsAt`. The run folder is the agent's, so it cannot hold them. The check also requires each cited record to be live at check time, so a record forgotten after the brief is refused too.
 - C4: a hypothesis's `text` is one paragraph, so that `confirm` makes a policy of it unchanged. A hypothesis whose normalized text (case, spacing and a closing period aside) repeats an active policy or a `proposed` or `rejected` hypothesis is not stored; the plan still is.
 - C5: `hypothesis` items live in the plan run's item file, keyed `hypothesis:<id>`, made by the daemon's tick from the newest plan's open hypotheses. `confirm` makes the policy first, then retires the hypothesis, then answers the item; a retry finds the policy by its `source`. An `expired` hypothesis is kept 90 days after its end so Forget can still remove it, then the tick removes it.
+- C6: Forget removes a hypothesis's items in every state, answered ones too, since their question carries its text. Forgetting a correction removes the hypotheses it grounds before the correction itself, so a crash between them leaves a correction to forget again, never a guess without its ground.

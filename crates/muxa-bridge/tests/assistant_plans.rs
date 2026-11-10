@@ -5,6 +5,9 @@
 //! budget stops a scheduled plan with a reason, no plan text in the
 //! daemon's log, and the windows that were there do not change. Slice B5:
 //! a delegate proposal to an `auto` workspace is sent once, without review.
+//! ADR 0048 slice C6: a forgotten correction and the hypothesis it grounds
+//! leave the next brief, a plan citing them is refused, and the log never
+//! held them.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -17,8 +20,8 @@ use common::Server;
 use common::daemon::{Conn, Daemon};
 use jiff::{Timestamp, ToSpan, tz::TimeZone};
 use muxa_protocol::{
-    ChangeKind, Delivery, ErrorCode, InboxAction, InboxItem, ItemKind, ItemState, Message, Plan,
-    WorkItem,
+    ChangeKind, Correction, Delivery, ErrorCode, Hypothesis, InboxAction, InboxItem, ItemKind,
+    ItemState, Message, Plan, WorkItem,
 };
 use serde_json::{Value, json};
 
@@ -500,5 +503,161 @@ async fn an_auto_delegate_proposal_is_sent_once_without_review() {
         assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
     }
     assert!(log.contains("delegate proposal approved"), "{log}");
+    daemon.shutdown().await;
+}
+
+/// The newest plan once it differs from `old` and has its answer.
+async fn next_plan(conn: &mut Conn, h: &Host, old: Option<&str>) -> Plan {
+    let listed = until_plans(conn, h, "the next plan", Duration::from_secs(120), |p| {
+        p.first()
+            .is_some_and(|p| Some(p.id.as_str()) != old && p.delivery == Delivery::Resulted)
+    })
+    .await;
+    listed[0].clone()
+}
+
+/// What `inbox-list` says the user told the overall assistant.
+async fn told(conn: &mut Conn) -> (Vec<Correction>, Vec<Hypothesis>, Vec<InboxItem>) {
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    let Some(Message::InboxList {
+        corrections,
+        hypotheses,
+        items,
+        ..
+    }) = listed.first()
+    else {
+        panic!("{listed:?}")
+    };
+    (
+        corrections.clone(),
+        hypotheses.clone(),
+        items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Hypothesis)
+            .cloned()
+            .collect(),
+    )
+}
+
+/// `plan-now`, once the previous run's session is closed and frees its slot.
+async fn plan_now(conn: &mut Conn) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let answer = conn.request(json!({"type": "plan-now"})).await;
+        match answer.last() {
+            Some(Message::Result { error: None, .. }) => return,
+            Some(Message::Result { error: Some(e), .. })
+                if e.code == ErrorCode::Conflict && Instant::now() < deadline =>
+            {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            _ => panic!("{answer:?}"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forgotten_correction_and_its_hypothesis_leave_the_next_plan() {
+    const REASON: &str = "reason-mark-3e8b";
+    const GUESS: &str = "guess-mark-c47a";
+    let h = Host::new("forget", "overall = true\nplans = []");
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let item = pinned_item(&mut conn).await;
+
+    // Plan 1, then the user dismisses its row with a reason.
+    h.steer("first.json", &plan_json(&item.id));
+    plan_now(&mut conn).await;
+    let first = next_plan(&mut conn, &h, None).await;
+    let dismissed = conn
+        .request(
+            json!({"type": "update-plan", "plan": first.id, "rev": first.rev,
+                        "action": "dismiss", "row": item.id,
+                        "text": format!("Not this week. {REASON}")}),
+        )
+        .await;
+    assert!(
+        matches!(dismissed.first(), Some(Message::PlanSaved { .. })),
+        "{dismissed:?}"
+    );
+    let (corrections, _, _) = told(&mut conn).await;
+    assert_eq!(corrections.len(), 1, "{corrections:?}");
+    let x = corrections[0].id.clone();
+
+    // Plan 2 cites it and proposes a guess grounded on it.
+    let mut second = plan_json(&item.id);
+    second["top"][0]["basis"] = json!([{"kind": "correction", "text": "Dismissed.", "source": x}]);
+    second["hypotheses"] = json!([{"text": format!("Short tasks first. {GUESS}"), "scope": "w",
+                                   "evidence": [x], "confidence": "low"}]);
+    h.steer("first.json", &second);
+    plan_now(&mut conn).await;
+    let plan2 = next_plan(&mut conn, &h, Some(&first.id)).await;
+    assert_eq!(plan2.top[0].basis[0].source.as_deref(), Some(x.as_str()));
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let (hypotheses, guessed) = loop {
+        let (_, hypotheses, items) = told(&mut conn).await;
+        if !items.is_empty() {
+            break (hypotheses, items);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no hypothesis item: {hypotheses:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    };
+    assert_eq!(hypotheses.len(), 1, "{hypotheses:?}");
+    let hid = hypotheses[0].id.clone();
+    assert_eq!(guessed[0].hypothesis.as_ref().unwrap().hypothesis, hid);
+
+    // Forget the correction: the guess and its item go with it.
+    let answer = conn.request(json!({"type": "forget", "record": x})).await;
+    assert!(
+        matches!(answer.last(), Some(Message::Result { error: None, .. })),
+        "{answer:?}"
+    );
+    let (corrections, hypotheses, items) = told(&mut conn).await;
+    assert!(corrections.is_empty() && hypotheses.is_empty() && items.is_empty());
+    let (code, _) = error_of(&conn.request(json!({"type": "forget", "record": x})).await);
+    assert_eq!(code, ErrorCode::BadRequest);
+
+    // Plan 3 cites both: refused. The fixed file is stored.
+    let mut stale = plan_json(&item.id);
+    stale["top"][0]["basis"] = json!([
+        {"kind": "correction", "text": "Dismissed.", "source": x},
+        {"kind": "hypothesis", "text": "My guess.", "source": hid}
+    ]);
+    h.steer("first.json", &stale);
+    h.steer("fixed.json", &plan_json(&item.id));
+    plan_now(&mut conn).await;
+    let plan3 = next_plan(&mut conn, &h, Some(&plan2.id)).await;
+    let dir = PathBuf::from(
+        h.record(plan3.run.as_ref().unwrap())["dir"]
+            .as_str()
+            .unwrap(),
+    );
+    let check = std::fs::read_to_string(dir.join(".muxa/checks/1.log")).unwrap();
+    assert!(
+        check.contains("top[0].basis[0].source is not a correction"),
+        "{check}"
+    );
+    assert!(
+        check.contains("top[0].basis[1].source is not a hypothesis"),
+        "{check}"
+    );
+    let brief = std::fs::read_to_string(dir.join(".muxa/assistant/BRIEF.md")).unwrap();
+    for mark in [REASON, GUESS] {
+        assert!(
+            !brief.contains(mark),
+            "the next brief holds {mark}:\n{brief}"
+        );
+        assert!(!check.contains(mark), "the check log holds {mark}");
+    }
+    assert!(!brief.contains(&x) && !brief.contains(&hid), "{brief}");
+
+    let log = daemon.log();
+    for mark in [REASON, GUESS] {
+        assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
+    }
+    assert!(log.contains("correction forgotten"), "{log}");
     daemon.shutdown().await;
 }
