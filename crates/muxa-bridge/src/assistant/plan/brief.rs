@@ -1,4 +1,4 @@
-//! The overall run's brief on disk (ADR 0047 §3, §5). It is longer than a
+//! The overall run's brief on disk (ADR 0047 §3, §5, ADR 0048 §4). It is longer than a
 //! goal may be, so the host writes it to `.muxa/assistant/BRIEF.md` in the
 //! run folder before the agent starts, and the goal points to it. The host
 //! reads the inputs then, and stamps `inputsAt` and `workspaces` on the plan.
@@ -7,11 +7,14 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
-use muxa_protocol::{Capture, Delivery, Plan};
+use muxa_protocol::{Capture, Delivery, Hypothesis, Plan};
 
+use crate::assistant::corrections;
+use crate::assistant::memory::{self, Memory, Records};
 use crate::assistant::overall_brief::{OverallBrief, marker};
 use crate::assistant::result::STAGE_DIR;
 use crate::assistant::share::{Input, shared};
+use crate::records::Workspaces;
 use crate::routines::store::StateError;
 use crate::task_records::Config;
 
@@ -59,10 +62,12 @@ pub fn write(config: &Config, plan: &str, dir: &Path) -> Result<(), String> {
         since,
     };
     let part = shared(&workspaces, &input);
+    let told = memory(config, &workspaces, at)?;
     let text = OverallBrief {
         plan: plan.to_owned(),
         minutes: this.minutes,
         shared: part.clone(),
+        memory: told.text,
     }
     .render();
     let path = dir.join(BRIEF);
@@ -86,9 +91,30 @@ pub fn write(config: &Config, plan: &str, dir: &Path) -> Result<(), String> {
         bytes = text.len(),
         workspaces = part.workspaces.len(),
         left_out = part.left_out,
+        policies = told.held[0],
+        hypotheses = told.held[1] + told.held[2],
+        corrections = told.held[3],
+        memory_left_out = told.left_out.iter().sum::<usize>(),
         "overall brief written"
     );
     Ok(())
+}
+
+/// Blocking. "What the user told you", from the records live at `now`.
+fn memory(config: &Config, workspaces: &Workspaces, now: u64) -> Result<Memory, String> {
+    let policies = crate::assistant::policies::list(config, now).map_err(|e| e.message)?;
+    let hypotheses = crate::assistant::shelf::<Hypothesis>(config)
+        .map_err(|e| e.message)?
+        .all()
+        .map_err(|e| e.to_string())?;
+    let corrections = corrections::live(config, now).map_err(|e| e.message)?;
+    let records = Records {
+        policies: &policies,
+        hypotheses: &hypotheses,
+        corrections: &corrections,
+        now,
+    };
+    Ok(memory::memory(workspaces, &records))
 }
 
 /// The newest plan older than `plan` that has an answer.
@@ -99,3 +125,7 @@ fn previous<'a>(newest_first: &'a [Plan], plan: &str) -> Option<&'a Plan> {
         .skip(1)
         .find(|p| p.delivery == Delivery::Resulted)
 }
+
+#[cfg(test)]
+#[path = "brief_tests.rs"]
+mod tests;

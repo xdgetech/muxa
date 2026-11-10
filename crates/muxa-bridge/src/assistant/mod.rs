@@ -14,6 +14,7 @@ pub mod delivery;
 mod derive;
 pub mod detail;
 pub mod info;
+pub mod memory;
 pub mod notes;
 pub mod overall_brief;
 pub mod plan;

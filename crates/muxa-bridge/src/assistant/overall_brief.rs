@@ -1,5 +1,6 @@
-//! The overall assistant's brief (ADR 0047 §3–§5): what the workspaces
-//! share, its own notes, and the plan file's schema and rules. Only the host
+//! The overall assistant's brief (ADR 0047 §3–§5, ADR 0048 §4): what the
+//! workspaces share, what the user told it, its own notes, and the plan
+//! file's schema and rules. Only the host
 //! builds it. It is longer than a Task's goal may be, so the run reads it
 //! from a file in its folder.
 use super::share::Shared;
@@ -12,15 +13,19 @@ pub struct OverallBrief {
     /// The time the user has, from `plan-now`.
     pub minutes: Option<u32>,
     pub shared: Shared,
+    /// "What the user told you": policies, hypotheses and corrections.
+    pub memory: String,
 }
 
 impl OverallBrief {
-    /// The shared part, the notes, then the plan file; the marker is the last line.
+    /// The shared part, what the user told it, the notes, then the plan
+    /// file; the marker is the last line.
     pub fn render(&self) -> String {
         format!(
-            "{head}{shared}{notes}{plan}{marker}\n",
+            "{head}{shared}{memory}{notes}{plan}{marker}\n",
             head = self.head(),
             shared = self.shared.text,
+            memory = self.memory,
             notes = NOTES,
             plan = self.plan_file(),
             marker = marker(&self.plan),
@@ -115,6 +120,7 @@ mod tests {
                 workspaces: vec!["Sum".into()],
                 left_out: 0,
             },
+            memory: "## What the user told you\n\nmemory-part\n\n".into(),
         }
     }
 
@@ -123,7 +129,8 @@ mod tests {
         let text = brief(Some(45)).render();
         let at = |needle: &str| text.find(needle).unwrap_or_else(|| panic!("{needle}"));
         assert!(at("You are the user's overall assistant") < at("shared-part"));
-        assert!(at("shared-part") < at("## Your notes"));
+        assert!(at("shared-part") < at("memory-part"));
+        assert!(at("memory-part") < at("## Your notes"));
         assert!(at("## Your notes") < at("## Plan file"));
         assert!(text.contains("about 45 minutes"));
         assert!(text.contains("\"plan\": \"p-0a1b2c3d\", exactly"));

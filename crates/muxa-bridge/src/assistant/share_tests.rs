@@ -321,6 +321,7 @@ fn no_sentinel_and_no_unshared_name_reaches_the_text() {
         plan: "p-0a1b2c3d".into(),
         minutes: None,
         shared: s.clone(),
+        memory: String::new(),
     }
     .render();
     for mark in [
