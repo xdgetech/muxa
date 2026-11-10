@@ -241,17 +241,27 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
     /// Its main checkouts, absolute and sorted: the repos under its root and
     /// those the config lists.
     public var repos: [String]
+    /// What a Task's end does with its "For the workspace" (`work` level 14, ADR 0053); nil
+    /// from older hosts.
+    public var memory: MemoryMode?
+    /// Epoch seconds of the last change to `.muxa/WORKSPACE.md`; nil when it does not exist.
+    public var memoryAt: UInt64?
 
     public var id: String { name }
 
-    public init(name: String, root: String? = nil, checks: WorkspaceChecks? = nil, repos: [String] = []) {
+    public init(
+        name: String, root: String? = nil, checks: WorkspaceChecks? = nil, repos: [String] = [],
+        memory: MemoryMode? = nil, memoryAt: UInt64? = nil
+    ) {
         self.name = name
         self.root = root
         self.checks = checks
         self.repos = repos
+        self.memory = memory
+        self.memoryAt = memoryAt
     }
 
-    private enum Key: String, CodingKey { case name, root, checks, repos }
+    private enum Key: String, CodingKey { case name, root, checks, repos, memory, memoryAt }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -259,6 +269,8 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
         root = try c.decodeIfPresent(String.self, forKey: .root)
         checks = try c.decodeIfPresent(WorkspaceChecks.self, forKey: .checks)
         repos = try c.decodeIfPresent([String].self, forKey: .repos) ?? []
+        memory = try c.decodeIfPresent(MemoryMode.self, forKey: .memory)
+        memoryAt = try c.decodeIfPresent(UInt64.self, forKey: .memoryAt)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -267,6 +279,8 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
         try c.encodeIfPresent(root, forKey: .root)
         try c.encodeIfPresent(checks, forKey: .checks)
         if !repos.isEmpty { try c.encode(repos, forKey: .repos) }
+        try c.encodeIfPresent(memory, forKey: .memory)
+        try c.encodeIfPresent(memoryAt, forKey: .memoryAt)
     }
 }
 

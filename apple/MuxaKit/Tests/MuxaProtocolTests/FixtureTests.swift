@@ -174,10 +174,10 @@ struct FixtureTests {
 
     @Test func itemContractRoundTrips() throws {
         let requests = try Self.lines("items/requests.jsonl")
-        #expect(requests.count == 17)
+        #expect(requests.count == 23)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("items/messages.jsonl")
-        #expect(messages.count == 5)
+        #expect(messages.count == 14)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -547,6 +547,66 @@ struct FixtureTests {
         guard case .inboxList(_, _, _, _, _, _, _, let assistant?, _, _, _) = try Wire.decodeMessage(Data(newer.utf8))
         else { Issue.record("expected inbox-list"); return }
         #expect(assistant.delegates[0].writes == .other("auto"))
+    }
+
+    /// ADR 0053: `memory` items, approve with the shown hash, and a workspace's `memory`
+    /// mode, from line 6 of `items/messages.jsonl`.
+    @Test func memoryContractRoundTrips() throws {
+        let requests = try Self.lines("items/requests.jsonl").map(Wire.decodeRequest)
+        let messages = try Self.lines("items/messages.jsonl").map(Wire.decodeMessage)
+        guard case .hello(_, _, _, let capabilities) = messages[5] else { Issue.record("expected hello"); return }
+        #expect(workLevel(capabilities) == workMemory)
+        guard case .taskList(let listing) = messages[6] else { Issue.record("expected task-list"); return }
+        #expect(listing.workspaces.map(\.memory) == [.review, .auto, .off])
+        #expect(listing.workspaces.map(\.memoryAt) == [1_762_790_000, nil, nil])
+        guard case .inboxList(_, _, let items, _, _, _, _, _, _, _, _) = messages[7] else {
+            Issue.record("expected inbox-list"); return
+        }
+        for item in items {
+            #expect(item.kind == .memory && item.state == .open && item.task == item.memory?.task)
+            #expect(item.title == item.memory?.title)
+            #expect(item.answers == [.approve, .reject, .later])
+        }
+        // Approve carries the hash of the text the client showed.
+        guard case .updateInboxEntry(_, let entry, .approve, _, _, _, _, let shown?) = requests[19],
+            let approved = items.first(where: { $0.id == entry })
+        else { Issue.record("expected approve with a hash"); return }
+        #expect(shown == approved.memory?.hash)
+        guard case .inboxSaved(_, _, let saved?) = messages[8] else { Issue.record("expected inbox-saved"); return }
+        #expect(saved.state == .answered && saved.answer == .approve && saved.memory == approved.memory)
+        // Over the file's cap: conflict with the sizes, and the item stays open.
+        guard case .result(_, let full?, _) = messages[10] else { Issue.record("expected an error"); return }
+        #expect(full.code == .conflict && full.message.contains("16 KiB"))
+        // Without the hash: refused.
+        guard case .updateInboxEntry(_, _, .approve, _, _, _, _, nil) = requests[21] else {
+            Issue.record("expected approve without a hash"); return
+        }
+        guard case .result(_, let refused?, _) = messages[11] else { Issue.record("expected an error"); return }
+        #expect(refused.code == .badRequest)
+        guard case .inboxSaved(_, _, let rejected?) = messages[12] else { Issue.record("expected inbox-saved"); return }
+        #expect(rejected.answer == .reject)
+        // A host before level 14 sends no mode; a newer value is unknown.
+        let decode = { (json: String) in try JSONDecoder().decode(WorkspaceInfo.self, from: Data(json.utf8)) }
+        let old = try decode(#"{"name":"w"}"#)
+        #expect(old.memory == nil && old.memoryAt == nil)
+        #expect(try decode(#"{"name":"w","memory":"ask"}"#).memory == .other("ask"))
+    }
+
+    /// A level 13 client knows no memory: it shows a `memory` item as a kind it does not
+    /// know, and reads the workspaces.
+    @Test func aLevel13ClientReadsMemoryAsUnknown() throws {
+        struct OldItem: Decodable { var kind: String; var title: String }
+        struct OldList: Decodable { var items: [OldItem] }
+        struct OldWorkspace: Decodable { var name: String; var root: String? }
+        struct OldTaskList: Decodable { var workspaces: [OldWorkspace] }
+        let lines = try Self.lines("items/messages.jsonl")
+        let old = try JSONDecoder().decode(OldList.self, from: lines[7])
+        let level13: Set<String> = [
+            "ask", "review", "failure", "proposal", "briefing", "sort", "delegate", "hypothesis", "handoff", "write",
+        ]
+        #expect(old.items.allSatisfy { !level13.contains($0.kind) && !$0.title.isEmpty })
+        let workspaces = try JSONDecoder().decode(OldTaskList.self, from: lines[6]).workspaces
+        #expect(workspaces.allSatisfy { !$0.name.isEmpty && $0.root != nil })
     }
 
     @Test func unknownPolicyValuesStillDecode() throws {

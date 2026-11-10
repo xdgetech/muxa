@@ -435,6 +435,54 @@ class FixtureTest {
         assertEquals(Writes("auto"), (Wire.decodeMessage(list) as Message.InboxList).assistant!!.delegates[0].writes)
     }
 
+    /** ADR 0053: `memory` items, approve with the shown hash, and a workspace's `memory` mode, from line 6 of `items/messages.jsonl`. */
+    @Test
+    fun memoryContractRoundTrips() {
+        val requests = lines("items/requests.jsonl").map(Wire::decodeRequest)
+        val messages = lines("items/messages.jsonl").map(Wire::decodeMessage)
+        assertEquals(WORK_MEMORY, workLevel((messages[5] as Message.Hello).capabilities))
+        val workspaces = (messages[6] as Message.TaskList).workspaces
+        assertEquals(listOf(MemoryMode.REVIEW, MemoryMode.AUTO, MemoryMode.OFF), workspaces.map { it.memory })
+        assertEquals(listOf(1_762_790_000L, null, null), workspaces.map { it.memoryAt })
+        val items = (messages[7] as Message.InboxList).items
+        items.forEach {
+            assertEquals(Triple(ItemKind.MEMORY, ItemState.OPEN, it.memory?.task), Triple(it.kind, it.state, it.task))
+            assertEquals(it.memory?.title, it.title)
+            assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER), it.answers)
+        }
+        // Approve carries the hash of the text the client showed.
+        val approve = requests[19] as Request.UpdateInbox
+        val approved = items.first { it.id == approve.entry }
+        assertEquals(InboxAction.APPROVE to approved.memory?.hash, approve.action to approve.hash)
+        val saved = (messages[8] as Message.InboxSaved).item!!
+        assertEquals(Triple(ItemState.ANSWERED, InboxAction.APPROVE, approved.memory), Triple(saved.state, saved.answer, saved.memory))
+        // Over the file's cap: conflict with the sizes, and the item stays open.
+        val full = (messages[10] as Message.Result).error!!
+        assertEquals(ErrorCode.CONFLICT, full.code)
+        assertTrue(full.message.contains("16 KiB"))
+        // Without the hash: refused.
+        val bare = requests[21] as Request.UpdateInbox
+        assertEquals(InboxAction.APPROVE to null, bare.action to bare.hash)
+        assertEquals(ErrorCode.BAD_REQUEST, (messages[11] as Message.Result).error!!.code)
+        assertEquals(InboxAction.REJECT, (messages[12] as Message.InboxSaved).item!!.answer)
+        // A host before level 14 sends no mode; a newer value is unknown.
+        val old = Json.decodeFromString(WorkspaceInfo.serializer(), """{"name":"w"}""")
+        assertEquals(null to null, old.memory to old.memoryAt)
+        assertEquals(MemoryMode("ask"), Json.decodeFromString(WorkspaceInfo.serializer(), """{"name":"w","memory":"ask"}""").memory)
+    }
+
+    /** A level 13 client knows no memory: it shows a `memory` item as a kind it does not know, and reads the workspaces. */
+    @Test
+    fun aLevel13ClientReadsMemoryAsUnknown() {
+        val lines = lines("items/messages.jsonl")
+        val json = Json { ignoreUnknownKeys = true }
+        val old = json.decodeFromString(Level13List.serializer(), lines[7])
+        val level13 = setOf("ask", "review", "failure", "proposal", "briefing", "sort", "delegate", "hypothesis", "handoff", "write")
+        assertTrue(old.items.all { it.kind !in level13 && it.title.isNotEmpty() })
+        val workspaces = json.decodeFromString(Level13TaskList.serializer(), lines[6]).workspaces
+        assertTrue(workspaces.all { it.name.isNotEmpty() && it.root != null })
+    }
+
     @Test
     fun unknownWorkStatesAndDeliveriesStillDecode() {
         val line = """{"type":"work-saved","work":1,"entry":{"id":"w-00000001","rev":1,"title":"t","state":"blocked",""" +
@@ -499,10 +547,10 @@ class FixtureTest {
     @Test
     fun itemContractRoundTrips() {
         val requests = lines("items/requests.jsonl")
-        assertEquals(17, requests.size)
+        assertEquals(23, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("items/messages.jsonl")
-        assertEquals(5, messages.size)
+        assertEquals(14, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -659,3 +707,12 @@ private data class Level11Request(val delivery: Delivery, val run: String? = nul
 @Serializable private data class Level12Request(val results: List<Level11Result>)
 
 @Serializable private data class Level12List(val items: List<Level12Item>, val requests: List<Level12Request>)
+
+// What a level 13 client knows of an `inbox-list` with memory items and a `task-list` with memory modes.
+@Serializable private data class Level13Item(val kind: String, val title: String)
+
+@Serializable private data class Level13List(val items: List<Level13Item>)
+
+@Serializable private data class Level13Workspace(val name: String, val root: String? = null)
+
+@Serializable private data class Level13TaskList(val workspaces: List<Level13Workspace>)

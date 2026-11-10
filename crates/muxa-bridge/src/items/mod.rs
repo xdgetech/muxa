@@ -65,8 +65,9 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         }
         // ADR 0050 §3: `assistant::hypotheses` answers confirm and reject.
         ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
-        // Stored by a newer host: no answer has a known meaning.
-        ItemKind::Unknown => return Vec::new(),
+        // Stored by a newer host: no answer has a known meaning. This host
+        // makes no `memory` items yet (ADR 0053 slice M2).
+        ItemKind::Memory | ItemKind::Unknown => return Vec::new(),
     };
     // An item with a session sends its text to its own agent (ADR 0040 §4).
     if item.session.is_none() {
@@ -88,6 +89,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         Disposition::Unknown => (ItemState::Resolved, None),
     };
     let mut item = InboxItem {
+        memory: None,
         write: None,
         handoff: None,
         id: entry.id.clone(),

@@ -98,4 +98,8 @@ data class WorkspaceInfo(
     val repos: List<String> = emptyList(),
     /** The root folder, absolute (ADR 0031); null from older hosts. A repo under it shows by its relative path. */
     val root: String? = null,
+    /** What a Task's end does with its "For the workspace" (`work` level 14, ADR 0053); null from older hosts. */
+    val memory: MemoryMode? = null,
+    /** Epoch seconds of the last change to `.muxa/WORKSPACE.md`; null when it does not exist. */
+    val memoryAt: Long? = null,
 )

@@ -313,8 +313,8 @@ fn routine_contract_fixtures_round_trip() {
 #[test]
 fn item_fixtures_round_trip() {
     use muxa_protocol::{InboxAction, ItemKind, ItemState, WORK_ITEMS, work_level};
-    assert_eq!(round_trip::<Request>("items/requests.jsonl"), 17);
-    assert_eq!(round_trip::<Message>("items/messages.jsonl"), 5);
+    assert_eq!(round_trip::<Request>("items/requests.jsonl"), 23);
+    assert_eq!(round_trip::<Message>("items/messages.jsonl"), 14);
     let path = format!(
         "{}/../../protocol/fixtures/items/messages.jsonl",
         env!("CARGO_MANIFEST_DIR")
@@ -1369,6 +1369,172 @@ fn a_level_12_client_reads_writes_as_unknown() {
         panic!()
     };
     assert_eq!(a.delegates[0].writes, Some(muxa_protocol::Writes::Unknown));
+}
+
+fn item_lines(name: &str) -> Vec<String> {
+    std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/items/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+    .lines()
+    .map(str::to_owned)
+    .collect()
+}
+
+/// ADR 0053: `memory` items, approve with the shown hash, and a workspace's
+/// `memory` mode, from line 6 of `items/messages.jsonl`.
+#[test]
+fn memory_fixtures_round_trip() {
+    use muxa_protocol::{
+        ErrorCode, InboxAction, ItemKind, ItemState, MemoryMode, WORK_MEMORY, work_level,
+    };
+    let messages: Vec<Message> = item_lines("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let requests: Vec<Request> = item_lines("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[5] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_MEMORY);
+    let Message::TaskList { workspaces, .. } = &messages[6] else {
+        panic!()
+    };
+    let modes: Vec<_> = workspaces.iter().map(|w| (w.memory, w.memory_at)).collect();
+    assert_eq!(
+        modes,
+        [
+            (Some(MemoryMode::Review), Some(1_762_790_000)),
+            (Some(MemoryMode::Auto), None),
+            (Some(MemoryMode::Off), None),
+        ]
+    );
+    let Message::InboxList { items, .. } = &messages[7] else {
+        panic!()
+    };
+    for item in items {
+        let memory = item.memory.as_ref().unwrap();
+        assert_eq!(
+            (item.kind, item.state, item.task.as_ref()),
+            (ItemKind::Memory, ItemState::Open, Some(&memory.task))
+        );
+        assert_eq!(item.title, memory.title);
+        assert_eq!(
+            item.answers,
+            [
+                InboxAction::Approve,
+                InboxAction::Reject,
+                InboxAction::Later
+            ]
+        );
+    }
+    // Approve carries the hash of the text the client showed.
+    let Request::UpdateInbox {
+        entry,
+        action: InboxAction::Approve,
+        hash: Some(shown),
+        ..
+    } = &requests[19]
+    else {
+        panic!()
+    };
+    let approved = items.iter().find(|i| i.id == *entry).unwrap();
+    assert_eq!(Some(shown), approved.memory.as_ref().map(|m| &m.hash));
+    let Message::InboxSaved {
+        item: Some(saved), ..
+    } = &messages[8]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (saved.state, saved.answer, &saved.memory),
+        (
+            ItemState::Answered,
+            Some(InboxAction::Approve),
+            &approved.memory
+        )
+    );
+    // Over the file's cap: conflict with the sizes, and the item stays open.
+    let Message::Result { error: Some(e), .. } = &messages[10] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::Conflict);
+    assert!(e.message.contains("16 KiB"));
+    // Without the hash: refused.
+    assert!(matches!(
+        requests[21],
+        Request::UpdateInbox {
+            action: InboxAction::Approve,
+            hash: None,
+            ..
+        }
+    ));
+    let Message::Result { error: Some(e), .. } = &messages[11] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::BadRequest);
+    let Message::InboxSaved {
+        item: Some(rejected),
+        ..
+    } = &messages[12]
+    else {
+        panic!()
+    };
+    assert_eq!(rejected.answer, Some(InboxAction::Reject));
+    // A host before level 14 sends no mode.
+    let old: muxa_protocol::WorkspaceInfo = serde_json::from_str(r#"{"name":"w"}"#).unwrap();
+    assert_eq!((old.memory, old.memory_at), (None, None));
+    let newer: muxa_protocol::WorkspaceInfo =
+        serde_json::from_str(r#"{"name":"w","memory":"ask"}"#).unwrap();
+    assert_eq!(newer.memory, Some(MemoryMode::Unknown));
+}
+
+/// A level 13 client knows no memory: it shows a `memory` item as a kind it
+/// does not know, with no action it can send, and reads the workspaces.
+#[test]
+fn a_level_13_client_reads_memory_as_unknown() {
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    #[serde(rename_all = "lowercase")]
+    enum OldKind {
+        Write,
+        #[serde(other)]
+        Unknown,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldItem {
+        kind: OldKind,
+        title: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldList {
+        items: Vec<OldItem>,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldWorkspace {
+        name: String,
+        root: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldTaskList {
+        workspaces: Vec<OldWorkspace>,
+    }
+    let lines = item_lines("messages.jsonl");
+    let old: OldList = serde_json::from_str(&lines[7]).unwrap();
+    assert!(
+        old.items
+            .iter()
+            .all(|i| i.kind == OldKind::Unknown && !i.title.is_empty())
+    );
+    let old: OldTaskList = serde_json::from_str(&lines[6]).unwrap();
+    assert!(
+        old.workspaces
+            .iter()
+            .all(|w| !w.name.is_empty() && w.root.is_some())
+    );
 }
 
 /// The fixtures' `inbox-list` lines with the values a newer host may add: an

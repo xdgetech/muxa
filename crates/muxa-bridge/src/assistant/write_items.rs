@@ -184,6 +184,7 @@ fn item_for(
         delegate: None,
         hypothesis: None,
         handoff: None,
+        memory: None,
         write: Some(WriteProposal {
             request: q.id.clone(),
             version: r.version,

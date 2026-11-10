@@ -15,3 +15,9 @@
 {"type":"update-inbox","id":321,"entry":"i-0a1b2c3d","action":"reply","text":"Do not apply. Run terraform plan and show me the diff."}
 {"type":"update-inbox","id":322,"entry":"i-3d4e5f6a","action":"reply","text":"The token expired. I renewed it; run the import again."}
 {"type":"update-inbox","id":323,"entry":"e-1a2b3c4d","action":"ask-agent","text":"Put this in Notion."}
+{"type":"list-tasks","id":330}
+{"type":"list-inbox","id":331}
+{"type":"update-inbox","id":332,"entry":"i-4e5f6a7b","action":"approve","hash":"sha256:4f4f83d8f4e4547bd05edb2c47b11522c43ac7999f3b8f97a0e14143832aba75"}
+{"type":"update-inbox","id":333,"entry":"i-5f6a7b8c","action":"approve","hash":"sha256:a3610dd52492f10423a18af4eaff467b99d92a5afb62fa72c1897c68747de24c"}
+{"type":"update-inbox","id":334,"entry":"i-6a7b8c9d","action":"approve"}
+{"type":"update-inbox","id":335,"entry":"i-5f6a7b8c","action":"reject"}

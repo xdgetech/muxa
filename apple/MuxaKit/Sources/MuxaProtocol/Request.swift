@@ -84,8 +84,8 @@ public enum Request: Equatable, Sendable {
     /// Answer a stored entry or an Inbox item (its `i-` id). `until` goes with
     /// `later`, `text` with `redo`, `change-course` and `reply`, `option` with `choose`,
     /// `worktree` with an answer that makes the Task done or dropped, `hash` with
-    /// `approve` on a `write` item: the hash of the content the client showed whole
-    /// (`work` level 13, ADR 0052).
+    /// `approve` on a `write` item (`work` level 13, ADR 0052) or a `memory` item
+    /// (level 14, ADR 0053): the hash of the content the client showed whole.
     case updateInboxEntry(
         id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil,
         worktree: WorktreeEnd? = nil, hash: String? = nil)

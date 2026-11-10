@@ -317,5 +317,7 @@ val InboxItem.kindTitle: String
         ItemKind.HYPOTHESIS -> "Hypothesis"
         ItemKind.HANDOFF -> "Hand-off"
         ItemKind.WRITE -> "Write"
+        // No memory view yet (ADR 0053 slice M6).
+        ItemKind.MEMORY -> "Memory"
         else -> kind.raw
     }

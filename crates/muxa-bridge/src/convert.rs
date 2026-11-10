@@ -121,6 +121,9 @@ pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
+        // Reported from ADR 0053 slice M1 on.
+        memory: None,
+        memory_at: None,
     }
 }
 

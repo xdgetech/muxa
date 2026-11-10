@@ -105,7 +105,7 @@ Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. 
 | `image-content` | `image`, `path`, `data` (base64), optional `mtime` |
 | `image-ended` | `image`, `reason` |
 | `task-created` | `task`, `session` |
-| `task-list` | `tasks`, `workspaces[] {name, root?, checks?, repos?}`, `entries[]` (task records), optional `truncated`, `workers[]` (Workers below) |
+| `task-list` | `tasks`, `workspaces[] {name, root?, checks?, repos?, memory?, memoryAt?}`, `entries[]` (task records), optional `truncated`, `workers[]` (Workers below) |
 | `task-saved` | `task`, `record` (a task record) |
 | `tasks-changed` | none. Send `list-tasks` again (capability `tasks-changed`) |
 | `routine-list` | `routines`, `entries[]`, optional `problems[]` (Routines below) |
@@ -392,7 +392,7 @@ A bridge with `work` level 3 keeps Inbox items: one stored question for the user
 1. `inbox-list` also has `items[]`: every item, a Routine's entries included, in the order to show them. Open items come first, `ask` before the rest, then newest first. Then the open ones with `laterAt`, in the order they were moved down (ADR 0040), then at most 100 answered or resolved ones, newest first. `entries` stays for older clients.
 2. An item has:
    - `id`: `i-` and 8 hex digits for a Task's item; a Routine's entry keeps its `e-` id;
-   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `reply`), `proposal`, `briefing`, at level 10 `sort` and `delegate` (Plans and the overall assistant below), at level 11 `hypothesis` (Policies, corrections and hypotheses below), at level 12 `handoff` (Staff and hand-offs below), or at level 13 `write` (Write proposals below);
+   - `kind`: `ask` (the agent waits on a menu), `review` (a finished turn, or a passed loop), `failure` (an error, a stopped loop, or a failed start; an item without `session` offers no `retry` or `reply`), `proposal`, `briefing`, at level 10 `sort` and `delegate` (Plans and the overall assistant below), at level 11 `hypothesis` (Policies, corrections and hypotheses below), at level 12 `handoff` (Staff and hand-offs below), at level 13 `write` (Write proposals below), or at level 14 `memory` (Workspace memory below);
    - `state`: `open`, `later`, `answered` or `resolved` (the need ended without an answer from the Inbox);
    - `question` (one line), `workspace`, `title` (the Task's or the entry's) and `createdAt`;
    - optional `readAt`, `laterAt` (epoch seconds: `later` moved it down), `until` (only from a host before ADR 0040, with `later`), `protectedAt` (epoch seconds: `protect` set it), `answeredAt`, and `answer` (with `answered`, the action given);
@@ -614,6 +614,18 @@ A bridge with `work` level 13 lets a Result propose writes outside the host, suc
 6. The host records the Task and the Task's state. It never claims the write happened: the Task's own `review` item is the writer's report, and `accept` closes it.
 
 Logs on the host carry ids, hashes, counts, worker names and states, never actions, targets, contents or reasons. A target can hold a token.
+
+## Workspace memory
+
+A bridge with `work` level 14 keeps one file per workspace of what it has learned, `<root>/.muxa/WORKSPACE.md`, and asks the user before a Task's close-out adds to it (ADR 0053). Levels add up. Clients send `approve` on a `memory` item only at level 14; a level 13 host answers it with `bad-request`. Fixtures: `fixtures/items/`, from line 18 of `requests.jsonl` and line 6 of `messages.jsonl`.
+
+1. Mode. A workspace in `task-list` gains `memory`: `review` (the default), `auto` or `off`, from `[[workspace]] memory` in the host's `workspaces.toml`, and `memoryAt`: the epoch seconds of the live file's last change, absent when it does not exist. A host before level 14 sends neither. Show an unknown `memory` value as unknown.
+2. Items. When a Task becomes `done` or `dropped` and its `TASK.md` has text under "For the workspace", a workspace with `memory = "review"` gets one Inbox item of kind `memory`: `title` is the Task's title, `question` is "`<title>` proposes to add to the workspace memory", `task` is the Task, and `memory {task, title, text, hash}` is the proposal whole. `text` is at most 4 KiB. `hash` is `sha256:` and the hex SHA-256 of `task`, a NUL byte, `title`, a NUL byte, and `text`. A Task has at most one `memory` item, and it is the one item a closed Task may keep open. The answers are `approve`, `reject` and `later`; a text over 4 KiB makes the item without `approve`, with the size in `summary`. Show `text` whole before Approve, as plain text in a fixed-width font, without rendered Markdown or active links. A client that cannot show it whole offers no Approve. A Routine run or an assistant run never makes a `memory` item.
+3. `update-inbox {entry, action: "approve", hash}` on a `memory` item carries the item's `memory.hash`, sent by a client that showed the text whole. Without `hash`, or with another one, approve is `bad-request`, and nothing is written. Approve appends `## <title> (<task>, <YYYY-MM-DD>)` and the text unchanged to the live file. A second `approve`, also after a crash between the write and the item's answer, appends nothing more. On success: `inbox-saved {inbox, item}` with state `answered`, then `result`. When the file would exceed 16 KiB, approve is `conflict` with the sizes, and the item stays open.
+4. `reject` answers the item and writes nothing. `later` moves the item down.
+5. With `memory = "auto"` the host appends at once, as approve would, and makes the `review` item only when the append is refused, with the reason in `summary`. With `memory = "off"` the host reads nothing and makes no item.
+
+Logs on the host carry Task ids, item ids, workspace names, sizes, hashes and states, never the text, the file or a heading.
 
 ## Reading Tasks
 

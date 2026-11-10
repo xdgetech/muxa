@@ -4,6 +4,7 @@
 mod assistant;
 mod items;
 mod known;
+mod memory;
 mod plans;
 mod policies;
 mod restart_recovery;
@@ -18,6 +19,7 @@ pub use assistant::{
 };
 pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_ITEMS};
 pub use known::Known;
+pub use memory::{MemoryMode, MemoryProposal, WORK_MEMORY};
 pub use plans::{
     AssistantInfo, Basis, BasisKind, ChangeKind, DelegateInfo, DelegateProposal, Minutes,
     OverallRequests, Plan, PlanChange, PlanRow, Share, SortProposal, WORK_PLANS,
@@ -348,9 +350,10 @@ pub enum Request {
         /// With an answer that ends the Task, as in `update-task`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<WorktreeEnd>,
-        /// With `approve` on a `write` item (`work` level 13, ADR 0052): the
-        /// hash of the content the client showed whole. Without it, or with
-        /// another, the host refuses the approve.
+        /// With `approve` on a `write` item (`work` level 13, ADR 0052) or a
+        /// `memory` item (level 14, ADR 0053): the hash of the content the
+        /// client showed whole. Without it, or with another, the host refuses
+        /// the approve.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hash: Option<String>,
     },
@@ -1120,6 +1123,14 @@ pub struct WorkspaceInfo {
     /// in one of them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<String>,
+    /// What a Task's end does with its "For the workspace" (`work` level 14,
+    /// ADR 0053). Absent from an older host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemoryMode>,
+    /// Epoch seconds of the last change to `.muxa/WORKSPACE.md`; absent when
+    /// the file does not exist.
+    #[serde(default, rename = "memoryAt", skip_serializing_if = "Option::is_none")]
+    pub memory_at: Option<u64>,
 }
 
 /// `"any"` or a list of exact commands, from the host's `[workspace.loop]`.

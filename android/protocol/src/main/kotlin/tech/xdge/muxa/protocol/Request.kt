@@ -142,8 +142,8 @@ sealed interface Request {
         /** As `update-task`'s, for an answer that makes the Task done or dropped. */
         val worktree: WorktreeEnd? = null,
         /**
-         * With `approve` on a `write` item (`work` level 13, ADR 0052): the hash of the content the client showed
-         * whole. The host refuses an approve on a write without it.
+         * With `approve` on a `write` item (`work` level 13, ADR 0052) or a `memory` item (level 14, ADR 0053):
+         * the hash of the content the client showed whole. The host refuses such an approve without it.
          */
         val hash: String? = null,
     ) : Request

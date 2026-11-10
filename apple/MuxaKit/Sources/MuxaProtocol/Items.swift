@@ -50,6 +50,9 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     /// With kind `write`: the exact write approve hands the writer (`work` level 13,
     /// ADR 0052). After approve, `task` is the writer's Task.
     public var write: WriteProposal?
+    /// With kind `memory`: the text approve appends to the workspace's WORKSPACE.md
+    /// (`work` level 14, ADR 0053). `task` is the same Task.
+    public var memory: MemoryProposal?
     /// The answers the host accepts now, in the order to show them. Unknown
     /// actions are left out: PROTOCOL.md says to show them as nothing.
     public var answers: [InboxAction]
@@ -61,7 +64,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         pane: String? = nil, prompt: ChatPrompt? = nil, attachments: Attachments = Attachments(),
         routine: String? = nil, proposal: Proposal? = nil, sort: SortProposal? = nil,
         delegate: DelegateProposal? = nil, hypothesis: HypothesisProposal? = nil, handoff: HandoffProposal? = nil,
-        write: WriteProposal? = nil,
+        write: WriteProposal? = nil, memory: MemoryProposal? = nil,
         answers: [InboxAction] = []
     ) {
         self.id = id
@@ -90,6 +93,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         self.hypothesis = hypothesis
         self.handoff = handoff
         self.write = write
+        self.memory = memory
         self.answers = answers
     }
 }
@@ -97,7 +101,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 extension InboxItem: Codable {
     private enum Key: String, CodingKey {
         case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, protectedAt, answeredAt, answer
-        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, handoff, write, answers
+        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, handoff, write, memory, answers
     }
 
     public init(from decoder: any Decoder) throws {
@@ -128,6 +132,7 @@ extension InboxItem: Codable {
         hypothesis = try c.decodeIfPresent(HypothesisProposal.self, forKey: .hypothesis)
         handoff = try c.decodeIfPresent(HandoffProposal.self, forKey: .handoff)
         write = try c.decodeIfPresent(WriteProposal.self, forKey: .write)
+        memory = try c.decodeIfPresent(MemoryProposal.self, forKey: .memory)
         answers = (try c.decodeIfPresent([String].self, forKey: .answers) ?? []).compactMap(InboxAction.init(rawValue:))
     }
 
@@ -159,6 +164,7 @@ extension InboxItem: Codable {
         try c.encodeIfPresent(hypothesis, forKey: .hypothesis)
         try c.encodeIfPresent(handoff, forKey: .handoff)
         try c.encodeIfPresent(write, forKey: .write)
+        try c.encodeIfPresent(memory, forKey: .memory)
         if !answers.isEmpty { try c.encode(answers, forKey: .answers) }
     }
 }
@@ -182,12 +188,14 @@ public enum ItemKind: Equatable, Hashable, Sendable {
     case handoff
     /// Level 13: a Result proposes a write outside the host.
     case write
+    /// Level 14: a Task's end proposes to add to the workspace memory.
+    case memory
     case other(String)
 
     private static let names: [(ItemKind, String)] = [
         (.ask, "ask"), (.review, "review"), (.failure, "failure"), (.proposal, "proposal"), (.briefing, "briefing"),
         (.sort, "sort"), (.delegate, "delegate"), (.hypothesis, "hypothesis"),
-        (.handoff, "handoff"), (.write, "write"),
+        (.handoff, "handoff"), (.write, "write"), (.memory, "memory"),
     ]
 
     public init(raw: String) {

@@ -143,6 +143,8 @@ mod tests {
             root: Some(root.into()),
             checks: None,
             repos: repos.iter().map(|r| r.to_string()).collect(),
+            memory: None,
+            memory_at: None,
         }
     }
 

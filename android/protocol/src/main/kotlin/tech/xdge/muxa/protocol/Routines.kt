@@ -39,6 +39,9 @@ const val WORK_STAFF = 12
 /** Level 13: external writes only when asked (ADR 0052). */
 const val WORK_WRITES = 13
 
+/** Level 14: workspace memory, `memory` Inbox items and a workspace's `memory` mode (ADR 0053). */
+const val WORK_MEMORY = 14
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }

@@ -212,6 +212,7 @@ pub(crate) fn start_failed(
             _ => return Ok(None),
         };
         let mut item = InboxItem {
+            memory: None,
             write: None,
             handoff: None,
             id: new_id()?,
@@ -439,6 +440,7 @@ fn make(
     };
     let tool = chat.tool.as_ref().map(|(n, s)| (n.as_str(), s.as_str()));
     let mut item = InboxItem {
+        memory: None,
         write: None,
         handoff: None,
         id: new_id()?,

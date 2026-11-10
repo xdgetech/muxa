@@ -37,6 +37,8 @@ extension ItemKind {
         case .hypothesis: "Hypothesis"
         case .handoff: "Hand-off"
         case .write: "Write"
+        // No memory view yet (ADR 0053 slice M5).
+        case .memory: "Memory"
         case .other(let raw): raw.capitalized
         }
     }
@@ -53,6 +55,7 @@ extension ItemKind {
         case .hypothesis: Icon.ask
         case .handoff: Icon.handoff
         case .write: Icon.write
+        case .memory: Icon.note
         case .other: "tray"
         }
     }

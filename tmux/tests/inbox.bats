@@ -7,7 +7,9 @@ load helper
 setup() {
   setup_server
   ITEMS="$TMPDIR/inbox.json"
-  jq -c 'select(.type == "inbox-list") | {work: 3, items, entries: [], runs: []}' \
+  # The level 3 list; the level 14 list of memory items (ADR 0053) comes later.
+  jq -c 'select(.type == "inbox-list" and all(.items[]; .kind != "memory")) |
+    {work: 3, items, entries: [], runs: []}' \
     "$ROOT/../protocol/fixtures/items/messages.jsonl" >"$ITEMS"
 }
 teardown() { kill "${CLIENT_PID:-}" 2>/dev/null || true; teardown_server; }

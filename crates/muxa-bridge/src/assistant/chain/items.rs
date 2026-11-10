@@ -75,6 +75,7 @@ fn item_for(
 ) -> InboxItem {
     let question = format!("{} asks {} to: {}", p.from, p.worker, p.purpose);
     let mut item = InboxItem {
+        memory: None,
         write: None,
         id,
         kind: ItemKind::Handoff,
