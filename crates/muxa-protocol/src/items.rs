@@ -4,8 +4,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ChatPrompt, DelegateProposal, HypothesisProposal, InboxAction, Proposal, SortProposal,
-    SourceLink,
+    ChatPrompt, DelegateProposal, HandoffProposal, HypothesisProposal, InboxAction, Proposal,
+    SortProposal, SourceLink,
 };
 
 /// Level 3: Inbox items (`items` in `inbox-list`, the answers of ADR 0033).
@@ -75,6 +75,9 @@ pub struct InboxItem {
     /// With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hypothesis: Option<HypothesisProposal>,
+    /// With kind `handoff`: the step approve starts (`work` level 12, ADR 0051).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<HandoffProposal>,
     /// The answers the host accepts now, in the order to show them. Empty
     /// once the item is answered or resolved.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -98,6 +101,8 @@ pub enum ItemKind {
     Delegate,
     /// Level 11: the overall assistant proposes a hypothesis about the user.
     Hypothesis,
+    /// Level 12: a staff member asks to pass a request on to another.
+    Handoff,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
     Unknown,

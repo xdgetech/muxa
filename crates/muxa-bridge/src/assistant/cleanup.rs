@@ -105,6 +105,7 @@ mod tests {
 
     fn request(results: &[u64]) -> AssistantRequest {
         AssistantRequest {
+            steps: Vec::new(),
             id: "q-0000000a".into(),
             work: "w-0000000b".into(),
             version: 3,
@@ -119,6 +120,8 @@ mod tests {
             results: results
                 .iter()
                 .map(|v| AssistResult {
+                    worker: None,
+                    step: None,
                     version: *v,
                     at: 1,
                     summary: "s".into(),

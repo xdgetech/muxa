@@ -19,6 +19,8 @@ public let workAssistant: UInt32 = 9
 public let workPlans: UInt32 = 10
 /// Level 11: policies, corrections and hypotheses (ADR 0050).
 public let workPolicies: UInt32 = 11
+/// Level 12: staff and hand-offs in a workspace (ADR 0051).
+public let workStaff: UInt32 = 12
 /// Level 8: `protect`, `unprotect` and `delete-inbox` (ADR 0046).
 public let workDeleteInbox: UInt32 = 8
 

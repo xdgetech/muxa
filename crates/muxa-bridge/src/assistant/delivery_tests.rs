@@ -9,6 +9,7 @@ const RUN: &str = "t-00000a";
 
 fn request(delivery: Delivery) -> AssistantRequest {
     AssistantRequest {
+        steps: Vec::new(),
         id: "q-0000000a".into(),
         work: "w-0000000b".into(),
         version: 2,
@@ -142,6 +143,8 @@ fn a_result_cancel_or_another_version_is_never_derived_over() {
     }
     let mut q = request(Delivery::TimedOut);
     q.results.push(AssistResult {
+        worker: None,
+        step: None,
         version: 2,
         at: 1500,
         summary: "s".into(),

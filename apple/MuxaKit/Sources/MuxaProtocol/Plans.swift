@@ -283,13 +283,18 @@ public struct DelegateProposal: Codable, Equatable, Sendable {
     public var purpose: String
     /// Why the overall assistant asks.
     public var reason: String
+    /// Level 12: the staff member to ask. Nil: the workspace's lead.
+    public var worker: String?
 
-    public init(work: String, workspace: String, scope: AssistScope, purpose: String, reason: String) {
+    public init(
+        work: String, workspace: String, scope: AssistScope, purpose: String, reason: String, worker: String? = nil
+    ) {
         self.work = work
         self.workspace = workspace
         self.scope = scope
         self.purpose = purpose
         self.reason = reason
+        self.worker = worker
     }
 }
 
@@ -322,18 +327,46 @@ extension AssistantInfo: Codable {
 }
 
 /// A workspace with `[workspace.assistant]`.
-public struct DelegateInfo: Codable, Equatable, Sendable {
+public struct DelegateInfo: Equatable, Sendable {
     public var workspace: String
     public var share: Share
     public var overallRequests: OverallRequests
     /// Epoch seconds: when its `NOTES.md` last changed. Nil: no notes.
     public var notesAt: UInt64?
+    /// Level 12: who answers its requests, the lead marked (ADR 0051 §1).
+    public var staff: [StaffMember]
 
-    public init(workspace: String, share: Share, overallRequests: OverallRequests, notesAt: UInt64? = nil) {
+    public init(
+        workspace: String, share: Share, overallRequests: OverallRequests, notesAt: UInt64? = nil,
+        staff: [StaffMember] = []
+    ) {
         self.workspace = workspace
         self.share = share
         self.overallRequests = overallRequests
         self.notesAt = notesAt
+        self.staff = staff
+    }
+}
+
+extension DelegateInfo: Codable {
+    private enum Key: String, CodingKey { case workspace, share, overallRequests, notesAt, staff }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        workspace = try c.decode(String.self, forKey: .workspace)
+        share = try c.decode(Share.self, forKey: .share)
+        overallRequests = try c.decode(OverallRequests.self, forKey: .overallRequests)
+        notesAt = try c.decodeIfPresent(UInt64.self, forKey: .notesAt)
+        staff = try c.decodeIfPresent([StaffMember].self, forKey: .staff) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(workspace, forKey: .workspace)
+        try c.encode(share, forKey: .share)
+        try c.encode(overallRequests, forKey: .overallRequests)
+        try c.encodeIfPresent(notesAt, forKey: .notesAt)
+        if !staff.isEmpty { try c.encode(staff, forKey: .staff) }
     }
 }
 

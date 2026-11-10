@@ -120,6 +120,8 @@ data class AssistantRequest(
     val run: String? = null,
     /** Newest first, at most 10. */
     val results: List<AssistResult> = emptyList(),
+    /** Level 12: the current version's chain, step 1 first (ADR 0051 §3). [delivery] and [run] are the newest step's. */
+    val steps: List<RequestStep> = emptyList(),
 )
 
 /** What the assistant is asked to do. Unknown scopes stay as their name. */
@@ -178,6 +180,10 @@ data class AssistResult(
     val possibleDuplicates: List<PossibleDuplicate> = emptyList(),
     /** Level 10: the delegate's proposed notes (ADR 0049 §1). Never logged. */
     val notes: Notes? = null,
+    /** Level 12: the staff member whose step produced it. */
+    val worker: String? = null,
+    /** Level 12: the step of [version] that produced it. Null: step 1. */
+    val step: Int? = null,
 )
 
 /** A deadline the user set on a Work item (ADR 0049 §6): epoch seconds, and the IANA zone it was set in. */
@@ -216,9 +222,9 @@ data class ResultSource(
 @Serializable
 data class PossibleDuplicate(val work: String, val reason: String)
 
-/** `capture {assist}`: ask the assistant right away. */
+/** `capture {assist}`: ask the assistant right away. [worker] (level 12) is a staff member; null asks the lead. */
 @Serializable
-data class AssistSpec(val scope: AssistScope, val purpose: String? = null)
+data class AssistSpec(val scope: AssistScope, val purpose: String? = null, val worker: String? = null)
 
 /** How `sort-capture` sorts a Capture. */
 @Serializable

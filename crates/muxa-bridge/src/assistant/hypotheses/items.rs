@@ -125,6 +125,7 @@ fn add(
 
 fn item_for(h: &Hypothesis, overall: &str, id: String, at: u64) -> InboxItem {
     let mut item = InboxItem {
+        handoff: None,
         id,
         kind: ItemKind::Hypothesis,
         state: ItemState::Open,

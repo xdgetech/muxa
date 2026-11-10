@@ -199,6 +199,8 @@ pub fn validate(bytes: &[u8], run: &RequestRun) -> Result<AssistResult, Vec<Stri
         return Err(reasons);
     }
     Ok(AssistResult {
+        worker: None,
+        step: None,
         version: run.version,
         at: 0,
         summary: raw.summary,

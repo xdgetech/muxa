@@ -37,6 +37,7 @@ pub async fn ask(conn: &mut Conn, a: Ask, as_json: bool) -> Result<String, Strin
                 scope: a.scope,
                 workspace: a.workspace,
                 purpose: a.purpose,
+                worker: None,
             },
             WAIT,
         )
@@ -203,6 +204,7 @@ pub async fn notes(
                 source: p.source,
                 version: p.version,
                 base: p.notes.base,
+                step: None,
             },
             WAIT,
         )
@@ -305,6 +307,7 @@ mod tests {
 
     fn request(results: Vec<AssistResult>) -> AssistantRequest {
         AssistantRequest {
+            steps: Vec::new(),
             id: "q-0000abcd".into(),
             work: "w-0000abcd".into(),
             version: 2,
@@ -322,6 +325,8 @@ mod tests {
 
     fn result(version: u64, summary: &str) -> AssistResult {
         AssistResult {
+            worker: None,
+            step: None,
             version,
             at: 100,
             summary: summary.into(),

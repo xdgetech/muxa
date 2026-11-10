@@ -171,6 +171,7 @@ fn a_request_keeps_its_own_version_beside_the_format() {
     let made = shelf
         .create::<StateError>(|id| {
             Ok(AssistantRequest {
+                steps: Vec::new(),
                 id,
                 work: "w-0000000b".into(),
                 version: 3,

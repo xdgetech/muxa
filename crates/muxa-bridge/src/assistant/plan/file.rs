@@ -400,6 +400,7 @@ fn delegate(
     text(&format!("{at}.purpose"), &purpose, MAX_PURPOSE, reasons);
     text(&format!("{at}.reason"), &reason, MAX_LINE, reasons);
     Some(Proposal::Delegate(DelegateProposal {
+        worker: None,
         work,
         workspace,
         scope: scope?,

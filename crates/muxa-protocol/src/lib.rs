@@ -8,6 +8,7 @@ mod plans;
 mod policies;
 mod restart_recovery;
 mod routines;
+mod staff;
 mod workers;
 pub use assistant::{
     AssistResult, AssistScope, AssistSpec, AssistantRequest, Capture, CaptureSource, CaptureState,
@@ -31,6 +32,7 @@ pub use routines::{
     WORK_ASK_AGENT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_DELETE_INBOX, WORK_END_REMOVES,
     WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
+pub use staff::{Handoff, HandoffProposal, RequestStep, StaffMember, StepBy, WORK_STAFF};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
 use serde::{Deserialize, Serialize};
@@ -432,6 +434,9 @@ pub enum Request {
         workspace: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         purpose: Option<String>,
+        /// Level 12: a staff member of the workspace. Absent: its lead.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<String>,
     },
     /// Stop a request's `version`. A `work-saved` comes before the `result`.
     CancelRequest {
@@ -457,6 +462,10 @@ pub enum Request {
         version: u64,
         /// The proposal's `base`.
         base: String,
+        /// Level 12: the step of a request's `version` whose result proposed
+        /// the notes. Absent: the version's last step.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        step: Option<u32>,
     },
     /// Start an overall run now (`work` level 10). A `plan-saved` comes
     /// before the `result`.

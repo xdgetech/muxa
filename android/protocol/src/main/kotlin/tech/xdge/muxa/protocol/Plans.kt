@@ -125,6 +125,8 @@ data class DelegateProposal(
     val purpose: String,
     /** Why the overall assistant asks. Never logged. */
     val reason: String,
+    /** Level 12: the staff member to ask. Null: the workspace's lead. */
+    val worker: String? = null,
 )
 
 /** Who assists on this host, in `inbox-list`. */
@@ -143,6 +145,8 @@ data class DelegateInfo(
     val overallRequests: OverallRequests,
     /** Epoch seconds: when its `NOTES.md` last changed. Null: no notes. */
     val notesAt: Long? = null,
+    /** Level 12: who answers its requests, the lead marked (ADR 0051 §1). */
+    val staff: List<StaffMember> = emptyList(),
 )
 
 /** What a workspace shares with the overall assistant (ADR 0049 §3). Unknown values stay as their name. */

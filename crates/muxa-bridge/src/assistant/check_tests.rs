@@ -76,6 +76,7 @@ impl Host {
         self.requests()
             .create::<StateError>(|id| {
                 Ok(AssistantRequest {
+                    steps: Vec::new(),
                     id,
                     work: work.into(),
                     version,

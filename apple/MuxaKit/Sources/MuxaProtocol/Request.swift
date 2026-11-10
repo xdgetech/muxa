@@ -112,9 +112,11 @@ public enum Request: Equatable, Sendable {
         into: String? = nil, due: Due? = nil)
     /// Ask a workspace's agent to work on a Work item; nil `workspace` takes the item's.
     /// Needs the host daemon. The same `work` and `rev` return the request already made.
-    /// A `work-saved` comes first.
+    /// A `work-saved` comes first. `worker` (level 12) names a staff member of the
+    /// workspace; nil asks its lead.
     case requestAssistant(
-        id: UInt64, work: String, rev: UInt64, scope: AssistScope, workspace: String? = nil, purpose: String? = nil)
+        id: UInt64, work: String, rev: UInt64, scope: AssistScope, workspace: String? = nil, purpose: String? = nil,
+        worker: String? = nil)
     /// Stop a request's `version`. A `work-saved` comes first.
     case cancelRequest(id: UInt64, request: String, version: UInt64)
     /// One Work item with every Capture it links, sorted or not, and its requests.
@@ -123,8 +125,9 @@ public enum Request: Equatable, Sendable {
     /// Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 10,
     /// ADR 0049). `source` is a request `q-…` or a plan `p-…`; `version` the request's
     /// version or the plan's `rev`; `base` the proposal's. A changed live file is `conflict`.
-    /// A `work-saved` or `plan-saved` comes first.
-    case applyNotes(id: UInt64, source: String, version: UInt64, base: String)
+    /// A `work-saved` or `plan-saved` comes first. `step` (level 12) is the step of a
+    /// request's version whose result proposed the notes; nil is the version's last step.
+    case applyNotes(id: UInt64, source: String, version: UInt64, base: String, step: UInt32? = nil)
     /// Start an overall run now (`work` level 10); `minutes` is the time the user has.
     /// A `plan-saved` comes first.
     case planNow(id: UInt64, minutes: UInt32? = nil)
@@ -158,8 +161,8 @@ public enum Request: Equatable, Sendable {
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
             .updateInboxEntry(let id, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
-            .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _),
-            .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _), .planNow(let id, _),
+            .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _, _),
+            .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _, _), .planNow(let id, _),
             .addPolicy(let id, _, _, _, _), .updatePolicy(let id, _, _, _, _, _, _, _),
             .updatePlan(let id, _, _, _, _, _, _), .forget(let id, _):
             id
@@ -176,6 +179,7 @@ extension Request: Codable {
         case clientId, source, assist, capture, work, workRev, into, request, version, purpose
         case due, minutes
         case policy, from, plan, order, row, record
+        case step
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -295,13 +299,14 @@ extension Request: Codable {
             try c.encodeIfPresent(workspace, forKey: .workspace)
             try c.encodeIfPresent(into, forKey: .into)
             try c.encodeIfPresent(due, forKey: .due)
-        case .requestAssistant(let id, let work, let rev, let scope, let workspace, let purpose):
+        case .requestAssistant(let id, let work, let rev, let scope, let workspace, let purpose, let worker):
             try c.head("request-assistant", id)
             try c.encode(work, forKey: .work)
             try c.encode(rev, forKey: .rev)
             try c.encode(scope, forKey: .scope)
             try c.encodeIfPresent(workspace, forKey: .workspace)
             try c.encodeIfPresent(purpose, forKey: .purpose)
+            try c.encodeIfPresent(worker, forKey: .worker)
         case .cancelRequest(let id, let request, let version):
             try c.head("cancel-request", id)
             try c.encode(request, forKey: .request)
@@ -309,11 +314,12 @@ extension Request: Codable {
         case .getWork(let id, let work):
             try c.head("get-work", id)
             try c.encode(work, forKey: .work)
-        case .applyNotes(let id, let source, let version, let base):
+        case .applyNotes(let id, let source, let version, let base, let step):
             try c.head("apply-notes", id)
             try c.encode(source, forKey: .source)
             try c.encode(version, forKey: .version)
             try c.encode(base, forKey: .base)
+            try c.encodeIfPresent(step, forKey: .step)
         case .planNow(let id, let minutes):
             try c.head("plan-now", id)
             try c.encodeIfPresent(minutes, forKey: .minutes)
@@ -500,7 +506,8 @@ extension Request: Codable {
                 rev: try c.decode(UInt64.self, forKey: .rev),
                 scope: try c.decode(AssistScope.self, forKey: .scope),
                 workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
-                purpose: try c.decodeIfPresent(String.self, forKey: .purpose))
+                purpose: try c.decodeIfPresent(String.self, forKey: .purpose),
+                worker: try c.decodeIfPresent(String.self, forKey: .worker))
         case "cancel-request":
             self = .cancelRequest(
                 id: id, request: try c.decode(String.self, forKey: .request),
@@ -511,7 +518,8 @@ extension Request: Codable {
             self = .applyNotes(
                 id: id, source: try c.decode(String.self, forKey: .source),
                 version: try c.decode(UInt64.self, forKey: .version),
-                base: try c.decode(String.self, forKey: .base))
+                base: try c.decode(String.self, forKey: .base),
+                step: try c.decodeIfPresent(UInt32.self, forKey: .step))
         case "plan-now":
             self = .planNow(id: id, minutes: try c.decodeIfPresent(UInt32.self, forKey: .minutes))
         case "add-policy":

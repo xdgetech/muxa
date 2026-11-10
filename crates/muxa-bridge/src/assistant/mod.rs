@@ -63,6 +63,9 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             workspace,
             assist,
         } => {
+            if assist.as_ref().is_some_and(|a| a.worker.is_some()) {
+                return (Vec::new(), Some(no_staff_yet()));
+            }
             let config = Arc::clone(&cx.records);
             let spec = assist.clone();
             let new = capture::NewCapture {
@@ -176,7 +179,11 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             scope,
             workspace,
             purpose,
+            worker,
         } => {
+            if worker.is_some() {
+                return (Vec::new(), Some(no_staff_yet()));
+            }
             if !cx.daemon {
                 return (
                     Vec::new(),
@@ -245,7 +252,11 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             source,
             version,
             base,
+            step,
         } => {
+            if step.is_some() {
+                return (Vec::new(), Some(no_staff_yet()));
+            }
             let config = Arc::clone(&cx.records);
             match blocking(move || apply::apply_notes(&config, &source, version, &base)).await {
                 Ok(apply::Applied::Request(entry, request)) => (
@@ -378,6 +389,15 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             )),
         ),
     }
+}
+
+/// `worker` and `step` are `work` level 12 (ADR 0051), which this host does
+/// not advertise yet.
+fn no_staff_yet() -> ErrorBody {
+    error_body(
+        ErrorCode::BadRequest,
+        "worker and step need work level 12; this host is at 11",
+    )
 }
 
 /// Blocking. The item as a list shows it, with its derived state.

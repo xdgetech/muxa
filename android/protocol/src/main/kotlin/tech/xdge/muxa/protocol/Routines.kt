@@ -33,6 +33,9 @@ const val WORK_PLANS = 10
 /** Level 11: policies, corrections and hypotheses (ADR 0050). */
 const val WORK_POLICIES = 11
 
+/** Level 12: staff and hand-offs in a workspace (ADR 0051). */
+const val WORK_STAFF = 12
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }

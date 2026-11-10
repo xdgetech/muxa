@@ -37,3 +37,8 @@
 {"type":"forget","id":439,"record":"x-0c1d2e3f"}
 {"type":"forget","id":440,"record":"h-2b3c4d5e"}
 {"type":"forget","id":441,"record":"h-3c4d5e6f"}
+{"type":"request-assistant","id":450,"work":"w-6a7b8c9d","rev":3,"scope":"research","purpose":"Which roles first, and why","worker":"lisk-strategist"}
+{"type":"capture","id":451,"clientId":"7d1e0c52-3f4a-4b6c-9d8e-0f1a2b3c4d5e","text":"Review the API gateway design","source":"app","workspace":"lisk","assist":{"scope":"draft","worker":"lisk-architect"}}
+{"type":"update-inbox","id":452,"entry":"i-6f7a8b9c","action":"approve"}
+{"type":"apply-notes","id":453,"source":"q-2b3c4d5e","version":2,"base":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","step":2}
+{"type":"request-assistant","id":454,"work":"w-6a7b8c9d","rev":5,"scope":"compare","worker":"lisk-sales"}

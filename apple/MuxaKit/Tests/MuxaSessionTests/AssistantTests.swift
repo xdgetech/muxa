@@ -34,7 +34,7 @@ class AssistantBridge: CaptureBridge, @unchecked Sendable {
             emit(.workDetail(work: id, entry: entry, captures: captures.filter { entry.captures.contains($0.id) },
                              requests: requests.filter { $0.work == item }))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .requestAssistant(let id, let item, let rev, let scope, let workspace, let purpose):
+        case .requestAssistant(let id, let item, let rev, let scope, let workspace, let purpose, _):
             record(req)
             ask(id, item, rev: rev, scope: scope, workspace: workspace, purpose: purpose)
         case .cancelRequest(let id, let request, let version):
@@ -163,7 +163,7 @@ struct AssistantTests {
         #expect(made.id == "q-00000001")
         #expect(made.delivery == .pending)
         #expect(bridge.sent.contains {
-            if case .requestAssistant(_, "w-00000001", 1, .draft, nil, "A memo") = $0 { true } else { false }
+            if case .requestAssistant(_, "w-00000001", 1, .draft, nil, "A memo", nil) = $0 { true } else { false }
         })
         #expect(session.workList[0].requests == ["q-00000001"])
         #expect(session.requests(of: session.workList[0]).map(\.id) == ["q-00000001"])
@@ -171,7 +171,7 @@ struct AssistantTests {
         let again = try await session.ask(session.workList[0], scope: .draft)
         #expect(again.version == 2)
         #expect(bridge.sent.contains {
-            if case .requestAssistant(_, "w-00000001", 2, .draft, nil, nil) = $0 { true } else { false }
+            if case .requestAssistant(_, "w-00000001", 2, .draft, nil, nil, nil) = $0 { true } else { false }
         })
     }
 

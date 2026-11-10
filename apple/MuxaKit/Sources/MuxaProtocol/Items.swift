@@ -45,6 +45,8 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     public var delegate: DelegateProposal?
     /// With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050).
     public var hypothesis: HypothesisProposal?
+    /// With kind `handoff`: the step approve starts (`work` level 12, ADR 0051).
+    public var handoff: HandoffProposal?
     /// The answers the host accepts now, in the order to show them. Unknown
     /// actions are left out: PROTOCOL.md says to show them as nothing.
     public var answers: [InboxAction]
@@ -55,7 +57,8 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         protectedAt: UInt64? = nil, answeredAt: UInt64? = nil, answer: InboxAction? = nil, summary: String? = nil, task: String? = nil, session: String? = nil,
         pane: String? = nil, prompt: ChatPrompt? = nil, attachments: Attachments = Attachments(),
         routine: String? = nil, proposal: Proposal? = nil, sort: SortProposal? = nil,
-        delegate: DelegateProposal? = nil, hypothesis: HypothesisProposal? = nil, answers: [InboxAction] = []
+        delegate: DelegateProposal? = nil, hypothesis: HypothesisProposal? = nil, handoff: HandoffProposal? = nil,
+        answers: [InboxAction] = []
     ) {
         self.id = id
         self.kind = kind
@@ -81,6 +84,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         self.sort = sort
         self.delegate = delegate
         self.hypothesis = hypothesis
+        self.handoff = handoff
         self.answers = answers
     }
 }
@@ -88,7 +92,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 extension InboxItem: Codable {
     private enum Key: String, CodingKey {
         case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, protectedAt, answeredAt, answer
-        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, answers
+        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, handoff, answers
     }
 
     public init(from decoder: any Decoder) throws {
@@ -117,6 +121,7 @@ extension InboxItem: Codable {
         sort = try c.decodeIfPresent(SortProposal.self, forKey: .sort)
         delegate = try c.decodeIfPresent(DelegateProposal.self, forKey: .delegate)
         hypothesis = try c.decodeIfPresent(HypothesisProposal.self, forKey: .hypothesis)
+        handoff = try c.decodeIfPresent(HandoffProposal.self, forKey: .handoff)
         answers = (try c.decodeIfPresent([String].self, forKey: .answers) ?? []).compactMap(InboxAction.init(rawValue:))
     }
 
@@ -146,6 +151,7 @@ extension InboxItem: Codable {
         try c.encodeIfPresent(sort, forKey: .sort)
         try c.encodeIfPresent(delegate, forKey: .delegate)
         try c.encodeIfPresent(hypothesis, forKey: .hypothesis)
+        try c.encodeIfPresent(handoff, forKey: .handoff)
         if !answers.isEmpty { try c.encode(answers, forKey: .answers) }
     }
 }
@@ -165,11 +171,14 @@ public enum ItemKind: Equatable, Hashable, Sendable {
     case delegate
     /// Level 11: the overall assistant proposes a hypothesis about the user.
     case hypothesis
+    /// Level 12: a staff member asks to pass a request on to another.
+    case handoff
     case other(String)
 
     private static let names: [(ItemKind, String)] = [
         (.ask, "ask"), (.review, "review"), (.failure, "failure"), (.proposal, "proposal"), (.briefing, "briefing"),
         (.sort, "sort"), (.delegate, "delegate"), (.hypothesis, "hypothesis"),
+        (.handoff, "handoff"),
     ]
 
     public init(raw: String) {

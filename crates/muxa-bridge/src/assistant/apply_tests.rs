@@ -107,6 +107,7 @@ impl Host {
         let q = requests
             .create::<StateError>(|id| {
                 Ok(AssistantRequest {
+                    steps: Vec::new(),
                     id,
                     work: work.id.clone(),
                     version: 1,

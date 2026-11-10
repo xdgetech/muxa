@@ -80,6 +80,8 @@ fn capture(id: &str, workspace: Option<&str>, text: &str, at: u64) -> Capture {
 fn result(summary: &str) -> AssistResult {
     let long = |n: usize| (0..n).map(|i| format!("{i}-{}", "q".repeat(300))).collect();
     AssistResult {
+        worker: None,
+        step: None,
         version: 1,
         at: 500,
         summary: summary.into(),
@@ -109,6 +111,7 @@ fn result(summary: &str) -> AssistResult {
 
 fn request(id: &str, work: &str, workspace: &str, summary: &str) -> AssistantRequest {
     AssistantRequest {
+        steps: Vec::new(),
         id: id.into(),
         work: work.into(),
         version: 1,

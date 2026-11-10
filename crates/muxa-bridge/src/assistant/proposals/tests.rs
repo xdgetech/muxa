@@ -244,6 +244,7 @@ fn sort_of(c: &Capture) -> Proposal {
 
 fn delegate_to(w: &WorkItem, workspace: &str) -> Proposal {
     Proposal::Delegate(DelegateProposal {
+        worker: None,
         work: w.id.clone(),
         workspace: workspace.into(),
         scope: AssistScope::Compare,

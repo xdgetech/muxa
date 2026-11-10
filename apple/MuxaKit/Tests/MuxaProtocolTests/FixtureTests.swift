@@ -224,10 +224,10 @@ struct FixtureTests {
 
     @Test func assistantContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl")
-        #expect(requests.count == 39)
+        #expect(requests.count == 44)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("assistant/messages.jsonl")
-        #expect(messages.count == 37)
+        #expect(messages.count == 49)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -287,8 +287,8 @@ struct FixtureTests {
     @Test func planContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl").map(Wire.decodeRequest)
         let messages = try Self.lines("assistant/messages.jsonl").map(Wire.decodeMessage)
-        guard case .applyNotes(_, let fromRequest, 1, _) = requests[18], fromRequest.hasPrefix("q-"),
-            case .applyNotes(_, let fromPlan, 2, _) = requests[19], fromPlan.hasPrefix("p-")
+        guard case .applyNotes(_, let fromRequest, 1, _, nil) = requests[18], fromRequest.hasPrefix("q-"),
+            case .applyNotes(_, let fromPlan, 2, _, nil) = requests[19], fromPlan.hasPrefix("p-")
         else { Issue.record("expected apply-notes from a request and a plan"); return }
         #expect(requests[20] == .planNow(id: 420, minutes: 45))
         #expect(requests[21] == .planNow(id: 421))
@@ -394,6 +394,86 @@ struct FixtureTests {
         #expect(corrections[3].reason == nil && !corrections[3].inTop)
     }
 
+    @Test func staffContractRoundTrips() throws {
+        let requests = try Self.lines("assistant/requests.jsonl").map(Wire.decodeRequest)
+        let messages = try Self.lines("assistant/messages.jsonl").map(Wire.decodeMessage)
+        guard case .requestAssistant(_, _, _, _, _, _, "lisk-strategist") = requests[39] else {
+            Issue.record("expected request-assistant with a worker"); return
+        }
+        guard case .capture(_, _, _, _, _, let assist?) = requests[40] else { Issue.record("expected capture"); return }
+        #expect(assist.worker == "lisk-architect")
+        guard case .applyNotes(_, _, _, _, 2) = requests[42], case .applyNotes(_, _, _, _, nil) = requests[18] else {
+            Issue.record("expected apply-notes with a step, and an older one without"); return
+        }
+
+        guard case .hello(_, _, _, let capabilities) = messages[37] else { Issue.record("expected hello"); return }
+        #expect(workLevel(capabilities) == workStaff)
+        // A named worker is step 1, picked by the user.
+        guard case .workSaved(_, _, let asked?) = messages[38] else { Issue.record("expected work-saved"); return }
+        #expect(asked.steps.count == 1 && asked.steps[0].by == .user && asked.steps[0].run == asked.run)
+        // Approving a hand-off: the request with its new step, then the answered item.
+        guard case .workSaved(_, _, let chain?) = messages[42], let newest = chain.steps.last else {
+            Issue.record("expected work-saved with steps"); return
+        }
+        #expect(newest.step == 2 && newest.by == .handoff && newest.delivery == chain.delivery)
+        #expect(newest.run == chain.run && chain.steps[0].handoff?.worker == newest.worker)
+        guard case .inboxSaved(_, _, let item?) = messages[43], let handoff = item.handoff else {
+            Issue.record("expected the answered handoff item"); return
+        }
+        #expect(item.kind == .handoff && item.answer == .approve && handoff.step == 1 && item.answers.isEmpty)
+        // Each result names its worker and step; inside a version nothing is stale.
+        guard case .workSaved(_, _, let done?) = messages[45] else { Issue.record("expected work-saved"); return }
+        #expect(done.delivery == .resulted)
+        let current = done.results.filter { $0.version == done.version }
+        #expect(current.map(\.step) == [2, 1] && current.allSatisfy { !$0.stale })
+        #expect(done.results[0].notes != nil && done.results[0].worker != nil)
+        guard case .result(_, let refused?, _) = messages[47] else { Issue.record("expected an error"); return }
+        #expect(refused.code == .badRequest)
+
+        guard case .inboxList(_, _, let items, _, _, _, _, let assistant?, _, _, _) = messages[48] else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(items.map(\.kind) == [.handoff, .delegate])
+        #expect(items[0].answers == [.approve, .reject, .later])
+        #expect(items[1].delegate?.worker == "lisk-security")
+        let staff = assistant.delegates[0].staff
+        #expect(staff.filter(\.lead).count == 1)
+        #expect(staff.allSatisfy { $0.description.utf8.count <= 1024 })
+        // A client before level 12 reads an inbox-list without staff.
+        let old = try Wire.decodeMessage(
+            Data(
+                #"{"type":"inbox-list","inbox":1,"entries":[],"assistant":{"delegates":[{"workspace":"w","share":"outline","overallRequests":"review"}]}}"#
+                    .utf8))
+        guard case .inboxList(_, _, _, _, _, _, _, let oldAssistant?, _, _, _) = old else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(oldAssistant.delegates[0].staff.isEmpty)
+    }
+
+    /// A level 11 client knows no steps, staff or result worker: it reads the newest
+    /// step as the request and ignores the rest.
+    @Test func aLevel11ClientReadsAChainAsOneRequest() throws {
+        struct OldResult: Decodable { var version: UInt64; var summary: String }
+        struct OldRequest: Decodable { var delivery: Delivery; var run: String?; var results: [OldResult] }
+        struct OldSaved: Decodable { var request: OldRequest }
+        let line = try Self.lines("assistant/messages.jsonl")[45]
+        let old = try JSONDecoder().decode(OldSaved.self, from: line).request
+        #expect(old.delivery == .resulted && old.run == "t-00e004")
+        #expect(old.results.allSatisfy { $0.version >= 1 && !$0.summary.isEmpty })
+        // A newer host's `by` is unknown, not a failed list.
+        var list = try #require(
+            JSONSerialization.jsonObject(with: Self.lines("assistant/messages.jsonl")[48]) as? [String: Any])
+        var requests = try #require(list["requests"] as? [[String: Any]])
+        var steps = try #require(requests[0]["steps"] as? [[String: Any]])
+        steps[0]["by"] = "routine"
+        requests[0]["steps"] = steps
+        list["requests"] = requests
+        guard case .inboxList(_, _, _, _, _, let listed, _, _, _, _, _) = try Wire.decodeMessage(
+            JSONSerialization.data(withJSONObject: list))
+        else { Issue.record("expected inbox-list"); return }
+        #expect(listed[0].steps[0].by == .other("routine"))
+    }
+
     @Test func unknownPolicyValuesStillDecode() throws {
         let decode = { (json: String) in Data(json.utf8) }
         #expect(try JSONDecoder().decode(CorrectionKind.self, from: decode(#""skipped""#)) == .other("skipped"))
@@ -458,10 +538,10 @@ struct FixtureTests {
     }
 
     @Test func unknownItemKindsStatesAndAnswersStillDecode() throws {
-        let json = #"{"id":"i-00000001","kind":"handoff","state":"snoozed","question":"q","workspace":"w","title":"t","#
+        let json = #"{"id":"i-00000001","kind":"escalation","state":"snoozed","question":"q","workspace":"w","title":"t","#
             + #""createdAt":1,"answer":"escalate","answers":["accept","escalate","later"]}"#
         let item = try JSONDecoder().decode(InboxItem.self, from: Data(json.utf8))
-        #expect(item.kind == .other("handoff"))
+        #expect(item.kind == .other("escalation"))
         #expect(item.state == .other("snoozed"))
         #expect(item.answer == nil)
         #expect(item.answers == [.accept, .later])

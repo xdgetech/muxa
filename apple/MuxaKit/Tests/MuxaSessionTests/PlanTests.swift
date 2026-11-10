@@ -42,7 +42,7 @@ class PlanBridge: AssistantBridge, @unchecked Sendable {
             plans.insert(made, at: 0)
             emit(.planSaved(plan: id, entry: made))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .applyNotes(let id, _, _, let base):
+        case .applyNotes(let id, _, _, let base, _):
             note(req)
             guard base == liveNotes else {
                 return emit(.result(id: id, error: ErrorBody(code: .conflict, message: "NOTES.md changed"), sessions: nil))
@@ -188,7 +188,7 @@ struct PlanTests {
         try await session.applyNotes(of: request, result: result)
         #expect(session.notesApplied(request, result))
         #expect(bridge.planRequests.contains {
-            if case .applyNotes(_, "q-00000001", 3, "base-1") = $0 { true } else { false }
+            if case .applyNotes(_, "q-00000001", 3, "base-1", nil) = $0 { true } else { false }
         })
         #expect(session.savedWork.isEmpty && session.savedRequests.isEmpty)
         // The live file changed: the host refuses, and the message says to ask again.

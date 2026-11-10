@@ -4,6 +4,8 @@ use super::*;
 
 fn result(version: u64, stale: bool, summary: &str) -> AssistResult {
     AssistResult {
+        worker: None,
+        step: None,
         version,
         at: 1,
         summary: summary.into(),
@@ -178,6 +180,7 @@ fn gather_reads_the_captures_and_the_task_titles() {
         tasks: vec![task.id.clone(), "t-ffffff".into()],
     };
     let request = AssistantRequest {
+        steps: Vec::new(),
         id: "q-0000000a".into(),
         work: work.id.clone(),
         version: 2,

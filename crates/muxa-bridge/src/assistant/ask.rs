@@ -202,6 +202,7 @@ fn new_request(
 ) -> Result<AssistantRequest, Fail> {
     requests.create_with_extra(|id| {
         let q = AssistantRequest {
+            steps: Vec::new(),
             id,
             work: w.id.clone(),
             version: 1,

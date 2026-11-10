@@ -23,6 +23,8 @@ fn work(id: &str, updated: u64) -> WorkItem {
 
 fn result(version: u64, at: u64) -> AssistResult {
     AssistResult {
+        worker: None,
+        step: None,
         version,
         at,
         summary: "s".into(),
@@ -38,6 +40,7 @@ fn result(version: u64, at: u64) -> AssistResult {
 
 fn request(id: &str, work: &str, version: u64, results: Vec<AssistResult>) -> AssistantRequest {
     AssistantRequest {
+        steps: Vec::new(),
         id: id.into(),
         work: work.into(),
         version,

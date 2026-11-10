@@ -35,6 +35,8 @@ extension ItemKind {
         case .sort: "Sort"
         case .delegate: "Delegate"
         case .hypothesis: "Hypothesis"
+        // No hand-off view yet (ADR 0051): shown like a kind this client does not know.
+        case .handoff: "Handoff"
         case .other(let raw): raw.capitalized
         }
     }
@@ -49,7 +51,7 @@ extension ItemKind {
         case .sort: Icon.capture
         case .delegate: Icon.assistant
         case .hypothesis: Icon.ask
-        case .other: "tray"
+        case .handoff, .other: "tray"
         }
     }
 }

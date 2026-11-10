@@ -243,6 +243,7 @@ fn the_file_is_read_from_a_plain_folder_only() {
 
 fn request(version: u64, results: Vec<AssistResult>) -> AssistantRequest {
     AssistantRequest {
+        steps: Vec::new(),
         id: "q-0000000a".into(),
         work: "w-0000000b".into(),
         version,

@@ -252,11 +252,14 @@ public struct AssistantRequest: Equatable, Sendable, Identifiable {
     public var run: String?
     /// Newest first, at most 10.
     public var results: [AssistResult]
+    /// Level 12: the current version's chain, step 1 first (ADR 0051 §3). `delivery`
+    /// and `run` are the newest step's.
+    public var steps: [RequestStep]
 
     public init(
         id: String, work: String, version: UInt64, workspace: String, scope: AssistScope, delivery: Delivery,
         deliveryAt: UInt64, createdAt: UInt64, updatedAt: UInt64, purpose: String? = nil, run: String? = nil,
-        results: [AssistResult] = []
+        results: [AssistResult] = [], steps: [RequestStep] = []
     ) {
         self.id = id
         self.work = work
@@ -270,12 +273,14 @@ public struct AssistantRequest: Equatable, Sendable, Identifiable {
         self.purpose = purpose
         self.run = run
         self.results = results
+        self.steps = steps
     }
 }
 
 extension AssistantRequest: Codable {
     private enum Key: String, CodingKey {
         case id, work, version, workspace, scope, delivery, deliveryAt, createdAt, updatedAt, purpose, run, results
+        case steps
     }
 
     public init(from decoder: any Decoder) throws {
@@ -292,6 +297,7 @@ extension AssistantRequest: Codable {
         purpose = try c.decodeIfPresent(String.self, forKey: .purpose)
         run = try c.decodeIfPresent(String.self, forKey: .run)
         results = try c.decodeIfPresent([AssistResult].self, forKey: .results) ?? []
+        steps = try c.decodeIfPresent([RequestStep].self, forKey: .steps) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -308,6 +314,7 @@ extension AssistantRequest: Codable {
         try c.encodeIfPresent(purpose, forKey: .purpose)
         try c.encodeIfPresent(run, forKey: .run)
         if !results.isEmpty { try c.encode(results, forKey: .results) }
+        if !steps.isEmpty { try c.encode(steps, forKey: .steps) }
     }
 }
 
@@ -438,11 +445,15 @@ public struct AssistResult: Equatable, Sendable {
     public var possibleDuplicates: [PossibleDuplicate]
     /// Level 10: the delegate's proposed notes (ADR 0049 §1).
     public var notes: Notes?
+    /// Level 12: the staff member whose step produced it.
+    public var worker: String?
+    /// Level 12: the step of `version` that produced it. Nil: step 1.
+    public var step: UInt32?
 
     public init(
         version: UInt64, at: UInt64, summary: String, stale: Bool = false, findings: [Finding] = [],
         openQuestions: [String] = [], next: [String] = [], files: [String] = [],
-        possibleDuplicates: [PossibleDuplicate] = [], notes: Notes? = nil
+        possibleDuplicates: [PossibleDuplicate] = [], notes: Notes? = nil, worker: String? = nil, step: UInt32? = nil
     ) {
         self.version = version
         self.at = at
@@ -454,12 +465,14 @@ public struct AssistResult: Equatable, Sendable {
         self.files = files
         self.possibleDuplicates = possibleDuplicates
         self.notes = notes
+        self.worker = worker
+        self.step = step
     }
 }
 
 extension AssistResult: Codable {
     private enum Key: String, CodingKey {
-        case version, at, summary, stale, findings, openQuestions, next, files, possibleDuplicates, notes
+        case version, at, summary, stale, findings, openQuestions, next, files, possibleDuplicates, notes, worker, step
     }
 
     public init(from decoder: any Decoder) throws {
@@ -474,6 +487,8 @@ extension AssistResult: Codable {
         files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
         possibleDuplicates = try c.decodeIfPresent([PossibleDuplicate].self, forKey: .possibleDuplicates) ?? []
         notes = try c.decodeIfPresent(Notes.self, forKey: .notes)
+        worker = try c.decodeIfPresent(String.self, forKey: .worker)
+        step = try c.decodeIfPresent(UInt32.self, forKey: .step)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -488,6 +503,8 @@ extension AssistResult: Codable {
         if !files.isEmpty { try c.encode(files, forKey: .files) }
         if !possibleDuplicates.isEmpty { try c.encode(possibleDuplicates, forKey: .possibleDuplicates) }
         try c.encodeIfPresent(notes, forKey: .notes)
+        try c.encodeIfPresent(worker, forKey: .worker)
+        try c.encodeIfPresent(step, forKey: .step)
     }
 }
 
@@ -560,10 +577,13 @@ public struct PossibleDuplicate: Codable, Equatable, Sendable {
 public struct AssistSpec: Codable, Equatable, Sendable {
     public var scope: AssistScope
     public var purpose: String?
+    /// Level 12: a staff member of the workspace. Nil: its lead.
+    public var worker: String?
 
-    public init(scope: AssistScope, purpose: String? = nil) {
+    public init(scope: AssistScope, purpose: String? = nil, worker: String? = nil) {
         self.scope = scope
         self.purpose = purpose
+        self.worker = worker
     }
 }
 

@@ -2,6 +2,8 @@
 //! None of them is a Task or an Inbox item.
 use serde::{Deserialize, Serialize};
 
+use crate::RequestStep;
+
 /// Level 9: `capture`, `sort-capture`, `update-work`, `request-assistant`,
 /// `cancel-request`, `get-work`, and `work`, `captures` and `requests` in
 /// `inbox-list`.
@@ -137,6 +139,10 @@ pub struct AssistantRequest {
     /// Newest first, at most 10.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub results: Vec<AssistResult>,
+    /// Level 12: the current version's chain, step 1 first (ADR 0051 §3).
+    /// `delivery` and `run` are the newest step's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<RequestStep>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,6 +206,12 @@ pub struct AssistResult {
     /// Level 10: the delegate's proposed notes (ADR 0049 §1). Never logged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<Notes>,
+    /// Level 12: the staff member whose step produced it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<String>,
+    /// Level 12: the step of `version` that produced it. Absent: step 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<u32>,
 }
 
 /// A deadline the user set on a Work item (ADR 0049 §6).
@@ -261,6 +273,9 @@ pub struct AssistSpec {
     pub scope: AssistScope,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
+    /// Level 12: a staff member of the workspace. Absent: its lead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

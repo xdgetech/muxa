@@ -2,7 +2,7 @@
 //! level 10. A plan never changes a Work item, an Inbox item or their order.
 use serde::{Deserialize, Serialize};
 
-use crate::{AssistScope, Delivery, Notes, SortAction};
+use crate::{AssistScope, Delivery, Notes, SortAction, StaffMember};
 
 /// Level 10: `apply-notes`, `plan-now`, `pin`, `unpin` and `due` on
 /// `update-work`, `sort` and `delegate` Inbox items, and `plans` and
@@ -171,6 +171,9 @@ pub struct DelegateProposal {
     pub purpose: String,
     /// Why the overall assistant asks. Never logged.
     pub reason: String,
+    /// Level 12: the staff member to ask. Absent: the workspace's lead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<String>,
 }
 
 /// Who assists on this host, in `inbox-list`.
@@ -194,6 +197,9 @@ pub struct DelegateInfo {
     /// Epoch seconds: when its `NOTES.md` last changed. Absent: no notes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes_at: Option<u64>,
+    /// Level 12: who answers its requests, the lead marked (ADR 0051 §1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub staff: Vec<StaffMember>,
 }
 
 /// What a workspace shares with the overall assistant (ADR 0049 §3).

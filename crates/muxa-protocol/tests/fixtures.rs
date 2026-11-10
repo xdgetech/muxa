@@ -443,8 +443,8 @@ fn assistant_fixtures_round_trip() {
     use muxa_protocol::{
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 39);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 37);
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 44);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 49);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -808,7 +808,7 @@ fn policy_fixtures_round_trip() {
             ..
         }
     ));
-    let forgotten: Vec<&str> = requests[36..]
+    let forgotten: Vec<&str> = requests[36..39]
         .iter()
         .map(|r| match r {
             Request::Forget { record, .. } => record.as_str(),
@@ -949,6 +949,201 @@ fn policy_fixtures_round_trip() {
     let old: Message =
         serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
     assert!(matches!(old, Message::InboxList { policies, .. } if policies.is_empty()));
+}
+
+#[test]
+fn staff_fixtures_round_trip() {
+    use muxa_protocol::{
+        Delivery, ErrorCode, InboxAction, ItemKind, StepBy, WORK_STAFF, work_level,
+    };
+    let read = |name: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/assistant/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[39],
+        Request::RequestAssistant { worker: Some(w), .. } if w == "lisk-strategist"
+    ));
+    assert!(matches!(
+        &requests[40],
+        Request::Capture { assist: Some(a), .. } if a.worker.as_deref() == Some("lisk-architect")
+    ));
+    assert!(matches!(
+        requests[42],
+        Request::ApplyNotes { step: Some(2), .. }
+    ));
+    // Older lines carry no worker and no step.
+    assert!(matches!(
+        requests[18],
+        Request::ApplyNotes { step: None, .. }
+    ));
+
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[37] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_STAFF);
+    // A named worker is step 1, picked by the user.
+    let Message::WorkSaved {
+        request: Some(q), ..
+    } = &messages[38]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (q.steps.len(), q.steps[0].by, q.steps[0].run.as_deref()),
+        (1, StepBy::User, q.run.as_deref())
+    );
+    // Approving a hand-off: the request with its new step, then the answered item.
+    let Message::WorkSaved {
+        request: Some(chain),
+        ..
+    } = &messages[42]
+    else {
+        panic!()
+    };
+    let newest = chain.steps.last().unwrap();
+    assert_eq!(
+        (newest.step, newest.by, newest.delivery),
+        (2, StepBy::Handoff, chain.delivery)
+    );
+    assert_eq!(newest.run, chain.run);
+    assert_eq!(
+        chain.steps[0].handoff.as_ref().map(|h| h.worker.as_str()),
+        Some(newest.worker.as_str())
+    );
+    let Message::InboxSaved {
+        item: Some(item), ..
+    } = &messages[43]
+    else {
+        panic!()
+    };
+    let handoff = item.handoff.as_ref().unwrap();
+    assert_eq!(
+        (item.kind, item.answer, handoff.step),
+        (ItemKind::Handoff, Some(InboxAction::Approve), 1)
+    );
+    assert!(item.answers.is_empty());
+    // Each result names its worker and step; inside a version nothing is stale.
+    let Message::WorkSaved {
+        request: Some(done),
+        ..
+    } = &messages[45]
+    else {
+        panic!()
+    };
+    assert_eq!(done.delivery, Delivery::Resulted);
+    let current: Vec<(Option<u32>, bool)> = done
+        .results
+        .iter()
+        .filter(|r| r.version == done.version)
+        .map(|r| (r.step, r.stale))
+        .collect();
+    assert_eq!(current, [(Some(2), false), (Some(1), false)]);
+    assert!(done.results[0].notes.is_some() && done.results[0].worker.is_some());
+    let Message::Result { error: Some(e), .. } = &messages[47] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::BadRequest);
+
+    let Message::InboxList {
+        items,
+        assistant: Some(assistant),
+        ..
+    } = &messages[48]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        items.iter().map(|i| i.kind).collect::<Vec<_>>(),
+        [ItemKind::Handoff, ItemKind::Delegate]
+    );
+    assert_eq!(
+        items[0].answers,
+        [
+            InboxAction::Approve,
+            InboxAction::Reject,
+            InboxAction::Later
+        ]
+    );
+    assert_eq!(
+        items[1].delegate.as_ref().and_then(|d| d.worker.as_deref()),
+        Some("lisk-security")
+    );
+    let staff = &assistant.delegates[0].staff;
+    assert_eq!(staff.iter().filter(|m| m.lead).count(), 1);
+    assert!(staff.iter().all(|m| m.description.len() <= 1024));
+    // A client before level 12 reads an inbox-list without staff.
+    let old: Message =
+        serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[],"assistant":{"delegates":[{"workspace":"w","share":"outline","overallRequests":"review"}]}}"#).unwrap();
+    assert!(
+        matches!(old, Message::InboxList { assistant: Some(a), .. } if a.delegates[0].staff.is_empty())
+    );
+}
+
+/// A level 11 client knows no steps, staff or result worker: it reads the
+/// newest step as the request and ignores the rest.
+#[test]
+fn a_level_11_client_reads_a_chain_as_one_request() {
+    #[derive(serde::Deserialize)]
+    struct OldResult {
+        version: u64,
+        summary: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldRequest {
+        delivery: muxa_protocol::Delivery,
+        run: Option<String>,
+        results: Vec<OldResult>,
+    }
+    let line = std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/assistant/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+    .lines()
+    .nth(45)
+    .unwrap()
+    .to_owned();
+    let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+    let old: OldRequest = serde_json::from_value(value["request"].clone()).unwrap();
+    assert_eq!(old.delivery, muxa_protocol::Delivery::Resulted);
+    assert_eq!(old.run.as_deref(), Some("t-00e004"));
+    assert!(
+        old.results
+            .iter()
+            .all(|r| r.version >= 1 && !r.summary.is_empty())
+    );
+    // A newer host's `by` is unknown, not a failed list.
+    let mut list: serde_json::Value = serde_json::from_str(
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/assistant/messages.jsonl",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .nth(48)
+        .unwrap(),
+    )
+    .unwrap();
+    list["requests"][0]["steps"][0]["by"] = serde_json::json!("routine");
+    let Message::InboxList { requests, .. } = serde_json::from_value(list).unwrap() else {
+        panic!()
+    };
+    assert_eq!(requests[0].steps[0].by, muxa_protocol::StepBy::Unknown);
 }
 
 /// The fixtures' `inbox-list` lines with the values a newer host may add: an

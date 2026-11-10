@@ -22,7 +22,7 @@ extension DemoBridge {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .applyNotes(let id, let source, let version, let base):
+        case .applyNotes(let id, let source, let version, let base, _):
             let outcome = lock.withLock { () -> Result<DemoNotesApplied, DemoWork.Refusal> in
                 do throws(DemoWork.Refusal) {
                     return .success(try work.applyNotes(source: source, version: version, base: base))

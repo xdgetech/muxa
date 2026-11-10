@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.Serializable
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -133,10 +134,10 @@ class FixtureTest {
     @Test
     fun assistantContractRoundTrips() {
         val requests = lines("assistant/requests.jsonl")
-        assertEquals(39, requests.size)
+        assertEquals(44, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(37, messages.size)
+        assertEquals(49, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -312,6 +313,65 @@ class FixtureTest {
     }
 
     @Test
+    fun staffContractRoundTrips() {
+        val requests = lines("assistant/requests.jsonl").map(Wire::decodeRequest)
+        val messages = lines("assistant/messages.jsonl").map(Wire::decodeMessage)
+        assertEquals("lisk-strategist", (requests[39] as Request.RequestAssistant).worker)
+        assertEquals("lisk-architect", (requests[40] as Request.Capture).assist?.worker)
+        assertEquals(2, (requests[42] as Request.ApplyNotes).step)
+        // Older lines carry no worker and no step.
+        assertEquals(null, (requests[18] as Request.ApplyNotes).step)
+
+        assertEquals(WORK_STAFF, workLevel((messages[37] as Message.Hello).capabilities))
+        // A named worker is step 1, picked by the user.
+        val asked = (messages[38] as Message.WorkSaved).request!!
+        assertEquals(Triple(1, StepBy.USER, asked.run), Triple(asked.steps.size, asked.steps[0].by, asked.steps[0].run))
+        // Approving a hand-off: the request with its new step, then the answered item.
+        val chain = (messages[42] as Message.WorkSaved).request!!
+        val newest = chain.steps.last()
+        assertEquals(Triple(2, StepBy.HANDOFF, chain.delivery), Triple(newest.step, newest.by, newest.delivery))
+        assertEquals(chain.run, newest.run)
+        assertEquals(newest.worker, chain.steps[0].handoff?.worker)
+        val item = (messages[43] as Message.InboxSaved).item!!
+        assertEquals(Triple(ItemKind.HANDOFF, InboxAction.APPROVE, 1), Triple(item.kind, item.answer, item.handoff?.step))
+        assertTrue(item.answers.isEmpty())
+        // Each result names its worker and step; inside a version nothing is stale.
+        val done = (messages[45] as Message.WorkSaved).request!!
+        assertEquals(Delivery.RESULTED, done.delivery)
+        val current = done.results.filter { it.version == done.version }.map { it.step to it.stale }
+        assertEquals(listOf(2 to false, 1 to false), current)
+        assertTrue(done.results[0].notes != null && done.results[0].worker != null)
+        assertEquals(ErrorCode.BAD_REQUEST, (messages[47] as Message.Result).error?.code)
+
+        val list = messages[48] as Message.InboxList
+        assertEquals(listOf(ItemKind.HANDOFF, ItemKind.DELEGATE), list.items.map { it.kind })
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER), list.items[0].answers)
+        assertEquals("lisk-security", list.items[1].delegate?.worker)
+        val staff = list.assistant!!.delegates[0].staff
+        assertEquals(1, staff.count { it.lead })
+        assertTrue(staff.all { it.description.toByteArray().size <= 1024 })
+        // A client before level 12 reads an inbox-list without staff.
+        val old = Wire.decodeMessage(
+            """{"type":"inbox-list","inbox":1,"entries":[],"assistant":{"delegates":[""" +
+                """{"workspace":"w","share":"outline","overallRequests":"review"}]}}""",
+        ) as Message.InboxList
+        assertTrue(old.assistant!!.delegates[0].staff.isEmpty())
+    }
+
+    /** A level 11 client knows no steps, staff or result worker: it reads the newest step as the request. */
+    @Test
+    fun aLevel11ClientReadsAChainAsOneRequest() {
+        val line = lines("assistant/messages.jsonl")[45]
+        val old = Json { ignoreUnknownKeys = true }.decodeFromString(Level11Saved.serializer(), line).request
+        assertEquals(Delivery.RESULTED to "t-00e004", old.delivery to old.run)
+        assertTrue(old.results.all { it.version >= 1 && it.summary.isNotEmpty() })
+        // A newer host's `by` is unknown, not a failed list.
+        val list = lines("assistant/messages.jsonl")[48].replace(""""by":"lead"""", """"by":"routine"""")
+        val requests = (Wire.decodeMessage(list) as Message.InboxList).requests
+        assertEquals(StepBy("routine"), requests[0].steps[0].by)
+    }
+
+    @Test
     fun unknownWorkStatesAndDeliveriesStillDecode() {
         val line = """{"type":"work-saved","work":1,"entry":{"id":"w-00000001","rev":1,"title":"t","state":"blocked",""" +
             """"createdAt":1,"updatedAt":1},"request":{"id":"q-00000001","work":"w-00000001","version":1,"workspace":"w",""" +
@@ -461,11 +521,11 @@ class FixtureTest {
 
     @Test
     fun unknownItemKindsStatesAndAnswersStillDecode() {
-        val line = """{"type":"inbox-list","inbox":1,"entries":[],"items":[{"id":"i-00000001","kind":"handoff",""" +
+        val line = """{"type":"inbox-list","inbox":1,"entries":[],"items":[{"id":"i-00000001","kind":"escalation",""" +
             """"state":"snoozed","question":"q","workspace":"w","title":"t","createdAt":1,"answer":"escalate",""" +
             """"answers":["accept","escalate","later"]}]}"""
         val item = (Wire.decodeMessage(line) as Message.InboxList).items.single()
-        assertEquals(ItemKind("handoff"), item.kind)
+        assertEquals(ItemKind("escalation"), item.kind)
         assertEquals(ItemState("snoozed"), item.state)
         assertEquals(null, item.answer)
         assertEquals(listOf(InboxAction.ACCEPT, InboxAction.LATER), item.answers)
@@ -520,3 +580,11 @@ class FixtureTest {
         assertEquals(tree("""{"type":"bytes","id":1,"pane":"%1","data":"G/8="}"""), tree(line))
     }
 }
+
+// What a level 11 client knows of a `work-saved` request.
+@Serializable private data class Level11Result(val version: Long, val summary: String)
+
+@Serializable
+private data class Level11Request(val delivery: Delivery, val run: String? = null, val results: List<Level11Result>)
+
+@Serializable private data class Level11Saved(val request: Level11Request)

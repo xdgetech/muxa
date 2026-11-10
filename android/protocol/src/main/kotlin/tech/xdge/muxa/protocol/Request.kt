@@ -204,7 +204,8 @@ sealed interface Request {
 
     /**
      * Ask a workspace's agent to work on a Work item; needs the host daemon. [workspace] null takes the item's.
-     * The same [work] and [rev] return the request already made. A `work-saved` comes first.
+     * The same [work] and [rev] return the request already made. A `work-saved` comes first. [worker] (level 12)
+     * names a staff member of the workspace; null asks its lead.
      */
     @Serializable
     data class RequestAssistant(
@@ -214,6 +215,7 @@ sealed interface Request {
         val scope: AssistScope,
         val workspace: String? = null,
         val purpose: String? = null,
+        val worker: String? = null,
     ) : Request
 
     /** Stop a request's [version]. A `work-saved` comes first. */
@@ -225,10 +227,17 @@ sealed interface Request {
     /**
      * Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 10, ADR 0049). [source]
      * is a request `q-…` or a plan `p-…`; [version] the request's version or the plan's `rev`; [base] the
-     * proposal's. A changed live file is `conflict`. A `work-saved` or `plan-saved` comes first.
+     * proposal's. A changed live file is `conflict`. A `work-saved` or `plan-saved` comes first. [step] (level 12)
+     * is the step of a request's version whose result proposed the notes; null is the version's last step.
      */
     @Serializable
-    data class ApplyNotes(override val id: Long, val source: String, val version: Long, val base: String) : Request
+    data class ApplyNotes(
+        override val id: Long,
+        val source: String,
+        val version: Long,
+        val base: String,
+        val step: Int? = null,
+    ) : Request
 
     /** Start an overall run now (`work` level 10); [minutes] is the time the user has. A `plan-saved` comes first. */
     @Serializable data class PlanNow(override val id: Long, val minutes: Int? = null) : Request

@@ -73,7 +73,7 @@ extension DemoBridge {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .requestAssistant(let id, let item, let rev, let scope, let workspace, let purpose):
+        case .requestAssistant(let id, let item, let rev, let scope, let workspace, let purpose, _):
             changeRequest(id) { a throws(DemoWork.Refusal) in
                 try a.ask(item, rev: rev, scope: scope, workspace: workspace, purpose: purpose)
             }

@@ -748,6 +748,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                     assist: assist.then(|| muxa_protocol::AssistSpec {
                         scope: scope.unwrap_or(muxa_protocol::AssistScope::Research),
                         purpose,
+                        worker: None,
                     }),
                 },
                 json,
