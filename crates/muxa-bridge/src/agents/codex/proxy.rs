@@ -104,6 +104,11 @@ impl Proxy {
         }
     }
 
+    /// Reads from now on end at `deadline`.
+    pub fn set_deadline(&mut self, deadline: Instant) {
+        self.socket.get_mut().deadline = deadline;
+    }
+
     fn error(&self, e: tungstenite::Error) -> Error {
         match io_kind(&e) {
             Some(io::ErrorKind::TimedOut) => Error::Timeout(self.timeout),

@@ -101,11 +101,12 @@ impl Launch {
             .collect()
     }
 
-    /// Blocking: starts the shared daemon if needed, then a thread in `cwd`.
-    pub fn create_thread(&self, cwd: &Path) -> Result<Thread, app_server::Error> {
+    /// Blocking: starts the shared daemon if needed, then a thread in `cwd`
+    /// named for `task`, saved so that the pane's `codex resume` opens it.
+    pub fn create_thread(&self, cwd: &Path, task: &str) -> Result<Thread, app_server::Error> {
         let endpoint = self.endpoint();
         endpoint.start_daemon()?;
-        endpoint.start_thread(cwd)
+        endpoint.start_saved_thread(cwd, &thread_name(task))
     }
 
     /// What the record keeps about `thread`, for `run`.
@@ -118,6 +119,12 @@ impl Launch {
             self.home.as_deref(),
         )
     }
+}
+
+/// The name the TUI shows for a run's thread: the record id, never its
+/// title, which can be an approved write's action (ADR 0052 §6).
+fn thread_name(task: &str) -> String {
+    format!("muxa {task}")
 }
 
 /// How a record's agent is seen: by the adapters, by the thread muxa owns

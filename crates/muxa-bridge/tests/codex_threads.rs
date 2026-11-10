@@ -2,8 +2,10 @@
 //! throwaway tmux server runs a Routine on Codex, played by
 //! `data/codex-fake.py`, which serves the App Server protocol and a viewer
 //! for `codex resume`. It never calls a model and never reads `~/.codex`.
-//! Checked: one thread per run, stored before the pane starts; turns go by
-//! id and nothing is typed; no input while the thread is not idle; an
+//! The fake drops a thread with no rollout soon after no connection holds
+//! it, and its viewer cannot open one (ADR 0028, facts 9 and 10).
+//! Checked: one thread per run, saved and stored before the pane starts; the
+//! viewer holds it until the first turn; turns go by id and nothing is typed; no input while the thread is not idle; an
 //! uncertain send is not retried; the state comes from the thread; logs
 //! hold no content; the user's layout does not change.
 #![cfg(feature = "tmux-integration")]
@@ -42,6 +44,8 @@ impl Host {
         let program = base.join("bin/codex");
         std::fs::copy(FAKE, &program).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Shorter than a run's way to its first turn.
+        std::fs::write(base.join("home/fake/unload-after"), "1").unwrap();
         let muxa = base.join("root/.muxa");
         std::fs::write(muxa.join("brief.md"), format!("Read. {}\n", MARKS[0])).unwrap();
         std::fs::write(
@@ -218,6 +222,7 @@ async fn a_routine_runs_on_its_own_thread_and_nothing_is_typed() {
     })
     .await;
     assert_eq!(h.log("resume.log"), std::slice::from_ref(&thread));
+    assert_eq!(h.log("names.log"), [format!("{thread}\tmuxa {run}")]);
 
     // Not idle: no input, and the state is the thread's.
     let mut seen = None;

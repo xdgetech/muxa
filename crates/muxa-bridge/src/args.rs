@@ -35,13 +35,15 @@ Logs go to stderr; MUXA_LOG sets the level (default: warn; the daemon: info).";
 
 /// Not in [`USAGE`]: a tool for the developer's checks of ADR 0028.
 pub const CODEX_RPC_USAGE: &str =
-    "usage: muxa-bridge codex-rpc [--codex PROGRAM] [--codex-home DIR] METHOD [JSON_PARAMS]
+    "usage: muxa-bridge codex-rpc [--codex PROGRAM] [--codex-home DIR] [--hold SECONDS] METHOD [JSON_PARAMS]
 
 Sends `initialize`, then one request, to the Codex app-server daemon through
 `codex app-server proxy`, the way muxa's runs do. Prints the result as JSON;
 an error answer goes to stderr and exits 1. JSON_PARAMS defaults to {}.
   --codex PROGRAM   the codex to run (default: codex)
-  --codex-home DIR  CODEX_HOME for the proxy (default: the inherited one)";
+  --codex-home DIR  CODEX_HOME for the proxy (default: the inherited one)
+  --hold SECONDS    keep the connection open that long after the answer, and
+                    print each notification's method and ids to stderr";
 
 /// Non-interactive SSH sessions often lack Homebrew's directories in PATH.
 const TMUX_CANDIDATES: [&str; 2] = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
@@ -74,6 +76,8 @@ pub struct CodexRpc {
     pub home: Option<PathBuf>,
     pub method: String,
     pub params: String,
+    /// Keep the connection open this long after the answer.
+    pub hold: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,11 +190,13 @@ fn parse_codex_rpc(args: Vec<std::ffi::OsString>) -> Result<Action, lexopt::Erro
     let mut parser = lexopt::Parser::from_args(args);
     let mut program = "codex".to_owned();
     let mut home = None;
+    let mut hold = None;
     let mut positional = Vec::new();
     while let Some(arg) = parser.next()? {
         match arg {
             Long("codex") => program = parser.value()?.string()?,
             Long("codex-home") => home = Some(absolute(parser.value()?.into(), "--codex-home")?),
+            Long("hold") => hold = Some(Duration::from_secs(parser.value()?.parse()?)),
             Long("help") | Short('h') => return Ok(Action::Help(CODEX_RPC_USAGE)),
             Value(v) if positional.len() < 2 => positional.push(v.string()?),
             _ => return Err(arg.unexpected()),
@@ -205,6 +211,7 @@ fn parse_codex_rpc(args: Vec<std::ffi::OsString>) -> Result<Action, lexopt::Erro
         home,
         method,
         params: positional.next().unwrap_or_else(|| "{}".to_owned()),
+        hold,
     }))
 }
 
@@ -453,8 +460,15 @@ mod tests {
                 home: Some("/h".into()),
                 method: "thread/read".into(),
                 params: r#"{"threadId":"t"}"#.into(),
+                hold: None,
             })
         );
+        let Action::CodexRpc(held) = parse_strs(&["codex-rpc", "--hold", "30", "m"]).unwrap()
+        else {
+            panic!("not codex-rpc")
+        };
+        assert_eq!(held.hold, Some(Duration::from_secs(30)));
+        assert!(parse_strs(&["codex-rpc", "--hold", "x", "m"]).is_err());
         let Action::CodexRpc(c) = parse_strs(&["codex-rpc", "thread/list"]).unwrap() else {
             panic!("not codex-rpc")
         };

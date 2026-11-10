@@ -467,17 +467,18 @@ async fn start(
     Ok(Started { launched, initial })
 }
 
-/// Creates the run's Codex thread in `dir`, and stores it for the reserved
-/// run under the creation claim before any pane exists (ADR 0028 §1).
+/// Creates the run's Codex thread in `dir`, saved so the pane can resume it,
+/// and stores it for the reserved run under the creation claim before any
+/// pane exists (ADR 0028 §1, revision 1).
 async fn owned_thread(
     record: &Record,
     launch: &owned::Launch,
     dir: &std::path::Path,
     slot: &mut Option<ClaimedTask>,
 ) -> Result<ThreadId, Failure> {
-    let (launch, cwd) = (launch.clone(), dir.to_path_buf());
+    let (launch, cwd, task) = (launch.clone(), dir.to_path_buf(), record.id.clone());
     let created =
-        tokio::task::spawn_blocking(move || launch.create_thread(&cwd).map(|t| (launch, t)))
+        tokio::task::spawn_blocking(move || launch.create_thread(&cwd, &task).map(|t| (launch, t)))
             .await
             .map_err(|_| Failure::before("the Codex thread start stopped"))?;
     let (launch, thread) = created.map_err(|e| {

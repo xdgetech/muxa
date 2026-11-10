@@ -1,6 +1,7 @@
 //! Against `tests/data/codex-fake.py`, which speaks the App Server protocol
 //! and never calls a model.
 use super::*;
+use std::path::Path;
 
 const FAKE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/codex-fake.py");
 
@@ -218,7 +219,7 @@ fn a_message_over_the_daemons_limit_is_not_sent() {
 #[test]
 fn a_request_returns_the_whole_response() {
     let home = Home::new("request");
-    let app = home.endpoint();
+    let mut app = home.endpoint().session().unwrap();
     let started = app
         .request(
             "thread/start",
@@ -232,4 +233,85 @@ fn a_request_returns_the_whole_response() {
         .unwrap();
     assert!(unknown["error"]["message"].is_string());
     assert!(unknown.get("result").is_none());
+}
+
+/// `codex resume <id>` as the pane runs it, with its stdin open.
+fn viewer(home: &Home, id: &ThreadId) -> std::process::Child {
+    Command::new(FAKE)
+        .args(["resume", id.as_str()])
+        .env(super::super::DIR_ENV, &home.0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+const UNLOAD: Duration = Duration::from_millis(600);
+
+#[test]
+fn an_empty_thread_is_gone_once_no_connection_holds_it_and_cannot_be_resumed() {
+    let home = Home::new("unload");
+    home.steer("unload-after", "0.3");
+    let app = home.endpoint();
+    let thread = app.start_thread(&home.0).unwrap();
+    let mut viewer = viewer(&home, &thread.id);
+    assert_eq!(
+        viewer.wait().unwrap().code(),
+        Some(1),
+        "no rollout to resume"
+    );
+    std::thread::sleep(UNLOAD);
+    assert!(matches!(
+        app.read_thread(&thread.id),
+        Err(Error::Rpc { .. })
+    ));
+    let refused = app.start_turn(&thread.id, "fixed prompt").unwrap_err();
+    assert!(!refused.uncertain);
+    assert!(home.log("turns.log").is_empty());
+
+    let mut held = app.session().unwrap();
+    let kept = held.start_thread(&home.0).unwrap();
+    std::thread::sleep(UNLOAD);
+    assert_eq!(app.read_thread(&kept.id).unwrap().status, Status::Idle);
+    held.start_turn(&kept.id, "fixed prompt").unwrap();
+}
+
+#[test]
+fn a_saved_thread_opens_in_the_viewer_which_keeps_it_loaded() {
+    let home = Home::new("saved");
+    home.steer("unload-after", "0.3");
+    let app = home.endpoint();
+    let thread = app.start_saved_thread(&home.0, "muxa t-000001").unwrap();
+    assert!(thread.path.as_deref().is_some_and(Path::is_file));
+    assert_eq!(
+        home.log("names.log"),
+        [format!("{}\tmuxa t-000001", thread.id)]
+    );
+    std::thread::sleep(UNLOAD);
+    assert_eq!(
+        app.read_thread(&thread.id).unwrap().status,
+        Status::NotLoaded
+    );
+    assert!(
+        !app.start_turn(&thread.id, "fixed prompt")
+            .unwrap_err()
+            .uncertain
+    );
+
+    let mut viewer = viewer(&home, &thread.id);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while app.read_thread(&thread.id).unwrap().status != Status::Idle {
+        assert!(
+            Instant::now() < deadline,
+            "the viewer never loaded the thread"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(UNLOAD);
+    assert_eq!(app.read_thread(&thread.id).unwrap().status, Status::Idle);
+    app.start_turn(&thread.id, "fixed prompt").unwrap();
+    assert_eq!(home.log("turns.log").len(), 1);
+    viewer.kill().unwrap();
+    viewer.wait().unwrap();
 }

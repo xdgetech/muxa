@@ -117,7 +117,10 @@ fn codex_rpc(c: args::CodexRpc) -> ExitCode {
         }
     };
     let endpoint = agents::codex::app_server::Endpoint::new(c.program, c.home);
-    let response = match endpoint.request(&c.method, params) {
+    let answered = endpoint
+        .session()
+        .and_then(|mut s| s.request(&c.method, params).map(|r| (s, r)));
+    let (mut session, response) = match answered {
         Ok(r) => r,
         Err(e) => {
             eprintln!("muxa-bridge codex-rpc: {e}");
@@ -125,7 +128,7 @@ fn codex_rpc(c: args::CodexRpc) -> ExitCode {
         }
     };
     let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).unwrap_or_default();
-    match (response.get("result"), response.get("error")) {
+    let code = match (response.get("result"), response.get("error")) {
         (Some(result), _) => {
             println!("{}", pretty(result));
             ExitCode::SUCCESS
@@ -138,7 +141,62 @@ fn codex_rpc(c: args::CodexRpc) -> ExitCode {
             eprintln!("muxa-bridge codex-rpc: the answer has no result or error");
             ExitCode::FAILURE
         }
+    };
+    if let Some(hold) = c.hold {
+        hold_open(&mut session, hold);
     }
+    code
+}
+
+/// Keeps `session` open for `hold`. Each event is printed as its method and
+/// ids only: notifications can carry the conversation.
+fn hold_open(session: &mut agents::codex::app_server::Session, hold: std::time::Duration) {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let until = std::time::Instant::now() + hold;
+    loop {
+        match session.next_event(until) {
+            Ok(Some(event)) => eprintln!("muxa-bridge codex-rpc: {}", event_line(&event)),
+            Ok(None) => {
+                eprintln!("muxa-bridge codex-rpc: held {}s; closing", hold.as_secs());
+                return;
+            }
+            Err(e) => {
+                eprintln!("muxa-bridge codex-rpc: the held connection ended: {e}");
+                return;
+            }
+        }
+    }
+}
+
+/// `event <method>`, with the thread and turn ids, the status and a server
+/// request's id when the event has them.
+fn event_line(event: &serde_json::Value) -> String {
+    let p = &event["params"];
+    let mut line = format!("event {}", event["method"].as_str().unwrap_or("?"));
+    let fields = [
+        ("request", &event["id"]),
+        ("thread", &p["threadId"]),
+        ("thread", &p["thread"]["id"]),
+        ("turn", &p["turnId"]),
+        ("turn", &p["turn"]["id"]),
+        ("status", &p["status"]["type"]),
+        ("status", &p["thread"]["status"]["type"]),
+    ];
+    // Short tokens only, so no text from the conversation is printed.
+    let token = |s: &str| {
+        s.len() <= 64
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    };
+    for (name, value) in fields {
+        match value {
+            serde_json::Value::String(s) if token(s) => line.push_str(&format!(" {name}={s}")),
+            serde_json::Value::Number(n) => line.push_str(&format!(" {name}={n}")),
+            _ => {}
+        }
+    }
+    line
 }
 
 /// What serve mode and the daemon both build from the flags and the environment.

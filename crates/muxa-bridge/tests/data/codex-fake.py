@@ -7,15 +7,24 @@
                                   WebSocket handshake, then one JSON-RPC message per
                                   text frame. Raw JSON lines get no answer, as with
                                   Codex 0.167.0 (docs/findings/codex-app-server.md).
-  codex resume <id> [args...]     a viewer: records its argv and every typed line
+  codex resume <id> [args...]     a viewer: records its argv and every typed line.
+                                  Like Codex 0.167.0 it exits 1 at once when the
+                                  thread has no rollout; else it holds the thread
   codex fake-work <id>            one turn's work, started by turn/start
 
 State lives under $CODEX_HOME/fake/, so every connection sees the same threads:
   threads/<id>.json  the thread: cwd, path, status
   starts.log         one JSON line per thread/start
   turns.log          "<id>\\t<text>" per turn/start that was answered or dropped
+  names.log          "<id>\\t<name>" per thread/name/set
   resume.log         the viewer's argv
   typed.log          lines typed into the viewer (muxa must type none)
+  holders/<id>       pids of the processes that hold the thread loaded: the
+                     connection that started or resumed it, a viewer, a turn
+Loading, as in docs/findings/codex-app-server.md: a thread no live process
+holds is unloaded unload-after seconds after one was last seen. Then a thread
+with a rollout reads notLoaded and one without is not found; turn/start
+fails on both. thread/name/set writes the rollout's session_meta line.
 Steering files there:
   status-<id>        overrides the status: idle, active, approval, notLoaded,
                      systemError, missing (no status field) or bogus
@@ -25,6 +34,7 @@ Steering files there:
   refuse-turn        turn/start gets a JSON-RPC error
   silent             no request is answered
   max-message        the byte limit the 101 answer names (default 16777216)
+  unload-after       seconds; without it no thread is ever unloaded
   turn-<n>.json      {"path": ..., "content": ...}: the n-th turn writes content
                      to path, relative to the thread's cwd
 """
@@ -72,7 +82,49 @@ def save(thread):
     write_json(path("threads", thread["id"] + ".json"), thread)
 
 
+def hold(tid, pid):
+    """`pid` holds thread `tid` loaded while it lives."""
+    os.makedirs(path("holders"), exist_ok=True)
+    with open(path("holders", tid), "a") as f:
+        f.write("%d\n" % pid)
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def loaded(tid):
+    """Whether the daemon still has thread `tid` in memory."""
+    try:
+        with open(path("unload-after")) as f:
+            grace = float(f.read().strip())
+    except (OSError, ValueError):
+        return True
+    held = path("holders", tid)
+    try:
+        with open(held) as f:
+            pids = [int(p) for p in f.read().split()]
+    except (OSError, ValueError):
+        return False
+    if any(alive(p) for p in pids):
+        os.utime(held)
+        return True
+    return time.time() - os.path.getmtime(held) < grace
+
+
+def saved(thread):
+    return os.path.exists(thread["path"])
+
+
 def status_of(thread):
+    if not loaded(thread["id"]):
+        return {"type": "notLoaded"}
     word = thread["status"]
     for name in ("status-" + thread["id"], "status"):
         try:
@@ -248,19 +300,37 @@ def handle(msg):
         thread = {"id": tid, "cwd": params.get("cwd"), "path": rollout, "status": "idle",
                   "historyMode": params.get("historyMode", "paginated"), "turns": 0}
         save(thread)
+        hold(tid, os.getpid())
         append("starts.log", json.dumps({"cwd": params.get("cwd"),
                                          "historyMode": params.get("historyMode")}))
         send({"id": rid, "result": {"thread": shown(thread), "model": "fake"}})
+        send({"method": "thread/started", "params": {"thread": shown(thread)}})
     elif method == "thread/read":
         thread = load(params.get("threadId", ""))
-        if thread is None:
+        if thread is None or not (saved(thread) or loaded(thread["id"])):
             error(rid, "thread not loaded: %s" % params.get("threadId"))
         else:
             send({"id": rid, "result": {"thread": shown(thread)}})
+    elif method == "thread/name/set":
+        thread = load(params.get("threadId", ""))
+        if thread is None or not loaded(thread["id"]):
+            error(rid, "thread not found: %s" % params.get("threadId"))
+            return
+        if not saved(thread):
+            meta(thread)
+        append("names.log", "%s\t%s" % (thread["id"], params.get("name", "")))
+        send({"id": rid, "result": {}})
+    elif method == "thread/resume":
+        thread = load(params.get("threadId", ""))
+        if thread is None or not saved(thread):
+            error(rid, "no rollout found for thread id %s" % params.get("threadId"))
+            return
+        hold(thread["id"], os.getpid())
+        send({"id": rid, "result": {"thread": shown(thread)}})
     elif method == "turn/start":
         thread = load(params.get("threadId", ""))
-        if thread is None:
-            error(rid, "thread not loaded")
+        if thread is None or not loaded(thread["id"]):
+            error(rid, "thread not found: %s" % params.get("threadId"))
             return
         text = "".join(i.get("text", "") for i in params.get("input", []))
         if os.path.exists(path("refuse-turn")):
@@ -274,9 +344,11 @@ def handle(msg):
         thread["status"] = "active"
         thread["turns"] += 1
         save(thread)
-        subprocess.Popen([sys.executable, os.path.abspath(__file__), "fake-work", thread["id"]],
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
+        worker = subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "fake-work", thread["id"]],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+        hold(thread["id"], worker.pid)
         send({"id": rid, "result": {"turn": {"id": "turn-%d" % thread["turns"]}}})
     else:
         error(rid, "unknown method")
@@ -288,15 +360,21 @@ def event(kind, **fields):
     return {"type": "event_msg", "payload": payload}
 
 
+def meta(thread):
+    """The rollout's first line, which makes the thread resumable."""
+    os.makedirs(os.path.dirname(thread["path"]), exist_ok=True)
+    with open(thread["path"], "a") as f:
+        f.write(json.dumps({"type": "session_meta",
+                            "payload": {"id": thread["id"], "cwd": thread["cwd"]}}) + "\n")
+
+
 def work(tid):
     time.sleep(0.5)
     thread = load(tid)
     n = thread["turns"]
-    lines = []
-    if not os.path.exists(thread["path"]):
-        os.makedirs(os.path.dirname(thread["path"]), exist_ok=True)
-        lines.append({"type": "session_meta", "payload": {"id": tid, "cwd": thread["cwd"]}})
-    lines.append(event("task_started", started_at=int(time.time())))
+    if not saved(thread):
+        meta(thread)
+    lines = [event("task_started", started_at=int(time.time()))]
     lines.append({"type": "response_item", "payload": {
         "type": "message", "id": "a%d" % n, "role": "assistant",
         "content": [{"type": "output_text", "text": "fake turn %d done" % n}]}})
@@ -316,6 +394,12 @@ def work(tid):
 
 def viewer(args):
     append("resume.log", " ".join(args))
+    thread = load(args[0]) if args else None
+    if thread is None or not saved(thread):
+        sys.stderr.write("thread/resume failed: no rollout found for thread id %s\n"
+                         % (args[0] if args else ""))
+        sys.exit(1)
+    hold(thread["id"], os.getpid())
     print("fake codex viewer", flush=True)
     for line in sys.stdin:
         append("typed.log", line.rstrip("\n"))

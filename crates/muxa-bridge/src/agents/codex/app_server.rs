@@ -47,6 +47,9 @@ pub enum Error {
     BadId,
     #[error("codex app-server daemon start failed: {0}")]
     Daemon(String),
+    /// After `thread/name/set` the rollout must exist (ADR 0028, fact 10).
+    #[error("the Codex thread has no rollout on disk")]
+    NotSaved,
 }
 
 /// A thread id as Codex prints it: a UUID's characters only.
@@ -196,42 +199,95 @@ impl Endpoint {
         }
     }
 
-    /// `thread/start` in `cwd`: a thread with no turn (ADR 0028, fact 4).
+    /// One open connection. A thread with no turn stays loaded only while
+    /// a connection holds it (ADR 0028, fact 9).
+    pub fn session(&self) -> Result<Session, Error> {
+        Connection::open(self).map(|conn| Session { conn })
+    }
+
+    /// `thread/start` in `cwd` on its own connection. With no turn and no
+    /// rollout the daemon drops it soon after the connection closes (fact 9),
+    /// so runs use [`Self::start_saved_thread`].
+    #[cfg(test)]
     pub fn start_thread(&self, cwd: &Path) -> Result<Thread, Error> {
-        const METHOD: &str = "thread/start";
-        let mut conn = Connection::open(self)?;
-        let params = json!({"cwd": cwd, "historyMode": HISTORY_MODE});
-        let result = conn.call(METHOD, params)?;
-        thread(METHOD, &result, None)
+        self.session()?.start_thread(cwd)
+    }
+
+    /// A thread in `cwd` that `codex resume` can open: `thread/start`, then
+    /// `thread/name/set` on the same connection, which writes the rollout
+    /// (fact 10). Fails unless the rollout exists afterwards.
+    pub fn start_saved_thread(&self, cwd: &Path, name: &str) -> Result<Thread, Error> {
+        let mut session = self.session()?;
+        let thread = session.start_thread(cwd)?;
+        session.name_thread(&thread.id, name)?;
+        if !thread.path.as_deref().is_some_and(Path::is_file) {
+            return Err(Error::NotSaved);
+        }
+        Ok(thread)
     }
 
     pub fn read_thread(&self, id: &ThreadId) -> Result<Thread, Error> {
-        const METHOD: &str = "thread/read";
-        let mut conn = Connection::open(self)?;
-        let result = conn.call(METHOD, json!({"threadId": id.as_str()}))?;
-        thread(METHOD, &result, Some(id))
+        self.session()?.read_thread(id)
     }
 
     /// `turn/start` with `text` on thread `id`. A result is a definite send.
     pub fn start_turn(&self, id: &ThreadId, text: &str) -> Result<(), TurnError> {
-        const METHOD: &str = "turn/start";
-        let not_sent = |error| TurnError {
+        let mut session = self.session().map_err(|error| TurnError {
             error,
             uncertain: false,
-        };
-        let mut conn = Connection::open(self).map_err(not_sent)?;
+        })?;
+        session.start_turn(id, text)
+    }
+}
+
+/// An initialized connection that stays open until it is dropped. Each
+/// call has the endpoint's timeout.
+pub struct Session {
+    conn: Connection,
+}
+
+impl Session {
+    /// `thread/start` in `cwd`: a thread with no turn (ADR 0028, fact 4).
+    pub fn start_thread(&mut self, cwd: &Path) -> Result<Thread, Error> {
+        const METHOD: &str = "thread/start";
+        let params = json!({"cwd": cwd, "historyMode": HISTORY_MODE});
+        let result = self.conn.call(METHOD, params)?;
+        thread(METHOD, &result, None)
+    }
+
+    pub fn read_thread(&mut self, id: &ThreadId) -> Result<Thread, Error> {
+        const METHOD: &str = "thread/read";
+        let result = self.conn.call(METHOD, json!({"threadId": id.as_str()}))?;
+        thread(METHOD, &result, Some(id))
+    }
+
+    /// `thread/name/set`. The TUI shows the name.
+    pub fn name_thread(&mut self, id: &ThreadId, name: &str) -> Result<(), Error> {
+        const METHOD: &str = "thread/name/set";
+        self.conn
+            .call(METHOD, json!({"threadId": id.as_str(), "name": name}))
+            .map(drop)
+    }
+
+    /// `turn/start` with `text` on thread `id`. A result is a definite send.
+    pub fn start_turn(&mut self, id: &ThreadId, text: &str) -> Result<(), TurnError> {
+        const METHOD: &str = "turn/start";
         let params = json!({
             "threadId": id.as_str(),
             "input": [{"type": "text", "text": text}],
         });
-        conn.write(METHOD, METHOD, params)
+        self.conn
+            .write(METHOD, METHOD, params)
             .map_err(|error| TurnError {
                 uncertain: matches!(error, Error::Lost),
                 error,
             })?;
-        match conn.answer(METHOD) {
+        match self.conn.answer(METHOD) {
             Ok(_) => Ok(()),
-            Err(error @ Error::Rpc { .. }) => Err(not_sent(error)),
+            Err(error @ Error::Rpc { .. }) => Err(TurnError {
+                error,
+                uncertain: false,
+            }),
             Err(error) => Err(TurnError {
                 error,
                 uncertain: true,
@@ -239,13 +295,33 @@ impl Endpoint {
         }
     }
 
-    /// `initialize`, then one request; the whole response, result or error.
-    /// For the developer's checks (`muxa-bridge codex-rpc`), not for runs.
-    pub fn request(&self, method: &str, params: Value) -> Result<Value, Error> {
+    /// One request; the whole response, result or error. For the
+    /// developer's checks (`muxa-bridge codex-rpc`), not for runs.
+    pub fn request(&mut self, method: &str, params: Value) -> Result<Value, Error> {
         const LABEL: &str = "the request";
-        let mut conn = Connection::open(self)?;
-        conn.write(LABEL, method, params)?;
-        conn.response(LABEL)
+        self.conn.write(LABEL, method, params)?;
+        self.conn.response(LABEL)
+    }
+
+    /// The next notification or server request, or None when `until` comes
+    /// first. Server requests are never answered.
+    pub fn next_event(&mut self, until: Instant) -> Result<Option<Value>, Error> {
+        const LABEL: &str = "an event";
+        self.conn.proxy.set_deadline(until);
+        loop {
+            let text = match self.conn.proxy.recv(LABEL) {
+                Ok(text) => text,
+                Err(Error::Timeout(_)) => return Ok(None),
+                Err(e) => return Err(e),
+            };
+            let msg = serde_json::from_slice::<Value>(&text).map_err(|_| Error::Shape {
+                method: LABEL,
+                what: "JSON message",
+            })?;
+            if msg.get("method").is_some() {
+                return Ok(Some(msg));
+            }
+        }
     }
 }
 
@@ -293,6 +369,7 @@ fn status(v: &Value) -> Option<Status> {
 struct Connection {
     proxy: Proxy,
     next: u64,
+    timeout: Duration,
 }
 
 impl Connection {
@@ -303,7 +380,11 @@ impl Connection {
             Instant::now() + endpoint.timeout,
             endpoint.timeout,
         )?;
-        let mut conn = Self { proxy, next: 0 };
+        let mut conn = Self {
+            proxy,
+            next: 0,
+            timeout: endpoint.timeout,
+        };
         let info = json!({
             "clientInfo": {"name": "muxa", "version": env!("CARGO_PKG_VERSION")},
             // `historyMode` is experimental (ADR 0028, fact 5).
@@ -319,8 +400,10 @@ impl Connection {
         self.answer(method)
     }
 
-    /// Writes request `name`; `method` labels its errors.
+    /// Writes request `name`; `method` labels its errors. Its answer is
+    /// due within the timeout.
     fn write(&mut self, method: &'static str, name: &str, params: Value) -> Result<(), Error> {
+        self.proxy.set_deadline(Instant::now() + self.timeout);
         self.next += 1;
         self.send(
             method,
