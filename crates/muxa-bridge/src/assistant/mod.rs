@@ -15,6 +15,7 @@ mod derive;
 pub mod detail;
 pub mod forget;
 pub mod goal;
+pub mod handoff;
 pub mod hypotheses;
 pub mod info;
 pub mod memory;

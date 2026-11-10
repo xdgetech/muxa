@@ -283,7 +283,9 @@ fn fail_leaves_a_moved_on_resulted_or_cancelled_request_alone() {
     let resulted = h.request(&work.id, 1);
     let run = run_for(&work, &resulted);
     h.write(&good(&run, None));
-    let found = result::read(&h.run_dir, &run).unwrap();
+    let found = result::read(&h.run_dir, &run, &Default::default())
+        .unwrap()
+        .result;
     set(&resulted.id, &|q| {
         result::store(q, found.clone(), 3).unwrap();
         q.delivery = Delivery::Processing;

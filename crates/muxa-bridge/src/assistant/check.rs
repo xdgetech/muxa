@@ -55,11 +55,16 @@ fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
         .dir
         .as_ref()
         .ok_or_else(|| one("The run has no directory.".into()))?;
-    let mut found = result::read(dir, &run)?;
     let state_dir = config
         .state_dir
         .as_ref()
         .ok_or_else(|| one("This host keeps no records.".into()))?;
+    let chain = chain_of(config, state_dir, &run).map_err(|e| {
+        tracing::warn!(task = %record.id, error = %e, "cannot read the request's chain");
+        one(retry())
+    })?;
+    let checked = result::read(dir, &run, &chain)?;
+    let (mut found, handoff) = (checked.result, checked.handoff);
     let unknown = unknown_duplicates(state_dir, &found).map_err(|e| {
         tracing::warn!(task = %record.id, error = %e, "cannot read work items");
         one(retry())
@@ -81,7 +86,11 @@ fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
             found.worker = record.worker().map(str::to_owned);
             found.step = Some(run.step());
         }
-        result::store(q, found, at).map_err(Failure::Refused)
+        let stored = result::store(q, found, at).map_err(Failure::Refused)?;
+        if stored == Stored::New {
+            super::handoff::keep(q, run.step(), handoff);
+        }
+        Ok(stored)
     });
     match stored {
         Ok(Some(s)) => {
@@ -107,6 +116,20 @@ fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
             Err(one(retry()))
         }
     }
+}
+
+/// Blocking. What the run's hand-off is checked against: the request as
+/// stored and the staff as configured now.
+fn chain_of(
+    config: &Config,
+    state_dir: &Path,
+    run: &RequestRun,
+) -> Result<super::handoff::Chain, StateError> {
+    let Some(q) = Shelf::<AssistantRequest>::open(state_dir)?.get(&run.request)? else {
+        return Ok(Default::default());
+    };
+    let workspaces = config.load_workspaces().unwrap_or_default();
+    Ok(super::handoff::Chain::of(&workspaces, &q, run))
 }
 
 fn retry() -> String {

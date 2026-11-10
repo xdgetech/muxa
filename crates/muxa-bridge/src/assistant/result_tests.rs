@@ -217,16 +217,16 @@ fn run_dir() -> Dir {
 #[test]
 fn the_file_is_read_from_a_plain_folder_only() {
     let d = run_dir();
-    let missing = read(&d.0, &run()).unwrap_err();
+    let missing = read(&d.0, &run(), &Default::default()).unwrap_err();
     assert!(missing[0].contains("does not exist"), "{missing:?}");
     let file = d.0.join(RESULT);
     std::fs::write(&file, serde_json::to_vec(&good()).unwrap()).unwrap();
-    assert!(read(&d.0, &run()).is_ok());
+    assert!(read(&d.0, &run(), &Default::default()).is_ok());
 
     let elsewhere = d.0.join("elsewhere.json");
     std::fs::rename(&file, &elsewhere).unwrap();
     std::os::unix::fs::symlink(&elsewhere, &file).unwrap();
-    let linked = read(&d.0, &run()).unwrap_err();
+    let linked = read(&d.0, &run(), &Default::default()).unwrap_err();
     assert!(linked[0].contains("symlink"), "{linked:?}");
     std::fs::remove_file(&file).unwrap();
 
@@ -234,13 +234,13 @@ fn the_file_is_read_from_a_plain_folder_only() {
     std::fs::rename(d.0.join(STAGE_DIR), &real).unwrap();
     std::fs::rename(&elsewhere, real.join("result.json")).unwrap();
     std::os::unix::fs::symlink(&real, d.0.join(STAGE_DIR)).unwrap();
-    let linked = read(&d.0, &run()).unwrap_err();
+    let linked = read(&d.0, &run(), &Default::default()).unwrap_err();
     assert!(linked[0].contains("symlink"), "{linked:?}");
     std::fs::remove_file(d.0.join(STAGE_DIR)).unwrap();
 
     crate::assistant::record::prepare(&d.0).unwrap();
     std::fs::write(&file, vec![b' '; (64 << 10) + 1]).unwrap();
-    let big = read(&d.0, &run()).unwrap_err();
+    let big = read(&d.0, &run(), &Default::default()).unwrap_err();
     assert!(big[0].contains("larger than 64 KiB"), "{big:?}");
 }
 
@@ -356,4 +356,32 @@ fn notes_are_kept_with_the_runs_base_and_checked_for_size_and_nul() {
     v["notes"] = json!("# Old\n");
     let same = validate(&serde_json::to_vec(&v).unwrap(), &with_base).unwrap();
     assert_eq!(same.notes, None);
+}
+
+#[test]
+fn a_hand_off_passes_only_within_its_chain() {
+    use crate::records::staff::Handoffs;
+    let chain = Chain {
+        staff: vec!["lead".into(), "strategist".into()],
+        workers: vec!["lead".into()],
+        step: 1,
+        max_steps: 3,
+        handoffs: Handoffs::Review,
+    };
+    let mut v = good();
+    v["handoff"] = json!({"worker": "strategist", "purpose": "Compare them."});
+    let bytes = serde_json::to_vec(&v).unwrap();
+    let passed = super::check(&bytes, &run(), &chain).unwrap();
+    assert_eq!(
+        passed.handoff.map(|h| h.worker).as_deref(),
+        Some("strategist")
+    );
+    // Without a staff, a hand-off is refused; an unknown field in it too.
+    let refused = super::check(&bytes, &run(), &Chain::default()).unwrap_err();
+    assert!(refused.join("\n").contains("no staff"), "{refused:?}");
+    v["handoff"]["when"] = json!(SENTINEL);
+    let all = super::check(&serde_json::to_vec(&v).unwrap(), &run(), &chain)
+        .unwrap_err()
+        .join("\n");
+    assert!(all.contains("does not match the schema") && !all.contains(SENTINEL));
 }

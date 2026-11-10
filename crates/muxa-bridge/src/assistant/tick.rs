@@ -102,8 +102,14 @@ fn scan(config: &Config, now: u64) -> Todo {
             .iter()
             .filter(|r| r.request_run().is_some_and(|run| run.request == q.id))
             .collect();
-        // A run of the current version may still be starting: only older ones end.
-        let older = |r: &&&Record| r.request_run().is_some_and(|run| run.version < q.version);
+        // A run of the current step may still be starting: only runs of older
+        // versions, and of this version's earlier steps, end.
+        let step = super::steps::current(&q);
+        let older = |r: &&&Record| {
+            r.request_run().is_some_and(|run| {
+                run.version < q.version || (run.version == q.version && run.step() < step)
+            })
+        };
         for r in runs.iter().filter(older) {
             if super::ask::open(r) {
                 drop_run(

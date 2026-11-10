@@ -18,6 +18,7 @@ fn brief(worker: &str) -> StaffBrief {
         ],
         step: 2,
         max_steps: 3,
+        handoffs: Handoffs::Review,
         earlier: vec![Earlier {
             step: 1,
             worker: "lisk-chief-of-staff".into(),
@@ -54,4 +55,26 @@ fn only_a_member_who_is_not_the_lead_keeps_its_own_notes() {
     assert!(member.contains("lisk-chief-of-staff"));
     assert_eq!(brief("lisk-chief-of-staff").member_notes(), None);
     assert!(brief("lisk-chief-of-staff").is_lead());
+}
+
+#[test]
+fn the_brief_states_when_a_step_may_hand_the_request_on() {
+    let s = brief("lisk-strategist").section();
+    assert!(s.contains("other than lisk-chief-of-staff, lisk-strategist"));
+    assert!(s.contains("The user approves each hand-off"));
+    let last = StaffBrief {
+        step: 3,
+        ..brief("lisk-strategist")
+    };
+    assert!(last.section().contains("This is the last step"));
+    let off = StaffBrief {
+        handoffs: Handoffs::None,
+        ..brief("lisk-strategist")
+    };
+    assert!(off.section().contains("Hand-offs are off"));
+    let auto = StaffBrief {
+        handoffs: Handoffs::Auto,
+        ..brief("lisk-strategist")
+    };
+    assert!(auto.section().contains("muxa starts the next step"));
 }

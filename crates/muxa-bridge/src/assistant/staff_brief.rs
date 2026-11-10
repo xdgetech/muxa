@@ -4,6 +4,7 @@
 //! and a hand-off's purpose are data, fenced as Captures are.
 use super::brief::{cut, fenced};
 use super::staff::Member;
+use crate::records::staff::Handoffs;
 
 /// Bytes of another member's description the staff list keeps.
 const OTHER_DESCRIPTION: usize = 300;
@@ -27,6 +28,7 @@ pub struct StaffBrief {
     pub members: Vec<Member>,
     pub step: u32,
     pub max_steps: u32,
+    pub handoffs: Handoffs,
     pub earlier: Vec<Earlier>,
     /// The hand-off that started this step: its sender and purpose.
     pub asked: Option<(String, String)>,
@@ -93,7 +95,43 @@ impl StaffBrief {
                 out.push_str(&fenced(summary, 3 * summary.len() + 64).unwrap_or_default());
             }
         }
+        out.push_str(&self.handoff_rules());
         out
+    }
+
+    /// When and how this step may pass the request on.
+    fn handoff_rules(&self) -> String {
+        let head = "### Hand-off\n\n";
+        if self.handoffs == Handoffs::None {
+            return format!(
+                "{head}Hand-offs are off in this workspace: answer the request yourself, and \
+                 leave \"handoff\" out of the result.\n\n"
+            );
+        }
+        if self.step >= self.max_steps {
+            return format!(
+                "{head}This is the last step: answer the request yourself, and leave \
+                 \"handoff\" out of the result.\n\n"
+            );
+        }
+        let taken: Vec<&str> = self
+            .earlier
+            .iter()
+            .map(|e| e.worker.as_str())
+            .chain([self.worker.as_str()])
+            .collect();
+        let approval = match self.handoffs {
+            Handoffs::Auto => "muxa starts the next step when it stores your result.",
+            _ => "The user approves each hand-off before the next step starts.",
+        };
+        format!(
+            "{head}When another member of the staff should continue, add \"handoff\": \
+             {{\"worker\": \"<member>\", \"purpose\": \"<what they do next>\"}} to the \
+             result. Name one member of the staff above, other than {taken}: a member works \
+             once per request. The purpose is 1 byte to 1 KiB and stays within what the user \
+             asked. {approval} Leave \"handoff\" out when you answered the request.\n\n",
+            taken = taken.join(", "),
+        )
     }
 
     /// The notes rules of a member who is not the lead; None for the lead,

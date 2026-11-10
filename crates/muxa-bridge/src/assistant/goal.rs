@@ -92,10 +92,11 @@ fn staff_brief(
         .find(|m| m.worker == worker)
         .map(|m| m.description.clone())
         .unwrap_or_default();
-    let max_steps = workspaces
+    let staff = workspaces
         .get(&q.workspace)
         .and_then(|w| w.assistant.as_ref())
-        .map_or(1, |d| d.staff.max_steps);
+        .map(|d| d.staff.clone())
+        .unwrap_or_default();
     let mut earlier: Vec<Earlier> = q
         .results
         .iter()
@@ -117,7 +118,8 @@ fn staff_brief(
         description,
         members,
         step,
-        max_steps,
+        max_steps: staff.max_steps,
+        handoffs: staff.handoffs,
         earlier,
         asked,
     })

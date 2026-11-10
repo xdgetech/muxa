@@ -2,7 +2,8 @@
 //! tmux server runs requests as named workers, each the fake agent of
 //! `data/assistant-agent.py` started as `claude --agent NAME`. A request
 //! names a member or goes to the lead; each member's notes land in its own
-//! file; worker descriptions, purposes and notes never reach the daemon's log.
+//! file; a hand-off is checked and kept on its step; worker descriptions,
+//! purposes and notes never reach the daemon's log.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -331,6 +332,46 @@ async fn a_request_runs_as_the_named_member_or_the_lead_with_its_own_notes() {
     for line in before.lines() {
         assert!(after.lines().any(|l| l == line), "{line} changed:\n{after}");
     }
+    assert_no_marks(&daemon);
+    daemon.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_off_is_checked_and_kept_on_its_step() {
+    let h = Host::new("handoff", "");
+    let purpose = format!("Compare the two options. {}", MARKS[3]);
+    // The lead first hands the request to itself, then to the strategist.
+    let handing = |to: &str| {
+        with(
+            result("Two options remain."),
+            "handoff",
+            json!({"worker": to, "purpose": purpose}),
+        )
+    };
+    h.steer(&format!("first.{LEAD}.json"), &handing(LEAD));
+    h.steer(&format!("fixed.{LEAD}.json"), &handing(STRATEGIST));
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let item = work_item(&mut conn, "c-handoff").await;
+    let q = ask(&mut conn, &item, None).await;
+    let run = q.run.clone().unwrap();
+    let done = until(&mut conn, &h, &q.id, Delivery::Resulted).await;
+    let log = std::fs::read_to_string(h.dir(&run).join(".muxa/checks/1.log")).unwrap();
+    assert!(log.contains("this run's own worker"), "{log}");
+    assert!(!log.contains(MARKS[3]), "{log}");
+    let task_md = std::fs::read_to_string(h.dir(&run).join(".muxa/TASK.md")).unwrap();
+    assert!(task_md.contains("### Hand-off"), "{task_md}");
+    // The hand-off waits on its step: approving it starts the next one.
+    assert_eq!(done.steps.len(), 1);
+    let handoff = done.steps[0].handoff.clone().expect("the step keeps it");
+    assert_eq!(
+        (handoff.worker.as_str(), handoff.purpose.as_str()),
+        (STRATEGIST, purpose.as_str())
+    );
+    assert_eq!(
+        (done.results[0].step, done.results[0].stale),
+        (Some(1), false)
+    );
     assert_no_marks(&daemon);
     daemon.shutdown().await;
 }

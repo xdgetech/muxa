@@ -7,11 +7,13 @@ use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
 
 use muxa_protocol::{
-    AssistResult, AssistantRequest, Delivery, Finding, Notes, PossibleDuplicate, ResultSource,
+    AssistResult, AssistantRequest, Delivery, Finding, Handoff, Notes, PossibleDuplicate,
+    ResultSource,
 };
 use rustix::fs::{Mode, OFlags};
 use serde::Deserialize;
 
+use super::handoff::{Chain, RawHandoff};
 use super::notes::{MAX_NOTES, base_of};
 use super::record::RequestRun;
 use crate::routines::output::valid_url;
@@ -53,6 +55,7 @@ struct RawResult {
     #[serde(default)]
     possible_duplicates: Vec<RawDuplicate>,
     notes: Option<String>,
+    handoff: Option<RawHandoff>,
 }
 
 #[derive(Deserialize)]
@@ -78,10 +81,18 @@ struct RawDuplicate {
     reason: String,
 }
 
-/// Reads the result in `dir` for `run`. The reasons are for the agent's check log.
-pub fn read(dir: &Path, run: &RequestRun) -> Result<AssistResult, Vec<String>> {
+/// A result that passed, and the hand-off it asks for (ADR 0051 §3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Checked {
+    pub result: AssistResult,
+    pub handoff: Option<Handoff>,
+}
+
+/// Reads the result in `dir` for `run`, a step of `chain`. The reasons are
+/// for the agent's check log.
+pub fn read(dir: &Path, run: &RequestRun, chain: &Chain) -> Result<Checked, Vec<String>> {
     let bytes = read_file(dir, "result.json").map_err(|r| vec![r])?;
-    validate(&bytes, run)
+    check(&bytes, run, chain)
 }
 
 /// Reads `.muxa/assistant/<name>` in `dir`, at most 64 KiB. Each folder is
@@ -139,8 +150,15 @@ fn step(
     })
 }
 
-/// Every reason the result fails, or the result for `run`'s version.
+/// Every reason the result fails, or the result for `run`'s version. A
+/// request without staff has an empty `chain`: no hand-off passes.
+#[cfg(test)]
 pub fn validate(bytes: &[u8], run: &RequestRun) -> Result<AssistResult, Vec<String>> {
+    check(bytes, run, &Chain::default()).map(|c| c.result)
+}
+
+/// Every reason the result fails, or the result for `run`, a step of `chain`.
+pub fn check(bytes: &[u8], run: &RequestRun, chain: &Chain) -> Result<Checked, Vec<String>> {
     if bytes.contains(&0) {
         return Err(vec![format!("{RESULT} contains a NUL byte.")]);
     }
@@ -195,12 +213,13 @@ pub fn validate(bytes: &[u8], run: &RequestRun) -> Result<AssistResult, Vec<Stri
     let notes = raw
         .notes
         .and_then(|text| proposal(text, run.notes_base.as_deref(), &mut reasons));
+    let handoff = raw
+        .handoff
+        .and_then(|h| super::handoff::check(h, chain, &mut reasons));
     if !reasons.is_empty() {
         return Err(reasons);
     }
-    Ok(AssistResult {
-        worker: None,
-        step: None,
+    let result = AssistResult {
         version: run.version,
         at: 0,
         summary: raw.summary,
@@ -218,7 +237,10 @@ pub fn validate(bytes: &[u8], run: &RequestRun) -> Result<AssistResult, Vec<Stri
             })
             .collect(),
         notes,
-    })
+        worker: None,
+        step: None,
+    };
+    Ok(Checked { result, handoff })
 }
 
 /// The proposed notes, stored with the base the run read (ADR 0049 §1).
