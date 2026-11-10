@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use super::staff::MAX_DESCRIPTION;
 use super::{AgentSettings, LoopSpec, Workspace, Workspaces};
 
 pub const MAX_INSTRUCTIONS: usize = 16 * 1024;
@@ -166,8 +167,11 @@ impl RawWorker {
             ));
         }
         if let Some(description) = &self.description {
-            if description.chars().count() > 200 || description.chars().any(char::is_control) {
-                return Err("worker description is too long or has a control character".into());
+            if description.len() > MAX_DESCRIPTION || description.chars().any(char::is_control) {
+                return Err(format!(
+                    "worker {:?}: description is over 1 KiB or has a control character",
+                    self.name
+                ));
             }
         }
         let agent = match self.agent.as_str() {
@@ -579,7 +583,7 @@ mod tests {
             REVIEWER.replace("['Company']", "['Company', 'Company']"),
             REVIEWER.replace(
                 "description = 'Review changes'",
-                &format!("description = '{}'", "x".repeat(201)),
+                &format!("description = '{}'", "x".repeat(1025)),
             ),
             REVIEWER.replace("name = 'Reviewer'", &format!("name = '{}'", "x".repeat(65))),
             REVIEWER.replace("args = ['--agent', 'reviewer']", "args = [1]"),

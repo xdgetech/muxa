@@ -6,6 +6,7 @@ use muxa_protocol::{OverallRequests, Share};
 use serde::Deserialize;
 
 use super::routines::{Trigger, scheduled};
+use super::staff::{self, DEFAULT_AUTO_HANDOFFS_PER_DAY, RawStaff, Staff};
 use super::workers::Worker;
 use super::workspaces::parse_duration;
 
@@ -34,6 +35,8 @@ pub struct AssistantHost {
     pub enabled: bool,
     pub max_runs_per_day: u32,
     pub max_auto_requests_per_day: u32,
+    /// Steps started by `handoffs = "auto"` across the host (ADR 0051 §3).
+    pub max_auto_handoffs_per_day: u32,
 }
 
 impl Default for AssistantHost {
@@ -42,6 +45,7 @@ impl Default for AssistantHost {
             enabled: false,
             max_runs_per_day: DEFAULT_HOST_RUNS_PER_DAY,
             max_auto_requests_per_day: DEFAULT_AUTO_REQUESTS_PER_DAY,
+            max_auto_handoffs_per_day: DEFAULT_AUTO_HANDOFFS_PER_DAY,
         }
     }
 }
@@ -60,6 +64,16 @@ pub struct Delegate {
     pub notes: NotesMode,
     /// When the overall assistant plans (ADR 0049 §5); empty for a delegate.
     pub plans: Vec<Trigger>,
+    /// Who answers its requests (ADR 0051 §1); a staff of one without `staff`.
+    pub staff: Staff,
+}
+
+impl Delegate {
+    /// The worker that takes a request naming none: the staff's lead, else
+    /// `worker`. None: the workspace's agent.
+    pub fn lead(&self) -> Option<&str> {
+        self.staff.lead.as_deref().or(self.worker.as_deref())
+    }
 }
 
 /// What a workspace is to the overall assistant (ADR 0049 §2–§4).
@@ -122,6 +136,7 @@ pub(super) struct RawHost {
     enabled: bool,
     max_runs_per_day: Option<i64>,
     max_auto_requests_per_day: Option<i64>,
+    max_auto_handoffs_per_day: Option<i64>,
 }
 
 impl RawHost {
@@ -137,6 +152,11 @@ impl RawHost {
                 "[assistant] max_auto_requests_per_day",
                 self.max_auto_requests_per_day,
                 DEFAULT_AUTO_REQUESTS_PER_DAY,
+            )?,
+            max_auto_handoffs_per_day: positive(
+                "[assistant] max_auto_handoffs_per_day",
+                self.max_auto_handoffs_per_day,
+                DEFAULT_AUTO_HANDOFFS_PER_DAY,
             )?,
         })
     }
@@ -157,6 +177,10 @@ pub(super) struct RawDelegate {
     notes: Option<String>,
     plans: Option<Vec<String>>,
     timezone: Option<String>,
+    staff: Option<Vec<String>>,
+    lead: Option<String>,
+    handoffs: Option<String>,
+    max_steps: Option<i64>,
 }
 
 impl RawDelegate {
@@ -169,10 +193,18 @@ impl RawDelegate {
         } else {
             (DEFAULT_OPEN_RUNS, DEFAULT_RUNS_PER_DAY, DEFAULT_RUN_TIMEOUT)
         };
+        let worker = self
+            .worker
+            .filter(|name| name != muxa_protocol::DEFAULT_WORKER);
+        let staff = RawStaff {
+            staff: self.staff,
+            lead: self.lead,
+            handoffs: self.handoffs,
+            max_steps: self.max_steps,
+        }
+        .parse(self.overall, worker.as_deref())?;
         let settings = Delegate {
-            worker: self
-                .worker
-                .filter(|name| name != muxa_protocol::DEFAULT_WORKER),
+            worker,
             max_open_runs: positive("max_open_runs", self.max_open_runs, open)?,
             max_runs_per_day: positive("max_runs_per_day", self.max_runs_per_day, per_day)?,
             run_timeout: self
@@ -184,6 +216,7 @@ impl RawDelegate {
                 .unwrap_or(timeout),
             notes: NotesMode::parse(self.notes.as_deref())?,
             plans: Vec::new(),
+            staff,
         };
         let share = self.share.as_deref().map(parse_share).transpose()?;
         let overall_requests = parse_overall_requests(self.overall_requests.as_deref())?;
@@ -239,12 +272,14 @@ fn plans(texts: Option<&[String]>, zone: Option<&str>) -> Result<Vec<Trigger>, S
     Ok(out)
 }
 
-/// The delegate's `worker` must be a configured `[[worker]]` this workspace may use.
+/// The delegate's `worker`, and each staff member, must be a configured
+/// `[[worker]]` this workspace may use.
 pub(super) fn check_worker(
     delegate: &Delegate,
     workspace: &str,
     workers: &[Worker],
 ) -> Result<(), String> {
+    staff::check(&delegate.staff, workspace, workers)?;
     let Some(name) = &delegate.worker else {
         return Ok(());
     };

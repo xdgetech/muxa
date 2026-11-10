@@ -49,7 +49,7 @@ workspaces = ["Company"]
 ```
 
 - `name`: unique, nonempty, at most 64 characters, no controls. It is the persisted identity for this slice. Renaming is removal plus addition; existing Tasks must explicitly select the new name. A display-name/id split can be added separately.
-- `description`: optional, at most 200 characters, no controls.
+- `description`: optional, at most 200 characters, no controls. ADR 0051 raised the limit to 1 KiB for every worker.
 - `agent`: `claude-code` or `codex`; selects the program. It does not assert the adapter's observed state or agent identity (invariant 6).
 - `args`: optional, at most 32 arguments, each at most 1024 bytes and without controls. Host-owned flags, not a sandbox or allowlist. muxa-tmux quotes each argument and is the only command-line construction path.
 - `instructions`: optional absolute path after expanding a leading `~/`; read on each start/restart, UTF-8, at most 16 KiB. A missing, invalid or oversized file fails before stopping the old agent. Never log its content.

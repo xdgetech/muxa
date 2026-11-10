@@ -14,6 +14,7 @@ pub mod repos;
 pub mod restart_files;
 pub mod routines;
 pub mod runs;
+pub mod staff;
 pub mod store;
 pub mod workers;
 pub mod workspaces;

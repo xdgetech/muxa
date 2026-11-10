@@ -61,7 +61,8 @@ pub fn delegated(
             ),
         )
     })?;
-    let choice = match delegate.worker.as_deref() {
+    // Without `staff`, the lead is `worker`, else the workspace's agent (ADR 0051 §1).
+    let choice = match delegate.lead() {
         Some(name) => WorkerChoice::Named(name),
         None => WorkerChoice::WorkspaceDefault,
     };
