@@ -243,6 +243,14 @@ apps show, with a goal and a status.
     one member asks to pass the request to the next. `a` approves and starts
     the next step, `r` rejects and ends the request with the results it has,
     `l` is Later. A `🤝` item names the member the plan picked.
+  - With `work` level 13 (ADR 0052), `📤` items are writes a staff member
+    proposes outside the host: a post or a comment. The item shows the action,
+    the target and the content whole, as plain text, and says when it comes
+    from an older result. `a` asks once more with the target, and `y` starts
+    one Task of the workspace's writer with exactly that text. `r` rejects it
+    with an optional reason, `l` is Later. `muxa-cli inbox show ITEM` prints
+    the same, and `muxa-cli assist writes WORKSPACE` lists the writer and
+    each write with its state.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

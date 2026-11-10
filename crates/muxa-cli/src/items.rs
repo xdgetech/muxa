@@ -186,6 +186,8 @@ pub async fn answer(
     if protects && !has_delete(&conn) {
         return Err(NEEDS_DELETE.into());
     }
+    // Nothing is sent when the host predates the write item it would approve.
+    crate::writes::check_approve(&mut conn, item, answer.action).await?;
     // Ask Agent may start the workspace's Ask session and wait for its agent.
     let launches = matches!(
         answer.action,
@@ -218,6 +220,11 @@ pub async fn answer(
             },
         )
         .await?;
+    // An approved write's Task (ADR 0052 §3). The host never says the write happened.
+    let started = messages.iter().find_map(|m| match m {
+        Message::TaskSaved { record, .. } => Some(record.id.clone()),
+        _ => None,
+    });
     let saved = messages
         .into_iter()
         .find_map(|m| match m {
@@ -229,6 +236,9 @@ pub async fn answer(
         println!("{}", json!(saved));
     } else {
         println!("{}", line(&saved, crate::when::now()));
+        if let Some(task) = started {
+            println!("Task started: {task}");
+        }
     }
     // A new or restarted agent gets its prompt after the answer.
     if launches {

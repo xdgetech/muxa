@@ -13,6 +13,7 @@ mod tasks;
 mod view;
 mod when;
 mod work;
+mod writes;
 
 use std::process::ExitCode;
 
@@ -48,6 +49,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
                 [--reason T] [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
+       muxa-cli [--bridge CMD] inbox show ITEM [--json]
        muxa-cli [--bridge CMD] inbox delete --older-than DAYS [--json]
        muxa-cli [--bridge CMD] capture TEXT [--workspace W] [--source S]
                 [--client-id ID] [--assist [--scope S] [--purpose P]] [--json]
@@ -62,6 +64,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] assist WORK [--scope S] [--purpose P]
                 [--workspace W] [--worker NAME] [--json]
        muxa-cli [--bridge CMD] assist staff WORKSPACE [--json]
+       muxa-cli [--bridge CMD] assist writes WORKSPACE [--json]
        muxa-cli [--bridge CMD] assist cancel REQUEST [--json]
        muxa-cli [--bridge CMD] assist show (WORK | REQUEST) [--json]
        muxa-cli [--bridge CMD] assist notes (WORK | REQUEST | PLAN) [--apply] [--json]
@@ -157,13 +160,19 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  (moves it below the others), ask-agent (--text T), read,
                  protect, unprotect, or confirm (a hypothesis becomes a
                  policy). reject takes an optional --reason on sort,
-                 delegate and hypothesis items. A protected item takes
+                 delegate, hypothesis and write items. approve on a write
+                 item starts one Task of the workspace's writer that writes
+                 the content exactly as inbox show prints it (work level
+                 13). A protected item takes
                  every answer; only inbox delete keeps it.
                  reply sends the text as it is; on an ask it denies the
                  permission first. ask-agent sends the item and the text to
                  the workspace's Ask session and leaves the item open
   inbox read ITEM
                  marks the item read, as inbox answer ITEM read
+  inbox show ITEM
+                 the item; a write item also prints its action, target and
+                 the content whole, as plain text
   inbox delete --older-than DAYS
                  removes every Inbox item made more than DAYS days ago,
                  open or closed, except protected ones (work level 8)
@@ -205,6 +214,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   assist staff WORKSPACE
                  the workspace's staff: each member's name, job description
                  and notes time, the lead marked (work level 12)
+  assist writes WORKSPACE
+                 the workspace's writer, and each write its Results proposed:
+                 its item, action, target, and whether it is proposed,
+                 rejected or became a Task (work level 13)
   assist cancel REQUEST
                  cancels the request's current version and closes its run;
                  on a chain that waits on a hand-off, it ends the chain
@@ -353,6 +366,14 @@ enum Cmd {
     },
     Staff {
         workspace: String,
+        json: bool,
+    },
+    Writes {
+        workspace: String,
+        json: bool,
+    },
+    ShowItem {
+        item: String,
         json: bool,
     },
     ShowResult {
@@ -563,6 +584,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let is_assist = matches!(words.as_slice(),
         [w, id] if w == "assist" && !["cancel", "show", "notes"].contains(&id.as_str()));
     let is_staff = matches!(words.as_slice(), [w, s, _] if w == "assist" && s == "staff");
+    let is_writes = matches!(words.as_slice(), [w, s, _] if w == "assist" && s == "writes");
     let is_plan_now = matches!(words.as_slice(), [w, n] if w == "plan" && n == "now");
     if minutes.is_some() && !is_plan_now {
         return Err(lexopt::Error::Custom("--minutes requires plan now".into()));
@@ -722,6 +744,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             .map_err(|e| lexopt::Error::Custom(e.into()))?,
             json,
         },
+        [w, s, item] if w == "inbox" && s == "show" => Cmd::ShowItem {
+            item: item.clone(),
+            json,
+        },
         [w, r, item] if w == "inbox" && r == "read" => Cmd::Answer {
             item: item.clone(),
             answer: items::Answer {
@@ -769,6 +795,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             }
         }
         [w, _, workspace] if is_staff && w == "assist" => Cmd::Staff {
+            workspace: workspace.clone(),
+            json,
+        },
+        [w, _, workspace] if is_writes && w == "assist" => Cmd::Writes {
             workspace: workspace.clone(),
             json,
         },
@@ -1053,6 +1083,8 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::Assist { ask, json } => assist::ask(&mut conn, ask, json).await,
         Cmd::CancelRequest { request, json } => assist::cancel(&mut conn, &request, json).await,
         Cmd::Staff { workspace, json } => staff::list(&mut conn, &workspace, json).await,
+        Cmd::Writes { workspace, json } => writes::list(&mut conn, &workspace, json).await,
+        Cmd::ShowItem { item, json } => writes::show(conn, &item, json).await,
         Cmd::ShowResult { target, json } => assist::show(&mut conn, &target, json).await,
         Cmd::Notes {
             target,

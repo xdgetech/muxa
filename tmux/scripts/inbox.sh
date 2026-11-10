@@ -12,6 +12,8 @@
 # With level 12 (ADR 0051), `a` on a Work item asks which staff member takes
 # it (Enter: the lead), a Work item shows its request's steps, and handoff
 # items take Approve and Reject as the other proposals do.
+# With level 13 (ADR 0052), write items show their target and content whole;
+# Approve asks once more with the target, and Reject takes a reason.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
@@ -77,7 +79,8 @@ EOF
 
 JQ_DEFS='
   def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰",
-    "sort": "🗂", "delegate": "🤝", "hypothesis": "💡", "handoff": "👥"}[.kind] // "•";
+    "sort": "🗂", "delegate": "🤝", "hypothesis": "💡", "handoff": "👥",
+    "write": "📤"}[.kind] // "•";
   def since($t): ($now - $t) as $s |
     if $s < 60 then "\($s)s" elif $s < 3600 then "\($s / 60 | floor)m"
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
@@ -300,7 +303,7 @@ view() {
     today:*) view_today "$@"; return ;;
   esac
   iq -r --arg item "$1" "$JQ_DEFS"'
-    (.work // 0) as $w | .items[] | select(.id == $item) | . as $i |
+    (.work // 0) as $w | (.requests // []) as $reqs | .items[] | select(.id == $item) | . as $i |
     "\(icon) \u001b[1m\(.question)\u001b[0m",
     "\u001b[2m\(.title) · \(.workspace) · \(age)\(if .readAt then "" else " · unread" end)\(if .protectedAt then " · protected" else "" end)\u001b[0m",
     "",
@@ -310,6 +313,11 @@ view() {
     (.handoff // empty |
       "From: \(.from | plain) → \(.worker | plain) · step \(.step + 1)", "Ask: \(.purpose | plain)",
       "Approve starts the next step; Reject ends the request with what it has.", ""),
+    (.write // empty | ([$reqs[] | select(.id == $i.write.request) | .version][0] // .version) as $current |
+      "Action: \(.action | plain)", "To: \(.target | plain)",
+      "From: \(.worker // "the assistant" | plain) · v\(.version)\(if .version < $current then " · from an older result" else "" end)",
+      "", "Content, written exactly as below:", (.content | plain), "",
+      "Approve starts one Task of the writer with this text; muxa does not check the result.", ""),
     (.hypothesis // empty |
       "Scope: \(.scope | plain) · confidence \(.confidence)",
       "Based on \((.evidence // []) | length) correction\(if ((.evidence // []) | length) == 1 then "" else "s" end): \((.evidence // []) | join(" "))",
@@ -419,6 +427,16 @@ NAMES
   printf '%s\n' "$name"
 }
 
+# Asks once more before a write leaves the host (ADR 0052 §7): y approves.
+confirm_write() {
+  local yes
+  clear
+  printf 'Write to %s?\n\nThe writer posts the content exactly as the item shows it.\n\n' \
+    "$(printf '%s' "$1" | tr -d '\000-\037\177')"
+  IFS= read -r -n 1 -p 'y approve, n cancel > ' yes || return 1
+  [ "$yes" = y ]
+}
+
 # Asks for an optional reason. Prints it; Enter prints nothing.
 ask_reason() {
   local text
@@ -478,10 +496,17 @@ EOF
       ;;
     policies) "$S/policies.sh" ui; return 0 ;;
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
+    approve)
+      text="$(jq -r --arg item "$id" '.items[] | select(.id == $item and .kind == "write") | .write.target' "$json")"
+      if [ -n "$text" ]; then
+        confirm_write "$text" || return 0
+      fi
+      set -- "$@" approve
+      ;;
     reject)
       kind="$(jq -r --arg item "$id" 'select((.work // 0) >= 11) | .items[] | select(.id == $item) | .kind' "$json")"
       case "$kind" in
-        sort | delegate | hypothesis)
+        sort | delegate | hypothesis | write)
           clear
           text="$(ask_reason "Reject. A reason helps the next plan; it is never required.")" || return 0
           set -- "$@" reject
