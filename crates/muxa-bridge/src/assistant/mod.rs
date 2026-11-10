@@ -7,6 +7,7 @@ mod assist;
 pub mod brief;
 mod cancel;
 pub mod capture;
+pub mod chain;
 pub mod check;
 mod cleanup;
 pub mod corrections;

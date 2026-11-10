@@ -140,8 +140,21 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
             return Err(bad("reject on a hypothesis runs through the assistant"));
         }
         // Approve runs in `assistant::proposals`, which `routines::handle` calls first.
-        Reject if matches!(item.kind, ItemKind::Sort | ItemKind::Delegate) => Plan::Nothing,
-        Approve if matches!(item.kind, ItemKind::Sort | ItemKind::Delegate) => {
+        // Reject on a hand-off ends the chain with the results it has (ADR 0051 §3).
+        Reject
+            if matches!(
+                item.kind,
+                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff
+            ) =>
+        {
+            Plan::Nothing
+        }
+        Approve
+            if matches!(
+                item.kind,
+                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff
+            ) =>
+        {
             return Err(bad("approve on a proposal item runs through the assistant"));
         }
         Approve | Reject | Choose => pick(item, answer.action, answer.option)?,

@@ -6,6 +6,7 @@
 //! sent. Sorting is always reviewed.
 mod approval;
 pub mod approve;
+mod handoff;
 pub mod inbox;
 
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use muxa_protocol::{ErrorBody, Message};
 use crate::task_records::Context;
 use approve::{Approved, By, Made};
 
-/// `update-inbox approve` on a `sort` or `delegate` item: `capture-saved` or
+/// `update-inbox approve` on a `sort`, `delegate` or `handoff` item: `capture-saved` or
 /// `work-saved` with what it made, then `inbox-saved`, and the error for
 /// `result`. None for any other item.
 pub async fn answer(

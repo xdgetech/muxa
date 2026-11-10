@@ -2,6 +2,8 @@
 //! so a late result is not stored; its run's record is dropped and its
 //! session closed as the daemon closes a Routine run's; once the session is
 //! gone the version is `cancelled`. The daemon's tick retries a failed close.
+//! A version whose last step waits on a hand-off keeps its results and
+//! ends its chain there (ADR 0051 §3).
 use std::sync::Arc;
 
 use muxa_protocol::{AssistantRequest, Delivery, ErrorBody, ErrorCode, WorkItem};
@@ -27,7 +29,14 @@ pub async fn cancel(
 ) -> Result<(WorkItem, AssistantRequest), ErrorBody> {
     let config = Arc::clone(&cx.records);
     let id = request.clone();
-    let (work, next) = super::blocking(move || mark(&config, &id, version)).await?;
+    let (work, next) = super::blocking(move || {
+        // A version whose last step waits on a hand-off: the chain ends there.
+        match super::chain::end(&config, &id, version)? {
+            Some(work) => Ok((work, Next::Done)),
+            None => mark(&config, &id, version),
+        }
+    })
+    .await?;
     if let Next::Close(task) = &next {
         let (config, t) = (Arc::clone(&cx.records), task.clone());
         super::blocking(move || {

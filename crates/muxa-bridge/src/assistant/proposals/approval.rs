@@ -17,7 +17,8 @@ const FIELD: &str = "approvals";
 pub struct Approval {
     /// The proposal's hash when the approval began.
     pub hash: String,
-    /// The Capture's or Work item's `rev` the last attempt ran at.
+    /// The Capture's or Work item's `rev` the last attempt ran at; a
+    /// hand-off's request version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rev: Option<u64>,
     /// Epoch seconds: an attempt is running since then.
@@ -62,6 +63,7 @@ pub fn hash(item: &InboxItem) -> Option<String> {
     let (kind, body) = match item.kind {
         ItemKind::Sort => ("sort", serde_json::to_vec(item.sort.as_ref()?)),
         ItemKind::Delegate => ("delegate", serde_json::to_vec(item.delegate.as_ref()?)),
+        ItemKind::Handoff => ("handoff", serde_json::to_vec(item.handoff.as_ref()?)),
         _ => return None,
     };
     let body = body.ok()?;

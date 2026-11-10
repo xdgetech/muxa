@@ -1,4 +1,5 @@
-//! Approving a `sort` or `delegate` item (ADR 0049 §4). The stored action
+//! Approving a `sort` or `delegate` item (ADR 0049 §4), or a `handoff` item
+//! (ADR 0051 §3, in `handoff.rs`). The stored action
 //! runs once, through `sort-capture`'s or `request-assistant`'s own code, at
 //! the `rev` read when it is approved. A second approve returns what the
 //! first made. The host approves a delegate item itself (`By::Host`) for a
@@ -57,13 +58,13 @@ pub struct Approved {
 
 /// The ids an approval records.
 #[derive(Debug, Default)]
-struct Ids {
-    capture: Option<String>,
-    work: Option<String>,
-    request: Option<String>,
+pub(super) struct Ids {
+    pub capture: Option<String>,
+    pub work: Option<String>,
+    pub request: Option<String>,
 }
 
-enum Claim {
+pub(super) enum Claim {
     Go,
     /// Another approve finished first.
     Done(Box<Found>),
@@ -106,12 +107,13 @@ pub async fn approve(cx: &Context, found: Found, by: By) -> Result<Approved, Err
     }
     match found.item.kind {
         ItemKind::Sort => blocking(move || sort(&config, found, by, now())).await,
+        ItemKind::Handoff => super::handoff::approve(cx, found).await,
         _ => delegate(cx, found, by).await,
     }
 }
 
 /// Blocking. What the first approval made, read again.
-fn again(config: &Config, f: &Found) -> Result<Approved, ErrorBody> {
+pub(super) fn again(config: &Config, f: &Found) -> Result<Approved, ErrorBody> {
     let a = f.approval.clone().unwrap_or_default();
     let work_item = |id: &str| {
         shelf::<WorkItem>(config)
@@ -319,7 +321,13 @@ fn refuse_none(config: &Config, workspace: &str) -> Result<(), ErrorBody> {
 }
 
 /// Blocking. Claims the approval at `rev` under the item file's lock.
-fn claim(config: &Config, f: &Found, rev: u64, by: By, at: u64) -> Result<Claim, ErrorBody> {
+pub(super) fn claim(
+    config: &Config,
+    f: &Found,
+    rev: u64,
+    by: By,
+    at: u64,
+) -> Result<Claim, ErrorBody> {
     with_items(config, &f.task, |items| {
         let mut a =
             approval::get(items, &f.item.id, &f.hash).unwrap_or_else(|| Approval::new(&f.hash));
@@ -354,7 +362,13 @@ fn claim(config: &Config, f: &Found, rev: u64, by: By, at: u64) -> Result<Claim,
 }
 
 /// Blocking. Records what the approval made and answers the item `approve`.
-fn finish(config: &Config, f: &Found, ids: Ids, by: By, at: u64) -> Result<InboxItem, ErrorBody> {
+pub(super) fn finish(
+    config: &Config,
+    f: &Found,
+    ids: Ids,
+    by: By,
+    at: u64,
+) -> Result<InboxItem, ErrorBody> {
     with_items(config, &f.task, |items| {
         let mut a =
             approval::get(items, &f.item.id, &f.hash).unwrap_or_else(|| Approval::new(&f.hash));
@@ -441,6 +455,6 @@ fn with_items<T>(
     store.update(task, change).map_err(ErrorBody::from)
 }
 
-fn bad(message: impl Into<String>) -> ErrorBody {
+pub(super) fn bad(message: impl Into<String>) -> ErrorBody {
     error_body(ErrorCode::BadRequest, message.into())
 }

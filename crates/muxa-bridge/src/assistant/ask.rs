@@ -281,7 +281,7 @@ fn next_version(
 
 /// Blocking, under [`CLAIMS`]. Under the request's lock: None when the
 /// version has its run (found again by marker after a crash), or needs none.
-fn claim_run(
+pub(super) fn claim_run(
     config: &Config,
     d: &Delegated,
     id: &str,
@@ -355,7 +355,11 @@ pub(super) fn budget(
 
 /// Makes the claimed version's run, and ends the claim. The error when it
 /// did not start.
-async fn start_run(cx: &Context, q: AssistantRequest, d: &Delegated) -> Option<ErrorBody> {
+pub(super) async fn start_run(
+    cx: &Context,
+    q: AssistantRequest,
+    d: &Delegated,
+) -> Option<ErrorBody> {
     let config = Arc::clone(&cx.records);
     let (req, delegate) = (q.clone(), d.worker.clone());
     let made =

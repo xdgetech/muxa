@@ -13,7 +13,7 @@ STEER_DIR/turns.log. Files in STEER_DIR steer it:
   stall       present at the start prompt: the turn stays running until
               release appears, then writes first.json
 A member NAME reads first.NAME.json and fixed.NAME.json before the shared
-files, and logs its turns as "NAME: <line>". With CLAUDE_CONFIG_DIR set, it
+files, stalls on stall.NAME as on stall, and logs its turns as "NAME: <line>". With CLAUDE_CONFIG_DIR set, it
 keeps a Claude Code session file there: a named worker's run is delivered
 only to a process the adapter binds (ADR 0027).
 A result's "request": "@" and "requestVersion": 0 are filled in from the
@@ -120,7 +120,7 @@ def main():
         with open(os.path.join(STEER, "turns.log"), "a") as f:
             f.write((NAME + ": " if NAME else "") + line + "\n")
         if "Read .muxa/TASK.md" in line:
-            if steer("stall"):
+            if steer("stall") or (NAME and steer("stall." + NAME)):
                 wait_for("release")
             write("first.json")
         elif "did not pass the check" in line:

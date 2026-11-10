@@ -208,13 +208,18 @@ pub fn fail(
             q.delivery,
             Delivery::Failed | Delivery::CancelRequested | Delivery::Cancelled
         );
-        if q.version != run.version || settled || q.results.iter().any(|r| r.version == run.version)
-        {
+        let answered = q
+            .results
+            .iter()
+            .any(|r| r.version == run.version && r.step.unwrap_or(1) == run.step());
+        let current = q.version == run.version && super::steps::current(q) == run.step();
+        if !current || settled || answered {
             return Ok(false);
         }
         q.delivery = Delivery::Failed;
         q.delivery_at = at;
         q.updated_at = at;
+        super::steps::sync(q);
         Ok(true)
     })?;
     Ok(changed.unwrap_or(false))
