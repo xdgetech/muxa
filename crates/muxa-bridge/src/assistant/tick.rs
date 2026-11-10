@@ -34,6 +34,7 @@ pub async fn tick(cx: &Context) {
     let scanned = tokio::task::spawn_blocking(move || {
         let workspaces = config.load_workspaces().unwrap_or_default();
         let plans = super::plan::tick::scan(&config, &workspaces, now);
+        super::policies::prune(&config, now);
         (scan(&config, now), plans)
     })
     .await;

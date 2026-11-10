@@ -1,5 +1,6 @@
 //! Captures, Work items and assistant requests (ADR 0046): the user's input
-//! and unfinished work, kept apart from Tasks and Inbox items.
+//! and unfinished work, kept apart from Tasks and Inbox items. Plans
+//! (ADR 0047) and the user's policies (ADR 0048) live here too.
 pub mod apply;
 pub mod ask;
 mod assist;
@@ -15,6 +16,7 @@ pub mod info;
 pub mod notes;
 pub mod overall_brief;
 pub mod plan;
+pub mod policies;
 pub mod policy;
 pub mod proposals;
 pub mod record;
@@ -46,7 +48,7 @@ const MAX_CLOSED: usize = 100;
 /// Unsorted Captures in one list.
 const MAX_CAPTURES: usize = 200;
 
-/// Answers a `work` level 8 or 9 request: its saved message, and its error.
+/// Answers a `work` level 8, 9 or 10 request: its saved message, and its error.
 pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
     match req {
         Request::Capture {
@@ -262,6 +264,60 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 );
             }
             plan::now(cx, id, minutes).await
+        }
+        Request::AddPolicy {
+            id,
+            text,
+            scope,
+            from,
+            until,
+        } => {
+            let config = Arc::clone(&cx.records);
+            let fields = policies::Fields {
+                text: Some(text),
+                scope: Some(scope),
+                from,
+                until,
+            };
+            let now = crate::records::now();
+            match blocking(move || policies::add(&config, fields, now)).await {
+                Ok(entry) => (vec![Message::PolicySaved { policy: id, entry }], None),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
+        Request::UpdatePolicy {
+            id,
+            policy,
+            rev,
+            action,
+            text,
+            scope,
+            from,
+            until,
+        } => {
+            let config = Arc::clone(&cx.records);
+            let change = policies::Change {
+                policy,
+                rev,
+                action,
+                fields: policies::Fields {
+                    text,
+                    scope,
+                    from,
+                    until,
+                },
+            };
+            let now = crate::records::now();
+            match blocking(move || policies::update(&config, change, now)).await {
+                Ok(saved) => (
+                    saved
+                        .map(|entry| Message::PolicySaved { policy: id, entry })
+                        .into_iter()
+                        .collect(),
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
         }
         _ => (
             Vec::new(),

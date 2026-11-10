@@ -87,11 +87,12 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     .load_workspaces()
                     .ok()
                     .and_then(|w| crate::assistant::info::info(&w));
-                Ok((entries, items, assistant, plans, info))
+                let policies = crate::assistant::policies::list(&config, crate::records::now())?;
+                Ok((entries, items, assistant, plans, info, policies))
             })
             .await
             .map(
-                |(entries, items, assistant, plans, info)| Message::InboxList {
+                |(entries, items, assistant, plans, info, policies)| Message::InboxList {
                     inbox: id,
                     entries,
                     items,
@@ -100,8 +101,8 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     requests: assistant.requests,
                     plans,
                     assistant: info.map(Box::new),
-                    // Policies come with level 10 (ADR 0048).
-                    policies: Vec::new(),
+                    policies,
+                    // Hypotheses and corrections come with later slices (ADR 0048).
                     hypotheses: Vec::new(),
                     corrections: Vec::new(),
                 },

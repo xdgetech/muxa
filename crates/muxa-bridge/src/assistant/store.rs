@@ -1,11 +1,11 @@
-//! One JSON file per record in `<state dir>/assistant/{captures,work,requests,plans}/`
-//! (ADR 0046 §2, ADR 0047 §5), with the item store's lock and atomic write.
+//! One JSON file per record in `<state dir>/assistant/{captures,work,requests,plans,policies}/`
+//! (ADR 0046 §2, ADR 0047 §5, ADR 0048 §1), with the item store's lock and atomic write.
 use std::fs::{self, DirBuilder};
 use std::marker::PhantomData;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
-use muxa_protocol::{AssistantRequest, Capture, Plan, WorkItem};
+use muxa_protocol::{AssistantRequest, Capture, Plan, Policy, WorkItem};
 use serde::de::{DeserializeOwned, Error as _};
 use serde::ser::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -67,6 +67,17 @@ impl Kind for Plan {
         &self.id
     }
 }
+
+impl Kind for Policy {
+    const DIR: &'static str = "policies";
+    const PREFIX: &'static str = "y-";
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+/// The name of a folder's own lock: no record id has it.
+const FOLDER_LOCK: &str = "folder";
 
 /// The file: the wire record, its format version under `T::FORMAT_KEY`, and
 /// fields a newer muxa wrote, kept on rewrite.
@@ -232,6 +243,38 @@ impl<T: Kind> Shelf<T> {
                 source,
             }),
         }
+    }
+
+    /// Removes record `id` under its lock when `check` passes on it. `None`
+    /// when there is no such record: `check` does not run.
+    pub fn remove_if<E: From<StateError>>(
+        &self,
+        id: &str,
+        check: impl FnOnce(&T) -> Result<(), E>,
+    ) -> Result<Option<T>, E> {
+        check_id::<T>(id)?;
+        let _lock = Lock::acquire(&self.dir, id, true).map_err(StateError::from)?;
+        let Some(stored) = self.read(id)? else {
+            return Ok(None);
+        };
+        check(&stored.record)?;
+        let path = self.dir.join(format!("{id}.json"));
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(Some(stored.record)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(source) => Err(StateError::Io {
+                action: "remove",
+                path,
+                source,
+            }
+            .into()),
+        }
+    }
+
+    /// The whole folder's lock, for a write that checks a limit across its
+    /// records. Take it before any record's lock.
+    pub(crate) fn lock_folder(&self) -> Result<Lock, StateError> {
+        Ok(Lock::acquire(&self.dir, FOLDER_LOCK, true)?)
     }
 
     /// Writes a new record under a fresh random id. `make` gets the id.

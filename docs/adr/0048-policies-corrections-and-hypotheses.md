@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slice C0 (the wire types) is built; hosts do not advertise level 10 yet.
+Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types) and C1 (the policy store) are built; hosts do not advertise level 10 yet.
 
 ## Context
 

@@ -400,3 +400,101 @@ async fn a_pinned_item_is_listed_first_and_a_due_is_kept() {
         Some(ErrorCode::BadRequest)
     );
 }
+
+fn policy_saved(messages: &[Message]) -> muxa_protocol::Policy {
+    messages
+        .iter()
+        .find_map(|m| match m {
+            Message::PolicySaved { entry, .. } => Some(entry.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no policy-saved: {messages:?}"))
+}
+
+fn listed_policies(messages: &[Message]) -> Vec<muxa_protocol::Policy> {
+    messages
+        .iter()
+        .find_map(|m| match m {
+            Message::InboxList { policies, .. } => Some(policies.clone()),
+            _ => None,
+        })
+        .expect("an inbox-list")
+}
+
+fn error_of(messages: &[Message]) -> Option<ErrorCode> {
+    match messages.last() {
+        Some(Message::Result { error, .. }) => error.as_ref().map(|e| e.code),
+        _ => None,
+    }
+}
+
+/// ADR 0048 slice C1, through a bridge without a daemon.
+#[tokio::test]
+async fn a_policy_is_added_edited_and_deleted_with_its_rev() {
+    let host = Host::new("policies");
+    let no_daemon = host.base.join("no-daemon").display().to_string();
+    let mut args = host.args();
+    args.extend(["--daemon-dir".into(), no_daemon]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let (mut bridge, _) = Bridge::start(&host.server, &args).await;
+    let text = format!("Recruiting comes before sales {SECRET}");
+    let added = call(
+        &mut bridge,
+        json!({"type": "add-policy", "text": text, "scope": "work"}),
+    )
+    .await;
+    assert!(ok(&added), "{added:?}");
+    let p = policy_saved(&added);
+    assert_eq!(
+        (p.rev, p.text.as_str(), p.scope.as_str(), p.source.as_str()),
+        (1, text.as_str(), "work", "user")
+    );
+    let listed = call(&mut bridge, json!({"type": "list-inbox"})).await;
+    assert_eq!(listed_policies(&listed), [p.clone()]);
+
+    let edit = |rev: u64| {
+        json!({"type": "update-policy", "policy": p.id, "rev": rev, "action": "edit",
+               "text": "Recruiting first."})
+    };
+    let edited = call(&mut bridge, edit(1)).await;
+    assert!(ok(&edited), "{edited:?}");
+    assert_eq!(policy_saved(&edited).rev, 2);
+    let stale = call(&mut bridge, edit(1)).await;
+    assert_eq!(error_of(&stale), Some(ErrorCode::Conflict));
+    let oversize = call(
+        &mut bridge,
+        json!({"type": "add-policy", "text": "x".repeat(501), "scope": "all"}),
+    )
+    .await;
+    assert_eq!(error_of(&oversize), Some(ErrorCode::BadRequest));
+
+    // A delete answers with the result only.
+    let deleted = call(
+        &mut bridge,
+        json!({"type": "update-policy", "policy": p.id, "rev": 2, "action": "delete"}),
+    )
+    .await;
+    assert!(ok(&deleted), "{deleted:?}");
+    assert_eq!(deleted.len(), 1, "{deleted:?}");
+    let listed = call(&mut bridge, json!({"type": "list-inbox"})).await;
+    assert!(listed_policies(&listed).is_empty());
+}
+
+#[tokio::test]
+async fn the_daemon_keeps_a_policy_and_logs_no_text() {
+    let host = Host::new("policies-daemon");
+    let args = host.args();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let daemon = Daemon::start(&host.server, &args).await;
+    let mut conn = daemon.connect().await;
+    let text = format!("Mornings are for the report {SECRET}");
+    let added = conn
+        .request(json!({"type": "add-policy", "text": text, "scope": "all"}))
+        .await;
+    assert!(ok(&added), "{added:?}");
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    assert_eq!(listed_policies(&listed)[0].text, text);
+    let log = daemon.log();
+    assert!(log.contains("policy added"), "{log}");
+    assert!(!log.contains(SECRET), "the daemon logged the policy's text");
+}

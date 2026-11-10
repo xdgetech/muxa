@@ -697,7 +697,9 @@ impl Worker {
             | Request::Capture { .. }
             | Request::SortCapture { .. }
             | Request::UpdateWork { .. }
-            | Request::ApplyNotes { .. }) => {
+            | Request::ApplyNotes { .. }
+            | Request::AddPolicy { .. }
+            | Request::UpdatePolicy { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -728,15 +730,12 @@ impl Worker {
                 }
                 return None;
             }
-            // The host side comes with `work` level 10 (ADR 0048); until it
+            // Later slices of `work` level 10 (ADR 0048); until the host
             // advertises that level, no client sends these.
-            Request::AddPolicy { .. }
-            | Request::UpdatePolicy { .. }
-            | Request::UpdatePlan { .. }
-            | Request::Forget { .. } => {
+            Request::UpdatePlan { .. } | Request::Forget { .. } => {
                 return Some(Err(error_body(
                     ErrorCode::Unsupported,
-                    "this host has no policies yet: update muxa-bridge",
+                    "this host has no corrections or hypotheses yet: update muxa-bridge",
                 )));
             }
             Request::Bye { .. } => Ok(()),
