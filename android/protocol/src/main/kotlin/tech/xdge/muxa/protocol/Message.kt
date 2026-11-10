@@ -199,6 +199,10 @@ sealed interface Message {
     @Serializable
     data class InboxSaved(val inbox: Long, val entry: InboxEntry? = null, val item: InboxItem? = null) : Message
 
+    /** How many items a `delete-inbox` removed, just before its `result`. */
+    @Serializable
+    data class InboxDeleted(val inbox: Long, val deleted: Int) : Message
+
     /** The session a `start-session` made, just before its `result`. [start] is the request id, [session] the `$n` id. */
     @Serializable
     data class SessionStarted(val start: Long, val session: String, val name: String) : Message

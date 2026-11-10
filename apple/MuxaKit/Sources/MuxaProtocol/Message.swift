@@ -72,6 +72,8 @@ public enum Message: Equatable, Sendable {
     /// What an `update-inbox` wrote, just before its `result`: the Routine entry,
     /// the item, or both for a Routine's item.
     case inboxSaved(inbox: UInt64, entry: InboxEntry?, item: InboxItem? = nil)
+    /// How many items a `delete-inbox` removed, just before its `result`.
+    case inboxDeleted(inbox: UInt64, deleted: UInt32)
     /// The session a `start-session` made, just before its `result`. `start`
     /// is the request id, `session` the `$n` id.
     case sessionStarted(start: UInt64, session: String, name: String)
@@ -149,7 +151,7 @@ extension Message: Codable {
         case type, `protocol`, bridge, tmux, capabilities, id, error, sessions
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
         case routines, routine, entries, entry, problems, inbox, items, item
-        case start, name
+        case start, name, deleted
         case work, captures, requests, capture, request, plans, assistant, plan
         case policies, hypotheses, corrections, policy
         case history, truncated
@@ -277,6 +279,10 @@ extension Message: Codable {
                 inbox: try c.decode(UInt64.self, forKey: .inbox),
                 entry: try c.decodeIfPresent(InboxEntry.self, forKey: .entry),
                 item: try c.decodeIfPresent(InboxItem.self, forKey: .item))
+        case "inbox-deleted":
+            self = .inboxDeleted(
+                inbox: try c.decode(UInt64.self, forKey: .inbox),
+                deleted: try c.decode(UInt32.self, forKey: .deleted))
         case "session-started":
             self = .sessionStarted(
                 start: try c.decode(UInt64.self, forKey: .start),
@@ -440,6 +446,10 @@ extension Message: Codable {
             try c.encode(inbox, forKey: .inbox)
             try c.encodeIfPresent(entry, forKey: .entry)
             try c.encodeIfPresent(item, forKey: .item)
+        case .inboxDeleted(let inbox, let deleted):
+            try c.encode("inbox-deleted", forKey: .type)
+            try c.encode(inbox, forKey: .inbox)
+            try c.encode(deleted, forKey: .deleted)
         case .sessionStarted(let start, let session, let name):
             try c.encode("session-started", forKey: .type)
             try c.encode(start, forKey: .start)

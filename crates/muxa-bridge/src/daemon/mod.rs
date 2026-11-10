@@ -136,8 +136,8 @@ impl Daemon {
         self.sweep();
     }
 
-    /// Starts a worktree sweep at start, then every [`SWEEP_EVERY`], in the
-    /// background: it runs git on each worktree nothing holds.
+    /// Starts a sweep at start, then every [`SWEEP_EVERY`], in the background:
+    /// it closes ended Tasks' sessions, then runs git on each worktree nothing holds.
     fn sweep(&self) {
         let Ok(mut swept) = self.swept.lock() else {
             return;
@@ -148,6 +148,8 @@ impl Daemon {
         *swept = Some(std::time::Instant::now());
         let cx = self.records.clone();
         self.records.pending.spawn(async move {
+            // First, so a worktree that only an ended Task's session held can go now.
+            crate::task_records::close::close_all_ended(&cx).await;
             let pending = crate::task_records::sweep::sweep(&cx).await;
             if !pending.is_empty() {
                 tracing::info!(count = pending.len(), "worktrees wait for the user");

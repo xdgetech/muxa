@@ -719,7 +719,8 @@ impl Worker {
             | Request::UpdateTask { .. }
             | Request::ListRoutines { .. }
             | Request::ListInbox { .. }
-            | Request::GetWork { .. }) => {
+            | Request::GetWork { .. }
+            | Request::DeleteInbox { .. }) => {
                 let answer = task_records::remote::serve(
                     &self.records_context(),
                     self.daemon_dir.as_deref(),

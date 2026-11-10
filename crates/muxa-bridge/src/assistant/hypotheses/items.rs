@@ -109,7 +109,7 @@ fn add(
     taken.extend(open_texts(items).collect::<Vec<_>>());
     for h in hypotheses {
         let key = key(&h.id);
-        if items.items.iter().any(|s| s.key == key) {
+        if items.has_key(&key) {
             continue;
         }
         if !taken.insert(normalized(&h.text)) {
@@ -135,6 +135,7 @@ fn item_for(h: &Hypothesis, overall: &str, id: String, at: u64) -> InboxItem {
         read_at: None,
         later_at: None,
         until: None,
+        protected_at: None,
         answered_at: None,
         answer: None,
         summary: None,

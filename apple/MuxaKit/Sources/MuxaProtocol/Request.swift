@@ -87,6 +87,9 @@ public enum Request: Equatable, Sendable {
     case updateInboxEntry(
         id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil,
         worktree: WorktreeEnd? = nil)
+    /// Remove the Inbox items made more than `olderThanDays` days ago, except protected
+    /// ones (capability `work` level 8, ADR 0046). An `inbox-deleted` comes first.
+    case deleteInbox(id: UInt64, olderThanDays: UInt32)
     /// An agent session in a repo's main checkout, to ask about its code: no
     /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as
     /// `createTask`'s. A `session-started` comes first.
@@ -153,7 +156,7 @@ public enum Request: Equatable, Sendable {
             .createTask(let id, _, _, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
-            .updateInboxEntry(let id, _, _, _, _, _, _), .startSession(let id, _, _),
+            .updateInboxEntry(let id, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
             .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _),
             .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _), .planNow(let id, _),
@@ -169,7 +172,7 @@ extension Request: Codable {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
         case cols, rows, operation, action, lines
-        case routine, entry, until, option, worktree
+        case routine, entry, until, option, worktree, olderThanDays
         case clientId, source, assist, capture, work, workRev, into, request, version, purpose
         case due, minutes
         case policy, from, plan, order, row, record
@@ -265,6 +268,9 @@ extension Request: Codable {
             try c.encodeIfPresent(text, forKey: .text)
             try c.encodeIfPresent(option, forKey: .option)
             try c.encodeIfPresent(worktree, forKey: .worktree)
+        case .deleteInbox(let id, let days):
+            try c.head("delete-inbox", id)
+            try c.encode(days, forKey: .olderThanDays)
         case .capture(let id, let clientId, let text, let source, let workspace, let assist):
             try c.head("capture", id)
             try c.encode(clientId, forKey: .clientId)
@@ -462,6 +468,8 @@ extension Request: Codable {
                 text: try c.decodeIfPresent(String.self, forKey: .text),
                 option: try c.decodeIfPresent(UInt32.self, forKey: .option),
                 worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree))
+        case "delete-inbox":
+            self = .deleteInbox(id: id, olderThanDays: try c.decode(UInt32.self, forKey: .olderThanDays))
         case "capture":
             self = .capture(
                 id: id, clientId: try c.decode(String.self, forKey: .clientId),

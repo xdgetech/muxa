@@ -21,6 +21,9 @@ const val WORK_ASK_AGENT = 6
 /** Level 7: `worktree` on `update-task` and `update-inbox`, and `would-lose-work` (ADR 0043). */
 const val WORK_WORKTREE_END = 7
 
+/** Level 8: `protect` and `unprotect` on an Inbox item, and `delete-inbox` (ADR 0046). */
+const val WORK_DELETE_INBOX = 8
+
 /** Level 8: Captures, Work items and assistant requests, and `work` on `create-task` (ADR 0046). */
 const val WORK_ASSISTANT = 8
 
@@ -90,6 +93,8 @@ data class InboxEntry(
     val disposition: String,
     /** With `later`: epoch seconds. */
     val until: Long? = null,
+    /** Set by `protect`: `delete-inbox` keeps the entry (ADR 0046). */
+    val protectedAt: Long? = null,
     val proposal: Proposal? = null,
     /** After approval: the Task that performs it. */
     val task: String? = null,
@@ -124,4 +129,7 @@ enum class InboxAction {
 
     /** A `hypothesis`: makes a policy of it (level 10, ADR 0048). */
     @SerialName("confirm") CONFIRM,
+    /** Any item, open or closed: `delete-inbox` keeps it. Never in `answers` (ADR 0046). */
+    @SerialName("protect") PROTECT,
+    @SerialName("unprotect") UNPROTECT,
 }

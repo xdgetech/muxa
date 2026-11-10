@@ -28,8 +28,8 @@ pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
-    WORK_ASK_AGENT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_END_REMOVES, WORK_READ, WORK_ROUTINES,
-    work_capability, work_level,
+    WORK_ASK_AGENT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_DELETE_INBOX, WORK_END_REMOVES,
+    WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 
@@ -345,6 +345,14 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<WorktreeEnd>,
     },
+    /// Remove every Inbox item made more than `older_than_days` days ago,
+    /// except protected ones (capability `work` level 8, ADR 0046). An
+    /// `inbox-deleted` comes before the `result`.
+    DeleteInbox {
+        id: u64,
+        #[serde(rename = "olderThanDays")]
+        older_than_days: u32,
+    },
     /// Start an agent session in a repo's main checkout, to ask about its
     /// code: no Task, no worktree (capability `work` level 2, ADR 0031). A
     /// `session-started` comes before the `result`.
@@ -558,6 +566,7 @@ impl Request {
             | Request::RunRoutine { id, .. }
             | Request::ListInbox { id }
             | Request::UpdateInbox { id, .. }
+            | Request::DeleteInbox { id, .. }
             | Request::StartSession { id, .. }
             | Request::Capture { id, .. }
             | Request::SortCapture { id, .. }
@@ -799,6 +808,8 @@ pub enum Message {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         item: Option<Box<InboxItem>>,
     },
+    /// How many items a `delete-inbox` removed, sent just before its `result`.
+    InboxDeleted { inbox: u64, deleted: u32 },
     /// The session a `start-session` made, sent just before its `result`.
     SessionStarted {
         /// The request's id.

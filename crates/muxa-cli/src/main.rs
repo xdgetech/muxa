@@ -47,6 +47,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
                 [--reason T] [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
+       muxa-cli [--bridge CMD] inbox delete --older-than DAYS [--json]
        muxa-cli [--bridge CMD] capture TEXT [--workspace W] [--source S]
                 [--client-id ID] [--assist [--scope S] [--purpose P]] [--json]
        muxa-cli [--bridge CMD] work [--all] [--json]
@@ -151,13 +152,18 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  (--option N), accept, keep-open, reply (--text T),
                  retry, drop, dismiss, later
                  (moves it below the others), ask-agent (--text T), read,
-                 or confirm (a hypothesis becomes a policy). reject takes
-                 an optional --reason on sort, delegate and hypothesis items.
+                 protect, unprotect, or confirm (a hypothesis becomes a
+                 policy). reject takes an optional --reason on sort,
+                 delegate and hypothesis items. A protected item takes
+                 every answer; only inbox delete keeps it.
                  reply sends the text as it is; on an ask it denies the
                  permission first. ask-agent sends the item and the text to
                  the workspace's Ask session and leaves the item open
   inbox read ITEM
                  marks the item read, as inbox answer ITEM read
+  inbox delete --older-than DAYS
+                 removes every Inbox item made more than DAYS days ago,
+                 open or closed, except protected ones (work level 8)
   capture TEXT   saves TEXT on the host as an unsorted Capture; - reads it
                  from stdin. Nothing starts. --source is cli (default), tmux
                  or app. Sending the same --client-id again returns the
@@ -381,6 +387,10 @@ enum Cmd {
         record: String,
         json: bool,
     },
+    DeleteInbox {
+        days: u32,
+        json: bool,
+    },
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
@@ -400,6 +410,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut assist, mut scope, mut purpose) = (false, None, None);
     let (mut minutes, mut at, mut timezone, mut apply) = (None, None, None, false);
     let (mut from, mut until, mut reason) = (None, None, None);
+    let mut older_than: Option<u32> = None;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -452,6 +463,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                     lexopt::Error::Custom("--source must be app, tmux or cli".into())
                 })?);
             }
+            Long("older-than") => older_than = Some(p.value()?.parse()?),
             Long("version") => {
                 println!("muxa-cli {}", env!("CARGO_PKG_VERSION"));
                 return Ok(None);
@@ -598,6 +610,12 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     if new.work.is_some() && !is_new {
         return Err(lexopt::Error::Custom("--work requires task new".into()));
     }
+    let is_delete = matches!(words.as_slice(), [w, d] if w == "inbox" && d == "delete");
+    if older_than.is_some() != is_delete {
+        return Err(lexopt::Error::Custom(
+            "inbox delete needs --older-than DAYS, and only it takes it".into(),
+        ));
+    }
     if new.worker.is_some() && !is_new && !is_restart {
         return Err(lexopt::Error::Custom(
             "--worker requires task new or task restart".into(),
@@ -669,6 +687,12 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             json,
         },
         [w] if w == "inbox" => Cmd::Inbox { all, json },
+        [w, d] if w == "inbox" && d == "delete" => Cmd::DeleteInbox {
+            days: older_than.filter(|d| *d >= 1).ok_or_else(|| {
+                lexopt::Error::Custom("--older-than must be 1 or more days".into())
+            })?,
+            json,
+        },
         [w, a, item, name] if w == "inbox" && a == "answer" => Cmd::Answer {
             item: item.clone(),
             answer: items::Answer {
@@ -1027,6 +1051,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         } => policy::edit(&mut conn, &policy, fields, json).await,
         Cmd::DeletePolicy { policy, json } => policy::delete(&mut conn, &policy, json).await,
         Cmd::Forget { record, json } => policy::forget(&mut conn, &record, json).await,
+        Cmd::DeleteInbox { days, json } => items::delete(conn, days, json).await,
     }
 }
 
@@ -1134,6 +1159,35 @@ mod tests {
         ] {
             assert!(answer(bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn inbox_delete_needs_older_than_in_days() {
+        let parse = |args: &[&str]| parse_with(lexopt::Parser::from_args(args.iter().copied()));
+        assert!(matches!(
+            parse(&["inbox", "delete", "--older-than", "3", "--json"]),
+            Ok(Some((
+                _,
+                Cmd::DeleteInbox {
+                    days: 3,
+                    json: true
+                }
+            )))
+        ));
+        for bad in [
+            &["inbox", "delete"][..],
+            &["inbox", "delete", "--older-than", "0"],
+            &["inbox", "delete", "--older-than", "3d"],
+            &["inbox", "--older-than", "3"],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+        assert_eq!(
+            answer(&["inbox", "answer", "i-1", "protect"])
+                .unwrap()
+                .action,
+            InboxAction::Protect
+        );
     }
 
     #[test]

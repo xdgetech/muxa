@@ -37,6 +37,10 @@ pub struct TaskItems {
     pub task: String,
     #[serde(default)]
     pub items: Vec<StoredItem>,
+    /// The keys of deleted items, oldest first: a need whose item was
+    /// deleted is not made again (ADR 0046).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<String>,
     /// Fields written by a newer muxa; kept on rewrite.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -48,8 +52,25 @@ impl TaskItems {
             version: FORMAT_VERSION,
             task: task.to_owned(),
             items: Vec::new(),
+            deleted: Vec::new(),
             extra: serde_json::Map::new(),
         }
+    }
+
+    /// Whether a need with this key already made an item, kept or deleted.
+    pub fn has_key(&self, key: &str) -> bool {
+        self.items.iter().any(|s| s.key == key) || self.deleted.iter().any(|k| k == key)
+    }
+
+    /// Deletes the unprotected items made before `cutoff` (epoch seconds),
+    /// keeping their keys. Returns how many it deleted.
+    pub fn delete_before(&mut self, cutoff: u64) -> u32 {
+        let (gone, kept): (Vec<StoredItem>, Vec<StoredItem>) = std::mem::take(&mut self.items)
+            .into_iter()
+            .partition(|s| s.item.created_at < cutoff && s.item.protected_at.is_none());
+        self.items = kept;
+        self.deleted.extend(gone.iter().map(|s| s.key.clone()));
+        u32::try_from(gone.len()).unwrap_or(u32::MAX)
     }
 
     /// The one item that is open or later, if any. ADR 0033 allows one.
@@ -69,6 +90,8 @@ impl TaskItems {
                 .position(|s| matches!(s.item.state, ItemState::Answered | ItemState::Resolved));
             self.items.remove(closed.unwrap_or(0));
         }
+        let extra = self.deleted.len().saturating_sub(KEEP_ITEMS);
+        self.deleted.drain(..extra);
     }
 }
 
@@ -205,6 +228,7 @@ pub(crate) fn tests_item(id: &str, state: ItemState) -> InboxItem {
         read_at: None,
         later_at: None,
         until: None,
+        protected_at: None,
         answered_at: None,
         answer: None,
         summary: None,
@@ -276,5 +300,33 @@ mod tests {
         t.prune();
         assert_eq!(t.items.len(), KEEP_ITEMS);
         assert_eq!(t.items[0].item.id, "i-open");
+    }
+
+    #[test]
+    fn deleting_keeps_protected_and_newer_items_and_remembers_keys() {
+        let mut t = TaskItems::new("t-000001");
+        for (id, created_at, protected) in [
+            ("i-old", 10, false),
+            ("i-kept", 10, true),
+            ("i-new", 20, false),
+        ] {
+            let mut item = tests_item(id, ItemState::Open);
+            item.created_at = created_at;
+            item.protected_at = protected.then_some(15);
+            t.items.push(StoredItem {
+                item,
+                key: format!("k-{id}"),
+            });
+        }
+        assert_eq!(t.delete_before(20), 1);
+        let ids: Vec<&str> = t.items.iter().map(|s| s.item.id.as_str()).collect();
+        assert_eq!(ids, ["i-kept", "i-new"]);
+        assert!(t.has_key("k-i-old"), "a deleted need is not made again");
+        for n in 0..=KEEP_ITEMS {
+            t.deleted.push(format!("k{n}"));
+        }
+        t.prune();
+        assert_eq!(t.deleted.len(), KEEP_ITEMS);
+        assert!(!t.has_key("k-i-old"), "the oldest keys go first");
     }
 }

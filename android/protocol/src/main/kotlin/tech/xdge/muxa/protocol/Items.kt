@@ -32,6 +32,8 @@ data class InboxItem(
     val laterAt: Long? = null,
     /** Only from a host before ADR 0040, with `later`: when the item is open again. */
     val until: Long? = null,
+    /** Set by `protect`: `delete-inbox` keeps the item (ADR 0046). */
+    val protectedAt: Long? = null,
     val answeredAt: Long? = null,
     /** With `answered`: the answer given. Null also when a newer host sent an action this client does not know. */
     @Serializable(with = KnownActionSerializer::class)

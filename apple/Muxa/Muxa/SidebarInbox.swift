@@ -81,7 +81,8 @@ struct ReturnOpensItem: View {
     }
 }
 
-/// One row: the question, then the source and the age. The dot marks unread.
+/// One row: the question, then the source and the age, and a lock when it is
+/// protected. The dot marks unread.
 struct InboxItemRow: View {
     let item: InboxItem
 
@@ -96,7 +97,14 @@ struct InboxItemRow: View {
                 if let delegate = item.delegate {
                     Text(delegate.shown).font(.caption).foregroundStyle(.secondary)
                 }
-                Text(item.source()).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(item.source())
+                    if item.isProtected {
+                        Image(systemName: Icon.protected).accessibilityLabel("Protected")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }

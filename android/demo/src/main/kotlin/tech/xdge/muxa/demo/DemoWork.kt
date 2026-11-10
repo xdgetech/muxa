@@ -81,6 +81,28 @@ internal class DemoWork(
         return Update(saved, null)
     }
 
+    /** Sets `protectedAt` to [at], or clears it with null, on any entry, open or closed (ADR 0046). */
+    fun protect(id: String, at: Long?): InboxEntry {
+        val entry = entries.firstOrNull { it.id == id } ?: throw Refusal(ErrorCode.BAD_REQUEST, "$id is not an entry")
+        val saved = entry.copy(protectedAt = at)
+        entries = entries.map { if (it.id == id) saved else it }
+        return saved
+    }
+
+    /** Moves entry [id]'s `createdAt` to [at], for Delete Old's tests. */
+    fun age(id: String, at: Long) {
+        entries = entries.map { if (it.id == id) it.copy(createdAt = at) else it }
+    }
+
+    /** Removes the entries made before [cutoff] (epoch seconds) that are not protected; returns how many. */
+    fun deleteBefore(cutoff: Long): Int {
+        val kept = entries.filter { it.protectedAt != null || it.createdAt >= cutoff }
+        val deleted = entries.size - kept.size
+        entries = kept
+        laterAts = laterAts.filterKeys { id -> kept.any { it.id == id } }
+        return deleted
+    }
+
     fun approved(id: String, task: String): InboxEntry {
         val saved = entries.first { it.id == id }.copy(disposition = "approved", task = task, until = null)
         entries = entries.map { if (it.id == id) saved else it }

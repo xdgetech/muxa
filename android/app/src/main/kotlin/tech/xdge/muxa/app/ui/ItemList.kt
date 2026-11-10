@@ -31,6 +31,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,12 +48,14 @@ import tech.xdge.muxa.app.SidebarMode
 import tech.xdge.muxa.app.paneItem
 import tech.xdge.muxa.app.selectMode
 import tech.xdge.muxa.app.answer
+import tech.xdge.muxa.app.askDeleteOld
 import tech.xdge.muxa.app.canCapture
 import tech.xdge.muxa.app.hasToday
 import tech.xdge.muxa.app.openItem
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.session.buttons
+import tech.xdge.muxa.session.isProtected
 import tech.xdge.muxa.session.isUnread
 
 /**
@@ -104,6 +113,46 @@ const val NOTHING = "Nothing needs you"
 
 /** What the Inbox says on a host below `work` level 3. */
 const val OLDER_HOST = "This host needs a newer muxa-bridge for the Inbox. Update muxa on the host."
+
+/** Delete Old's choices, in days (docs/inbox.md). */
+private val DELETE_OLD_DAYS = listOf(1, 3, 5)
+
+/**
+ * The Inbox list's toolbar menu: Delete Old, then how old (ADR 0046). The caller shows it only
+ * on a host with `work` level 8.
+ */
+@Composable
+fun InboxMenu(model: AppModel) {
+    var open by remember { mutableStateOf(false) }
+    var choosingDays by remember { mutableStateOf(false) }
+    Box {
+        IconButton({ open = true; choosingDays = false }, Modifier.testTag("inbox-more")) { Icon(Icons.more, "Inbox Actions") }
+        DropdownMenu(open, { open = false }) {
+            if (!choosingDays) {
+                DropdownMenuItem(
+                    { Text("Delete Old") }, { choosingDays = true }, Modifier.testTag("inbox-delete-old"),
+                    leadingIcon = { Icon(Icons.delete, null) },
+                )
+            } else {
+                for (d in DELETE_OLD_DAYS) {
+                    DropdownMenuItem(
+                        { Text(olderThan(d)) },
+                        {
+                            open = false
+                            model.askDeleteOld(d)
+                        },
+                        Modifier.testTag("inbox-delete-old-$d"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** "Older than 1 day", "Older than 3 days". */
+internal fun olderThan(days: Int): String = "Older than ${dayCount(days)}"
+
+internal fun dayCount(days: Int): String = if (days == 1) "1 day" else "$days days"
 
 /** A swipe right is ✓, a swipe left is Later (ADR 0040 §6); the host takes either now. */
 @Composable
@@ -170,13 +219,22 @@ fun ItemRow(item: InboxItem, focused: Boolean, tag: String = "item-row-${item.id
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                item.source,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    item.source,
+                    Modifier.weight(1f, fill = false),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (item.isProtected) {
+                    Icon(
+                        Icons.protect, "Protected", Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }

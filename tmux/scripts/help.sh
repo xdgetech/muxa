@@ -59,10 +59,11 @@ print() {
   row "l d a" "on a Work item: Later, Complete, ask its assistant"
   row "P" "on a Work item: pin it first, or unpin it"
   row "o" "on a Today row: go to its Work item or Inbox item"
-  row "p" "ask the overall assistant for a plan now"
+  row "t" "ask the overall assistant for a plan now"
   row "K J" "on a Today row: move it up or down"
   row "x" "on a Today row: Not today, with an optional reason"
   row "y" "the Policies list: add, edit or delete a policy; forget what it learned"
+  printf '  %sp protects an item, D deletes items older than 1, 3 or 5 days.%s\n' "$D" "$Z"
 }
 
 case "${1:-print}" in

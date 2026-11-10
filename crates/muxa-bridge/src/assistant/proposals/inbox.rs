@@ -174,7 +174,7 @@ fn add(
     let mut made = 0;
     for (i, proposal) in proposals.iter().enumerate() {
         let key = key(plan, i);
-        if items.items.iter().any(|s| s.key == key) {
+        if items.has_key(&key) {
             continue;
         }
         let target = target(proposal);
@@ -298,6 +298,7 @@ fn item_for(p: &Proposal, facts: &Facts, id: String, at: u64) -> Option<InboxIte
         read_at: None,
         later_at: None,
         until: None,
+        protected_at: None,
         answered_at: None,
         answer: None,
         summary: None,

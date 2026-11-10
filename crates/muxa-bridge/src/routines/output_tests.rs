@@ -160,6 +160,41 @@ fn publish_stores_new_keys_commits_state_and_closes_the_run() {
 }
 
 #[test]
+fn deleted_entries_are_not_published_again_and_protected_ones_stay() {
+    let mut s = state_with_run("t-000001");
+    let out = validate(
+        &stage(json!([briefing("a"), briefing("b"), proposal("c")])),
+        10,
+    )
+    .unwrap();
+    publish(&mut s, "t-000001", "2026-11-03T09:00", out, 50, ids()).unwrap();
+    s.entries[1].entry.protected_at = Some(55);
+    s.entries[2].approving = Some(55);
+    assert_eq!(
+        s.delete_before(60),
+        1,
+        "only the unprotected entry not being approved"
+    );
+    let keys: Vec<&str> = s.entries.iter().map(|e| e.entry.key.as_str()).collect();
+    assert_eq!(keys, ["b", "c"]);
+    s.running = Some(RoutineRun {
+        occurrence: "2026-11-04T09:00".into(),
+        started_at: 2,
+        task: Some("t-000002".into()),
+    });
+    let next = validate(&stage(json!([briefing("a"), briefing("d")])), 10).unwrap();
+    let mut fresh = ids();
+    for _ in 0..3 {
+        fresh();
+    }
+    assert_eq!(
+        publish(&mut s, "t-000002", "2026-11-04T09:00", next, 70, fresh).unwrap(),
+        1,
+        "the deleted key a is skipped"
+    );
+}
+
+#[test]
 fn only_the_open_run_publishes() {
     let mut s = state_with_run("t-000002");
     let out = validate(&stage(json!([briefing("a")])), 10).unwrap();

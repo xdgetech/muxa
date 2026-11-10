@@ -28,7 +28,7 @@ internal class DemoItems(private var items: List<InboxItem>) {
      * the entries' `laterAt`, by id. [askAgent]: the host offers `ask-agent` (ADR 0041).
      */
     fun list(entries: List<InboxEntry>, laterAts: Map<String, Long>, askAgent: Boolean): List<InboxItem> {
-        val all = items + entries.map { fromEntry(it, laterAts[it.id], askAgent) }
+        val all = items.map { shown(it, askAgent) } + entries.map { fromEntry(it, laterAts[it.id], askAgent) }
         val open = all.filter { it.state == ItemState.OPEN && it.laterAt == null }
             .sortedWith(compareByDescending<InboxItem> { it.kind == ItemKind.ASK }.thenByDescending { it.createdAt })
         val later = all.filter { it.state == ItemState.OPEN && it.laterAt != null }.sortedBy { it.laterAt }
@@ -74,6 +74,27 @@ internal class DemoItems(private var items: List<InboxItem>) {
 
     /** The Task of item [id], when it has one. */
     fun task(id: String): String? = items.firstOrNull { it.id == id }?.task
+    /** Sets `protectedAt` to [at], or clears it with null, on any item, open or closed (ADR 0046). */
+    fun protect(id: String, at: Long?): InboxItem {
+        val item = items.firstOrNull { it.id == id }
+            ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item $id; list the Inbox again")
+        val saved = item.copy(protectedAt = at)
+        items = items.map { if (it.id == id) saved else it }
+        return saved
+    }
+
+    /** Moves item [id]'s `createdAt` to [at], for Delete Old's tests. */
+    fun age(id: String, at: Long) {
+        items = items.map { if (it.id == id) it.copy(createdAt = at) else it }
+    }
+
+    /** Removes the items made before [cutoff] (epoch seconds) that are not protected; returns how many. */
+    fun deleteBefore(cutoff: Long): Int {
+        val kept = items.filter { it.protectedAt != null || it.createdAt >= cutoff }
+        val deleted = items.size - kept.size
+        items = kept
+        return deleted
+    }
 
     private fun check(action: InboxAction, item: InboxItem, text: String?, option: Int?) {
         if (action == InboxAction.REPLY) {
@@ -94,6 +115,11 @@ internal class DemoItems(private var items: List<InboxItem>) {
             InboxAction.DROP -> TaskStatus.DROPPED
             else -> null
         }
+
+        /** [item] as the host sends it: without `ask-agent` unless the host offers it ([askAgent], ADR 0041). */
+        fun shown(item: InboxItem, askAgent: Boolean): InboxItem =
+            if (askAgent) item else item.copy(answers = item.answers - InboxAction.ASK_AGENT)
+
         /**
          * A Routine's entry as an item; it keeps its `e-` id, as the host's `from_entry` does.
          * [laterAt] is when Later moved it down. A stored `later` entry is open (ADR 0040).
@@ -113,7 +139,7 @@ internal class DemoItems(private var items: List<InboxItem>) {
             }.filter { askAgent || it != InboxAction.ASK_AGENT }
             return InboxItem(
                 entry.id, kind, state, entry.title, entry.workspace, entry.title, entry.createdAt,
-                laterAt = laterAt.takeIf { state == ItemState.OPEN }, answer = answer, summary = entry.body,
+                laterAt = laterAt.takeIf { state == ItemState.OPEN }, protectedAt = entry.protectedAt, answer = answer, summary = entry.body,
                 attachments = Attachments(links = entry.links), routine = entry.routine, proposal = entry.proposal, answers = answers,
             )
         }

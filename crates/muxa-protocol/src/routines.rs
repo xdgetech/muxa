@@ -21,6 +21,8 @@ pub const WORK_ASK_AGENT: u32 = 6;
 /// Level 7: `update-task` and `update-inbox` take `worktree`, and a Task's
 /// end removes its worktree (ADR 0043).
 pub const WORK_END_REMOVES: u32 = 7;
+/// Level 8: `protect` and `unprotect` on an Inbox item, and `delete-inbox` (ADR 0046).
+pub const WORK_DELETE_INBOX: u32 = 8;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {
@@ -153,6 +155,9 @@ pub struct InboxEntry {
     /// Only on an entry stored before ADR 0040: when a hidden entry was open again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub until: Option<u64>,
+    /// Set by `protect`: `delete-inbox` keeps the entry (ADR 0046).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_at: Option<u64>,
     /// Only for kind `proposal`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposal: Option<Proposal>,
@@ -239,6 +244,10 @@ pub enum InboxAction {
     AskAgent,
     /// A `hypothesis`: makes a policy of it (level 10, ADR 0048).
     Confirm,
+    /// Any item: `delete-inbox` keeps it. It still takes every answer (ADR 0046, level 8).
+    Protect,
+    /// Any item: `delete-inbox` may remove it again.
+    Unprotect,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
     Unknown,

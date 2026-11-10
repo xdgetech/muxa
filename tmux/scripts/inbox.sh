@@ -2,10 +2,11 @@
 # shellcheck disable=SC2016  # jq programs: $ is jq's, not the shell's
 # The Inbox of ADR 0033 in tmux: the sidebar's section, and prefix + T with
 # the list above the selected item. muxa owns the items; this only shows them
-# and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3.
+# and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3;
+# Protect and Delete old need level 8 (ADR 0046).
 # With level 8, Work items (w-) and unsorted Captures (c-) follow the items;
 # `a` on a Work item asks its workspace's assistant. With level 9, Today rows
-# (today:) of the newest plan come first (ADR 0047); `p` asks for a plan.
+# (today:) of the newest plan come first (ADR 0047); `t` asks for a plan.
 # With level 10 (ADR 0048), K/J move a Today row, x takes it off Today, y
 # opens the Policies list (policies.sh), and hypothesis items take Confirm.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
@@ -20,6 +21,8 @@ S="$AGENTS_SCRIPTS"
 CACHE="$(agents_run_dir)/inbox.json"
 # A lock older than this, in seconds, belongs to a refresh that died.
 LOCK_LIMIT=60
+# muxa's work level with protect and delete-inbox.
+WORK_DELETE=8
 
 muxa() { "$S/muxa.sh" cli "$@"; }
 
@@ -77,6 +80,10 @@ JQ_DEFS='
   def age: since(.createdAt);
   def dot: if .readAt then " " else "●" end;
   def shown: select(.state == "open" or .state == "later");
+  def marks: (if .laterAt or .state == "later" then " · later" else "" end) +
+    (if .protectedAt then " · protected" else "" end);
+  # p toggles Protect; only a host with work level 8 takes it (ADR 0046).
+  def protect_act($w): if $w < 8 then empty elif .protectedAt then "unprotect" else "protect" end;
   # Labels name the result as the apps do (ADR 0033 §4a, ADR 0040): ✓ closes only
   # the item, and an answer that changes the Task names it. A proposal keeps
   # Approve and Reject.
@@ -136,7 +143,7 @@ JQ_DEFS='
   def mins: "\(.minutes.low)–\(.minutes.high) min";
   def mark($p): (.work // .item) as $t |
     {"entered": " · new", "moved": " · moved"}[[($p.changed // [])[] | select(.id == $t) | .change][0] // ""] // "";
-  def plan_status: if ((.plans // []) | length) == 0 then "no plan yet · p Plan Now" else latest_plan |
+  def plan_status: if ((.plans // []) | length) == 0 then "no plan yet · t Plan Now" else latest_plan |
     if .delivery == "resulted" then "planned \(since(.at)) ago"
     elif (.delivery | IN("pending", "received", "processing")) then "planning…"
     else "last plan \(delivery_word)" end end;
@@ -192,7 +199,7 @@ list() {
       (shown_plan | select((.dueSoon // []) | length > 0) |
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
     (.items[] | shown |
-    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(if .laterAt or .state == "later" then " · later" else "" end)\u001b[0m"),
+    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(marks)\u001b[0m"),
     (open_work |
     "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
     ((.captures // [])[] | "\(.id)\t  ✎ \(first_line)  \u001b[2munsorted · \(age)\u001b[0m")
@@ -240,13 +247,13 @@ view_today() {
         ([(.changed // [])[] | select(.change == "left") | .id] | select(length > 0) |
           "Left the plan: \(join(" "))"),
         (if (.top // []) | length == 0 then "Nothing to rank." else empty end), ""),
-      "p Plan Now\(if $memory then "   y Policies" else "" end)"
+      "t Plan Now\(if $memory then "   y Policies" else "" end)"
     elif $row == "due" then
       shown_plan |
       "⏰ \u001b[1mDue soon, moved down by you\u001b[0m", "",
       (.dueSoon[] as $d | ([($root.workItems // [])[] | select(.id == $d)][0] // {id: $d, title: $d}) |
         "◆ \(.title | plain)\(pin_due)"),
-      "", "o Open   p Plan Now"
+      "", "o Open   t Plan Now"
     else
       shown_plan | . as $p | today_rows[$row | tonumber - 1] // empty |
       "\($row). \u001b[1m\(title_of($root; row_id))\u001b[0m",
@@ -259,7 +266,7 @@ view_today() {
       (if (.missing // []) | length > 0 then "", "\u001b[1mWould help\u001b[0m", (.missing[] | "  \(plain)")
        else empty end),
       "", (if $memory then "K/J Move   " + (if not_today($p) then "" else "x Not today   " end) else "" end) +
-        "o Open   p Plan Now"
+        "o Open   t Plan Now"
     end,
     "\u001b[2mq close\u001b[0m"
   ' "$2"
@@ -288,9 +295,9 @@ view() {
     today:*) view_today "$@"; return ;;
   esac
   iq -r --arg item "$1" "$JQ_DEFS"'
-    .items[] | select(.id == $item) | . as $i |
+    (.work // 0) as $w | .items[] | select(.id == $item) | . as $i |
     "\(icon) \u001b[1m\(.question)\u001b[0m",
-    "\u001b[2m\(.title) · \(.workspace) · \(age)\(if .readAt then "" else " · unread" end)\u001b[0m",
+    "\u001b[2m\(.title) · \(.workspace) · \(age)\(if .readAt then "" else " · unread" end)\(if .protectedAt then " · protected" else "" end)\u001b[0m",
     "",
     (.summary // empty), (if .summary then "" else empty end),
     (.delegate // empty |
@@ -309,10 +316,11 @@ view() {
       (.prompt.options | to_entries[] | "  \(.key + 1)  \(.value.label)"), ""
      else empty end),
     ([keymap[] | select(.group == "triage") | . as $k | "\($k.key) \($i | answer_label($k.act))"] +
+      [protect_act($w) | if . == "protect" then "p Protect" else "p Unprotect" end] +
       (if .session then ["o Open Session"] else [] end) | select(length > 0) | join("   ")),
     ([keymap[] | select(.group == "answer") | . as $k | "\($k.key) \($i | answer_label($k.act))"]
       | select(length > 0) | join("   ")),
-    "\u001b[2mspace/b scroll   v read all   q close\u001b[0m"
+    "\u001b[2mspace/b scroll   v read all   \(if $w >= 8 then "D delete old   " else "" end)q close\u001b[0m"
   ' "$2"
 }
 
@@ -320,7 +328,7 @@ view() {
 key_action() {
   local level
   level="$(jq -r '.work // 0' "$3")"
-  if [ "$2" = p ] && [ "$level" -ge 9 ]; then
+  if [ "$2" = t ] && [ "$level" -ge 9 ]; then
     echo plan:now
     return
   fi
@@ -353,8 +361,9 @@ key_action() {
     [wc]-*:*) return ;;
   esac
   iq -r --arg item "$1" --arg key "$2" "$JQ_DEFS"'
-    .items[] | select(.id == $item) |
-    if ($key | test("^[1-9]$")) then
+    (.work // 0) as $w | .items[] | select(.id == $item) |
+    if $key == "p" then protect_act($w) // ""
+    elif ($key | test("^[1-9]$")) then
       if .prompt.kind == "question" and ((.answers // []) | index("choose"))
       then "choose:\($key | tonumber - 1)" else "open:\($key)" end
     else (keymap[] | select(.key == $key) | .act) // "" end
@@ -463,6 +472,35 @@ EOF
   fi
 }
 
+# How many listed items delete_old removes: older than <days>, not protected.
+old_count() {
+  iq -r --argjson days "$2" \
+    '[.items[] | select(.createdAt < ($now - $days * 86400) and (.protectedAt | not))] | length' "$1"
+}
+
+# D: deletes the items older than 1, 3 or 5 days, after a confirmation that
+# names how many (ADR 0046). Protected items stay.
+delete_old() {
+  local json="$1" days ok n err
+  clear
+  if [ "$(jq -r '.work // 0' "$json")" -lt "$WORK_DELETE" ]; then
+    echo "This host cannot delete Inbox items; update muxa-bridge on the host."
+    pause
+    return 0
+  fi
+  printf 'Delete Inbox items older than how many days? Protected items stay.\n\n'
+  IFS= read -r -n 1 -p '1, 3 or 5 (any other key cancels): ' days || return 0
+  case "$days" in 1 | 3 | 5) ;; *) return 0 ;; esac
+  n="$(old_count "$json" "$days")"
+  printf '\n\nDelete %s items older than %s days? [y/N] ' "$n" "$days"
+  IFS= read -r -n 1 ok || return 0
+  [ "$ok" = y ] || return 0
+  if ! err="$(muxa inbox delete --older-than "$days" --json 2>&1 >/dev/null)"; then
+    printf '\nmuxa could not delete: %s\n' "$(printf '%s' "$err" | sed 's/^muxa-cli: //' | tail -n 1)"
+    pause
+  fi
+}
+
 # The item's pane directory and repo root, for its evidence.
 item_dir() {
   local pane
@@ -552,7 +590,7 @@ ui() {
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
-      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,K,J,y,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,t,K,J,y,D,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
@@ -560,6 +598,7 @@ ui() {
     case "$key" in
       ctrl-r) continue ;;
       v) read_item "$id" "$json" ;;
+      D) delete_old "$json" ;;
       enter | o)
         case "$id" in
           today:*)

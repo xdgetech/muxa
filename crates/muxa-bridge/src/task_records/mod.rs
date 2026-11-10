@@ -181,6 +181,7 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::UpdatePolicy { .. }
             | Request::UpdatePlan { .. }
             | Request::Forget { .. }
+            | Request::DeleteInbox { .. }
     )
 }
 
@@ -327,7 +328,8 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         req @ (Request::ListRoutines { .. }
         | Request::RunRoutine { .. }
         | Request::ListInbox { .. }
-        | Request::UpdateInbox { .. }) => crate::routines::handle(cx, req).await,
+        | Request::UpdateInbox { .. }
+        | Request::DeleteInbox { .. }) => crate::routines::handle(cx, req).await,
         req @ (Request::Capture { .. }
         | Request::SortCapture { .. }
         | Request::UpdateWork { .. }

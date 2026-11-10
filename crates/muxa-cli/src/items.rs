@@ -1,10 +1,11 @@
-//! Inbox items of `inbox` and `inbox answer` (ADR 0033), behind the host's
-//! `work` level 3 capability.
+//! Inbox items of `inbox`, `inbox answer` (ADR 0033) and `inbox delete`
+//! (ADR 0046), behind the host's `work` level 3 and 8 capabilities.
 
 use std::time::Duration;
 
 use muxa_protocol::{
-    InboxAction, InboxItem, ItemKind, ItemState, Message, Request, WORK_ITEMS, WorktreeEnd,
+    InboxAction, InboxItem, ItemKind, ItemState, Message, Request, WORK_DELETE_INBOX, WORK_ITEMS,
+    WorktreeEnd,
 };
 use serde_json::json;
 
@@ -79,6 +80,43 @@ pub fn has_items(conn: &Conn) -> bool {
     muxa_protocol::work_level(conn.capabilities()) >= WORK_ITEMS
 }
 
+fn has_delete(conn: &Conn) -> bool {
+    muxa_protocol::work_level(conn.capabilities()) >= WORK_DELETE_INBOX
+}
+
+const NEEDS_DELETE: &str =
+    "this host cannot protect or delete Inbox items; update muxa-bridge on the host";
+
+/// `inbox delete --older-than DAYS`: removes the unprotected items made
+/// more than DAYS days ago and prints how many.
+pub async fn delete(mut conn: Conn, days: u32, as_json: bool) -> Result<String, String> {
+    if !has_delete(&conn) {
+        return Err(NEEDS_DELETE.into());
+    }
+    let messages = conn
+        .call(
+            |id| Request::DeleteInbox {
+                id,
+                older_than_days: days,
+            },
+            WAIT,
+        )
+        .await?;
+    let deleted = messages
+        .into_iter()
+        .find_map(|m| match m {
+            Message::InboxDeleted { deleted, .. } => Some(deleted),
+            _ => None,
+        })
+        .ok_or("the bridge sent no delete count")?;
+    if as_json {
+        println!("{}", json!({"deleted": deleted}));
+    } else {
+        println!("deleted {deleted} Inbox items older than {days} days");
+    }
+    Ok(String::new())
+}
+
 pub fn shown(item: &InboxItem, all: bool) -> bool {
     all || matches!(item.state, ItemState::Open | ItemState::Later)
 }
@@ -118,6 +156,9 @@ pub fn line(item: &InboxItem, now: u64) -> String {
     if item.read_at.is_none() && item.state == ItemState::Open {
         state.push_str(" unread");
     }
+    if item.protected_at.is_some() {
+        state.push_str(" protected");
+    }
     format!(
         "{}  {kind}  {state}  {}  {}  {}",
         item.id,
@@ -138,6 +179,10 @@ pub async fn answer(
     }
     if answer.action == InboxAction::Confirm || answer.reason.is_some() {
         crate::policy::require(&conn)?;
+    }
+    let protects = matches!(answer.action, InboxAction::Protect | InboxAction::Unprotect);
+    if protects && !has_delete(&conn) {
+        return Err(NEEDS_DELETE.into());
     }
     // Ask Agent may start the workspace's Ask session and wait for its agent.
     let launches = matches!(
@@ -234,6 +279,8 @@ mod tests {
             .checked()
             .is_err()
         );
+        assert!(answer("protect").checked().is_ok());
+        assert!(answer("unprotect").checked().is_ok());
         assert!(super::action("keep-open").is_some());
         assert!(super::action("keep_open").is_none());
         let reason = |a| Answer {

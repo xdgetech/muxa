@@ -39,6 +39,7 @@ import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_ASK_AGENT
+import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_CAPABILITY
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_ITEMS
@@ -63,16 +64,21 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_PLANS] it has the overall assistant's plans (ADR 0047); at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0046); below [WORK_WORKTREE_END] it plays a host whose Done
- * keeps the worktree (ADR 0043), below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing ask sessions (ADR 0039), below [WORK_ITEMS] one from before
+ * [workLevel] is the `work` level it advertises; at [WORK_PLANS] it has the overall assistant's plans (ADR 0047);
+ * at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0046); below [WORK_DELETE_INBOX] it plays a host from before
+ * Protect and Delete Old (ADR 0046), below [WORK_WORKTREE_END] one whose Done keeps the worktree (ADR 0043),
+ * below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing
+ * ask sessions (ADR 0039), below [WORK_ITEMS] one from before
  * Inbox items (ADR 0033), below [WORK_ASK] one from before ask sessions and branches named after
- * the title (ADR 0031), and at 0 one without Routines.
+ * the title (ADR 0031), and at 0 one without Routines. [oldItems] makes the failure and the last
+ * proposal four days old, for Delete Old's UI test (ADR 0046), as the iOS demo's `-old-items` does.
  */
 class DemoBridge(
     set: Content = Content.TESTS,
     alerts: Boolean = false,
     taskRecords: Boolean = true,
-    workLevel: Int = WORK_WORKTREE_END,
+    workLevel: Int = WORK_DELETE_INBOX,
+    oldItems: Boolean = false,
     /** How fast an assistant run moves on (ADR 0046). */
     assistPace: AssistPace = AssistPace.DEMO,
 ) : BridgeChannel {
@@ -143,6 +149,11 @@ class DemoBridge(
     private class ChatFollow(val id: Long, var seq: Long = 0, var count: Int = 0)
 
     init {
+        if (oldItems) {
+            val old = now() - OLD_ITEM_AGE
+            items.age("i-0000a003", old)
+            work.age("e-000000a3", old - 60)
+        }
         if (alerts) {
             scope.launch {
                 delay(content.alertDelayMillis)
@@ -227,7 +238,8 @@ class DemoBridge(
             is Request.Unimage -> ok(req.id)
             is Request.CloseTask -> closeTask(req.id, req.session, req.mode)
             is Request.Keys -> keys(req)
-            is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox -> serveWork(req)
+            is Request.ListRoutines, is Request.ListInbox, is Request.RunRoutine, is Request.UpdateInbox,
+            is Request.DeleteInbox -> serveWork(req)
             is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork,
             is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
             is Request.ApplyNotes, is Request.PlanNow -> servePlans(req)
@@ -267,8 +279,11 @@ class DemoBridge(
                 ok(req.id)
             }
             is Request.RunRoutine -> runRoutine(req, now)
+            is Request.DeleteInbox -> deleteInbox(req, now)
             is Request.UpdateInbox -> if (req.action == InboxAction.ASK_AGENT) {
                 askAgent(req)
+            } else if (req.action in PROTECT_ACTIONS) {
+                protect(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind }.let { it == ItemKind.SORT || it == ItemKind.DELEGATE }) {
                 answerProposal(req, now)
             } else if (workLevel >= WORK_ITEMS && synchronized(lock) { items.has(req.entry) }) answerItem(req, now) else updateEntry(req, now)
@@ -510,6 +525,38 @@ class DemoBridge(
         if (started) emit(Message.SessionsChanged)
     }
 
+    /** Protect and Unprotect (ADR 0046): on a Task's item or a Routine's entry, open or closed. */
+    private fun protect(req: Request.UpdateInbox, now: Long) {
+        if (workLevel < WORK_DELETE_INBOX) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        val at = now.takeIf { req.action == InboxAction.PROTECT }
+        val (entry, item) = try {
+            synchronized(lock) {
+                if (items.has(req.entry)) {
+                    null to items.protect(req.entry, at)
+                } else {
+                    val saved = work.protect(req.entry, at)
+                    saved to DemoItems.fromEntry(saved, work.laterAts[saved.id], askAgent = true)
+                }
+            }
+        } catch (e: DemoWork.Refusal) {
+            return fail(req.id, e.code, e.message ?: "")
+        }
+        emit(Message.InboxSaved(req.id, entry, item))
+        ok(req.id)
+    }
+
+    /** Delete Old (ADR 0046): every item and entry made more than the days ago, except protected ones. */
+    private fun deleteInbox(req: Request.DeleteInbox, now: Long) {
+        if (workLevel < WORK_DELETE_INBOX) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        if (req.olderThanDays !in 1..MAX_DELETE_DAYS) {
+            return fail(req.id, ErrorCode.BAD_REQUEST, "olderThanDays must be 1 to $MAX_DELETE_DAYS")
+        }
+        val cutoff = now - req.olderThanDays * DAY_SECONDS
+        val deleted = synchronized(lock) { items.deleteBefore(cutoff) + work.deleteBefore(cutoff) }
+        emit(Message.InboxDeleted(req.id, deleted))
+        ok(req.id)
+    }
+
     /** Starts a run with a session whose agent runs, as the daemon does. */
     private fun runRoutine(req: Request.RunRoutine, now: Long) {
         val saved = try {
@@ -576,7 +623,7 @@ class DemoBridge(
         } catch (e: DemoWork.Refusal) {
             return fail(req.id, e.code, e.message ?: "")
         }
-        emit(Message.InboxSaved(req.id, item = saved.item))
+        emit(Message.InboxSaved(req.id, item = DemoItems.shown(saved.item, workLevel >= WORK_ASK_AGENT)))
         ok(req.id)
         if (saved.status != null) emit(Message.TasksChanged)
         val text = req.text
@@ -1076,6 +1123,10 @@ class DemoBridge(
 
         /** The Inbox answers whose text goes to the agent as its next prompt. */
         private val PROMPT_ACTIONS = setOf(InboxAction.REPLY)
+        private val PROTECT_ACTIONS = setOf(InboxAction.PROTECT, InboxAction.UNPROTECT)
+        private const val MAX_DELETE_DAYS = 3650
+        private const val DAY_SECONDS = 86_400L
+        private const val OLD_ITEM_AGE = 4 * DAY_SECONDS
 
         /** Where the bridge writes a Task's brief for its agent (ADR 0015). */
         const val TASK_DOC = ".muxa/TASK.md"

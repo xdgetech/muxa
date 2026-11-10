@@ -122,6 +122,8 @@ public final class PaneSession {
     @ObservationIgnored var readWorks: [UInt64: LoadedWork] = [:]
     /// `plan-saved`, by request id (`PaneSession+Plans.swift`).
     @ObservationIgnored var savedPlans: [UInt64: Plan] = [:]
+    /// `inbox-deleted` counts, by request id, until the result arrives (`PaneSession+Items.swift`).
+    @ObservationIgnored var deletedCounts: [UInt64: UInt32] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
     @ObservationIgnored var startedSessions: [UInt64: StartedSession] = [:]
     @ObservationIgnored private var pending: [UInt64: CheckedContinuation<Message, any Error>] = [:]
@@ -854,6 +856,8 @@ public final class PaneSession {
             // A run that did not start comes as a `failed` plan before the error.
             savedPlans[id] = entry
             keep(entry)
+        case .inboxDeleted(let id, let deleted):
+            deletedCounts[id] = deleted
         case .sessionStarted(let start, let session, let name):
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
@@ -904,6 +908,7 @@ public final class PaneSession {
         savedRequests = [:]
         readWorks = [:]
         savedPlans = [:]
+        deletedCounts = [:]
         startedSessions = [:]
         inputs = []
         sentViewport = nil

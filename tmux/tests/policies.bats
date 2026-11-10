@@ -64,13 +64,13 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   out="$(plain inbox view today:2 "$ITEMS")"
   [[ "$out" == *"policy: This week, recruiting comes before sales and support.  y-0a1b2c3d"* ]]
   [[ "$out" == *"correction: pinned w-0b1c2d3e  x-0a1b2c3d"* ]]
-  [[ "$out" == *"K/J Move   x Not today   o Open   p Plan Now"* ]]
+  [[ "$out" == *"K/J Move   x Not today   o Open   t Plan Now"* ]]
   jq -c '.hypotheses = []' "$ITEMS" >"$TMPDIR/gone.json"
   [[ "$(plain inbox view today:1 "$TMPDIR/gone.json")" == *"hypothesis: forgotten  h-4e5f6a7b"* ]]
   out="$(plain inbox view today:3 "$ITEMS")"
   [[ "$out" == *"i-1a2b3c4d · not today"* ]]
-  [[ "$out" == *"K/J Move   o Open   p Plan Now"* ]]
-  [[ "$(plain inbox view today: "$ITEMS")" == *"p Plan Now   y Policies"* ]]
+  [[ "$out" == *"K/J Move   o Open   t Plan Now"* ]]
+  [[ "$(plain inbox view today: "$ITEMS")" == *"t Plan Now   y Policies"* ]]
 }
 
 @test "K and J move a Today row, x takes it off Today, y opens the Policies list" {

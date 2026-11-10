@@ -350,7 +350,7 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   [[ "$out" == *"Time: 5–15 min, about 10"* ]]
   [[ "$out" == *"due: The offer ends Friday  https://example.com/offer"* ]]
   [[ "$out" == *"Which region the contract covers"* ]]
-  [[ "$out" == *"o Open   p Plan Now"* ]]
+  [[ "$out" == *"o Open   t Plan Now"* ]]
   [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
   [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
   [ "$(inbox target today:due "$TMPDIR/p.json")" = w-8c9d0e1f ]
@@ -375,17 +375,19 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   plan_inbox | jq -c '.work = 8' >"$TMPDIR/p.json"
   [[ "$(inbox list "$TMPDIR/p.json" | cut -f1)" != *today* ]]
   [ "$(inbox key w-0b1c2d3e P "$TMPDIR/p.json")" = "" ]
-  [ "$(inbox key w-0b1c2d3e p "$TMPDIR/p.json")" = "" ]
+  [ "$(inbox key w-0b1c2d3e t "$TMPDIR/p.json")" = "" ]
   plan_inbox | jq -c '.plans = [] | del(.assistant)' >"$TMPDIR/p.json"
   [[ "$(inbox list "$TMPDIR/p.json" | cut -f1)" != *today* ]]
   plan_inbox | jq -c '.plans = []' >"$TMPDIR/p.json"
-  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  no plan yet · p Plan Now"* ]]
+  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  no plan yet · t Plan Now"* ]]
 }
 
-@test "p plans now from any row, P pins or unpins a Work item" {
+@test "t plans now from any row, p still protects an item, P pins or unpins a Work item" {
   plan_inbox >"$TMPDIR/p.json"
-  [ "$(inbox key today:1 p "$TMPDIR/p.json")" = plan:now ]
-  [ "$(inbox key i-1a2b3c4d p "$TMPDIR/p.json")" = plan:now ]
+  [ "$(inbox key today:1 t "$TMPDIR/p.json")" = plan:now ]
+  [ "$(inbox key i-1a2b3c4d t "$TMPDIR/p.json")" = plan:now ]
+  [ "$(inbox key i-1a2b3c4d p "$TMPDIR/p.json")" = protect ]
+  [ "$(inbox key today:1 p "$TMPDIR/p.json")" = "" ]
   [ "$(inbox key w-0b1c2d3e P "$TMPDIR/p.json")" = work:unpin ]
   [ "$(inbox key w-7b8c9d0e P "$TMPDIR/p.json")" = work:pin ]
   [ "$(inbox key today:1 a "$TMPDIR/p.json")" = "" ]
@@ -408,17 +410,71 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   [[ "$(plain_view i-1a2b3c4d "$TMPDIR/p.json")" == *"c-4e5f6a7b: a new Work item in work: Try the tool for business B"* ]]
 }
 
-@test "prefix+T: p asks for the minutes and plans now; o on a Today row moves to it, P pins" {
+@test "prefix+T: t asks for the minutes and plans now; o on a Today row moves to it, P pins" {
   fake_cli
   plan_inbox >"$ITEMS"
   attach
   key C-b T
   sleep 1
-  key p
+  key t
   key 4 5 Enter
   wait_for 'grep -q "^plan now --minutes 45 --json$" "$TMPDIR/bin/calls"'
   sleep 1
   key j j o
   key P
   wait_for 'grep -q "^work pin w-7b8c9d0e --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "with work level 8, p protects or unprotects and the item shows it" {
+  [ "$(inbox key i-2c3d4e5f p "$ITEMS")" = "" ]
+  jq -c '.work = 8 | .items[2].protectedAt = 1762160000' "$ITEMS" >"$TMPDIR/w7.json"
+  [ "$(inbox key i-2c3d4e5f p "$TMPDIR/w7.json")" = protect ]
+  [ "$(inbox key i-3d4e5f6a p "$TMPDIR/w7.json")" = unprotect ]
+  plain() { inbox view "$1" "$TMPDIR/w7.json" | sed $'s/\x1b\\[[0-9;]*m//g'; }
+  [[ "$(plain i-2c3d4e5f)" == *"l Later   d ✓ Done   c Complete Task   p Protect   o Open Session"* ]]
+  [[ "$(plain i-3d4e5f6a)" == *"· protected"* ]]
+  [[ "$(plain i-3d4e5f6a)" == *"p Unprotect"* ]]
+  [[ "$(plain i-3d4e5f6a)" == *"D delete old"* ]]
+  [[ "$(inbox list "$TMPDIR/w7.json" | grep i-3d4e5f6a)" == *"· later · protected"* ]]
+}
+
+@test "prefix+T: p protects the selected item" {
+  fake_cli
+  jq -c '.work = 8' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key p
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f protect --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: D deletes items older than the days picked, after a confirmation" {
+  fake_cli
+  jq -c '.work = 8' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key D
+  key 3
+  key n
+  sleep 1
+  run grep -q "^inbox delete" "$TMPDIR/bin/calls"
+  [ "$status" -ne 0 ]
+  key D
+  key 3
+  key y
+  wait_for 'grep -q "^inbox delete --older-than 3 --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: D on an older muxa deletes nothing" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key D
+  key Enter
+  sleep 1
+  run grep -q "^inbox delete" "$TMPDIR/bin/calls"
+  [ "$status" -ne 0 ]
 }

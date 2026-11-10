@@ -78,7 +78,7 @@ A plan is a record `plans/p-<8hex>.json` in the assistant store, made by one ove
 
 - **Work detail:** the proposed notes text with Update notes (clients keep no copy of the live file, so no diff); the plan's reason when the item is in Today.
 - **Inbox:** Today section; `sort` and `delegate` items with Approve, Reject, Later; the delegate's name is the workspace's.
-- **muxa for tmux:** Today rows in `prefix + T` with `o` to open the target; `p` plan now. CLI: `plan`, `plan now`, `assist notes WORK --apply`.
+- **muxa for tmux:** Today rows in `prefix + T` with `o` to open the target; `t` plan now. CLI: `plan`, `plan now`, `assist notes WORK --apply`.
 
 ### 9. Logs and budgets
 

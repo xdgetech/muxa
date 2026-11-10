@@ -154,7 +154,7 @@ pub(crate) fn change(need: &Need, items: &TaskItems) -> Change {
             _ => Change::None,
         },
         _ => match need.key() {
-            Some(k) if !items.items.iter().any(|s| s.key == k) => Change::Make(k),
+            Some(k) if !items.has_key(&k) => Change::Make(k),
             _ => Change::None,
         },
     }
@@ -222,6 +222,7 @@ pub(crate) fn start_failed(
             read_at: None,
             later_at: None,
             until: None,
+            protected_at: None,
             answered_at: None,
             answer: None,
             summary: None,
@@ -243,7 +244,7 @@ pub(crate) fn start_failed(
         let key = format!("start:{}:{}", record.runs.len(), item.created_at);
         let store = ItemStore::open(dir)?;
         let pushed = store.update::<_, StateError>(task, |t| {
-            if t.items.iter().any(|s| s.key == key) {
+            if t.has_key(&key) {
                 return Ok(false);
             }
             resolve(t);
@@ -446,6 +447,7 @@ fn make(
         read_at: None,
         later_at: None,
         until: None,
+        protected_at: None,
         answered_at: None,
         answer: None,
         summary: chat.summary,
@@ -488,7 +490,7 @@ fn make(
     item.answers = super::answers(&item);
     let id = item.id.clone();
     let made = store.update::<_, StateError>(&record.id, |t| {
-        if t.items.iter().any(|s| s.key == key) {
+        if t.has_key(&key) {
             return Ok(false);
         }
         resolve(t);

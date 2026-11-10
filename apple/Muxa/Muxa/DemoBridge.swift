@@ -95,6 +95,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         tasks = content.tasks
         work = content.work
         work.offersAskAgent = Self.workLevel >= workAskAgent
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-old-items") { work.ageForDeleteOld() }
+        #endif
         alertsPending = alerts
         (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
         emit(.hello(protocol: protocolVersion, bridge: "demo", tmux: "demo", capabilities: Self.capabilities))
@@ -116,7 +119,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         if arguments.contains("-work2") { return all.map { $0 == "work:9" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
         if arguments.contains("-work3") { return all.map { $0 == "work:9" ? "work:3" : $0 } }
-        // A bridge from before Captures (ADR 0046): `+` is New Task.
+        // A bridge from before Protect and Delete Old, and before Captures (ADR 0046): `+` is New Task.
         if arguments.contains("-work7") { return all.map { $0 == "work:9" ? "work:7" : $0 } }
         // A bridge from before the overall assistant (ADR 0047): no Today, pins or notes.
         if arguments.contains("-work8") { return all.map { $0 == "work:9" ? "work:8" : $0 } }
@@ -214,7 +217,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                     id: id, workspace: workspace, title: title, goal: goal, project: project, repo: repo, branch: branch, loop: loop,
                     work: forWork)
             }
-        case .listRoutines, .listInbox, .runRoutine, .updateInboxEntry:
+        case .listRoutines, .listInbox, .runRoutine, .updateInboxEntry, .deleteInbox:
             serveWork(req)
         case .updateTask(let id, let task, let rev, let status, let worktree):
             let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
@@ -411,6 +414,10 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
         case .updateInboxEntry(let id, let entry, .askAgent, _, let text, _, _):
             askAgent(id: id, item: entry, text: text)
+        case .updateInboxEntry(let id, let entry, let action, _, _, _, _) where action == .protect || action == .unprotect:
+            protect(id: id, item: entry, action == .protect)
+        case .deleteInbox(let id, let days):
+            deleteOld(id: id, days: days)
         // `until` is ignored: Later moves an item down (ADR 0040).
         case .updateInboxEntry(let id, let entry, .approve, _, _, _, _) where isOverallProposal(entry):
             approveProposal(id: id, item: entry)
@@ -424,6 +431,36 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             }
         default:
             unsupported(req.id, Self.noRequest)
+        }
+    }
+
+    /// Protect and Unprotect (ADR 0046): a Routine's item comes with its entry.
+    private func protect(id: UInt64, item: String, _ on: Bool) {
+        guard Self.workLevel >= workDeleteInbox else { return unsupported(id, Self.noRequest) }
+        let outcome = lock.withLock { () -> Result<(InboxEntry?, InboxItem), DemoWork.Refusal> in
+            do throws(DemoWork.Refusal) { return .success(try work.protect(item, on)) } catch { return .failure(error) }
+        }
+        switch outcome {
+        case .success(let (entry, saved)):
+            emit(.inboxSaved(inbox: id, entry: entry, item: saved))
+            ok(id)
+        case .failure(let refusal):
+            emit(.result(id: id, error: refusal.body, sessions: nil))
+        }
+    }
+
+    /// Delete Old (ADR 0046): the count, then the result. The app lists again.
+    private func deleteOld(id: UInt64, days: UInt32) {
+        guard Self.workLevel >= workDeleteInbox else { return unsupported(id, Self.noRequest) }
+        let outcome = lock.withLock { () -> Result<UInt32, DemoWork.Refusal> in
+            do throws(DemoWork.Refusal) { return .success(try work.delete(olderThanDays: days)) } catch { return .failure(error) }
+        }
+        switch outcome {
+        case .success(let deleted):
+            emit(.inboxDeleted(inbox: id, deleted: deleted))
+            ok(id)
+        case .failure(let refusal):
+            emit(.result(id: id, error: refusal.body, sessions: nil))
         }
     }
 

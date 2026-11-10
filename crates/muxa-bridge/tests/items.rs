@@ -264,3 +264,75 @@ async fn waiting_makes_an_ask_that_a_newer_need_replaces() {
     assert_eq!(items[1]["kind"], "failure");
     assert_eq!(items[1]["question"], "The agent stopped with an error");
 }
+
+/// ADR 0046: `delete-inbox` removes old unprotected items, and the agent's
+/// unchanged state does not make the deleted item again.
+#[tokio::test]
+async fn deleted_items_stay_deleted_and_protected_ones_stay() {
+    let host = Host::new("delete", "done", 1000);
+    let dir = host.state_dir();
+    let no_daemon = host.base.join("no-daemon").display().to_string();
+    let (mut bridge, _) = Bridge::start(
+        &host.server,
+        &["--state-dir", &dir, "--daemon-dir", &no_daemon],
+    )
+    .await;
+    let items = host.until("review", |i| !i.is_empty()).await;
+    let id = items[0]["id"].clone();
+    let result = bridge
+        .request(json!({"type": "update-inbox", "entry": "i-0000beef", "action": "protect"}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: Some(_), .. }),
+        "an unknown item: {result:?}"
+    );
+
+    // Age the review, and add an old closed item that is protected.
+    let file = host.base.join(format!("state/items/{TASK}.json"));
+    let mut stored: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    stored["items"][0]["createdAt"] = json!(1);
+    let mut kept = stored["items"][0].clone();
+    kept["id"] = json!("i-0000beef");
+    kept["key"] = json!("review:900");
+    kept["state"] = json!("answered");
+    stored["items"].as_array_mut().unwrap().insert(0, kept);
+    std::fs::write(&file, stored.to_string()).unwrap();
+    let result = bridge
+        .request(json!({"type": "update-inbox", "entry": "i-0000beef", "action": "protect"}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+
+    let result = bridge
+        .request(json!({"type": "delete-inbox", "olderThanDays": 1}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+    let deleted = loop {
+        match bridge.event(WAIT).await {
+            Some(Message::InboxDeleted { deleted, .. }) => break deleted,
+            Some(_) => continue,
+            None => panic!("no inbox-deleted"),
+        }
+    };
+    assert_eq!(deleted, 1);
+    // Several looks of the producer: the same `done` makes nothing new.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let items = host.items();
+    let ids: Vec<&Value> = items.iter().map(|i| &i["id"]).collect();
+    assert_eq!(ids, [&json!("i-0000beef")], "{items:?}");
+    assert_ne!(items[0]["id"], id);
+    assert!(items[0]["protectedAt"].is_u64());
+
+    // A new turn is a new need: it makes a new item.
+    host.report("running", 1010);
+    host.report("done", 1020);
+    host.until("a new review", |i| {
+        i.iter().any(|x| x["key"] == "review:1020")
+    })
+    .await;
+}

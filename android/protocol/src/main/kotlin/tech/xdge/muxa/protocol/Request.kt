@@ -144,6 +144,12 @@ sealed interface Request {
     ) : Request
 
     /**
+     * Remove every Inbox item made more than [olderThanDays] days ago, except protected ones
+     * (capability `work` level 8, ADR 0046). An `inbox-deleted` comes first.
+     */
+    @Serializable data class DeleteInbox(override val id: Long, val olderThanDays: Int) : Request
+
+    /**
      * An agent session in a repo's main checkout, to ask about its code: no Task, no
      * worktree (capability `work` level 2, ADR 0031). [repo] is as `create-task`'s.
      * A `session-started` comes first.

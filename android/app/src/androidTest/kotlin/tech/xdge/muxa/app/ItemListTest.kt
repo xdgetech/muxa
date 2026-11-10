@@ -216,14 +216,17 @@ class ItemListTest {
         assertEquals(status, model.state.tasks?.record("t-lint01")?.status)
     }
 
-    /** A briefing has no …: ✓ closes it, and Later moves it to the bottom. */
+    /** A briefing's … holds only Protect (ADR 0046): ✓ closes it, and Later moves it to the bottom. */
     @Test
     fun aBriefingOffersDoneAndLater() {
         launchOnInbox()
         compose.onNodeWithTag("inbox-list").performScrollToNode(hasTestTag(row(BRIEFING)))
         click(row(BRIEFING))
         compose.waitUntilAtLeastOneExists(hasTestTag("item-dismiss") and hasContentDescription("Done"), TIMEOUT)
-        compose.onNodeWithTag("item-more").assertDoesNotExist()
+        click("item-more")
+        waitForTag("item-more-protect")
+        compose.onNodeWithTag("item-more-open-session").assertDoesNotExist()
+        pressBack()
         click("item-later")
         compose.waitUntil(TIMEOUT) { model.inboxItems.last().id == BRIEFING }
         assertEquals(ItemState.OPEN, item(BRIEFING).state)

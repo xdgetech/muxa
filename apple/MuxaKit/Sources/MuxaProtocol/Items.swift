@@ -22,6 +22,8 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     public var laterAt: UInt64?
     /// Only from a host before ADR 0040, with `later`: when the item is open again.
     public var until: UInt64?
+    /// Set by `protect`: `delete-inbox` keeps the item (ADR 0046).
+    public var protectedAt: UInt64?
     public var answeredAt: UInt64?
     /// With `answered`: the answer given. Nil also when a newer host sent an action this client does not know.
     public var answer: InboxAction?
@@ -49,8 +51,8 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 
     public init(
         id: String, kind: ItemKind, state: ItemState, question: String, workspace: String, title: String,
-        createdAt: UInt64, readAt: UInt64? = nil, laterAt: UInt64? = nil, until: UInt64? = nil, answeredAt: UInt64? = nil,
-        answer: InboxAction? = nil, summary: String? = nil, task: String? = nil, session: String? = nil,
+        createdAt: UInt64, readAt: UInt64? = nil, laterAt: UInt64? = nil, until: UInt64? = nil,
+        protectedAt: UInt64? = nil, answeredAt: UInt64? = nil, answer: InboxAction? = nil, summary: String? = nil, task: String? = nil, session: String? = nil,
         pane: String? = nil, prompt: ChatPrompt? = nil, attachments: Attachments = Attachments(),
         routine: String? = nil, proposal: Proposal? = nil, sort: SortProposal? = nil,
         delegate: DelegateProposal? = nil, hypothesis: HypothesisProposal? = nil, answers: [InboxAction] = []
@@ -65,6 +67,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         self.readAt = readAt
         self.laterAt = laterAt
         self.until = until
+        self.protectedAt = protectedAt
         self.answeredAt = answeredAt
         self.answer = answer
         self.summary = summary
@@ -84,7 +87,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 
 extension InboxItem: Codable {
     private enum Key: String, CodingKey {
-        case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, answeredAt, answer
+        case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, protectedAt, answeredAt, answer
         case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, answers
     }
 
@@ -100,6 +103,7 @@ extension InboxItem: Codable {
         readAt = try c.decodeIfPresent(UInt64.self, forKey: .readAt)
         laterAt = try c.decodeIfPresent(UInt64.self, forKey: .laterAt)
         until = try c.decodeIfPresent(UInt64.self, forKey: .until)
+        protectedAt = try c.decodeIfPresent(UInt64.self, forKey: .protectedAt)
         answeredAt = try c.decodeIfPresent(UInt64.self, forKey: .answeredAt)
         answer = try c.decodeIfPresent(String.self, forKey: .answer).flatMap(InboxAction.init(rawValue:))
         summary = try c.decodeIfPresent(String.self, forKey: .summary)
@@ -128,6 +132,7 @@ extension InboxItem: Codable {
         try c.encodeIfPresent(readAt, forKey: .readAt)
         try c.encodeIfPresent(laterAt, forKey: .laterAt)
         try c.encodeIfPresent(until, forKey: .until)
+        try c.encodeIfPresent(protectedAt, forKey: .protectedAt)
         try c.encodeIfPresent(answeredAt, forKey: .answeredAt)
         try c.encodeIfPresent(answer, forKey: .answer)
         try c.encodeIfPresent(summary, forKey: .summary)

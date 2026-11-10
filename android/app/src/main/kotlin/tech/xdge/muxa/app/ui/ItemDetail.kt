@@ -47,12 +47,15 @@ import tech.xdge.muxa.app.openItemSession
 import tech.xdge.muxa.app.reply
 import tech.xdge.muxa.app.setReply
 import tech.xdge.muxa.app.answer
+import tech.xdge.muxa.app.canDeleteInbox
+import tech.xdge.muxa.app.protect
 import tech.xdge.muxa.app.tap
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.session.buttons
 import tech.xdge.muxa.session.choices
+import tech.xdge.muxa.session.isProtected
 import tech.xdge.muxa.session.isWaiting
 import tech.xdge.muxa.session.mainAnswer
 
@@ -162,7 +165,8 @@ private fun Triage(model: AppModel, item: InboxItem) {
         }
     }
     val session = model.itemSession(item) != null
-    if (buttons.menu.isEmpty() && !session) return
+    val protects = model.canDeleteInbox
+    if (buttons.menu.isEmpty() && !session && !protects) return
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton({ open = true }, Modifier.testTag("item-more"), enabled = !busy) { Icon(Icons.more, "More") }
@@ -175,6 +179,18 @@ private fun Triage(model: AppModel, item: InboxItem) {
                         model.tap(item, action)
                     },
                     Modifier.testTag("item-more-${action.tag}"),
+                )
+            }
+            if (protects) {
+                val action = if (item.isProtected) InboxAction.UNPROTECT else InboxAction.PROTECT
+                DropdownMenuItem(
+                    { Text(action.title(item)) },
+                    {
+                        open = false
+                        model.protect(item, !item.isProtected)
+                    },
+                    Modifier.testTag("item-more-${action.tag}"),
+                    leadingIcon = { Icon(if (item.isProtected) Icons.unprotect else Icons.protect, null) },
                 )
             }
             if (session) {
@@ -280,6 +296,8 @@ fun InboxAction.title(item: InboxItem): String = when (this) {
     InboxAction.READ -> "Mark Read"
     InboxAction.ASK_AGENT -> "Ask Agent"
     InboxAction.CONFIRM -> "Confirm"
+    InboxAction.PROTECT -> "Protect"
+    InboxAction.UNPROTECT -> "Unprotect"
 }
 
 val InboxItem.kindTitle: String

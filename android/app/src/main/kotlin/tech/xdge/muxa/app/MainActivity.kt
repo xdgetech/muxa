@@ -14,6 +14,7 @@ import tech.xdge.muxa.app.ui.MuxaTheme
 import tech.xdge.muxa.app.ui.Root
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
+import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WORK_ITEMS
@@ -58,8 +59,9 @@ class MainActivity : ComponentActivity() {
                     intent.getBooleanExtra(EXTRA_WORK1, false) -> WORK_ROUTINES
                     intent.getBooleanExtra(EXTRA_WORK2, false) -> WORK_ASK
                     intent.getBooleanExtra(EXTRA_WORK3, false) -> WORK_ITEMS
-                    else -> WORK_WORKTREE_END
+                    else -> WORK_DELETE_INBOX
                 },
+                oldItems = intent.getBooleanExtra(EXTRA_OLD_ITEMS, false),
             )
         } else if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_NO_SAVED_HOSTS, false)) {
             model.forgetSavedHosts()
@@ -151,5 +153,8 @@ class MainActivity : ComponentActivity() {
 
         /** A bridge with the overall assistant: Today in the Inbox, pins, deadlines and notes. */
         const val EXTRA_WORK9 = "work9"
+
+        /** The failure and the last proposal are four days old, for Delete Old (ADR 0046). */
+        const val EXTRA_OLD_ITEMS = "old-items"
     }
 }

@@ -80,6 +80,10 @@ pub struct RoutineState {
     pub state: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entries: Vec<Stored>,
+    /// The keys of deleted entries, oldest first: a publish skips them as it
+    /// skips stored keys (ADR 0046).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<String>,
     /// Fields written by a newer muxa; kept on rewrite.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -97,8 +101,30 @@ impl RoutineState {
             last_failure: None,
             state: None,
             entries: Vec::new(),
+            deleted: Vec::new(),
             extra: serde_json::Map::new(),
         }
+    }
+
+    /// Whether the Routine already published this key, kept or deleted.
+    pub fn has_key(&self, key: &str) -> bool {
+        self.entries.iter().any(|s| s.entry.key == key) || self.deleted.iter().any(|k| k == key)
+    }
+
+    /// Deletes the unprotected entries made before `cutoff` (epoch seconds),
+    /// keeping their keys. An entry being approved stays. Returns how many.
+    pub fn delete_before(&mut self, cutoff: u64) -> u32 {
+        let (gone, kept): (Vec<Stored>, Vec<Stored>) = std::mem::take(&mut self.entries)
+            .into_iter()
+            .partition(|s| {
+                s.entry.created_at < cutoff
+                    && s.entry.protected_at.is_none()
+                    && s.approving.is_none()
+            });
+        self.entries = kept;
+        self.deleted
+            .extend(gone.iter().map(|s| s.entry.key.clone()));
+        u32::try_from(gone.len()).unwrap_or(u32::MAX)
     }
 
     /// Drops the oldest closed entries, then the oldest of all, down to [`KEEP_ENTRIES`].
@@ -110,6 +136,8 @@ impl RoutineState {
             });
             self.entries.remove(closed.unwrap_or(0));
         }
+        let extra = self.deleted.len().saturating_sub(KEEP_ENTRIES);
+        self.deleted.drain(..extra);
     }
 }
 

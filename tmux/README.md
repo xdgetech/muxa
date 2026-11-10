@@ -179,7 +179,7 @@ apps show, with a goal and a status.
   - `j`/`k` move. The keys sit on two lines, as on the apps' item screen
     (ADR 0040). The first line is triage: `l` Later (the item moves below the
     others and stays there until you answer it), `d` ✓ Done (closes only the
-    item), `c` Complete Task, `x` Drop Task and `o` Open Session.
+    item), `c` Complete Task, `x` Drop Task, `p` Protect and `o` Open Session.
   - The second line answers the agent: `a` its first decision (Allow, Approve
     or Retry; never Complete Task), `r` Deny or Reject, and `s` the reply box.
     `s` asks for the text. With a session it is Send: the text goes to the agent
@@ -195,6 +195,10 @@ apps show, with a goal and a status.
   - `space` and `b` scroll the item a page down and up, `Shift`+arrows a
     line. `v` shows the whole item in `$PAGER`.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
+  - With muxa's `work` level 8 (ADR 0046), `p` protects the item or removes the
+    protection, and `D` deletes old items: pick 1, 3 or 5 days, then confirm the
+    count. It deletes every item older than that, open or closed, except
+    protected ones. A protected item still takes `l`, `d` and every answer.
   - With `work` level 8, the open Work items (`◆`) and the unsorted Captures
     (`✎`) follow the items. On a Work item, `l` Later moves it below the others
     and `d` completes it; its Tasks keep running. `a` asks its workspace's
@@ -210,7 +214,7 @@ apps show, with a goal and a status.
     line of the items you moved down with Later that are due soon. The heading
     says when the plan was made, or that the newest plan failed. The item below
     the list shows a row's why, next step, time and basis. `o` or `Enter` on a
-    row goes to its Work item or Inbox item in the list. `p` anywhere asks the
+    row goes to its Work item or Inbox item in the list. `t` anywhere asks the
     overall assistant for a plan now (`muxa-cli plan now`); it asks for the
     minutes you have first, and `Enter` gives no limit. `P` on a Work item pins
     it, so it is listed first and fills the first plan rows, or unpins it. The

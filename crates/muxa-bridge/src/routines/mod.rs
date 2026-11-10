@@ -155,6 +155,17 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     item: Some(Box::new(item)),
                 })
         }
+        Request::DeleteInbox {
+            id,
+            older_than_days,
+        } => {
+            let config = Arc::clone(&cx.records);
+            blocking(move || {
+                crate::items::delete::delete(&config, older_than_days, crate::records::now())
+            })
+            .await
+            .map(|deleted| Message::InboxDeleted { inbox: id, deleted })
+        }
         Request::UpdateInbox {
             id, entry, action, ..
         } => inbox::update(cx, entry, action)

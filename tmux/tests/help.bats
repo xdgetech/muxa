@@ -22,7 +22,7 @@ teardown() { teardown_server; }
   run "$ROOT/scripts/help.sh"
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"  P              on a Work item: pin it first, or unpin it"* ]]
-  [[ "$out" == *"  p              ask the overall assistant for a plan now"* ]]
+  [[ "$out" == *"  t              ask the overall assistant for a plan now"* ]]
   [[ "$out" == *"  o              on a Today row: go to its Work item or Inbox item"* ]]
 }
 

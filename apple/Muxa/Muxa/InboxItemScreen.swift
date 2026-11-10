@@ -132,11 +132,19 @@ struct InboxItemScreen: View {
                 .accessibilityIdentifier("item-answer-\(done.rawValue)")
         }
         let session = model.itemSession(item) != nil
-        if !answers.menu.isEmpty || session {
+        let protects = model.session.canDeleteInbox
+        if !answers.menu.isEmpty || session || protects {
             Menu {
                 ForEach(answers.menu, id: \.self) { action in
                     Button(action.title(for: item.kind), role: action == .drop ? .destructive : nil) { perform(item, action) }
                         .accessibilityIdentifier("item-answer-\(action.rawValue)")
+                }
+                if protects {
+                    let action: InboxAction = item.isProtected ? .unprotect : .protect
+                    Button(action.title(for: item.kind), systemImage: item.isProtected ? Icon.unprotect : Icon.protect) {
+                        setProtected(item, !item.isProtected)
+                    }
+                    .accessibilityIdentifier("item-\(action.rawValue)")
                 }
                 if session {
                     Button("Open Session", systemImage: Icon.openSession) { openSession(item) }
@@ -220,6 +228,19 @@ struct InboxItemScreen: View {
         case .approve where item.kind == .proposal: approving = item
         case _ where action.needsText && !hasReply: replying = true
         default: send(item, action)
+        }
+    }
+
+    /// Protect is no answer: the item stays open and on screen (ADR 0046).
+    private func setProtected(_ item: InboxItem, _ protected: Bool) {
+        sending = true
+        Task {
+            defer { sending = false }
+            do {
+                try await model.session.setProtected(item, protected)
+            } catch {
+                failure = PaneSession.describe(error)
+            }
         }
     }
 

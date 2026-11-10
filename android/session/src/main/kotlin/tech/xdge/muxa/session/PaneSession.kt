@@ -47,6 +47,7 @@ import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
+import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
@@ -185,6 +186,9 @@ class PaneSession(
 
         /** The Inbox has Today, Work items take pins and deadlines, and Results propose notes (ADR 0047). */
         val canPlan get() = workLevel >= WORK_PLANS
+
+        /** The host protects items and deletes old ones (ADR 0046). */
+        val canDeleteInbox get() = workLevel >= WORK_DELETE_INBOX
     }
 
     private val _state = MutableStateFlow(State())
@@ -222,6 +226,7 @@ class PaneSession(
     private val savedPlans = mutableMapOf<Long, Plan>()
     private val workDetailListings = mutableMapOf<Long, Message.WorkDetail>()
     private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
+    private val deletedCounts = mutableMapOf<Long, Int>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
 
     /** Ids of input requests in flight; their results only matter when they fail. */
@@ -647,6 +652,30 @@ class PaneSession(
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "The bridge did not name the Ask session."))
         refresh()
         started
+    }
+
+    /** Sets or clears [item]'s `protectedAt` (ADR 0046). It takes every answer as before. */
+    suspend fun protect(item: InboxItem, protected: Boolean): InboxItem = withContext(dispatcher) {
+        requireDeleteInbox()
+        answer(item, if (protected) InboxAction.PROTECT else InboxAction.UNPROTECT)
+    }
+
+    /**
+     * Removes every item made more than [olderThanDays] days ago, except protected ones (ADR 0046),
+     * then lists the Inbox again, also after a refusal. Returns how many the host removed.
+     */
+    suspend fun deleteInbox(olderThanDays: Int): Int = withContext(dispatcher) {
+        requireDeleteInbox()
+        val deleted = try {
+            listing({ Request.DeleteInbox(it, olderThanDays) }) { deletedCounts.remove(it) }
+        } finally {
+            loadWork()
+        }
+        deleted ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not say how many items it deleted"))
+    }
+
+    private fun requireDeleteInbox() {
+        if (!_state.value.canDeleteInbox) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, DELETE_INBOX_UNSUPPORTED))
     }
 
     /** Marks [item] read on every device. It stays open. Nothing is asked of a host without items, or for a read item. */
@@ -1250,6 +1279,7 @@ class PaneSession(
                     keep(it)
                 }
             }
+            is Message.InboxDeleted -> deletedCounts[message.inbox] = message.deleted
             is Message.SessionStarted -> startedSessions[message.start] = message
             is Message.CaptureSaved -> savedCaptures[message.capture] = message
             is Message.WorkSaved -> savedWork[message.work] = message
@@ -1315,6 +1345,7 @@ class PaneSession(
         savedPlans.clear()
         workDetailListings.clear()
         startedSessions.clear()
+        deletedCounts.clear()
         inputs.clear()
         sentViewport = null
         viewportJob?.cancel()
@@ -1353,6 +1384,9 @@ class PaneSession(
 
         /** Shown when the host cannot send an item to the workspace's agent (ADR 0041). */
         const val ASK_AGENT_UNSUPPORTED = "This host cannot send an item to the workspace's agent. Update muxa on the host."
+
+        /** Shown when the host cannot protect or delete Inbox items (ADR 0046). */
+        const val DELETE_INBOX_UNSUPPORTED = "This host cannot delete Inbox items. Update muxa on the host."
 
         /** Shown when the host keeps no Inbox items. */
         const val ITEMS_UNSUPPORTED = "This host has no Inbox items. Update muxa on the host."
