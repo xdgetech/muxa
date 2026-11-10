@@ -234,6 +234,15 @@ apps show, with a goal and a status.
     Confirm and `r` Reject while its item is open, and `f` Forget; a
     correction takes `f` Forget, which also removes the hypotheses it
     grounds. `q` goes back to the Inbox.
+  - With `work` level 12 (ADR 0051), a workspace's assistant is a staff of
+    members. `a` on a Work item whose workspace has more than one member asks
+    which member takes it, numbered with the lead marked; a number or a name
+    picks one (`muxa-cli assist WORK --worker NAME`), and `Enter` lets the lead
+    decide. The item below the list shows the request's steps, one row per
+    member, with the member each step hands on to. `👥` items are hand-offs:
+    one member asks to pass the request to the next. `a` approves and starts
+    the next step, `r` rejects and ends the request with the results it has,
+    `l` is Later. A `🤝` item names the member the plan picked.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

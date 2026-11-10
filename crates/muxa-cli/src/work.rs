@@ -4,9 +4,9 @@
 use std::time::Duration;
 
 use muxa_protocol::{
-    AssistSpec, AssistantRequest, Capture, CaptureSource, Correction, Due, Hypothesis, InboxItem,
-    Message, Plan, Policy, Request, SortAction, WORK_ASSISTANT, WorkAction, WorkItem, WorkState,
-    work_level,
+    AssistSpec, AssistantInfo, AssistantRequest, Capture, CaptureSource, Correction, Due,
+    Hypothesis, InboxItem, Message, Plan, Policy, Request, SortAction, WORK_ASSISTANT, WorkAction,
+    WorkItem, WorkState, work_level,
 };
 use serde_json::json;
 
@@ -189,6 +189,7 @@ fn detail_text(
     }
     if let Some(q) = latest_request(w, requests) {
         out.push_str(&format!("Asked  {}\n", crate::assist::request_line(q)));
+        out.push_str(&crate::staff::steps_text(q));
     }
     out
 }
@@ -365,6 +366,8 @@ pub struct Listing {
     pub hypotheses: Vec<Hypothesis>,
     /// Newest first.
     pub corrections: Vec<Correction>,
+    /// Level 10: the overall assistant and the delegates, with their staff at 12.
+    pub assistant: Option<AssistantInfo>,
 }
 
 pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
@@ -382,6 +385,7 @@ pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
                 policies,
                 hypotheses,
                 corrections,
+                assistant,
                 ..
             } => Some(Listing {
                 work,
@@ -392,6 +396,7 @@ pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
                 policies,
                 hypotheses,
                 corrections,
+                assistant: assistant.map(|a| *a),
             }),
             _ => None,
         })

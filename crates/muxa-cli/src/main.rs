@@ -8,6 +8,7 @@ mod items;
 mod plan;
 mod policy;
 mod routines;
+mod staff;
 mod tasks;
 mod view;
 mod when;
@@ -59,7 +60,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] work (pin | unpin) WORK [--json]
        muxa-cli [--bridge CMD] work due WORK --at TIME [--timezone ZONE] [--json]
        muxa-cli [--bridge CMD] assist WORK [--scope S] [--purpose P]
-                [--workspace W] [--json]
+                [--workspace W] [--worker NAME] [--json]
+       muxa-cli [--bridge CMD] assist staff WORKSPACE [--json]
        muxa-cli [--bridge CMD] assist cancel REQUEST [--json]
        muxa-cli [--bridge CMD] assist show (WORK | REQUEST) [--json]
        muxa-cli [--bridge CMD] assist notes (WORK | REQUEST | PLAN) [--apply] [--json]
@@ -114,7 +116,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  task, its TASK.md and its directory stay
   --worker NAME  selects a host-defined worker for new/restart, or `default`
                  for the workspace default agent; requires workers. Without
-                 it, restart keeps the current worker
+                 it, restart keeps the current worker. With assist WORK: the
+                 staff member to ask (work level 12); without it, the lead
   task recover ID
                  inspects an interrupted restart. To resolve it, supply its
                  displayed --operation and --rev, with --action cancel-prepared,
@@ -199,11 +202,17 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   --scope S      research (default), compare or draft
   --purpose P    what to find out or make, at most 4096 bytes; - reads it
                  from stdin
+  assist staff WORKSPACE
+                 the workspace's staff: each member's name, job description
+                 and notes time, the lead marked (work level 12)
   assist cancel REQUEST
-                 cancels the request's current version and closes its run
+                 cancels the request's current version and closes its run;
+                 on a chain that waits on a hand-off, it ends the chain
   assist show (WORK | REQUEST)
                  the newest Result: summary, findings with their sources,
-                 open questions, next steps, files and possible duplicates
+                 open questions, next steps, files and possible duplicates.
+                 A chain of staff members shows a row per step, then each
+                 step's Result, newest first
   assist notes (WORK | REQUEST | PLAN)
                  the newest proposed NOTES.md of the item's requests, the
                  request or the plan; --apply writes it on the host, unless
@@ -340,6 +349,10 @@ enum Cmd {
     },
     CancelRequest {
         request: String,
+        json: bool,
+    },
+    Staff {
+        workspace: String,
         json: bool,
     },
     ShowResult {
@@ -549,6 +562,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     }
     let is_assist = matches!(words.as_slice(),
         [w, id] if w == "assist" && !["cancel", "show", "notes"].contains(&id.as_str()));
+    let is_staff = matches!(words.as_slice(), [w, s, _] if w == "assist" && s == "staff");
     let is_plan_now = matches!(words.as_slice(), [w, n] if w == "plan" && n == "now");
     if minutes.is_some() && !is_plan_now {
         return Err(lexopt::Error::Custom("--minutes requires plan now".into()));
@@ -616,9 +630,9 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "inbox delete needs --older-than DAYS, and only it takes it".into(),
         ));
     }
-    if new.worker.is_some() && !is_new && !is_restart {
+    if new.worker.is_some() && !is_new && !is_restart && !is_assist {
         return Err(lexopt::Error::Custom(
-            "--worker requires task new or task restart".into(),
+            "--worker requires task new, task restart or assist WORK".into(),
         ));
     }
     // A Task's end removes its worktree; --force after the user said yes (ADR 0043).
@@ -754,6 +768,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 json,
             }
         }
+        [w, _, workspace] if is_staff && w == "assist" => Cmd::Staff {
+            workspace: workspace.clone(),
+            json,
+        },
         [w, c, request] if w == "assist" && c == "cancel" => Cmd::CancelRequest {
             request: request.clone(),
             json,
@@ -810,6 +828,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 scope: scope.unwrap_or(muxa_protocol::AssistScope::Research),
                 workspace: some(new.workspace),
                 purpose: purpose.as_deref().map(stdin_or).transpose()?,
+                worker: new.worker,
             },
             json,
         },
@@ -1033,6 +1052,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         Cmd::ShowWork { work, json } => work::show(&mut conn, &work, json).await,
         Cmd::Assist { ask, json } => assist::ask(&mut conn, ask, json).await,
         Cmd::CancelRequest { request, json } => assist::cancel(&mut conn, &request, json).await,
+        Cmd::Staff { workspace, json } => staff::list(&mut conn, &workspace, json).await,
         Cmd::ShowResult { target, json } => assist::show(&mut conn, &target, json).await,
         Cmd::Notes {
             target,

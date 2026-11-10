@@ -237,7 +237,9 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
 # A work:9 Inbox (ADR 0048): the contract's Work items and Captures follow the
 # items. The fixture's level 10 list (with plans) is plan_inbox's.
 work_inbox() {
-  jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list" and .plans == null) |
+  # The level 12 list of ADR 0051 has no plans either: staff.bats reads it.
+  jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list" and .plans == null and
+      ((.assistant.delegates // []) | any(.staff) | not)) |
     {work: 9, items: $items[0].items, entries: [], runs: [], workItems: .work, captures, requests}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }

@@ -594,7 +594,7 @@ async fn approve_asks_the_staff_member_the_plan_named() {
     inbox::publish(h.config());
     let item = h.item(ItemKind::Delegate);
     assert!(
-        item.question.starts_with("Ask w-research of w to compare:"),
+        item.question.starts_with("Ask w-research in w to compare:"),
         "{}",
         item.question
     );

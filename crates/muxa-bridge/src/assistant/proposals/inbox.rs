@@ -271,7 +271,7 @@ fn item_for(p: &Proposal, facts: &Facts, id: String, at: u64) -> Option<InboxIte
         Proposal::Delegate(d) => {
             let w = open_work(&d.work)?;
             let asked = match &d.worker {
-                Some(worker) => format!("{worker} of {}", d.workspace),
+                Some(worker) => format!("{worker} in {}", d.workspace),
                 None => d.workspace.clone(),
             };
             let question = format!("Ask {asked} to {}: {}", scope_name(d.scope), w.title);

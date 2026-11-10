@@ -24,9 +24,15 @@ pub struct Ask {
     pub scope: AssistScope,
     pub workspace: Option<String>,
     pub purpose: Option<String>,
+    /// A staff member of the workspace (work level 12). None: its lead.
+    pub worker: Option<String>,
 }
 
 pub async fn ask(conn: &mut Conn, a: Ask, as_json: bool) -> Result<String, String> {
+    // Before any request: an older host would refuse the field anyway.
+    if a.worker.is_some() {
+        crate::staff::require(conn)?;
+    }
     let rev = work::rev_of(conn, &a.work).await?;
     let messages = conn
         .call(
@@ -37,7 +43,7 @@ pub async fn ask(conn: &mut Conn, a: Ask, as_json: bool) -> Result<String, Strin
                 scope: a.scope,
                 workspace: a.workspace,
                 purpose: a.purpose,
-                worker: None,
+                worker: a.worker,
             },
             WAIT,
         )
@@ -80,6 +86,7 @@ fn print_saved(messages: &[Message], as_json: bool) -> Result<String, String> {
         println!("{}", json!({"work": entry, "request": request}));
     } else {
         println!("{}", request_line(request));
+        print!("{}", crate::staff::steps_text(request));
     }
     Ok(String::new())
 }
@@ -94,11 +101,35 @@ pub async fn show(conn: &mut Conn, target: &str, as_json: bool) -> Result<String
         return Ok(String::new());
     }
     println!("{}", request_line(request));
-    match request.results.first() {
-        Some(r) => print!("{}", result_text(r, request.version, crate::when::now())),
-        None => println!("no Result yet"),
+    print!("{}", crate::staff::steps_text(request));
+    let now = crate::when::now();
+    match shown_results(request).as_slice() {
+        [] => println!("no Result yet"),
+        results => {
+            for (i, r) in results.iter().enumerate() {
+                if i > 0 {
+                    println!();
+                }
+                print!("{}", result_text(r, request.version, now));
+            }
+        }
     }
     Ok(String::new())
+}
+
+/// The newest Result; with a chain of steps, every step's Result of the
+/// current version, newest first, since they are one answer in parts.
+fn shown_results(q: &AssistantRequest) -> Vec<&AssistResult> {
+    let Some(newest) = q.results.first() else {
+        return Vec::new();
+    };
+    if q.steps.is_empty() || newest.version != q.version {
+        return vec![newest];
+    }
+    q.results
+        .iter()
+        .filter(|r| r.version == q.version)
+        .collect()
 }
 
 fn pick<'a>(
@@ -132,6 +163,8 @@ struct Proposal {
     source: String,
     /// The Result's request version, or the plan's `rev`.
     version: u64,
+    /// The Result's step in a chain of staff members (ADR 0051); None for a plan.
+    step: Option<u32>,
     notes: Notes,
 }
 
@@ -145,6 +178,7 @@ fn proposal(listing: &work::Listing, target: &str) -> Result<Proposal, String> {
         return Ok(Proposal {
             source: p.id.clone(),
             version: p.rev,
+            step: None,
             notes,
         });
     }
@@ -161,11 +195,12 @@ fn proposal(listing: &work::Listing, target: &str) -> Result<Proposal, String> {
     }
     mine.iter()
         .flat_map(|q| q.results.iter().map(move |r| (q, r)))
-        .filter_map(|(q, r)| r.notes.clone().map(|notes| (r.at, q, r.version, notes)))
+        .filter_map(|(q, r)| r.notes.clone().map(|notes| (r.at, q, r, notes)))
         .max_by_key(|(at, ..)| *at)
-        .map(|(_, q, version, notes)| Proposal {
+        .map(|(_, q, r, notes)| Proposal {
             source: q.id.clone(),
-            version,
+            version: r.version,
+            step: r.step,
             notes,
         })
         .ok_or_else(|| format!("{target} has no notes proposal"))
@@ -204,7 +239,7 @@ pub async fn notes(
                 source: p.source,
                 version: p.version,
                 base: p.notes.base,
-                step: None,
+                step: p.step,
             },
             WAIT,
         )
@@ -244,8 +279,12 @@ fn result_text(r: &AssistResult, current: u64, now: u64) -> String {
     } else {
         ""
     };
+    let step = match (&r.worker, r.step) {
+        (Some(w), step) => format!(" · step {}, {}", step.unwrap_or(1), plain(w)),
+        (None, _) => String::new(),
+    };
     let mut out = format!(
-        "Result v{}, {} ago{stale}\n{}\n",
+        "Result v{}{step}, {} ago{stale}\n{}\n",
         r.version,
         crate::items::age(now.saturating_sub(r.at)),
         plain(&r.summary)
@@ -351,6 +390,7 @@ mod tests {
         old.at = 50;
         let mut newer = result(2, "y");
         newer.notes = Some(notes("new"));
+        newer.step = Some(2);
         let plain_result = result(3, "z");
         let item = WorkItem {
             requests: vec!["q-0000abcd".into()],
@@ -363,7 +403,10 @@ mod tests {
         };
         for target in ["w-0000abcd", "q-0000abcd"] {
             let p = proposal(&listing, target).unwrap();
-            assert_eq!((p.source.as_str(), p.version), ("q-0000abcd", 2));
+            assert_eq!(
+                (p.source.as_str(), p.version, p.step),
+                ("q-0000abcd", 2, Some(2))
+            );
             assert_eq!(p.notes.text, "new");
         }
         assert!(proposal(&listing, "w-0000ffff").is_err());

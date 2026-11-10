@@ -9,10 +9,14 @@
 # (today:) of the newest plan come first (ADR 0049); `t` asks for a plan.
 # With level 11 (ADR 0050), K/J move a Today row, x takes it off Today, y
 # opens the Policies list (policies.sh), and hypothesis items take Confirm.
+# With level 12 (ADR 0051), `a` on a Work item asks which staff member takes
+# it (Enter: the lead), a Work item shows its request's steps, and handoff
+# items take Approve and Reject as the other proposals do.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh order <today row> up|down <json>  (the row ids plan reorder sends)
+#        inbox.sh worker <work id> <json>  (asks on stdin which staff member; prints the name)
 #        inbox.sh ui <client> [item id]
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -73,7 +77,7 @@ EOF
 
 JQ_DEFS='
   def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰",
-    "sort": "🗂", "delegate": "🤝", "hypothesis": "💡"}[.kind] // "•";
+    "sort": "🗂", "delegate": "🤝", "hypothesis": "💡", "handoff": "👥"}[.kind] // "•";
   def since($t): ($now - $t) as $s |
     if $s < 60 then "\($s)s" elif $s < 3600 then "\($s / 60 | floor)m"
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
@@ -219,7 +223,8 @@ view_work() {
     "",
     "Captures: \((.captures // []) | length)   Tasks: \((.tasks // []) | length)",
     (if .state == "waiting-decision" then "A Task waits for your decision above." else empty end),
-    (asked($reqs) | "Assistant: \(.scope) v\(.version) · \(delivery_word) · \(.workspace | plain)"),
+    (asked($reqs) | "Assistant: \(.scope) v\(.version) · \(delivery_word) · \(.workspace | plain)",
+      ((.steps // [])[] | "  \(.step). \(.worker | plain) · \(delivery_word)\(if .handoff then " → \(.handoff.worker | plain)" else "" end)")),
     (if $result then
       "", "\u001b[1mResult v\($result.version)\(if $result.stale then " (stale)" else "" end)\u001b[0m",
       ($result.summary | plain), "\u001b[2mAll of it: muxa-cli assist show \($item)\u001b[0m"
@@ -301,7 +306,10 @@ view() {
     "",
     (.summary // empty), (if .summary then "" else empty end),
     (.delegate // empty |
-      "To: \(.workspace | plain) · \(.scope)", "Ask: \(.purpose | plain)", "Why: \(.reason | plain)", ""),
+      "To: \(.workspace | plain)\(if .worker then " · \(.worker | plain)" else "" end) · \(.scope)", "Ask: \(.purpose | plain)", "Why: \(.reason | plain)", ""),
+    (.handoff // empty |
+      "From: \(.from | plain) → \(.worker | plain) · step \(.step + 1)", "Ask: \(.purpose | plain)",
+      "Approve starts the next step; Reject ends the request with what it has.", ""),
     (.hypothesis // empty |
       "Scope: \(.scope | plain) · confidence \(.confidence)",
       "Based on \((.evidence // []) | length) correction\(if ((.evidence // []) | length) == 1 then "" else "s" end): \((.evidence // []) | join(" "))",
@@ -382,6 +390,35 @@ today_order() {
     else $ids | .[$i] as $a | .[$j] as $b | .[$i] = $b | .[$j] = $a | .[] end' "$3"
 }
 
+# Asks which staff member takes a Work item's request (ADR 0051 §2), when its
+# workspace has more than one. Prints the name; Enter prints nothing: the lead.
+pick_worker() {
+  local names choice n=0 name what
+  names="$(jq -r --arg item "$1" 'select((.work // 0) >= 12) | . as $r |
+    [.workItems[]? | select(.id == $item) | .workspace][0] as $ws |
+    [$r.assistant.delegates[]? | select(.workspace == $ws) | (.staff // [])[]] |
+    select(length > 1) | .[] |
+    "\(.worker)\t\(if .lead then "lead · " else "" end)\(.description | gsub("[\\x00-\\x1f\\x7f]"; " ") | .[:80])"' "$2")"
+  [ -n "$names" ] || return 0
+  clear >&2
+  printf 'Which staff member?\n\n' >&2
+  while IFS=$'\t' read -r name what; do
+    n=$((n + 1))
+    printf '  %d  %s  \033[2m%s\033[0m\n' "$n" "$name" "$what" >&2
+  done <<NAMES
+$names
+NAMES
+  printf '\n' >&2
+  IFS= read -r -e -p 'Number or name (Enter: the lead decides) > ' choice || return 1
+  case "$choice" in
+    "") return 0 ;;
+    *[!0-9]*) name="$(printf '%s\n' "$names" | cut -f1 | grep -Fx -- "$choice")" ;;
+    *) name="$(printf '%s\n' "$names" | sed -n "${choice}p" | cut -f1)" ;;
+  esac
+  [ -n "$name" ] || { printf 'No staff member %s.\n' "$choice" >&2; return 1; }
+  printf '%s\n' "$name"
+}
+
 # Asks for an optional reason. Prints it; Enter prints nothing.
 ask_reason() {
   local text
@@ -405,7 +442,11 @@ answer() {
   case "$act" in
     work:*) set -- work "${act#work:}" "$id" ;;
     # The item's workspace, scope research: the apps' Ask Assistant.
-    assist) set -- assist "$id" ;;
+    assist)
+      text="$(pick_worker "$id" "$json")" || { pause; return 0; }
+      set -- assist "$id"
+      [ -z "$text" ] || set -- "$@" --worker "$text"
+      ;;
     sort:*) set -- work sort "$id" "${act#sort:}" ;;
     plan:now)
       clear
@@ -648,6 +689,7 @@ case "${1:-}" in
   target) today_target "${2:?today row}" "${3:?json}" ;;
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
   order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
+  worker) pick_worker "${2:?work id}" "${3:?json}" ;;
   ui) ui "${2:?client}" "${3:-}" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | ui <client> [item id]" >&2; exit 2 ;;
+  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | ui <client> [item id]" >&2; exit 2 ;;
 esac

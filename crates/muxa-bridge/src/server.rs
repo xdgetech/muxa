@@ -111,8 +111,9 @@ where
         // 5 closes ask sessions (ADR 0039), 6 asks the workspace's agent from an item (ADR 0041),
         // 7 removes a Task's worktree at its end (ADR 0043), 8 protects and deletes items (ADR 0046),
         // 9 keeps Captures and Work items (ADR 0048), 10 adds delegate notes, plans, pins and
-        // due dates (ADR 0049), 11 policies, corrections and hypotheses (ADR 0050).
-        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_POLICIES));
+        // due dates (ADR 0049), 11 policies, corrections and hypotheses (ADR 0050), 12 staff
+        // and hand-offs (ADR 0051).
+        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_STAFF));
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {
