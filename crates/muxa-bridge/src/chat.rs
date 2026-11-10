@@ -72,7 +72,8 @@ impl Active {
         self.status = None;
         self.prompt = None;
         let probe = self.info.clone();
-        let opened = tokio::task::spawn_blocking(move || registry.open(&probe))
+        let rollout = self.binding.as_ref().and_then(|b| b.rollout.clone());
+        let opened = tokio::task::spawn_blocking(move || open(&registry, &probe, rollout))
             .await
             .map_err(|_| error_body(ErrorCode::Internal, "cannot reopen the agent conversation"))?
             .map_err(|_| error_body(ErrorCode::Internal, "cannot reopen the agent conversation"))?;
@@ -170,7 +171,8 @@ impl ChatTask {
         .await?;
         let registry = Arc::clone(&self.registry);
         let probe = info.clone();
-        let opened = tokio::task::spawn_blocking(move || registry.open(&probe))
+        let rollout = binding.as_ref().and_then(|b| b.rollout.clone());
+        let opened = tokio::task::spawn_blocking(move || open(&registry, &probe, rollout))
             .await
             .map_err(|e| error_body(ErrorCode::Internal, e.to_string()))?;
         match opened {
@@ -312,6 +314,22 @@ impl ChatTask {
                 })
                 .await;
         }
+    }
+}
+
+/// The pane's conversation: an owned Codex thread's rollout when the
+/// binding names one (ADR 0028), else the first adapter that sees its agent.
+fn open(
+    registry: &Registry,
+    pane: &PaneInfo,
+    rollout: Option<std::path::PathBuf>,
+) -> Result<Option<crate::agents::Opened>, crate::agents::Error> {
+    match rollout {
+        Some(path) => Ok(Some((
+            crate::agents::codex::ID,
+            Box::new(crate::agents::codex::CodexSource::owned(path)),
+        ))),
+        None => registry.open(pane),
     }
 }
 

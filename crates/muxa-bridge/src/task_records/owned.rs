@@ -4,9 +4,11 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::agents::codex::app_server::{self, Endpoint, Thread, ThreadId};
-use crate::records::Workspaces;
+use crate::agents::codex::{self, owned::Stored};
+use crate::agents::{Found, PaneInfo, Processes, Registry};
 use crate::records::owned_thread::OwnedThread;
 use crate::records::workers::{LaunchCommand, ResolvedWorker};
+use crate::records::{Record, Workspaces};
 
 const PROGRAM: &str = "codex";
 const HOME: &str = "CODEX_HOME";
@@ -118,6 +120,55 @@ impl Launch {
     }
 }
 
+/// How a record's agent is seen: by the adapters, by the thread muxa owns
+/// (ADR 0028), or not at all when its thread is unreadable or another run's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Observer {
+    Adapters,
+    Thread(OwnedThread),
+    Unknown,
+}
+
+impl Observer {
+    pub fn of(record: &Record) -> Self {
+        match record.owned_thread() {
+            Ok(None) => Self::Adapters,
+            Ok(Some(thread)) => Self::Thread(thread),
+            Err(_) => Self::Unknown,
+        }
+    }
+
+    /// The agent in `pane`, and the id of the adapter that reports it.
+    pub fn identify(
+        &self,
+        agents: &Registry,
+        pane: &PaneInfo,
+        procs: &Processes,
+    ) -> Option<(&'static str, Found)> {
+        match self {
+            Self::Adapters => agents.identify(pane, procs),
+            Self::Thread(thread) => {
+                let stored = stored(thread)?;
+                codex::owned::find(&endpoint(thread), &stored, pane).map(|f| (codex::ID, f))
+            }
+            Self::Unknown => None,
+        }
+    }
+}
+
+/// The App Server of a stored thread. Its own environment is not stored:
+/// `CODEX_HOME` alone picks the daemon.
+pub fn endpoint(thread: &OwnedThread) -> Endpoint {
+    Endpoint::new(thread.program.clone(), thread.home.clone())
+}
+
+pub fn stored(thread: &OwnedThread) -> Option<Stored> {
+    Some(Stored {
+        id: ThreadId::parse(&thread.id).ok()?,
+        path: thread.path.clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +223,68 @@ mod tests {
             Workspaces::parse("[codex]\nowned = true\n", Path::new("w.toml"), None).is_err(),
             "an unknown key fails config"
         );
+    }
+
+    const FAKE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/codex-fake.py");
+
+    fn record() -> Record {
+        serde_json::from_value(serde_json::json!({
+            "version":1,"id":"t-000001","rev":1,"workspace":"w","title":"fixture",
+            "goal":"","status":"open","createdAt":100,"updatedAt":100
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_record_is_seen_by_its_thread_and_a_bad_thread_is_unknown() {
+        let mut r = record();
+        assert_eq!(Observer::of(&r), Observer::Adapters);
+        let thread = OwnedThread::new(r.reserved_run(), ID, None, "codex", None);
+        r.set_owned_thread(&thread).unwrap();
+        assert_eq!(Observer::of(&r), Observer::Unknown, "before its run");
+        r.start_run(crate::records::RunReason::Start, 101);
+        assert_eq!(Observer::of(&r), Observer::Thread(thread));
+        r.extra
+            .insert(crate::records::owned_thread::FIELD.into(), "x".into());
+        assert_eq!(Observer::of(&r), Observer::Unknown);
+    }
+
+    #[test]
+    fn an_owned_pane_is_bound_by_id_and_another_codex_in_its_cwd_is_not() {
+        let home = std::env::temp_dir().join(format!(
+            "muxa-owned-observer-{}-{:08x}",
+            std::process::id(),
+            getrandom::u32().unwrap()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        let app = Endpoint::new(FAKE, Some(home.clone()));
+        let mine = app.start_thread(Path::new("/work/app")).unwrap();
+        let other = app.start_thread(Path::new("/work/app")).unwrap();
+        let owned = OwnedThread::new(1, mine.id.as_str(), None, FAKE, Some(&home));
+        let pane = PaneInfo {
+            pane: "%1".into(),
+            session: "s".into(),
+            pid: 1,
+            path: "/work/app".into(),
+            shell_foreground: false,
+        };
+        let agents = Registry::new(Vec::new());
+        let (agent, found) = Observer::Thread(owned)
+            .identify(&agents, &pane, &Processes::default())
+            .unwrap();
+        assert_eq!(agent, codex::ID);
+        assert!(found.process_bound);
+        let session = found.session.unwrap();
+        assert_eq!(session.id, mine.id.as_str());
+        assert_ne!(session.id, other.id.as_str());
+        assert_eq!(session.transcript, mine.path);
+        assert_eq!(
+            found.status.map(|a| a.state),
+            Some(muxa_protocol::AgentState::Idle)
+        );
+        let unknown = Observer::Unknown.identify(&agents, &pane, &Processes::default());
+        assert!(unknown.is_none());
+        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]

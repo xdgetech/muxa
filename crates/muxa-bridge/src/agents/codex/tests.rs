@@ -344,3 +344,31 @@ fn abort_and_undated_completion_are_idle_without_completion_time() {
         })
     );
 }
+
+#[test]
+fn an_owned_rollout_is_read_by_path_from_its_first_turn_and_never_switched() {
+    let f = Fixture::new("owned");
+    let path = f.dir.join("sessions/rollout-owned.jsonl");
+    let mut source = CodexSource::owned(path.clone());
+    let mut gone = pane();
+    gone.pid = 0;
+    let first = source.poll(&gone).unwrap();
+    assert!(
+        matches!(first.as_slice(), [ChatEvent::Reset { entries, .. }] if entries.is_empty()),
+        "no rollout before the first turn: {first:?}"
+    );
+    assert!(source.poll(&gone).unwrap().is_empty());
+    // A newer rollout in the same cwd is never followed.
+    let other = f.rollout("rollout-other.jsonl", "/work/app");
+    std::fs::copy(&other, &path).unwrap();
+    let mut reset = None;
+    for _ in 0..=CHECK_EVERY {
+        for event in source.poll(&gone).unwrap() {
+            if let ChatEvent::Reset { entries, .. } = event {
+                reset = Some(entries);
+            }
+        }
+    }
+    assert!(!reset.expect("a reset once the rollout exists").is_empty());
+    assert_eq!(source.path.as_deref(), Some(path.as_path()));
+}

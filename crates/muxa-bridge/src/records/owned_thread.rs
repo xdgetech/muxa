@@ -1,7 +1,5 @@
 //! The Codex thread muxa created for a run (ADR 0028). Written before the
 //! pane starts, under the creation claim, for the run that is reserved then.
-// Read by the state and delivery slices of ADR 0028.
-#![cfg_attr(not(test), allow(dead_code))]
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};

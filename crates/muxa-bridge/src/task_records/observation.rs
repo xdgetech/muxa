@@ -37,6 +37,7 @@ pub(crate) fn refresh(sessions: &mut [Session], config: &Config, agents: &Regist
 
 fn guarded(record: &Record) -> bool {
     record.worker().is_some()
+        || record.has_owned_thread()
         || record.extra.contains_key(crate::records::lifecycle::FIELD)
         || record.open_run().is_some_and(|run| {
             run.extra.contains_key(crate::records::observation::FIELD)
@@ -60,6 +61,8 @@ fn uncertain(record: &Record) -> bool {
 pub(crate) struct ChatBinding {
     operation: String,
     pub seen: Seen,
+    /// An owned Codex thread's rollout: chat reads it, found by id (ADR 0028).
+    pub rollout: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -106,13 +109,20 @@ pub(crate) fn chat_binding(
         .restart_observation()
         .map_err(|_| Unconfirmed)?
         .ok_or(Unconfirmed)?;
+    let transcript = found.session.as_ref().and_then(|s| s.transcript.clone());
+    let rollout = if record.has_owned_thread() {
+        Some(transcript.clone().ok_or(Unconfirmed)?)
+    } else {
+        None
+    };
     Ok(Some(ChatBinding {
         operation: baseline.operation,
         seen: Seen {
             agent: agent.into(),
             session: found.session.as_ref().map(|session| session.id.clone()),
-            transcript: found.session.and_then(|session| session.transcript),
+            transcript,
         },
+        rollout,
     }))
 }
 
@@ -133,7 +143,7 @@ fn accepted(
         return None;
     }
     let info = crate::sessions::info(&session.name, pane);
-    let (agent, found) = agents.identify(&info, procs)?;
+    let (agent, found) = super::owned::Observer::of(record).identify(agents, &info, procs)?;
     let seen = Seen {
         agent: agent.into(),
         session: found.session.as_ref().map(|session| session.id.clone()),

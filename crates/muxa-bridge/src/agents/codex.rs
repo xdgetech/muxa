@@ -17,9 +17,10 @@ use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, c
 use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
 use super::{AgentAdapter, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
-// Wired in by ADR 0028's launch slice.
+// Wired in by ADR 0028's delivery slice.
 #[allow(dead_code)]
 pub mod app_server;
+pub mod owned;
 
 pub const ID: &str = "codex";
 /// Moves Codex's state, and with it the rollouts (ADR 0016).
@@ -270,9 +271,25 @@ pub struct CodexSource {
     reset_for: Option<Option<PathBuf>>,
     list: ListProcesses,
     polls: u32,
+    /// An owned thread's rollout (ADR 0028): never another file, and no
+    /// process check; the caller proved the run.
+    fixed: bool,
 }
 
 impl CodexSource {
+    /// The chat of an owned thread, read at its rollout path. The file may
+    /// not exist before the first turn.
+    pub fn owned(path: PathBuf) -> Self {
+        let mut source = Self::new(
+            Vec::new(),
+            UNIX_EPOCH,
+            Some(path),
+            Box::new(|| Ok(Processes::default())),
+        );
+        source.fixed = true;
+        source
+    }
+
     fn new(
         dirs: Vec<PathBuf>,
         started: SystemTime,
@@ -289,6 +306,7 @@ impl CodexSource {
             reset_for: None,
             list,
             polls: 0,
+            fixed: false,
         }
     }
 
@@ -312,6 +330,9 @@ impl CodexSource {
         let Some(path) = self.path.clone() else {
             return Ok(self.mark_reset(Vec::new(), false));
         };
+        if self.fixed && !path.exists() {
+            return Ok(self.mark_reset(Vec::new(), false));
+        }
         let (tail, lines, cut) = JsonlTail::open(&path, INITIAL_TAIL)?;
         self.tail = Some(tail);
         for line in &lines {
@@ -332,7 +353,7 @@ impl CodexSource {
 
 impl ChatSource for CodexSource {
     fn poll(&mut self, pane: &PaneInfo) -> Result<Vec<ChatEvent>, Error> {
-        if self.polls % CHECK_EVERY == 0 {
+        if !self.fixed && self.polls % CHECK_EVERY == 0 {
             self.check(pane)?;
         }
         self.polls = self.polls.wrapping_add(1);
