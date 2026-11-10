@@ -87,7 +87,7 @@ A request gains `steps[]`; a Result `worker?` and `step?`; `inbox-list`'s `assis
 
 ## Not decided
 
-- External writes "only when asked directly": a worker's permissions are static, so a staff member is read-only toward outside systems. An approval step for a Result's proposed external write, like a Routine proposal under `direct_writes = false` (ADR 0026), is a separate decision.
+- External writes "only when asked directly": a worker's permissions are static, so a staff member is read-only toward outside systems. An approval step for a Result's proposed external write, like a Routine proposal under `direct_writes = false` (ADR 0026), is decided in ADR 0052.
 - Fan-out: a lead that asks two members at once and merges their Results. This ADR: a line of at most `max_steps`; a graph is spec §12's non-goal until a chain proves too narrow.
 - A second round: reviewer → writer → reviewer. This ADR: a worker appears once per chain; the reviewer's findings go to the user, who asks again with a new version.
 - Whether a Staff screen shows each member's notes and lets the user edit them from a client. This ADR: the file is edited on the host, as `NOTES.md` is.
