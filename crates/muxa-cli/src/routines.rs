@@ -199,24 +199,27 @@ fn waiting(routines: &[RoutineInfo], sessions: &[Session]) -> Vec<(String, Strin
 pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, String> {
     let (routines, _) = fetch(conn).await?;
     let messages = conn.call(|id| Request::ListInbox { id }, WAIT).await?;
-    let (entries, items, work, captures, requests, plans, assistant) = messages
+    let Some(Message::InboxList {
+        entries,
+        items,
+        work,
+        captures,
+        requests,
+        plans,
+        assistant,
+        policies,
+        hypotheses,
+        corrections,
+        ..
+    }) = messages
         .into_iter()
-        .find_map(|m| match m {
-            Message::InboxList {
-                entries,
-                items,
-                work,
-                captures,
-                requests,
-                plans,
-                assistant,
-                ..
-            } => Some((entries, items, work, captures, requests, plans, assistant)),
-            _ => None,
-        })
-        .ok_or("the bridge sent no inbox list")?;
-    // Work items, Captures, requests and plans are listed by `work` and `plan`;
-    // the JSON carries them for tools.
+        .find(|m| matches!(m, Message::InboxList { .. }))
+    else {
+        return Err("the bridge sent no inbox list".into());
+    };
+    // Work items, Captures, requests, plans and what the user told the
+    // assistant are listed by `work`, `plan` and `policy`; the JSON carries
+    // them for tools.
     let work: Vec<_> = work
         .into_iter()
         .filter(|w| all || !matches!(w.state, WorkState::Done | WorkState::Withdrawn))
@@ -247,7 +250,8 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
             "{}",
             json!({"work": work_level(conn.capabilities()), "items": items, "entries": entries, "runs": runs,
                 "workItems": work, "captures": captures, "requests": requests,
-                "plans": plans, "assistant": assistant})
+                "plans": plans, "assistant": assistant, "policies": policies,
+                "hypotheses": hypotheses, "corrections": corrections})
         );
         return Ok(String::new());
     }

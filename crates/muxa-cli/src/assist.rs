@@ -353,10 +353,8 @@ mod tests {
         };
         let listing = work::Listing {
             work: vec![item],
-            captures: Vec::new(),
             requests: vec![request(vec![plain_result, newer, old])],
-            items: Vec::new(),
-            plans: Vec::new(),
+            ..work::Listing::default()
         };
         for target in ["w-0000abcd", "q-0000abcd"] {
             let p = proposal(&listing, target).unwrap();

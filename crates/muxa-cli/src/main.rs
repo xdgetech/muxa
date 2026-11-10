@@ -6,6 +6,7 @@ mod conn;
 mod inbox;
 mod items;
 mod plan;
+mod policy;
 mod routines;
 mod tasks;
 mod view;
@@ -44,7 +45,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] inbox (approve | dismiss) ENTRY [--json]
        muxa-cli [--bridge CMD] inbox later ENTRY [--json]
        muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
-                [--json]
+                [--reason T] [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
        muxa-cli [--bridge CMD] capture TEXT [--workspace W] [--source S]
                 [--client-id ID] [--assist [--scope S] [--purpose P]] [--json]
@@ -63,6 +64,15 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] assist notes (WORK | REQUEST | PLAN) [--apply] [--json]
        muxa-cli [--bridge CMD] plan [--json]
        muxa-cli [--bridge CMD] plan now [--minutes N] [--json]
+       muxa-cli [--bridge CMD] plan reorder ID... [--json]
+       muxa-cli [--bridge CMD] plan dismiss ROW [--reason T] [--json]
+       muxa-cli [--bridge CMD] policy [--json]
+       muxa-cli [--bridge CMD] policy add TEXT [--scope all|WORKSPACE]
+                [--from TIME] [--until TIME|week] [--timezone ZONE] [--json]
+       muxa-cli [--bridge CMD] policy edit ID [--text T] [--scope S]
+                [--from TIME] [--until TIME|week] [--timezone ZONE] [--json]
+       muxa-cli [--bridge CMD] policy delete ID [--json]
+       muxa-cli [--bridge CMD] forget ID [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -140,7 +150,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  answers an item. ACTION is approve, reject, choose
                  (--option N), accept, keep-open, reply (--text T),
                  retry, drop, dismiss, later
-                 (moves it below the others), ask-agent (--text T) or read.
+                 (moves it below the others), ask-agent (--text T), read,
+                 or confirm (a hypothesis becomes a policy). reject takes
+                 an optional --reason on sort, delegate and hypothesis items.
                  reply sends the text as it is; on an ask it denies the
                  permission first. ask-agent sends the item and the text to
                  the workspace's Ask session and leaves the item open
@@ -194,7 +206,24 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  next and minutes, Due soon, and the unanswered and stale
                  requests. A plan without a result shows its reason
   plan now       asks the overall assistant for a plan now; --minutes N is
-                 the time you have. Needs an overall workspace and the daemon";
+                 the time you have. Needs an overall workspace and the daemon
+  plan reorder ID...
+                 puts Today's rows in your order: each row of the newest
+                 plan with a result once, by Work item or Inbox item id
+  plan dismiss ROW
+                 removes a row from Today (Not today); --reason is optional
+  policy         what you told the overall assistant: the policies, active
+                 then expired, its hypotheses and the recent corrections
+                 (ADR 0048)
+  policy add TEXT
+                 keeps a policy in your words, one paragraph; - reads it from
+                 stdin. --scope is all (default) or a workspace. --from and
+                 --until take TIME as work due --at does; --until week ends
+                 this Sunday at 23:59
+  policy edit ID, policy delete ID
+                 changes or deletes a policy
+  forget ID      removes a correction (x-) or a hypothesis (h-); forgetting a
+                 correction also removes the hypotheses it grounds";
 
 enum Cmd {
     List,
@@ -323,6 +352,35 @@ enum Cmd {
         minutes: Option<u32>,
         json: bool,
     },
+    Reorder {
+        order: Vec<String>,
+        json: bool,
+    },
+    Dismiss {
+        row: String,
+        reason: Option<String>,
+        json: bool,
+    },
+    Policies {
+        json: bool,
+    },
+    AddPolicy {
+        fields: policy::Fields,
+        json: bool,
+    },
+    EditPolicy {
+        policy: String,
+        fields: policy::Fields,
+        json: bool,
+    },
+    DeletePolicy {
+        policy: String,
+        json: bool,
+    },
+    Forget {
+        record: String,
+        json: bool,
+    },
 }
 
 fn parse() -> Result<Option<(String, Cmd)>, lexopt::Error> {
@@ -341,6 +399,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut source, mut client_id) = (None, None);
     let (mut assist, mut scope, mut purpose) = (false, None, None);
     let (mut minutes, mut at, mut timezone, mut apply) = (None, None, None, false);
+    let (mut from, mut until, mut reason) = (None, None, None);
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -382,13 +441,11 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("at") => at = Some(p.value()?.string()?),
             Long("timezone") => timezone = Some(p.value()?.string()?),
             Long("apply") => apply = true,
+            Long("from") => from = Some(p.value()?.string()?),
+            Long("until") => until = Some(p.value()?.string()?),
+            Long("reason") => reason = Some(p.value()?.string()?),
             Long("purpose") => purpose = Some(p.value()?.string()?),
-            Long("scope") => {
-                let value = p.value()?.string()?;
-                scope = Some(assist::scope(&value).ok_or_else(|| {
-                    lexopt::Error::Custom("--scope must be research, compare or draft".into())
-                })?);
-            }
+            Long("scope") => scope = Some(p.value()?.string()?),
             Long("source") => {
                 let value = p.value()?.string()?;
                 source = Some(work::source(&value).ok_or_else(|| {
@@ -438,11 +495,40 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         )),
     };
     let is_answer = matches!(words.as_slice(), [w, a, _, _] if w == "inbox" && a == "answer");
-    if (text.is_some() || option.is_some()) && !is_answer {
+    let is_policy_add = matches!(words.as_slice(), [w, a, _] if w == "policy" && a == "add");
+    let is_policy_edit = matches!(words.as_slice(), [w, e, _] if w == "policy" && e == "edit");
+    let is_dismiss = matches!(words.as_slice(), [w, d, _] if w == "plan" && d == "dismiss");
+    if option.is_some() && !is_answer {
         return Err(lexopt::Error::Custom(
-            "--text and --option require inbox answer".into(),
+            "--option requires inbox answer".into(),
         ));
     }
+    if text.is_some() && !is_answer && !is_policy_edit {
+        return Err(lexopt::Error::Custom(
+            "--text requires inbox answer or policy edit".into(),
+        ));
+    }
+    if reason.is_some() && !is_answer && !is_dismiss {
+        return Err(lexopt::Error::Custom(
+            "--reason requires inbox answer ITEM reject or plan dismiss".into(),
+        ));
+    }
+    if let Some(r) = reason.as_deref().filter(|_| is_dismiss) {
+        policy::reason(r).map_err(|e| lexopt::Error::Custom(e.into()))?;
+    }
+    let is_policy_fields = is_policy_add || is_policy_edit;
+    if (from.is_some() || until.is_some()) && !is_policy_fields {
+        return Err(lexopt::Error::Custom(
+            "--from and --until require policy add or policy edit".into(),
+        ));
+    }
+    let policy_scope = scope.clone().filter(|_| is_policy_fields);
+    let scope = match scope.filter(|_| !is_policy_fields) {
+        Some(value) => Some(assist::scope(&value).ok_or_else(|| {
+            lexopt::Error::Custom("--scope must be research, compare or draft".into())
+        })?),
+        None => None,
+    };
     let is_capture = matches!(words.as_slice(), [w, _] if w == "capture");
     if (source.is_some() || client_id.is_some()) && !is_capture {
         return Err(lexopt::Error::Custom(
@@ -456,11 +542,33 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         return Err(lexopt::Error::Custom("--minutes requires plan now".into()));
     }
     let is_due = matches!(words.as_slice(), [w, d, _] if w == "work" && d == "due");
-    if (at.is_some() || timezone.is_some()) && !is_due {
+    if (at.is_some() || timezone.is_some()) && !is_due && !is_policy_fields {
         return Err(lexopt::Error::Custom(
-            "--at and --timezone require work due".into(),
+            "--at and --timezone require work due, policy add or policy edit".into(),
         ));
     }
+    if at.is_some() && !is_due {
+        return Err(lexopt::Error::Custom("--at requires work due".into()));
+    }
+    let fields = if is_policy_fields {
+        let text = if is_policy_add {
+            words.get(2).map(|t| stdin_or(t)).transpose()?
+        } else {
+            text.clone()
+        };
+        Some(
+            policy::fields(
+                text,
+                policy_scope,
+                from.as_deref(),
+                until.as_deref(),
+                timezone.as_deref(),
+            )
+            .map_err(|e| lexopt::Error::Custom(e.into()))?,
+        )
+    } else {
+        None
+    };
     let is_notes = matches!(words.as_slice(), [w, n, _] if w == "assist" && n == "notes");
     if apply && !is_notes {
         return Err(lexopt::Error::Custom(
@@ -568,6 +676,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                     lexopt::Error::Custom(format!("unknown answer {name:?}\n{USAGE}").into())
                 })?,
                 text,
+                reason,
                 option,
                 worktree: Some(worktree),
             }
@@ -580,6 +689,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             answer: items::Answer {
                 action: InboxAction::Read,
                 text: None,
+                reason: None,
                 option: None,
                 worktree: None,
             },
@@ -634,6 +744,41 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         },
         [w] if w == "plan" => Cmd::Plan { json },
         [w, n] if w == "plan" && n == "now" => Cmd::PlanNow { minutes, json },
+        [w, r, order @ ..] if w == "plan" && r == "reorder" && !order.is_empty() => Cmd::Reorder {
+            order: order.to_vec(),
+            json,
+        },
+        [w, d, row] if w == "plan" && d == "dismiss" => Cmd::Dismiss {
+            row: row.clone(),
+            reason,
+            json,
+        },
+        [w] if w == "policy" => Cmd::Policies { json },
+        [w, a, _] if w == "policy" && a == "add" => Cmd::AddPolicy {
+            fields: fields.unwrap_or_default(),
+            json,
+        },
+        [w, e, id] if w == "policy" && e == "edit" => Cmd::EditPolicy {
+            policy: id.clone(),
+            fields: fields.unwrap_or_default(),
+            json,
+        },
+        [w, d, id] if w == "policy" && d == "delete" => Cmd::DeletePolicy {
+            policy: id.clone(),
+            json,
+        },
+        [w, id] if w == "forget" => {
+            if !(id.starts_with("x-") || id.starts_with("h-")) {
+                return Err(lexopt::Error::Custom(
+                    "forget takes a correction x-… or a hypothesis h-…; policy delete removes a policy"
+                        .into(),
+                ));
+            }
+            Cmd::Forget {
+                record: id.clone(),
+                json,
+            }
+        }
         [w, id] if is_assist && w == "assist" => Cmd::Assist {
             ask: assist::Ask {
                 work: id.clone(),
@@ -871,6 +1016,17 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         } => assist::notes(&mut conn, &target, apply, json).await,
         Cmd::Plan { json } => plan::show(&mut conn, json).await,
         Cmd::PlanNow { minutes, json } => plan::now(&mut conn, minutes, json).await,
+        Cmd::Reorder { order, json } => plan::reorder(&mut conn, order, json).await,
+        Cmd::Dismiss { row, reason, json } => plan::dismiss(&mut conn, row, reason, json).await,
+        Cmd::Policies { json } => policy::list(&mut conn, json).await,
+        Cmd::AddPolicy { fields, json } => policy::add(&mut conn, fields, json).await,
+        Cmd::EditPolicy {
+            policy,
+            fields,
+            json,
+        } => policy::edit(&mut conn, &policy, fields, json).await,
+        Cmd::DeletePolicy { policy, json } => policy::delete(&mut conn, &policy, json).await,
+        Cmd::Forget { record, json } => policy::forget(&mut conn, &record, json).await,
     }
 }
 

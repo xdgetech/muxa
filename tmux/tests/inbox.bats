@@ -320,9 +320,9 @@ work_inbox() {
 }
 
 # A work:9 Inbox (ADR 0047): the contract's plans, overall assistant, and sort
-# and delegate items.
+# and delegate items. The level 10 list (with policies) is policies.bats'.
 plan_inbox() {
-  jq -c 'select(.type == "inbox-list" and .plans) |
+  jq -c 'select(.type == "inbox-list" and .plans and .policies == null) |
     {work: 9, items, entries: [], runs: [], workItems: .work, captures, requests, plans, assistant}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }

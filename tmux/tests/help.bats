@@ -25,3 +25,11 @@ teardown() { teardown_server; }
   [[ "$out" == *"  p              ask the overall assistant for a plan now"* ]]
   [[ "$out" == *"  o              on a Today row: go to its Work item or Inbox item"* ]]
 }
+
+@test "help lists the Today and Policies keys of ADR 0048" {
+  run "$ROOT/scripts/help.sh"
+  out="$(printf '%s\n' "$output" | strip_ansi)"
+  [[ "$out" == *"  K J            on a Today row: move it up or down"* ]]
+  [[ "$out" == *"  x              on a Today row: Not today, with an optional reason"* ]]
+  [[ "$out" == *"  y              the Policies list: add, edit or delete a policy; forget what it learned"* ]]
+}

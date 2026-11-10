@@ -21,6 +21,8 @@ const REPLY_WAIT: Duration = Duration::from_secs(30);
 pub struct Answer {
     pub action: InboxAction,
     pub text: Option<String>,
+    /// With `reject`, at level 10: the correction's reason (ADR 0048).
+    pub reason: Option<String>,
     pub option: Option<u32>,
     /// Used by the host only when the answer ends the Task (ADR 0043).
     pub worktree: Option<WorktreeEnd>,
@@ -49,6 +51,13 @@ impl Answer {
             wants_text,
             "reply and ask-agent",
         )?;
+        // A reason is never required (ADR 0048 §2).
+        if let Some(r) = &self.reason {
+            if a != InboxAction::Reject {
+                return Err("--reason is only for reject".into());
+            }
+            crate::policy::reason(r)?;
+        }
         rule(
             "--option",
             self.option.is_some(),
@@ -127,6 +136,9 @@ pub async fn answer(
     if !has_items(&conn) {
         return Err("this host has no Inbox items; update muxa-bridge on the host".into());
     }
+    if answer.action == InboxAction::Confirm || answer.reason.is_some() {
+        crate::policy::require(&conn)?;
+    }
     // Ask Agent may start the workspace's Ask session and wait for its agent.
     let launches = matches!(
         answer.action,
@@ -136,9 +148,11 @@ pub async fn answer(
     let Answer {
         action,
         text,
+        reason,
         option,
         worktree,
     } = answer;
+    let text = text.or(reason);
     let messages = conn
         .call(
             |id| Request::UpdateInbox {
@@ -184,6 +198,7 @@ mod tests {
         Answer {
             action: super::action(action).unwrap(),
             text: None,
+            reason: None,
             option: None,
             worktree: None,
         }
@@ -221,5 +236,12 @@ mod tests {
         );
         assert!(super::action("keep-open").is_some());
         assert!(super::action("keep_open").is_none());
+        let reason = |a| Answer {
+            reason: Some("Sales still matters.".into()),
+            ..answer(a)
+        };
+        assert!(reason("reject").checked().is_ok());
+        assert!(reason("confirm").checked().is_err());
+        assert!(answer("confirm").checked().is_ok());
     }
 }

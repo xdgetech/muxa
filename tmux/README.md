@@ -192,8 +192,8 @@ apps show, with a goal and a status.
   - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with
     the system opener (a link is also copied to the tmux buffer). For a question,
     `1`–`9` choose its option instead.
-  - `space` and `b` scroll the item a page down and up, `J` and `K` (or
-    `Shift`+arrows) a line. `v` shows the whole item in `$PAGER`.
+  - `space` and `b` scroll the item a page down and up, `Shift`+arrows a
+    line. `v` shows the whole item in `$PAGER`.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
   - With `work` level 8, the open Work items (`◆`) and the unsorted Captures
     (`✎`) follow the items. On a Work item, `l` Later moves it below the others
@@ -216,6 +216,20 @@ apps show, with a goal and a status.
     it, so it is listed first and fills the first plan rows, or unpins it. The
     overall assistant's proposals are items too: `🗂` sorts a Capture and `🤝`
     asks a workspace's assistant; `a` approves, `r` rejects, `l` is Later.
+  - With `work` level 10 (ADR 0048), Today keeps the order you choose: `K` and
+    `J` move a row up and down (`muxa-cli plan reorder`). `x` takes a row off
+    Today (Not today, `muxa-cli plan dismiss`); it asks for a reason, and
+    `Enter` gives none. A row taken off stays as one dimmed line. A row's basis
+    shows the policy, hypothesis or correction it cites by its text, or
+    `forgotten` when that record is gone. `💡` items are the overall
+    assistant's hypotheses: `a` Confirm keeps one as a policy in its words, `r`
+    rejects it and asks for an optional reason, as `r` does on `🗂` and `🤝`.
+  - `y` opens the Policies list: what the overall assistant remembers. On it,
+    `n` adds a policy in your words (scope `all` or a workspace; `w` ends it
+    this Sunday), `e` edits and `d` deletes one. A hypothesis takes `a`
+    Confirm and `r` Reject while its item is open, and `f` Forget; a
+    correction takes `f` Forget, which also removes the hypotheses it
+    grounds. `q` goes back to the Inbox.
   - Only the keys an item takes are listed under it. With a muxa older than
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.

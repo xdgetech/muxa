@@ -4,8 +4,9 @@
 use std::time::Duration;
 
 use muxa_protocol::{
-    AssistSpec, AssistantRequest, Capture, CaptureSource, Due, InboxItem, Message, Plan, Request,
-    SortAction, WORK_ASSISTANT, WorkAction, WorkItem, WorkState, work_level,
+    AssistSpec, AssistantRequest, Capture, CaptureSource, Correction, Due, Hypothesis, InboxItem,
+    Message, Plan, Policy, Request, SortAction, WORK_ASSISTANT, WorkAction, WorkItem, WorkState,
+    work_level,
 };
 use serde_json::json;
 
@@ -261,15 +262,28 @@ pub fn action(name: &str) -> Option<WorkAction> {
 /// `work due --at`: an RFC 3339 time, or `YYYY-MM-DD HH:MM` in `timezone`.
 /// The zone defaults to the system's, which must have an IANA name.
 pub fn due(at: &str, timezone: Option<&str>) -> Result<Due, String> {
-    let zone = match timezone {
-        Some(name) => name.to_owned(),
+    let zone = zone_name(timezone)?;
+    let at = epoch("--at", at, &zone)?;
+    Ok(Due { at, timezone: zone })
+}
+
+/// The IANA name of `timezone`, or of this system's zone.
+pub fn zone_name(timezone: Option<&str>) -> Result<String, String> {
+    match timezone {
+        Some(name) => Ok(name.to_owned()),
         None => jiff::tz::TimeZone::system()
             .iana_name()
             .map(str::to_owned)
-            .ok_or("this system's time zone has no IANA name; give --timezone, e.g. Asia/Tokyo")?,
-    };
-    let tz = jiff::tz::TimeZone::get(&zone)
-        .map_err(|_| format!("unknown time zone {zone:?}; give an IANA name, e.g. Asia/Tokyo"))?;
+            .ok_or_else(|| {
+                "this system's time zone has no IANA name; give --timezone, e.g. Asia/Tokyo".into()
+            }),
+    }
+}
+
+/// Epoch seconds of `at`: RFC 3339, or `YYYY-MM-DD HH:MM` in `zone`. `flag`
+/// names the option in the error.
+pub fn epoch(flag: &str, at: &str, zone: &str) -> Result<u64, String> {
+    let tz = time_zone(zone)?;
     let stamp = match at.parse::<jiff::Timestamp>() {
         Ok(stamp) => stamp,
         Err(_) => at
@@ -277,12 +291,17 @@ pub fn due(at: &str, timezone: Option<&str>) -> Result<Due, String> {
             .parse::<jiff::civil::DateTime>()
             .and_then(|local| local.to_zoned(tz))
             .map(|zoned| zoned.timestamp())
-            .map_err(|_| format!("--at {at:?}: give an RFC 3339 time or YYYY-MM-DD HH:MM"))?,
+            .map_err(|_| format!("{flag} {at:?}: give an RFC 3339 time or YYYY-MM-DD HH:MM"))?,
     };
     match u64::try_from(stamp.as_second()) {
-        Ok(at) if at > 0 => Ok(Due { at, timezone: zone }),
-        _ => Err(format!("--at {at:?} is before 1970")),
+        Ok(at) if at > 0 => Ok(at),
+        _ => Err(format!("{flag} {at:?} is before 1970")),
     }
+}
+
+pub fn time_zone(zone: &str) -> Result<jiff::tz::TimeZone, String> {
+    jiff::tz::TimeZone::get(zone)
+        .map_err(|_| format!("unknown time zone {zone:?}; give an IANA name, e.g. Asia/Tokyo"))
 }
 
 pub async fn change(conn: &mut Conn, c: Change, as_json: bool) -> Result<String, String> {
@@ -331,7 +350,8 @@ pub async fn rev_of(conn: &mut Conn, work: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("no Work item {work}"))
 }
 
-/// The level 8 and 9 parts of `inbox-list`, and its items.
+/// The level 8 to 10 parts of `inbox-list`, and its items.
+#[derive(Debug, Default)]
 pub struct Listing {
     pub work: Vec<WorkItem>,
     pub captures: Vec<Capture>,
@@ -339,6 +359,12 @@ pub struct Listing {
     pub items: Vec<InboxItem>,
     /// Newest first.
     pub plans: Vec<Plan>,
+    /// Active, then expired.
+    pub policies: Vec<Policy>,
+    /// `proposed` and `rejected`, newest first.
+    pub hypotheses: Vec<Hypothesis>,
+    /// Newest first.
+    pub corrections: Vec<Correction>,
 }
 
 pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
@@ -353,6 +379,9 @@ pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
                 requests,
                 items,
                 plans,
+                policies,
+                hypotheses,
+                corrections,
                 ..
             } => Some(Listing {
                 work,
@@ -360,6 +389,9 @@ pub async fn fetch(conn: &mut Conn) -> Result<Listing, String> {
                 requests,
                 items,
                 plans,
+                policies,
+                hypotheses,
+                corrections,
             }),
             _ => None,
         })

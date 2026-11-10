@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`), C3 (the brief's memory section), C4 (hypotheses and citations in the plan file), C5 (`hypothesis` items, `confirm` and `reject`) and C6 (`forget`) are built; hosts do not advertise level 10 yet.
+Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`), C3 (the brief's memory section), C4 (hypotheses and citations in the plan file), C5 (`hypothesis` items, `confirm` and `reject`), C6 (`forget`) and C7 (`work:10`, the CLI and muxa for tmux) are built; hosts advertise level 10.
 
 ## Context
 

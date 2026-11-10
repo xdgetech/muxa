@@ -6,9 +6,12 @@
 # With level 8, Work items (w-) and unsorted Captures (c-) follow the items;
 # `a` on a Work item asks its workspace's assistant. With level 9, Today rows
 # (today:) of the newest plan come first (ADR 0047); `p` asks for a plan.
+# With level 10 (ADR 0048), K/J move a Today row, x takes it off Today, y
+# opens the Policies list (policies.sh), and hypothesis items take Confirm.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
+#        inbox.sh order <today row> up|down <json>  (the row ids plan reorder sends)
 #        inbox.sh ui <client> [item id]
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -67,7 +70,7 @@ EOF
 
 JQ_DEFS='
   def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰",
-    "sort": "🗂", "delegate": "🤝"}[.kind] // "•";
+    "sort": "🗂", "delegate": "🤝", "hypothesis": "💡"}[.kind] // "•";
   def since($t): ($now - $t) as $s |
     if $s < 60 then "\($s)s" elif $s < 3600 then "\($s / 60 | floor)m"
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
@@ -83,7 +86,7 @@ JQ_DEFS='
      "retry": "Retry", "reject": (if $ask then "Deny" else "Reject" end),
      "reply": (if $ask then "Deny & Send" else "Send" end),
      "keep-open": "✓ Done", "ask-agent": "Ask Agent",
-     "drop": "Drop Task", "later": "Later", "dismiss": "✓ Done"}[$a] // $a;
+     "drop": "Drop Task", "later": "Later", "dismiss": "✓ Done", "confirm": "Confirm"}[$a] // $a;
   # [{key, act, group}] as the apps place them (ADR 0040): triage is the top bar
   # and its … menu, answers are the decisions and the reply box. `a` is never
   # Complete Task, which the apps keep in the menu.
@@ -94,7 +97,7 @@ JQ_DEFS='
      (pick(["keep-open", "dismiss"]) | bind("d"; .; "triage")),
      (pick(["accept"]) | bind("c"; .; "triage")),
      (pick(["drop"]) | bind("x"; .; "triage")),
-     (pick(["approve", "retry"]) | bind("a"; .; "answer")),
+     (pick(["approve", "retry", "confirm"]) | bind("a"; .; "answer")),
      (pick(["reject"]) | bind("r"; .; "answer")),
      (pick(["reply", "ask-agent"]) | bind("s"; .; "answer"))];
   # Text the user or an agent wrote, without terminal control characters.
@@ -114,6 +117,21 @@ JQ_DEFS='
   def latest_plan: (.plans // [])[0] // empty;
   def shown_plan: [(.plans // [])[] | select(.delivery == "resulted")][0] // empty;
   def has_today: (.work // 0) >= 9 and (((.plans // []) | length) > 0 or .assistant.overall != null);
+  # Today in the order the user chose, when there is one (ADR 0048):
+  # userOrder, then any row it misses. `top` keeps the order of the plan.
+  def today_rows: (.top // []) as $top |
+    [(.userOrder // [])[] as $id | $top[] | select((.work // .item) == $id)] as $u |
+    $u + [$top[] | select(IN($u[]) | not)];
+  def row_id: .work // .item;
+  def not_today($p): row_id as $id | ($p.dismissed // []) | index($id) != null;
+  # A basis that cites what the user told the assistant shows the text of
+  # the record, or "forgotten" when the record is gone.
+  def cited($root): .source as $s |
+    if .kind == "policy" then [($root.policies // [])[] | select(.id == $s) | .text][0]
+    elif .kind == "hypothesis" then [($root.hypotheses // [])[] | select(.id == $s) | .text][0]
+    elif .kind == "correction" then [($root.corrections // [])[] | select(.id == $s) |
+      "\(.kind)\(if .row then " \(.row)" else "" end)"][0]
+    else .text end // "forgotten";
   def title_of($root; $id): ([($root.workItems // [])[], ($root.items // [])[] | select(.id == $id) | .title][0] // $id) | plain;
   def mins: "\(.minutes.low)–\(.minutes.high) min";
   def mark($p): (.work // .item) as $t |
@@ -165,8 +183,12 @@ list() {
     . as $root | (.requests // []) as $reqs |
     (select(has_today) |
       "today:\t☀ \u001b[1mToday\u001b[0m  \u001b[2m\(plan_status)\u001b[0m",
-      (shown_plan | . as $p | .top // [] | to_entries[] | .value as $r |
-        "today:\(.key + 1)\t  \(.key + 1). \(title_of($root; $r.work // $r.item))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"),
+      (shown_plan | . as $p | today_rows | to_entries[] | .value as $r |
+        if $r | not_today($p) then
+          "today:\(.key + 1)\t  \u001b[2m\(.key + 1). \(title_of($root; $r | row_id)) · not today\u001b[0m"
+        else
+          "today:\(.key + 1)\t  \(.key + 1). \(title_of($root; $r | row_id))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
+        end),
       (shown_plan | select((.dueSoon // []) | length > 0) |
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
     (.items[] | shown |
@@ -205,7 +227,7 @@ view_work() {
 # how planning went; the Due soon line: the items moved down that are due.
 view_today() {
   iq -r --arg row "${1#today:}" "$JQ_DEFS"'
-    . as $root |
+    . as $root | ((.work // 0) >= 10) as $memory |
     if $row == "" then
       "☀ \u001b[1mToday\u001b[0m", "\u001b[2m\(plan_status)\u001b[0m", "",
       (latest_plan | select(.delivery != "resulted") |
@@ -218,7 +240,7 @@ view_today() {
         ([(.changed // [])[] | select(.change == "left") | .id] | select(length > 0) |
           "Left the plan: \(join(" "))"),
         (if (.top // []) | length == 0 then "Nothing to rank." else empty end), ""),
-      "p Plan Now"
+      "p Plan Now\(if $memory then "   y Policies" else "" end)"
     elif $row == "due" then
       shown_plan |
       "⏰ \u001b[1mDue soon, moved down by you\u001b[0m", "",
@@ -226,17 +248,18 @@ view_today() {
         "◆ \(.title | plain)\(pin_due)"),
       "", "o Open   p Plan Now"
     else
-      shown_plan | . as $p | (.top // [])[$row | tonumber - 1] // empty |
-      "\($row). \u001b[1m\(title_of($root; .work // .item))\u001b[0m",
-      "\u001b[2m\(.work // .item)\(mark($p))\u001b[0m", "",
+      shown_plan | . as $p | today_rows[$row | tonumber - 1] // empty |
+      "\($row). \u001b[1m\(title_of($root; row_id))\u001b[0m",
+      "\u001b[2m\(row_id)\(mark($p))\(if not_today($p) then " · not today" else "" end)\u001b[0m", "",
       "Why: \(.why | plain)", "Next: \(.next | plain)",
       "Time: \(mins), about \(.minutes.estimated)",
       (if (.basis // []) | length > 0 then "", "\u001b[1mBasis\u001b[0m",
-        (.basis[] | "  \(.kind): \(.text | plain)\(if .source then "  \(.source | plain)" else "" end)")
+        (.basis[] | "  \(.kind): \(cited($root) | plain)\(if .source then "  \(.source | plain)" else "" end)")
        else empty end),
       (if (.missing // []) | length > 0 then "", "\u001b[1mWould help\u001b[0m", (.missing[] | "  \(plain)")
        else empty end),
-      "", "o Open   p Plan Now"
+      "", (if $memory then "K/J Move   " + (if not_today($p) then "" else "x Not today   " end) else "" end) +
+        "o Open   p Plan Now"
     end,
     "\u001b[2mq close\u001b[0m"
   ' "$2"
@@ -272,6 +295,10 @@ view() {
     (.summary // empty), (if .summary then "" else empty end),
     (.delegate // empty |
       "To: \(.workspace | plain) · \(.scope)", "Ask: \(.purpose | plain)", "Why: \(.reason | plain)", ""),
+    (.hypothesis // empty |
+      "Scope: \(.scope | plain) · confidence \(.confidence)",
+      "Based on \((.evidence // []) | length) correction\(if ((.evidence // []) | length) == 1 then "" else "s" end): \((.evidence // []) | join(" "))",
+      "Confirm keeps it as a policy in these words.", ""),
     (.sort // empty |
       "\(.capture): \({"work": "a new Work item", "link": "add to \(.work // "")", "note": "keep as a note"}[.action] // .action)\(if .workspace then " in \(.workspace | plain)" else "" end)\(if .title then ": \(.title | plain)" else "" end)", ""),
     (evidence as $e | if ($e | length) > 0 then
@@ -291,11 +318,27 @@ view() {
 
 # What a key does for an item: an action, choose:<n>, open:<n>, or nothing.
 key_action() {
-  if [ "$2" = p ] && [ "$(jq -r '.work // 0' "$3")" -ge 9 ]; then
+  local level
+  level="$(jq -r '.work // 0' "$3")"
+  if [ "$2" = p ] && [ "$level" -ge 9 ]; then
     echo plan:now
     return
   fi
+  if [ "$2" = y ] && [ "$level" -ge 10 ]; then
+    echo policies
+    return
+  fi
   case "$1:$2" in
+    today:[1-9]*:[KJx])
+      [ "$level" -ge 10 ] || return 0
+      iq -r --arg row "${1#today:}" --arg key "$2" "$JQ_DEFS"'
+        shown_plan | . as $p | today_rows as $rows | ($row | tonumber) as $n |
+        $rows[$n - 1] // empty |
+        if $key == "x" then (if not_today($p) then empty else "plan:dismiss" end)
+        elif $key == "K" then (if $n > 1 then "plan:up" else empty end)
+        else (if $n < ($rows | length) then "plan:down" else empty end) end' "$3"
+      return
+      ;;
     w-*:P)
       jq -r --arg item "$1" 'select((.work // 0) >= 9) | .workItems[]? | select(.id == $item) |
         if .pinnedAt then "work:unpin" else "work:pin" end' "$3"
@@ -320,6 +363,24 @@ key_action() {
 
 pause() { echo "Press Enter."; read -r _; }
 
+# Today's row ids, one per line, with Today row <row> moved up or down by one:
+# the order plan reorder sends (ADR 0048).
+today_order() {
+  iq -r --arg row "${1#today:}" --arg dir "$2" "$JQ_DEFS"'
+    shown_plan | [today_rows[] | row_id] as $ids | ($row | tonumber - 1) as $i |
+    (if $dir == "up" then $i - 1 else $i + 1 end) as $j |
+    if $i < 0 or $j < 0 or $j >= ($ids | length) then empty
+    else $ids | .[$i] as $a | .[$j] as $b | .[$i] = $b | .[$j] = $a | .[] end' "$3"
+}
+
+# Asks for an optional reason. Prints it; Enter prints nothing.
+ask_reason() {
+  local text
+  printf '%s\n\n' "$1" >&2
+  IFS= read -r -e -p 'Reason (optional, Enter to skip) > ' text || return 1
+  printf '%s' "$text"
+}
+
 # What answer() asks before an action's text.
 text_prompt() {
   case "$1" in
@@ -330,7 +391,7 @@ text_prompt() {
 
 # Runs one answer of the item in <json>. Asks for the text an action needs.
 answer() {
-  local id="$1" act="$2" json="$3" text err kind why
+  local id="$1" act="$2" json="$3" text err kind why row
   set -- inbox answer "$id"
   case "$act" in
     work:*) set -- work "${act#work:}" "$id" ;;
@@ -348,7 +409,37 @@ answer() {
         *) set -- plan now --minutes "$text" ;;
       esac
       ;;
+    plan:up | plan:down)
+      set -- plan reorder
+      while IFS= read -r text; do
+        [ -n "$text" ] && set -- "$@" "$text"
+      done <<EOF
+$(today_order "$id" "${act#plan:}" "$json")
+EOF
+      [ $# -gt 2 ] || return 0
+      ;;
+    plan:dismiss)
+      clear
+      row="$(today_target "$id" "$json")"
+      [ -n "$row" ] || return 0
+      text="$(ask_reason "Not today: the row stays in the plan as one line.")" || return 0
+      set -- plan dismiss "$row"
+      [ -z "$text" ] || set -- "$@" --reason "$text"
+      ;;
+    policies) "$S/policies.sh" ui; return 0 ;;
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
+    reject)
+      kind="$(jq -r --arg item "$id" 'select((.work // 0) >= 10) | .items[] | select(.id == $item) | .kind' "$json")"
+      case "$kind" in
+        sort | delegate | hypothesis)
+          clear
+          text="$(ask_reason "Reject. A reason helps the next plan; it is never required.")" || return 0
+          set -- "$@" reject
+          [ -z "$text" ] || set -- "$@" --reason "$text"
+          ;;
+        *) set -- "$@" reject ;;
+      esac
+      ;;
     reply | ask-agent)
       clear
       kind="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .kind' "$json")"
@@ -383,11 +474,11 @@ item_dir() {
 # What a Today row opens: the Work item or Inbox item its plan row names, or
 # the first item due soon.
 today_target() {
-  jq -r --arg row "${1#today:}" '
-    [(.plans // [])[] | select(.delivery == "resulted")][0] // empty |
+  iq -r --arg row "${1#today:}" "$JQ_DEFS"'
+    shown_plan |
     if $row == "due" then (.dueSoon // [])[0] // empty
     elif $row == "" then empty
-    else (.top // [])[$row | tonumber - 1] // empty | .work // .item end' "$2"
+    else today_rows[$row | tonumber - 1] // empty | row_id end' "$2"
 }
 
 # The whole item in the pager, for a screen too small for the preview.
@@ -460,8 +551,8 @@ ui() {
       --layout reverse --info hidden --pointer '▌' --highlight-line \
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
-      --bind 'space:preview-page-down,b:preview-page-up,J:preview-down,K:preview-up' \
-      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,1,2,3,4,5,6,7,8,9')" || break
+      --bind 'space:preview-page-down,b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
+      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,K,J,y,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
@@ -494,7 +585,14 @@ ui() {
         case "$act" in
           "") ;;
           open:*) open_evidence "$id" "${act#open:}" "$json" ;;
-          *) answer "$id" "$act" "$json" ;;
+          *)
+            answer "$id" "$act" "$json"
+            # The moved row keeps the cursor.
+            case "$act" in
+              plan:up) focus="today:$((${id#today:} - 1))" ;;
+              plan:down) focus="today:$((${id#today:} + 1))" ;;
+            esac
+            ;;
         esac
         ;;
     esac
@@ -510,6 +608,7 @@ case "${1:-}" in
   view) view "${2:?item id}" "${3:?json}" ;;
   target) today_target "${2:?today row}" "${3:?json}" ;;
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
+  order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   ui) ui "${2:?client}" "${3:-}" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | ui <client> [item id]" >&2; exit 2 ;;
+  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | ui <client> [item id]" >&2; exit 2 ;;
 esac
