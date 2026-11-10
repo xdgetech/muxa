@@ -55,6 +55,7 @@ import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
+import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
@@ -62,6 +63,7 @@ import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorktreeEnd
 import tech.xdge.muxa.protocol.WriteProposal
+import tech.xdge.muxa.protocol.MemoryProposal
 import tech.xdge.muxa.protocol.workLevel
 import tech.xdge.muxa.terminal.PaneRenderer
 import tech.xdge.muxa.transport.BridgeChannel
@@ -207,6 +209,9 @@ class PaneSession(
 
         /** Results propose writes; Approve on a `write` item sends the hash of the content shown (ADR 0052). */
         val canWrite get() = workLevel >= WORK_WRITES
+
+        /** Task ends propose to the workspace memory; Approve on a `memory` item sends the hash of the text shown (ADR 0053). */
+        val canKeepMemory get() = workLevel >= WORK_MEMORY
     }
 
     private val _state = MutableStateFlow(State())
@@ -599,7 +604,8 @@ class PaneSession(
      * `later` takes no time (ADR 0040). Returns the item as the host saved it. A refusal lists the Inbox again,
      * since another device may have answered first; an `ask` whose menu changed is [Failure.ItemChanged].
      * Done and Drop end the Task with its worktree, as [updateTask] does with [forceWorktree].
-     * Approve on a `write` item goes only through [approveWrite]: it needs the content the user saw.
+     * Approve on a `write` item goes only through [approveWrite], and on a `memory` item through
+     * [approveMemory]: each needs the text the user saw.
      */
     suspend fun answer(
         item: InboxItem,
@@ -609,6 +615,7 @@ class PaneSession(
         forceWorktree: Boolean = false,
     ): InboxItem {
         if (item.kind == ItemKind.WRITE && action == InboxAction.APPROVE) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, WRITE_NOT_SHOWN))
+        if (item.kind == ItemKind.MEMORY && action == InboxAction.APPROVE) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, MEMORY_NOT_SHOWN))
         return answering(item, action, text, option, forceWorktree, hash = null)
     }
 
@@ -620,6 +627,17 @@ class PaneSession(
     suspend fun approveWrite(item: InboxItem, shown: WriteProposal): InboxItem {
         if (!_state.value.canWrite) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, WRITES_UNSUPPORTED))
         if (item.kind != ItemKind.WRITE) throw Failure.Bridge(ErrorBody(ErrorCode.BAD_REQUEST, "${item.id} proposes no write"))
+        return answering(item, InboxAction.APPROVE, null, null, false, shown.hash)
+    }
+
+    /**
+     * Approve on a `memory` item (ADR 0053 §3): [shown] is the proposal whose text this client showed
+     * whole, and its `hash` binds the approve to that text. The host appends it to the workspace's
+     * WORKSPACE.md; a full file is [Failure.Refused] with the sizes, and the item stays open.
+     */
+    suspend fun approveMemory(item: InboxItem, shown: MemoryProposal): InboxItem {
+        if (!_state.value.canKeepMemory) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, MEMORY_UNSUPPORTED))
+        if (item.kind != ItemKind.MEMORY) throw Failure.Bridge(ErrorBody(ErrorCode.BAD_REQUEST, "${item.id} proposes no memory"))
         return answering(item, InboxAction.APPROVE, null, null, false, shown.hash)
     }
 
@@ -638,6 +656,8 @@ class PaneSession(
         // confirmed `hypothesis` writes a policy, and a reject a correction (ADR 0050 §3); an
         // approved `handoff` starts the next step (ADR 0051 §3), and an approved `write` the writer's Task (ADR 0052 §3).
         val proposal = item.kind in OVERALL_KINDS
+        // A full WORKSPACE.md is the host's reason, with the sizes (ADR 0053 §3).
+        val refusable = proposal || item.kind == ItemKind.MEMORY
         try {
             request { id ->
                 requestId = id
@@ -648,7 +668,7 @@ class PaneSession(
             loadWork()
             if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) {
                 // A proposal's conflict is the host's reason: a Capture sorted meanwhile, or a budget.
-                throw if (proposal) Failure.Refused(e.body) else Failure.ItemChanged()
+                throw if (refusable) Failure.Refused(e.body) else Failure.ItemChanged()
             }
             throw e
         }
@@ -1530,6 +1550,12 @@ class PaneSession(
 
         /** Approve on a `write` item without its content shown whole: nothing is sent (ADR 0052 §2). */
         const val WRITE_NOT_SHOWN = "Open the write and read its whole content to approve it."
+
+        /** Shown when the host keeps no workspace memory (ADR 0053). */
+        const val MEMORY_UNSUPPORTED = "This host keeps no workspace memory. Update muxa-bridge on the host."
+
+        /** Approve on a `memory` item without its text shown whole: nothing is sent (ADR 0053 §2). */
+        const val MEMORY_NOT_SHOWN = "Open the item and read its whole text to add it to the workspace memory."
 
         /**
          * The assistants' items: answering one may write a Capture, a Work item, a request's step, a

@@ -269,6 +269,8 @@ internal object ShowcaseContent : DemoContent {
 
     override fun writes(now: Long) = DemoWrites.showcase(now)
 
+    override fun memory(now: Long) = DemoMemory.showcase(now)
+
     override fun tasks(now: Long) = listOf(
         demoTask(
             "t-a1b2c3", "work", "Handle Stripe invoice.paid webhook",

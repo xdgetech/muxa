@@ -49,6 +49,7 @@ import tech.xdge.muxa.app.setReply
 import tech.xdge.muxa.app.answer
 import tech.xdge.muxa.app.canDeleteInbox
 import tech.xdge.muxa.app.canWrite
+import tech.xdge.muxa.app.canKeepMemory
 import tech.xdge.muxa.app.protect
 import tech.xdge.muxa.app.tap
 import tech.xdge.muxa.protocol.InboxAction
@@ -60,6 +61,7 @@ import tech.xdge.muxa.session.isProtected
 import tech.xdge.muxa.session.isWaiting
 import tech.xdge.muxa.session.mainAnswer
 import tech.xdge.muxa.session.offered
+import tech.xdge.muxa.session.memoryOffered
 
 /**
  * One Inbox item (docs/inbox.md, "The item screen"): the question and its source, the summary
@@ -70,8 +72,9 @@ import tech.xdge.muxa.session.offered
 @Composable
 fun ItemDetail(model: AppModel, id: String?, modifier: Modifier) {
     val item = id?.let(model::item)
-    // A `write` item offers Approve only where this screen shows its content whole (ADR 0052 §2).
-    val waiting = item?.takeIf { model.usesItems && it.isWaiting(System.currentTimeMillis() / 1000) }?.offered(model.canWrite)
+    // A `write` or `memory` item offers Approve only where this screen shows its text whole (ADR 0052 §2, 0053 §2).
+    val waiting = item?.takeIf { model.usesItems && it.isWaiting(System.currentTimeMillis() / 1000) }
+        ?.offered(model.canWrite)?.memoryOffered(model.canKeepMemory)
     Column(modifier.navigationBarsPadding().imePadding()) {
         TopAppBar(
             title = { Text(item?.kindTitle ?: "Inbox", maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -120,6 +123,7 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
     }
     OverallProposal(model, item)
     WriteView(model, item)
+    MemoryView(model, item)
     ItemAttachments(model, item)
     if (item.kind == ItemKind.ASK && item.prompt == null) {
         Text(
@@ -286,7 +290,7 @@ private val InboxAction.tag: String get() = wire
  */
 fun InboxAction.title(item: InboxItem): String = when (this) {
     InboxAction.APPROVE -> when (item.kind) {
-        ItemKind.PROPOSAL, ItemKind.WRITE -> "Approve…"
+        ItemKind.PROPOSAL, ItemKind.WRITE, ItemKind.MEMORY -> "Approve…"
         ItemKind.ASK -> "Allow"
         else -> "Approve"
     }
@@ -317,7 +321,6 @@ val InboxItem.kindTitle: String
         ItemKind.HYPOTHESIS -> "Hypothesis"
         ItemKind.HANDOFF -> "Hand-off"
         ItemKind.WRITE -> "Write"
-        // No memory view yet (ADR 0053 slice M6).
         ItemKind.MEMORY -> "Memory"
         else -> kind.raw
     }

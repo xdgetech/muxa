@@ -194,11 +194,13 @@ fun TaskDetail(model: AppModel, record: TaskRecord?, modifier: Modifier, onClose
                 if (item.agent != null) AgentLine(item)
             }
             record.note?.let { Text(it, color = Theme.failure, modifier = Modifier.testTag("task-note")) }
+            TaskMemoryLine(model, record)
             TaskActions(model, record, item)
             RestartRecoverySection(model, record)
             LoopSection(model, record, item)
             Field("Goal", record.goal)
             Field("Workspace", record.workspace)
+            MemoryNote(model, record.workspace, "task-workspace-memory")
             if (model.state.canUseWorkers || record.worker != null) Field("Worker", record.worker ?: "Workspace default")
             record.project?.let { Field("Project", it) }
             record.repo?.let { Field("Repository", it, mono = true) }

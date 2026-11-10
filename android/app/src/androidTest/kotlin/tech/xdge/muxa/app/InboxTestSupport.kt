@@ -34,6 +34,9 @@ fun staffDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActiv
 /** The demo in Inbox mode at `work` level 13: the writer, a Result's writes and two `write` items (ADR 0052). */
 fun writesDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK13, true)
 
+/** The demo at `work` level 14 in [mode]: each workspace's memory mode and a done Task's `memory` item (ADR 0053). */
+fun memoryDemoIntent(mode: SidebarMode = SidebarMode.INBOX): Intent = demoIntent(mode).putExtra(MainActivity.EXTRA_WORK14, true)
+
 /** Waits for the pane that Sessions mode shows at connect: Chat's composer, or the terminal. */
 @OptIn(ExperimentalTestApi::class)
 fun ComposeTestRule.waitForInitialPane() {

@@ -39,6 +39,7 @@ fun InboxDialogs(model: AppModel) {
             ProposalDialog(model, prompt.item.title, prompt.item.workspace, p) { model.answer(prompt.item, InboxAction.APPROVE) }
         }
         is InboxPrompt.ApproveWrite -> ApproveWriteDialog(model, prompt.item, prompt.write)
+        is InboxPrompt.ApproveMemory -> ApproveMemoryDialog(model, prompt.item, prompt.memory)
         is InboxPrompt.DeleteOld -> DeleteOldDialog(model, prompt)
         is InboxPrompt.RejectItem -> RejectDialog(model, prompt.item)
         null -> {}

@@ -89,6 +89,7 @@ fun CaptureSheet(model: AppModel, initial: CaptureDraft) {
                 ScopePicker(draft.scope, "capture-scope") { edit(draft.copy(scope = it)) }
                 StaffPicker(model, draft.workspace, draft.worker, "capture-staff") { edit(draft.copy(worker = it)) }
                 WriterNote(model, draft.workspace, "capture-writer")
+                MemoryNote(model, draft.workspace, "capture-memory")
                 Text(
                     "Save keeps it in the Inbox under Unsorted. Nothing starts. " +
                         "Ask Assistant makes a Work item and asks the workspace's assistant.",

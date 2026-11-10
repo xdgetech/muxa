@@ -122,6 +122,7 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                         }
                     }
                 }
+                MemoryNote(model, draft.workspace, "task-memory-mode")
                 OutlinedTextField(
                     draft.title, { edit(draft.copy(title = it)) }, Modifier.fillMaxWidth().testTag("task-title"),
                     label = { Text("Title") }, singleLine = true,

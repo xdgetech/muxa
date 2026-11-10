@@ -172,6 +172,7 @@ internal fun AskPanel(model: AppModel, item: WorkItem, requests: List<AssistantR
         }
         StaffPicker(model, workspace, worker, "ask-staff") { worker = it }
         WriterNote(model, workspace, "ask-writer")
+        MemoryNote(model, workspace, "ask-memory")
         OutlinedTextField(
             purpose, {
                 purpose = it

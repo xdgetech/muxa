@@ -46,6 +46,7 @@ import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
+import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.StepBy
 import tech.xdge.muxa.protocol.CorrectionKind
@@ -70,7 +71,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_WRITES] Results propose writes that the user approves by
+ * [workLevel] is the `work` level it advertises; at [WORK_MEMORY] a Task's end proposes to the workspace memory
+ * (ADR 0053); at [WORK_WRITES] Results propose writes that the user approves by
  * hash (ADR 0052); at [WORK_STAFF] each workspace has staff and a request runs as a chain of steps (ADR 0051); at [WORK_POLICIES] it keeps policies, corrections and hypotheses (ADR 0050); at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
  * at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0048); below [WORK_DELETE_INBOX] it plays a host from before
  * Protect and Delete Old (ADR 0046), below [WORK_WORKTREE_END] one whose Done keeps the worktree (ADR 0043),
@@ -178,12 +180,15 @@ class DemoBridge(
         }
     }
 
+    /** Workspace memory (ADR 0053) at level 14: each workspace's mode, and a closed Task's `memory` item. */
+    private val memory: DemoMemory? = content.memory(now())?.takeIf { workLevel >= WORK_MEMORY }?.also { items.add(it.items) }
+
     /** The workspaces `list-tasks` names: the overall assistant's is one of them. */
     private val listedWorkspaces = content.workspaces + listOfNotNull(plans?.let { WorkspaceInfo(it.overall) })
     private val images = content.images(now())
 
     /** The host's task records; grows when a task is created. */
-    private var tasks: List<TaskRecord> = content.tasks(now())
+    private var tasks: List<TaskRecord> = content.tasks(now()) + memory?.tasks.orEmpty()
     private var createdCount = 0
     private var runCount = 0
 
@@ -248,7 +253,8 @@ class DemoBridge(
             is Request.StartLoop -> startLoop(req)
             is Request.StopLoop -> stopLoop(req)
             is Request.ListTasks -> {
-                emit(Message.TaskList(req.id, listedWorkspaces, synchronized(lock) { tasks }))
+                val workspaces = synchronized(lock) { memory?.listed(listedWorkspaces) ?: listedWorkspaces }
+                emit(Message.TaskList(req.id, workspaces, synchronized(lock) { tasks }))
                 ok(req.id)
             }
             is Request.Doc -> doc(req)
@@ -328,6 +334,8 @@ class DemoBridge(
                 answerHandoff(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.WRITE) {
                 answerWrite(req, now)
+            } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.MEMORY) {
+                answerMemory(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.HYPOTHESIS) {
                 answerHypothesis(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind }.let { it == ItemKind.SORT || it == ItemKind.DELEGATE }) {
@@ -627,6 +635,36 @@ class DemoBridge(
         }
         finish(req.id, outcome)
     }
+
+    /**
+     * Approve, Reject or Later on a `memory` item (ADR 0053 §3). Approve needs the hash of the text the
+     * client showed, and appends it once: a second approve appends nothing more. A full file is
+     * `conflict` with the sizes, and the item stays open. Reject writes nothing.
+     */
+    private fun answerMemory(req: Request.UpdateInbox, now: Long) {
+        val outcome = synchronized(lock) {
+            try {
+                val m = memory ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, NO_REQUEST)
+                val item = items.item(req.entry) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item ${req.entry}")
+                if (req.action != InboxAction.APPROVE) {
+                    return@synchronized ProposalOutcome(items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item, emptyList(), null)
+                }
+                val proposal = m.checkHash(item, req.hash)
+                if (item.answer == InboxAction.APPROVE) return@synchronized ProposalOutcome(item, emptyList(), null)
+                if (item.state != ItemState.OPEN) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "Inbox item ${item.id} is closed")
+                m.append(item.workspace, proposal, now)
+                val answered = item.copy(state = ItemState.ANSWERED, answer = InboxAction.APPROVE, answeredAt = now, laterAt = null, answers = emptyList())
+                    .also(items::save)
+                ProposalOutcome(answered, emptyList(), null)
+            } catch (e: DemoWork.Refusal) {
+                ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))
+            }
+        }
+        finish(req.id, outcome)
+    }
+
+    /** [workspace]'s WORKSPACE.md as approves left it, for the demo's tests. */
+    internal fun memoryFile(workspace: String): String = synchronized(lock) { memory?.file(workspace).orEmpty() }
 
     /**
      * A new version or a cancel ends the chain: a `handoff` item that waits on [request] is resolved,

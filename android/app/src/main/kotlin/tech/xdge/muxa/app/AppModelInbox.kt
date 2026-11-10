@@ -2,6 +2,7 @@ package tech.xdge.muxa.app
 
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.InboxItem
+import tech.xdge.muxa.protocol.MemoryProposal
 import tech.xdge.muxa.protocol.RoutineInfo
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.WriteProposal
@@ -16,6 +17,9 @@ sealed interface InboxPrompt {
 
     /** A `write` item's target once more, before Approve sends [write]'s hash (ADR 0052 §7). */
     data class ApproveWrite(val item: InboxItem, val write: WriteProposal) : InboxPrompt
+
+    /** A `memory` item's workspace once more, before Approve sends [memory]'s hash (ADR 0053 §7). */
+    data class ApproveMemory(val item: InboxItem, val memory: MemoryProposal) : InboxPrompt
 
     /** Reject on the overall assistant's item, with an optional reason the host records (ADR 0050 §2). */
     data class RejectItem(val item: InboxItem) : InboxPrompt

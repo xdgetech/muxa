@@ -18,6 +18,7 @@ import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
+import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WORK_ITEMS
@@ -56,8 +57,9 @@ class MainActivity : ComponentActivity() {
                 // A host from before ask sessions (ADR 0031), Inbox items (ADR 0033) or
                 // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0048),
                 // with the overall assistant's plans (ADR 0049), with policies (ADR 0050), with staff (ADR 0051),
-                // or with write proposals (ADR 0052).
+                // with write proposals (ADR 0052), or with workspace memory (ADR 0053).
                 workLevel = when {
+                    intent.getBooleanExtra(EXTRA_WORK14, false) -> WORK_MEMORY
                     intent.getBooleanExtra(EXTRA_WORK13, false) -> WORK_WRITES
                     intent.getBooleanExtra(EXTRA_WORK12, false) -> WORK_STAFF
                     intent.getBooleanExtra(EXTRA_WORK11, false) -> WORK_POLICIES
@@ -169,6 +171,9 @@ class MainActivity : ComponentActivity() {
 
         /** A bridge with write proposals: `write` items, writes in Work detail and the writer. */
         const val EXTRA_WORK13 = "work13"
+
+        /** A bridge with workspace memory: `memory` items, the Task detail line and each workspace's mode. */
+        const val EXTRA_WORK14 = "work14"
 
         /** The failure and the last proposal are four days old, for Delete Old (ADR 0046). */
         const val EXTRA_OLD_ITEMS = "old-items"
