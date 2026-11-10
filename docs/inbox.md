@@ -134,7 +134,7 @@ Pins and due dates live on Work items:
 
 - Work detail has **Pin** / **Unpin** and **Due**. A pinned item comes first in Work, in pin order, and fills the first Today rows. Pin clears Later; Later, Complete, Withdraw and Merge clear the pin.
 - A Work row shows "pinned" and "due <date>" after its state.
-- Work detail shows a Result's proposed `NOTES.md` in full, with **Update Notes**. The apps keep no copy of the live file, so they show the whole text, not a diff. A changed live file is `conflict`: ask again.
+- Work detail shows a Result's proposed notes (`WORKSPACE.md` for the lead, a member's `NOTES.md`) in full, with **Update Notes**. The apps keep no copy of the live file, so they show the whole text, not a diff. A changed live file is `conflict`: ask again.
 
 muxa for tmux (`prefix + T`): Today comes first, with `new` or `moved` on a row. `o` or `Enter` on a row goes to its item in the list. `t` plans now and asks for the minutes first (`Enter` gives no limit). `P` on a Work item pins or unpins it. `sort` and `delegate` items take `a` Approve, `r` Reject and `l` Later.
 

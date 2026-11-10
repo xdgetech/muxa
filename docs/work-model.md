@@ -52,7 +52,7 @@ This defines the product concepts used by the vision and milestone plan. Propose
 
 - A plan reads the live policies, hypotheses and recent corrections, and cites by id the ones a row relies on. A policy outranks every hypothesis and every note.
 - A correction never changes a Work item or a note. The Work item or Inbox item changes first, as before, and the host records the correction after.
-- Policies are not `NOTES.md`. Notes are the agent's memory; a policy is the user's word, with a scope, an end and an id. The brief forbids copying policies, hypotheses or corrections into the notes.
+- Policies are not the notes (`WORKSPACE.md`, a member's `NOTES.md`). Notes are the agent's memory; a policy is the user's word, with a scope, an end and an id. The brief forbids copying policies, hypotheses or corrections into the notes.
 - Later never lowers importance. A hypothesis grounded only in Later is refused.
 - Forgetting a correction removes the hypotheses it grounds. A policy is deleted, not forgotten.
 

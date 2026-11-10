@@ -194,7 +194,7 @@ pub struct DelegateInfo {
     pub workspace: String,
     pub share: Share,
     pub overall_requests: OverallRequests,
-    /// Epoch seconds: when its `NOTES.md` last changed. Absent: no notes.
+    /// Epoch seconds: when its `.muxa/WORKSPACE.md` last changed (ADR 0053). Absent: no file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes_at: Option<u64>,
     /// Level 12: who answers its requests, the lead marked (ADR 0051 §1).

@@ -229,7 +229,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  A chain of staff members shows a row per step, then each
                  step's Result, newest first
   assist notes (WORK | REQUEST | PLAN)
-                 the newest proposed NOTES.md of the item's requests, the
+                 the newest proposed notes (WORKSPACE.md, or a member's
+                 NOTES.md) of the item's requests, the
                  request or the plan; --apply writes it on the host, unless
                  the file changed since the run read it
   plan           the overall assistant's newest plan: up to 3 rows with why,

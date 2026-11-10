@@ -70,7 +70,7 @@ impl Host {
     }
 
     fn set_live(&self, text: &str) {
-        std::fs::create_dir_all(self.root.join(".muxa/assistant")).unwrap();
+        std::fs::create_dir_all(self.root.join(".muxa")).unwrap();
         std::fs::write(self.root.join(notes::NOTES), text).unwrap();
     }
 
@@ -210,6 +210,10 @@ fn review_stores_the_proposal_and_apply_writes_it_while_the_base_holds() {
         (q.work.as_str(), q.id.as_str())
     );
     assert_eq!(h.live(), text);
+    // The lead's notes are the workspace memory (ADR 0053 §1).
+    let file = std::fs::read_to_string(h.root.join(".muxa/WORKSPACE.md")).unwrap();
+    assert_eq!(file, text);
+    assert!(!h.root.join(".muxa/assistant/NOTES.md").exists());
     // Applied once, the live file is no longer the proposal's base.
     let again = apply_notes(&h.config, &q.id, 1, &notes.base, None).unwrap_err();
     assert_eq!(again.code, ErrorCode::Conflict);
@@ -318,7 +322,7 @@ fn each_step_applies_its_own_workers_notes_by_hash() {
     assert_eq!(h.live(), "# Shared\n");
     let again = apply_notes(&h.config, &q.id, 1, &empty, Some(2)).unwrap_err();
     assert_eq!(again.code, ErrorCode::Conflict);
-    // Step 1 is the lead's: the workspace's NOTES.md, by its own hash.
+    // Step 1 is the lead's: the workspace's WORKSPACE.md, by its own hash.
     let wrong = apply_notes(&h.config, &q.id, 1, &empty, Some(1)).unwrap_err();
     assert_eq!(wrong.code, ErrorCode::BadRequest);
     h.set_live("# Edited\n");
@@ -327,5 +331,8 @@ fn each_step_applies_its_own_workers_notes_by_hash() {
     h.set_live("# Shared\n");
     apply_notes(&h.config, &q.id, 1, &shared_base, Some(1)).unwrap();
     assert_eq!(h.live(), "# Lead\n");
+    let file = |p: &str| std::fs::read_to_string(h.root.join(p)).unwrap();
+    assert_eq!(file(".muxa/WORKSPACE.md"), "# Lead\n");
+    assert_eq!(file(".muxa/assistant/staff/member/NOTES.md"), "# Member\n");
     assert_eq!(notes::read_at(&h.root, member).unwrap().text, "# Member\n");
 }

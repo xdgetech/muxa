@@ -4,7 +4,7 @@ use muxa_protocol::{Delivery, Notes};
 
 use super::*;
 use crate::assistant::apply::{Applied, apply_notes};
-use crate::assistant::notes::{self, base_of};
+use crate::assistant::notes::base_of;
 use crate::assistant::store::Extra;
 use crate::routines::store::StateError;
 
@@ -128,7 +128,11 @@ fn a_plans_notes_apply_to_the_overall_root_at_its_rev() {
         panic!("a plan's notes reply with the plan")
     };
     assert_eq!(entry.id, p.id);
-    assert_eq!(notes::read(&h.root).unwrap().text, text);
+    let file = std::fs::read_to_string(h.root.join(".muxa/WORKSPACE.md")).unwrap();
+    assert_eq!(
+        file, text,
+        "the overall assistant's notes are its WORKSPACE.md"
+    );
     let again = apply_notes(&h.config, &p.id, 2, &proposal.base, None).unwrap_err();
     assert_eq!(again.code, ErrorCode::Conflict, "the live file changed");
 }
