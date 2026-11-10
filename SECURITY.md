@@ -62,5 +62,17 @@ muxa gives a remote device keyboard access to your terminal sessions. That is sh
   - The brief's "What the user told you" section follows `share`: a policy, hypothesis or correction scoped to a workspace whose `share` is `none` is never in it.
   - Forgetting is structural, not a promise of the agent. The host builds each brief from live records only, and the plan check refuses a `basis` or `evidence` id the brief did not carry, or whose record is gone. A forgotten record cannot reach the next brief or be cited as a reason.
   - What stays as history after Forget: the kept plans' rows and `basis` texts, and the run folder's `plan.json` until its folder is removed (a newer plan, or 7 days). `NOTES.md` is the agent's: the brief forbids copying the section into it, and the default `notes = "review"` shows the user when it did.
+- **Staff and hand-offs** (ADR 0051).
+  - The staff list, each member's `description` and the writer live in the host's `workspaces.toml`, not under a workspace's root: a worker is a grant of permissions, and an agent writes under root. A description is a job, not a permission.
+  - A hand-off names a member of the same workspace only. Nothing adds a path from one workspace's run to another's.
+  - The default `handoffs = "review"` makes the user approve each hand-off, because a page one member read can plant a purpose the next would follow. `auto` stays within every budget and `[assistant] max_auto_handoffs_per_day`.
+  - A member proposes changes to its own notes file only; the lead's is `NOTES.md`.
+  - Logs carry worker names, step numbers and ids. Never descriptions, purposes or hand-off texts.
+- **Writes outside the host** (ADR 0052).
+  - Staff members read; they never write. Only the workspace's `writer` performs a write, and config refuses a writer that is also the `worker`, on `staff` or the lead. Give the writer the write tools of its targets and no web, search or read-side MCP. muxa states this; it cannot enforce it.
+  - Every write is an Inbox item the user approves; there is no `auto`, and `direct_writes` grants nothing here. Approve carries the hash of the action, target and content the client showed. Without it, or with another one, approve is refused. A client older than `work:13` never sends it, so it cannot approve a write.
+  - Clients show the content whole, as plain text in a fixed-width font, without rendered Markdown or active links, so the text approved is the text seen.
+  - The writer's Task holds the content unchanged and is told to do exactly that write and nothing else. The host cannot check that it did; the Task's review and the target system show it. `[assistant] max_writes_per_day` (default 10) caps approved writes.
+  - Logs carry ids, hashes, counts, worker names and states. Never actions, targets, contents or reasons: a target can hold a token. The log line of a linked Task no longer carries its folder path.
 - **Agent transcripts** (for the chat view) are read from the agent's own files under your home directory: `~/.claude` for Claude Code, `~/.codex` for Codex. They are sent only over the same SSH channel, and never logged. Reading them needs no access beyond what the key already has: it can type into the same panes. Where the bridge looks is fixed by its command line (`--agent-dir`), which the forced command in `authorized_keys` sets, and by the agent directories in `workspaces.toml`, not by the client.
 - **Out of scope:** an attacker who already has a shell as your user, and a compromised SSH server.

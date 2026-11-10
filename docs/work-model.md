@@ -58,6 +58,22 @@ This defines the product concepts used by the vision and milestone plan. Propose
 
 A Session is not inherently manual, and a Task is not a renamed tmux Session. A manual shell or manually launched Claude/Codex can exist without a Task. A Task can have no live session, for example after its session ends. A person can type inside a Task's session while its Task identity remains unchanged. No process-name or terminal-content heuristic promotes a manual session into a Task.
 
+## Staff, hand-offs and writes (ADR 0051, 0052)
+
+| Concept | Question it answers | Identity and lifetime |
+|---|---|---|
+| Staff member | Who in a workspace works on my requests? | A `[[worker]]` named in the workspace's `staff`, with its description as its job. One is the lead. A workspace without `staff` has one member, its delegate |
+| Step | Which member answered which part of a request? | One run of one member on one request version: `{step, worker, by, delivery}`, step 1 first, at most `max_steps`. Each step has its own Result |
+| Hand-off | Who should work on it next? | A step's `handoff {worker, purpose}`, to a member not yet in the chain. An Inbox item of kind `handoff` under `review` |
+| Writer | Who changes systems outside the host? | The one `[[worker]]` named `writer`, never a staff member or the delegate |
+| Write proposal | What does a Result want to send? | One entry of a Result's `writes[]`, `{action, target, content, hash}`, and one Inbox item of kind `write` |
+
+- A request is still one request with versions. Its steps belong to a version; a new version starts at step 1 and ends the open step. The newest step's Result is the version's current one.
+- A chain stays inside one workspace. Another workspace is reached only through the overall assistant's `delegate`, approved by the user.
+- A staff member reads; it never writes outside the host. A write is a proposal until the user approves its exact text.
+- An approved write is a Task of the writer, linked to the Work item with `work`. The Work item lists it as any Task it started. The Task's `review` item is the writer's report; muxa never claims the write happened.
+- A newer request version leaves an open `write` item open: its text is fixed, and the user may still want it.
+
 ## Example
 
 1. Task `t-000001`: fix a login bug. The goal, notes and history belong to this Task.

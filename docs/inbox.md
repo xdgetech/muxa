@@ -152,6 +152,32 @@ Forget removes a record from what the assistant reads next, with the hypotheses 
 
 muxa for tmux (`prefix + T`): `K` and `J` move a Today row up and down. `x` takes a row off Today and asks for a reason (`Enter` gives none). `💡` items are hypotheses: `a` Confirm, `r` Reject with an optional reason, `l` Later. `y` opens the Policies list: `n` adds a policy, `e` edits, `d` deletes, `f` forgets a hypothesis or a correction. Plan Now is `t`, because `p` is Protect.
 
+## Staff and hand-offs (ADR 0051)
+
+With `work:12`, a workspace's assistant can be a staff of several members. Its Work items show the team's steps.
+
+1. **Ask Assistant** has a staff picker when the workspace has more than one staff member. The default is "Let `<lead>` decide". Each member shows its description as its subtitle.
+2. **Work detail** shows a request's steps as a chain of rows, "`lisk-research` → `lisk-delivery` → `lisk-meetings`". Each row has its delivery, its Result and Update Notes. A hand-off that waits for approval is the next row, greyed, with Approve and Reject.
+3. **Hand-off items** in Decisions have kind `handoff`. The title names both staff members; the summary is the hand-off's purpose. **Approve** starts the next step, once. **Reject** ends the chain with the Results it has. **Later** moves it down. A budget reached keeps the item open with the limit.
+4. **Today**: a `delegate` row names the staff member when the plan picked one.
+
+A host below `work:12` shows a request's newest step as the request. muxa for tmux (`prefix + T`): `a` on a Work row asks for the staff member (`Enter` for the lead). `handoff` items take `a` Approve, `r` Reject and `l` Later.
+
+## Write proposals (ADR 0052)
+
+With `work:13`, a Result may propose writes outside the host, such as a Slack post. Each write is one Decisions item of kind `write`. The workspace's writer performs it only after the user approves its exact text.
+
+1. **The item.** The title is the action, "Post to #release". The question names the staff member and the target: "`lisk-delivery` proposes to write to `slack:#release`". The summary is the reason.
+2. **The content** is shown whole, above Approve, Reject and Later: plain text in a fixed-width font, no rendered Markdown, no active links. A write from an older result version says "from an older result".
+3. **Approve** shows the target once more to confirm. It sends the write's hash, so the host performs only the text the user saw. It starts one Task of the writer; the item says "Task started", then the Task's own state. Approving twice starts one Task. A refusal (no writer, `max_writes_per_day` reached, the writer cannot start) keeps the item open with the reason.
+4. **Reject** takes an optional reason and starts nothing. **Later** moves the item down.
+5. **Work detail** lists each Result's writes with their state: proposed, rejected, or the Task with its state and Open Session.
+6. **Staff settings** list the writer under the staff, marked "writes", with its description.
+
+The writer's Task reports what it did in its own `review` item. muxa does not check the target system: the user sees the write there. A client below `work:13` shows a `write` item as an unknown kind, without Approve. It cannot approve a write: approve without the hash is refused.
+
+muxa for tmux (`prefix + T`): the preview shows a `write` item's target and content whole. `a` approves after the target is shown once more and confirmed with `y`. `r` rejects, `l` moves it down. `muxa-cli inbox show ITEM` prints the item with its content, and `muxa-cli assist writes WORKSPACE` lists a workspace's writes.
+
 ## Tasks and Sessions modes
 
 - Tasks mode lists Routines first, then every Task grouped by what it needs: Needs attention, Ready for review, Running, No agent, Closed (`protocol/fixtures/inbox/groups.jsonl`). Closed lists a Task for a day after its last change; an item can still open an older one. A Task with a session opens its pane, as a Sessions row does; its detail is Task Info in the pane's More menu (ADR 0044). A Task without a session, or a closed one, shows its detail. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.

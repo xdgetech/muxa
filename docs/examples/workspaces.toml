@@ -54,6 +54,26 @@
 #   delegate          required; false: no requests here
 #   worker            optional; a [[worker]] this workspace may use. Else the
 #                     workspace's agent.
+#   staff             optional; instead of worker, at most 8 [[worker]]s that
+#                     answer this workspace's requests, the staff members
+#                     (ADR 0051). Each is allowed here, runs Claude Code, has
+#                     a description and a name of one path segment. Each
+#                     member but the lead keeps its own notes in
+#                     <root>/.muxa/assistant/staff/<worker>/NOTES.md.
+#   lead              optional; the staff member that takes a request naming
+#                     nobody, and keeps NOTES.md (default the first in staff)
+#   handoffs          "review", "auto" or "none": whether a staff member may
+#                     pass a request on to another (default "review": you
+#                     approve each hand-off)
+#   max_steps         staff members one request may pass through (default 3,
+#                     at most 5)
+#   writer            optional; the one [[worker]] that performs the writes
+#                     you approve (ADR 0052). It runs Claude Code, has a
+#                     description, and is neither worker nor on staff. Give it
+#                     the write tools of its targets and no web or search.
+#   writes            "review" or "none": whether a result may propose writes
+#                     outside the host (default "review" with writer, else
+#                     "none"). Each write is an Inbox item you approve.
 #   max_open_runs     runs open at once (default 1)
 #   max_runs_per_day  runs started a day (default 10)
 #   run_timeout       "30m", "12h" or "2d": a run with no result by then is
@@ -89,6 +109,14 @@
 #   max_runs_per_day  runs started a day across all workspaces (default 20)
 #   max_auto_requests_per_day  requests the overall assistant sends without
 #                     your approval, across all workspaces (default 5)
+#   max_auto_handoffs_per_day  hand-offs started without your approval
+#                     (handoffs = "auto"), across all workspaces (default 10)
+#   max_writes_per_day  writes you may approve a day, across all workspaces
+#                     (default 10)
+#
+# [[worker]]  optional; a named agent setup (ADR 0022, docs/workers.md).
+#   description       what it does, at most 1 KiB; required for a staff
+#                     member or a writer, and shown to you as its job
 #
 # Unknown keys are refused, so a typo fails loudly instead of being ignored.
 
@@ -108,6 +136,17 @@ enabled = true
 # Remove the # signs to allow these two checks in Company's Tasks.
 # [workspace.loop]
 # checks = ["make check", "cargo test --workspace"]
+
+# Remove the # signs to give Company a staff of two and a writer. The three
+# workers need their own [[worker]] tables, with a description each.
+# [workspace.assistant]
+# delegate = true
+# staff = ["company-research", "company-delivery"]
+# lead = "company-research"
+# handoffs = "review"
+# max_steps = 3
+# writer = "company-writer"
+# writes = "review"
 
 [[workspace]]
 name = "Side project"
