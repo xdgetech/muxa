@@ -67,7 +67,7 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$(plain inbox view i-0d1e2f3a "$ITEMS")" != *"older result"* ]]
 }
 
-@test "prefix+T: approve asks once more with the target, and n sends nothing" {
+@test "prefix+T: approve asks once more with the target, sends the shown hash, and n sends nothing" {
   fake_cli
   jq -c '.items |= .[:1] | .workItems = [] | .plans = [] | .assistant.overall = null' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
   attach
@@ -82,7 +82,8 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   key a
   sleep 0.5
   key y
-  wait_for 'grep -q "^inbox answer i-0d1e2f3a approve --json$" "$TMPDIR/bin/calls"'
+  hash="$(jq -r '.items[0].write.hash' "$ITEMS")"
+  wait_for 'grep -qF "inbox answer i-0d1e2f3a approve --hash $hash --json" "$TMPDIR/bin/calls"'
 }
 
 @test "prefix+T: reject on a write item asks for an optional reason" {

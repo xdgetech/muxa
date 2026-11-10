@@ -134,10 +134,10 @@ class FixtureTest {
     @Test
     fun assistantContractRoundTrips() {
         val requests = lines("assistant/requests.jsonl")
-        assertEquals(47, requests.size)
+        assertEquals(49, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(57, messages.size)
+        assertEquals(58, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -414,6 +414,13 @@ class FixtureTest {
         // A host before level 13 sends neither.
         val older = (messages[48] as Message.InboxList).assistant!!.delegates
         assertTrue(older.all { it.writer == null && it.writes == null })
+        // Approve on a write carries the hash of the write the client showed; without it, refused.
+        val shown = requests[47] as Request.UpdateInbox
+        assertEquals(list.items.single { it.id == shown.entry }.write?.hash, shown.hash)
+        assertEquals(null, (requests[48] as Request.UpdateInbox).hash)
+        val refusedOld = (messages[57] as Message.Result).error!!
+        assertEquals(ErrorCode.BAD_REQUEST, refusedOld.code)
+        assertTrue(refusedOld.message.contains("cannot show the whole write"))
     }
 
     /** A level 12 client knows no writes: it reads the Result and shows a `write` item as a kind it does not know. */

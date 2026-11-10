@@ -265,6 +265,7 @@ async fn update_inbox_confirm_answers_with_the_policy_then_the_item() {
         text: text.map(Into::into),
         option: None,
         worktree: None,
+        hash: None,
     };
     let bad_reason = "x".repeat(501);
     let (_, error) =

@@ -47,7 +47,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] inbox (approve | dismiss) ENTRY [--json]
        muxa-cli [--bridge CMD] inbox later ENTRY [--json]
        muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
-                [--reason T] [--json]
+                [--reason T] [--hash H] [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
        muxa-cli [--bridge CMD] inbox show ITEM [--json]
        muxa-cli [--bridge CMD] inbox delete --older-than DAYS [--json]
@@ -163,7 +163,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  delegate, hypothesis and write items. approve on a write
                  item starts one Task of the workspace's writer that writes
                  the content exactly as inbox show prints it (work level
-                 13). A protected item takes
+                 13). It prints the write first and sends its hash; --hash H
+                 sends H, the hash of the write another view showed, instead.
+                 A host refuses an approve on a write without the hash A protected item takes
                  every answer; only inbox delete keeps it.
                  reply sends the text as it is; on an ask it denies the
                  permission first. ask-agent sends the item and the text to
@@ -444,6 +446,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut assist, mut scope, mut purpose) = (false, None, None);
     let (mut minutes, mut at, mut timezone, mut apply) = (None, None, None, false);
     let (mut from, mut until, mut reason) = (None, None, None);
+    let mut hash: Option<String> = None;
     let mut older_than: Option<u32> = None;
     while let Some(arg) = p.next()? {
         match arg {
@@ -489,6 +492,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("from") => from = Some(p.value()?.string()?),
             Long("until") => until = Some(p.value()?.string()?),
             Long("reason") => reason = Some(p.value()?.string()?),
+            Long("hash") => hash = Some(p.value()?.string()?),
             Long("purpose") => purpose = Some(p.value()?.string()?),
             Long("scope") => scope = Some(p.value()?.string()?),
             Long("source") => {
@@ -552,6 +556,11 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     if text.is_some() && !is_answer && !is_policy_edit {
         return Err(lexopt::Error::Custom(
             "--text requires inbox answer or policy edit".into(),
+        ));
+    }
+    if hash.is_some() && !is_answer {
+        return Err(lexopt::Error::Custom(
+            "--hash requires inbox answer ITEM approve".into(),
         ));
     }
     if reason.is_some() && !is_answer && !is_dismiss {
@@ -739,6 +748,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 reason,
                 option,
                 worktree: Some(worktree),
+                hash,
             }
             .checked()
             .map_err(|e| lexopt::Error::Custom(e.into()))?,
@@ -756,6 +766,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 reason: None,
                 option: None,
                 worktree: None,
+                hash: None,
             },
             json,
         },

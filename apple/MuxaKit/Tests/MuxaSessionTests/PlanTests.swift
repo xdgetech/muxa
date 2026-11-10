@@ -61,7 +61,7 @@ class PlanBridge: AssistantBridge, @unchecked Sendable {
             if let due { work[i].due = due }
             emit(.workSaved(work: id, entry: work[i]))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .updateInboxEntry(let id, let entry, let action, _, _, _, _):
+        case .updateInboxEntry(let id, let entry, let action, _, _, _, _, _):
             note(req)
             guard let i = items.firstIndex(where: { $0.id == entry }) else {
                 return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "no item"), sessions: nil))
@@ -225,7 +225,7 @@ struct PlanTests {
         #expect(session.requests(of: session.workList[0]).map(\.id) == ["q-00000002"])
         #expect(session.savedWork.isEmpty && session.savedRequests.isEmpty && session.savedCaptures.isEmpty)
         #expect(bridge.planRequests.contains {
-            if case .updateInboxEntry(_, "i-0000000d", .approve, nil, nil, nil, nil) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-0000000d", .approve, nil, nil, nil, nil, _) = $0 { true } else { false }
         })
     }
 

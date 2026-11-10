@@ -41,7 +41,7 @@ final class WorkBridge: FakeBridge, @unchecked Sendable {
             routines[i].running = RoutineRun(occurrence: "now-1", startedAt: 1, task: "t-run1")
             emit(.routineSaved(routine: id, entry: routines[i]))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .updateInboxEntry(let id, let entry, let action, let until, _, _, _):
+        case .updateInboxEntry(let id, let entry, let action, let until, _, _, _, _):
             record(req)
             guard let i = entries.firstIndex(where: { $0.id == entry }),
                   entries[i].disposition == "open" || entries[i].disposition == "later" || action == .approve
@@ -162,7 +162,7 @@ struct WorkTests {
         _ = try await session.dismiss(session.inboxEntries[1])
         _ = try await session.later(session.inboxEntries[0], until: 9000)
         #expect(session.inboxEntries.map(\.disposition) == ["later", "dismissed"])
-        #expect(bridge.work.contains { if case .updateInboxEntry(_, "e-00000001", .later, 9000, _, _, _) = $0 { true } else { false } })
+        #expect(bridge.work.contains { if case .updateInboxEntry(_, "e-00000001", .later, 9000, _, _, _, _) = $0 { true } else { false } })
         // A closed entry is refused by the host, and the list is read again.
         await #expect(throws: PaneSession.Failure.self) { try await session.dismiss(session.inboxEntries[1]) }
     }

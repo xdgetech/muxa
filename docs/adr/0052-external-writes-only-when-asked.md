@@ -110,6 +110,7 @@ A write Task is a Task: it has no run budget today. `[assistant] max_writes_per_
 
 ## Implementation notes
 
+- `update-inbox approve` on a `write` item carries the write's `hash`, which a client sends only after it showed the content whole. Without it, or with another hash, the bridge answers `bad-request`. Clients installed before level 13 show a `write` item generically with Approve and never send the hash, so they cannot approve a write.
 - `write` items live in the Result's run's item file, keyed `write:<request>:<version>:<step>:<index>`, so a second scan makes none; the hash dedup is within the request. The item's `task` field is the ordinary one, so `inbox-list` and Work detail find the Task as for any item.
 - `task_goal` of `routines/inbox.rs` becomes one function with an origin line and a marker prefix; both the `muxa-proposal:` and the `muxa-write:` approvals use it, and both search records by their last goal line.
 - `writer` resolves through `Workspaces::worker`, `Worker::allows` and `check_agent` at config load, with the `staff` and `worker` exclusions beside ADR 0051's `staff` checks.

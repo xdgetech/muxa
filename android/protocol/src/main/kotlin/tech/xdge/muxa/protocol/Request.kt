@@ -141,6 +141,11 @@ sealed interface Request {
         val option: Int? = null,
         /** As `update-task`'s, for an answer that makes the Task done or dropped. */
         val worktree: WorktreeEnd? = null,
+        /**
+         * With `approve` on a `write` item (`work` level 13, ADR 0052): the hash of the content the client showed
+         * whole. The host refuses an approve on a write without it.
+         */
+        val hash: String? = null,
     ) : Request
 
     /**

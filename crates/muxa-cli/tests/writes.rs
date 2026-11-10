@@ -164,8 +164,35 @@ fn approve_says_the_task_started_and_reject_sends_the_reason() {
             &json!("Wrong channel.")
         )
     );
-    // Only a level 12 host is asked what the item is first.
+    // Approve prints the write whole first, then sends the hash of what it printed.
+    assert!(
+        text.contains("written exactly as below:\nRelease 2.4 is out."),
+        "{text}"
+    );
+    assert_eq!(sent[0]["hash"], "sha256:ab");
+    assert!(sent[1].get("hash").is_none());
+}
+
+#[test]
+fn approve_sends_the_hash_another_view_showed() {
+    let bridge = Bridge::new(13);
+    ok(&bridge.run(&[
+        "inbox",
+        "answer",
+        "i-9c0d1e2f",
+        "approve",
+        "--hash",
+        "sha256:cd",
+    ]));
+    assert_eq!(bridge.sent("update-inbox")[0]["hash"], "sha256:cd");
     assert!(bridge.sent("list-inbox").is_empty());
+    let out = bridge.run(&["inbox", "answer", "i-9c0d1e2f", "reject", "--hash", "x"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--hash is only for approve"));
+    // With --json, stdout is the item alone; the write goes to stderr.
+    let out = bridge.run(&["inbox", "answer", "i-9c0d1e2f", "approve", "--json"]);
+    let item: Value = serde_json::from_str(ok(&out).trim()).unwrap();
+    assert_eq!(item["task"], "t-00f001");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Target  slack:#release"));
 }
 
 #[test]

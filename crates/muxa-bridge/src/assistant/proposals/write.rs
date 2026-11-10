@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use muxa_protocol::{
-    AssistantRequest, ErrorBody, ErrorCode, InboxAction, InboxItem, ItemState, WorkItem,
+    AssistantRequest, ErrorBody, ErrorCode, InboxAction, InboxItem, ItemKind, ItemState, WorkItem,
     WriteProposal,
 };
 
@@ -75,6 +75,26 @@ pub(super) async fn approve(cx: &Context, f: Found) -> Result<Approved, ErrorBod
         tracing::warn!(error = %r.message, "cannot release a write's approval");
     }
     Err(error.unwrap_or_else(|| error_body(ErrorCode::Internal, "the writer's Task was not made")))
+}
+
+/// An app that shows a `write` item generically (level 12 or older) sends
+/// no hash, so it can never approve one; a hash of other text is refused too.
+pub(super) fn hash_shown(f: &Found, hash: Option<&str>) -> Result<(), ErrorBody> {
+    let Some(w) = f
+        .item
+        .write
+        .as_ref()
+        .filter(|_| f.item.kind == ItemKind::Write)
+    else {
+        return Ok(());
+    };
+    if hash == Some(w.hash.as_str()) {
+        return Ok(());
+    }
+    tracing::info!(item = %f.item.id, sent = hash.is_some(), "write approval refused: no matching hash");
+    Err(bad(
+        "this app cannot show the whole write; update the app or use muxa-cli",
+    ))
 }
 
 /// Blocking. The writer, the Work item and the goal, or the Task an earlier

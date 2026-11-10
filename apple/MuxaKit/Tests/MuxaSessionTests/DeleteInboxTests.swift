@@ -32,7 +32,7 @@ struct DeleteInboxTests {
         try await session.setProtected(session.openItems[1], false)
         #expect(!session.openItems[1].isProtected)
         #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000002", .unprotect, nil, nil, nil, nil) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-00000002", .unprotect, nil, nil, nil, nil, _) = $0 { true } else { false }
         })
     }
 

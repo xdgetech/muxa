@@ -498,10 +498,12 @@ EOF
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
     approve)
       text="$(jq -r --arg item "$id" '.items[] | select(.id == $item and .kind == "write") | .write.target' "$json")"
+      set -- "$@" approve
       if [ -n "$text" ]; then
         confirm_write "$text" || return 0
+        # The host approves only the write whose hash this view showed (ADR 0052 §2).
+        set -- "$@" --hash "$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .write.hash' "$json")"
       fi
-      set -- "$@" approve
       ;;
     reject)
       kind="$(jq -r --arg item "$id" 'select((.work // 0) >= 11) | .items[] | select(.id == $item) | .kind' "$json")"

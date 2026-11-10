@@ -207,7 +207,9 @@ impl Host {
     }
 
     async fn approve(&self, item: &str) -> (Vec<Message>, Option<ErrorBody>) {
-        answer(&self.cx, 7, item).await.expect("a proposal item")
+        answer(&self.cx, 7, item, None)
+            .await
+            .expect("a proposal item")
     }
 
     /// An open run of `w`, as `create()` leaves it.

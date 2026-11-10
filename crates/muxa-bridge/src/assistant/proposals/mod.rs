@@ -21,10 +21,13 @@ use approve::{Approved, By, Made};
 /// `update-inbox approve` on a `sort`, `delegate`, `handoff` or `write` item:
 /// `capture-saved`, `work-saved` or `task-saved` with what it made, then
 /// `inbox-saved`, and the error for `result`. None for any other item.
+/// `shown` is the hash of the write the client showed whole; a `write` item
+/// is approved only with its own (ADR 0052 §2).
 pub async fn answer(
     cx: &Context,
     id: u64,
     entry: &str,
+    shown: Option<&str>,
 ) -> Option<(Vec<Message>, Option<ErrorBody>)> {
     let (config, item) = (Arc::clone(&cx.records), entry.to_owned());
     let found = match super::blocking(move || approve::find(&config, &item)).await {
@@ -32,6 +35,9 @@ pub async fn answer(
         Ok(None) => return None,
         Err(e) => return Some((Vec::new(), Some(e))),
     };
+    if let Err(e) = write::hash_shown(&found, shown) {
+        return Some((Vec::new(), Some(e)));
+    }
     Some(match approve::approve(cx, found, By::User).await {
         Ok(approved) => {
             let error = approved.error.clone();

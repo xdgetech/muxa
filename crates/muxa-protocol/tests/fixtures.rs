@@ -443,8 +443,8 @@ fn assistant_fixtures_round_trip() {
     use muxa_protocol::{
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 47);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 57);
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 49);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 58);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -1283,6 +1283,34 @@ fn write_fixtures_round_trip() {
             .iter()
             .all(|d| d.writer.is_none() && d.writes.is_none())
     );
+    // Approve on a write carries the hash of the write the client showed; without it, refused.
+    let sent: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Request::UpdateInbox {
+        hash: Some(shown),
+        entry,
+        ..
+    } = &sent[47]
+    else {
+        panic!()
+    };
+    let item = items.iter().find(|i| i.id == *entry).unwrap();
+    assert_eq!(Some(shown), item.write.as_ref().map(|w| &w.hash));
+    assert!(matches!(
+        sent[48],
+        Request::UpdateInbox {
+            action: InboxAction::Approve,
+            hash: None,
+            ..
+        }
+    ));
+    let Message::Result { error: Some(e), .. } = &messages[57] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::BadRequest);
+    assert!(e.message.contains("cannot show the whole write"));
 }
 
 /// A level 12 client knows no writes: it reads the Result and shows a

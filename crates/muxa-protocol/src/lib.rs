@@ -348,6 +348,11 @@ pub enum Request {
         /// With an answer that ends the Task, as in `update-task`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<WorktreeEnd>,
+        /// With `approve` on a `write` item (`work` level 13, ADR 0052): the
+        /// hash of the content the client showed whole. Without it, or with
+        /// another, the host refuses the approve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hash: Option<String>,
     },
     /// Remove every Inbox item made more than `older_than_days` days ago,
     /// except protected ones (capability `work` level 8, ADR 0046). An

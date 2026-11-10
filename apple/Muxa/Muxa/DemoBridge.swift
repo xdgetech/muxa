@@ -432,18 +432,18 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .updateInboxEntry(let id, let entry, .askAgent, _, let text, _, _):
+        case .updateInboxEntry(let id, let entry, .askAgent, _, let text, _, _, _):
             askAgent(id: id, item: entry, text: text)
-        case .updateInboxEntry(let id, let entry, let action, _, _, _, _) where action == .protect || action == .unprotect:
+        case .updateInboxEntry(let id, let entry, let action, _, _, _, _, _) where action == .protect || action == .unprotect:
             protect(id: id, item: entry, action == .protect)
         case .deleteInbox(let id, let days):
             deleteOld(id: id, days: days)
         // `until` is ignored: Later moves an item down (ADR 0040).
-        case .updateInboxEntry(let id, let entry, .approve, _, _, _, _) where isOverallProposal(entry):
+        case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, _) where isOverallProposal(entry):
             approveProposal(id: id, item: entry)
-        case .updateInboxEntry(let id, let entry, .confirm, _, _, _, _):
+        case .updateInboxEntry(let id, let entry, .confirm, _, _, _, _, _):
             confirmHypothesis(id: id, item: entry)
-        case .updateInboxEntry(let id, let entry, let action, _, let text, let option, let worktree):
+        case .updateInboxEntry(let id, let entry, let action, _, let text, let option, let worktree, _):
             let isEntry = lock.withLock { work.entries.contains { $0.id == entry } }
             if Self.workLevel >= workItems, !isEntry || action == .read {
                 answerItem(id: id, item: entry, action: action, text: text, option: option, worktree: worktree)

@@ -86,7 +86,7 @@ final class PolicyBridge: PlanBridge, @unchecked Sendable {
                 return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "no record \(record)"), sessions: nil))
             }
             emit(.result(id: id, error: nil, sessions: nil))
-        case .updateInboxEntry(let id, let entry, let action, _, let text, _, _)
+        case .updateInboxEntry(let id, let entry, let action, _, let text, _, _, _)
             where items.contains { $0.id == entry && $0.kind == .hypothesis }:
             note(req)
             guard let i = items.firstIndex(where: { $0.id == entry }), let h = items[i].hypothesis,
@@ -108,7 +108,7 @@ final class PolicyBridge: PlanBridge, @unchecked Sendable {
             items[i].answers = []
             emit(.inboxSaved(inbox: id, entry: nil, item: items[i]))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .updateInboxEntry(_, _, .reject, _, _, _, _):
+        case .updateInboxEntry(_, _, .reject, _, _, _, _, _):
             note(req)
             try await super.send(line)
         default:
@@ -164,7 +164,7 @@ struct PolicyTests {
         let item = try #require(session.inboxItems.first { $0.kind == .delegate })
         _ = try await session.reject(item, reason: "Not now.")
         #expect(bridge.memoryRequests.allSatisfy {
-            if case .updateInboxEntry(_, _, .reject, _, nil, _, _) = $0 { true } else { false }
+            if case .updateInboxEntry(_, _, .reject, _, nil, _, _, _) = $0 { true } else { false }
         }, "a level 10 host gets no reason")
     }
 
@@ -253,7 +253,7 @@ struct PolicyTests {
         let item = try #require(session.inboxItems.first { $0.kind == .hypothesis })
         _ = try await session.reject(item, reason: "It is the budget, not finance.")
         #expect(bridge.memoryRequests.contains {
-            if case .updateInboxEntry(_, "i-0000000h", .reject, nil, "It is the budget, not finance.", nil, nil) = $0 {
+            if case .updateInboxEntry(_, "i-0000000h", .reject, nil, "It is the budget, not finance.", nil, nil, nil) = $0 {
                 true
             } else { false }
         })
@@ -262,7 +262,7 @@ struct PolicyTests {
         let delegate = try #require(session.inboxItems.first { $0.kind == .delegate })
         _ = try await session.reject(delegate, reason: "")
         #expect(bridge.memoryRequests.contains {
-            if case .updateInboxEntry(_, "i-0000000d", .reject, nil, nil, nil, nil) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-0000000d", .reject, nil, nil, nil, nil, _) = $0 { true } else { false }
         }, "an empty reason is none")
     }
 

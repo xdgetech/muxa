@@ -37,20 +37,43 @@ async fn items(conn: &mut Conn) -> Result<Vec<InboxItem>, String> {
         .ok_or_else(|| "the bridge sent no Inbox list".into())
 }
 
-/// Before `approve` on a host below level 13: a `write` item there has no
-/// content this client may vouch for, so nothing is sent.
-pub async fn check_approve(conn: &mut Conn, item: &str, action: InboxAction) -> Result<(), String> {
-    if action != InboxAction::Approve || has_writes(conn) {
-        return Ok(());
+/// The hash an `approve` sends (ADR 0052 §2): `--hash` as given, or, for a
+/// `write` item, its hash once its write is printed whole, so the user saw
+/// the text it approves. On a host below level 13 nothing is sent.
+pub async fn approve_hash(
+    conn: &mut Conn,
+    item: &str,
+    answer: &crate::items::Answer,
+    as_json: bool,
+) -> Result<Option<String>, String> {
+    if answer.action != InboxAction::Approve {
+        return Ok(None);
+    }
+    if let Some(given) = &answer.hash {
+        return if has_writes(conn) {
+            Ok(Some(given.clone()))
+        } else {
+            Err(NEEDS_WRITES.into())
+        };
     }
     let found = items(conn).await?;
-    if found
+    let Some(w) = found
         .iter()
-        .any(|i| i.id == item && i.kind == ItemKind::Write)
-    {
+        .find(|i| i.id == item && i.kind == ItemKind::Write)
+        .and_then(|i| i.write.as_ref())
+    else {
+        return Ok(None);
+    };
+    if !has_writes(conn) {
         return Err(NEEDS_WRITES.into());
     }
-    Ok(())
+    // With --json, stdout carries the item only.
+    if as_json {
+        eprint!("{}", write_text(w));
+    } else {
+        print!("{}", write_text(w));
+    }
+    Ok(Some(w.hash.clone()))
 }
 
 /// `inbox show ITEM`: the item, and a write's target and content whole.

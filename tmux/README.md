@@ -247,7 +247,8 @@ apps show, with a goal and a status.
     proposes outside the host: a post or a comment. The item shows the action,
     the target and the content whole, as plain text, and says when it comes
     from an older result. `a` asks once more with the target, and `y` starts
-    one Task of the workspace's writer with exactly that text. `r` rejects it
+    one Task of the workspace's writer with exactly that text; it sends the
+    hash of the write it showed, without which the host refuses approve. `r` rejects it
     with an optional reason, `l` is Later. `muxa-cli inbox show ITEM` prints
     the same, and `muxa-cli assist writes WORKSPACE` lists the writer and
     each write with its state.

@@ -83,10 +83,12 @@ public enum Request: Equatable, Sendable {
     case listInbox(id: UInt64)
     /// Answer a stored entry or an Inbox item (its `i-` id). `until` goes with
     /// `later`, `text` with `redo`, `change-course` and `reply`, `option` with `choose`,
-    /// `worktree` with an answer that makes the Task done or dropped.
+    /// `worktree` with an answer that makes the Task done or dropped, `hash` with
+    /// `approve` on a `write` item: the hash of the content the client showed whole
+    /// (`work` level 13, ADR 0052).
     case updateInboxEntry(
         id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil,
-        worktree: WorktreeEnd? = nil)
+        worktree: WorktreeEnd? = nil, hash: String? = nil)
     /// Remove the Inbox items made more than `olderThanDays` days ago, except protected
     /// ones (capability `work` level 8, ADR 0046). An `inbox-deleted` comes first.
     case deleteInbox(id: UInt64, olderThanDays: UInt32)
@@ -159,7 +161,7 @@ public enum Request: Equatable, Sendable {
             .createTask(let id, _, _, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
-            .updateInboxEntry(let id, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
+            .updateInboxEntry(let id, _, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
             .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _, _),
             .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _, _), .planNow(let id, _),
@@ -175,7 +177,7 @@ extension Request: Codable {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
         case cols, rows, operation, action, lines
-        case routine, entry, until, option, worktree, olderThanDays
+        case routine, entry, until, option, worktree, olderThanDays, hash
         case clientId, source, assist, capture, work, workRev, into, request, version, purpose
         case due, minutes
         case policy, from, plan, order, row, record
@@ -264,7 +266,7 @@ extension Request: Codable {
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(repo, forKey: .repo)
-        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option, let worktree):
+        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option, let worktree, let hash):
             try c.head("update-inbox", id)
             try c.encode(entry, forKey: .entry)
             try c.encode(action, forKey: .action)
@@ -272,6 +274,7 @@ extension Request: Codable {
             try c.encodeIfPresent(text, forKey: .text)
             try c.encodeIfPresent(option, forKey: .option)
             try c.encodeIfPresent(worktree, forKey: .worktree)
+            try c.encodeIfPresent(hash, forKey: .hash)
         case .deleteInbox(let id, let days):
             try c.head("delete-inbox", id)
             try c.encode(days, forKey: .olderThanDays)
@@ -473,7 +476,8 @@ extension Request: Codable {
                 until: try c.decodeIfPresent(UInt64.self, forKey: .until),
                 text: try c.decodeIfPresent(String.self, forKey: .text),
                 option: try c.decodeIfPresent(UInt32.self, forKey: .option),
-                worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree))
+                worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree),
+                hash: try c.decodeIfPresent(String.self, forKey: .hash))
         case "delete-inbox":
             self = .deleteInbox(id: id, olderThanDays: try c.decode(UInt32.self, forKey: .olderThanDays))
         case "capture":

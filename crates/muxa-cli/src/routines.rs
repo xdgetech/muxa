@@ -302,6 +302,7 @@ pub async fn act(
                 text: None,
                 option: None,
                 worktree: None,
+                hash: None,
             },
             wait,
         )

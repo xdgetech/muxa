@@ -137,7 +137,7 @@ struct FixtureTests {
         #expect(error == ErrorBody(code: .wouldLoseWork, message: "its branch is not merged"))
         let ends = try requests.map(Wire.decodeRequest).map { request -> WorktreeEnd? in
             switch request {
-            case .updateTask(_, _, _, .done, let end), .updateInboxEntry(_, _, .drop, nil, nil, nil, let end): end
+            case .updateTask(_, _, _, .done, let end), .updateInboxEntry(_, _, .drop, nil, nil, nil, let end, _): end
             default: nil
             }
         }
@@ -210,24 +210,24 @@ struct FixtureTests {
             Issue.record("expected inbox-saved with an entry and an item"); return
         }
         #expect(entry.id == both.id)
-        guard case .updateInboxEntry(_, _, .choose, nil, nil, 1?, nil) = try Wire.decodeRequest(requests[3]) else {
+        guard case .updateInboxEntry(_, _, .choose, nil, nil, 1?, nil, _) = try Wire.decodeRequest(requests[3]) else {
             Issue.record("expected choose with option 1"); return
         }
-        guard case .updateInboxEntry(_, _, .keepOpen, nil, nil, nil, nil) = try Wire.decodeRequest(requests[6]) else {
+        guard case .updateInboxEntry(_, _, .keepOpen, nil, nil, nil, nil, _) = try Wire.decodeRequest(requests[6]) else {
             Issue.record("expected keep-open"); return
         }
         let replies = try requests.map(Wire.decodeRequest).filter {
-            if case .updateInboxEntry(_, _, .reply, nil, let text?, nil, nil) = $0 { !text.isEmpty } else { false }
+            if case .updateInboxEntry(_, _, .reply, nil, let text?, nil, nil, _) = $0 { !text.isEmpty } else { false }
         }
         #expect(replies.count == 3)
     }
 
     @Test func assistantContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl")
-        #expect(requests.count == 47)
+        #expect(requests.count == 49)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("assistant/messages.jsonl")
-        #expect(messages.count == 57)
+        #expect(messages.count == 58)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -359,8 +359,8 @@ struct FixtureTests {
             case .updatePlan(_, _, _, .dismiss, [], _?, _?) = requests[32]
         else { Issue.record("expected reorder and dismiss"); return }
         #expect(order.count == 3)
-        guard case .updateInboxEntry(_, _, .reject, _, _?, _, _) = requests[34],
-            case .updateInboxEntry(_, _, .confirm, _, nil, _, _) = requests[35]
+        guard case .updateInboxEntry(_, _, .reject, _, _?, _, _, _) = requests[34],
+            case .updateInboxEntry(_, _, .confirm, _, nil, _, _, _) = requests[35]
         else { Issue.record("expected reject with a reason and confirm"); return }
         #expect(requests[38] == .forget(id: 441, record: "h-3c4d5e6f"))
 
@@ -477,8 +477,8 @@ struct FixtureTests {
     @Test func writeContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl").map(Wire.decodeRequest)
         let messages = try Self.lines("assistant/messages.jsonl").map(Wire.decodeMessage)
-        guard case .updateInboxEntry(_, "i-9c0d1e2f", .approve, _, _, _, _) = requests[44],
-            case .updateInboxEntry(_, _, .reject, _, _, _, _) = requests[46]
+        guard case .updateInboxEntry(_, "i-9c0d1e2f", .approve, _, _, _, _, _) = requests[44],
+            case .updateInboxEntry(_, _, .reject, _, _, _, _, _) = requests[46]
         else { Issue.record("expected approve and reject on write items"); return }
 
         guard case .hello(_, _, _, let capabilities) = messages[49] else { Issue.record("expected hello"); return }
@@ -520,6 +520,13 @@ struct FixtureTests {
             Issue.record("expected inbox-list"); return
         }
         #expect(older.delegates.allSatisfy { $0.writer == nil && $0.writes == nil })
+        // Approve on a write carries the hash of the write the client showed; without it, refused.
+        guard case .updateInboxEntry(_, let entry, .approve, _, _, _, _, let shown?) = requests[47],
+            case .updateInboxEntry(_, _, .approve, _, _, _, _, nil) = requests[48],
+            case .result(_, let old?, _) = messages[57]
+        else { Issue.record("expected approves with and without a hash"); return }
+        #expect(items.first { $0.id == entry }?.write?.hash == shown)
+        #expect(old.code == .badRequest && old.message.contains("cannot show the whole write"))
     }
 
     /// A level 12 client knows no writes: it reads the Result and shows a `write` item as
@@ -597,8 +604,8 @@ struct FixtureTests {
         guard case .inboxDeleted(403, 12) = try Wire.decodeMessage(messages[3]) else {
             Issue.record("expected inbox-deleted 12"); return
         }
-        guard case .updateInboxEntry(_, _, .protect, nil, nil, nil, nil) = try Wire.decodeRequest(requests[0]),
-              case .updateInboxEntry(_, _, .unprotect, nil, nil, nil, nil) = try Wire.decodeRequest(requests[2]),
+        guard case .updateInboxEntry(_, _, .protect, nil, nil, nil, nil, _) = try Wire.decodeRequest(requests[0]),
+              case .updateInboxEntry(_, _, .unprotect, nil, nil, nil, nil, _) = try Wire.decodeRequest(requests[2]),
               case .deleteInbox(403, 3) = try Wire.decodeRequest(requests[3])
         else {
             Issue.record("expected protect, unprotect and delete-inbox 3"); return

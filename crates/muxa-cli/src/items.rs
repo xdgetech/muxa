@@ -27,6 +27,8 @@ pub struct Answer {
     pub option: Option<u32>,
     /// Used by the host only when the answer ends the Task (ADR 0043).
     pub worktree: Option<WorktreeEnd>,
+    /// With `approve` on a `write` item: the hash of the write the user saw (ADR 0052 §2).
+    pub hash: Option<String>,
 }
 
 /// The kebab-case name on the wire.
@@ -58,6 +60,9 @@ impl Answer {
                 return Err("--reason is only for reject".into());
             }
             crate::policy::reason(r)?;
+        }
+        if self.hash.is_some() && a != InboxAction::Approve {
+            return Err("--hash is only for approve".into());
         }
         rule(
             "--option",
@@ -186,8 +191,8 @@ pub async fn answer(
     if protects && !has_delete(&conn) {
         return Err(NEEDS_DELETE.into());
     }
-    // Nothing is sent when the host predates the write item it would approve.
-    crate::writes::check_approve(&mut conn, item, answer.action).await?;
+    // A write is approved only with the hash of the text the user saw (ADR 0052 §2).
+    let hash = crate::writes::approve_hash(&mut conn, item, &answer, as_json).await?;
     // Ask Agent may start the workspace's Ask session and wait for its agent.
     let launches = matches!(
         answer.action,
@@ -200,6 +205,7 @@ pub async fn answer(
         reason,
         option,
         worktree,
+        ..
     } = answer;
     let text = text.or(reason);
     let messages = conn
@@ -212,6 +218,7 @@ pub async fn answer(
                 text,
                 option,
                 worktree,
+                hash,
             },
             match action {
                 _ if launches => LAUNCH_WAIT,
@@ -258,6 +265,7 @@ mod tests {
             reason: None,
             option: None,
             worktree: None,
+            hash: None,
         }
     }
 
@@ -302,5 +310,11 @@ mod tests {
         assert!(reason("reject").checked().is_ok());
         assert!(reason("confirm").checked().is_err());
         assert!(answer("confirm").checked().is_ok());
+        let hash = |a| Answer {
+            hash: Some("sha256:00".into()),
+            ..answer(a)
+        };
+        assert!(hash("approve").checked().is_ok());
+        assert!(hash("reject").checked().is_err());
     }
 }

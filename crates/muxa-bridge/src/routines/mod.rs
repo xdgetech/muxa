@@ -49,11 +49,13 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
         id,
         entry,
         action: muxa_protocol::InboxAction::Approve,
+        hash,
         ..
     } = &req
     {
         if entry.starts_with("i-") {
-            if let Some(answer) = crate::assistant::proposals::answer(cx, *id, entry).await {
+            let shown = hash.as_deref();
+            if let Some(answer) = crate::assistant::proposals::answer(cx, *id, entry, shown).await {
                 return answer;
             }
         }

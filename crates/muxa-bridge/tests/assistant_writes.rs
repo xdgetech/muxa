@@ -276,6 +276,16 @@ async fn answer(conn: &mut Conn, item: &str, action: &str) -> Vec<Message> {
         .await
 }
 
+/// Approve with the hash of the write the client showed (ADR 0052 §2).
+async fn approve(conn: &mut Conn, item: &InboxItem) -> Vec<Message> {
+    let hash = &item.write.as_ref().unwrap().hash;
+    conn.request(
+        json!({"type": "update-inbox", "entry": item.id, "action": "approve",
+                        "hash": hash}),
+    )
+    .await
+}
+
 /// The writer's Task an approve made, and the item it answered.
 fn approved(answer: &[Message]) -> (TaskRecord, InboxItem) {
     match answer {
@@ -360,7 +370,20 @@ async fn an_approved_write_is_one_task_of_the_writer() {
         .iter()
         .find(|i| i.write.as_ref().unwrap().hash == writes[0].hash)
         .unwrap();
-    let (task, item) = approved(&answer(&mut conn, &first.id, "approve").await);
+    // An app that cannot show the whole write sends no hash, or another: refused.
+    for wrong in [json!(null), json!(writes[1].hash)] {
+        let sent = conn
+            .request(
+                json!({"type": "update-inbox", "entry": first.id, "action": "approve",
+                            "hash": wrong}),
+            )
+            .await;
+        let (code, message) = error_of(&sent);
+        assert_eq!(code, ErrorCode::BadRequest);
+        assert!(message.contains("cannot show the whole write"), "{message}");
+    }
+    assert!(h.writer_tasks().is_empty());
+    let (task, item) = approved(&approve(&mut conn, first).await);
     let w = &writes[0];
     assert_eq!(task.worker.as_deref(), Some(WRITER));
     assert_eq!(task.title, w.action);
@@ -383,11 +406,11 @@ async fn an_approved_write_is_one_task_of_the_writer() {
         )
     );
     // A second approve makes nothing new.
-    let (again, _) = approved(&answer(&mut conn, &first.id, "approve").await);
+    let (again, _) = approved(&approve(&mut conn, first).await);
     assert_eq!(again.id, task.id);
     // So does one after a crash between the Task and its record.
     h.forget_approval(&run, &first.id);
-    let (recovered, item) = approved(&answer(&mut conn, &first.id, "approve").await);
+    let (recovered, item) = approved(&approve(&mut conn, first).await);
     assert_eq!(
         (recovered.id.as_str(), item.task.as_deref()),
         (task.id.as_str(), Some(task.id.as_str()))
@@ -494,8 +517,8 @@ async fn none_refuses_writes_and_the_day_limit_holds_an_item_open() {
     let q = ask(&mut conn, &work).await;
     until_resulted(&mut conn, &h, &q.id).await;
     let (items, _) = until_items(&mut conn, &q.id, 2).await;
-    approved(&answer(&mut conn, &items[0].id, "approve").await);
-    let (code, message) = error_of(&answer(&mut conn, &items[1].id, "approve").await);
+    approved(&approve(&mut conn, &items[0]).await);
+    let (code, message) = error_of(&approve(&mut conn, &items[1]).await);
     assert_eq!(code, ErrorCode::Conflict);
     assert!(message.contains("max_writes_per_day"), "{message}");
     let (after, _) = listed(&mut conn).await;

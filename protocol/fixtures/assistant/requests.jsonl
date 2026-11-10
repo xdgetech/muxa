@@ -45,3 +45,5 @@
 {"type":"update-inbox","id":460,"entry":"i-9c0d1e2f","action":"approve"}
 {"type":"update-inbox","id":461,"entry":"i-0d1e2f3a","action":"approve"}
 {"type":"update-inbox","id":462,"entry":"i-0d1e2f3a","action":"reject"}
+{"type":"update-inbox","id":464,"entry":"i-0d1e2f3a","action":"approve","hash":"sha256:e495150141fce15c0e08a8f84d0164f0eec6531c80e3405b5281cf4a871014c5"}
+{"type":"update-inbox","id":465,"entry":"i-1e2f3a4b","action":"approve"}
