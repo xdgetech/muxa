@@ -66,13 +66,13 @@ pub struct InboxItem {
     pub routine: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposal: Option<Proposal>,
-    /// With kind `sort`: what approve does (`work` level 9, ADR 0047).
+    /// With kind `sort`: what approve does (`work` level 10, ADR 0049).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort: Option<SortProposal>,
     /// With kind `delegate`: what approve does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegate: Option<DelegateProposal>,
-    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 10, ADR 0048).
+    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hypothesis: Option<HypothesisProposal>,
     /// The answers the host accepts now, in the order to show them. Empty
@@ -92,11 +92,11 @@ pub enum ItemKind {
     Failure,
     Proposal,
     Briefing,
-    /// Level 9: the overall assistant proposes to sort a Capture.
+    /// Level 10: the overall assistant proposes to sort a Capture.
     Sort,
-    /// Level 9: the overall assistant proposes to ask a workspace's delegate.
+    /// Level 10: the overall assistant proposes to ask a workspace's delegate.
     Delegate,
-    /// Level 10: the overall assistant proposes a hypothesis about the user.
+    /// Level 11: the overall assistant proposes a hypothesis about the user.
     Hypothesis,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]

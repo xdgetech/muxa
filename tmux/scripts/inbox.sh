@@ -4,10 +4,10 @@
 # the list above the selected item. muxa owns the items; this only shows them
 # and answers them through muxa-cli (muxa.sh cli). Needs muxa's work level 3;
 # Protect and Delete old need level 8 (ADR 0046).
-# With level 8, Work items (w-) and unsorted Captures (c-) follow the items;
-# `a` on a Work item asks its workspace's assistant. With level 9, Today rows
-# (today:) of the newest plan come first (ADR 0047); `t` asks for a plan.
-# With level 10 (ADR 0048), K/J move a Today row, x takes it off Today, y
+# With level 9, Work items (w-) and unsorted Captures (c-) follow the items;
+# `a` on a Work item asks its workspace's assistant. With level 10, Today rows
+# (today:) of the newest plan come first (ADR 0049); `t` asks for a plan.
+# With level 11 (ADR 0050), K/J move a Today row, x takes it off Today, y
 # opens the Policies list (policies.sh), and hypothesis items take Confirm.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens)
@@ -119,12 +119,12 @@ JQ_DEFS='
     then .delivery | gsub("-"; " ") else "unknown" end;
   def pin_due: (if .pinnedAt then " · pinned" else "" end) +
     (if .due then " · due \(.due.at | strftime("%Y-%m-%d %H:%MZ"))" else "" end);
-  # Today (ADR 0047 §5): the newest plan says how planning went; the rows come
+  # Today (ADR 0049 §5): the newest plan says how planning went; the rows come
   # from the newest plan with a result.
   def latest_plan: (.plans // [])[0] // empty;
   def shown_plan: [(.plans // [])[] | select(.delivery == "resulted")][0] // empty;
-  def has_today: (.work // 0) >= 9 and (((.plans // []) | length) > 0 or .assistant.overall != null);
-  # Today in the order the user chose, when there is one (ADR 0048):
+  def has_today: (.work // 0) >= 10 and (((.plans // []) | length) > 0 or .assistant.overall != null);
+  # Today in the order the user chose, when there is one (ADR 0050):
   # userOrder, then any row it misses. `top` keeps the order of the plan.
   def today_rows: (.top // []) as $top |
     [(.userOrder // [])[] as $id | $top[] | select((.work // .item) == $id)] as $u |
@@ -184,7 +184,7 @@ detail() {
 }
 
 # prefix + T: one row per open or later item, then the open Work items and
-# the unsorted Captures (ADR 0046): <id> TAB <display>.
+# the unsorted Captures (ADR 0048): <id> TAB <display>.
 list() {
   iq -r "$JQ_DEFS"'
     . as $root | (.requests // []) as $reqs |
@@ -210,7 +210,7 @@ list() {
 # summary, and its keys.
 view_work() {
   iq -r --arg item "$1" "$JQ_DEFS"'
-    ((.work // 0) >= 9) as $pins | (.requests // []) as $reqs |
+    ((.work // 0) >= 10) as $pins | (.requests // []) as $reqs |
     .workItems[]? | select(.id == $item) |
     (.requests // []) as $mine |
     ([$reqs[] | select(.id | IN($mine[])) | .results[0]? // empty] | max_by(.at)) as $result |
@@ -234,7 +234,7 @@ view_work() {
 # how planning went; the Due soon line: the items moved down that are due.
 view_today() {
   iq -r --arg row "${1#today:}" "$JQ_DEFS"'
-    . as $root | ((.work // 0) >= 10) as $memory |
+    . as $root | ((.work // 0) >= 11) as $memory |
     if $row == "" then
       "☀ \u001b[1mToday\u001b[0m", "\u001b[2m\(plan_status)\u001b[0m", "",
       (latest_plan | select(.delivery != "resulted") |
@@ -328,17 +328,17 @@ view() {
 key_action() {
   local level
   level="$(jq -r '.work // 0' "$3")"
-  if [ "$2" = t ] && [ "$level" -ge 9 ]; then
+  if [ "$2" = t ] && [ "$level" -ge 10 ]; then
     echo plan:now
     return
   fi
-  if [ "$2" = y ] && [ "$level" -ge 10 ]; then
+  if [ "$2" = y ] && [ "$level" -ge 11 ]; then
     echo policies
     return
   fi
   case "$1:$2" in
     today:[1-9]*:[KJx])
-      [ "$level" -ge 10 ] || return 0
+      [ "$level" -ge 11 ] || return 0
       iq -r --arg row "${1#today:}" --arg key "$2" "$JQ_DEFS"'
         shown_plan | . as $p | today_rows as $rows | ($row | tonumber) as $n |
         $rows[$n - 1] // empty |
@@ -348,7 +348,7 @@ key_action() {
       return
       ;;
     w-*:P)
-      jq -r --arg item "$1" 'select((.work // 0) >= 9) | .workItems[]? | select(.id == $item) |
+      jq -r --arg item "$1" 'select((.work // 0) >= 10) | .workItems[]? | select(.id == $item) |
         if .pinnedAt then "work:unpin" else "work:pin" end' "$3"
       return
       ;;
@@ -373,7 +373,7 @@ key_action() {
 pause() { echo "Press Enter."; read -r _; }
 
 # Today's row ids, one per line, with Today row <row> moved up or down by one:
-# the order plan reorder sends (ADR 0048).
+# the order plan reorder sends (ADR 0050).
 today_order() {
   iq -r --arg row "${1#today:}" --arg dir "$2" "$JQ_DEFS"'
     shown_plan | [today_rows[] | row_id] as $ids | ($row | tonumber - 1) as $i |
@@ -438,7 +438,7 @@ EOF
     policies) "$S/policies.sh" ui; return 0 ;;
     choose:*) set -- "$@" choose --option "${act#choose:}" ;;
     reject)
-      kind="$(jq -r --arg item "$id" 'select((.work // 0) >= 10) | .items[] | select(.id == $item) | .kind' "$json")"
+      kind="$(jq -r --arg item "$id" 'select((.work // 0) >= 11) | .items[] | select(.id == $item) | .kind' "$json")"
       case "$kind" in
         sort | delegate | hypothesis)
           clear

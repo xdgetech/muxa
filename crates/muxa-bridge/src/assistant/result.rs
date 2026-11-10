@@ -1,4 +1,4 @@
-//! The run's result file, `.muxa/assistant/result.json` (ADR 0046 §4, schema
+//! The run's result file, `.muxa/assistant/result.json` (ADR 0048 §4, schema
 //! in `protocol/PROTOCOL.md`): read, validated, and stored on the request.
 //! The agent's text is untrusted: reasons name fields and indices, never values.
 use std::fs::File;
@@ -219,7 +219,7 @@ pub fn validate(bytes: &[u8], run: &RequestRun) -> Result<AssistResult, Vec<Stri
     })
 }
 
-/// The proposed notes, stored with the base the run read (ADR 0047 §1).
+/// The proposed notes, stored with the base the run read (ADR 0049 §1).
 /// None when the text is the copy's own: nothing to apply.
 pub(super) fn proposal(
     text: String,

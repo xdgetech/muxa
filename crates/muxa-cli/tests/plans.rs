@@ -1,6 +1,6 @@
 //! `plan`, `plan now`, `work pin|unpin|due`, `assist notes` and the answers
-//! to `sort` and `delegate` items against a fake bridge at `work` level 9
-//! (ADR 0047): what each command sends, and that a level 8 host gets nothing.
+//! to `sort` and `delegate` items against a fake bridge at `work` level 10
+//! (ADR 0049): what each command sends, and that a level 9 host gets nothing.
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -132,7 +132,7 @@ fn ok(out: &Output) -> String {
 
 #[test]
 fn plan_shows_the_failed_newest_plan_then_the_last_rows() {
-    let bridge = Bridge::new(9, true);
+    let bridge = Bridge::new(10, true);
     let text = ok(&bridge.run(&["plan"]));
     for part in [
         "p-2c3d4e5f  failed  ",
@@ -156,7 +156,7 @@ fn plan_shows_the_failed_newest_plan_then_the_last_rows() {
 
 #[test]
 fn plan_now_sends_the_minutes_and_prints_the_refusal() {
-    let bridge = Bridge::new(9, true);
+    let bridge = Bridge::new(10, true);
     let text = ok(&bridge.run(&["plan", "now", "--minutes", "45"]));
     assert!(text.starts_with("p-1b2c3d4e  pending  "), "{text}");
     assert!(text.trim_end().ends_with("(45 min)"), "{text}");
@@ -167,7 +167,7 @@ fn plan_now_sends_the_minutes_and_prints_the_refusal() {
     assert_eq!(sent[0]["minutes"], 45);
     assert!(sent[1].get("minutes").is_none());
 
-    let none = Bridge::new(9, false);
+    let none = Bridge::new(10, false);
     let out = none.run(&["plan", "now"]);
     assert!(!out.status.success());
     assert!(out.stdout.is_empty());
@@ -180,7 +180,7 @@ fn plan_now_sends_the_minutes_and_prints_the_refusal() {
 
 #[test]
 fn pin_unpin_and_due_send_the_rev_they_read() {
-    let bridge = Bridge::new(9, true);
+    let bridge = Bridge::new(10, true);
     let text = ok(&bridge.run(&["work", "pin", "w-0b1c2d3e"]));
     assert!(text.starts_with("w-0b1c2d3e  open pinned  "), "{text}");
     ok(&bridge.run(&["work", "unpin", "w-0b1c2d3e"]));
@@ -220,7 +220,7 @@ fn pin_unpin_and_due_send_the_rev_they_read() {
 
 #[test]
 fn assist_notes_shows_the_proposal_and_applies_it_with_its_base() {
-    let bridge = Bridge::new(9, true);
+    let bridge = Bridge::new(10, true);
     let text = ok(&bridge.run(&["assist", "notes", "w-0b1c2d3e"]));
     assert_eq!(
         text,
@@ -258,7 +258,7 @@ fn assist_notes_shows_the_proposal_and_applies_it_with_its_base() {
 
 #[test]
 fn sort_and_delegate_items_list_and_approve_like_other_items() {
-    let bridge = Bridge::new(9, true);
+    let bridge = Bridge::new(10, true);
     let text = ok(&bridge.run(&["inbox"]));
     assert!(text.contains("i-1a2b3c4d  sort  open unread  "), "{text}");
     assert!(
@@ -281,8 +281,8 @@ fn sort_and_delegate_items_list_and_approve_like_other_items() {
 }
 
 #[test]
-fn wrong_arguments_and_a_level_8_host_send_nothing() {
-    let bridge = Bridge::new(9, true);
+fn wrong_arguments_and_a_level_9_host_send_nothing() {
+    let bridge = Bridge::new(10, true);
     for args in [
         &["plan", "--minutes", "5"][..],
         &["plan", "now", "--minutes", "x"],
@@ -323,7 +323,7 @@ fn wrong_arguments_and_a_level_8_host_send_nothing() {
         assert!(!out.status.success(), "{args:?}");
     }
     assert!(bridge.changes().is_empty());
-    let old = Bridge::new(8, true);
+    let old = Bridge::new(9, true);
     for args in [
         &["plan"][..],
         &["plan", "now"],

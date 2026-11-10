@@ -64,7 +64,7 @@ public final class PaneSession {
     public internal(set) var inboxItems: [InboxItem] = []
     /// Why the Routines or the stored entries could not be listed; the last lists stay.
     public internal(set) var workError: String?
-    /// The host's Work items in the host's order, as last listed (`work` level 8, ADR 0046).
+    /// The host's Work items in the host's order, as last listed (`work` level 9, ADR 0048).
     public internal(set) var workList: [WorkItem] = []
     /// The unsorted Captures, newest first, as last listed.
     public internal(set) var captures: [Capture] = []
@@ -75,9 +75,9 @@ public final class PaneSession {
     public internal(set) var knownCaptures: [String: Capture] = [:]
     /// Work items as `get-work` last read them, by id: every Capture they link and their requests.
     public internal(set) var workDetails: [String: LoadedWork] = [:]
-    /// The kept plans, newest first, as last listed (`work` level 9, ADR 0047).
+    /// The kept plans, newest first, as last listed (`work` level 10, ADR 0049).
     public internal(set) var plans: [Plan] = []
-    /// The overall assistant and the delegates, as last listed. Nil below level 9.
+    /// The overall assistant and the delegates, as last listed. Nil below level 10.
     public internal(set) var assistantInfo: AssistantInfo?
     /// Notes proposals applied from this device, by `source version`: the live file now
     /// differs from their base, so applying again would only conflict.
@@ -475,7 +475,7 @@ public final class PaneSession {
                 return .createTask(
                     id: id, workspace: new.workspace, title: new.title, goal: new.goal, project: new.project,
                     repo: new.repo, branch: new.branch, base: new.base, loop: new.loop, worker: new.worker,
-                    // An older host ignores them, but they are sent only at level 8 (ADR 0046).
+                    // An older host ignores them, but they are sent only at level 9 (ADR 0048).
                     work: canCapture ? new.work : nil, workRev: canCapture ? new.workRev : nil)
             }
         } catch {
@@ -862,7 +862,7 @@ public final class PaneSession {
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
-        // Policies come with `work` level 10 (ADR 0048); no client asks for them yet.
+        // Policies come with `work` level 11 (ADR 0050); no client asks for them yet.
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
             .diffContent, .diffEnded, .imageContent, .imageEnded, .policySaved:
             break

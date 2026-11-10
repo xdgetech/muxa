@@ -1,6 +1,6 @@
-//! The goal of an assistant run (ADR 0046 §4): the Work item, the user's
+//! The goal of an assistant run (ADR 0048 §4): the Work item, the user's
 //! Captures as data, the scope, earlier work to continue from, the rules of
-//! the delegate's notes (ADR 0047 §1), and the result schema. It lands in `.muxa/TASK.md`; its last line is the request marker.
+//! the delegate's notes (ADR 0049 §1), and the result schema. It lands in `.muxa/TASK.md`; its last line is the request marker.
 use muxa_protocol::{AssistResult, AssistScope, AssistantRequest, Capture, ErrorBody, WorkItem};
 
 use crate::records::MAX_GOAL;
@@ -148,7 +148,7 @@ impl Brief {
 }
 
 /// `muxa-request: <request> v<version>`: the goal's last line, which finds
-/// a run again after a crash (ADR 0046 §3).
+/// a run again after a crash (ADR 0048 §3).
 pub fn marker(request: &str, version: u64) -> String {
     format!("muxa-request: {request} v{version}")
 }

@@ -1,6 +1,6 @@
 //! `policy`, `forget`, `plan reorder|dismiss`, and `confirm` and `reject
-//! --reason` on Inbox items against a fake bridge at `work` level 10
-//! (ADR 0048): what each command sends, and that a level 9 host gets nothing.
+//! --reason` on Inbox items against a fake bridge at `work` level 11
+//! (ADR 0050): what each command sends, and that a level 10 host gets nothing.
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -136,7 +136,7 @@ fn ok(out: &Output) -> String {
 
 #[test]
 fn policy_lists_active_then_expired_then_hypotheses_and_corrections() {
-    let bridge = Bridge::new(10);
+    let bridge = Bridge::new(11);
     let text = ok(&bridge.run(&["policy"]));
     for part in [
         "Policies\ny-0a1b2c3d  all  until 2100-01-01T00:00Z  This week, recruiting comes before sales.\n",
@@ -152,7 +152,7 @@ fn policy_lists_active_then_expired_then_hypotheses_and_corrections() {
     assert_eq!(json["hypotheses"][0]["id"], "h-4e5f6a7b");
     assert_eq!(json["corrections"][0]["id"], "x-3f4a5b6c");
     let inbox: Value = serde_json::from_str(ok(&bridge.run(&["inbox", "--json"])).trim()).unwrap();
-    assert_eq!(inbox["work"], 10);
+    assert_eq!(inbox["work"], 11);
     assert_eq!(inbox["policies"][0]["id"], "y-0a1b2c3d");
     assert_eq!(inbox["hypotheses"][0]["id"], "h-4e5f6a7b");
     assert_eq!(inbox["corrections"][1]["id"], "x-0a1b2c3d");
@@ -161,7 +161,7 @@ fn policy_lists_active_then_expired_then_hypotheses_and_corrections() {
 
 #[test]
 fn policy_add_edit_and_delete_send_what_the_user_gave() {
-    let bridge = Bridge::new(10);
+    let bridge = Bridge::new(11);
     let text = ok(&bridge.run(&[
         "policy",
         "add",
@@ -226,7 +226,7 @@ fn policy_add_edit_and_delete_send_what_the_user_gave() {
 
 #[test]
 fn plan_reorder_and_dismiss_change_the_newest_plan_with_a_result() {
-    let bridge = Bridge::new(10);
+    let bridge = Bridge::new(11);
     let text = ok(&bridge.run(&["plan"]));
     for part in [
         "1. w-7b8c9d0e  Compare vendor offers  60-120 min, about 90\n",
@@ -265,7 +265,7 @@ fn plan_reorder_and_dismiss_change_the_newest_plan_with_a_result() {
 
 #[test]
 fn hypothesis_items_confirm_and_reject_with_a_reason() {
-    let bridge = Bridge::new(10);
+    let bridge = Bridge::new(11);
     let text = ok(&bridge.run(&["inbox"]));
     assert!(
         text.contains("i-5e6f7a8b  hypothesis  open unread  "),
@@ -299,8 +299,8 @@ fn hypothesis_items_confirm_and_reject_with_a_reason() {
 }
 
 #[test]
-fn wrong_arguments_and_a_level_9_host_send_nothing() {
-    let bridge = Bridge::new(10);
+fn wrong_arguments_and_a_level_10_host_send_nothing() {
+    let bridge = Bridge::new(11);
     let long = "x".repeat(501);
     for args in [
         &["policy", "add", "two\nlines"][..],
@@ -333,7 +333,7 @@ fn wrong_arguments_and_a_level_9_host_send_nothing() {
         assert!(!out.status.success(), "{args:?}");
     }
     assert!(bridge.changes().is_empty());
-    let old = Bridge::new(9);
+    let old = Bridge::new(10);
     for args in [
         &["policy"][..],
         &["policy", "add", "Recruiting first."],

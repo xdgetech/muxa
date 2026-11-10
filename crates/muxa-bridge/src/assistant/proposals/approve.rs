@@ -1,4 +1,4 @@
-//! Approving a `sort` or `delegate` item (ADR 0047 §4). The stored action
+//! Approving a `sort` or `delegate` item (ADR 0049 §4). The stored action
 //! runs once, through `sort-capture`'s or `request-assistant`'s own code, at
 //! the `rev` read when it is approved. A second approve returns what the
 //! first made. The host approves a delegate item itself (`By::Host`) for a

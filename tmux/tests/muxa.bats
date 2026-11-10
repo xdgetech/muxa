@@ -469,14 +469,14 @@ cli_tasks() {
   wait_for 'grep -qx "task done t-0000e3 --json" "$TMPDIR/bin/calls" 2>/dev/null'
 }
 
-# A work:8 host (ADR 0046): prefix + N asks for the text first.
-work8_tasks() {
-  printf '{"workspaces":["work"],"workspaceInfo":[{"name":"work","root":"%s/repos","repos":["%s"]}],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}' \
+# A work:9 host (ADR 0048): prefix + N asks for the text first.
+work9_tasks() {
+  printf '{"workspaces":["work"],"workspaceInfo":[{"name":"work","root":"%s/repos","repos":["%s"]}],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[]}' \
     "$TMPDIR" "$REPO"
 }
 
-@test "the form on work:8: s saves the text as a Capture and starts nothing" {
-  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}'
+@test "the form on work:9: s saves the text as a Capture and starts nothing" {
+  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[]}'
   printf '{"capture":{"id":"c-0000abcd"}}\n' >"$TMPDIR/bin/out-capture"
   run bash -c "printf '%s\n%s' 'Onboarding could be shorter -v' s | '$ROOT/scripts/muxa.sh' form none ''"
   [ "$status" -eq 0 ]
@@ -488,8 +488,8 @@ work8_tasks() {
   [ "$output" = 0 ]
 }
 
-@test "the form on work:8: a saves the text and asks the workspace's assistant" {
-  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}'
+@test "the form on work:9: a saves the text and asks the workspace's assistant" {
+  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[]}'
   printf '{"capture":{"id":"c-0000abcd"},"request":{"id":"q-0000abcd","delivery":"pending"}}\n' >"$TMPDIR/bin/out-capture"
   run bash -c "printf '%s\n%s' 'Compare hosting plans -v' a | '$ROOT/scripts/muxa.sh' form none ''"
   [ "$status" -eq 0 ]
@@ -500,8 +500,8 @@ work8_tasks() {
   [ "$output" = 0 ]
 }
 
-@test "the form on work:8: a with two workspaces asks which one" {
-  fake_cli '{"workspaces":["home","work"],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}'
+@test "the form on work:9: a with two workspaces asks which one" {
+  fake_cli '{"workspaces":["home","work"],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[]}'
   printf '{"capture":{"id":"c-0000abcd"},"request":{"id":"q-0000abcd","delivery":"pending"}}\n' >"$TMPDIR/bin/out-capture"
   run bash -c "printf '%s\n%s%s\n' 'Renew the visa' a work | '$ROOT/scripts/muxa.sh' form none ''"
   [ "$status" -eq 0 ]
@@ -509,8 +509,8 @@ work8_tasks() {
   grep -qx -- "capture - --source tmux --assist --workspace work --json" "$TMPDIR/bin/calls"
 }
 
-@test "the form on work:8: q cancels and saves nothing" {
-  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:8"],"truncated":false,"tasks":[]}'
+@test "the form on work:9: q cancels and saves nothing" {
+  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[]}'
   run bash -c "printf '%s\n%s' 'Not this' q | '$ROOT/scripts/muxa.sh' form none ''"
   [ "$status" -eq 0 ]
   [ "$(cat "$TMPDIR/bin/calls")" = "tasks --json" ]
@@ -520,7 +520,7 @@ work8_tasks() {
   new feature/from-text >/dev/null
   sid="$(tx display-message -p -t =feature-from-text: '#{session_id}')"
   fake_cli "$(printf '{"group":"no-agent","record":{"id":"t-0000d3"},"session":{"id":"%s","name":"feature-from-text"}}' "$sid")"
-  work8_tasks >"$TMPDIR/bin/out-tasks"
+  work9_tasks >"$TMPDIR/bin/out-tasks"
   attach
   tx send-keys -K -c "$C" C-b N
   sleep 1.5
@@ -537,7 +537,7 @@ work8_tasks() {
 }
 
 @test "prefix+N with Work items: no text opens the New Task form" {
-  fake_cli "$(work8_tasks)"
+  fake_cli "$(work9_tasks)"
   attach
   tx send-keys -K -c "$C" C-b N
   sleep 1.5

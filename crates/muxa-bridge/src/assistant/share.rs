@@ -1,4 +1,4 @@
-//! What the overall assistant reads of each workspace (ADR 0047 §3): a pure
+//! What the overall assistant reads of each workspace (ADR 0049 §3): a pure
 //! filter from store data to the shared part of its brief. Never: findings'
 //! text or sources, a workspace's Capture text, paths, Result files or notes.
 use std::collections::HashMap;

@@ -13,7 +13,7 @@ This defines the product concepts used by the vision and milestone plan. Propose
 | Routine | What runs on a trigger, and what does it propose? | Host configuration with a stable id: workspace, project, trigger, worker, instructions and output policy. Its runs are not Tasks; they appear only in its history and as running work |
 | Inbox item | What must I decide now? | One stored question (ADR 0033): a Task's agent asks, waits for review or failed, or a Routine proposes or briefs. It has its own read and answered state. Answering may change its Task (Accept, Drop) but the item is not the Task |
 
-## Unstarted work and the assistant (ADR 0046)
+## Unstarted work and the assistant (ADR 0048)
 
 | Concept | Question it answers | Identity and lifetime |
 |---|---|---|
@@ -28,7 +28,7 @@ This defines the product concepts used by the vision and milestone plan. Propose
 - An assistant run uses the Routine machinery (create path, delivery, Loop, in-process check), but it belongs to a request, not to a Routine. A Routine is configured and triggered; a request is asked once per version by the user.
 - A decision a Task needs stays an Inbox item. Its Work item shows "waiting on decision" and has no answer of its own.
 
-## Plans and the overall assistant (ADR 0047)
+## Plans and the overall assistant (ADR 0049)
 
 | Concept | Question it answers | Identity and lifetime |
 |---|---|---|

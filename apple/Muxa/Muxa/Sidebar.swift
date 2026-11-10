@@ -34,7 +34,7 @@ struct Sidebar: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                // At `work` level 8, `+` saves a thought first (ADR 0046); New Task is one tap further.
+                // At `work` level 9, `+` saves a thought first (ADR 0048); New Task is one tap further.
                 if model.capturesFirst {
                     Button("Capture", systemImage: Icon.add) { model.startCapture() }
                         .accessibilityIdentifier("sidebar-capture")

@@ -1,7 +1,7 @@
 import Foundation
 import MuxaProtocol
 
-/// Captures and Work items behind the host's `work` level 8 (ADR 0046). None of them
+/// Captures and Work items behind the host's `work` level 9 (ADR 0048). None of them
 /// is a Task or an Inbox item, and nothing here starts an agent.
 extension PaneSession {
     public var canCapture: Bool { workLevel >= workAssistant }
@@ -68,7 +68,7 @@ extension PaneSession {
         return saved.work
     }
 
-    /// Changes a Work item: Later, Complete, Withdraw or Reopen; at level 9 also Pin,
+    /// Changes a Work item: Later, Complete, Withdraw or Reopen; at level 10 also Pin,
     /// Unpin, and Edit with `due`. Its Tasks stay as they are.
     @discardableResult
     public func update(_ item: WorkItem, _ action: WorkAction, due: Due? = nil) async throws -> WorkItem {
@@ -123,7 +123,7 @@ extension PaneSession {
         workList = inbox.work
         captures = inbox.captures
         assistantRequests = inbox.requests
-        // An older host sends neither; a level 8 host is not asked for plans.
+        // An older host sends neither; a level 9 host is not asked for plans.
         plans = canPlan ? inbox.plans : []
         assistantInfo = canPlan ? inbox.assistant : nil
         for c in inbox.captures { knownCaptures[c.id] = c }

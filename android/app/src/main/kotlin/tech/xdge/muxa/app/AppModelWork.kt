@@ -17,7 +17,7 @@ import tech.xdge.muxa.session.forWork
 import tech.xdge.muxa.session.listed
 import tech.xdge.muxa.session.unsentReason
 
-// Captures and Work items (ADR 0046 §10). Every change is written on the host at the `rev` this
+// Captures and Work items (ADR 0048 §10). Every change is written on the host at the `rev` this
 // app saw; a failure lands in `inboxError` with the host's reason, and the Inbox is read again.
 
 /** The host keeps Captures and Work items, so `+` opens Capture and the Inbox has three sections. */
@@ -40,7 +40,7 @@ val AppModel.listedRequests: List<AssistantRequest> get() = if (canCapture) stat
 /** The Work row's note on its newest request; null without one. */
 fun AppModel.assistNote(item: WorkItem): String? = assistNote(item, listedRequests)
 
-/** `+` (ADR 0035 §5, changed by ADR 0046): Capture on a host with `work:8`, else New Task. */
+/** `+` (ADR 0035 §5, changed by ADR 0048): Capture on a host with `work:9`, else New Task. */
 fun AppModel.openPlus() {
     if (!canCapture) return startNewTask()
     // The workspaces come with the task list.

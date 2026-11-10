@@ -167,7 +167,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   capture TEXT   saves TEXT on the host as an unsorted Capture; - reads it
                  from stdin. Nothing starts. --source is cli (default), tmux
                  or app. Sending the same --client-id again returns the
-                 Capture already saved (ADR 0046)
+                 Capture already saved (ADR 0048)
   --assist       capture: also makes a Work item in --workspace (required)
                  and asks that workspace's assistant, as assist does
   work           open Work items, then unsorted Captures; --all also lists
@@ -185,7 +185,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   work merge WORK INTO
                  withdraws WORK into INTO; INTO gets its Captures
   work pin WORK  lists the item first, and in the first rows of a plan;
-                 unpin undoes it (ADR 0047)
+                 unpin undoes it (ADR 0049)
   work due WORK --at TIME
                  sets the item's deadline. TIME is RFC 3339
                  (2026-11-12T16:00:00+09:00) or YYYY-MM-DD HH:MM in
@@ -220,7 +220,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  removes a row from Today (Not today); --reason is optional
   policy         what you told the overall assistant: the policies, active
                  then expired, its hypotheses and the recent corrections
-                 (ADR 0048)
+                 (ADR 0050)
   policy add TEXT
                  keeps a policy in your words, one paragraph; - reads it from
                  stdin. --scope is all (default) or a workspace. --from and

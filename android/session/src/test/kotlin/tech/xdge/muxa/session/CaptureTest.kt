@@ -20,8 +20,8 @@ import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
 
-/** A host at `work` level 8 with one Work item; it keeps one Capture per `clientId`, as PROTOCOL.md says. */
-private class CaptureBridge(level: Int = 8) : FakeBridge() {
+/** A host at `work` level 9 with one Work item; it keeps one Capture per `clientId`, as PROTOCOL.md says. */
+private class CaptureBridge(level: Int = 9) : FakeBridge() {
     var work = listOf(WorkItem("w-00000001", 3, "Plan the offsite", WorkState.OPEN, 1, 1))
     var captures = listOf<Capture>()
 
@@ -95,7 +95,7 @@ class CaptureTest {
     }
 
     @Test
-    fun connectListsWorkAndCapturesAtLevelEight() = runBlocking {
+    fun connectListsWorkAndCapturesAtLevelNine() = runBlocking {
         val bridge = CaptureBridge().apply {
             captures = listOf(Capture("c-00000009", 1, "x", "Idea", CaptureSource.TMUX, CaptureState.RECEIVED, 1, 1))
         }
@@ -107,7 +107,7 @@ class CaptureTest {
 
     @Test
     fun anOlderHostListsNoWorkAndIsNeverSentACapture() = runBlocking {
-        val bridge = CaptureBridge(level = 7)
+        val bridge = CaptureBridge(level = 8)
         val session = connected(bridge)
         assertTrue(session.state.value.work.isEmpty())
         val e = refusal { session.capture("id-1", "Idea", null) }
@@ -158,7 +158,7 @@ class CaptureTest {
     }
 
     @Test
-    fun aTaskForAWorkItemSendsItsRevOnlyAtLevelEight() = runBlocking {
+    fun aTaskForAWorkItemSendsItsRevOnlyAtLevelNine() = runBlocking {
         val draft = TaskRecordDraft.forWork(WorkItem("w-00000001", 3, "Plan the offsite", WorkState.OPEN, 1, 1), listOf())
             .copy(workspace = "work")
         val bridge = CaptureBridge()
@@ -167,7 +167,7 @@ class CaptureTest {
         assertEquals("w-00000001", sent.work)
         assertEquals(3L, sent.workRev)
 
-        val older = CaptureBridge(level = 7)
+        val older = CaptureBridge(level = 8)
         connected(older).createTask(draft.request!!)
         val plain = older.received.filterIsInstance<Request.CreateTask>().single()
         assertNull(plain.work)

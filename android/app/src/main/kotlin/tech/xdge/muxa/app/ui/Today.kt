@@ -49,7 +49,7 @@ import tech.xdge.muxa.session.planStatus
 import tech.xdge.muxa.session.planning
 import tech.xdge.muxa.session.target
 
-// Today, above Decisions (ADR 0047 §5): the newest plan's rows. Its keys are row positions, so a
+// Today, above Decisions (ADR 0049 §5): the newest plan's rows. Its keys are row positions, so a
 // newer plan keeps the list's scroll; nothing here changes the selection.
 
 /** The header with New and Plan now, the newest plan's state, the rows, then the Due soon line. */

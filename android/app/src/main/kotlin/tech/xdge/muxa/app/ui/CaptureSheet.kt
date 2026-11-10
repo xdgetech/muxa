@@ -45,7 +45,7 @@ import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.label
 
 /**
- * `+` on a host with `work:8` (ADR 0046 §10): write it down now, sort it later. Save keeps the
+ * `+` on a host with `work:9` (ADR 0048 §10): write it down now, sort it later. Save keeps the
  * text on the host and starts nothing. Ask Assistant also makes a Work item and asks the
  * workspace's assistant, so it needs a workspace. "Start a Task instead…" opens New Task with the text.
  */

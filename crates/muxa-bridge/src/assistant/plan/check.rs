@@ -1,4 +1,4 @@
-//! The Loop check of an overall run (ADR 0047 §5): the plan file's own
+//! The Loop check of an overall run (ADR 0049 §5): the plan file's own
 //! rules, then the rules the host holds it to against the store, then the
 //! plan's one write. Reasons go to the run's check log and name fields and
 //! indices; host logs get ids and counts only.

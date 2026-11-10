@@ -109,9 +109,9 @@ where
         capabilities.push("workers".into());
         // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034),
         // 5 closes ask sessions (ADR 0039), 6 asks the workspace's agent from an item (ADR 0041),
-        // 7 removes a Task's worktree at its end (ADR 0043), 8 keeps Captures and Work items (ADR 0046),
-        // 9 adds delegate notes, plans, pins and due dates (ADR 0047), 10 policies,
-        // corrections and hypotheses (ADR 0048).
+        // 7 removes a Task's worktree at its end (ADR 0043), 8 protects and deletes items (ADR 0046),
+        // 9 keeps Captures and Work items (ADR 0048), 10 adds delegate notes, plans, pins and
+        // due dates (ADR 0049), 11 policies, corrections and hypotheses (ADR 0050).
         capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_POLICIES));
     }
     // Checked once per session (ADR 0019); each record request looks again.
@@ -670,7 +670,7 @@ impl Worker {
                 Err(e) => Err(e),
             },
             // Only the daemon runs loops (ADR 0019) and assistant requests
-            // (ADR 0046 §8). A create takes seconds.
+            // (ADR 0048 §8). A create takes seconds.
             req @ (Request::CreateTask {
                 r#loop: Some(_), ..
             }

@@ -2,7 +2,7 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// `+` on a host with `work` level 8 (ADR 0046): save a thought on the host, with no
+/// `+` on a host with `work` level 9 (ADR 0048): save a thought on the host, with no
 /// Task and no agent. Ask Assistant also makes a Work item and asks the workspace's
 /// assistant. "Start a Task instead…" opens the New Task form with the text.
 struct CaptureSheet: View {
@@ -31,7 +31,7 @@ struct CaptureSheet: View {
                     Section {
                         Picker("Workspace", selection: $draft.workspace) {
                             Text("None").tag(String?.none)
-                            // The overall assistant's workspace takes no Captures (ADR 0047 §2).
+                            // The overall assistant's workspace takes no Captures (ADR 0049 §2).
                             ForEach(model.session.pickableWorkspaces) { w in
                                 Text(w.name).tag(String?.some(w.name))
                             }

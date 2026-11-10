@@ -1,4 +1,4 @@
-//! Corrections (ADR 0048 §2): what the host saw the user do while a plan was
+//! Corrections (ADR 0050 §2): what the host saw the user do while a plan was
 //! current. Each is written after the change it describes, so a failed write
 //! loses a signal, never the change. Reasons never reach a log.
 use muxa_protocol::{
@@ -13,7 +13,7 @@ use crate::task_records::Config;
 
 /// Bytes of a reason.
 pub const MAX_REASON: usize = 500;
-/// Corrections kept, newest first (ADR 0048 §8).
+/// Corrections kept, newest first (ADR 0050 §8).
 pub const MAX_KEPT: usize = 200;
 /// Seconds a correction is kept: 90 days.
 pub const KEEP_FOR: u64 = 90 * 86_400;

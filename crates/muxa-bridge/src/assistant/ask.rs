@@ -1,4 +1,4 @@
-//! `request-assistant` (ADR 0046 §3, §4): one request version per Work item
+//! `request-assistant` (ADR 0048 §3, §4): one request version per Work item
 //! `rev`, and one run per version. The run is a record of kind
 //! `assistant-run` made by `create()`, found again after a crash by its
 //! goal's last line, as `start.rs` finds a Task.
@@ -219,7 +219,7 @@ fn new_request(
     })
 }
 
-/// A newer version makes the older results stale (ADR 0046 §4).
+/// A newer version makes the older results stale (ADR 0048 §4).
 fn next_version(
     requests: &Shelf<AssistantRequest>,
     id: &str,
@@ -341,7 +341,7 @@ async fn start_run(cx: &Context, q: AssistantRequest, d: &Delegated) -> Option<E
             .get(&work_id)
             .map_err(|e| super::state_error(&e))?
             .ok_or_else(|| bad(format!("no Work item {work_id}")))?;
-        // An invalid notes file fails the start before any record or session (ADR 0047 §1).
+        // An invalid notes file fails the start before any record or session (ADR 0049 §1).
         let root = super::apply::workspace_root(&config, &req.workspace)?;
         let notes = super::notes::read(&root).map_err(|e| super::apply::refused(&e))?;
         Ok((Brief::gather(&config, &item, &req)?.goal(), notes.base))
@@ -443,7 +443,7 @@ pub fn reply(
 }
 
 /// Ids only: the title names the run's folder and session, which logs and
-/// tmux show, and a Work item's title comes from Capture text (ADR 0046 §11).
+/// tmux show, and a Work item's title comes from Capture text (ADR 0048 §11).
 fn title(q: &AssistantRequest) -> String {
     format!(
         "{} {} v{}",

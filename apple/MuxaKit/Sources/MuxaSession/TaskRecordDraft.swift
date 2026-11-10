@@ -13,7 +13,7 @@ public struct NewTaskRecord: Equatable, Sendable {
     /// Also start a Task Loop (ADR 0019).
     public var loop: LoopSpec?
     public var worker: String?
-    /// The Work item the Task is for, and its `rev` the client saw (`work` level 8, ADR 0046).
+    /// The Work item the Task is for, and its `rev` the client saw (`work` level 9, ADR 0048).
     public var work: String?
     public var workRev: UInt64?
 
@@ -53,7 +53,7 @@ public struct TaskRecordDraft: Equatable, Sendable {
     public var worker: String?
     /// The host names an empty branch after the title (`work` level 2, ADR 0031).
     public var branchFromTitle: Bool
-    /// Started from a Work item: one Task per item `rev` (ADR 0046).
+    /// Started from a Work item: one Task per item `rev` (ADR 0048).
     public var work: String?
     public var workRev: UInt64?
 

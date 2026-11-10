@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A fake agent for assistant runs (ADR 0046). Usage: assistant-agent.py STEER_DIR
+"""A fake agent for assistant runs (ADR 0048). Usage: assistant-agent.py STEER_DIR
 
 Each line typed into its pane is one turn. It sets @agent_state and
 @agent_state_at on its pane, as tmux-agents does, and appends the line to

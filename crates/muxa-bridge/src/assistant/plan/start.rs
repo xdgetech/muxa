@@ -1,4 +1,4 @@
-//! Starting an overall run (ADR 0047 §5, §9): `plan-now` or a schedule's
+//! Starting an overall run (ADR 0049 §5, §9): `plan-now` or a schedule's
 //! occurrence. One plan is made at a time; a plan whose run timed out or
 //! whose prompt was interrupted is `cancelled` by the next. Budgets are the
 //! overall workspace's and the host's. A scheduled plan past a budget is
@@ -233,7 +233,7 @@ pub(super) fn prune(shelf: &Shelf<Plan>) {
 /// Makes the plan's run, and ends the claim. The error when it did not start.
 async fn run(cx: &Context, plan: &Plan, d: &Delegated) -> Option<ErrorBody> {
     let (config, workspace) = (Arc::clone(&cx.records), d.workspace.clone());
-    // An invalid notes file fails the start before any record or session (ADR 0047 §1).
+    // An invalid notes file fails the start before any record or session (ADR 0049 §1).
     let base = crate::assistant::blocking(move || {
         let root = crate::assistant::apply::workspace_root(&config, &workspace)?;
         crate::assistant::notes::read(&root)
@@ -248,7 +248,7 @@ async fn run(cx: &Context, plan: &Plan, d: &Delegated) -> Option<ErrorBody> {
             let new = NewTask {
                 workspace: d.workspace.clone(),
                 worker: d.worker.clone(),
-                // Ids only, as a request's run (ADR 0046 §11).
+                // Ids only, as a request's run (ADR 0048 §11).
                 title: format!("plan {}", plan.id),
                 goal: super::brief::goal(&plan.id),
                 assistant: Some(RunFor::Plan(PlanRun {

@@ -21,7 +21,7 @@ import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.session.listed
 import tech.xdge.muxa.session.shown
 
-/** Today, the overall assistant's items, pins and notes (ADR 0047 §5, §8), against the demo at `work` level 9. */
+/** Today, the overall assistant's items, pins and notes (ADR 0049 §5, §8), against the demo at `work` level 10. */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class TodayTest {

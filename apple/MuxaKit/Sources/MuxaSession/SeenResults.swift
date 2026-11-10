@@ -3,7 +3,7 @@ import MuxaProtocol
 import Observation
 
 /// The assistant Results this device has shown, so the Inbox marks a new one as ready
-/// (ADR 0046 §10). Kept per host as ids and versions in one file; never the Result's text.
+/// (ADR 0048 §10). Kept per host as ids and versions in one file; never the Result's text.
 @MainActor
 @Observable
 public final class SeenResults {

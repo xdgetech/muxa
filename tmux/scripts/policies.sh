@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016  # jq programs: $ is jq's, not the shell's
-# The Policies list of ADR 0048 in tmux, opened with y in the Inbox: the
+# The Policies list of ADR 0050 in tmux, opened with y in the Inbox: the
 # policies (y-), the overall assistant's hypotheses (h-) and the recent
-# corrections (x-), from muxa's work level 10. Changes go through muxa-cli.
+# corrections (x-), from muxa's work level 11. Changes go through muxa-cli.
 # Usage: policies.sh list <json> | view <id> <json> | key <id> <key> <json> | ui
 set -u
 . "$(dirname "$0")/lib.sh"

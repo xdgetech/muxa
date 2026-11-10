@@ -17,7 +17,7 @@ import java.time.DateTimeException
 import java.time.ZoneId
 
 /**
- * The demo bridge's Captures, Work items and assistant requests (ADR 0046, `work` level 8), with the
+ * The demo bridge's Captures, Work items and assistant requests (ADR 0048, `work` level 9), with the
  * host's checks: one Capture per `clientId`, a stale `rev` is `conflict`, Later moves an item down in
  * the order moved, one Task per Work item `rev`, one request per `(work, rev)`, and one open run per
  * workspace. A run moves on at [pace] when the Inbox is listed. Not thread safe: the bridge holds its lock.
@@ -49,7 +49,7 @@ internal class DemoAssistant(
     val unsorted: List<Capture> get() = captures.filter { it.state == CaptureState.RECEIVED }.sortedByDescending { it.createdAt }
 
     /**
-     * `work` as `inbox-list` sends it: the pinned ones in pin order (level 9), then the other open
+     * `work` as `inbox-list` sends it: the pinned ones in pin order (level 10), then the other open
      * ones, newest first; then the ones Later moved down, in the order moved; then the closed ones,
      * newest change first. [derive] gives an open item the state its Tasks make.
      */
@@ -95,7 +95,7 @@ internal class DemoAssistant(
     }
 
     /**
-     * [laterAt] is what `later` sets; it grows, so the list keeps the order moved. `pin` (level 9) sets
+     * [laterAt] is what `later` sets; it grows, so the list keeps the order moved. `pin` (level 10) sets
      * `pinnedAt` the same way and clears `laterAt`; a pin of a pinned item, or an unpin of an unpinned
      * one, keeps `rev`. `later`, `complete` and `withdraw` clear `pinnedAt`.
      */
@@ -129,7 +129,7 @@ internal class DemoAssistant(
         return due
     }
 
-    /** The plans' fixtures (ADR 0047): pins and deadlines, without a new `rev`. */
+    /** The plans' fixtures (ADR 0049): pins and deadlines, without a new `rev`. */
     fun seed(pins: Map<String, Long>, dues: Map<String, Due>) {
         work = work.map { w -> w.copy(pinnedAt = pins[w.id] ?: w.pinnedAt, due = dues[w.id] ?: w.due) }
     }

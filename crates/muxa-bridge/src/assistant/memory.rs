@@ -1,4 +1,4 @@
-//! The overall brief's "What the user told you" (ADR 0048 §4): policies,
+//! The overall brief's "What the user told you" (ADR 0050 §4): policies,
 //! hypotheses and corrections as data, with the ranks the host states. A
 //! pure filter from live records; a `share = "none"` workspace's never cross.
 use muxa_protocol::{
@@ -174,7 +174,7 @@ fn parts(workspaces: &Workspaces, r: &Records<'_>) -> [Vec<Line>; 4] {
 }
 
 /// Whether the overall assistant reads `workspace`'s data: nobody's, its
-/// own, or a workspace whose `share` is not `none` (ADR 0047 §3).
+/// own, or a workspace whose `share` is not `none` (ADR 0049 §3).
 fn shares(workspaces: &Workspaces, workspace: Option<&str>) -> bool {
     let Some(name) = workspace else {
         return true;

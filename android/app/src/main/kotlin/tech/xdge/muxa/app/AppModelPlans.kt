@@ -13,10 +13,10 @@ import tech.xdge.muxa.session.planIsNew
 import tech.xdge.muxa.session.rowOf
 import tech.xdge.muxa.session.shown
 
-// The overall assistant's plans, pins, deadlines and notes (ADR 0047). The host ranks and writes;
+// The overall assistant's plans, pins, deadlines and notes (ADR 0049). The host ranks and writes;
 // a new plan never changes the selection, the scroll or any order here.
 
-/** The host has plans, pins and notes (`work:9`). */
+/** The host has plans, pins and notes (`work:10`). */
 val AppModel.canPlan: Boolean get() = isConnected && state.canPlan
 
 /** Today shows: the host has an overall assistant, or kept plans. */
@@ -46,7 +46,7 @@ fun AppModel.openPlanRow(row: PlanRow) {
     row.item?.let { openItem(it) }
 }
 
-/** The New Task and Capture pickers' workspaces: not the overall assistant's (ADR 0047 §2). */
+/** The New Task and Capture pickers' workspaces: not the overall assistant's (ADR 0049 §2). */
 val AppModel.pickableWorkspaces: List<WorkspaceInfo> get() = state.tasks?.workspaces.orEmpty().pickable(state.assistant)
 
 /** Plan now, with the time the user has. Returns the host's reason when it refused. */

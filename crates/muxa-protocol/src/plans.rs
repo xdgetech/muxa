@@ -1,13 +1,13 @@
-//! Delegate notes, the overall assistant and its plans (ADR 0047), at `work`
-//! level 9. A plan never changes a Work item, an Inbox item or their order.
+//! Delegate notes, the overall assistant and its plans (ADR 0049), at `work`
+//! level 10. A plan never changes a Work item, an Inbox item or their order.
 use serde::{Deserialize, Serialize};
 
 use crate::{AssistScope, Delivery, Notes, SortAction};
 
-/// Level 9: `apply-notes`, `plan-now`, `pin`, `unpin` and `due` on
+/// Level 10: `apply-notes`, `plan-now`, `pin`, `unpin` and `due` on
 /// `update-work`, `sort` and `delegate` Inbox items, and `plans` and
 /// `assistant` in `inbox-list`.
-pub const WORK_PLANS: u32 = 9;
+pub const WORK_PLANS: u32 = 10;
 
 /// One overall run's plan: at most 3 rows to do next.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,10 +48,10 @@ pub struct Plan {
     /// Derived against the previous plan.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed: Vec<PlanChange>,
-    /// Level 10: Today's rows in the user's order, from `update-plan reorder`.
+    /// Level 11: Today's rows in the user's order, from `update-plan reorder`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub user_order: Vec<String>,
-    /// Level 10: rows the user removed from Today, from `update-plan dismiss`.
+    /// Level 11: rows the user removed from Today, from `update-plan dismiss`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dismissed: Vec<String>,
     /// The overall assistant's proposed notes. Never logged.
@@ -113,11 +113,11 @@ pub enum BasisKind {
     Time,
     /// The user's pin.
     Manual,
-    /// Level 10: a policy `y-…` in `source` (ADR 0048).
+    /// Level 11: a policy `y-…` in `source` (ADR 0050).
     Policy,
-    /// Level 10: a hypothesis `h-…` in `source`.
+    /// Level 11: a hypothesis `h-…` in `source`.
     Hypothesis,
-    /// Level 10: a correction `x-…` in `source`.
+    /// Level 11: a correction `x-…` in `source`.
     Correction,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
@@ -196,7 +196,7 @@ pub struct DelegateInfo {
     pub notes_at: Option<u64>,
 }
 
-/// What a workspace shares with the overall assistant (ADR 0047 §3).
+/// What a workspace shares with the overall assistant (ADR 0049 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Share {
@@ -208,7 +208,7 @@ pub enum Share {
     Unknown,
 }
 
-/// Whether the overall assistant may ask this workspace (ADR 0047 §4).
+/// Whether the overall assistant may ask this workspace (ADR 0049 §4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OverallRequests {

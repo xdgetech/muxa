@@ -1,6 +1,6 @@
-//! The Loop check of an assistant run (ADR 0046 §4): muxa's own validation
+//! The Loop check of an assistant run (ADR 0048 §4): muxa's own validation
 //! of the result file, and its store on the request when it passes; a plan
-//! run's goes to `plan::check` (ADR 0047 §5). It runs
+//! run's goes to `plan::check` (ADR 0049 §5). It runs
 //! in the daemon's process. Reasons go to `.muxa/checks/<attempt>.log` for the
 //! agent; host logs get ids and counts only.
 use std::path::Path;
@@ -136,7 +136,7 @@ enum Failure {
 }
 
 /// Blocking. After the Loop stopped an assistant run without a result, its
-/// request version is `failed` (ADR 0046 §4). A stop by the user or by a
+/// request version is `failed` (ADR 0048 §4). A stop by the user or by a
 /// status change is a cancel or a cleanup, not a failure.
 pub fn stopped(state_dir: &Path, record: &Record, lp: &Loop) {
     let failing = matches!(

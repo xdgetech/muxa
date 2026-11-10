@@ -1,12 +1,12 @@
-//! Policies, corrections and hypotheses (ADR 0048), at `work` level 10: what
+//! Policies, corrections and hypotheses (ADR 0050), at `work` level 11: what
 //! the user told the overall assistant, and what the host saw. Their texts are
 //! never logged.
 use serde::{Deserialize, Serialize};
 
-/// Level 10: `add-policy`, `update-policy`, `update-plan`, `forget`, `confirm`
+/// Level 11: `add-policy`, `update-policy`, `update-plan`, `forget`, `confirm`
 /// and `reject` with a reason on proposals, `hypothesis` Inbox items, and
 /// `policies`, `hypotheses` and `corrections` in `inbox-list`.
-pub const WORK_POLICIES: u32 = 10;
+pub const WORK_POLICIES: u32 = 11;
 
 /// The user's own words, which outrank every hypothesis and note.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

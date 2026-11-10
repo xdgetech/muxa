@@ -4,7 +4,7 @@ import Testing
 
 @testable import MuxaSession
 
-/// A bridge with the overall assistant (`work` level 9, ADR 0047), as the host answers:
+/// A bridge with the overall assistant (`work` level 10, ADR 0049), as the host answers:
 /// plans, notes, pins and due dates, and the `sort` and `delegate` items.
 final class PlanBridge: AssistantBridge, @unchecked Sendable {
     var plans: [Plan] = [PlanTests.plan("p-00000001", .resulted, top: [
@@ -23,7 +23,7 @@ final class PlanBridge: AssistantBridge, @unchecked Sendable {
     var approveRefusal: ErrorBody?
     private let sentLock = NSLock()
     private var _planRequests: [Request] = []
-    /// The level 9 requests the session sent, in order.
+    /// The level 10 requests the session sent, in order.
     var planRequests: [Request] { sentLock.withLock { _planRequests } }
 
     override func send(_ line: Data) async throws {
@@ -112,7 +112,7 @@ struct PlanTests {
 
     static let notes = Notes(text: "# Work\n\n- Invoices come from the old sequence.\n", base: "base-1")
 
-    func connected(_ bridge: PlanBridge, level: String = "work:9") async throws -> PaneSession {
+    func connected(_ bridge: PlanBridge, level: String = "work:10") async throws -> PaneSession {
         bridge.capabilities = ["task-records", level]
         bridge.workspaces = [WorkspaceInfo(name: "assistant"), WorkspaceInfo(name: "work")]
         let session = PaneSession()
@@ -138,9 +138,9 @@ struct PlanTests {
         #expect(!session.isUnanswered(request))
     }
 
-    @Test func aLevel8HostShowsNoPlans() async throws {
+    @Test func aLevel9HostShowsNoPlans() async throws {
         let bridge = PlanBridge()
-        let session = try await connected(bridge, level: "work:8")
+        let session = try await connected(bridge, level: "work:9")
         #expect(session.plans.isEmpty)
         #expect(session.assistantInfo == nil)
         #expect(session.pickableWorkspaces.map(\.name) == ["assistant", "work"])

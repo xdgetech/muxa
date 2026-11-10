@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. The developer chose this shape on 2026-11-04. It decides the navigation that ADR 0025 left open. It changes the phone rule of ADR 0012 and the tablet presentation of ADR 0033 §4. It depends on ADR 0033 slice I4. Proposed ADR 0046 changes §5: on a host with `work:8`, `+` opens Capture, which can still start a Task.
+Proposed. The developer chose this shape on 2026-11-04. It decides the navigation that ADR 0025 left open. It changes the phone rule of ADR 0012 and the tablet presentation of ADR 0033 §4. It depends on ADR 0033 slice I4. Proposed ADR 0048 changes §5: on a host with `work:9`, `+` opens Capture, which can still start a Task.
 
 ## Context
 

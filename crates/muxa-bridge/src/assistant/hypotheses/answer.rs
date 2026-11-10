@@ -1,4 +1,4 @@
-//! `confirm` and `reject` on a `hypothesis` item (ADR 0048 §3). Confirm
+//! `confirm` and `reject` on a `hypothesis` item (ADR 0050 §3). Confirm
 //! makes one policy, then retires the hypothesis, then closes the item, so
 //! a retry after a crash finds the policy and finishes. Reject keeps the
 //! hypothesis `rejected` for 90 days and records a `rejected` correction.

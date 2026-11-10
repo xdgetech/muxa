@@ -2,7 +2,7 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// The Inbox's Work section (ADR 0046): open Work items in the host's order, the ones
+/// The Inbox's Work section (ADR 0048): open Work items in the host's order, the ones
 /// moved down with Later last (ADR 0040). A swipe right completes, left is Later.
 struct SidebarWorkSection: View {
     @Environment(AppModel.self) private var model
@@ -42,7 +42,7 @@ struct WorkRow: View {
     var request: AssistantRequest?
     /// The newest Result is not shown on this device yet.
     var resultReady = false
-    /// The plan's mark on the request: not answered, or older than the item (ADR 0047 §5).
+    /// The plan's mark on the request: not answered, or older than the item (ADR 0049 §5).
     var mark: String?
 
     var body: some View {

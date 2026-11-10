@@ -50,11 +50,11 @@ data class InboxItem(
     val attachments: Attachments = Attachments(),
     val routine: String? = null,
     val proposal: Proposal? = null,
-    /** With kind `sort`: what approve does (`work` level 9, ADR 0047). */
+    /** With kind `sort`: what approve does (`work` level 10, ADR 0049). */
     val sort: SortProposal? = null,
     /** With kind `delegate`: what approve does. */
     val delegate: DelegateProposal? = null,
-    /** With kind `hypothesis`: what confirm makes a policy of (`work` level 10, ADR 0048). */
+    /** With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050). */
     val hypothesis: HypothesisProposal? = null,
     /** The answers the host accepts now, in the order to show them. Unknown actions are left out: PROTOCOL.md says to show them as nothing. */
     @Serializable(with = KnownActionsSerializer::class)
@@ -77,13 +77,13 @@ value class ItemKind(val raw: String) {
         val PROPOSAL = ItemKind("proposal")
         val BRIEFING = ItemKind("briefing")
 
-        /** Level 9: the overall assistant proposes to sort a Capture. */
+        /** Level 10: the overall assistant proposes to sort a Capture. */
         val SORT = ItemKind("sort")
 
-        /** Level 9: the overall assistant proposes to ask a workspace's delegate. */
+        /** Level 10: the overall assistant proposes to ask a workspace's delegate. */
         val DELEGATE = ItemKind("delegate")
 
-        /** Level 10: the overall assistant proposes a hypothesis about the user. */
+        /** Level 11: the overall assistant proposes a hypothesis about the user. */
         val HYPOTHESIS = ItemKind("hypothesis")
     }
 }

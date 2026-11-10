@@ -1,4 +1,4 @@
-//! Who runs a request and how many runs may start (ADR 0046 §7, §8). Checked
+//! Who runs a request and how many runs may start (ADR 0048 §7, §8). Checked
 //! before any run folder exists. A refusal names its reason; a budget's names
 //! the limit and when it resets.
 use muxa_protocol::{ErrorBody, ErrorCode};
@@ -77,7 +77,7 @@ pub fn delegated(
     })
 }
 
-/// The overall assistant, as a plan run starts it (ADR 0047 §2, §5), or why
+/// The overall assistant, as a plan run starts it (ADR 0049 §2, §5), or why
 /// this host makes no plans.
 pub fn overall(workspaces: &Workspaces, fallback: &str) -> Result<Delegated, ErrorBody> {
     if !workspaces.assistant().enabled {

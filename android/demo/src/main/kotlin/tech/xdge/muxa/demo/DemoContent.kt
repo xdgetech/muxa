@@ -64,10 +64,10 @@ internal interface DemoContent {
     /** The Tasks' Inbox items (ADR 0033); a host at `work` level 3 serves them. */
     fun items(now: Long): DemoItems = DemoItems(emptyList())
 
-    /** Captures and Work items (ADR 0046); a host at `work` level 8 serves them. */
+    /** Captures and Work items (ADR 0048); a host at `work` level 9 serves them. */
     fun assistant(now: Long): DemoAssistant = DemoAssistant(emptyList(), emptyList())
 
-    /** The overall assistant and its plans (ADR 0047); a host at `work` level 9 serves them. */
+    /** The overall assistant and its plans (ADR 0049); a host at `work` level 10 serves them. */
     fun plans(now: Long): DemoPlans? = null
 
     /** Tasks whose branch is not merged: ending one with `worktree: remove` is `would-lose-work` (ADR 0043). */

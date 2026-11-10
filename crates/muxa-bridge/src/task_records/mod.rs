@@ -127,7 +127,7 @@ pub struct Context {
     pub records: Arc<Config>,
     pub agents: Arc<Registry>,
     pub pending: Pending,
-    /// This process is the host daemon: only it runs assistant requests (ADR 0046 §8).
+    /// This process is the host daemon: only it runs assistant requests (ADR 0048 §8).
     pub daemon: bool,
 }
 
@@ -584,7 +584,7 @@ pub async fn list(config: &Config, request: u64) -> Result<Message, ErrorBody> {
     blocking(move || {
         let workspaces = config.load_workspaces()?;
         let mut records = config.store()?.list().map_err(|e| store_error(&e))?;
-        // A Routine or assistant run is not a Task (ADR 0046 section 5).
+        // A Routine or assistant run is not a Task (ADR 0048 section 5).
         records.retain(|r| !r.is_background_run());
         let (records, truncated) = cap(records, MAX_LIST);
         Ok(Message::TaskList {

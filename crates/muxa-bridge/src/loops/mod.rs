@@ -460,7 +460,7 @@ impl Engine {
         env: Vec<(String, String)>,
         claim: crate::records::store::ClaimedTask,
     ) {
-        // muxa's own checks run in process (ADR 0026 section 3, ADR 0046 §4).
+        // muxa's own checks run in process (ADR 0026 section 3, ADR 0048 §4).
         let in_process: Option<(InProcessCheck, &'static str)> = if record.is_routine_run() {
             Some((crate::routines::check::run, "check the routine output of"))
         } else if record.is_assistant_run() {

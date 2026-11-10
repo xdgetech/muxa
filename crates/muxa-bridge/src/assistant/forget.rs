@@ -1,4 +1,4 @@
-//! `forget {record}` (ADR 0048 §5): removes a correction or a hypothesis.
+//! `forget {record}` (ADR 0050 §5): removes a correction or a hypothesis.
 //! Forgetting a correction also removes every `proposed` hypothesis it is
 //! evidence of, and their items, so no guess outlives its ground. The next
 //! brief is built from live records and the plan check refuses an id that

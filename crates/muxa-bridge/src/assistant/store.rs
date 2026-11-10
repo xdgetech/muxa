@@ -1,5 +1,5 @@
-//! One JSON file per record in `<state dir>/assistant/<kind>/` (ADR 0046 §2,
-//! ADR 0047 §5, ADR 0048 §1–§3), with the item store's lock and atomic write.
+//! One JSON file per record in `<state dir>/assistant/<kind>/` (ADR 0048 §2,
+//! ADR 0049 §5, ADR 0050 §1–§3), with the item store's lock and atomic write.
 use std::fs::{self, DirBuilder};
 use std::marker::PhantomData;
 use std::os::unix::fs::DirBuilderExt;

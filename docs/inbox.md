@@ -83,9 +83,9 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 - `D` is Delete Old (`work:8`): it asks for 1, 3 or 5 days, then confirms with the count, as the apps do. A row and an item show "protected".
 - Labels are the apps' labels (ADR 0033 §4a, ADR 0040): `accept` is "Complete Task", `drop` "Drop Task", `keep-open` and `dismiss` "✓ Done", `later` "Later", `ask-agent` "Ask Agent", `reply` is "Send" ("Deny & Send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
 
-## Work and Unsorted (ADR 0046)
+## Work and Unsorted (ADR 0048)
 
-With `work:8` the Inbox has three sections, in this order. An older host shows Decisions only.
+With `work:9` the Inbox has three sections, in this order. An older host shows Decisions only.
 
 ```
 Decisions
@@ -108,15 +108,15 @@ Unsorted
 
 - Swipe on a Work row: right is **Complete**, left is **Later** (moves it to the bottom, never hides it).
 - Swipe on an Unsorted row: right makes a **Work Item**, left keeps it as a **Note**. A "Not sent" row swipes left to **Delete**.
-- A Work row with an assistant request shows its newest delivery: `pending`, `received`, `processing`, `unconfirmed`, `failed`, `timed-out`, `cancel-requested` or `cancelled` (ADR 0046 §6). These are derived from the run on every list; `failed` and `timed-out` show as needing attention.
+- A Work row with an assistant request shows its newest delivery: `pending`, `received`, `processing`, `unconfirmed`, `failed`, `timed-out`, `cancel-requested` or `cancelled` (ADR 0048 §6). These are derived from the run on every list; `failed` and `timed-out` show as needing attention.
 - **Result ready** replaces the delivery when the newest Result was not shown on this device yet. The device keeps the ids and versions it showed, never the Result's text. Opening the Work item clears it.
 - The Work detail shows the Captures' full texts, each request with its delivery and Results, Cancel, Ask Again, and Open Session while the run lives. Result files are paths; the Reader cannot open them yet.
-- `+` opens Capture: text, an optional workspace, **Save**, **Ask Assistant** and "Start a Task instead…". A host below `work:8` keeps New Task.
+- `+` opens Capture: text, an optional workspace, **Save**, **Ask Assistant** and "Start a Task instead…". A host below `work:9` keeps New Task.
 - muxa for tmux: `prefix + T` lists Work rows with `l` Later, `d` complete and `a` ask.
 
-## Today, proposals and pins (ADR 0047)
+## Today, proposals and pins (ADR 0049)
 
-With `work:9` and an overall assistant, a **Today** section comes above Decisions. It shows the newest plan with a result.
+With `work:10` and an overall assistant, a **Today** section comes above Decisions. It shows the newest plan with a result.
 
 1. **Rows**: at most 3. Each row shows its Work item's or Inbox item's title, the why, the minutes and the next step. A row of a Work item whose request has no answer yet, or whose newest Result is older than the item, says so. Tapping a row opens its Work item or Inbox item.
 2. **Why** opens the row's basis (due, dependency, goal, time or manual, with its source and time) and what is missing.

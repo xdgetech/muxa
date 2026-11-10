@@ -21,7 +21,7 @@ AGENTS_AWK_STATE='
 
 # The tree's sections (ADR 0038): muxa Tasks, Routine runs (a repo-less Task
 # whose folder is <root>/routines/...), assistant runs (<root>/assistant/...,
-# ADR 0046 §5: never Tasks), ask sessions (@muxa_ask), then every other
+# ADR 0048 §5: never Tasks), ask sessions (@muxa_ask), then every other
 # session. Tasks and Sessions group by repo; "~" is no repo, last in byte order.
 # shellcheck disable=SC2034  # used by scripts that source this file
 AGENTS_AWK_GROUP='

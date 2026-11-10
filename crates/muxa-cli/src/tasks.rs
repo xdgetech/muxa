@@ -33,7 +33,7 @@ pub struct NewTask {
     pub r#loop: Option<LoopSpec>,
     /// `--read`: a reading Task (ADR 0034).
     pub read: bool,
-    /// `--work`: the Work item the Task is for (ADR 0046).
+    /// `--work`: the Work item the Task is for (ADR 0048).
     pub work: Option<String>,
 }
 

@@ -8,7 +8,7 @@ import tech.xdge.muxa.protocol.WorkState
 import tech.xdge.muxa.protocol.WorkspaceInfo
 import java.util.UUID
 
-// Captures and Work items as the Inbox shows them (ADR 0046 §10). The host orders and derives
+// Captures and Work items as the Inbox shows them (ADR 0048 §10). The host orders and derives
 // them; this only picks what to show and in which words.
 
 /** Done or withdrawn: only the user's `reopen` brings it back. */

@@ -1,4 +1,4 @@
-//! `get-work` (ADR 0046 §9): one Work item with every Capture it links, sorted
+//! `get-work` (ADR 0048 §9): one Work item with every Capture it links, sorted
 //! or not, and its requests. `inbox-list` lists only unsorted Captures.
 use muxa_protocol::{AssistantRequest, Capture, ErrorBody, ErrorCode, WorkItem};
 

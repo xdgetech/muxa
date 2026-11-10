@@ -18,7 +18,7 @@ teardown() { teardown_server; }
   [[ "$out" == *"  l d a          on a Work item: Later, Complete, ask its assistant"* ]]
 }
 
-@test "help lists the Today keys of ADR 0047" {
+@test "help lists the Today keys of ADR 0049" {
   run "$ROOT/scripts/help.sh"
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"  P              on a Work item: pin it first, or unpin it"* ]]
@@ -26,7 +26,7 @@ teardown() { teardown_server; }
   [[ "$out" == *"  o              on a Today row: go to its Work item or Inbox item"* ]]
 }
 
-@test "help lists the Today and Policies keys of ADR 0048" {
+@test "help lists the Today and Policies keys of ADR 0050" {
   run "$ROOT/scripts/help.sh"
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"  K J            on a Today row: move it up or down"* ]]

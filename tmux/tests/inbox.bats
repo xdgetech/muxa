@@ -234,15 +234,15 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   wait_for "tx capture-pane -p -t '$sb' | grep -q 'Allow Bash'"
 }
 
-# A work:8 Inbox (ADR 0046): the contract's Work items and Captures follow the
-# items. The fixture's level 9 list (with plans) is plan_inbox's.
+# A work:9 Inbox (ADR 0048): the contract's Work items and Captures follow the
+# items. The fixture's level 10 list (with plans) is plan_inbox's.
 work_inbox() {
   jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list" and .plans == null) |
-    {work: 8, items: $items[0].items, entries: [], runs: [], workItems: .work, captures, requests}' \
+    {work: 9, items: $items[0].items, entries: [], runs: [], workItems: .work, captures, requests}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }
 
-@test "on work:8 the list ends with the open Work items, then the unsorted Captures" {
+@test "on work:9 the list ends with the open Work items, then the unsorted Captures" {
   work_inbox >"$TMPDIR/w.json"
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | cut -f1 | tail -n 5"
   [ "$status" -eq 0 ]
@@ -319,18 +319,18 @@ work_inbox() {
   wait_for 'grep -q "^assist w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
 }
 
-# A work:9 Inbox (ADR 0047): the contract's plans, overall assistant, and sort
-# and delegate items. The level 10 list (with policies) is policies.bats'.
+# A work:10 Inbox (ADR 0049): the contract's plans, overall assistant, and sort
+# and delegate items. The level 11 list (with policies) is policies.bats'.
 plan_inbox() {
   jq -c 'select(.type == "inbox-list" and .plans and .policies == null) |
-    {work: 9, items, entries: [], runs: [], workItems: .work, captures, requests, plans, assistant}' \
+    {work: 10, items, entries: [], runs: [], workItems: .work, captures, requests, plans, assistant}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }
 
 plain_list() { inbox list "$1" | sed $'s/\x1b\\[[0-9;]*m//g'; }
 plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
 
-@test "on work:9 Today comes first: the plan's rows, then the Due soon line" {
+@test "on work:10 Today comes first: the plan's rows, then the Due soon line" {
   plan_inbox >"$TMPDIR/p.json"
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 7"
   [ "$output" = "$(printf '%s\n' today: today:1 today:2 today:3 today:due i-1a2b3c4d i-2b3c4d5e)" ]
@@ -371,8 +371,8 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   [[ "$out" == *"The run did not start: cannot reach tmux on the host"* ]]
 }
 
-@test "Today is absent below work:9, and without plans or an overall assistant" {
-  plan_inbox | jq -c '.work = 8' >"$TMPDIR/p.json"
+@test "Today is absent below work:10, and without plans or an overall assistant" {
+  plan_inbox | jq -c '.work = 9' >"$TMPDIR/p.json"
   [[ "$(inbox list "$TMPDIR/p.json" | cut -f1)" != *today* ]]
   [ "$(inbox key w-0b1c2d3e P "$TMPDIR/p.json")" = "" ]
   [ "$(inbox key w-0b1c2d3e t "$TMPDIR/p.json")" = "" ]

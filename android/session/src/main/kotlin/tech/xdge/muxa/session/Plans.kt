@@ -21,7 +21,7 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-// The overall assistant's plans, pins and deadlines as the clients show them (ADR 0047 §5, §6).
+// The overall assistant's plans, pins and deadlines as the clients show them (ADR 0049 §5, §6).
 // The host ranks and derives; this only picks the plan to show and its words.
 
 /** The plan whose rows Today shows: the newest `resulted` one. */
@@ -84,7 +84,7 @@ fun Plan.dueSoonLine(titles: (String) -> String): String? =
 
 val WorkItem.isPinned: Boolean get() = pinnedAt != null
 
-/** The workspaces a New Task or Capture picker offers: the overall assistant's is left out (ADR 0047 §2). */
+/** The workspaces a New Task or Capture picker offers: the overall assistant's is left out (ADR 0049 §2). */
 fun List<WorkspaceInfo>.pickable(assistant: AssistantInfo?): List<WorkspaceInfo> =
     assistant?.overall?.let { overall -> filterNot { it.name == overall } } ?: this
 

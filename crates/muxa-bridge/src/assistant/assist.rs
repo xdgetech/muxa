@@ -1,4 +1,4 @@
-//! `capture {assist}` (ADR 0046 §9): save the input, make a Work item from it
+//! `capture {assist}` (ADR 0048 §9): save the input, make a Work item from it
 //! and ask the assistant, as `sort-capture work` and `request-assistant`
 //! would. The input is saved first: a refused start keeps it unsorted.
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use super::work::{self, Sort};
 use crate::convert::error_body;
 use crate::task_records::{Config, Context};
 
-/// Without a usable daemon nothing processes a request (ADR 0046 §8).
+/// Without a usable daemon nothing processes a request (ADR 0048 §8).
 pub const NO_DAEMON: &str = "Automatic processing is off: assistant requests run in the muxa \
                              daemon. On the host, run: muxa-bridge daemon install";
 

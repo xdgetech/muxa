@@ -3,7 +3,7 @@ package tech.xdge.muxa.protocol
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** The user's original input (ADR 0046). Its [text] is never rewritten. Never logged. */
+/** The user's original input (ADR 0048). Its [text] is never rewritten. Never logged. */
 @Serializable
 data class Capture(
     /** `c-` and 8 hex digits. */
@@ -48,7 +48,7 @@ value class CaptureState(val raw: String) {
     }
 }
 
-/** The user's unfinished work (ADR 0046). Only the user completes or withdraws it. */
+/** The user's unfinished work (ADR 0048). Only the user completes or withdraws it. */
 @Serializable
 data class WorkItem(
     /** `w-` and 8 hex digits. */
@@ -67,9 +67,9 @@ data class WorkItem(
     val laterAt: Long? = null,
     /** With `withdrawn` after `merge`: the Work item it was merged into. */
     val mergedInto: String? = null,
-    /** Level 9: set by `pin`. Pinned items are listed first, in pin order (ADR 0047). */
+    /** Level 10: set by `pin`. Pinned items are listed first, in pin order (ADR 0049). */
     val pinnedAt: Long? = null,
-    /** Level 9: the user's deadline. Only the user sets it. */
+    /** Level 10: the user's deadline. Only the user sets it. */
     val due: Due? = null,
     val captures: List<String> = emptyList(),
     /** Assistant requests, oldest first. */
@@ -176,11 +176,11 @@ data class AssistResult(
     /** Paths the run wrote, absolute. */
     val files: List<String> = emptyList(),
     val possibleDuplicates: List<PossibleDuplicate> = emptyList(),
-    /** Level 9: the delegate's proposed notes (ADR 0047 §1). Never logged. */
+    /** Level 10: the delegate's proposed notes (ADR 0049 §1). Never logged. */
     val notes: Notes? = null,
 )
 
-/** A deadline the user set on a Work item (ADR 0047 §6): epoch seconds, and the IANA zone it was set in. */
+/** A deadline the user set on a Work item (ADR 0049 §6): epoch seconds, and the IANA zone it was set in. */
 @Serializable
 data class Due(val at: Long, val timezone: String)
 
@@ -236,7 +236,7 @@ enum class SortAction {
 /** A change in `update-work`. */
 @Serializable
 enum class WorkAction {
-    /** Change `title`, `workspace` or, at level 9, `due`. */
+    /** Change `title`, `workspace` or, at level 10, `due`. */
     @SerialName("edit") EDIT,
     @SerialName("later") LATER,
     @SerialName("complete") COMPLETE,
@@ -246,9 +246,9 @@ enum class WorkAction {
     /** Withdraw this item into `into`; its Captures move there. */
     @SerialName("merge") MERGE,
 
-    /** Level 9: list it first, after the items pinned before it. */
+    /** Level 10: list it first, after the items pinned before it. */
     @SerialName("pin") PIN,
 
-    /** Level 9: clear `pinnedAt`. */
+    /** Level 10: clear `pinnedAt`. */
     @SerialName("unpin") UNPIN,
 }

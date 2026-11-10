@@ -46,7 +46,7 @@ internal object DemoResults {
         possibleDuplicates = listOfNotNull(duplicateOf?.let { PossibleDuplicate(it, "It names the same vendor.") }),
     )
 
-    /** The SHA-256 of no bytes: the base of notes proposed when the workspace had none (ADR 0047 §1). */
+    /** The SHA-256 of no bytes: the base of notes proposed when the workspace had none (ADR 0049 §1). */
     const val EMPTY_NOTES = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
     const val TESTS_NOTES = "# Personal\n\n- Domains renew at the current registrar; auto-renew is the default.\n"

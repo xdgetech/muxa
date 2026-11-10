@@ -47,7 +47,7 @@ tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
   [ "${lines[10]}" = "s:base	 5    base" ]
 }
 
-@test "an assistant run is never a Task: it lists under Assistant (ADR 0046)" {
+@test "an assistant run is never a Task: it lists under Assistant (ADR 0048)" {
   mkdir -p "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001" "$BATS_TEST_TMPDIR/w/assistant/hosting-t-000004"
   tx new-session -d -s fix -c "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001"
   tx set-option -t =fix: @muxa_task t-000001

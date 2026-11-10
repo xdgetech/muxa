@@ -1,6 +1,6 @@
 import Foundation
 
-// Delegate notes, the overall assistant and its plans (ADR 0047), at `work` level 9.
+// Delegate notes, the overall assistant and its plans (ADR 0049), at `work` level 10.
 // A plan never changes a Work item, an Inbox item or their order.
 
 /// One overall run's plan, from `plan-saved` or `inbox-list`: at most 3 rows to do next.
@@ -32,9 +32,9 @@ public struct Plan: Equatable, Sendable, Identifiable {
     public var stale: [String]
     /// Derived against the previous plan.
     public var changed: [PlanChange]
-    /// Level 10: Today's rows in the user's order, from `update-plan reorder`.
+    /// Level 11: Today's rows in the user's order, from `update-plan reorder`.
     public var userOrder: [String]
-    /// Level 10: rows the user removed from Today, from `update-plan dismiss`.
+    /// Level 11: rows the user removed from Today, from `update-plan dismiss`.
     public var dismissed: [String]
     /// The overall assistant's proposed notes.
     public var notes: Notes?
@@ -205,7 +205,7 @@ public enum BasisKind: Equatable, Hashable, Sendable {
     case due, dependency, goal, time
     /// The user's pin.
     case manual
-    /// Level 10: a policy, a hypothesis or a correction, by id in `source` (ADR 0048).
+    /// Level 11: a policy, a hypothesis or a correction, by id in `source` (ADR 0050).
     case policy, hypothesis, correction
     case other(String)
 
@@ -337,7 +337,7 @@ public struct DelegateInfo: Codable, Equatable, Sendable {
     }
 }
 
-/// What a workspace shares with the overall assistant (ADR 0047 §3). A value added by
+/// What a workspace shares with the overall assistant (ADR 0049 §3). A value added by
 /// a newer bridge decodes as `other`.
 public enum Share: Equatable, Hashable, Sendable {
     case none, outline, summaries
@@ -355,7 +355,7 @@ public enum Share: Equatable, Hashable, Sendable {
     }
 }
 
-/// Whether the overall assistant may ask this workspace (ADR 0047 §4). A value added by
+/// Whether the overall assistant may ask this workspace (ADR 0049 §4). A value added by
 /// a newer bridge decodes as `other`.
 public enum OverallRequests: Equatable, Hashable, Sendable {
     /// Refuses even approved requests.

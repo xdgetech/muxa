@@ -177,21 +177,21 @@ sealed interface Message {
         val inbox: Long,
         val entries: List<InboxEntry>,
         val items: List<InboxItem> = emptyList(),
-        /** Level 8: open Work items first, then the ones moved down with Later, then at most 100 done or withdrawn, newest first. */
+        /** Level 9: open Work items first, then the ones moved down with Later, then at most 100 done or withdrawn, newest first. */
         val work: List<WorkItem> = emptyList(),
-        /** Level 8: unsorted Captures, newest first. */
+        /** Level 9: unsorted Captures, newest first. */
         val captures: List<Capture> = emptyList(),
-        /** Level 8: the requests of the listed Work items. */
+        /** Level 9: the requests of the listed Work items. */
         val requests: List<AssistantRequest> = emptyList(),
-        /** Level 9: the kept plans, newest first (ADR 0047). */
+        /** Level 10: the kept plans, newest first (ADR 0049). */
         val plans: List<Plan> = emptyList(),
-        /** Level 9: the overall assistant and the delegates. */
+        /** Level 10: the overall assistant and the delegates. */
         val assistant: AssistantInfo? = null,
-        /** Level 10: active policies, then expired ones (ADR 0048). */
+        /** Level 11: active policies, then expired ones (ADR 0050). */
         val policies: List<Policy> = emptyList(),
-        /** Level 10: `proposed` and `rejected` hypotheses, newest first. */
+        /** Level 11: `proposed` and `rejected` hypotheses, newest first. */
         val hypotheses: List<Hypothesis> = emptyList(),
-        /** Level 10: at most 50 corrections, newest first. */
+        /** Level 11: at most 50 corrections, newest first. */
         val corrections: List<Correction> = emptyList(),
     ) : Message
 
@@ -236,7 +236,7 @@ sealed interface Message {
     @Serializable
     data class PlanSaved(val plan: Long, val entry: Plan) : Message
 
-    /** What an `add-policy`, an `update-policy edit` or a `confirm` wrote, just before its `result` (`work` level 10). */
+    /** What an `add-policy`, an `update-policy edit` or a `confirm` wrote, just before its `result` (`work` level 11). */
     @Serializable
     data class PolicySaved(val policy: Long, val entry: Policy) : Message
 

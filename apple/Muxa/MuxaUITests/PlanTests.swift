@@ -1,6 +1,6 @@
 import XCTest
 
-/// The overall assistant on a `work` level 9 host (ADR 0047), against the demo's
+/// The overall assistant on a `work` level 10 host (ADR 0049), against the demo's
 /// `-demo-plans` fixtures: plan p-0000e001 lists w-0000b002 (pinned), w-0000b001 (due in
 /// two days) and the item i-0000a001; w-0000b004 is moved down and due in 5 hours; i-0000f001
 /// asks work's assistant about w-0000b002 and i-0000f002 sorts c-0000c001; the Result
@@ -214,10 +214,10 @@ final class PlanTests: XCTestCase {
         XCTAssertFalse(app.buttons["assistant"].exists)
     }
 
-    /// A level 8 host keeps the Inbox as it was: no Today, no pins, no notes.
+    /// A level 9 host keeps the Inbox as it was: no Today, no pins, no notes.
     @MainActor
-    func testALevel8HostShowsNoPlan() throws {
-        let app = launchPlans(["-work8"])
+    func testALevel9HostShowsNoPlan() throws {
+        let app = launchPlans(["-work9"])
         XCTAssertTrue(inboxSection(app, "decisions").exists)
         XCTAssertFalse(inboxSection(app, "today").exists)
         XCTAssertFalse(app.buttons["today-plan-now"].exists)

@@ -34,7 +34,7 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
     public var pendingPrompt: PendingPrompt?
     public var worker: String?
     public var restartOperation: RestartOperation?
-    /// The Work item the Task was started for (ADR 0046).
+    /// The Work item the Task was started for (ADR 0048).
     public var work: String?
 
     public init(

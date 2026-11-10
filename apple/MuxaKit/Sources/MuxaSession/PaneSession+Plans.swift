@@ -2,7 +2,7 @@ import Foundation
 import MuxaProtocol
 
 /// The overall assistant's plans and the delegates' notes behind the host's `work`
-/// level 9 (ADR 0047). A plan never changes a Work item, an Inbox item or their order.
+/// level 10 (ADR 0049). A plan never changes a Work item, an Inbox item or their order.
 extension PaneSession {
     public var canPlan: Bool { workLevel >= workPlans }
 

@@ -47,7 +47,7 @@
 #                  only when this is true (default false)
 #
 # [workspace.assistant]  optional; lets the assistant work on this
-#   workspace's Work items (ADR 0046). Without it, the workspace keeps
+#   workspace's Work items (ADR 0048). Without it, the workspace keeps
 #   Captures and Work items but takes no requests, and shares nothing with
 #   the overall assistant. Each run gets its own folder,
 #   <root>/assistant/<slug>-<id>/.
@@ -60,7 +60,7 @@
 #                     timed-out; the agent is not stopped (default "30m")
 #   notes             "review" or "auto": who writes a run's proposed
 #                     <root>/.muxa/assistant/NOTES.md (default "review": you
-#                     apply each one) (ADR 0047)
+#                     apply each one) (ADR 0049)
 #   share             "none", "outline" or "summaries": what the overall
 #                     assistant reads of this workspace (default "summaries"
 #                     with delegate = true, else "none"). "none" leaves no
@@ -70,7 +70,7 @@
 #                     assistant may ask this workspace (default "review": you
 #                     approve each request)
 #   overall           true makes this workspace the overall assistant's
-#                     (ADR 0047): at most one workspace. Its root holds only
+#                     (ADR 0049): at most one workspace. Its root holds only
 #                     its notes and runs. It takes no requests, so delegate,
 #                     share and overall_requests are refused. Its defaults:
 #                     max_open_runs 1, max_runs_per_day 8, run_timeout "15m".

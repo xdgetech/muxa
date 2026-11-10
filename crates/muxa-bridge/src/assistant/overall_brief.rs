@@ -1,4 +1,4 @@
-//! The overall assistant's brief (ADR 0047 §3–§5, ADR 0048 §4): what the
+//! The overall assistant's brief (ADR 0049 §3–§5, ADR 0050 §4): what the
 //! workspaces share, what the user told it, its own notes, and the plan
 //! file's schema and rules. Only the host
 //! builds it. It is longer than a Task's goal may be, so the run reads it

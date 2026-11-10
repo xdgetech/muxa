@@ -1,11 +1,11 @@
-//! Captures, Work items and assistant requests (ADR 0046), at `work` level 8.
+//! Captures, Work items and assistant requests (ADR 0048), at `work` level 9.
 //! None of them is a Task or an Inbox item.
 use serde::{Deserialize, Serialize};
 
-/// Level 8: `capture`, `sort-capture`, `update-work`, `request-assistant`,
+/// Level 9: `capture`, `sort-capture`, `update-work`, `request-assistant`,
 /// `cancel-request`, `get-work`, and `work`, `captures` and `requests` in
 /// `inbox-list`.
-pub const WORK_ASSISTANT: u32 = 8;
+pub const WORK_ASSISTANT: u32 = 9;
 
 /// The user's original input. Its `text` is never rewritten. Never logged.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,10 +78,10 @@ pub struct WorkItem {
     /// With `withdrawn` after `merge`: the Work item it was merged into.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merged_into: Option<String>,
-    /// Level 9: set by `pin`. Pinned items are listed first, in pin order (ADR 0047).
+    /// Level 10: set by `pin`. Pinned items are listed first, in pin order (ADR 0049).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned_at: Option<u64>,
-    /// Level 9: the user's deadline. Only the user sets it.
+    /// Level 10: the user's deadline. Only the user sets it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<Due>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -197,12 +197,12 @@ pub struct AssistResult {
     pub files: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub possible_duplicates: Vec<PossibleDuplicate>,
-    /// Level 9: the delegate's proposed notes (ADR 0047 §1). Never logged.
+    /// Level 10: the delegate's proposed notes (ADR 0049 §1). Never logged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<Notes>,
 }
 
-/// A deadline the user set on a Work item (ADR 0047 §6).
+/// A deadline the user set on a Work item (ADR 0049 §6).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Due {
@@ -280,7 +280,7 @@ pub enum SortAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkAction {
-    /// Change `title`, `workspace` or, at level 9, `due`.
+    /// Change `title`, `workspace` or, at level 10, `due`.
     Edit,
     Later,
     Complete,
@@ -288,8 +288,8 @@ pub enum WorkAction {
     Reopen,
     /// Withdraw this item into `into`; its Captures move there.
     Merge,
-    /// Level 9: list it first, after the items pinned before it.
+    /// Level 10: list it first, after the items pinned before it.
     Pin,
-    /// Level 9: clear `pinnedAt`.
+    /// Level 10: clear `pinnedAt`.
     Unpin,
 }

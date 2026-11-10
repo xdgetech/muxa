@@ -39,11 +39,11 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     public var attachments: Attachments
     public var routine: String?
     public var proposal: Proposal?
-    /// With kind `sort`: what approve does (`work` level 9, ADR 0047).
+    /// With kind `sort`: what approve does (`work` level 10, ADR 0049).
     public var sort: SortProposal?
     /// With kind `delegate`: what approve does.
     public var delegate: DelegateProposal?
-    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 10, ADR 0048).
+    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050).
     public var hypothesis: HypothesisProposal?
     /// The answers the host accepts now, in the order to show them. Unknown
     /// actions are left out: PROTOCOL.md says to show them as nothing.
@@ -159,11 +159,11 @@ public enum ItemKind: Equatable, Hashable, Sendable {
     /// The agent stopped with an error, or its loop stopped.
     case failure
     case proposal, briefing
-    /// Level 9: the overall assistant proposes to sort a Capture.
+    /// Level 10: the overall assistant proposes to sort a Capture.
     case sort
-    /// Level 9: the overall assistant proposes to ask a workspace's delegate.
+    /// Level 10: the overall assistant proposes to ask a workspace's delegate.
     case delegate
-    /// Level 10: the overall assistant proposes a hypothesis about the user.
+    /// Level 11: the overall assistant proposes a hypothesis about the user.
     case hypothesis
     case other(String)
 

@@ -1,6 +1,6 @@
 import Foundation
 
-// Captures, Work items and assistant requests (ADR 0046). None of them is a Task or an Inbox item.
+// Captures, Work items and assistant requests (ADR 0048). None of them is a Task or an Inbox item.
 
 /// The user's original input, from `capture-saved` or `inbox-list`. Its `text` is never rewritten.
 public struct Capture: Equatable, Sendable, Identifiable {
@@ -129,9 +129,9 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
     public var laterAt: UInt64?
     /// With `withdrawn` after `merge`: the Work item it was merged into.
     public var mergedInto: String?
-    /// Level 9: set by `pin`. Pinned items are listed first, in pin order (ADR 0047).
+    /// Level 10: set by `pin`. Pinned items are listed first, in pin order (ADR 0049).
     public var pinnedAt: UInt64?
-    /// Level 9: the user's deadline. Only the user sets it.
+    /// Level 10: the user's deadline. Only the user sets it.
     public var due: Due?
     public var captures: [String]
     /// Assistant requests, oldest first.
@@ -436,7 +436,7 @@ public struct AssistResult: Equatable, Sendable {
     /// Paths the run wrote, absolute.
     public var files: [String]
     public var possibleDuplicates: [PossibleDuplicate]
-    /// Level 9: the delegate's proposed notes (ADR 0047 §1).
+    /// Level 10: the delegate's proposed notes (ADR 0049 §1).
     public var notes: Notes?
 
     public init(
@@ -491,7 +491,7 @@ extension AssistResult: Codable {
     }
 }
 
-/// A deadline the user set on a Work item (ADR 0047 §6).
+/// A deadline the user set on a Work item (ADR 0049 §6).
 public struct Due: Codable, Equatable, Sendable {
     /// Epoch seconds.
     public var at: UInt64
@@ -579,13 +579,13 @@ public enum SortAction: String, Codable, Sendable {
 
 /// What `update-work` does.
 public enum WorkAction: String, Codable, Sendable {
-    /// Change `title`, `workspace` or, at level 9, `due`.
+    /// Change `title`, `workspace` or, at level 10, `due`.
     case edit
     case later, complete, withdraw, reopen
     /// Withdraw this item into `into`; its Captures and requests move there.
     case merge
-    /// Level 9: list it first, after the items pinned before it.
+    /// Level 10: list it first, after the items pinned before it.
     case pin
-    /// Level 9: clear `pinnedAt`.
+    /// Level 10: clear `pinnedAt`.
     case unpin
 }

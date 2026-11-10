@@ -1,4 +1,4 @@
-//! The overall assistant's hypotheses (ADR 0048 §3): guesses at the user's
+//! The overall assistant's hypotheses (ADR 0050 §3): guesses at the user's
 //! preferences that a plan proposes and the user confirms or rejects. The
 //! host stores them as `proposed`, with limits and an end. Texts never reach
 //! a log or an error message.
@@ -16,7 +16,7 @@ use crate::task_records::Config;
 
 /// Hypotheses one plan may propose.
 pub const MAX_PER_PLAN: usize = 3;
-/// `proposed` hypotheses at once (ADR 0048 §8).
+/// `proposed` hypotheses at once (ADR 0050 §8).
 pub const MAX_PROPOSED: usize = 10;
 /// Seconds a `proposed` hypothesis waits for an answer: 14 days.
 pub const PROPOSED_FOR: u64 = 14 * 86_400;

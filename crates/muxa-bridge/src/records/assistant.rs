@@ -1,5 +1,5 @@
-//! `[assistant]` and `[workspace.assistant]` in `workspaces.toml` (ADR 0046
-//! §1, ADR 0047 §2–§4): whether a workspace takes requests, which agent runs
+//! `[assistant]` and `[workspace.assistant]` in `workspaces.toml` (ADR 0048
+//! §1, ADR 0049 §2–§4): whether a workspace takes requests, which agent runs
 //! them, what it shares with the overall assistant, and how many runs it may
 //! have. Parsing only; `assistant/` runs them.
 use muxa_protocol::{OverallRequests, Share};
@@ -17,13 +17,13 @@ pub const DEFAULT_OPEN_RUNS: u32 = 1;
 pub const DEFAULT_RUNS_PER_DAY: u32 = 10;
 /// Seconds: `"30m"`.
 pub const DEFAULT_RUN_TIMEOUT: u64 = 30 * 60;
-/// The overall workspace's own defaults (ADR 0047 §9).
+/// The overall workspace's own defaults (ADR 0049 §9).
 pub const OVERALL_OPEN_RUNS: u32 = 1;
 pub const OVERALL_RUNS_PER_DAY: u32 = 8;
 /// Seconds: `"15m"`.
 pub const OVERALL_RUN_TIMEOUT: u64 = 15 * 60;
 /// The overall assistant's plan without `plans`: weekday mornings at 07:30,
-/// in `timezone` or the host's own zone (ADR 0047 §5).
+/// in `timezone` or the host's own zone (ADR 0049 §5).
 pub const DEFAULT_PLAN: &str = "30 7 * * 1-5";
 /// Schedules in `plans`.
 pub const MAX_PLANS: usize = 3;
@@ -50,19 +50,19 @@ impl Default for AssistantHost {
 /// (`delegate = true`) or the overall assistant's (`overall = true`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Delegate {
-    /// None: the workspace's default agent (ADR 0046 §7).
+    /// None: the workspace's default agent (ADR 0048 §7).
     pub worker: Option<String>,
     pub max_open_runs: u32,
     pub max_runs_per_day: u32,
     /// Seconds before a run without a result is `timed-out`.
     pub run_timeout: u64,
-    /// Who writes a run's proposed notes to the live file (ADR 0047 §1).
+    /// Who writes a run's proposed notes to the live file (ADR 0049 §1).
     pub notes: NotesMode,
-    /// When the overall assistant plans (ADR 0047 §5); empty for a delegate.
+    /// When the overall assistant plans (ADR 0049 §5); empty for a delegate.
     pub plans: Vec<Trigger>,
 }
 
-/// What a workspace is to the overall assistant (ADR 0047 §2–§4).
+/// What a workspace is to the overall assistant (ADR 0049 §2–§4).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Role {
     /// No `[workspace.assistant]`: it shares nothing and is never asked.

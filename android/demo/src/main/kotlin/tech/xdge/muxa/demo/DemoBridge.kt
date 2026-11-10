@@ -64,8 +64,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_PLANS] it has the overall assistant's plans (ADR 0047);
- * at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0046); below [WORK_DELETE_INBOX] it plays a host from before
+ * [workLevel] is the `work` level it advertises; at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
+ * at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0048); below [WORK_DELETE_INBOX] it plays a host from before
  * Protect and Delete Old (ADR 0046), below [WORK_WORKTREE_END] one whose Done keeps the worktree (ADR 0043),
  * below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing
  * ask sessions (ADR 0039), below [WORK_ITEMS] one from before
@@ -79,7 +79,7 @@ class DemoBridge(
     taskRecords: Boolean = true,
     workLevel: Int = WORK_DELETE_INBOX,
     oldItems: Boolean = false,
-    /** How fast an assistant run moves on (ADR 0046). */
+    /** How fast an assistant run moves on (ADR 0048). */
     assistPace: AssistPace = AssistPace.DEMO,
 ) : BridgeChannel {
     /** [TESTS] holds the fixtures the UI tests assert on; [SHOWCASE] looks like real work. */
@@ -121,7 +121,7 @@ class DemoBridge(
     /** The Tasks' Inbox items (ADR 0033). */
     private val items = content.items(now())
 
-    /** Captures and Work items (ADR 0046). */
+    /** Captures and Work items (ADR 0048). */
     private val assistant = content.assistant(now()).also { it.pace = assistPace }
     private var sessions: List<Session> = content.sessions(now()) + work.sessions
     private val capabilities = CAPABILITIES
@@ -130,7 +130,7 @@ class DemoBridge(
 
     private val workLevel = tech.xdge.muxa.protocol.workLevel(capabilities)
 
-    /** The overall assistant (ADR 0047): its pins, deadlines and proposal items join the fixtures at level 9. */
+    /** The overall assistant (ADR 0049): its pins, deadlines and proposal items join the fixtures at level 10. */
     private val plans: DemoPlans? = content.plans(now())?.takeIf { workLevel >= WORK_PLANS }?.also { p ->
         assistant.seed(p.pins, p.dues)
         items.add(p.proposals)
@@ -243,7 +243,7 @@ class DemoBridge(
             is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork,
             is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
             is Request.ApplyNotes, is Request.PlanNow -> servePlans(req)
-            // The demo has no policies yet (`work` level 10, ADR 0048).
+            // The demo has no policies yet (`work` level 11, ADR 0050).
             is Request.AddPolicy, is Request.UpdatePolicy, is Request.UpdatePlan, is Request.Forget ->
                 fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
@@ -291,7 +291,7 @@ class DemoBridge(
         }
     }
 
-    /** Captures, Work items and assistant requests (ADR 0046), refused as a bridge below `work` level 8 refuses them. */
+    /** Captures, Work items and assistant requests (ADR 0048), refused as a bridge below `work` level 9 refuses them. */
     private fun serveAssistant(req: Request) {
         if (workLevel < WORK_ASSISTANT) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
         val now = now()
@@ -302,7 +302,7 @@ class DemoBridge(
                     is Request.SortCapture -> assistant.sort(req, now).let { (c, w) -> Message.CaptureSaved(req.id, c, w?.let(::derived)) }
                     is Request.UpdateWork -> {
                         if (workLevel < WORK_PLANS && (req.action == WorkAction.PIN || req.action == WorkAction.UNPIN || req.due != null)) {
-                            return fail(req.id, ErrorCode.BAD_REQUEST, "pin, unpin and due need work level 9")
+                            return fail(req.id, ErrorCode.BAD_REQUEST, "pin, unpin and due need work level 10")
                         }
                         val laterAt = maxOf(now, (assistant.lastLaterAt ?: 0) + 1)
                         Message.WorkSaved(req.id, derived(assistant.update(req, now, laterAt)))
@@ -351,7 +351,7 @@ class DemoBridge(
     /** The workspaces that take requests: not the overall assistant's. */
     private val workspaceNames get() = content.workspaces.map { it.name }.toSet()
 
-    /** `plan-now` and `apply-notes` (ADR 0047), refused as a bridge below `work` level 9 refuses them. */
+    /** `plan-now` and `apply-notes` (ADR 0049), refused as a bridge below `work` level 10 refuses them. */
     private fun servePlans(req: Request) {
         val p = plans ?: return fail(req.id, ErrorCode.BAD_REQUEST, "unknown request for work level $workLevel")
         val now = now()
@@ -389,7 +389,7 @@ class DemoBridge(
     private val assistPaceNever get() = assistant.pace == AssistPace.NEVER
 
     /**
-     * Approve, Reject or Later on a `sort` or `delegate` item (ADR 0047 §4). Approve runs the action
+     * Approve, Reject or Later on a `sort` or `delegate` item (ADR 0049 §4). Approve runs the action
      * once, at the Capture's or Work item's current `rev`; a second approve returns the item. A
      * refused delegate leaves the item open; a Capture sorted meanwhile resolves it.
      */
@@ -858,7 +858,7 @@ class DemoBridge(
         }
         val now = now()
         val failed = branch == FAILING_BRANCH
-        // One Task per Work item `rev` (ADR 0046); an older host ignores `work`.
+        // One Task per Work item `rev` (ADR 0048); an older host ignores `work`.
         val work = req.work?.takeIf { workLevel >= WORK_ASSISTANT }
         val made = try {
             synchronized(lock) { work?.let { assistant.taskFor(it, req.workRev ?: -1) }?.let { id -> tasks.first { it.id == id } } }

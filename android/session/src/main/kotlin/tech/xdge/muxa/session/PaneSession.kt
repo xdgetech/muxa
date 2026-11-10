@@ -103,7 +103,7 @@ class PaneSession(
          */
         class Refused(val body: ErrorBody) : Failure(body.message)
 
-        /** The live `NOTES.md` changed since the run read it; nothing was written (ADR 0047 §1). */
+        /** The live `NOTES.md` changed since the run read it; nothing was written (ADR 0049 §1). */
         class NotesChanged : Failure("the notes changed")
     }
 
@@ -137,17 +137,17 @@ class PaneSession(
         val inboxItems: List<InboxItem> = emptyList(),
         /** Why the Routines or the Inbox could not be listed; the last lists stay. */
         val workError: String? = null,
-        /** The Work items in the host's order, as last listed (`work` level 8, ADR 0046). */
+        /** The Work items in the host's order, as last listed (`work` level 9, ADR 0048). */
         val work: List<WorkItem> = emptyList(),
-        /** The unsorted Captures, newest first, as last listed (`work` level 8). */
+        /** The unsorted Captures, newest first, as last listed (`work` level 9). */
         val captures: List<Capture> = emptyList(),
-        /** The assistant requests of the listed Work items, as last listed (`work` level 8). */
+        /** The assistant requests of the listed Work items, as last listed (`work` level 9). */
         val requests: List<AssistantRequest> = emptyList(),
         /** Work items read with `get-work`, by id: their Captures' texts for the detail. */
         val workDetails: Map<String, WorkDetail> = emptyMap(),
-        /** The overall assistant's kept plans, newest first, as last listed (`work` level 9, ADR 0047). */
+        /** The overall assistant's kept plans, newest first, as last listed (`work` level 10, ADR 0049). */
         val plans: List<Plan> = emptyList(),
-        /** Who assists on the host, as last listed (`work` level 9); null when nobody does. */
+        /** Who assists on the host, as last listed (`work` level 10); null when nobody does. */
         val assistant: AssistantInfo? = null,
     ) {
         val canChat get() = "chat" in capabilities
@@ -181,10 +181,10 @@ class PaneSession(
         /** Done and Drop also remove the Task's worktree and branch, and ask first when that could lose work (ADR 0043). */
         val endsWorktrees get() = workLevel >= WORK_WORKTREE_END
 
-        /** `+` saves a Capture, and the Inbox lists Work items and unsorted Captures (ADR 0046). */
+        /** `+` saves a Capture, and the Inbox lists Work items and unsorted Captures (ADR 0048). */
         val canCapture get() = workLevel >= WORK_ASSISTANT
 
-        /** The Inbox has Today, Work items take pins and deadlines, and Results propose notes (ADR 0047). */
+        /** The Inbox has Today, Work items take pins and deadlines, and Results propose notes (ADR 0049). */
         val canPlan get() = workLevel >= WORK_PLANS
 
         /** The host protects items and deletes old ones (ADR 0046). */
@@ -338,7 +338,7 @@ class PaneSession(
                 requestId = id
                 Request.CreateTask(
                     id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base, draft.loop, draft.worker,
-                    // An older host would ignore them; this app sends them only at level 8.
+                    // An older host would ignore them; this app sends them only at level 9.
                     work = draft.work.takeIf { _state.value.canCapture },
                     workRev = draft.workRev.takeIf { draft.work != null && _state.value.canCapture },
                 )
@@ -590,7 +590,7 @@ class PaneSession(
         if (!_state.value.canAnswerItems) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ITEMS_UNSUPPORTED))
         var requestId = 0L
         val worktree = worktreeEnd(action in ENDING_ACTIONS, forceWorktree)
-        // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0047 §4).
+        // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0049 §4).
         val proposal = item.kind == ItemKind.SORT || item.kind == ItemKind.DELEGATE
         try {
             request { id ->
@@ -685,7 +685,7 @@ class PaneSession(
         runCatching { answer(item, InboxAction.READ) }
     }
 
-    // Captures and Work items (`work` level 8, ADR 0046)
+    // Captures and Work items (`work` level 9, ADR 0048)
 
     /**
      * Saves the user's input with [clientId]; the host returns the stored Capture for a
@@ -733,20 +733,20 @@ class PaneSession(
         changing(savedCaptures, "the Capture") { id -> Request.SortCapture(id, capture.id, capture.rev, action, work = work?.id) }.entry
     }
 
-    /** Changes [item] at the `rev` this client saw. `pin` and `unpin` need `work` level 9. */
+    /** Changes [item] at the `rev` this client saw. `pin` and `unpin` need `work` level 10. */
     suspend fun updateWork(item: WorkItem, action: WorkAction): WorkItem = withContext(dispatcher) {
         requireCaptures()
         if (action == WorkAction.PIN || action == WorkAction.UNPIN) requirePlans()
         changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, action) }.entry
     }
 
-    /** Sets [item]'s deadline, as `edit` with `due` (`work` level 9). Only the user sets it. */
+    /** Sets [item]'s deadline, as `edit` with `due` (`work` level 10). Only the user sets it. */
     suspend fun setDue(item: WorkItem, due: Due): WorkItem = withContext(dispatcher) {
         requirePlans()
         changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, WorkAction.EDIT, due = due) }.entry
     }
 
-    // Plans and notes (`work` level 9, ADR 0047)
+    // Plans and notes (`work` level 10, ADR 0049)
 
     /**
      * Asks the overall assistant for a plan now; [minutes] is the time the user has. Returns the
@@ -1285,7 +1285,7 @@ class PaneSession(
             is Message.WorkSaved -> savedWork[message.work] = message
             is Message.WorkDetail -> workDetailListings[message.work] = message
             is Message.PlanSaved -> savedPlans[message.plan] = message.entry
-            // Policies come with `work` level 10 (ADR 0048); no client asks for them yet.
+            // Policies come with `work` level 11 (ADR 0050); no client asks for them yet.
             is Message.PolicySaved -> {}
             is Message.Unknown -> {}
         }
@@ -1394,10 +1394,10 @@ class PaneSession(
         /** Shown when a Capture or Work item changed on another device since it was listed. */
         const val WORK_CHANGED = "This changed on another device. The Inbox shows it as it is now."
 
-        /** Shown when the live notes changed since the run read them (ADR 0047 §1). */
+        /** Shown when the live notes changed since the run read them (ADR 0049 §1). */
         const val NOTES_CHANGED = "The notes changed on the host. Ask the assistant again."
 
-        /** Shown when the host has no plans, pins or notes (ADR 0047). */
+        /** Shown when the host has no plans, pins or notes (ADR 0049). */
         const val PLANS_UNSUPPORTED = "This host has no overall assistant. Update muxa on the host."
 
         /** A plan's id starts with it; a request's with `q-`. */

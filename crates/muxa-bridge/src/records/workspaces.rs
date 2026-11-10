@@ -64,9 +64,9 @@ pub struct Workspace {
     /// None: this workspace has no Routines (ADR 0036).
     pub routines: Option<RoutineGate>,
     /// How its assistant runs start: a delegate's or the overall
-    /// assistant's. None: it runs none (ADR 0046, 0047).
+    /// assistant's. None: it runs none (ADR 0048, 0049).
     pub assistant: Option<Delegate>,
-    /// What it is to the overall assistant (ADR 0047 §2–§4).
+    /// What it is to the overall assistant (ADR 0049 §2–§4).
     pub role: Role,
 }
 
@@ -418,7 +418,7 @@ impl Workspace {
         self.inside(&dir)
     }
 
-    /// `<root>/assistant/<slug>-<id>` for an assistant run (ADR 0046 §4),
+    /// `<root>/assistant/<slug>-<id>` for an assistant run (ADR 0048 §4),
     /// checked to stay inside the root. It is not created.
     pub fn assistant_dir(&self, title: &str, id: &str) -> Result<PathBuf, PathError> {
         if !is_valid_id(id) {

@@ -1,4 +1,4 @@
-//! The overall run's plan file, `.muxa/assistant/plan.json` (ADR 0047 §5,
+//! The overall run's plan file, `.muxa/assistant/plan.json` (ADR 0049 §5,
 //! schema in PROTOCOL.md "Plan file"): read and checked on its own, before
 //! `check` holds it against the store. Reasons name fields and indices,
 //! never values.

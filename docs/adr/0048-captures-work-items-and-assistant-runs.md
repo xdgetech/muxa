@@ -1,8 +1,8 @@
-# 0046: Captures, Work items and assistant runs (Personal Assistant PA0 and PA1)
+# 0048: Captures, Work items and assistant runs (Personal Assistant PA0 and PA1)
 
 ## Status
 
-Proposed on 2026-11-09. It implements stages PA0 and PA1 of ADR 0045 ([specification](../personal-assistant.md)). It changes ADR 0035 §5: `+` opens Capture on a host with `work:8`. It widens the Inbox screen of ADR 0033 without changing its items. Slices A0–A12 are implemented.
+Proposed on 2026-11-09. It implements stages PA0 and PA1 of ADR 0045 ([specification](../personal-assistant.md)). It changes ADR 0035 §5: `+` opens Capture on a host with `work:9`. It widens the Inbox screen of ADR 0033 without changing its items. Slices A0–A12 are implemented.
 
 ## Context
 
@@ -67,7 +67,7 @@ A request needs automatic delivery and a finished turn, as a Routine does. The d
 
 Before `create()`: open `assistant-run` records per workspace ≤ `max_open_runs`; runs created today ≤ both `max_runs_per_day`. A refusal is `conflict` with the limit and when it resets. Without a daemon, `request-assistant` is `unsupported` and the clients say automatic processing is off. Captures and lists work in the bridge.
 
-### 9. Wire: additive, `work:8`, protocol v1
+### 9. Wire: additive, `work:9`, protocol v1
 
 | Request | Reply |
 |---|---|
@@ -79,11 +79,11 @@ Before `create()`: open `assistant-run` records per workspace ≤ `max_open_runs
 | `cancel-request {request, version}` | `work-saved {work, entry, request}` |
 | `get-work {work}` | `work-detail {work, entry, captures, requests}`: every Capture the item links, sorted or not; an unknown item is `bad-request` |
 
-`inbox-list` gains `work[]`, `captures[]` (unsorted only) and `requests[]` (those of the listed Work items). The full contract is `protocol/PROTOCOL.md`, "Captures and Work items". Old clients ignore both. `update-inbox` keeps its `i-` / `e-` ids only. Fixtures go in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:8`. Branches that also raise the level renumber on merge.
+`inbox-list` gains `work[]`, `captures[]` (unsorted only) and `requests[]` (those of the listed Work items). The full contract is `protocol/PROTOCOL.md`, "Captures and Work items". Old clients ignore both. `update-inbox` keeps its `i-` / `e-` ids only. Fixtures go in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:9`. Branches that also raise the level renumber on merge.
 
 ### 10. Clients
 
-- **`+`** opens Capture at `work:8`: text, optional workspace, Save, Ask Assistant, "Start a Task instead…". An older host keeps New Task. The repo header's New Task, Ask and Terminal stay. Unsent captures stay on the device as "Not sent" and are resent on connect.
+- **`+`** opens Capture at `work:9`: text, optional workspace, Save, Ask Assistant, "Start a Task instead…". An older host keeps New Task. The repo header's New Task, Ask and Terminal stay. Unsent captures stay on the device as "Not sent" and are resent on connect.
 - **Inbox** has three sections: Decisions (today's items), Work, Unsorted. A Work item whose Task has an open item shows "waiting on decision" with no answer button of its own. Swipe right completes the Work item, left is Later (ADR 0040: moves to the bottom, never hidden).
 - **Work detail** shows Capture → Request → Result → Task → Decision, the delivery state, and Open Session while the run lives. Result files are paths; the Reader needs a pane and cannot open them yet.
 - **muxa for tmux:** `prefix + N` asks for the text first (`s` save, `a` ask, `t` Task form). The Inbox shows Work rows (`l` Later, `d` complete, `a` ask). CLI: `capture`, `work`, `assist`.
@@ -121,7 +121,7 @@ New error types carry ids and paths only. Logs hold ids, sizes and states, never
 | A1 | the store | atomic writes; a failed change writes nothing; duplicate `clientId`; oversize text; unknown version refused |
 | A2 | `capture`, `inbox-list` arrays | save without workspace; reconnect returns the same id and text; no session or layout change; a sentinel from the text is absent from logs |
 | A3 | `update-work`, the hidden-kind helper | Later order; stale `rev` conflict; two concurrent edits, one wins; `start-task` twice makes one Task; each record kind test (§5) |
-| A4 | advertise `work:8`; CLI; muxa for tmux | save-only never starts a session; keys |
+| A4 | advertise `work:9`; CLI; muxa for tmux | save-only never starts a session; keys |
 | A5 | iOS | Capture, `+` fallback, three sections, unsent captures, demo |
 | A6 | Android | the same |
 | — | **PA0 done** | spec §11 PA0 |

@@ -1,4 +1,4 @@
-//! Captures (ADR 0046 slice A2), end to end: a bridge or a daemon on a
+//! Captures (ADR 0048 slice A2), end to end: a bridge or a daemon on a
 //! throwaway tmux server saves the user's input, returns the same Capture
 //! for a resend, lists it, and starts nothing.
 #![cfg(feature = "tmux-integration")]
@@ -339,7 +339,7 @@ fn error_code(messages: &[Message]) -> Option<ErrorCode> {
     }
 }
 
-/// ADR 0047 slice B6, at the wire.
+/// ADR 0049 slice B6, at the wire.
 #[tokio::test]
 async fn a_pinned_item_is_listed_first_and_a_due_is_kept() {
     let host = Host::new("pins");
@@ -428,7 +428,7 @@ fn error_of(messages: &[Message]) -> Option<ErrorCode> {
     }
 }
 
-/// ADR 0048 slice C1, through a bridge without a daemon.
+/// ADR 0050 slice C1, through a bridge without a daemon.
 #[tokio::test]
 async fn a_policy_is_added_edited_and_deleted_with_its_rev() {
     let host = Host::new("policies");
@@ -509,7 +509,7 @@ fn plan_saved(messages: &[Message]) -> muxa_protocol::Plan {
         .unwrap_or_else(|| panic!("no plan-saved: {messages:?}"))
 }
 
-/// ADR 0048 slice C2, through the daemon: each action on the current plan
+/// ADR 0050 slice C2, through the daemon: each action on the current plan
 /// records one correction, and a reason never reaches the log.
 #[tokio::test]
 async fn the_daemon_records_corrections_and_logs_no_reason() {

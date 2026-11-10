@@ -1,5 +1,5 @@
 //! `create-task {work, workRev}`: one Task per Work item `rev`, found again
-//! after a crash by the goal's last line (ADR 0046 §3), as Routine approval is.
+//! after a crash by the goal's last line (ADR 0048 §3), as Routine approval is.
 use std::sync::Arc;
 
 use muxa_protocol::{ErrorBody, ErrorCode, WorkItem};

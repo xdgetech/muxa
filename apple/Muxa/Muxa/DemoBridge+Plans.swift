@@ -2,9 +2,9 @@ import Foundation
 import MuxaProtocol
 
 /// `plan-now`, `apply-notes` and approving the overall assistant's proposals (`work`
-/// level 9, ADR 0047), answered as the bridge with its daemon answers them.
+/// level 10, ADR 0049), answered as the bridge with its daemon answers them.
 extension DemoBridge {
-    /// A level 8 host answers the new requests `bad-request`, as any unknown request.
+    /// A level 9 host answers the new requests `bad-request`, as any unknown request.
     func servePlans(_ req: Request) {
         guard Self.workLevel >= workPlans else {
             return emit(.result(id: req.id, error: ErrorBody(code: .badRequest, message: "unknown request"), sessions: nil))
@@ -43,7 +43,7 @@ extension DemoBridge {
         }
     }
 
-    /// The plans and the overall assistant as `inbox-list` sends them; none below level 9.
+    /// The plans and the overall assistant as `inbox-list` sends them; none below level 10.
     func listedPlans() -> (plans: [Plan], assistant: AssistantInfo?) {
         guard Self.workLevel >= workPlans else { return ([], nil) }
         return lock.withLock {

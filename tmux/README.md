@@ -26,7 +26,7 @@ its own git worktree, with the AI pane on the left and a terminal on the right.
 A finished turn shows 🏁 until you look at its window, then 💤.
 The tree has five sections (ADR 0038): **Tasks** (muxa Tasks, by repo),
 **Routines** (running Routine runs), **Assistant** (running assistant runs,
-ADR 0046), **Ask** (ask sessions) and **Sessions** (every other session, by repo). `Enter` or `space` on a section's heading folds
+ADR 0048), **Ask** (ask sessions) and **Sessions** (every other session, by repo). `Enter` or `space` on a section's heading folds
 it in every sidebar. A folded heading shows its count and its most urgent state.
 One line per session, labelled `1`–`9` then `a`–`z` for the jump keys; sessions
 in a folded section get no label. `▎`
@@ -148,7 +148,7 @@ With `muxa-cli` and `muxa-bridge` installed on the host, a task is a muxa task r
 apps show, with a goal and a status.
 
 - `prefix + N` opens a form in a popup: workspace, repo, branch, title and goal.
-  With a muxa that keeps Captures (`work` level 8, ADR 0046), the popup first
+  With a muxa that keeps Captures (`work` level 9, ADR 0048), the popup first
   asks for the text: `s` saves it on the host as an unsorted Capture and starts
   nothing, `a` saves it and asks a workspace's assistant to research it
   (`muxa-cli capture - --assist --workspace W`; with several workspaces it asks
@@ -199,7 +199,7 @@ apps show, with a goal and a status.
     protection, and `D` deletes old items: pick 1, 3 or 5 days, then confirm the
     count. It deletes every item older than that, open or closed, except
     protected ones. A protected item still takes `l`, `d` and every answer.
-  - With `work` level 8, the open Work items (`◆`) and the unsorted Captures
+  - With `work` level 9, the open Work items (`◆`) and the unsorted Captures
     (`✎`) follow the items. On a Work item, `l` Later moves it below the others
     and `d` completes it; its Tasks keep running. `a` asks its workspace's
     assistant (`muxa-cli assist WORK`, scope research); asking again adds a
@@ -208,7 +208,7 @@ apps show, with a goal and a status.
     shows the request and the newest Result's summary; `muxa-cli assist show
     WORK` prints all of it. On a Capture, `w` makes a Work item from it and `n`
     keeps it as a note.
-  - With `work` level 9 and an overall assistant (ADR 0047), a Today section
+  - With `work` level 10 and an overall assistant (ADR 0049), a Today section
     (`☀`) comes first: up to 3 rows of the newest plan with a result, each with
     its time estimate and `new` or `moved` since the plan before, then one
     line of the items you moved down with Later that are due soon. The heading
@@ -220,7 +220,7 @@ apps show, with a goal and a status.
     it, so it is listed first and fills the first plan rows, or unpins it. The
     overall assistant's proposals are items too: `🗂` sorts a Capture and `🤝`
     asks a workspace's assistant; `a` approves, `r` rejects, `l` is Later.
-  - With `work` level 10 (ADR 0048), Today keeps the order you choose: `K` and
+  - With `work` level 11 (ADR 0050), Today keeps the order you choose: `K` and
     `J` move a row up and down (`muxa-cli plan reorder`). `x` takes a row off
     Today (Not today, `muxa-cli plan dismiss`); it asks for a reason, and
     `Enter` gives none. A row taken off stays as one dimmed line. A row's basis

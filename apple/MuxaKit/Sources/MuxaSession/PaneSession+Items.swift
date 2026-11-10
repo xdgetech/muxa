@@ -27,7 +27,7 @@ extension PaneSession {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.itemsUnsupported))
         }
         let end = action == .accept || action == .drop ? worktreeEnd(worktree) : nil
-        // The overall assistant's proposals (ADR 0047 §4): approve sorts a Capture or asks a
+        // The overall assistant's proposals (ADR 0049 §4): approve sorts a Capture or asks a
         // delegate, and a `capture-saved` or `work-saved` comes before `inbox-saved`.
         let proposes = item.kind == .sort || item.kind == .delegate
         var requestId: UInt64 = 0

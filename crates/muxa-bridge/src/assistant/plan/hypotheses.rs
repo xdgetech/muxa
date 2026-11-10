@@ -1,4 +1,4 @@
-//! The plan file's `hypotheses[]` (ADR 0048 §3), checked on their own:
+//! The plan file's `hypotheses[]` (ADR 0050 §3), checked on their own:
 //! shape, sizes and ids. `cite` holds them against the brief and the store.
 //! Reasons name fields and indices, never values.
 use std::collections::HashSet;

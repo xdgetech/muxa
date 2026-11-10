@@ -57,7 +57,7 @@ fun Sidebar(model: AppModel, onEdit: (HostDraft) -> Unit, onHide: (() -> Unit)?,
                 }
             },
             actions = {
-                // On a host with `work:8`, `+` is Capture, which can still start a Task (ADR 0046).
+                // On a host with `work:9`, `+` is Capture, which can still start a Task (ADR 0048).
                 if (model.isConnected && (model.canCreateTasks || model.canCapture)) {
                     IconButton(model::openPlus, Modifier.testTag("sidebar-new-task")) {
                         Icon(Icons.add, if (model.canCapture) "Capture" else "New Task")

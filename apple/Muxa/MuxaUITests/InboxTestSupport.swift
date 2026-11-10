@@ -1,6 +1,6 @@
 import XCTest
 
-/// The Inbox's Work and Unsorted rows on the demo (ADR 0046), shared by the Capture
+/// The Inbox's Work and Unsorted rows on the demo (ADR 0048), shared by the Capture
 /// and assistant tests.
 extension XCTestCase {
     @MainActor

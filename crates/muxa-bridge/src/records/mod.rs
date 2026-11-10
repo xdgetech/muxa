@@ -127,9 +127,9 @@ fn new_id() -> Result<String, getrandom::Error> {
 mod tests;
 
 /// The record field that names a background run's kind: `routine-run`
-/// (ADR 0026) or `assistant-run` (ADR 0046). A Task has none.
+/// (ADR 0026) or `assistant-run` (ADR 0048). A Task has none.
 pub const KIND_FIELD: &str = "kind";
-/// The Work item a Task was started for (ADR 0046).
+/// The Work item a Task was started for (ADR 0048).
 pub const WORK_FIELD: &str = "work";
 
 impl Record {
@@ -144,7 +144,7 @@ impl Record {
             .and_then(serde_json::Value::as_str)
     }
 
-    /// A run muxa started for itself, not a Task (ADR 0046 section 5). A
+    /// A run muxa started for itself, not a Task (ADR 0048 section 5). A
     /// kind from a newer muxa counts too: it is never shown as a Task.
     pub fn is_background_run(&self) -> bool {
         self.extra.contains_key(KIND_FIELD)

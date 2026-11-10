@@ -522,7 +522,7 @@ fn assistant_fixtures_round_trip() {
     let results = &requests[0].results;
     assert!(!results[0].stale && results[1].stale);
     assert!(results[0].findings.iter().all(|f| !f.sources.is_empty()));
-    // A client before level 8 reads an inbox-list without the new arrays.
+    // A client before level 9 reads an inbox-list without the new arrays.
     let old: Message =
         serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
     assert!(matches!(old, Message::InboxList { work, .. } if work.is_empty()));
@@ -732,7 +732,7 @@ fn plan_fixtures_round_trip() {
     assert_eq!(entry.delivery, Delivery::Failed);
     assert!(entry.reason.as_deref().is_some_and(|r| r.len() <= 500));
     assert!(plans.iter().all(|p| p.reason.is_none()));
-    // A client before level 9 reads an inbox-list without plans.
+    // A client before level 10 reads an inbox-list without plans.
     let old: Message =
         serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
     assert!(
@@ -945,7 +945,7 @@ fn policy_fixtures_round_trip() {
     let reordered = &corrections[1];
     assert!(reordered.row.is_none() && reordered.before.len() == reordered.after.len());
     assert!(corrections[3].reason.is_none());
-    // A client before level 10 reads an inbox-list without the new arrays.
+    // A client before level 11 reads an inbox-list without the new arrays.
     let old: Message =
         serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
     assert!(matches!(old, Message::InboxList { policies, .. } if policies.is_empty()));

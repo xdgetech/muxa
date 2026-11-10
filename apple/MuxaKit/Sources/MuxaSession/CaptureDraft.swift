@@ -1,7 +1,7 @@
 import Foundation
 import MuxaProtocol
 
-/// What the Capture sheet edits (ADR 0046). Checked here for quick feedback; the host
+/// What the Capture sheet edits (ADR 0048). Checked here for quick feedback; the host
 /// checks again and has the final say.
 public struct CaptureDraft: Equatable, Sendable {
     /// Made once per capture, so sending it again never makes a second one.

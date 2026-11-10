@@ -57,13 +57,13 @@ public enum Message: Equatable, Sendable {
     case routineSaved(routine: UInt64, entry: RoutineInfo)
     /// The stored Inbox entries for a `list-inbox` request, newest first. Level 3
     /// also sends `items`: every item, Routine entries included, in the order to show them.
-    /// Level 8 also sends `work` (open first, then the ones moved down with Later, then
+    /// Level 9 also sends `work` (open first, then the ones moved down with Later, then
     /// at most 100 done or withdrawn), the unsorted `captures`, newest first, and the
-    /// `requests` of the listed Work items (ADR 0046).
-    /// Level 9 also sends the kept `plans`, newest first, and `assistant`: the overall
-    /// assistant and the delegates (ADR 0047).
-    /// Level 10 also sends `policies` (active, then expired), `hypotheses` (`proposed` and
-    /// `rejected`, newest first) and at most 50 `corrections`, newest first (ADR 0048).
+    /// `requests` of the listed Work items (ADR 0048).
+    /// Level 10 also sends the kept `plans`, newest first, and `assistant`: the overall
+    /// assistant and the delegates (ADR 0049).
+    /// Level 11 also sends `policies` (active, then expired), `hypotheses` (`proposed` and
+    /// `rejected`, newest first) and at most 50 `corrections`, newest first (ADR 0050).
     case inboxList(
         inbox: UInt64, entries: [InboxEntry], items: [InboxItem] = [], work: [WorkItem] = [],
         captures: [Capture] = [], requests: [AssistantRequest] = [], plans: [Plan] = [],
@@ -89,7 +89,7 @@ public enum Message: Equatable, Sendable {
     /// What a `plan-now` or `apply-notes` wrote, just before its `result`.
     case planSaved(plan: UInt64, entry: Plan)
     /// What an `add-policy`, an `update-policy edit` or a `confirm` wrote, just before its
-    /// `result` (`work` level 10).
+    /// `result` (`work` level 11).
     case policySaved(policy: UInt64, entry: Policy)
     /// The bridge is exiting.
     case bye(reason: String)

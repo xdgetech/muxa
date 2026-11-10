@@ -1,6 +1,6 @@
 import XCTest
 
-/// Captures and Work items on a `work` level 8 host (ADR 0046), against the demo's
+/// Captures and Work items on a `work` level 9 host (ADR 0048), against the demo's
 /// fixtures: Work items w-0000b001 to b003, unsorted Captures c-0000c001 and c002, and
 /// c-0000c003 sorted into b002. The demo numbers new Captures from c-00000103 and new
 /// Work items from w-00000103.
@@ -162,7 +162,7 @@ final class CaptureTests: XCTestCase {
         XCTAssertTrue(unsent.waitForNonExistence(timeout: 5))
     }
 
-    /// A host before `work` level 8 keeps New Task behind `+`, and its Inbox has no Work.
+    /// A host before `work` level 9 keeps New Task behind `+`, and its Inbox has no Work.
     @MainActor
     func testAnOlderHostKeepsNewTask() throws {
         let app = launchWorkInbox(["-work7"])

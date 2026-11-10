@@ -24,7 +24,7 @@ struct DemoContent: Sendable {
 
     #if DEBUG
     /// The UI tests' launch argument `-showcase` picks the showcase; `-demo-plans` adds
-    /// the overall assistant to the tests' fixtures (ADR 0047).
+    /// the overall assistant to the tests' fixtures (ADR 0049).
     static var current: DemoContent {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-showcase") { return .showcase }

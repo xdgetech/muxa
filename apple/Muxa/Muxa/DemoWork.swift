@@ -17,9 +17,9 @@ struct DemoWork: Sendable {
     var entryLaters: [String: UInt64] = [:]
     /// The host has `ask-agent` (`work` level 6, ADR 0041).
     var offersAskAgent = true
-    /// Captures and Work items (`work` level 8, ADR 0046).
+    /// Captures and Work items (`work` level 9, ADR 0048).
     var assistant = DemoAssistant(captures: [], work: [])
-    /// The overall assistant's plans and the delegates' notes (`work` level 9, ADR 0047).
+    /// The overall assistant's plans and the delegates' notes (`work` level 10, ADR 0049).
     var plans = DemoPlans()
 
     struct Refusal: Error {

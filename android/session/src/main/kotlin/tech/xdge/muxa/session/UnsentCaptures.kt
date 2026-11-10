@@ -11,7 +11,7 @@ import java.io.File
 import java.io.IOException
 
 /**
- * A capture the host has not confirmed (ADR 0046 §10). It keeps its [clientId], so a resend
+ * A capture the host has not confirmed (ADR 0048 §10). It keeps its [clientId], so a resend
  * returns the Capture the host may already have stored instead of making a second one.
  */
 @Serializable

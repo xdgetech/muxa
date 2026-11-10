@@ -27,7 +27,7 @@ capture = {'id':'c-4e5f6a7b','rev':1,'clientId':'x','text':'From a mail','source
            'state':'received','createdAt':1,'updatedAt':1}
 correction = {'id':'x-0c1d2e3f','kind':'snoozed','at':1,'plan':'p-0a1b2c3d','inTop':True}
 send({'type':'hello','protocol':1,'bridge':'fixture','tmux':'fixture',
-      'capabilities':['task-records','work:11']})
+      'capabilities':['task-records','work:12']})
 for line in sys.stdin:
     req = json.loads(line)
     kind, ident = req['type'], req['id']

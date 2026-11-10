@@ -43,9 +43,9 @@ pub struct NewTask {
     pub read: bool,
     /// Set when the daemon starts a Routine run (ADR 0026); never from a client.
     pub routine: Option<crate::routines::record::RunOf>,
-    /// Set when the daemon starts an assistant run (ADR 0046); never from a client.
+    /// Set when the daemon starts an assistant run (ADR 0048); never from a client.
     pub assistant: Option<crate::assistant::record::RunFor>,
-    /// The Work item the Task is for, checked by `assistant::start` (ADR 0046).
+    /// The Work item the Task is for, checked by `assistant::start` (ADR 0048).
     pub work: Option<String>,
 }
 

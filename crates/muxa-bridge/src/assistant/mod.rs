@@ -1,6 +1,6 @@
-//! Captures, Work items and assistant requests (ADR 0046): the user's input
+//! Captures, Work items and assistant requests (ADR 0048): the user's input
 //! and unfinished work, kept apart from Tasks and Inbox items. Plans
-//! (ADR 0047), the user's policies and corrections (ADR 0048) live here too.
+//! (ADR 0049), the user's policies and corrections (ADR 0050) live here too.
 pub mod apply;
 pub mod ask;
 mod assist;
@@ -52,7 +52,7 @@ const MAX_CLOSED: usize = 100;
 /// Unsorted Captures in one list.
 const MAX_CAPTURES: usize = 200;
 
-/// Answers a `work` level 8, 9 or 10 request: its saved message, and its error.
+/// Answers a `work` level 9, 10 or 11 request: its saved message, and its error.
 pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
     match req {
         Request::Capture {
@@ -76,7 +76,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 Ok((entry, _)) => entry,
                 Err(e) => return (Vec::new(), Some(e)),
             };
-            // The input is kept even when the start is refused (ADR 0046 §8).
+            // The input is kept even when the start is refused (ADR 0048 §8).
             let done = match spec {
                 Some(spec) => assist::assist(cx, entry, spec).await,
                 None => assist::Assisted {
@@ -389,7 +389,7 @@ fn listed(config: &Config, item: WorkItem) -> WorkItem {
     item
 }
 
-/// What `inbox-list` adds at level 8.
+/// What `inbox-list` adds at level 9.
 #[derive(Debug, Default)]
 pub struct Listing {
     /// In the order to show them.
@@ -437,7 +437,7 @@ pub fn list(config: &Config) -> Result<Listing, ErrorBody> {
     })
 }
 
-/// Pinned items, in the order pinned (ADR 0047 §6); then open items, newest
+/// Pinned items, in the order pinned (ADR 0049 §6); then open items, newest
 /// `createdAt` first; then the ones moved down with Later, in the order
 /// moved; then at most [`MAX_CLOSED`] closed ones, newest `updatedAt` first.
 fn order(items: Vec<WorkItem>) -> Vec<WorkItem> {

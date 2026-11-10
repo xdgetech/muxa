@@ -1,5 +1,5 @@
-//! `policy` and `forget`: what the user told the overall assistant (ADR 0048),
-//! behind the host's `work` level 10. Policy texts and reasons go to stdout only.
+//! `policy` and `forget`: what the user told the overall assistant (ADR 0050),
+//! behind the host's `work` level 11. Policy texts and reasons go to stdout only.
 
 use muxa_protocol::{
     Correction, CorrectionKind, Hypothesis, Message, Policy, PolicyAction, Request, WORK_POLICIES,

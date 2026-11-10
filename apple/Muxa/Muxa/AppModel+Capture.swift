@@ -2,7 +2,7 @@ import Foundation
 import MuxaProtocol
 import MuxaSession
 
-/// Captures and Work items (ADR 0046) on a host with `work` level 8. An older host
+/// Captures and Work items (ADR 0048) on a host with `work` level 9. An older host
 /// keeps New Task behind `+`, and its Inbox has decisions only.
 extension AppModel {
     /// `+` opens Capture. It still does while the connection is down, for the host

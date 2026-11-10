@@ -4,7 +4,7 @@ import Testing
 
 @testable import MuxaSession
 
-/// A bridge that also answers assistant requests (ADR 0046 §9) as the host does, with
+/// A bridge that also answers assistant requests (ADR 0048 §9) as the host does, with
 /// a daemon unless `daemon` is false.
 class AssistantBridge: CaptureBridge, @unchecked Sendable {
     var requests: [AssistantRequest] = []
@@ -107,7 +107,7 @@ class AssistantBridge: CaptureBridge, @unchecked Sendable {
 
 @MainActor
 struct AssistantTests {
-    func connected(_ bridge: AssistantBridge, level: String = "work:8") async throws -> PaneSession {
+    func connected(_ bridge: AssistantBridge, level: String = "work:9") async throws -> PaneSession {
         bridge.capabilities = ["task-records", level]
         let session = PaneSession()
         try await session.connect {
@@ -229,7 +229,7 @@ struct AssistantTests {
 
     @Test func anOlderHostIsNeverAsked() async throws {
         let bridge = AssistantBridge()
-        let session = try await connected(bridge, level: "work:7")
+        let session = try await connected(bridge, level: "work:8")
         let item = CaptureTests.work("w-00000001", "Plan")
         await #expect(throws: PaneSession.Failure.bridge(ErrorBody(code: .unsupported, message: PaneSession.capturesUnsupported))) {
             try await session.ask(item, scope: .research)

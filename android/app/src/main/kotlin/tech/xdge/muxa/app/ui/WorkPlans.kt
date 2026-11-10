@@ -41,7 +41,7 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneOffset
 
-// A Work item's part of the overall assistant (ADR 0047 §1, §5, §6): why Today lists it, the
+// A Work item's part of the overall assistant (ADR 0049 §1, §5, §6): why Today lists it, the
 // delegate's proposed notes, and the user's deadline.
 
 /** "In Today: …" with the plan's reason, when the shown plan lists the item. */

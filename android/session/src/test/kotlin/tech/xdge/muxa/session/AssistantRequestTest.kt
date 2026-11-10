@@ -41,10 +41,10 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 /**
- * A host at `work` level 8 with one Work item, its Capture and one finished request. [refusal] answers
+ * A host at `work` level 9 with one Work item, its Capture and one finished request. [refusal] answers
  * the next `request-assistant` or assisted `capture` after the Capture is saved, as the host does.
  */
-private class AssistBridge(level: Int = 8) : FakeBridge() {
+private class AssistBridge(level: Int = 9) : FakeBridge() {
     val text = "Plan the offsite\nTwo days in May."
     var capture = Capture("c-00000001", 2, "x", text, CaptureSource.APP, CaptureState.SORTED, 1, 1, "work", listOf("w-00000001"))
     var item = WorkItem("w-00000001", 3, "Plan the offsite", WorkState.OPEN, 1, 1, "work", captures = listOf(capture.id), requests = listOf("q-00000001"))
@@ -254,7 +254,7 @@ class AssistantRequestTest {
 
     @Test
     fun anOlderHostIsNeverAskedForWorkOrRequests() = runBlocking {
-        val bridge = AssistBridge(level = 7)
+        val bridge = AssistBridge(level = 8)
         val session = connected(bridge)
         assertTrue(session.state.value.requests.isEmpty())
         refusal { session.getWork("w-00000001") }
@@ -288,15 +288,15 @@ class AssistantRequestTest {
         assertTrue(assistProblem("work", "x".repeat(PURPOSE_MAX_BYTES + 1)) != null)
     }
 
-    // `work` level 9 (ADR 0047)
+    // `work` level 10 (ADR 0049)
 
     @Test
-    fun levelNineListsPlansAndTheAssistantAndLevelEightNeither() = runBlocking {
-        val s = connected(AssistBridge(level = 9)).state.value
+    fun levelTenListsPlansAndTheAssistantAndLevelNineNeither() = runBlocking {
+        val s = connected(AssistBridge(level = 10)).state.value
         assertEquals("p-00000001", s.plans.shown()?.id)
         assertEquals("secretary", s.assistant?.overall)
         assertEquals(listOf(OUT_OF_DATE), s.plans.shown()!!.marks(s.work.single()))
-        val old = connected(AssistBridge(level = 8))
+        val old = connected(AssistBridge(level = 9))
         assertTrue(old.state.value.plans.isEmpty())
         assertNull(old.state.value.assistant)
         refusal { old.planNow() }
@@ -307,7 +307,7 @@ class AssistantRequestTest {
 
     @Test
     fun planNowSendsTheMinutesAndAnOpenRunShowsTheHostsMessage() = runBlocking {
-        val bridge = AssistBridge(level = 9)
+        val bridge = AssistBridge(level = 10)
         val session = connected(bridge)
         val plan = session.planNow(45)
         assertEquals(45, bridge.received.filterIsInstance<Request.PlanNow>().single().minutes)
@@ -334,7 +334,7 @@ class AssistantRequestTest {
 
     @Test
     fun applyNotesSendsTheBaseAndAConflictSaysTheNotesChanged() = runBlocking {
-        val bridge = AssistBridge(level = 9)
+        val bridge = AssistBridge(level = 10)
         val session = connected(bridge)
         val notes = Notes("# Work", "e3b0")
         session.applyNotes("q-00000001", 1, notes)
@@ -348,7 +348,7 @@ class AssistantRequestTest {
 
     @Test
     fun pinAndDueAreSentAtTheRevSeen() = runBlocking {
-        val bridge = AssistBridge(level = 9)
+        val bridge = AssistBridge(level = 10)
         val session = connected(bridge)
         session.updateWork(session.state.value.work.single(), WorkAction.PIN)
         val due = Due(2_000_000_000, "Asia/Tokyo")
@@ -363,7 +363,7 @@ class AssistantRequestTest {
     /** An approved delegate writes a request: the reply's `work-saved` is consumed and the Inbox listed again. */
     @Test
     fun approvingADelegateListsTheInboxAgainAndARefusalKeepsTheHostsReason() = runBlocking {
-        val bridge = AssistBridge(level = 9)
+        val bridge = AssistBridge(level = 10)
         val session = connected(bridge)
         val lists = bridge.received.count { it is Request.ListInbox }
         val saved = session.answer(bridge.delegate, InboxAction.APPROVE)

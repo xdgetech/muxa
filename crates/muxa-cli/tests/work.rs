@@ -1,5 +1,5 @@
 //! `capture`, `work`, `assist` and `task new --work` against a fake bridge at
-//! `work` level 8 (ADR 0046): what each command sends, with the `rev` it read.
+//! `work` level 9 (ADR 0048): what each command sends, with the `rev` it read.
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -144,7 +144,7 @@ fn ok(out: &Output) -> String {
 
 #[test]
 fn capture_sends_the_text_once_with_its_source() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     let text = ok(&bridge.run(
         &[
             "capture",
@@ -169,7 +169,7 @@ fn capture_sends_the_text_once_with_its_source() {
 
 #[test]
 fn work_lists_open_items_then_unsorted_captures() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     let text = ok(&bridge.run(&["work"], ""));
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 2, "{text}");
@@ -185,7 +185,7 @@ fn work_lists_open_items_then_unsorted_captures() {
 
 #[test]
 fn changes_send_the_rev_they_read() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     ok(&bridge.run(&["work", "later", "w-0000abcd"], ""));
     ok(&bridge.run(&["work", "merge", "w-0000abcd", "w-0000dead"], ""));
     ok(&bridge.run(&["work", "sort", "c-0000abcd", "link", "w-0000abcd"], ""));
@@ -221,7 +221,7 @@ fn changes_send_the_rev_they_read() {
 
 #[test]
 fn wrong_arguments_and_an_older_host_send_nothing() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     for args in [
         &["work", "edit", "w-0000abcd"][..],
         &["work", "later", "w-0000abcd", "--title", "x"],
@@ -236,7 +236,7 @@ fn wrong_arguments_and_an_older_host_send_nothing() {
         assert!(!out.status.success(), "{args:?}");
     }
     assert!(bridge.changes().is_empty());
-    let old = Bridge::new(7);
+    let old = Bridge::new(8);
     let out = old.run(&["capture", "x"], "");
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("update muxa-bridge"));
@@ -245,7 +245,7 @@ fn wrong_arguments_and_an_older_host_send_nothing() {
 
 #[test]
 fn assist_sends_the_rev_it_read_with_the_scope_and_purpose() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     let text = ok(&bridge.run(&["assist", "w-0000abcd"], ""));
     assert_eq!(text.trim(), "q-0000abcd v4 research  pending  [work]");
     ok(&bridge.run(
@@ -275,7 +275,7 @@ fn assist_sends_the_rev_it_read_with_the_scope_and_purpose() {
 
 #[test]
 fn assist_cancel_sends_the_current_version() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     let text = ok(&bridge.run(&["assist", "cancel", "q-0000abcd"], ""));
     assert_eq!(
         text.trim(),
@@ -290,7 +290,7 @@ fn assist_cancel_sends_the_current_version() {
 
 #[test]
 fn capture_assist_asks_in_the_workspace() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     let text = ok(&bridge.run(
         &[
             "capture",
@@ -315,7 +315,7 @@ fn capture_assist_asks_in_the_workspace() {
 
 #[test]
 fn assist_show_prints_the_newest_result() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     for target in ["w-0000abcd", "q-0000abcd"] {
         let text = ok(&bridge.run(&["assist", "show", target], ""));
         let lines: Vec<&str> = text.lines().collect();
@@ -345,7 +345,7 @@ fn assist_show_prints_the_newest_result() {
 
 #[test]
 fn a_refusal_is_printed_as_the_bridge_sent_it() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     let out = bridge.run(&["assist", "w-0000abcd", "--workspace", "off"], "");
     assert!(!out.status.success());
     assert!(out.stdout.is_empty());
@@ -368,7 +368,7 @@ fn a_refusal_is_printed_as_the_bridge_sent_it() {
 
 #[test]
 fn wrong_assist_arguments_and_an_older_host_send_nothing() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     for args in [
         &["assist", "w-0000abcd", "--scope", "summarize"][..],
         &["assist", "w-0000ffff"],
@@ -392,7 +392,7 @@ fn wrong_assist_arguments_and_an_older_host_send_nothing() {
         assert!(!out.status.success(), "{args:?}");
     }
     assert!(bridge.changes().is_empty());
-    let old = Bridge::new(7);
+    let old = Bridge::new(8);
     for args in [
         &["assist", "w-0000abcd"][..],
         &["assist", "cancel", "q-0000abcd"],
@@ -407,7 +407,7 @@ fn wrong_assist_arguments_and_an_older_host_send_nothing() {
 
 #[test]
 fn work_show_prints_every_captures_full_text() {
-    let bridge = Bridge::new(8);
+    let bridge = Bridge::new(9);
     let text = ok(&bridge.run(&["work", "show", "w-0000abcd"], ""));
     let lines: Vec<&str> = text.lines().collect();
     assert!(lines[0].starts_with("w-0000abcd  open  "), "{text}");
@@ -433,7 +433,7 @@ fn work_show_prints_every_captures_full_text() {
     assert!(bridge.changes().is_empty());
     let sent = std::fs::read_to_string(bridge.0.join("requests")).unwrap();
     assert!(sent.contains(r#""type": "get-work""#), "{sent}");
-    let old = Bridge::new(7);
+    let old = Bridge::new(8);
     let out = old.run(&["work", "show", "w-0000abcd"], "");
     assert!(String::from_utf8_lossy(&out.stderr).contains("update muxa-bridge"));
 }

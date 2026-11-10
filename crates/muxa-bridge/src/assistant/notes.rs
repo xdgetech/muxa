@@ -1,4 +1,4 @@
-//! A delegate's notes, `<root>/.muxa/assistant/NOTES.md` (ADR 0047 §1): the
+//! A delegate's notes, `<root>/.muxa/assistant/NOTES.md` (ADR 0049 §1): the
 //! snapshot a run reads, and the checked write of a proposal. Each folder is
 //! opened without following a symlink. Errors name paths and sizes, never text.
 use std::fs::File;

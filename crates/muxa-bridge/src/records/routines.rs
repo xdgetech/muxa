@@ -320,7 +320,7 @@ fn trigger(
 }
 
 /// Five cron fields in an IANA time zone; without `zone`, the host's own
-/// (the overall assistant's plans, ADR 0047 §5). Errors never quote the schedule.
+/// (the overall assistant's plans, ADR 0049 §5). Errors never quote the schedule.
 pub(crate) fn scheduled(text: &str, zone: Option<&str>) -> Result<Trigger, String> {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let parsed = cron::parse(&text)?;

@@ -1,4 +1,4 @@
-//! The user's policies (ADR 0048 §1): `add-policy`, `update-policy`, their
+//! The user's policies (ADR 0050 §1): `add-policy`, `update-policy`, their
 //! expiry, and their place in `inbox-list`. Only the user writes one; no run
 //! does. Texts never reach a log or an error message.
 use muxa_protocol::{ErrorBody, ErrorCode, Hypothesis, HypothesisState, Policy, PolicyAction};
@@ -9,7 +9,7 @@ use crate::convert::error_body;
 use crate::records::assistant::Role;
 use crate::task_records::Config;
 
-/// Policies that are not expired, at most (ADR 0048 §8).
+/// Policies that are not expired, at most (ADR 0050 §8).
 pub const MAX_ACTIVE: usize = 50;
 /// Bytes of a policy's text.
 pub const MAX_TEXT: usize = 500;

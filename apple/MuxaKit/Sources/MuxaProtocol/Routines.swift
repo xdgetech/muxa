@@ -13,12 +13,12 @@ public let workCloseAsk: UInt32 = 5
 public let workAskAgent: UInt32 = 6
 /// Level 7: `worktree` on `update-task` and `update-inbox`, and `would-lose-work` (ADR 0043).
 public let workWorktreeEnd: UInt32 = 7
-/// Level 8: Captures, Work items and assistant requests (ADR 0046).
-public let workAssistant: UInt32 = 8
-/// Level 9: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0047).
-public let workPlans: UInt32 = 9
-/// Level 10: policies, corrections and hypotheses (ADR 0048).
-public let workPolicies: UInt32 = 10
+/// Level 9: Captures, Work items and assistant requests (ADR 0048).
+public let workAssistant: UInt32 = 9
+/// Level 10: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0049).
+public let workPlans: UInt32 = 10
+/// Level 11: policies, corrections and hypotheses (ADR 0050).
+public let workPolicies: UInt32 = 11
 /// Level 8: `protect`, `unprotect` and `delete-inbox` (ADR 0046).
 public let workDeleteInbox: UInt32 = 8
 
@@ -214,7 +214,7 @@ public enum InboxAction: String, Codable, Sendable {
     case reply
     /// Sends the item and the text to the workspace's Ask session; the item stays open (ADR 0041).
     case askAgent = "ask-agent"
-    /// A `hypothesis`: makes a policy of it (level 10, ADR 0048).
+    /// A `hypothesis`: makes a policy of it (level 11, ADR 0050).
     case confirm
     /// Set or clear `protectedAt` on any item (level 8, ADR 0046). Like `read`, never in `answers`.
     case protect, unprotect

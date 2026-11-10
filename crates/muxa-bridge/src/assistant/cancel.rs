@@ -1,4 +1,4 @@
-//! `cancel-request` (ADR 0046 §6): the version is `cancel-requested` at once,
+//! `cancel-request` (ADR 0048 §6): the version is `cancel-requested` at once,
 //! so a late result is not stored; its run's record is dropped and its
 //! session closed as the daemon closes a Routine run's; once the session is
 //! gone the version is `cancelled`. The daemon's tick retries a failed close.

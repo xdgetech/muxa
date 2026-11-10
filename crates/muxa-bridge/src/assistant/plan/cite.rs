@@ -1,4 +1,4 @@
-//! What a plan may cite (ADR 0048 §3, §4): the ids its brief carried, kept
+//! What a plan may cite (ADR 0050 §3, §4): the ids its brief carried, kept
 //! on the plan record where the run cannot write, and still live in the
 //! store. A forgotten or deleted record cannot be a reason, and a guess
 //! grounded in Later alone, or in one workspace's habits, is refused.
@@ -40,7 +40,7 @@ static NOTHING: Carried = Carried {
 };
 
 impl Carried {
-    /// What the plan file records. A plan briefed before ADR 0048 carried
+    /// What the plan file records. A plan briefed before ADR 0050 carried
     /// nothing, so it may cite nothing.
     pub fn of(extra: &Extra) -> Self {
         extra

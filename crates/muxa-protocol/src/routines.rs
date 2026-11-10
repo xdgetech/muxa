@@ -242,7 +242,7 @@ pub enum InboxAction {
     /// Any open item: sends `text` with the item to the workspace's Ask session,
     /// and leaves the item open (ADR 0041, level 6).
     AskAgent,
-    /// A `hypothesis`: makes a policy of it (level 10, ADR 0048).
+    /// A `hypothesis`: makes a policy of it (level 11, ADR 0050).
     Confirm,
     /// Any item: `delete-inbox` keeps it. It still takes every answer (ADR 0046, level 8).
     Protect,

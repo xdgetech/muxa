@@ -223,7 +223,7 @@ pub enum Request {
         /// Task's own folder and reads the repo (`work` level 4, ADR 0034).
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         read: bool,
-        /// The Work item the Task is for (`work` level 8, ADR 0046). The host
+        /// The Work item the Task is for (`work` level 9, ADR 0048). The host
         /// links them, and a second request for the same item and `rev`
         /// returns the Task it already made.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -362,7 +362,7 @@ pub enum Request {
         /// As `create-task`'s `repo`.
         repo: String,
     },
-    /// Save the user's input (`work` level 8, ADR 0046). The same `clientId`
+    /// Save the user's input (`work` level 9, ADR 0048). The same `clientId`
     /// returns the stored Capture and writes nothing. A `capture-saved` comes
     /// before the `result`.
     Capture {
@@ -414,7 +414,7 @@ pub enum Request {
         /// With `merge`: the Work item to merge into.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         into: Option<String>,
-        /// With `edit`, at level 9: the user's deadline.
+        /// With `edit`, at level 10: the user's deadline.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         due: Option<Due>,
     },
@@ -446,7 +446,7 @@ pub enum Request {
         work: String,
     },
     /// Write a result's or a plan's proposed notes to the live `NOTES.md`
-    /// (`work` level 9, ADR 0047). A live file that no longer hashes to
+    /// (`work` level 10, ADR 0049). A live file that no longer hashes to
     /// `base` is `conflict`. A `work-saved` or `plan-saved` comes before the
     /// `result`.
     ApplyNotes {
@@ -458,7 +458,7 @@ pub enum Request {
         /// The proposal's `base`.
         base: String,
     },
-    /// Start an overall run now (`work` level 9). A `plan-saved` comes
+    /// Start an overall run now (`work` level 10). A `plan-saved` comes
     /// before the `result`.
     PlanNow {
         id: u64,
@@ -466,7 +466,7 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         minutes: Option<u32>,
     },
-    /// Keep a policy in the user's words (`work` level 10, ADR 0048). A
+    /// Keep a policy in the user's words (`work` level 11, ADR 0050). A
     /// `policy-saved` comes before the `result`.
     AddPolicy {
         id: u64,
@@ -773,29 +773,29 @@ pub enum Message {
         /// Level 3: every item, Routine entries included, open ones first (ADR 0033).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         items: Vec<InboxItem>,
-        /// Level 8: Work items, open ones first, then the ones moved down
+        /// Level 9: Work items, open ones first, then the ones moved down
         /// with Later, then at most 100 done or withdrawn, newest first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         work: Vec<WorkItem>,
-        /// Level 8: unsorted Captures, newest first.
+        /// Level 9: unsorted Captures, newest first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         captures: Vec<Capture>,
-        /// Level 8: the requests of the listed Work items.
+        /// Level 9: the requests of the listed Work items.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         requests: Vec<AssistantRequest>,
-        /// Level 9: the kept plans, newest first.
+        /// Level 10: the kept plans, newest first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         plans: Vec<Plan>,
-        /// Level 9: the overall assistant and the delegates.
+        /// Level 10: the overall assistant and the delegates.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         assistant: Option<Box<AssistantInfo>>,
-        /// Level 10: active policies, then expired ones.
+        /// Level 11: active policies, then expired ones.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         policies: Vec<Policy>,
-        /// Level 10: `proposed` and `rejected` hypotheses, newest first.
+        /// Level 11: `proposed` and `rejected` hypotheses, newest first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         hypotheses: Vec<Hypothesis>,
-        /// Level 10: at most 50 corrections, newest first.
+        /// Level 11: at most 50 corrections, newest first.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         corrections: Vec<Correction>,
     },
@@ -850,7 +850,7 @@ pub enum Message {
     /// What a `plan-now` or `apply-notes` wrote, sent just before its `result`.
     PlanSaved { plan: u64, entry: Box<Plan> },
     /// What an `add-policy`, an `update-policy edit` or a `confirm` wrote,
-    /// sent just before its `result` (`work` level 10).
+    /// sent just before its `result` (`work` level 11).
     PolicySaved { policy: u64, entry: Policy },
     /// The bridge is exiting.
     Bye { reason: String },
@@ -906,7 +906,7 @@ pub struct TaskRecord {
     pub worker: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restart_operation: Option<Box<RestartOperation>>,
-    /// The Work item the Task was started for (ADR 0046).
+    /// The Work item the Task was started for (ADR 0048).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work: Option<String>,
 }

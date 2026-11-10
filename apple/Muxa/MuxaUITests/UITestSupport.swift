@@ -76,8 +76,8 @@ extension XCTestCase {
 
     var isPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
 
-    /// The sidebar's `+` up to the New Task form. At `work` level 8 it opens Capture,
-    /// and "Start a Task instead…" opens the form (ADR 0046); an older host opens it at once.
+    /// The sidebar's `+` up to the New Task form. At `work` level 9 it opens Capture,
+    /// and "Start a Task instead…" opens the form (ADR 0048); an older host opens it at once.
     @MainActor
     func openNewTaskFromSidebar(_ app: XCUIApplication, olderHost: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
         if olderHost {

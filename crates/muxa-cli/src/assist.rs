@@ -1,5 +1,5 @@
 //! `assist`: ask a workspace's assistant about a Work item, cancel a request,
-//! and show its latest Result (ADR 0046). Purposes and Results go to stdout
+//! and show its latest Result (ADR 0048). Purposes and Results go to stdout
 //! only, never to stderr or a log.
 
 use muxa_protocol::{

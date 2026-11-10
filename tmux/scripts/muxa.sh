@@ -233,7 +233,7 @@ read_answer() {
   printf '%s' "${answer:-$2}"
 }
 
-# Work level 8 (ADR 0046): the text comes first. s saves it as a Capture and
+# Work level 9 (ADR 0048): the text comes first. s saves it as a Capture and
 # starts nothing; a saves it and asks a workspace's assistant (scope research);
 # t takes it into the New Task form. Sets SEED for the form.
 # Returns 1 when nothing more is to be done.
@@ -289,7 +289,7 @@ form() {
     return
   fi
   SEED=""
-  if printf '%s' "$json" | work_at 8; then
+  if printf '%s' "$json" | work_at 9; then
     capture_first "$json" "$spaces" "$repo" || return 0
   fi
   printf '%s' "$json" | work2 && w2=1

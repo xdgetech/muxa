@@ -43,7 +43,7 @@ import tech.xdge.muxa.session.isClosed
 import tech.xdge.muxa.session.label
 import tech.xdge.muxa.session.runMayLive
 
-// A Work item's assistant requests and their Results (ADR 0046 §10). Result files are plain paths:
+// A Work item's assistant requests and their Results (ADR 0048 §10). Result files are plain paths:
 // the Reader needs a pane and cannot open them yet.
 
 /** One request: its scope, version and delivery state with its age, then its Results. */

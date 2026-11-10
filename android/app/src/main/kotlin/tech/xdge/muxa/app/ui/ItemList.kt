@@ -62,8 +62,8 @@ import tech.xdge.muxa.session.isUnread
  * Inbox mode (ADR 0033, 0035), like a mail list: the question, then where it comes from and
  * its age. A dot marks unread. The host's whole list in its order, with no fold. A swipe right
  * is ✓, a swipe left is Later: the item moves to the bottom (ADR 0040). The row of what the
- * detail shows is highlighted, also while its pane is shown. On a host with `work:8` the items
- * are the Decisions section, and Work and Unsorted follow (ADR 0046); `work:9` adds Today above them (ADR 0047).
+ * detail shows is highlighted, also while its pane is shown. On a host with `work:9` the items
+ * are the Decisions section, and Work and Unsorted follow (ADR 0048); `work:10` adds Today above them (ADR 0049).
  */
 @Composable
 fun ItemList(model: AppModel, modifier: Modifier) {
@@ -79,7 +79,7 @@ fun ItemList(model: AppModel, modifier: Modifier) {
         } else if (items.isEmpty() && !model.hasWorkRows && !model.hasToday) {
             item(key = "empty") { InboxEmpty(model, NOTHING, "inbox") }
         }
-        // Today leads at `work:9`; a new plan keeps the scroll and the selection (ADR 0047 §5).
+        // Today leads at `work:10`; a new plan keeps the scroll and the selection (ADR 0049 §5).
         if (sections) todaySection(model)
         if (sections && items.isNotEmpty()) item(key = "h-decisions") { InboxSectionHeader("Decisions", "decisions") }
         items(items, key = { it.id }) { item ->

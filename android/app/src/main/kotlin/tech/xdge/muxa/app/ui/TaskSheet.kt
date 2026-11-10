@@ -108,7 +108,7 @@ fun NewTaskRecordSheet(model: AppModel, initial: TaskRecordDraft) {
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(picking) },
                     )
                     ExposedDropdownMenu(picking, { picking = false }) {
-                        // The overall assistant's workspace takes no Tasks from here (ADR 0047 §2).
+                        // The overall assistant's workspace takes no Tasks from here (ADR 0049 §2).
                         for (w in model.pickableWorkspaces) {
                             DropdownMenuItem({ Text(w.name) }, {
                                 // Another workspace allows other checks.

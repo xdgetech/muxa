@@ -1,5 +1,5 @@
 //! `in-progress` and `waiting-decision` come from a Work item's Tasks and
-//! requests each time it is listed (ADR 0046 §2). They are never stored.
+//! requests each time it is listed (ADR 0048 §2). They are never stored.
 use std::collections::HashMap;
 
 use muxa_protocol::{AssistantRequest, Delivery, ItemState, WorkItem, WorkState};

@@ -70,17 +70,17 @@ enum Icon {
     static let openSession = "arrow.up.right.square"
     static let settings = "gearshape"
     static let ask = "questionmark.bubble"
-    /// `+` at `work` level 8: a thought saved on the host (ADR 0046).
+    /// `+` at `work` level 9: a thought saved on the host (ADR 0048).
     static let capture = "square.and.pencil"
     static let work = "list.bullet.rectangle"
     static let note = "note.text"
     static let reopen = "arrow.uturn.backward"
     static let withdraw = "xmark.circle"
-    /// A workspace's assistant working on a Work item (ADR 0046).
+    /// A workspace's assistant working on a Work item (ADR 0048).
     static let assistant = "sparkles"
     static let cancel = "stop.circle"
     static let result = "doc.text.magnifyingglass"
-    /// The overall assistant's plan, and the user's pins and due dates (ADR 0047).
+    /// The overall assistant's plan, and the user's pins and due dates (ADR 0049).
     static let today = "sun.max"
     static let pin = "pin"
     static let unpin = "pin.slash"

@@ -28,7 +28,7 @@ import tech.xdge.muxa.protocol.WorkState
 import java.security.MessageDigest
 
 /**
- * The demo bridge's overall assistant (ADR 0047, `work` level 9): its plans, its proposal items, and
+ * The demo bridge's overall assistant (ADR 0049, `work` level 10): its plans, its proposal items, and
  * each workspace's live notes as a hash. `plan-now` makes a plan that is `resulted` [planMillis] later,
  * when the Inbox is listed; one plan run at a time. Not thread safe: the bridge holds its lock.
  */

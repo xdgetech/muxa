@@ -2,7 +2,7 @@ package tech.xdge.muxa.protocol
 
 import kotlinx.serialization.Serializable
 
-// Delegate notes, the overall assistant and its plans (ADR 0047), at `work` level 9.
+// Delegate notes, the overall assistant and its plans (ADR 0049), at `work` level 10.
 // A plan never changes a Work item, an Inbox item or their order.
 
 /** One overall run's plan, from `plan-saved` or `inbox-list`: at most 3 rows to do next. */
@@ -35,9 +35,9 @@ data class Plan(
     val stale: List<String> = emptyList(),
     /** Derived against the previous plan. */
     val changed: List<PlanChange> = emptyList(),
-    /** Level 10: Today's rows in the user's order, from `update-plan reorder`. */
+    /** Level 11: Today's rows in the user's order, from `update-plan reorder`. */
     val userOrder: List<String> = emptyList(),
-    /** Level 10: rows the user removed from Today, from `update-plan dismiss`. */
+    /** Level 11: rows the user removed from Today, from `update-plan dismiss`. */
     val dismissed: List<String> = emptyList(),
     /** The overall assistant's proposed notes. Never logged. */
     val notes: Notes? = null,
@@ -79,13 +79,13 @@ value class BasisKind(val raw: String) {
         /** The user's pin. */
         val MANUAL = BasisKind("manual")
 
-        /** Level 10: a policy `y-…` in `source` (ADR 0048). */
+        /** Level 11: a policy `y-…` in `source` (ADR 0050). */
         val POLICY = BasisKind("policy")
 
-        /** Level 10: a hypothesis `h-…` in `source`. */
+        /** Level 11: a hypothesis `h-…` in `source`. */
         val HYPOTHESIS = BasisKind("hypothesis")
 
-        /** Level 10: a correction `x-…` in `source`. */
+        /** Level 11: a correction `x-…` in `source`. */
         val CORRECTION = BasisKind("correction")
     }
 }
@@ -145,7 +145,7 @@ data class DelegateInfo(
     val notesAt: Long? = null,
 )
 
-/** What a workspace shares with the overall assistant (ADR 0047 §3). Unknown values stay as their name. */
+/** What a workspace shares with the overall assistant (ADR 0049 §3). Unknown values stay as their name. */
 @Serializable
 @JvmInline
 value class Share(val raw: String) {
@@ -156,7 +156,7 @@ value class Share(val raw: String) {
     }
 }
 
-/** Whether the overall assistant may ask this workspace (ADR 0047 §4). Unknown values stay as their name. */
+/** Whether the overall assistant may ask this workspace (ADR 0049 §4). Unknown values stay as their name. */
 @Serializable
 @JvmInline
 value class OverallRequests(val raw: String) {

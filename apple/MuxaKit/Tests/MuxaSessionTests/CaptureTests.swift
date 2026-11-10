@@ -4,7 +4,7 @@ import Testing
 
 @testable import MuxaSession
 
-/// A bridge with Captures and Work items (`work` level 8, ADR 0046), as the host answers them.
+/// A bridge with Captures and Work items (`work` level 9, ADR 0048), as the host answers them.
 class CaptureBridge: FakeBridge, @unchecked Sendable {
     var captures: [Capture] = [CaptureTests.capture("c-00000001", "Look at the flaky test\nIt failed twice.")]
     var work: [WorkItem] = [CaptureTests.work("w-00000001", "Plan the migration")]
@@ -79,7 +79,7 @@ struct CaptureTests {
         WorkItem(id: id, rev: 1, title: title, state: .open, createdAt: 1, updatedAt: 1, workspace: "work")
     }
 
-    func connected(_ bridge: CaptureBridge, level: String = "work:8") async throws -> PaneSession {
+    func connected(_ bridge: CaptureBridge, level: String = "work:9") async throws -> PaneSession {
         bridge.capabilities = ["task-records", level]
         let session = PaneSession()
         try await session.connect {
@@ -98,7 +98,7 @@ struct CaptureTests {
 
     @Test func anOlderHostKeepsNoCapturesAndIsNeverAskedForOne() async throws {
         let bridge = CaptureBridge()
-        let session = try await connected(bridge, level: "work:7")
+        let session = try await connected(bridge, level: "work:8")
         #expect(!session.canCapture)
         #expect(session.workList.isEmpty)
         #expect(session.captures.isEmpty)
@@ -172,7 +172,7 @@ struct CaptureTests {
 
     @Test func anOlderHostGetsNoWorkFieldsOnATask() async throws {
         let bridge = CaptureBridge()
-        let session = try await connected(bridge, level: "work:7")
+        let session = try await connected(bridge, level: "work:8")
         _ = try await session.createTask(NewTaskRecord(workspace: "work", title: "T", goal: "G", work: "w-1", workRev: 1))
         #expect(bridge.received.contains {
             if case .createTask(_, _, _, _, _, _, _, _, _, _, nil, nil) = $0 { true } else { false }

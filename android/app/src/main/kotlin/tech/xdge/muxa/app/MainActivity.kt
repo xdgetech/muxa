@@ -51,11 +51,11 @@ class MainActivity : ComponentActivity() {
                 alerts = intent.getBooleanExtra(EXTRA_DEMO_ALERTS, false),
                 taskRecords = !intent.getBooleanExtra(EXTRA_NO_TASK_RECORDS, false),
                 // A host from before ask sessions (ADR 0031), Inbox items (ADR 0033) or
-                // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0046),
-                // or with the overall assistant's plans (ADR 0047).
+                // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0048),
+                // or with the overall assistant's plans (ADR 0049).
                 workLevel = when {
-                    intent.getBooleanExtra(EXTRA_WORK9, false) -> WORK_PLANS
-                    intent.getBooleanExtra(EXTRA_WORK8, false) -> WORK_ASSISTANT
+                    intent.getBooleanExtra(EXTRA_WORK10, false) -> WORK_PLANS
+                    intent.getBooleanExtra(EXTRA_WORK9, false) -> WORK_ASSISTANT
                     intent.getBooleanExtra(EXTRA_WORK1, false) -> WORK_ROUTINES
                     intent.getBooleanExtra(EXTRA_WORK2, false) -> WORK_ASK
                     intent.getBooleanExtra(EXTRA_WORK3, false) -> WORK_ITEMS
@@ -149,10 +149,10 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_WORK3 = "work3"
 
         /** A bridge with Captures and Work items: `+` opens Capture, and the Inbox has three sections. */
-        const val EXTRA_WORK8 = "work8"
+        const val EXTRA_WORK9 = "work9"
 
         /** A bridge with the overall assistant: Today in the Inbox, pins, deadlines and notes. */
-        const val EXTRA_WORK9 = "work9"
+        const val EXTRA_WORK10 = "work10"
 
         /** The failure and the last proposal are four days old, for Delete Old (ADR 0046). */
         const val EXTRA_OLD_ITEMS = "old-items"

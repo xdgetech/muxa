@@ -35,7 +35,7 @@ data class TaskRecord(
     val pendingPrompt: PendingPrompt? = null,
     val worker: String? = null,
     val restartOperation: RestartOperation? = null,
-    /** The Work item the Task was started for (ADR 0046). */
+    /** The Work item the Task was started for (ADR 0048). */
     val work: String? = null,
 )
 

@@ -14,7 +14,7 @@ import tech.xdge.muxa.session.delegateName
 import tech.xdge.muxa.session.firstLine
 import tech.xdge.muxa.session.label
 
-// The overall assistant's `sort` and `delegate` items (ADR 0047 §4): what Approve would do. Approve
+// The overall assistant's `sort` and `delegate` items (ADR 0049 §4): what Approve would do. Approve
 // runs it once on the host; Reject and Later change nothing else.
 
 /** The proposed sort or request, with the receiving workspace, its scope and purpose. */

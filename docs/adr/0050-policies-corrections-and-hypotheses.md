@@ -1,16 +1,16 @@
-# 0048: Policies, corrections and hypotheses (Personal Assistant PA3)
+# 0050: Policies, corrections and hypotheses (Personal Assistant PA3)
 
 ## Status
 
-Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`), C3 (the brief's memory section), C4 (hypotheses and citations in the plan file), C5 (`hypothesis` items, `confirm` and `reject`), C6 (`forget`) and C7 (`work:10`, the CLI and muxa for tmux) are built; hosts advertise level 10.
+Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0049. It adds to ADR 0049 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`), C3 (the brief's memory section), C4 (hypotheses and citations in the plan file), C5 (`hypothesis` items, `confirm` and `reject`), C6 (`forget`) and C7 (`work:11`, the CLI and muxa for tmux) are built; hosts advertise level 11.
 
 ## Context
 
-- A plan ranks from what the workspaces share, the open items, the previous plan and the overall notes (ADR 0047 §3, §5). The user's judgment reaches it in two ways only: pins and `due` on items, and whatever the agent chose to write into `NOTES.md`. Neither says "this week recruiting outranks sales" in the user's words, with a scope and an end.
+- A plan ranks from what the workspaces share, the open items, the previous plan and the overall notes (ADR 0049 §3, §5). The user's judgment reaches it in two ways only: pins and `due` on items, and whatever the agent chose to write into `NOTES.md`. Neither says "this week recruiting outranks sales" in the user's words, with a scope and an end.
 - The user corrects a plan every morning by acting on it: pinning what it missed, moving down what it ranked, rejecting a `delegate`. Nothing records that against the plan, so the next plan repeats the mistake. Spec §2: "今回の並びの修正と、適用範囲が見える方針の記録".
 - Spec §8 names three records and their ranks: explicit policies (the user's words, with workspace, period), tentative hypotheses (weaker, with grounds and uncertainty), and the correction history (plan, change, optional reason, outcome). It forbids learning "unimportant" from Later alone, and asks that "why did you propose this" lead to the records used, each of which the user can correct, disable or forget.
 - Spec §11 PA3: an explicit policy outranks a hypothesis; a deferral alone never lowers importance; a forgotten record is absent from later proposals.
-- `basis` has a `kind` and a `source` (ADR 0047 §5), and the check already refuses ids the brief did not carry. The store holds one JSON file per record with a lock and atomic writes (ADR 0046 §2). `.muxa/assistant/BRIEF.md` is built from the store at every run's start and from nothing else (`plan/brief.rs`).
+- `basis` has a `kind` and a `source` (ADR 0049 §5), and the check already refuses ids the brief did not carry. The store holds one JSON file per record with a lock and atomic writes (ADR 0048 §2). `.muxa/assistant/BRIEF.md` is built from the store at every run's start and from nothing else (`plan/brief.rs`).
 - No retraining, no numeric score the host owns (spec §7, §8): the ranking stays the agent's; the host owns what it may read and what it must cite.
 
 ## Decision
@@ -39,7 +39,7 @@ The Work item or item is written first, the correction after. A crash between th
 
 ### 3. The overall assistant proposes hypotheses; the user confirms or rejects
 
-`plan.json` gains `hypotheses[]`, at most 3 per plan: `{text (1 to 500 bytes), scope (all | workspace), evidence[] (1 to 5 correction ids from the brief), confidence (low | medium)}`. The host stores each as `hypotheses/h-<8hex>.json` with `state: proposed` and the plan it came from, and makes one Inbox item of kind `hypothesis` from the newest plan only, keyed as `sort` items are (ADR 0047, Implementation notes), with answers `confirm`, `reject`, `later`. `confirm` makes a policy with the hypothesis's text and scope, `source` the hypothesis, and retires it as `confirmed`. `reject` makes it `rejected`; it stays in the brief for 90 days as "rejected, do not use or propose again", then goes. A `proposed` hypothesis nobody answered in 14 days is `expired` and leaves the brief. At most 10 hypotheses are `proposed` at once; the brief says how many slots remain, and the check refuses a plan that exceeds them. The same text as an active policy or an open hypothesis makes no item.
+`plan.json` gains `hypotheses[]`, at most 3 per plan: `{text (1 to 500 bytes), scope (all | workspace), evidence[] (1 to 5 correction ids from the brief), confidence (low | medium)}`. The host stores each as `hypotheses/h-<8hex>.json` with `state: proposed` and the plan it came from, and makes one Inbox item of kind `hypothesis` from the newest plan only, keyed as `sort` items are (ADR 0049, Implementation notes), with answers `confirm`, `reject`, `later`. `confirm` makes a policy with the hypothesis's text and scope, `source` the hypothesis, and retires it as `confirmed`. `reject` makes it `rejected`; it stays in the brief for 90 days as "rejected, do not use or propose again", then goes. A `proposed` hypothesis nobody answered in 14 days is `expired` and leaves the brief. At most 10 hypotheses are `proposed` at once; the brief says how many slots remain, and the check refuses a plan that exceeds them. The same text as an active policy or an open hypothesis makes no item.
 
 The check refuses, with a reason that names the index:
 
@@ -49,7 +49,7 @@ The check refuses, with a reason that names the index:
 
 ### 4. The brief: memory as data, with ranks the host states
 
-The brief gains a section "## What the user told you", before the notes, built only from live records at the run's start: active policies (as JSON lines with `policy`, `text`, `scope`, `from?`, `until?`), then `proposed` hypotheses with their evidence ids, then rejected hypotheses, then the corrections of the last 30 days (`correction`, `kind`, `plan`, `row`, `inTop`, `reason?`). It states the rules: a policy is the user's words and outranks every hypothesis and every note; when they conflict, follow the policy and cite it; a hypothesis may shape a row only when cited in its `basis`; Later is "not now"; nothing in this section goes into `notes`. Policies, hypotheses and corrections scoped to a workspace enter only while that workspace's `share` is not `none`, as its items do (ADR 0047 §3). The section is at most 16 KiB; corrections leave first, oldest first, and the brief says how many. Should policies and hypotheses alone not fit (50 policies of 500 bytes do not), rejected hypotheses leave next, then proposed ones, then policies, each oldest first, and the brief names each count. The shared part keeps its 32 KiB.
+The brief gains a section "## What the user told you", before the notes, built only from live records at the run's start: active policies (as JSON lines with `policy`, `text`, `scope`, `from?`, `until?`), then `proposed` hypotheses with their evidence ids, then rejected hypotheses, then the corrections of the last 30 days (`correction`, `kind`, `plan`, `row`, `inTop`, `reason?`). It states the rules: a policy is the user's words and outranks every hypothesis and every note; when they conflict, follow the policy and cite it; a hypothesis may shape a row only when cited in its `basis`; Later is "not now"; nothing in this section goes into `notes`. Policies, hypotheses and corrections scoped to a workspace enter only while that workspace's `share` is not `none`, as its items do (ADR 0049 §3). The section is at most 16 KiB; corrections leave first, oldest first, and the brief says how many. Should policies and hypotheses alone not fit (50 policies of 500 bytes do not), rejected hypotheses leave next, then proposed ones, then policies, each oldest first, and the brief names each count. The shared part keeps its 32 KiB.
 
 `basis.kind` gains `policy`, `hypothesis` and `correction`; `source` is the record's id. The check refuses a `basis` that cites an id the brief did not carry, so a hypothesis the user rejected, or a correction the user forgot, cannot be a reason. What the host cannot check, and says so: that the agent cited every hypothesis it used. The user sees the difference in Why.
 
@@ -57,10 +57,10 @@ The brief gains a section "## What the user told you", before the notes, built o
 
 - **Why.** A Today row's Why lists its `basis`; a `policy`, `hypothesis` or `correction` entry shows the record's text from `inbox-list` (§6), with Edit on a policy and Forget on the others. An id with no record shows "forgotten".
 - **Forget.** `forget {record}` removes a correction or a `proposed`, `rejected` or `expired` hypothesis. Forgetting a correction also removes every `proposed` hypothesis whose `evidence` names it, so no derived guess outlives its ground (spec §8). A `confirmed` hypothesis is gone already; its policy is the user's word and stays until the user deletes it. A policy is deleted, not forgotten: `update-policy delete`.
-- **What forgetting guarantees.** The next brief is built from live records, so it cannot carry the record, and a `basis` citing its id is refused. A plan run started before the forget read the old brief and may still cite it; its plan is listed with that entry as "forgotten". Kept plans are history, like Results (ADR 0046 §4): they keep their rows and `basis` texts. The clients say so next to Forget. `NOTES.md` is the agent's; the brief forbids copying this section into it, and the default `notes = "review"` lets the user see when it did.
-- **Tests.** A correction `reason` and a hypothesis `text` carry sentinels. After `forget`, the next brief lacks them, a plan citing the ids is refused, and the daemon's log never had them (ADR 0046 A2's grep).
+- **What forgetting guarantees.** The next brief is built from live records, so it cannot carry the record, and a `basis` citing its id is refused. A plan run started before the forget read the old brief and may still cite it; its plan is listed with that entry as "forgotten". Kept plans are history, like Results (ADR 0048 §4): they keep their rows and `basis` texts. The clients say so next to Forget. `NOTES.md` is the agent's; the brief forbids copying this section into it, and the default `notes = "review"` lets the user see when it did.
+- **Tests.** A correction `reason` and a hypothesis `text` carry sentinels. After `forget`, the next brief lacks them, a plan citing the ids is refused, and the daemon's log never had them (ADR 0048 A2's grep).
 
-### 6. Wire: additive, `work:10`, protocol v1
+### 6. Wire: additive, `work:11`, protocol v1
 
 | Request | Reply |
 |---|---|
@@ -71,7 +71,7 @@ The brief gains a section "## What the user told you", before the notes, built o
 | `update-inbox {entry, action: confirm}` on a `hypothesis` item | `policy-saved`, `inbox-saved` |
 | `forget {record}`, `record` an `x-` or `h-` (not `id`, which every request uses for itself) | `result`; an unknown id is `bad-request`; a `confirmed` hypothesis is `bad-request` naming its policy |
 
-`inbox-list` gains `policies[]` (active, then expired), `hypotheses[]` (`proposed` and `rejected`, newest first) and `corrections[]` (newest first, at most 50). A plan row's `basis.kind` takes the three new values; a level 9 client shows an unknown kind as unknown and ignores the `hypothesis` item kind and the new arrays, as the contract already says. `update-work later`, `pin` and `unpin` record corrections at every level, since they are the host's own observation. The full contract goes into `protocol/PROTOCOL.md`, "Policies, corrections and hypotheses"; fixtures in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:10`; a level 9 host answers them `bad-request`.
+`inbox-list` gains `policies[]` (active, then expired), `hypotheses[]` (`proposed` and `rejected`, newest first) and `corrections[]` (newest first, at most 50). A plan row's `basis.kind` takes the three new values; a level 10 client shows an unknown kind as unknown and ignores the `hypothesis` item kind and the new arrays, as the contract already says. `update-work later`, `pin` and `unpin` record corrections at every level, since they are the host's own observation. The full contract goes into `protocol/PROTOCOL.md`, "Policies, corrections and hypotheses"; fixtures in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:11`; a level 10 host answers them `bad-request`.
 
 ### 7. Clients
 
@@ -82,17 +82,17 @@ The brief gains a section "## What the user told you", before the notes, built o
 
 ### 8. Logs and budgets
 
-Logs carry ids, kinds, counts, scopes and states; never policy text, reasons, hypothesis text or evidence texts. No new run: hypotheses come out of the plan run, so PA3 adds no agent cost and no budget beyond ADR 0047 §9. The record limits are §1 to §3's: 50 active policies, 10 `proposed` hypotheses, 200 corrections or 90 days, 16 KiB of memory in the brief. A limit reached refuses the write with the limit, or leaves the oldest out and says so; nothing stops a plan.
+Logs carry ids, kinds, counts, scopes and states; never policy text, reasons, hypothesis text or evidence texts. No new run: hypotheses come out of the plan run, so PA3 adds no agent cost and no budget beyond ADR 0049 §9. The record limits are §1 to §3's: 50 active policies, 10 `proposed` hypotheses, 200 corrections or 90 days, 16 KiB of memory in the brief. A limit reached refuses the write with the limit, or leaves the oldest out and says so; nothing stops a plan.
 
 ## Not decided
 
-- Whether a workspace-scoped policy also enters that delegate's request brief (`assistant/brief.rs`). This ADR: no; the delegate's `NOTES.md` carries the user's preferences for it (ADR 0047 §1).
+- Whether a workspace-scoped policy also enters that delegate's request brief (`assistant/brief.rs`). This ADR: no; the delegate's `NOTES.md` carries the user's preferences for it (ADR 0049 §1).
 - Whether `complete` and `create-task` on an item the plan did not list are corrections ("you missed what I worked on"). This ADR: no; they are not about the plan.
 - Whether a policy may be structured (a time window, a minute cap) that the host enforces on `top`. This ADR: text only; the host enforces citations, not meaning.
 - Whether the agent may propose to renew an expiring policy. This ADR: no; it expires, and the user adds it again.
 - How long a rejected hypothesis stays in the brief (§3: 90 days), and the 14-day expiry, 30-day correction window and 200 / 90-day retention are initial values.
 - Whether `userOrder` carries to the next plan as a `reordered` correction only (this ADR) or also as the starting order.
-- Whether `plan-now`'s `minutes` persists as the day's free time (ADR 0047, open).
+- Whether `plan-now`'s `minutes` persists as the day's free time (ADR 0049, open).
 
 ## Consequences
 
@@ -112,14 +112,14 @@ Logs carry ids, kinds, counts, scopes and states; never policy text, reasons, hy
 
 | Slice | Scope | Acceptance |
 |---|---|---|
-| C0 | this ADR, `PROTOCOL.md`, fixtures, Rust, Swift and Kotlin types | fixtures round-trip in all three; a level 9 client decodes a plan with the new `basis` kinds |
+| C0 | this ADR, `PROTOCOL.md`, fixtures, Rust, Swift and Kotlin types | fixtures round-trip in all three; a level 10 client decodes a plan with the new `basis` kinds |
 | C1 | policy store, `add-policy`, `update-policy`, expiry and cleanup | 50 active refused with the limit; a stale `rev` conflicts; expired leaves the list after 30 days; oversize text refused |
 | C2 | corrections from `later`, `pin`, `unpin`, `reject`; `update-plan reorder` and `dismiss` | each action writes one correction with `plan`, `row`, `inTop`; `deferred` carries the reason only when given; a non-newest plan conflicts; 200 / 90 days |
 | C3 | the memory section of the brief, share filter, size | synthetic data: a `none` workspace's policy, hypothesis and correction are absent; the section holds policies first, then hypotheses, then corrections; over 16 KiB drops corrections oldest first and says how many |
 | C4 | plan file: `hypotheses[]`, the three `basis` kinds, the check | counterexamples refused: Later-only evidence, `all` from one workspace's rows, an evidence or `basis` id not in the brief, more hypotheses than slots |
 | C5 | `hypothesis` items, `confirm`, `reject` with reason, dedup, 14-day expiry | confirm twice makes one policy; reject records a correction; the same text makes no second item |
 | C6 | `forget`, the cascade, sentinel tests | a forgotten correction's hypotheses are gone; the next brief lacks both sentinels; a plan citing them is refused; the log grep is empty |
-| C7 | advertise `work:10`; CLI; muxa for tmux | bats; `policy add` against a level 9 host fails with "update muxa-bridge" and sends nothing |
+| C7 | advertise `work:11`; CLI; muxa for tmux | bats; `policy add` against a level 10 host fails with "update muxa-bridge" and sends nothing |
 | C8 | iOS: Policies, Today reorder and Not today, Why with Forget, `hypothesis` items | UI tests on the demo |
 | C9 | Android | the same |
 | C10 | docs: `agents.md`, `inbox.md`, `work-model.md`, `SECURITY.md`, `plan.md` | — |

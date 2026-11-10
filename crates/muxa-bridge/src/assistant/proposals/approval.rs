@@ -1,5 +1,5 @@
 //! What an approval of a proposal item ran and made, kept in the item's own
-//! file beside it (ADR 0047 §4). Keyed by the item's id and its proposal's
+//! file beside it (ADR 0049 §4). Keyed by the item's id and its proposal's
 //! hash, as a Routine's approval is (ADR 0026, Implementation notes).
 use std::collections::BTreeMap;
 

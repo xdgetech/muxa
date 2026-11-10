@@ -1,7 +1,7 @@
 import Foundation
 import MuxaProtocol
 
-/// The demo bridge's Captures and Work items (`work` level 8, ADR 0046), kept in memory,
+/// The demo bridge's Captures and Work items (`work` level 9, ADR 0048), kept in memory,
 /// with the host's checks: one Capture per `clientId`, a stale `rev` is refused, and
 /// one Task per Work item `rev`. Its assistant requests are in `DemoAssistant+Requests.swift`.
 struct DemoAssistant: Sendable {
@@ -26,7 +26,7 @@ struct DemoAssistant: Sendable {
         captures.filter { $0.state == .received }.sorted { $0.createdAt > $1.createdAt }
     }
 
-    /// Pinned open ones first, in the order pinned (`work` level 9, ADR 0047 §6); then the
+    /// Pinned open ones first, in the order pinned (`work` level 10, ADR 0049 §6); then the
     /// other open ones, newest first; then the moved-down ones in the order moved; then
     /// done and withdrawn, newest change first. `waiting` derives a linked Task's open item.
     /// A live run makes the item in progress, as a running Task does.
@@ -88,7 +88,7 @@ struct DemoAssistant: Sendable {
     }
 
     /// Later, complete, withdraw and reopen; `laterAt` is the next place at the bottom.
-    /// At level 9 also pin, unpin, and edit with `due`; a pin of a pinned item, or an
+    /// At level 10 also pin, unpin, and edit with `due`; a pin of a pinned item, or an
     /// unpin of an unpinned one, keeps `rev`.
     mutating func update(
         _ id: String, rev: UInt64, action: WorkAction, laterAt: UInt64, title: String? = nil, workspace: String? = nil,

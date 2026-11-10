@@ -1,4 +1,4 @@
-//! The daemon's tick for assistant requests (ADR 0046 §4–§6): finds a run
+//! The daemon's tick for assistant requests (ADR 0048 §4–§6): finds a run
 //! again after a crash, keeps each version's delivery, ends what a version
 //! no longer needs, and closes finished runs' sessions as for Routine runs
 //! (ADR 0037). It never stops a timed-out agent. Plans have their own scan

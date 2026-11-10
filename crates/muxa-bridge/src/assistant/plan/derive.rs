@@ -1,4 +1,4 @@
-//! What the host says about a plan, never the agent (ADR 0047 §5): the
+//! What the host says about a plan, never the agent (ADR 0049 §5): the
 //! Later items due soon, stored with the plan; and `unanswered`, `stale`
 //! and `changed`, derived each time plans are listed.
 use std::collections::HashMap;

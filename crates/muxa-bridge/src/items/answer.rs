@@ -70,7 +70,7 @@ pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody
     let saved = close(cx, &task, &answer.item, answer.action, plan).await?;
     tracing::info!(item = %answer.item, task, action = ?answer.action, "inbox item answered");
     let (config, item, action) = (Arc::clone(&cx.records), saved.clone(), answer.action);
-    // The item is written; the correction is a signal on top (ADR 0048 §2).
+    // The item is written; the correction is a signal on top (ADR 0050 §2).
     let recorded = blocking(move || {
         corrections::after_answer(&config, &item, action, reason, now());
         Ok(())
@@ -83,7 +83,7 @@ pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody
 }
 
 /// A correction's reason: `text` with `later`, and with `reject` on a
-/// `sort` or `delegate` item (ADR 0048 §2).
+/// `sort` or `delegate` item (ADR 0050 §2).
 fn reason(item: &InboxItem, answer: &Answer) -> Result<Option<String>, ErrorBody> {
     let proposal = matches!(item.kind, ItemKind::Sort | ItemKind::Delegate);
     match answer.action {

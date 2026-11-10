@@ -43,7 +43,7 @@ import tech.xdge.muxa.session.taskItem
 
 /**
  * One Work item, read with `get-work` on open: Captures → Request → Result → Tasks → the decision
- * it waits on (ADR 0046 §10). A Task that waits on a decision is answered in its Inbox item, not here.
+ * it waits on (ADR 0048 §10). A Task that waits on a decision is answered in its Inbox item, not here.
  */
 @Composable
 fun WorkDetail(model: AppModel, id: String) {
@@ -130,7 +130,7 @@ private fun LinkedTasks(model: AppModel, item: WorkItem) {
     }
 }
 
-/** Complete, Later and Withdraw on an open item, and at `work:9` Pin and Due; Reopen on a closed one. Start a Task on both. */
+/** Complete, Later and Withdraw on an open item, and at `work:10` Pin and Due; Reopen on a closed one. Start a Task on both. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Actions(model: AppModel, item: WorkItem, busy: Boolean) {

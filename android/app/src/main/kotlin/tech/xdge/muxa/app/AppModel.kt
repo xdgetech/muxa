@@ -104,7 +104,7 @@ class AppModel(
     var storageError by mutableStateOf<String?>(null)
         private set
 
-    /** Captures the host has not confirmed (ADR 0046); during the demo, kept in memory only. */
+    /** Captures the host has not confirmed (ADR 0048); during the demo, kept in memory only. */
     var unsent = savedUnsent
         private set
     private var unsentMirror by mutableStateOf<List<UnsentCapture>>(emptyList())
@@ -217,7 +217,7 @@ class AppModel(
     val selectedTask: String? get() = (selection as? Selection.Task)?.id
     val selectedRoutine: String? get() = (selection as? Selection.Routine)?.key
 
-    /** The Capture sheet's text and workspace while it is open (ADR 0046). */
+    /** The Capture sheet's text and workspace while it is open (ADR 0048). */
     var captureDraft by mutableStateOf<CaptureDraft?>(null)
 
     /** Shown once a Save could not reach the host: the capture waits on this device. */
@@ -232,7 +232,7 @@ class AppModel(
     /** The Work item or Capture a change is on its way for, by id. */
     var changingWork by mutableStateOf<String?>(null)
 
-    /** The plan whose rows the user has seen: a newer one shows New in Today (ADR 0047 §5). */
+    /** The plan whose rows the user has seen: a newer one shows New in Today (ADR 0049 §5). */
     var seenPlan by mutableStateOf<String?>(null)
 
     /** Plan now's sheet is open. */
@@ -376,7 +376,7 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        // Try the Demo shows Captures, Work items (ADR 0046) and Today (ADR 0047); the UI tests pick their level.
+        // Try the Demo shows Captures, Work items (ADR 0048) and Today (ADR 0049); the UI tests pick their level.
         demoWorkLevel = WORK_PLANS
         demoOldItems = false
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))

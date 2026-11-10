@@ -9,7 +9,7 @@ struct DemoRun: Sendable {
     var started: Date
 }
 
-/// The demo's assistant requests (ADR 0046 §6–9), with the host's checks. Delivery
+/// The demo's assistant requests (ADR 0048 §6–9), with the host's checks. Delivery
 /// follows from the run's age: pending, received, processing, then a Result.
 extension DemoAssistant {
     /// Seconds after the start at which the run is received, processing, and resulted.

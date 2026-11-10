@@ -2,7 +2,7 @@ import Foundation
 import MuxaProtocol
 
 /// `capture`, `sort-capture`, `update-work`, `get-work` and the assistant requests
-/// (`work` level 8, ADR 0046), answered as the bridge with its daemon answers them.
+/// (`work` level 9, ADR 0048), answered as the bridge with its daemon answers them.
 extension DemoBridge {
     func serveCaptures(_ req: Request) async {
         guard Self.workLevel >= workAssistant else { return unsupported(req.id, Self.noRequest) }
@@ -38,7 +38,7 @@ extension DemoBridge {
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
         case .updateWork(let id, let item, let rev, let action, let title, let workspace, _, let due):
-            // A level 8 host knows neither pins nor due dates (ADR 0047 §7).
+            // A level 9 host knows neither pins nor due dates (ADR 0049 §7).
             if Self.workLevel < workPlans, action == .pin || action == .unpin || due != nil {
                 return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "unknown action"), sessions: nil))
             }

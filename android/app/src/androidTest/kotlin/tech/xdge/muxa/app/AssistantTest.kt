@@ -18,7 +18,7 @@ import org.junit.runner.RunWith
 import tech.xdge.muxa.protocol.AssistScope
 import tech.xdge.muxa.protocol.Delivery
 
-/** Ask Assistant from Capture and from a Work item, and the Result in the detail (ADR 0046 §10), against the demo at level 8. */
+/** Ask Assistant from Capture and from a Work item, and the Result in the detail (ADR 0048 §10), against the demo at level 9. */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class AssistantTest {
@@ -33,7 +33,7 @@ class AssistantTest {
     }
 
     private fun launchOnInbox() {
-        scenario = ActivityScenario.launch(demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK8, true))
+        scenario = ActivityScenario.launch(demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK9, true))
         waitForTag("work-row-$OPEN")
     }
 

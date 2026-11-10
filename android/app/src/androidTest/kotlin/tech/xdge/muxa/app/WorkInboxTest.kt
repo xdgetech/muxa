@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 import tech.xdge.muxa.protocol.WorkState
 import tech.xdge.muxa.session.listed
 
-/** Capture and the Inbox's Work and Unsorted sections (ADR 0046), against the demo at `work` level 8. */
+/** Capture and the Inbox's Work and Unsorted sections (ADR 0048), against the demo at `work` level 9. */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class WorkInboxTest {
@@ -39,7 +39,7 @@ class WorkInboxTest {
     }
 
     private fun launchOnInbox() {
-        scenario = ActivityScenario.launch(demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK8, true))
+        scenario = ActivityScenario.launch(demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK9, true))
         waitForTag("work-row-$OPEN")
     }
 
@@ -63,7 +63,7 @@ class WorkInboxTest {
     fun theInboxHasThreeSectionsAndCountsDecisionsOnly() {
         launchOnInbox()
         for (section in listOf("decisions", "work", "unsorted")) scrollTo("inbox-section-$section")
-        // Today comes with `work:9` only (ADR 0047).
+        // Today comes with `work:10` only (ADR 0049).
         assertTrue(!compose.exists("inbox-section-today"))
         waitForText("sidebar-mode-inbox", "Inbox ${model.inboxItems.size}")
         // A Task with an open item: the Work item waits on it and has no answer of its own.

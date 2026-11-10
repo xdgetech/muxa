@@ -40,7 +40,7 @@ internal class DemoItems(private var items: List<InboxItem>) {
 
     fun item(id: String): InboxItem? = items.firstOrNull { it.id == id }
 
-    /** The overall assistant's proposal items join the list (ADR 0047). */
+    /** The overall assistant's proposal items join the list (ADR 0049). */
     fun add(more: List<InboxItem>) {
         items = items + more
     }

@@ -2,7 +2,7 @@ import Foundation
 import MuxaProtocol
 import MuxaSession
 
-/// A workspace's assistant on Work items (ADR 0046 §10). Requests run on the host's
+/// A workspace's assistant on Work items (ADR 0048 §10). Requests run on the host's
 /// daemon; the app asks, cancels, and shows the delivery and the Result.
 extension AppModel {
     /// The item's newest request: the one a row and Cancel speak of.

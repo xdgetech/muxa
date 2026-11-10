@@ -1,4 +1,4 @@
-//! `assistant` in `inbox-list` (ADR 0047 §7): who assists on this host.
+//! `assistant` in `inbox-list` (ADR 0049 §7): who assists on this host.
 //! Clients leave `overall` out of their New Task and Capture pickers.
 use muxa_protocol::{AssistantInfo, DelegateInfo};
 

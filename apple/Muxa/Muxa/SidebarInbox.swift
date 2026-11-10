@@ -24,7 +24,7 @@ struct SidebarInbox: View {
                 Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure)
             }
             if model.usesWork {
-                // Today above Decisions (ADR 0047 §5), then Work and Unsorted (ADR 0046 §10).
+                // Today above Decisions (ADR 0049 §5), then Work and Unsorted (ADR 0048 §10).
                 if model.showsToday {
                     SidebarTodaySection()
                 }

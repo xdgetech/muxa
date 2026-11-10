@@ -2,7 +2,7 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// The Inbox's Today section (ADR 0047 §5): the newest plan's rows, each with its
+/// The Inbox's Today section (ADR 0049 §5): the newest plan's rows, each with its
 /// reason, its minutes and a Why disclosure, then the Due soon line and Plan Now. A new
 /// plan replaces the rows and shows New until a row is opened; it never changes the
 /// selection, which only a tap on a row does.

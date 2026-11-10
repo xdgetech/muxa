@@ -311,7 +311,7 @@ mod tests {
         assert!(parkable(&r).is_err());
     }
 
-    /// ADR 0046 section 5: only the Task is listed, watched or parked.
+    /// ADR 0048 section 5: only the Task is listed, watched or parked.
     #[tokio::test]
     async fn only_a_task_of_each_record_kind_shows_as_a_task() {
         let base = std::env::temp_dir().join(format!(
@@ -333,7 +333,7 @@ mod tests {
             extra.insert(crate::records::KIND_FIELD.into(), k.into());
             Some(extra)
         };
-        // ADR 0047 §5: an overall run is an assistant run that names a plan.
+        // ADR 0049 §5: an overall run is an assistant run that names a plan.
         let plan = crate::assistant::record::RunFor::Plan(crate::assistant::record::PlanRun {
             plan: "p-0000000a".into(),
             notes_base: "e3b0".into(),

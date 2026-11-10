@@ -1,4 +1,4 @@
-//! The overall assistant's proposals (ADR 0047 §4): after a plan is stored,
+//! The overall assistant's proposals (ADR 0049 §4): after a plan is stored,
 //! the daemon's tick makes each of its `sort` and `delegate` proposals an
 //! Inbox item, and `update-inbox approve` runs the action once. A delegate
 //! to a workspace with `overall_requests = "auto"` is approved by the host

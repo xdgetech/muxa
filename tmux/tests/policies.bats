@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# The Inbox at muxa's work level 10 (ADR 0048): Today in the order the user
+# The Inbox at muxa's work level 11 (ADR 0050): Today in the order the user
 # chose, K/J/x on its rows, hypothesis items, and the Policies list (y). The
 # data is the contract's own fixture.
 load helper
@@ -13,13 +13,13 @@ setup() {
 }
 teardown() { kill "${CLIENT_PID:-}" 2>/dev/null || true; teardown_server; }
 
-# The level 9 list (Work items, sort and delegate items) with the level 10
+# The level 10 list (Work items, sort and delegate items) with the level 11
 # list's plan, hypothesis item, policies, hypotheses and corrections.
 memory_inbox() {
   jq -c -n --slurpfile m "$FIXTURE" '
     ($m[] | select(.type == "inbox-list" and .plans and .policies == null)) as $nine |
     ($m[] | select(.type == "inbox-list" and .policies)) as $ten |
-    {work: 10, items: ($nine.items + $ten.items), entries: [], runs: [], workItems: $nine.work,
+    {work: 11, items: ($nine.items + $ten.items), entries: [], runs: [], workItems: $nine.work,
      captures: $nine.captures, requests: $nine.requests, plans: $ten.plans, assistant: $nine.assistant,
      policies: $ten.policies, hypotheses: $ten.hypotheses, corrections: $ten.corrections}'
 }
@@ -87,8 +87,8 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [ "$(inbox order today:3 down "$ITEMS")" = "" ]
 }
 
-@test "below work:10 the Today keys and y do nothing" {
-  jq -c '.work = 9' "$ITEMS" >"$TMPDIR/nine.json"
+@test "below work:11 the Today keys and y do nothing" {
+  jq -c '.work = 10' "$ITEMS" >"$TMPDIR/nine.json"
   for k in K J x y; do
     [ "$(inbox key today:2 "$k" "$TMPDIR/nine.json")" = "" ]
   done

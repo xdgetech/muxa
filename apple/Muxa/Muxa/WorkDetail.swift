@@ -2,7 +2,7 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// A Work item (ADR 0046): Capture, then the assistant's request and Result, the
+/// A Work item (ADR 0048): Capture, then the assistant's request and Result, the
 /// Tasks, and the decision it waits on; then what the user can do. Only the user
 /// completes or withdraws it; a Task or a Result never does.
 struct WorkDetail: View {

@@ -1,4 +1,4 @@
-//! `update-plan` (ADR 0048 §2, §6): the user reorders Today's rows or
+//! `update-plan` (ADR 0050 §2, §6): the user reorders Today's rows or
 //! removes one from Today. Only the newest `resulted` plan changes; `top`
 //! keeps the agent's order. Each change records one correction.
 use muxa_protocol::{CorrectionKind, ErrorBody, ErrorCode, Plan, PlanAction};

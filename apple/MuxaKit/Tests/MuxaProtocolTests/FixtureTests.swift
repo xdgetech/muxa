@@ -262,7 +262,7 @@ struct FixtureTests {
         let results = listed[0].results
         #expect(!results[0].stale && results[1].stale)
         #expect(results[0].findings.allSatisfy { !$0.sources.isEmpty })
-        // A client before level 8 reads an inbox-list without the new arrays.
+        // A client before level 9 reads an inbox-list without the new arrays.
         let old = try Wire.decodeMessage(Data(#"{"type":"inbox-list","inbox":1,"entries":[]}"#.utf8))
         guard case .inboxList(_, _, _, let none, let noCaptures, let noRequests, _, _, _, _, _) = old else {
             Issue.record("expected inbox-list"); return
@@ -342,7 +342,7 @@ struct FixtureTests {
         guard case .planSaved(_, let failed) = messages[22] else { Issue.record("expected plan-saved"); return }
         #expect(failed.delivery == .failed && (failed.reason?.utf8.count ?? 0) > 0)
         #expect(plans.allSatisfy { $0.reason == nil })
-        // A client before level 9 reads an inbox-list without plans.
+        // A client before level 10 reads an inbox-list without plans.
         let old = try Wire.decodeMessage(Data(#"{"type":"inbox-list","inbox":1,"entries":[]}"#.utf8))
         guard case .inboxList(_, _, _, _, _, _, let none, nil, _, _, _) = old else { Issue.record("expected inbox-list"); return }
         #expect(none.isEmpty)

@@ -2,7 +2,7 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// Why the current plan lists this Work item in Today (ADR 0047 §8).
+/// Why the current plan lists this Work item in Today (ADR 0049 §8).
 struct PlanReasonSection: View {
     let row: PlanRow
 
@@ -22,7 +22,7 @@ struct PlanReasonSection: View {
 }
 
 /// The user's due date, in a time zone: the item's own, else this device's. Only the
-/// user sets one; a plan's estimated deadline stays in its reasons (ADR 0047 §6).
+/// user sets one; a plan's estimated deadline stays in its reasons (ADR 0049 §6).
 struct DueSection: View {
     @Environment(AppModel.self) private var model
     let item: WorkItem
@@ -75,7 +75,7 @@ struct DueSection: View {
     }
 }
 
-/// A Result's proposed `NOTES.md` for its workspace's assistant (ADR 0047 §1). The app
+/// A Result's proposed `NOTES.md` for its workspace's assistant (ADR 0049 §1). The app
 /// has no copy of the live file, so it shows the whole proposed text. Update Notes
 /// writes it only while the host's file is still the one the run read.
 struct NotesSection: View {

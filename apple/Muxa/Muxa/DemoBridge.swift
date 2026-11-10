@@ -31,7 +31,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     var sessions: [Session]
     /// Grows when a task record is created.
     private var tasks: DemoTasks
-    /// Routines, stored Inbox entries (ADR 0026), Captures and Work items (ADR 0046).
+    /// Routines, stored Inbox entries (ADR 0026), Captures and Work items (ADR 0048).
     var work: DemoWork
     /// Set until the first watch, when the alert's clock starts.
     private var alertsPending: Bool
@@ -109,20 +109,20 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:9",
+            "task-loop", "tasks-changed", "viewport", "history", "work:10",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:9" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:10" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:9" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:10" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:9" ? "work:3" : $0 } }
-        // A bridge from before Protect and Delete Old, and before Captures (ADR 0046): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:9" ? "work:7" : $0 } }
-        // A bridge from before the overall assistant (ADR 0047): no Today, pins or notes.
-        if arguments.contains("-work8") { return all.map { $0 == "work:9" ? "work:8" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:10" ? "work:3" : $0 } }
+        // A bridge from before Protect and Delete Old (ADR 0046) and Captures (ADR 0048): `+` is New Task.
+        if arguments.contains("-work7") { return all.map { $0 == "work:10" ? "work:7" : $0 } }
+        // A bridge from before the overall assistant (ADR 0049): no Today, pins or notes.
+        if arguments.contains("-work9") { return all.map { $0 == "work:10" ? "work:9" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -210,7 +210,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .createTask(
             let id, let workspace, let title, let goal, let project, let repo, let branch, _, let loop, let worker, let item, let rev):
             guard worker == nil else { unsupported(id); return }
-            // Only a level 8 host knows Work items; an older one ignores the fields.
+            // Only a level 9 host knows Work items; an older one ignores the fields.
             let forWork = Self.workLevel >= workAssistant ? item.flatMap { w in rev.map { (w, $0) } } : nil
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) { [weak self] in
                 self?.createTask(
@@ -228,7 +228,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
-        // The demo has no policies yet (`work` level 10, ADR 0048).
+        // The demo has no policies yet (`work` level 11, ADR 0050).
         case .addPolicy, .updatePolicy, .updatePlan, .forget:
             unsupported(req.id, Self.noRequest)
         case .applyNotes, .planNow:
@@ -391,7 +391,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let (entries, items) = lock.withLock { (work.shownEntries, work.shownItems) }
             let (listed, captures, requests) = listedWork()
             let (plans, assistant) = listedPlans()
-            // A host below level 9 has no overall assistant, so none of its proposals.
+            // A host below level 10 has no overall assistant, so none of its proposals.
             let shown = Self.workLevel >= workPlans ? items : items.filter { $0.kind != .sort && $0.kind != .delegate }
             emit(.inboxList(inbox: id, entries: entries, items: Self.workLevel >= workItems ? shown : [],
                             work: listed, captures: captures, requests: requests, plans: plans, assistant: assistant))
@@ -592,7 +592,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     ) {
         let launched = branch != Self.failingBranch
         let outcome = lock.withLock { () -> Result<TaskRecord, DemoTasks.Refusal> in
-            // One Task per Work item `rev`: asking again returns it (ADR 0046 §3).
+            // One Task per Work item `rev`: asking again returns it (ADR 0048 §3).
             if let forWork, let made = work.assistant.task(for: forWork.id, rev: forWork.rev), let record = tasks.record(made) {
                 return .success(record)
             }

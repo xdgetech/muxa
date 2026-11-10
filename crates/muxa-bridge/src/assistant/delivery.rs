@@ -1,5 +1,5 @@
 //! A request's delivery state comes from its run record and the adapter
-//! (ADR 0046 §6), never from the agent's words. The stored value is a cache:
+//! (ADR 0048 §6), never from the agent's words. The stored value is a cache:
 //! a list derives it again from the record, the daemon's tick also from the
 //! adapter, and only the tick writes it.
 use std::collections::HashMap;
@@ -63,7 +63,7 @@ pub fn derive(q: &AssistantRequest, f: &Facts<'_>) -> (Delivery, u64) {
     )
 }
 
-/// A plan's delivery, as a request's (ADR 0047 §5): only its own run counts.
+/// A plan's delivery, as a request's (ADR 0049 §5): only its own run counts.
 pub fn derive_plan(p: &Plan, f: &Facts<'_>) -> (Delivery, u64) {
     let seen = (p.delivery, p.delivery_at);
     if settled(p.delivery) {

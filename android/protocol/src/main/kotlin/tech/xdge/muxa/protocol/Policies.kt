@@ -3,7 +3,7 @@ package tech.xdge.muxa.protocol
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// Policies, corrections and hypotheses (ADR 0048), at `work` level 10: what the user
+// Policies, corrections and hypotheses (ADR 0050), at `work` level 11: what the user
 // told the overall assistant, and what the host saw. Their texts are never logged.
 
 /** The user's own words, which outrank every hypothesis and note. */

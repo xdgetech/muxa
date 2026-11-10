@@ -255,7 +255,7 @@ fn more_hypotheses_than_slots_are_refused() {
         s.reasons(&plan(vec![], two)),
         ["hypotheses has 2 entries; this plan may propose 0."]
     );
-    // A plan briefed before ADR 0048 may propose none and cite nothing.
+    // A plan briefed before ADR 0050 may propose none and cite nothing.
     let none = Told::nothing();
     let run = PlanRun {
         plan: "p-0a1b2c3d".into(),

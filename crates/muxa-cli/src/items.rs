@@ -22,7 +22,7 @@ const REPLY_WAIT: Duration = Duration::from_secs(30);
 pub struct Answer {
     pub action: InboxAction,
     pub text: Option<String>,
-    /// With `reject`, at level 10: the correction's reason (ADR 0048).
+    /// With `reject`, at level 11: the correction's reason (ADR 0050).
     pub reason: Option<String>,
     pub option: Option<u32>,
     /// Used by the host only when the answer ends the Task (ADR 0043).
@@ -52,7 +52,7 @@ impl Answer {
             wants_text,
             "reply and ask-agent",
         )?;
-        // A reason is never required (ADR 0048 §2).
+        // A reason is never required (ADR 0050 §2).
         if let Some(r) = &self.reason {
             if a != InboxAction::Reject {
                 return Err("--reason is only for reject".into());

@@ -1,4 +1,4 @@
-//! The daemon's tick for plans (ADR 0047 §5), as for requests (ADR 0046
+//! The daemon's tick for plans (ADR 0049 §5), as for requests (ADR 0048
 //! §4–§6): finds a run again after a crash, keeps each plan's delivery,
 //! ends runs no plan waits for, closes published runs' sessions, and removes
 //! published runs' folders once a newer plan published or after a week.

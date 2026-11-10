@@ -1,7 +1,7 @@
 import Foundation
 import MuxaProtocol
 
-/// Assistant requests on Work items behind the host's `work` level 8 (ADR 0046 §9). A
+/// Assistant requests on Work items behind the host's `work` level 9 (ADR 0048 §9). A
 /// request needs the host's daemon; without it the host refuses with `unsupported`.
 extension PaneSession {
     /// A Work item as `get-work` read it: every Capture it links, sorted or not, and its requests.

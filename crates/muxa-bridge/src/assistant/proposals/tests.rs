@@ -411,7 +411,7 @@ async fn reject_answers_the_item_and_makes_nothing() {
         (ItemState::Answered, Some(InboxAction::Reject))
     );
     assert!(h.requests().is_empty());
-    // ADR 0048 §2: one correction, with the reason.
+    // ADR 0050 §2: one correction, with the reason.
     let now = crate::records::now();
     let recorded = crate::assistant::corrections::live(h.config(), now).unwrap();
     assert_eq!(recorded.len(), 1);

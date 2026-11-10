@@ -2,7 +2,7 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// A request on a Work item (ADR 0046 §6): what was asked, its delivery with its age,
+/// A request on a Work item (ADR 0048 §6): what was asked, its delivery with its age,
 /// Cancel while the run may still deliver, and Open Session while the run's session lives.
 struct RequestSection: View {
     @Environment(AppModel.self) private var model

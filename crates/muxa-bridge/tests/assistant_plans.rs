@@ -1,11 +1,11 @@
-//! The overall assistant's plans (ADR 0047 slices B3 and B4) end to end: a
+//! The overall assistant's plans (ADR 0049 slices B3 and B4) end to end: a
 //! real daemon on a throwaway tmux server runs overall runs with the fake
 //! agent of `data/assistant-agent.py`. One catch-up and one occurrence of
 //! `plans`, the plan check and its fail prompt, an open run conflicts, a
 //! budget stops a scheduled plan with a reason, no plan text in the
 //! daemon's log, and the windows that were there do not change. Slice B5:
 //! a delegate proposal to an `auto` workspace is sent once, without review.
-//! ADR 0048 slice C6: a forgotten correction and the hypothesis it grounds
+//! ADR 0050 slice C6: a forgotten correction and the hypothesis it grounds
 //! leave the next brief, a plan citing them is refused, and the log never
 //! held them.
 #![cfg(feature = "tmux-integration")]
@@ -26,7 +26,7 @@ use muxa_protocol::{
 use serde_json::{Value, json};
 
 const AGENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/assistant-agent.py");
-/// Plan texts that must never reach the daemon's log (ADR 0047 §9).
+/// Plan texts that must never reach the daemon's log (ADR 0049 §9).
 const MARKS: [&str; 3] = ["why-mark-4a7e", "next-mark-91c0", "notes-mark-d35b"];
 const FAIL_PROMPT: &str = "The plan did not pass the check";
 /// The midnight plan, whose last occurrence the test sets three days back.

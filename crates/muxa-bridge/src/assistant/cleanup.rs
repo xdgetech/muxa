@@ -1,6 +1,6 @@
 //! A published assistant run's folder stays so its result files can be read.
 //! It goes when the request's next version publishes, or after
-//! [`KEEP`] (ADR 0046 §5). A failed, replaced or cancelled run keeps its
+//! [`KEEP`] (ADR 0048 §5). A failed, replaced or cancelled run keeps its
 //! folder for inspection, as a failed Routine run does (ADR 0037 §2).
 use std::path::PathBuf;
 

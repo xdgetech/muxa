@@ -1,4 +1,4 @@
-//! `hypothesis` Inbox items (ADR 0048 §3): one per `proposed` hypothesis of
+//! `hypothesis` Inbox items (ADR 0050 §3): one per `proposed` hypothesis of
 //! the newest plan, in the plan run's item file, keyed by the hypothesis so
 //! a second scan makes none. The same text as an active policy or an open
 //! hypothesis item makes no item.

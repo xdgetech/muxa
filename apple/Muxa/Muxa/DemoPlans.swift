@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import MuxaProtocol
 
-/// The demo's overall assistant (`work` level 9, ADR 0047), kept in memory with the
+/// The demo's overall assistant (`work` level 10, ADR 0049), kept in memory with the
 /// host's checks: one plan made at a time, approve once, and notes written only while
 /// the live file is still the one the run read. A plan never changes a Work item.
 struct DemoPlans: Sendable {

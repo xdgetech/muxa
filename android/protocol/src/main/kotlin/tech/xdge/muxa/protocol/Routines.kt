@@ -24,14 +24,14 @@ const val WORK_WORKTREE_END = 7
 /** Level 8: `protect` and `unprotect` on an Inbox item, and `delete-inbox` (ADR 0046). */
 const val WORK_DELETE_INBOX = 8
 
-/** Level 8: Captures, Work items and assistant requests, and `work` on `create-task` (ADR 0046). */
-const val WORK_ASSISTANT = 8
+/** Level 9: Captures, Work items and assistant requests, and `work` on `create-task` (ADR 0048). */
+const val WORK_ASSISTANT = 9
 
-/** Level 9: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0047). */
-const val WORK_PLANS = 9
+/** Level 10: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0049). */
+const val WORK_PLANS = 10
 
-/** Level 10: policies, corrections and hypotheses (ADR 0048). */
-const val WORK_POLICIES = 10
+/** Level 11: policies, corrections and hypotheses (ADR 0050). */
+const val WORK_POLICIES = 11
 
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
@@ -127,7 +127,7 @@ enum class InboxAction {
     /** Sends the item and its text to the workspace's Ask session; the item stays open (ADR 0041). */
     @SerialName("ask-agent") ASK_AGENT,
 
-    /** A `hypothesis`: makes a policy of it (level 10, ADR 0048). */
+    /** A `hypothesis`: makes a policy of it (level 11, ADR 0050). */
     @SerialName("confirm") CONFIRM,
     /** Any item, open or closed: `delete-inbox` keeps it. Never in `answers` (ADR 0046). */
     @SerialName("protect") PROTECT,

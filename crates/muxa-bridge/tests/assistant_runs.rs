@@ -1,4 +1,4 @@
-//! Assistant requests (ADR 0046 slice A8) end to end: a real daemon on a
+//! Assistant requests (ADR 0048 slice A8) end to end: a real daemon on a
 //! throwaway tmux server runs requests with the fake agent of
 //! `data/assistant-agent.py`. One request per Work item rev and one run per
 //! version, also after a crash; the result check and its fail prompt; a new
@@ -18,7 +18,7 @@ use muxa_protocol::{AssistantRequest, Delivery, ErrorCode, Message, WorkItem};
 use serde_json::{Value, json};
 
 const AGENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/assistant-agent.py");
-/// Content that must never reach the daemon's log (ADR 0046 §11).
+/// Content that must never reach the daemon's log (ADR 0048 §11).
 const MARKS: [&str; 3] = ["capture-mark-5e1a", "purpose-mark-0c7d", "result-mark-b93f"];
 const FAIL_PROMPT: &str = "did not pass the check";
 const RUN_WAIT: Duration = Duration::from_secs(120);
@@ -44,7 +44,7 @@ impl Host {
             std::fs::create_dir_all(base.join(d)).unwrap();
         }
         let base = base.canonicalize().unwrap();
-        // The program's name is how a delegate's adapter is known (ADR 0046 §7).
+        // The program's name is how a delegate's adapter is known (ADR 0048 §7).
         let claude = base.join("bin/claude");
         std::fs::write(&claude, format!("#!/bin/sh\nexec python3 {AGENT} \"$@\"\n")).unwrap();
         std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -257,7 +257,7 @@ async fn a_request_runs_once_its_result_is_stored_and_its_session_closes() {
     let mut conn = daemon.connect().await;
     let before = h.server.layout();
 
-    // Refusals come before any run folder (ADR 0046 §7).
+    // Refusals come before any run folder (ADR 0048 §7).
     let plain = work_item(&mut conn, "c-plain", "plain").await;
     let (code, message) = error_of(&ask_raw(&mut conn, &plain, None).await);
     assert_eq!(code, ErrorCode::Unsupported);
@@ -586,7 +586,7 @@ async fn without_a_daemon_automatic_processing_is_off() {
     assert!(!h.base.join("w/assistant").exists());
 }
 
-/// Notes text that must never reach the daemon's log (ADR 0047 §9).
+/// Notes text that must never reach the daemon's log (ADR 0049 §9).
 const NOTES_MARK: &str = "notes-mark-3b6f";
 
 fn notes_path(h: &Host) -> PathBuf {

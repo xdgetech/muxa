@@ -273,7 +273,7 @@ struct InboxItemScreen: View {
     }
 }
 
-/// What approving the overall assistant's proposal does (ADR 0047 §4): ask a
+/// What approving the overall assistant's proposal does (ADR 0049 §4): ask a
 /// workspace's delegate, or sort a Capture. The delegate's name is its workspace's.
 private struct OverallProposal: View {
     @Environment(AppModel.self) private var model

@@ -1,6 +1,6 @@
-//! An assistant run is a task record of kind `assistant-run` (ADR 0046 §4):
+//! An assistant run is a task record of kind `assistant-run` (ADR 0048 §4):
 //! the runs, claims, observation and Loop of a Task, as a Routine run has,
-//! with the request version or the plan it answers (ADR 0047 §5). Task lists
+//! with the request version or the plan it answers (ADR 0049 §5). Task lists
 //! skip it.
 use std::path::Path;
 
@@ -34,13 +34,13 @@ pub struct RequestRun {
     pub version: u64,
     /// `w-…`: the request's Work item.
     pub work: String,
-    /// The SHA-256 of the notes the run read at its start (ADR 0047 §1).
+    /// The SHA-256 of the notes the run read at its start (ADR 0049 §1).
     /// None: a run from before notes, which may not propose any.
     #[serde(default, rename = "notesBase", skip_serializing_if = "Option::is_none")]
     pub notes_base: Option<String>,
 }
 
-/// The plan an overall run answers (ADR 0047 §5).
+/// The plan an overall run answers (ADR 0049 §5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanRun {
     /// `p-…`.
@@ -136,7 +136,7 @@ pub fn arm(record: &mut Record, now: u64) {
     }
 }
 
-/// The fixed prompt after a failed result or plan check (ADR 0046 §4).
+/// The fixed prompt after a failed result or plan check (ADR 0048 §4).
 pub fn fail_prompt(record: &Record, attempt: u32) -> String {
     let (what, file) = match record.plan_run() {
         Some(_) => ("plan", super::plan::file::PLAN),

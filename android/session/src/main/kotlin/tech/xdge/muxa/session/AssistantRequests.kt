@@ -7,7 +7,7 @@ import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.Delivery
 import tech.xdge.muxa.protocol.WorkItem
 
-// Assistant requests as the clients show them (ADR 0046 §6, §10). The host derives `delivery`;
+// Assistant requests as the clients show them (ADR 0048 §6, §10). The host derives `delivery`;
 // this only picks the words and which actions apply.
 
 /** One Work item as `get-work` read it: every Capture it links, with its text, and its requests. */

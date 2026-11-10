@@ -1,6 +1,6 @@
 import XCTest
 
-/// A workspace's assistant on Work items (ADR 0046), against the demo's fixtures:
+/// A workspace's assistant on Work items (ADR 0048), against the demo's fixtures:
 /// w-0000b001 has a Result of version 2 (version 1's is Earlier), w-0000b002 has none
 /// and holds c-0000c003, a Capture sorted elsewhere, and w-0000b003 is in "personal",
 /// which takes no requests. A new run is pending, then processing, and has its Result

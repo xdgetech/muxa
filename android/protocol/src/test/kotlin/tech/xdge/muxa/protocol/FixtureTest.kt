@@ -167,7 +167,7 @@ class FixtureTest {
         val results = list.requests[0].results
         assertEquals(listOf(false, true), results.map { it.stale })
         assertTrue(results[0].findings.all { it.sources.isNotEmpty() })
-        // A client before level 8 reads an inbox-list without the new arrays.
+        // A client before level 9 reads an inbox-list without the new arrays.
         val old = Wire.decodeMessage("""{"type":"inbox-list","inbox":1,"entries":[]}""") as Message.InboxList
         assertEquals(Triple(emptyList<WorkItem>(), emptyList<Capture>(), emptyList<AssistantRequest>()), Triple(old.work, old.captures, old.requests))
         // An older client's create-task has no work keys at all.
@@ -237,7 +237,7 @@ class FixtureTest {
         val failed = (messages[22] as Message.PlanSaved).entry
         assertTrue(failed.delivery == Delivery.FAILED && !failed.reason.isNullOrEmpty())
         assertTrue(list.plans.all { it.reason == null })
-        // A client before level 9 reads an inbox-list without plans.
+        // A client before level 10 reads an inbox-list without plans.
         val old = Wire.decodeMessage("""{"type":"inbox-list","inbox":1,"entries":[]}""") as Message.InboxList
         assertTrue(old.plans.isEmpty() && old.assistant == null)
         // Unknown plan values keep their names.
@@ -298,7 +298,7 @@ class FixtureTest {
         )
         val reordered = list.corrections[1]
         assertTrue(reordered.row == null && reordered.before.size == reordered.after.size)
-        // A client before level 10 reads an inbox-list without the new arrays.
+        // A client before level 11 reads an inbox-list without the new arrays.
         val old = Wire.decodeMessage("""{"type":"inbox-list","inbox":1,"entries":[]}""") as Message.InboxList
         assertTrue(old.policies.isEmpty() && old.hypotheses.isEmpty() && old.corrections.isEmpty())
         // Unknown values keep their names.

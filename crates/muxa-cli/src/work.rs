@@ -1,5 +1,5 @@
-//! `capture` and `work`: the user's input and Work items (ADR 0046), behind
-//! the host's `work` level 8. Saving starts an agent only with `--assist`.
+//! `capture` and `work`: the user's input and Work items (ADR 0048), behind
+//! the host's `work` level 9. Saving starts an agent only with `--assist`.
 
 use std::time::Duration;
 
@@ -350,7 +350,7 @@ pub async fn rev_of(conn: &mut Conn, work: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("no Work item {work}"))
 }
 
-/// The level 8 to 10 parts of `inbox-list`, and its items.
+/// The level 9 to 11 parts of `inbox-list`, and its items.
 #[derive(Debug, Default)]
 pub struct Listing {
     pub work: Vec<WorkItem>,

@@ -28,7 +28,7 @@ import tech.xdge.muxa.protocol.Due
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.protocol.ItemState
-import tech.xdge.muxa.protocol.WORK_WORKTREE_END
+import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkState
 import tech.xdge.muxa.session.PaneSession
@@ -41,7 +41,7 @@ import tech.xdge.muxa.session.proposedNotes
 import tech.xdge.muxa.session.shown
 import java.util.concurrent.Executors
 
-/** The demo's Captures and Work items at `work` level 8, as the UI tests use them (ADR 0046). */
+/** The demo's Captures and Work items at `work` level 9, as the UI tests use them (ADR 0048). */
 class DemoAssistantTest {
     private suspend fun connected(level: Int = WORK_ASSISTANT, pace: AssistPace = AssistPace.AT_ONCE): PaneSession {
         val session = PaneSession(Executors.newSingleThreadExecutor().asCoroutineDispatcher())
@@ -75,7 +75,7 @@ class DemoAssistantTest {
 
     @Test
     fun anOlderLevelListsNoWorkAndRefusesACapture() = runBlocking {
-        val session = connected(WORK_WORKTREE_END)
+        val session = connected(WORK_DELETE_INBOX)
         assertTrue(session.state.value.work.isEmpty())
         refused { session.capture("id-1", "Idea", null) }
         Unit
@@ -131,10 +131,10 @@ class DemoAssistantTest {
         assertEquals(listOf(first.id), session.work("w-0000b001").tasks)
     }
 
-    /** A host below level 8 has no assistant: the request is refused, as before. */
+    /** A host below level 9 has no assistant: the request is refused, as before. */
     @Test
-    fun askingTheAssistantBelowLevelEightIsUnsupported() = runBlocking {
-        val bridge = DemoBridge(workLevel = WORK_WORKTREE_END)
+    fun askingTheAssistantBelowLevelNineIsUnsupported() = runBlocking {
+        val bridge = DemoBridge(workLevel = WORK_DELETE_INBOX)
         bridge.send(Wire.encode(Request.RequestAssistant(7, "w-0000b001", 2, AssistScope.RESEARCH)))
         val result = bridge.lines.receiveAsFlow().map { Wire.decodeMessage(it) }
             .first { it is Message.Result && it.id == 7L } as Message.Result
@@ -236,12 +236,12 @@ class DemoAssistantTest {
         assertTrue(session.state.value.captures.any { it.id == a.capture.id })
     }
 
-    // `work` level 9 (ADR 0047): plans, proposals, pins, deadlines and notes.
+    // `work` level 10 (ADR 0049): plans, proposals, pins, deadlines and notes.
 
     private fun PaneSession.item(id: String) = state.value.inboxItems.first { it.id == id }
 
     @Test
-    fun levelNineListsThePlanTheOverallAssistantAndItsProposals() = runBlocking {
+    fun levelTenListsThePlanTheOverallAssistantAndItsProposals() = runBlocking {
         val s = connected(WORK_PLANS).state.value
         val plan = s.plans.shown()!!
         assertEquals("p-0000d001", plan.id)
@@ -256,7 +256,7 @@ class DemoAssistantTest {
     }
 
     @Test
-    fun levelEightListsNoPlanAndRefusesAPin() = runBlocking {
+    fun levelNineListsNoPlanAndRefusesAPin() = runBlocking {
         val session = connected()
         assertTrue(session.state.value.plans.isEmpty())
         assertNull(session.state.value.assistant)

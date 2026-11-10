@@ -1,6 +1,6 @@
-//! `plan` and `plan now`: the overall assistant's plans (ADR 0047 §5), behind
-//! the host's `work` level 9; `plan reorder` and `plan dismiss` at level 10
-//! (ADR 0048). Plan texts and reasons go to stdout only.
+//! `plan` and `plan now`: the overall assistant's plans (ADR 0049 §5), behind
+//! the host's `work` level 10; `plan reorder` and `plan dismiss` at level 11
+//! (ADR 0050). Plan texts and reasons go to stdout only.
 
 use std::time::Duration;
 

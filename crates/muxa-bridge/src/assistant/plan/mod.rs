@@ -1,4 +1,4 @@
-//! The overall assistant's plans (ADR 0047 §5): one overall run answers one
+//! The overall assistant's plans (ADR 0049 §5): one overall run answers one
 //! plan, on a schedule or on demand. The host checks the plan file, stores
 //! it, keeps [`KEEP`] plans and derives the marks the agent may not write.
 //! A plan never changes a Work item, an Inbox item, their order or `laterAt`.

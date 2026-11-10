@@ -2,8 +2,8 @@ import Foundation
 import MuxaProtocol
 import MuxaSession
 
-/// The overall assistant's plan, delegate notes, pins and due dates (ADR 0047) on a
-/// host with `work` level 9. A level 8 host keeps the Inbox as it was.
+/// The overall assistant's plan, delegate notes, pins and due dates (ADR 0049) on a
+/// host with `work` level 10. A level 9 host keeps the Inbox as it was.
 extension AppModel {
     /// The Inbox has Today above Decisions, and Work items can be pinned and dated.
     var usesPlans: Bool { usesWork && session.canPlan }
@@ -127,7 +127,7 @@ extension BasisKind {
 }
 
 extension DelegateProposal {
-    /// The delegate's name is its workspace's (ADR 0047 §8).
+    /// The delegate's name is its workspace's (ADR 0049 §8).
     var shown: String { "\(workspace)'s assistant · \(scope.shown)" }
 }
 

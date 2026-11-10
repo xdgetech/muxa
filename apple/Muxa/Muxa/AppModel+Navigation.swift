@@ -20,7 +20,7 @@ enum SidebarMode: String, CaseIterable, Identifiable {
 /// What the detail column shows: the sidebar's selection, or a session's pane.
 enum Detail: Hashable {
     case item(String)
-    /// A Work item or an unsorted Capture (ADR 0046).
+    /// A Work item or an unsorted Capture (ADR 0048).
     case work(String)
     case capture(String)
     case task(String)

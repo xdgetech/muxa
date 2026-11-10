@@ -1,4 +1,4 @@
-//! The overall run's brief on disk (ADR 0047 §3, §5, ADR 0048 §4). It is longer than a
+//! The overall run's brief on disk (ADR 0049 §3, §5, ADR 0050 §4). It is longer than a
 //! goal may be, so the host writes it to `.muxa/assistant/BRIEF.md` in the
 //! run folder before the agent starts, and the goal points to it. The host
 //! reads the inputs then, and stamps `inputsAt` and `workspaces` on the plan.

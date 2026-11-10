@@ -1,4 +1,4 @@
-//! `apply-notes` and `notes = "auto"` (ADR 0047 §1): a stored proposal
+//! `apply-notes` and `notes = "auto"` (ADR 0049 §1): a stored proposal
 //! replaces the workspace's live notes only while they still hash to its
 //! base. Logs carry ids, sizes and hashes, never the text.
 use std::path::PathBuf;

@@ -82,7 +82,7 @@ sealed interface Request {
         /** Also start a Task Loop (capability `task-loop`, ADR 0019). */
         val loop: LoopSpec? = null,
         val worker: String? = null,
-        /** The Work item the Task is for (`work` level 8, ADR 0046). The same [work] and [workRev] return the Task already made. */
+        /** The Work item the Task is for (`work` level 9, ADR 0048). The same [work] and [workRev] return the Task already made. */
         val work: String? = null,
         /** With [work]: the item's `rev` the client saw. */
         val workRev: Long? = null,
@@ -157,7 +157,7 @@ sealed interface Request {
     @Serializable data class StartSession(override val id: Long, val workspace: String, val repo: String) : Request
 
     /**
-     * Save the user's input (`work` level 8, ADR 0046). The same [clientId] returns the stored Capture and
+     * Save the user's input (`work` level 9, ADR 0048). The same [clientId] returns the stored Capture and
      * writes nothing. [assist] also makes a Work item and asks the assistant; it needs [workspace].
      * A `capture-saved` comes first.
      */
@@ -187,7 +187,7 @@ sealed interface Request {
     ) : Request
 
     /**
-     * Change a Work item. [title], [workspace] and [due] (level 9) go with `edit`, [into] with `merge`.
+     * Change a Work item. [title], [workspace] and [due] (level 10) go with `edit`, [into] with `merge`.
      * A stale [rev] is `conflict`. A `work-saved` comes first.
      */
     @Serializable
@@ -223,18 +223,18 @@ sealed interface Request {
     @Serializable data class GetWork(override val id: Long, val work: String) : Request
 
     /**
-     * Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 9, ADR 0047). [source]
+     * Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 10, ADR 0049). [source]
      * is a request `q-…` or a plan `p-…`; [version] the request's version or the plan's `rev`; [base] the
      * proposal's. A changed live file is `conflict`. A `work-saved` or `plan-saved` comes first.
      */
     @Serializable
     data class ApplyNotes(override val id: Long, val source: String, val version: Long, val base: String) : Request
 
-    /** Start an overall run now (`work` level 9); [minutes] is the time the user has. A `plan-saved` comes first. */
+    /** Start an overall run now (`work` level 10); [minutes] is the time the user has. A `plan-saved` comes first. */
     @Serializable data class PlanNow(override val id: Long, val minutes: Int? = null) : Request
 
     /**
-     * Keep a policy in the user's words (`work` level 10, ADR 0048). [scope] is `all` or a workspace; [from]
+     * Keep a policy in the user's words (`work` level 11, ADR 0050). [scope] is `all` or a workspace; [from]
      * and [until] are epoch seconds. A `policy-saved` comes first.
      */
     @Serializable

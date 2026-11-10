@@ -55,7 +55,7 @@ public enum Request: Equatable, Sendable {
     /// Without `repo` the task gets a directory in its workspace.
     /// With `loop`, the host also starts a Task Loop (capability `task-loop`).
     /// `work` is the Work item the Task is for and `workRev` its `rev` the client saw
-    /// (`work` level 8, ADR 0046); the same pair returns the Task already made.
+    /// (`work` level 9, ADR 0048); the same pair returns the Task already made.
     case createTask(
         id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?,
         branch: String?, base: String?, loop: LoopSpec? = nil, worker: String? = nil, work: String? = nil,
@@ -94,7 +94,7 @@ public enum Request: Equatable, Sendable {
     /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as
     /// `createTask`'s. A `session-started` comes first.
     case startSession(id: UInt64, workspace: String, repo: String)
-    /// Save the user's input (`work` level 8, ADR 0046). The same `clientId` returns the
+    /// Save the user's input (`work` level 9, ADR 0048). The same `clientId` returns the
     /// stored Capture and writes nothing. `assist` also makes a Work item and asks the
     /// assistant; it needs `workspace`. A `capture-saved` comes first.
     case capture(
@@ -105,7 +105,7 @@ public enum Request: Equatable, Sendable {
     case sortCapture(
         id: UInt64, capture: String, rev: UInt64, action: SortAction, work: String? = nil, title: String? = nil,
         workspace: String? = nil)
-    /// Change a Work item. `title`, `workspace` and `due` (level 9) go with `edit`, `into`
+    /// Change a Work item. `title`, `workspace` and `due` (level 10) go with `edit`, `into`
     /// with `merge`. A stale `rev` is `conflict`. A `work-saved` comes first.
     case updateWork(
         id: UInt64, work: String, rev: UInt64, action: WorkAction, title: String? = nil, workspace: String? = nil,
@@ -120,15 +120,15 @@ public enum Request: Equatable, Sendable {
     /// One Work item with every Capture it links, sorted or not, and its requests.
     /// A `work-detail` comes first.
     case getWork(id: UInt64, work: String)
-    /// Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 9,
-    /// ADR 0047). `source` is a request `q-…` or a plan `p-…`; `version` the request's
+    /// Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 10,
+    /// ADR 0049). `source` is a request `q-…` or a plan `p-…`; `version` the request's
     /// version or the plan's `rev`; `base` the proposal's. A changed live file is `conflict`.
     /// A `work-saved` or `plan-saved` comes first.
     case applyNotes(id: UInt64, source: String, version: UInt64, base: String)
-    /// Start an overall run now (`work` level 9); `minutes` is the time the user has.
+    /// Start an overall run now (`work` level 10); `minutes` is the time the user has.
     /// A `plan-saved` comes first.
     case planNow(id: UInt64, minutes: UInt32? = nil)
-    /// Keep a policy in the user's words (`work` level 10, ADR 0048): `scope` is `all` or a
+    /// Keep a policy in the user's words (`work` level 11, ADR 0050): `scope` is `all` or a
     /// workspace; `from` and `until` are epoch seconds. A `policy-saved` comes first.
     case addPolicy(id: UInt64, text: String, scope: String, from: UInt64? = nil, until: UInt64? = nil)
     /// Edit or delete a policy. A stale `rev` is `conflict`. `edit` sends a `policy-saved`

@@ -1,4 +1,4 @@
-//! When the overall assistant plans (ADR 0047 §5): each schedule in
+//! When the overall assistant plans (ADR 0049 §5): each schedule in
 //! `plans` is a Routine's (ADR 0036 §3), with one catch-up and a DST fold
 //! run once (`routines::schedule`). The last occurrence handled per schedule
 //! is kept in `<state dir>/assistant/schedule.json`. Logs carry schedule times.
