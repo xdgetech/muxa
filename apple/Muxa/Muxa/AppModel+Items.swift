@@ -36,6 +36,8 @@ extension ItemKind {
         case .delegate: "Delegate"
         case .hypothesis: "Hypothesis"
         case .handoff: "Hand-off"
+        // No write view yet (ADR 0052 slice E5): shown like a kind this client does not know.
+        case .write: "Write"
         case .other(let raw): raw.capitalized
         }
     }
@@ -51,7 +53,7 @@ extension ItemKind {
         case .delegate: Icon.assistant
         case .hypothesis: Icon.ask
         case .handoff: Icon.handoff
-        case .other: "tray"
+        case .write, .other: "tray"
         }
     }
 }

@@ -80,6 +80,7 @@ fn capture(id: &str, workspace: Option<&str>, text: &str, at: u64) -> Capture {
 fn result(summary: &str) -> AssistResult {
     let long = |n: usize| (0..n).map(|i| format!("{i}-{}", "q".repeat(300))).collect();
     AssistResult {
+        writes: Vec::new(),
         worker: None,
         step: None,
         version: 1,

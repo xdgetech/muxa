@@ -57,9 +57,10 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],
         ItemKind::Proposal => vec![Approve, Reject],
         ItemKind::Briefing => vec![Dismiss],
-        // The overall assistant's proposals (ADR 0049 §4) and a staff
-        // member's hand-off (ADR 0051 §3): no agent to ask.
-        ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff => {
+        // The overall assistant's proposals (ADR 0049 §4), a staff
+        // member's hand-off (ADR 0051 §3) and a proposed write (ADR 0052
+        // §2): no agent to ask.
+        ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff | ItemKind::Write => {
             return vec![Approve, Reject, Later];
         }
         // ADR 0050 §3: `assistant::hypotheses` answers confirm and reject.
@@ -87,6 +88,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         Disposition::Unknown => (ItemState::Resolved, None),
     };
     let mut item = InboxItem {
+        write: None,
         handoff: None,
         id: entry.id.clone(),
         kind: match entry.kind {

@@ -123,6 +123,7 @@ mod tests {
             results: results
                 .iter()
                 .map(|v| AssistResult {
+                    writes: Vec::new(),
                     worker: None,
                     step: None,
                     version: *v,

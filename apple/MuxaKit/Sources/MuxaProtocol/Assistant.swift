@@ -449,11 +449,14 @@ public struct AssistResult: Equatable, Sendable {
     public var worker: String?
     /// Level 12: the step of `version` that produced it. Nil: step 1.
     public var step: UInt32?
+    /// Level 13: writes outside the host it proposes, at most 3 (ADR 0052).
+    public var writes: [ResultWrite]
 
     public init(
         version: UInt64, at: UInt64, summary: String, stale: Bool = false, findings: [Finding] = [],
         openQuestions: [String] = [], next: [String] = [], files: [String] = [],
-        possibleDuplicates: [PossibleDuplicate] = [], notes: Notes? = nil, worker: String? = nil, step: UInt32? = nil
+        possibleDuplicates: [PossibleDuplicate] = [], notes: Notes? = nil, worker: String? = nil, step: UInt32? = nil,
+        writes: [ResultWrite] = []
     ) {
         self.version = version
         self.at = at
@@ -467,12 +470,14 @@ public struct AssistResult: Equatable, Sendable {
         self.notes = notes
         self.worker = worker
         self.step = step
+        self.writes = writes
     }
 }
 
 extension AssistResult: Codable {
     private enum Key: String, CodingKey {
         case version, at, summary, stale, findings, openQuestions, next, files, possibleDuplicates, notes, worker, step
+        case writes
     }
 
     public init(from decoder: any Decoder) throws {
@@ -489,6 +494,7 @@ extension AssistResult: Codable {
         notes = try c.decodeIfPresent(Notes.self, forKey: .notes)
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
         step = try c.decodeIfPresent(UInt32.self, forKey: .step)
+        writes = try c.decodeIfPresent([ResultWrite].self, forKey: .writes) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -505,6 +511,7 @@ extension AssistResult: Codable {
         try c.encodeIfPresent(notes, forKey: .notes)
         try c.encodeIfPresent(worker, forKey: .worker)
         try c.encodeIfPresent(step, forKey: .step)
+        if !writes.isEmpty { try c.encode(writes, forKey: .writes) }
     }
 }
 

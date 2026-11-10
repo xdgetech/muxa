@@ -4,6 +4,7 @@ use super::*;
 
 fn result(version: u64, stale: bool, summary: &str) -> AssistResult {
     AssistResult {
+        writes: Vec::new(),
         worker: None,
         step: None,
         version,

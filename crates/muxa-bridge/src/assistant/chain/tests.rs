@@ -87,6 +87,7 @@ fn step(n: u32, worker: &str, run: &str, handoff: Option<&str>) -> RequestStep {
 
 fn result(version: u64, step: u32) -> AssistResult {
     AssistResult {
+        writes: Vec::new(),
         version,
         at: 1,
         summary: "Two options.".into(),

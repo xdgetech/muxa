@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-10; its questions were answered with the recommended values the same day. It answers the first open question of ADR 0051 (Not decided) and implements spec §6, "送信、公開、購入、大きな変更は、対象と内容を示した明示許可を要する" ([specification](../personal-assistant.md)). It adds to ADR 0048 §4 and §9, ADR 0049 §4 (approve once) and ADR 0051 §3 (a step's Result) without changing them. It keeps the shape of ADR 0026 §5 for an approved write: a proposal, an approval in the Inbox, one Task that performs it. It does not change `[workspace.routines] direct_writes` (ADR 0036). No slice is implemented.
+Proposed on 2026-11-10; its questions were answered with the recommended values the same day. It answers the first open question of ADR 0051 (Not decided) and implements spec §6, "送信、公開、購入、大きな変更は、対象と内容を示した明示許可を要する" ([specification](../personal-assistant.md)). It adds to ADR 0048 §4 and §9, ADR 0049 §4 (approve once) and ADR 0051 §3 (a step's Result) without changing them. It keeps the shape of ADR 0026 §5 for an approved write: a proposal, an approval in the Inbox, one Task that performs it. It does not change `[workspace.routines] direct_writes` (ADR 0036). Slice E0 (the wire types) is built; hosts do not advertise level 13 yet.
 
 ## Context
 

@@ -184,6 +184,8 @@ data class AssistResult(
     val worker: String? = null,
     /** Level 12: the step of [version] that produced it. Null: step 1. */
     val step: Int? = null,
+    /** Level 13: writes outside the host it proposes, at most 3 (ADR 0052). Never logged. */
+    val writes: List<ResultWrite> = emptyList(),
 )
 
 /** A deadline the user set on a Work item (ADR 0049 §6): epoch seconds, and the IANA zone it was set in. */

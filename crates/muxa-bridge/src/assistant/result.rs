@@ -220,6 +220,7 @@ pub fn check(bytes: &[u8], run: &RequestRun, chain: &Chain) -> Result<Checked, V
         return Err(reasons);
     }
     let result = AssistResult {
+        writes: Vec::new(),
         version: run.version,
         at: 0,
         summary: raw.summary,

@@ -23,6 +23,7 @@ fn work(id: &str, updated: u64) -> WorkItem {
 
 fn result(version: u64, at: u64) -> AssistResult {
     AssistResult {
+        writes: Vec::new(),
         worker: None,
         step: None,
         version,

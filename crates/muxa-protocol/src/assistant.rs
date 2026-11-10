@@ -2,7 +2,7 @@
 //! None of them is a Task or an Inbox item.
 use serde::{Deserialize, Serialize};
 
-use crate::RequestStep;
+use crate::{RequestStep, ResultWrite};
 
 /// Level 9: `capture`, `sort-capture`, `update-work`, `request-assistant`,
 /// `cancel-request`, `get-work`, and `work`, `captures` and `requests` in
@@ -212,6 +212,10 @@ pub struct AssistResult {
     /// Level 12: the step of `version` that produced it. Absent: step 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step: Option<u32>,
+    /// Level 13: writes outside the host it proposes, at most 3 (ADR 0052).
+    /// Never logged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub writes: Vec<ResultWrite>,
 }
 
 /// A deadline the user set on a Work item (ADR 0049 §6).

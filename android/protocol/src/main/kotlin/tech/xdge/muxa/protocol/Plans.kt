@@ -147,6 +147,10 @@ data class DelegateInfo(
     val notesAt: Long? = null,
     /** Level 12: who answers its requests, the lead marked (ADR 0051 §1). */
     val staff: List<StaffMember> = emptyList(),
+    /** Level 13: the worker that performs approved writes (ADR 0052 §3). */
+    val writer: WriterInfo? = null,
+    /** Level 13: whether the workspace takes write proposals. Null: an older host. */
+    val writes: Writes? = null,
 )
 
 /** What a workspace shares with the overall assistant (ADR 0049 §3). Unknown values stay as their name. */

@@ -335,21 +335,27 @@ public struct DelegateInfo: Equatable, Sendable {
     public var notesAt: UInt64?
     /// Level 12: who answers its requests, the lead marked (ADR 0051 §1).
     public var staff: [StaffMember]
+    /// Level 13: the worker that performs approved writes (ADR 0052 §3).
+    public var writer: WriterInfo?
+    /// Level 13: whether the workspace takes write proposals. Nil: an older host.
+    public var writes: Writes?
 
     public init(
         workspace: String, share: Share, overallRequests: OverallRequests, notesAt: UInt64? = nil,
-        staff: [StaffMember] = []
+        staff: [StaffMember] = [], writer: WriterInfo? = nil, writes: Writes? = nil
     ) {
         self.workspace = workspace
         self.share = share
         self.overallRequests = overallRequests
         self.notesAt = notesAt
         self.staff = staff
+        self.writer = writer
+        self.writes = writes
     }
 }
 
 extension DelegateInfo: Codable {
-    private enum Key: String, CodingKey { case workspace, share, overallRequests, notesAt, staff }
+    private enum Key: String, CodingKey { case workspace, share, overallRequests, notesAt, staff, writer, writes }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -358,6 +364,8 @@ extension DelegateInfo: Codable {
         overallRequests = try c.decode(OverallRequests.self, forKey: .overallRequests)
         notesAt = try c.decodeIfPresent(UInt64.self, forKey: .notesAt)
         staff = try c.decodeIfPresent([StaffMember].self, forKey: .staff) ?? []
+        writer = try c.decodeIfPresent(WriterInfo.self, forKey: .writer)
+        writes = try c.decodeIfPresent(Writes.self, forKey: .writes)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -367,6 +375,8 @@ extension DelegateInfo: Codable {
         try c.encode(overallRequests, forKey: .overallRequests)
         try c.encodeIfPresent(notesAt, forKey: .notesAt)
         if !staff.isEmpty { try c.encode(staff, forKey: .staff) }
+        try c.encodeIfPresent(writer, forKey: .writer)
+        try c.encodeIfPresent(writes, forKey: .writes)
     }
 }
 

@@ -58,6 +58,8 @@ data class InboxItem(
     val hypothesis: HypothesisProposal? = null,
     /** With kind `handoff`: the step approve starts (`work` level 12, ADR 0051). */
     val handoff: HandoffProposal? = null,
+    /** With kind `write`: the exact write approve hands the writer (`work` level 13, ADR 0052). After approve, [task] is the writer's Task. */
+    val write: WriteProposal? = null,
     /** The answers the host accepts now, in the order to show them. Unknown actions are left out: PROTOCOL.md says to show them as nothing. */
     @Serializable(with = KnownActionsSerializer::class)
     val answers: List<InboxAction> = emptyList(),
@@ -90,6 +92,9 @@ value class ItemKind(val raw: String) {
 
         /** Level 12: a staff member asks to pass a request on to another. */
         val HANDOFF = ItemKind("handoff")
+
+        /** Level 13: a Result proposes a write outside the host. */
+        val WRITE = ItemKind("write")
     }
 }
 

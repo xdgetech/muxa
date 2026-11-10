@@ -42,3 +42,6 @@
 {"type":"update-inbox","id":452,"entry":"i-6f7a8b9c","action":"approve"}
 {"type":"apply-notes","id":453,"source":"q-2b3c4d5e","version":2,"base":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","step":2}
 {"type":"request-assistant","id":454,"work":"w-6a7b8c9d","rev":5,"scope":"compare","worker":"lisk-sales"}
+{"type":"update-inbox","id":460,"entry":"i-9c0d1e2f","action":"approve"}
+{"type":"update-inbox","id":461,"entry":"i-0d1e2f3a","action":"approve"}
+{"type":"update-inbox","id":462,"entry":"i-0d1e2f3a","action":"reject"}

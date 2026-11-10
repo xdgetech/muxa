@@ -18,6 +18,8 @@ pub fn info(workspaces: &Workspaces) -> Option<AssistantInfo> {
         .iter()
         .filter(|w| matches!(w.role, Role::Member { .. }))
         .map(|w| DelegateInfo {
+            writer: None,
+            writes: None,
             workspace: w.name.clone(),
             share: workspaces.share(&w.name),
             overall_requests: workspaces.overall_requests(&w.name),

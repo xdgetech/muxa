@@ -224,10 +224,10 @@ struct FixtureTests {
 
     @Test func assistantContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl")
-        #expect(requests.count == 44)
+        #expect(requests.count == 47)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("assistant/messages.jsonl")
-        #expect(messages.count == 49)
+        #expect(messages.count == 57)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -472,6 +472,74 @@ struct FixtureTests {
             JSONSerialization.data(withJSONObject: list))
         else { Issue.record("expected inbox-list"); return }
         #expect(listed[0].steps[0].by == .other("routine"))
+    }
+
+    @Test func writeContractRoundTrips() throws {
+        let requests = try Self.lines("assistant/requests.jsonl").map(Wire.decodeRequest)
+        let messages = try Self.lines("assistant/messages.jsonl").map(Wire.decodeMessage)
+        guard case .updateInboxEntry(_, "i-9c0d1e2f", .approve, _, _, _, _) = requests[44],
+            case .updateInboxEntry(_, _, .reject, _, _, _, _) = requests[46]
+        else { Issue.record("expected approve and reject on write items"); return }
+
+        guard case .hello(_, _, _, let capabilities) = messages[49] else { Issue.record("expected hello"); return }
+        #expect(workLevel(capabilities) == workWrites)
+        // Approve: the writer's Task, then the answered item that names it.
+        guard case .taskSaved(_, let record) = messages[50], case .inboxSaved(_, _, let item?) = messages[51],
+            let write = item.write
+        else { Issue.record("expected the writer's Task and the answered item"); return }
+        #expect(item.kind == .write && item.answer == .approve && item.task == record.id)
+        #expect(record.worker == "lisk-writer" && record.title == write.action)
+        // The content is in the goal unchanged, and the marker is the last line.
+        #expect(record.goal.contains("\n\n\(write.content)\n\n"))
+        let last = record.goal.split(separator: "\n").last.map(String.init)
+        #expect(last == "muxa-write: \(item.id) \(write.hash)")
+        guard case .result(_, let refused?, _) = messages[53] else { Issue.record("expected an error"); return }
+        #expect(refused.code == .conflict && refused.message.contains("max_writes_per_day"))
+        guard case .inboxSaved(_, _, let rejected?) = messages[54] else { Issue.record("expected inbox-saved"); return }
+        #expect(rejected.answer == .reject && rejected.task == nil)
+
+        guard case .inboxList(_, _, let items, _, _, let listed, _, let assistant?, _, _, _) = messages[56] else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(items.allSatisfy { $0.kind == .write && $0.state == .open })
+        #expect(items[0].answers == [.approve, .reject, .later])
+        // An older version's write stays open and names its version.
+        let q = listed[0]
+        #expect(items[1].write?.version == q.version - 1)
+        // A Result's writes carry their hash, the item, and the Task once approved.
+        let newest = q.results[0]
+        #expect(newest.writes.count == 2 && newest.writes[0].task == record.id)
+        #expect(newest.writes[1].item == items[0].id && newest.writes[1].hash == items[0].write?.hash)
+        let lisk = assistant.delegates[0]
+        #expect(lisk.writer?.worker == "lisk-writer" && lisk.writes == Writes.review)
+        #expect(!lisk.staff.contains { $0.worker == "lisk-writer" })
+        let personal = assistant.delegates[1]
+        #expect(personal.writer == nil && personal.writes == Writes.none)
+        // A host before level 13 sends neither.
+        guard case .inboxList(_, _, _, _, _, _, _, let older?, _, _, _) = messages[48] else {
+            Issue.record("expected inbox-list"); return
+        }
+        #expect(older.delegates.allSatisfy { $0.writer == nil && $0.writes == nil })
+    }
+
+    /// A level 12 client knows no writes: it reads the Result and shows a `write` item as
+    /// a kind it does not know.
+    @Test func aLevel12ClientReadsWritesAsUnknown() throws {
+        struct OldItem: Decodable { var kind: String }
+        struct OldResult: Decodable { var version: UInt64; var summary: String }
+        struct OldRequest: Decodable { var results: [OldResult] }
+        struct OldList: Decodable { var items: [OldItem]; var requests: [OldRequest] }
+        let line = try Self.lines("assistant/messages.jsonl")[56]
+        let old = try JSONDecoder().decode(OldList.self, from: line)
+        let level12: Set<String> = ["ask", "review", "failure", "proposal", "briefing", "sort", "delegate", "hypothesis", "handoff"]
+        #expect(old.items.allSatisfy { !level12.contains($0.kind) })
+        #expect(old.requests[0].results.allSatisfy { $0.version >= 1 && !$0.summary.isEmpty })
+        // A newer host's `writes` value is unknown, not a failed list.
+        let newer = String(decoding: line, as: UTF8.self).replacingOccurrences(
+            of: #""writes":"review""#, with: #""writes":"auto""#)
+        guard case .inboxList(_, _, _, _, _, _, _, let assistant?, _, _, _) = try Wire.decodeMessage(Data(newer.utf8))
+        else { Issue.record("expected inbox-list"); return }
+        #expect(assistant.delegates[0].writes == .other("auto"))
     }
 
     @Test func unknownPolicyValuesStillDecode() throws {

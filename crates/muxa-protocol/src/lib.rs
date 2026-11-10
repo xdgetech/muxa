@@ -10,6 +10,7 @@ mod restart_recovery;
 mod routines;
 mod staff;
 mod workers;
+mod writes;
 pub use assistant::{
     AssistResult, AssistScope, AssistSpec, AssistantRequest, Capture, CaptureSource, CaptureState,
     Delivery, Due, Finding, Notes, PossibleDuplicate, ResultSource, SortAction, WORK_ASSISTANT,
@@ -34,6 +35,7 @@ pub use routines::{
 };
 pub use staff::{Handoff, HandoffProposal, RequestStep, StaffMember, StepBy, WORK_STAFF};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
+pub use writes::{ResultWrite, WORK_WRITES, WriteProposal, WriterInfo, Writes};
 
 use serde::{Deserialize, Serialize};
 

@@ -146,6 +146,7 @@ fn a_result_cancel_or_another_version_is_never_derived_over() {
     }
     let mut q = request(Delivery::TimedOut);
     q.results.push(AssistResult {
+        writes: Vec::new(),
         worker: None,
         step: None,
         version: 2,

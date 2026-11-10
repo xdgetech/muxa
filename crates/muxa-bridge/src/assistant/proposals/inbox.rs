@@ -283,6 +283,7 @@ fn item_for(p: &Proposal, facts: &Facts, id: String, at: u64) -> Option<InboxIte
         Proposal::Delegate(d) => (None, Some(d.clone())),
     };
     let mut item = InboxItem {
+        write: None,
         handoff: None,
         id,
         kind: if sort.is_some() {

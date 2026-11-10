@@ -134,10 +134,10 @@ class FixtureTest {
     @Test
     fun assistantContractRoundTrips() {
         val requests = lines("assistant/requests.jsonl")
-        assertEquals(44, requests.size)
+        assertEquals(47, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(49, messages.size)
+        assertEquals(57, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -372,6 +372,63 @@ class FixtureTest {
     }
 
     @Test
+    fun writeContractRoundTrips() {
+        val requests = lines("assistant/requests.jsonl").map(Wire::decodeRequest)
+        val messages = lines("assistant/messages.jsonl").map(Wire::decodeMessage)
+        val approve = requests[44] as Request.UpdateInbox
+        assertEquals("i-9c0d1e2f" to InboxAction.APPROVE, approve.entry to approve.action)
+        assertEquals(InboxAction.REJECT, (requests[46] as Request.UpdateInbox).action)
+
+        assertEquals(WORK_WRITES, workLevel((messages[49] as Message.Hello).capabilities))
+        // Approve: the writer's Task, then the answered item that names it.
+        val record = (messages[50] as Message.TaskSaved).record
+        val item = (messages[51] as Message.InboxSaved).item!!
+        val write = item.write!!
+        assertEquals(Triple(ItemKind.WRITE, InboxAction.APPROVE, record.id), Triple(item.kind, item.answer, item.task))
+        assertEquals("lisk-writer" to write.action, record.worker to record.title)
+        // The content is in the goal unchanged, and the marker is the last line.
+        assertTrue(record.goal.contains("\n\n${write.content}\n\n"))
+        assertEquals("muxa-write: ${item.id} ${write.hash}", record.goal.lines().last { it.isNotEmpty() })
+        val refused = (messages[53] as Message.Result).error!!
+        assertEquals(ErrorCode.CONFLICT, refused.code)
+        assertTrue(refused.message.contains("max_writes_per_day"))
+        val rejected = (messages[54] as Message.InboxSaved).item!!
+        assertEquals(InboxAction.REJECT to null, rejected.answer to rejected.task)
+
+        val list = messages[56] as Message.InboxList
+        assertTrue(list.items.all { it.kind == ItemKind.WRITE && it.state == ItemState.OPEN })
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER), list.items[0].answers)
+        // An older version's write stays open and names its version.
+        val q = list.requests[0]
+        assertEquals(q.version - 1, list.items[1].write?.version)
+        // A Result's writes carry their hash, the item, and the Task once approved.
+        val newest = q.results[0]
+        assertEquals(2, newest.writes.size)
+        assertEquals(record.id, newest.writes[0].task)
+        assertEquals(list.items[0].id to list.items[0].write?.hash, newest.writes[1].item to newest.writes[1].hash)
+        val lisk = list.assistant!!.delegates[0]
+        assertEquals("lisk-writer" to Writes.REVIEW, lisk.writer?.worker to lisk.writes)
+        assertTrue(lisk.staff.none { it.worker == "lisk-writer" })
+        val personal = list.assistant!!.delegates[1]
+        assertEquals(null to Writes.NONE, personal.writer to personal.writes)
+        // A host before level 13 sends neither.
+        val older = (messages[48] as Message.InboxList).assistant!!.delegates
+        assertTrue(older.all { it.writer == null && it.writes == null })
+    }
+
+    /** A level 12 client knows no writes: it reads the Result and shows a `write` item as a kind it does not know. */
+    @Test
+    fun aLevel12ClientReadsWritesAsUnknown() {
+        val line = lines("assistant/messages.jsonl")[56]
+        val old = Json { ignoreUnknownKeys = true }.decodeFromString(Level12List.serializer(), line)
+        assertTrue(old.items.all { it.kind !in setOf("ask", "review", "failure", "proposal", "briefing", "sort", "delegate", "hypothesis", "handoff") })
+        assertTrue(old.requests[0].results.all { it.version >= 1 && it.summary.isNotEmpty() })
+        // A newer host's `writes` value is unknown, not a failed list.
+        val list = line.replace(""""writes":"review"""", """"writes":"auto"""")
+        assertEquals(Writes("auto"), (Wire.decodeMessage(list) as Message.InboxList).assistant!!.delegates[0].writes)
+    }
+
+    @Test
     fun unknownWorkStatesAndDeliveriesStillDecode() {
         val line = """{"type":"work-saved","work":1,"entry":{"id":"w-00000001","rev":1,"title":"t","state":"blocked",""" +
             """"createdAt":1,"updatedAt":1},"request":{"id":"q-00000001","work":"w-00000001","version":1,"workspace":"w",""" +
@@ -588,3 +645,10 @@ class FixtureTest {
 private data class Level11Request(val delivery: Delivery, val run: String? = null, val results: List<Level11Result>)
 
 @Serializable private data class Level11Saved(val request: Level11Request)
+
+// What a level 12 client knows of an `inbox-list` with writes.
+@Serializable private data class Level12Item(val kind: String)
+
+@Serializable private data class Level12Request(val results: List<Level11Result>)
+
+@Serializable private data class Level12List(val items: List<Level12Item>, val requests: List<Level12Request>)

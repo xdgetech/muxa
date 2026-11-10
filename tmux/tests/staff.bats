@@ -14,9 +14,10 @@ setup() {
 teardown() { kill "${CLIENT_PID:-}" 2>/dev/null || true; teardown_server; }
 
 # The level 12 list: a handoff and a delegate item, a Work item whose request
-# has two steps, and a workspace with a staff of four.
+# has two steps, and a workspace with a staff of four. The level 13 list, with
+# a writer, is the write items'.
 staff_inbox() {
-  jq -c 'select(.type == "inbox-list" and (.assistant.delegates // [] | any(.staff))) |
+  jq -c 'select(.type == "inbox-list" and (.assistant.delegates // [] | any(.staff) and all(.writes == null))) |
     {work: 12, items, entries: [], runs: [], workItems: .work, captures, requests, plans, assistant}' \
     "$FIXTURE"
 }

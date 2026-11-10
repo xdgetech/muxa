@@ -443,8 +443,8 @@ fn assistant_fixtures_round_trip() {
     use muxa_protocol::{
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 44);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 49);
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 47);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 57);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -1144,6 +1144,203 @@ fn a_level_11_client_reads_a_chain_as_one_request() {
         panic!()
     };
     assert_eq!(requests[0].steps[0].by, muxa_protocol::StepBy::Unknown);
+}
+
+#[test]
+fn write_fixtures_round_trip() {
+    use muxa_protocol::{
+        ErrorCode, InboxAction, ItemKind, ItemState, WORK_WRITES, Writes, work_level,
+    };
+    let read = |name: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/assistant/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[44],
+        Request::UpdateInbox { entry, action: InboxAction::Approve, .. } if entry == "i-9c0d1e2f"
+    ));
+    assert!(matches!(
+        requests[46],
+        Request::UpdateInbox {
+            action: InboxAction::Reject,
+            ..
+        }
+    ));
+
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[49] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_WRITES);
+    // Approve: the writer's Task, then the answered item that names it.
+    let Message::TaskSaved { record, .. } = &messages[50] else {
+        panic!()
+    };
+    let Message::InboxSaved {
+        item: Some(item), ..
+    } = &messages[51]
+    else {
+        panic!()
+    };
+    let write = item.write.as_ref().unwrap();
+    assert_eq!(
+        (item.kind, item.answer, item.task.as_deref()),
+        (
+            ItemKind::Write,
+            Some(InboxAction::Approve),
+            Some(record.id.as_str())
+        )
+    );
+    assert_eq!(record.worker.as_deref(), Some("lisk-writer"));
+    assert_eq!(record.title, write.action);
+    // The content is in the goal unchanged, and the marker is the last line.
+    assert!(record.goal.contains(&format!("\n\n{}\n\n", write.content)));
+    assert_eq!(
+        record.goal.lines().next_back(),
+        Some(format!("muxa-write: {} {}", item.id, write.hash).as_str())
+    );
+    let Message::Result { error: Some(e), .. } = &messages[53] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::Conflict);
+    assert!(e.message.contains("max_writes_per_day"));
+    let Message::InboxSaved {
+        item: Some(rejected),
+        ..
+    } = &messages[54]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (rejected.answer, rejected.task.as_ref()),
+        (Some(InboxAction::Reject), None)
+    );
+
+    let Message::InboxList {
+        items,
+        requests,
+        assistant: Some(assistant),
+        ..
+    } = &messages[56]
+    else {
+        panic!()
+    };
+    assert!(items.iter().all(|i| i.kind == ItemKind::Write
+        && i.state == ItemState::Open
+        && i.answers
+            == [
+                InboxAction::Approve,
+                InboxAction::Reject,
+                InboxAction::Later
+            ]));
+    // An older version's write stays open and names its version.
+    let q = &requests[0];
+    assert_eq!(
+        items[1].write.as_ref().map(|w| w.version),
+        Some(q.version - 1)
+    );
+    // A Result's writes carry their hash, the item, and the Task once approved.
+    let newest = &q.results[0];
+    assert_eq!(newest.writes.len(), 2);
+    assert_eq!(newest.writes[0].task.as_deref(), Some(record.id.as_str()));
+    assert_eq!(newest.writes[1].item.as_deref(), Some(items[0].id.as_str()));
+    assert_eq!(newest.writes[1].hash, items[0].write.as_ref().unwrap().hash);
+    let lisk = &assistant.delegates[0];
+    assert_eq!(
+        (lisk.writer.as_ref().map(|w| w.worker.as_str()), lisk.writes),
+        (Some("lisk-writer"), Some(Writes::Review))
+    );
+    assert!(lisk.staff.iter().all(|m| m.worker != "lisk-writer"));
+    let personal = &assistant.delegates[1];
+    assert_eq!(
+        (personal.writer.as_ref(), personal.writes),
+        (None, Some(Writes::None))
+    );
+    // A host before level 13 sends neither.
+    let Message::InboxList {
+        assistant: Some(older),
+        ..
+    } = &messages[48]
+    else {
+        panic!()
+    };
+    assert!(
+        older
+            .delegates
+            .iter()
+            .all(|d| d.writer.is_none() && d.writes.is_none())
+    );
+}
+
+/// A level 12 client knows no writes: it reads the Result and shows a
+/// `write` item as a kind it does not know, with no action it can send.
+#[test]
+fn a_level_12_client_reads_writes_as_unknown() {
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    #[serde(rename_all = "lowercase")]
+    enum OldKind {
+        Handoff,
+        #[serde(other)]
+        Unknown,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldItem {
+        kind: OldKind,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldResult {
+        version: u64,
+        summary: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldRequest {
+        results: Vec<OldResult>,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldList {
+        items: Vec<OldItem>,
+        requests: Vec<OldRequest>,
+    }
+    let line = std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/assistant/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+    .lines()
+    .nth(56)
+    .unwrap()
+    .to_owned();
+    let old: OldList = serde_json::from_str(&line).unwrap();
+    assert!(old.items.iter().all(|i| i.kind == OldKind::Unknown));
+    assert!(
+        old.requests[0]
+            .results
+            .iter()
+            .all(|r| r.version >= 1 && !r.summary.is_empty())
+    );
+    // A newer host's `writes` value is unknown, not a failed list.
+    let mut list: serde_json::Value = serde_json::from_str(&line).unwrap();
+    list["assistant"]["delegates"][0]["writes"] = serde_json::json!("auto");
+    let Message::InboxList {
+        assistant: Some(a), ..
+    } = serde_json::from_value(list).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(a.delegates[0].writes, Some(muxa_protocol::Writes::Unknown));
 }
 
 /// The fixtures' `inbox-list` lines with the values a newer host may add: an
