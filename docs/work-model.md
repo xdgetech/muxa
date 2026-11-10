@@ -42,6 +42,20 @@ This defines the product concepts used by the vision and milestone plan. Propose
 - A `sort` proposal, approved, does what `sort-capture` does to the Capture. A `delegate` proposal, approved, makes an assistant request on the Work item, as `request-assistant` does. Approving twice makes one request. Rejecting changes nothing else.
 - The overall assistant never sends a request without approval, unless the receiving workspace sets `overall_requests = "auto"`. Even then the Inbox item stays, answered, so every request it sent is visible.
 
+## Policies, corrections and hypotheses (ADR 0050)
+
+| Concept | Question it answers | Identity and lifetime |
+|---|---|---|
+| Policy | What did I tell the assistant? | `y-<8hex>`: the user's own words, with a scope (`all` or one workspace) and an optional end. Only the user writes, edits or deletes one. At most 50 active; an expired one is listed for 30 days |
+| Correction | What did I change in the plan? | `x-<8hex>`: a fact the host saw while a plan was current (reorder, Not Today, reject, pin, unpin, Later), with an optional reason. 200 for 90 days |
+| Hypothesis | What does the assistant guess I prefer? | `h-<8hex>`: proposed by a plan, grounded in corrections, answered in the Inbox. Confirm makes it a policy; reject keeps it out of later plans |
+
+- A plan reads the live policies, hypotheses and recent corrections, and cites by id the ones a row relies on. A policy outranks every hypothesis and every note.
+- A correction never changes a Work item or a note. The Work item or Inbox item changes first, as before, and the host records the correction after.
+- Policies are not `NOTES.md`. Notes are the agent's memory; a policy is the user's word, with a scope, an end and an id. The brief forbids copying policies, hypotheses or corrections into the notes.
+- Later never lowers importance. A hypothesis grounded only in Later is refused.
+- Forgetting a correction removes the hypotheses it grounds. A policy is deleted, not forgotten.
+
 A Session is not inherently manual, and a Task is not a renamed tmux Session. A manual shell or manually launched Claude/Codex can exist without a Task. A Task can have no live session, for example after its session ends. A person can type inside a Task's session while its Task identity remains unchanged. No process-name or terminal-content heuristic promotes a manual session into a Task.
 
 ## Example

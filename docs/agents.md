@@ -142,6 +142,32 @@ The overall assistant is a workspace with `[workspace.assistant] overall = true`
 - **Proposals.** Each `sort` or `delegate` proposal of the newest plan becomes one Inbox item with `approve`, `reject` and `later`. A proposal makes no item when an open item already asks the same thing. `approve` runs `sort-capture` or `request-assistant` once; a second approve returns what the first made. A `delegate` to a workspace with `overall_requests = "auto"` is approved by the host itself, within every budget and at most once per workspace per plan; the item stays, `answered`, so the user sees every request sent. Past a budget it stays open for the user. A `sort` is always reviewed. A `none` workspace refuses even an approved request.
 - **Logs.** Ids, counts, hashes, states and schedule times. Never notes, plan texts, reasons, purposes or summaries.
 
+### Policies, corrections and hypotheses (ADR 0050)
+
+The user's judgment reaches the overall assistant as records the host keeps in the assistant store. A policy (`y-…`) is the user's own words, with a scope (`all` or one workspace) and an optional `from` and `until`. Only the user writes one. A correction (`x-…`) is what the host saw the user do to the newest plan: `reordered`, `dismissed`, `rejected`, `pinned`, `unpinned` or `deferred`, with an optional reason. A hypothesis (`h-…`) is the overall assistant's guess at a preference, which the user confirms or rejects.
+
+- **The brief.** The overall brief has a section "What the user told you", before the notes. The host builds it from live records at the run's start, as JSON lines:
+  1. active policies;
+  2. `proposed` hypotheses with their evidence ids, and how many hypothesis slots remain;
+  3. rejected hypotheses, marked "do not use or propose again";
+  4. the corrections of the last 30 days.
+
+  It states the ranks: a policy outranks every hypothesis and every note, and wins a conflict, cited. A hypothesis shapes a row only when the row cites it. Later is "not now", never "unimportant". Nothing in the section goes into `notes`.
+- **What it never carries.** Expired policies, expired, confirmed or forgotten hypotheses, forgotten corrections, corrections older than 30 days, and any record scoped to a workspace whose `share` is `none`. The section is at most 16 KiB. Corrections leave first, oldest first; then rejected hypotheses, proposed ones and policies, each oldest first. The brief names each count left out.
+- **Citations.** A row's `basis` entry of kind `policy`, `hypothesis` or `correction` has the record's id in `source`.
+- **Hypotheses.** `plan.json` may carry `hypotheses[]`: at most 3, each `{text, scope, evidence[], confidence}`, with 1 to 5 correction ids as evidence. The host stores each as `proposed` and makes one `hypothesis` Inbox item from the newest plan only. A text that repeats an active policy or a `proposed` or `rejected` hypothesis is not stored; the plan still is.
+- **The checks.** The ids the brief carried, and its free slots, are kept on the plan record in the state directory, not in the run folder. The check refuses, naming the index:
+  - a `basis` or `evidence` id the brief did not carry, or whose record is no longer live;
+  - `evidence` of `deferred` corrections only: Later alone is no ground;
+  - `scope: all` whose evidence rows all belong to one sharing workspace. Rows of nobody's items, and of the overall workspace, count as the user's own;
+  - more hypotheses than the slots the brief names.
+
+  The host cannot check that the agent cited every hypothesis it used. The user sees the citations in Why.
+- **Confirm and reject.** `confirm` makes a policy with the hypothesis's text and scope, `source` its id, then retires it as `confirmed`; a retry finds the policy and makes no second one. `reject` makes it `rejected` and records a `rejected` correction with the optional reason.
+- **Forget.** `forget` removes a correction, or a `proposed`, `rejected` or `expired` hypothesis, with its Inbox items in every state. Forgetting a correction first removes every `proposed` hypothesis whose evidence names it, so no guess outlives its ground. A `confirmed` hypothesis cannot be forgotten: its policy is the user's word, deleted with `update-policy`. The next brief cannot carry a forgotten record, and a plan citing it is refused. A plan run that started before the forget may still cite it; that plan shows the entry as "forgotten".
+- **Retention.** 50 active policies; an expired one is listed for 30 days, then removed. 200 corrections for 90 days, oldest out first. At most 10 `proposed` hypotheses; one nobody answered in 14 days expires. A rejected hypothesis stays in the brief for 90 days. An expired one is kept 90 days more, so Forget can still remove it.
+- **Logs.** Ids, kinds, counts, scopes and states. Never policy texts, reasons, hypothesis texts or evidence texts.
+
 From a terminal: `muxa-cli routines`, `routine run [WORKSPACE/]NAME`, `inbox`, and `inbox approve|dismiss ENTRY` or `inbox later ENTRY --until +4h`. With `work` level 3, `inbox` lists Inbox items, and `inbox answer ITEM ACTION` answers one (Desktop tools below).
 
 ## Desktop tools

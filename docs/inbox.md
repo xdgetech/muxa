@@ -138,6 +138,20 @@ Pins and due dates live on Work items:
 
 muxa for tmux (`prefix + T`): Today comes first, with `new` or `moved` on a row. `o` or `Enter` on a row goes to its item in the list. `t` plans now and asks for the minutes first (`Enter` gives no limit). `P` on a Work item pins or unpins it. `sort` and `delegate` items take `a` Approve, `r` Reject and `l` Later.
 
+## Policies, Today order and hypotheses (ADR 0050)
+
+With `work:11`, the user can correct the newest plan and tell the overall assistant what matters, in their own words.
+
+1. **Reorder Today.** iOS: drag the rows in edit mode, or Move Up / Move Down in a row's context menu. Android: Move Up / Move Down in a row's menu. The order is kept on the plan. The next plan does not start from it.
+2. **Not Today** takes a row off Today, with an optional reason. The row stays as one line. A reason is never required.
+3. **Why** lists the policies, hypotheses and corrections a row cites, by their text. A hypothesis or a correction has **Forget**. A record that is gone shows "forgotten".
+4. **Hypothesis items** in Decisions are the overall assistant's guesses at a preference, "Based on 3 corrections". **Confirm** keeps the text as a policy. **Reject** takes an optional reason and tells the assistant not to use it again. **Later** moves it down.
+5. **Policies** opens from the Today header and from Settings, on both clients. It lists the active policies with their scope and end, then Expired, Hypotheses and Recent Corrections. **Add Policy** takes the text, a scope (all or one workspace, never the overall one) and an end: this week, a date, or none. A policy has **Edit** and **Delete**; a hypothesis **Confirm**, **Reject** and **Forget**; a correction **Forget**.
+
+Forget removes a record from what the assistant reads next, with the hypotheses based on it. Plans made before keep their reasons. Later and Not Today never tell the assistant that an item is unimportant.
+
+muxa for tmux (`prefix + T`): `K` and `J` move a Today row up and down. `x` takes a row off Today and asks for a reason (`Enter` gives none). `💡` items are hypotheses: `a` Confirm, `r` Reject with an optional reason, `l` Later. `y` opens the Policies list: `n` adds a policy, `e` edits, `d` deletes, `f` forgets a hypothesis or a correction. Plan Now is `t`, because `p` is Protect.
+
 ## Tasks and Sessions modes
 
 - Tasks mode lists Routines first, then every Task grouped by what it needs: Needs attention, Ready for review, Running, No agent, Closed (`protocol/fixtures/inbox/groups.jsonl`). Closed lists a Task for a day after its last change; an item can still open an older one. A Task with a session opens its pane, as a Sessions row does; its detail is Task Info in the pane's More menu (ADR 0044). A Task without a session, or a closed one, shows its detail. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.
