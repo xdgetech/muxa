@@ -17,8 +17,6 @@ use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, c
 use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
 use super::{AgentAdapter, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
-// Wired in by ADR 0028's delivery slice.
-#[allow(dead_code)]
 pub mod app_server;
 pub mod owned;
 

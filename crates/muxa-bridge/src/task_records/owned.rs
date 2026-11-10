@@ -156,6 +156,51 @@ impl Observer {
     }
 }
 
+/// What a `turn/start` did (ADR 0028 §4, ADR 0024).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Delivery {
+    /// The server answered with a result.
+    Sent,
+    /// The server answered with an error, or the request was never written.
+    NotSent,
+    /// No answer after the request was written. Never retried.
+    Uncertain,
+}
+
+/// Blocking. A fresh `thread/read` of the stored id; only `idle` is ready.
+/// Any error is unknown, so not ready.
+pub fn idle(thread: &OwnedThread) -> bool {
+    let Some(stored) = stored(thread) else {
+        return false;
+    };
+    match endpoint(thread).read_thread(&stored.id) {
+        Ok(t) => t.status == app_server::Status::Idle,
+        Err(e) => {
+            tracing::debug!(thread = %stored.id, error = %e, "codex thread unread; not ready");
+            false
+        }
+    }
+}
+
+/// Blocking. Sends `text` as a turn on the stored id. The caller has
+/// persisted `delivering` first. The text never reaches a log.
+pub fn deliver(thread: &OwnedThread, text: &str) -> Delivery {
+    let Some(stored) = stored(thread) else {
+        return Delivery::NotSent;
+    };
+    match endpoint(thread).start_turn(&stored.id, text) {
+        Ok(()) => Delivery::Sent,
+        Err(e) if e.uncertain => {
+            tracing::warn!(thread = %stored.id, error = %e, "codex turn uncertain");
+            Delivery::Uncertain
+        }
+        Err(e) => {
+            tracing::warn!(thread = %stored.id, error = %e, "codex turn not sent");
+            Delivery::NotSent
+        }
+    }
+}
+
 /// The App Server of a stored thread. Its own environment is not stored:
 /// `CODEX_HOME` alone picks the daemon.
 pub fn endpoint(thread: &OwnedThread) -> Endpoint {
@@ -284,6 +329,49 @@ mod tests {
         );
         let unknown = Observer::Unknown.identify(&agents, &pane, &Processes::default());
         assert!(unknown.is_none());
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn only_idle_is_ready_and_each_send_outcome_is_kept_apart() {
+        let home = std::env::temp_dir().join(format!(
+            "muxa-owned-deliver-{}-{:08x}",
+            std::process::id(),
+            getrandom::u32().unwrap()
+        ));
+        let fake = home.join("fake");
+        std::fs::create_dir_all(&fake).unwrap();
+        let app = Endpoint::new(FAKE, Some(home.clone()));
+        let t = app.start_thread(&home).unwrap();
+        let owned = OwnedThread::new(1, t.id.as_str(), None, FAKE, Some(&home));
+        let status = fake.join(format!("status-{}", t.id));
+        for (word, ready) in [
+            ("idle", true),
+            ("active", false),
+            ("approval", false),
+            ("notLoaded", false),
+            ("systemError", false),
+            ("missing", false),
+        ] {
+            std::fs::write(&status, word).unwrap();
+            assert_eq!(idle(&owned), ready, "{word}");
+        }
+        let unknown = OwnedThread::new(1, ID, None, FAKE, Some(&home));
+        assert!(!idle(&unknown));
+        std::fs::remove_file(&status).unwrap();
+        let turns = || {
+            std::fs::read_to_string(fake.join("turns.log"))
+                .unwrap_or_default()
+                .lines()
+                .count()
+        };
+        assert_eq!(deliver(&owned, "fixed"), Delivery::Sent);
+        std::fs::write(fake.join("refuse-turn"), "").unwrap();
+        assert_eq!(deliver(&owned, "fixed"), Delivery::NotSent);
+        std::fs::remove_file(fake.join("refuse-turn")).unwrap();
+        std::fs::write(fake.join("drop-turn"), "").unwrap();
+        assert_eq!(deliver(&owned, "fixed"), Delivery::Uncertain);
+        assert_eq!(turns(), 2, "the refused turn never arrived");
         let _ = std::fs::remove_dir_all(home);
     }
 

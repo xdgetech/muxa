@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use muxa_tmux::{AgentState, AgentStatus, Client, PaneId, Role, SessionId};
 
+use super::owned::{self, Observer};
 use super::{Config, blocking, link};
 use crate::agents::{Processes, Registry};
 use crate::loops::typing;
@@ -133,13 +134,14 @@ pub async fn send_prompt(
         .await
     };
     let Ok(record) = record else { return };
+    let observer = Observer::of(&record);
     let left = (pending.since + PROMPT_WAIT).saturating_sub(crate::records::now());
     let deadline = tokio::time::Instant::now() + Duration::from_secs(left);
     // The Task's pane, for the failure item if the prompt is never sent.
     let mut last_pane: Option<(String, String)> = None;
     let seen = loop {
         let mut seen = None;
-        let found = agent_pane(&client, &agents, &config, which.clone()).await;
+        let found = observed_pane(&client, &agents, &config, which.clone(), &observer).await;
         if let Some(f) = &found {
             last_pane = Some((f.session.to_string(), f.pane.to_string()));
         }
@@ -165,9 +167,12 @@ pub async fn send_prompt(
                         seen = None;
                         // Read again under the lifecycle claim: the process may have
                         // changed while we waited for readiness or another writer.
-                        let Some(current) = agent_pane(&client, &agents, &config, which.clone())
-                            .await
-                            .and_then(|found| bound_observation(claim.record(), pending, found))
+                        let Some(current) =
+                            observed_pane(&client, &agents, &config, which.clone(), &observer)
+                                .await
+                                .and_then(|found| {
+                                    bound_observation(claim.record(), pending, found)
+                                })
                         else {
                             break 'delivery;
                         };
@@ -187,6 +192,10 @@ pub async fn send_prompt(
                             };
                         if process.pid != current.pid
                             || !bound_process(claim.record(), pending, &process)
+                        {
+                            break 'delivery;
+                        }
+                        if Observer::of(claim.record()) != observer || !thread_idle(&observer).await
                         {
                             break 'delivery;
                         }
@@ -225,23 +234,41 @@ pub async fn send_prompt(
                         let Ok(claim) = claimed else {
                             return;
                         };
-                        let sent = match typing::type_prompt(&client, found.pane, prompt.text).await
-                        {
-                            Ok(()) => {
-                                tracing::info!(task, pane = %found.pane, "prompt sent");
-                                true
+                        let sent = match &observer {
+                            Observer::Thread(thread) => {
+                                let (thread, text) = (thread.clone(), prompt.text);
+                                let delivery = tokio::task::spawn_blocking(move || {
+                                    owned::deliver(&thread, text)
+                                })
+                                .await
+                                .unwrap_or(owned::Delivery::Uncertain);
+                                tracing::info!(task, ?delivery, "prompt turn");
+                                delivery
                             }
-                            Err(e) => {
-                                tracing::warn!(task, pane = %found.pane, error = %e, "cannot send the prompt");
-                                false
+                            _ => {
+                                match typing::type_prompt(&client, found.pane, prompt.text).await {
+                                    Ok(()) => {
+                                        tracing::info!(task, pane = %found.pane, "prompt sent");
+                                        owned::Delivery::Sent
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(task, pane = %found.pane, error = %e, "cannot send the prompt");
+                                        owned::Delivery::Uncertain
+                                    }
+                                }
                             }
                         };
                         // Keep restart and other senders excluded through bookkeeping.
-                        if !sent {
+                        match sent {
+                            owned::Delivery::Sent => {
+                                finish_claimed_wait(claim, pending, seen, at).await;
+                            }
+                            owned::Delivery::NotSent => {
+                                abandon_claimed_wait(claim, pending, prompt.not_sent).await;
+                            }
                             // Even partial input is uncertain; no automatic second attempt.
-                            return;
+                            owned::Delivery::Uncertain => {}
                         }
-                        finish_claimed_wait(claim, pending, seen, at).await;
                         return;
                     }
                 }
@@ -419,6 +446,39 @@ async fn person_quiet(client: &Client, session: SessionId, task: &str) -> bool {
     }
 }
 
+/// Whether an owned run's thread reads `idle` now (ADR 0028 §3). Other runs
+/// were checked by their adapter already.
+async fn thread_idle(observer: &Observer) -> bool {
+    match observer {
+        Observer::Thread(thread) => {
+            let thread = thread.clone();
+            tokio::task::spawn_blocking(move || owned::idle(&thread))
+                .await
+                .unwrap_or(false)
+        }
+        Observer::Adapters => true,
+        Observer::Unknown => false,
+    }
+}
+
+/// The send was refused: nothing reached the agent. The wait ends with the
+/// note, as when the agent never became ready; nothing is retried.
+async fn abandon_claimed_wait(mut claim: ClaimedTask, pending: PendingPrompt, note: &'static str) {
+    let result = blocking(move || {
+        claim
+            .update(move |r| {
+                r.extra.remove(crate::records::lifecycle::FIELD);
+                not_sent(r, pending, None, note, crate::records::now());
+            })
+            .map_err(|e| super::store_error(&e))?;
+        Ok(())
+    })
+    .await;
+    if let Err(e) = result {
+        tracing::warn!(error = %e.message, "cannot end a refused prompt wait");
+    }
+}
+
 /// The first live agent pane of the linked session, with its state and what
 /// its adapter reports.
 pub async fn agent_pane(
@@ -427,6 +487,19 @@ pub async fn agent_pane(
     config: &Arc<Config>,
     which: Linked,
 ) -> Option<AgentPane> {
+    observed_pane(client, agents, config, which, &Observer::Adapters).await
+}
+
+/// Like [`agent_pane`], with the agent seen as `observer` says: an owned
+/// run's by its thread (ADR 0028).
+async fn observed_pane(
+    client: &Client,
+    agents: &Arc<Registry>,
+    config: &Arc<Config>,
+    which: Linked,
+    observer: &Observer,
+) -> Option<AgentPane> {
+    let observer = observer.clone();
     let listed = tokio::time::timeout(LIST_TIMEOUT, muxa_tmux::list_sessions(client))
         .await
         .ok()?
@@ -452,7 +525,7 @@ pub async fn agent_pane(
             .iter()
             .find(|p| p.role == Role::Agent && !p.dead)?;
         let procs = Processes::list().ok()?;
-        let found = agents.identify(&crate::sessions::info(&session.name, pane), &procs);
+        let found = observer.identify(&agents, &crate::sessions::info(&session.name, pane), &procs);
         let adapter_process_bound = found.as_ref().is_some_and(|(_, found)| found.process_bound);
         let adapter_status = found
             .as_ref()

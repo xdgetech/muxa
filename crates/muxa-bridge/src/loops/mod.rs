@@ -19,6 +19,7 @@ use crate::agents::Registry;
 use crate::records::{
     Loop, LoopSpec, LoopState, Reason, Record, Status, Store, StoreError, Workspaces, now,
 };
+use crate::task_records::owned::{self, Observer};
 use crate::task_records::{Config, link};
 use check::{CheckError, CheckRun};
 use step::{Action, Agent, Check, CheckEnd, Memory, Observation, effects, step};
@@ -301,6 +302,17 @@ impl Engine {
                             Err(_) => return,
                         }
                     }
+                    let observer = Observer::of(claim.record());
+                    if observer == Observer::Unknown {
+                        return;
+                    }
+                    if let Observer::Thread(thread) = &observer {
+                        let thread = thread.clone();
+                        let idle = tokio::task::spawn_blocking(move || owned::idle(&thread));
+                        if !idle.await.unwrap_or(false) {
+                            return;
+                        }
+                    }
                     let run = claim.record().open_run().map(|r| r.id);
                     let operation = match getrandom::u64() {
                         Ok(n) => format!("delivery-{n:016x}"),
@@ -338,8 +350,23 @@ impl Engine {
                     } else {
                         typing::fail_prompt(attempt)
                     };
-                    match typing::type_prompt(client, f.pane, &prompt).await {
-                        Ok(()) => {
+                    let delivery = match &observer {
+                        Observer::Thread(thread) => {
+                            let (thread, text) = (thread.clone(), prompt.clone());
+                            tokio::task::spawn_blocking(move || owned::deliver(&thread, &text))
+                                .await
+                                .unwrap_or(owned::Delivery::Uncertain)
+                        }
+                        _ => match typing::type_prompt(client, f.pane, &prompt).await {
+                            Ok(()) => owned::Delivery::Sent,
+                            Err(e) => {
+                                tracing::warn!(task, pane = %f.pane, error = %e, "cannot type the fail prompt");
+                                owned::Delivery::Uncertain
+                            }
+                        },
+                    };
+                    match delivery {
+                        owned::Delivery::Sent => {
                             tracing::info!(task, pane = %f.pane, attempt, "fail prompt sent");
                             let then = Loop {
                                 armed_at: at,
@@ -361,9 +388,26 @@ impl Engine {
                                 memory = step::typed(at);
                             }
                         }
-                        Err(e) => {
-                            tracing::warn!(task, pane = %f.pane, error = %e, "cannot type the fail prompt")
+                        // Refused: nothing was sent. The loop stops rather than ask again.
+                        owned::Delivery::NotSent => {
+                            let stopped = then.stopped(Reason::NotSent, now());
+                            let written = tokio::task::spawn_blocking(move || {
+                                claim
+                                    .update(|r| {
+                                        r.extra.remove(crate::records::lifecycle::FIELD);
+                                        if let Err(e) = r.set_loop(Some(&stopped)) {
+                                            tracing::warn!(error = %e, "cannot encode loop");
+                                        }
+                                    })
+                                    .map(|_| ())
+                            })
+                            .await;
+                            if !matches!(written, Ok(Ok(()))) {
+                                tracing::warn!(task, "cannot stop a loop whose prompt was refused");
+                            }
                         }
+                        // Uncertain: the claim stays for recovery (ADR 0024).
+                        owned::Delivery::Uncertain => {}
                     }
                 }
             }

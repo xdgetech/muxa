@@ -133,16 +133,19 @@ impl Endpoint {
         self
     }
 
+    #[cfg(test)]
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
+    #[cfg(test)]
     pub fn program(&self) -> &str {
         &self.program
     }
 
+    #[cfg(test)]
     pub fn home(&self) -> Option<&Path> {
         self.home.as_deref()
     }
