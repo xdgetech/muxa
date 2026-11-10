@@ -17,6 +17,10 @@ use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, c
 use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
 use super::{AgentAdapter, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
+// Wired in by ADR 0028's launch slice.
+#[allow(dead_code)]
+pub mod app_server;
+
 pub const ID: &str = "codex";
 /// Moves Codex's state, and with it the rollouts (ADR 0016).
 pub const DIR_ENV: &str = "CODEX_HOME";

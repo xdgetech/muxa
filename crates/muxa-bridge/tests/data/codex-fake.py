@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""A stand-in `codex` for ADR 0028's tests. It never calls a model.
+
+  codex app-server daemon start   records the call; exits 1 with fake/daemon-fails
+  codex app-server proxy          serves the App Server's JSON-RPC on stdio
+  codex resume <id> [args...]     a viewer: records its argv and every typed line
+  codex fake-work <id>            one turn's work, started by turn/start
+
+State lives under $CODEX_HOME/fake/, so every connection sees the same threads:
+  threads/<id>.json  the thread: cwd, path, status
+  starts.log         one JSON line per thread/start
+  turns.log          "<id>\\t<text>" per turn/start that was answered or dropped
+  resume.log         the viewer's argv
+  typed.log          lines typed into the viewer (muxa must type none)
+Steering files there:
+  status-<id>        overrides the status: idle, active, approval, notLoaded,
+                     systemError, missing (no status field) or bogus
+  drop-turn          turn/start is recorded, then the connection drops unanswered
+  silent-turn        turn/start is recorded and never answered
+  refuse-turn        turn/start gets a JSON-RPC error
+  silent             no request is answered
+  turn-<n>.json      {"path": ..., "content": ...}: the n-th turn writes content
+                     to path, relative to the thread's cwd
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+import uuid
+
+HOME = os.environ.get("CODEX_HOME", "")
+FAKE = os.path.join(HOME, "fake")
+
+
+def path(*parts):
+    return os.path.join(FAKE, *parts)
+
+
+def append(name, line):
+    os.makedirs(FAKE, exist_ok=True)
+    with open(path(name), "a") as f:
+        f.write(line + "\n")
+
+
+def write_json(file, value):
+    os.makedirs(os.path.dirname(file), exist_ok=True)
+    tmp = file + ".tmp-%d" % os.getpid()
+    with open(tmp, "w") as f:
+        json.dump(value, f)
+    os.replace(tmp, file)
+
+
+def load(tid):
+    try:
+        with open(path("threads", tid + ".json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def save(thread):
+    write_json(path("threads", thread["id"] + ".json"), thread)
+
+
+def status_of(thread):
+    try:
+        with open(path("status-" + thread["id"])) as f:
+            word = f.read().strip()
+    except OSError:
+        word = thread["status"]
+    if word == "approval":
+        return {"type": "active", "activeFlags": ["waitingOnApproval"]}
+    if word == "active":
+        return {"type": "active", "activeFlags": []}
+    if word == "missing":
+        return None
+    return {"type": word}
+
+
+def shown(thread):
+    out = {"id": thread["id"], "cwd": thread["cwd"], "path": thread["path"],
+           "historyMode": thread.get("historyMode", "paginated")}
+    status = status_of(thread)
+    if status is not None:
+        out["status"] = status
+    return out
+
+
+def send(value):
+    sys.stdout.write(json.dumps(value) + "\n")
+    sys.stdout.flush()
+
+
+def error(rid, message):
+    send({"id": rid, "error": {"code": -32600, "message": message}})
+
+
+def proxy():
+    for line in sys.stdin:
+        msg = json.loads(line)
+        rid, method = msg.get("id"), msg.get("method")
+        params = msg.get("params") or {}
+        if rid is None:
+            continue
+        if os.path.exists(path("silent")):
+            continue
+        # The real server sends notifications between answers.
+        send({"method": "remoteControl/status/changed", "params": {"status": "disabled"}})
+        if method == "initialize":
+            send({"id": rid, "result": {"userAgent": "fake", "codexHome": HOME}})
+        elif method == "thread/start":
+            tid = str(uuid.uuid4())
+            day = time.strftime("%Y/%m/%d", time.gmtime())
+            stamp = time.strftime("%Y-%m-%dT%H-%M-%S", time.gmtime())
+            rollout = os.path.join(HOME, "sessions", day, "rollout-%s-%s.jsonl" % (stamp, tid))
+            thread = {"id": tid, "cwd": params.get("cwd"), "path": rollout, "status": "idle",
+                      "historyMode": params.get("historyMode", "paginated"), "turns": 0}
+            save(thread)
+            append("starts.log", json.dumps({"cwd": params.get("cwd"),
+                                             "historyMode": params.get("historyMode")}))
+            send({"id": rid, "result": {"thread": shown(thread), "model": "fake"}})
+        elif method == "thread/read":
+            thread = load(params.get("threadId", ""))
+            if thread is None:
+                error(rid, "thread not loaded: %s" % params.get("threadId"))
+            else:
+                send({"id": rid, "result": {"thread": shown(thread)}})
+        elif method == "turn/start":
+            thread = load(params.get("threadId", ""))
+            if thread is None:
+                error(rid, "thread not loaded")
+                continue
+            text = "".join(i.get("text", "") for i in params.get("input", []))
+            if os.path.exists(path("refuse-turn")):
+                error(rid, "turn refused")
+                continue
+            append("turns.log", "%s\t%s" % (thread["id"], text))
+            if os.path.exists(path("drop-turn")):
+                sys.exit(0)
+            if os.path.exists(path("silent-turn")):
+                continue
+            thread["status"] = "active"
+            thread["turns"] += 1
+            save(thread)
+            subprocess.Popen([sys.executable, os.path.abspath(__file__), "fake-work", thread["id"]],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+            send({"id": rid, "result": {"turn": {"id": "turn-%d" % thread["turns"]}}})
+        else:
+            error(rid, "unknown method")
+
+
+def event(kind, **fields):
+    payload = {"type": kind}
+    payload.update(fields)
+    return {"type": "event_msg", "payload": payload}
+
+
+def work(tid):
+    time.sleep(0.5)
+    thread = load(tid)
+    n = thread["turns"]
+    lines = []
+    if not os.path.exists(thread["path"]):
+        os.makedirs(os.path.dirname(thread["path"]), exist_ok=True)
+        lines.append({"type": "session_meta", "payload": {"id": tid, "cwd": thread["cwd"]}})
+    lines.append(event("task_started", started_at=int(time.time())))
+    lines.append({"type": "response_item", "payload": {
+        "type": "message", "id": "a%d" % n, "role": "assistant",
+        "content": [{"type": "output_text", "text": "fake turn %d done" % n}]}})
+    steer = path("turn-%d.json" % n)
+    if os.path.exists(steer):
+        with open(steer) as f:
+            spec = json.load(f)
+        write_json(os.path.join(thread["cwd"], spec["path"]), spec["content"])
+    lines.append(event("task_complete", completed_at=int(time.time())))
+    with open(thread["path"], "a") as f:
+        for line in lines:
+            f.write(json.dumps(line) + "\n")
+    thread = load(tid)
+    thread["status"] = "idle"
+    save(thread)
+
+
+def viewer(args):
+    append("resume.log", " ".join(args))
+    print("fake codex viewer", flush=True)
+    for line in sys.stdin:
+        append("typed.log", line.rstrip("\n"))
+    while True:
+        time.sleep(60)
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:3] == ["app-server", "daemon", "start"]:
+        append("calls.log", "daemon-start")
+        sys.exit(1 if os.path.exists(path("daemon-fails")) else 0)
+    if args[:2] == ["app-server", "proxy"]:
+        proxy()
+    elif args[:1] == ["resume"]:
+        viewer(args[1:])
+    elif args[:1] == ["fake-work"]:
+        work(args[1])
+    else:
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

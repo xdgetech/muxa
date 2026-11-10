@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. It answers the open item of ADR 0027 section 2 and the Codex gate of ADR 0024 and 0026. Nothing is implemented. It needs the developer's checks below, with a real login, before it is enabled.
+Proposed. It answers the open item of ADR 0027 section 2 and the Codex gate of ADR 0024 and 0026. Slices S1 to S7 below are being implemented behind a host switch that is off by default. It needs the developer's checks below, with a real login, before it is enabled.
 
 ## Context
 
@@ -57,6 +57,18 @@ Use a real login, a throwaway tmux server (`tmux -L muxa-test-codex`), a scratch
 8. After `codex app-server daemon restart`, the stored thread reads as `notLoaded` or fails, and muxa sends no input.
 
 If check 1, 3 or 5 fails with the installed version, keep the fallback. If only check 2 fails, C still works with `turn/start` before `resume`; ADR 0024's order then needs a short amendment.
+
+### Slices
+
+| Slice | What | Checked by |
+|---|---|---|
+| S1 | `agents/codex/app_server.rs`: one JSON-RPC connection per call through `codex app-server proxy`. `thread/start` (cwd, `legacy` history), `thread/read`, `turn/start`, typed errors. A turn whose answer never came is uncertain. | unit tests against `tests/data/codex-fake.py` |
+| S2 | Launch. A background Codex run creates its thread before dispatch and stores it on the reserved run under the creation claim. The pane runs `codex resume <id>`. | unit tests |
+| S3 | State and Chat by thread id. `process_bound` only with a stored id. | unit tests |
+| S4 | Readiness and delivery. `idle` on the stored id is ready. `delivering` is persisted, then `turn/start`. An uncertain send is never retried. | unit tests |
+| S5 | The host switch. Routine runs, delegates, staff members and the overall assistant may run Codex with it. The writer stays Claude Code. | unit tests |
+| S6 | Through the daemon on a `-L` server with a fake `codex`. | `tests/codex_threads.rs` |
+| S7 | `docs/agents.md`, `docs/plan.md`, this ADR's status and the developer checklist. | review |
 
 ## Consequences
 
