@@ -22,10 +22,12 @@ extension DemoBridge {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .applyNotes(let id, let source, let version, let base, _):
+        case .applyNotes(let id, _, _, _, .some) where Self.workLevel < workStaff:
+            emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "unknown field step"), sessions: nil))
+        case .applyNotes(let id, let source, let version, let base, let step):
             let outcome = lock.withLock { () -> Result<DemoNotesApplied, DemoWork.Refusal> in
                 do throws(DemoWork.Refusal) {
-                    return .success(try work.applyNotes(source: source, version: version, base: base))
+                    return .success(try work.applyNotes(source: source, version: version, base: base, step: step))
                 } catch { return .failure(error) }
             }
             switch outcome {
@@ -48,14 +50,16 @@ extension DemoBridge {
         guard Self.workLevel >= workPlans else { return ([], nil) }
         return lock.withLock {
             _ = work.finishPlan()
-            return (work.listedPlans, work.plans.assistant)
+            return (work.listedPlans, work.listedAssistant)
         }
     }
 
+    /// A `sort` or `delegate` item, or at level 12 a `handoff`: approve runs what it proposes.
     func isOverallProposal(_ id: String) -> Bool {
         guard Self.workLevel >= workPlans else { return false }
+        let kinds: [ItemKind] = Self.workLevel >= workStaff ? [.sort, .delegate, .handoff] : [.sort, .delegate]
         return lock.withLock {
-            work.taskItems.contains { $0.id == id && ($0.kind == .sort || $0.kind == .delegate) }
+            work.taskItems.contains { $0.id == id && kinds.contains($0.kind) }
         }
     }
 

@@ -97,6 +97,9 @@ struct InboxItemRow: View {
                 if let delegate = item.delegate {
                     Text(delegate.shown).font(.caption).foregroundStyle(.secondary)
                 }
+                if let handoff = item.handoff {
+                    Text(handoff.shown).font(.caption).foregroundStyle(.secondary)
+                }
                 HStack(spacing: 4) {
                     Text(item.source())
                     if item.isProtected {

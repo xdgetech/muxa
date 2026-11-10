@@ -9,7 +9,8 @@ struct DemoPlans: Sendable {
     /// Newest first, at most 7.
     var plans: [Plan] = []
     var assistant: AssistantInfo?
-    /// SHA-256 of each workspace's live `NOTES.md`, by workspace.
+    /// SHA-256 of each live notes file, by `notesFile`: a workspace's `NOTES.md`, or a
+    /// staff member's own.
     var liveNotes: [String: String] = [:]
     /// What approving each proposal made, by item id: a second approve returns it.
     var made: [String: Made] = [:]
@@ -27,6 +28,10 @@ struct DemoPlans: Sendable {
     static let kept = 7
 
     static func id(_ n: Int) -> String { String(format: "p-%08x", 0xe000 + n) }
+
+    static func notesFile(_ workspace: String, member: String? = nil) -> String {
+        member.map { "\(workspace)/\($0)" } ?? workspace
+    }
 
     static func hash(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -89,7 +94,7 @@ struct DemoPlans: Sendable {
     }
 }
 
-/// What approving a `sort` or `delegate` item did.
+/// What approving a `sort`, `delegate` or `handoff` item did.
 enum DemoProposalOutcome {
     case delegated(WorkItem, AssistantRequest, DemoAssistant.RunChange, InboxItem)
     case sorted(Capture, WorkItem?, InboxItem)
@@ -168,8 +173,11 @@ extension DemoWork {
                     changed: DemoPlans.changes(rows, since: previous))
     }
 
-    /// `apply-notes`: writes only while the live file still hashes to `base`.
-    mutating func applyNotes(source: String, version: UInt64, base: String) throws(Refusal) -> DemoNotesApplied {
+    /// `apply-notes`: writes only while the live file still hashes to `base`. `step` (level
+    /// 12) picks the step's Result, else the version's newest; a member other than the lead
+    /// has its own file.
+    mutating func applyNotes(source: String, version: UInt64, base: String, step: UInt32? = nil) throws(Refusal)
+        -> DemoNotesApplied {
         if source.hasPrefix("p-") {
             guard let plan = plans.plans.first(where: { $0.id == source }), let notes = plan.notes,
                   let overall = plans.assistant?.overall
@@ -179,25 +187,35 @@ extension DemoWork {
             return .plan(plan)
         }
         guard let request = assistant.requests.first(where: { $0.id == source }),
-              let notes = request.results.first(where: { $0.version == version })?.notes,
+              let result = request.results.first(where: { $0.version == version && (step == nil || ($0.step ?? 1) == step) }),
+              let notes = result.notes,
               let item = assistant.work.first(where: { $0.id == request.work })
         else { throw Refusal(.badRequest, "\(source) v\(version) has no notes") }
-        try writeNotes(notes, base: base, in: request.workspace)
+        let member = result.worker.flatMap { name in assistant.staff[request.workspace]?.first { $0.worker == name } }
+        if let member, !member.lead {
+            try writeNotes(notes, base: base, in: request.workspace, member: member.worker)
+        } else {
+            try writeNotes(notes, base: base, in: request.workspace)
+        }
         return .request(item, request)
     }
 
-    private mutating func writeNotes(_ notes: Notes, base: String, in workspace: String) throws(Refusal) {
-        guard notes.base == base, plans.liveNotes[workspace] == base else {
-            throw Refusal(.conflict, "NOTES.md of \(workspace) changed since the run read it")
+    /// The workspace's `NOTES.md`, or a staff member's own notes file.
+    private mutating func writeNotes(_ notes: Notes, base: String, in workspace: String, member: String? = nil) throws(Refusal) {
+        let file = DemoPlans.notesFile(workspace, member: member)
+        guard notes.base == base, plans.liveNotes[file] == base else {
+            throw Refusal(.conflict, "the notes of \(file) changed since the run read them")
         }
-        plans.liveNotes[workspace] = DemoPlans.hash(notes.text)
-        if let i = plans.assistant?.delegates.firstIndex(where: { $0.workspace == workspace }) {
+        plans.liveNotes[file] = DemoPlans.hash(notes.text)
+        if let member, let i = assistant.staff[workspace]?.firstIndex(where: { $0.worker == member }) {
+            assistant.staff[workspace]?[i].notesAt = Self.now
+        } else if let i = plans.assistant?.delegates.firstIndex(where: { $0.workspace == workspace }) {
             plans.assistant?.delegates[i].notesAt = Self.now
         }
     }
 
-    /// Approve on a `sort` or `delegate` item: runs its action once. A second approve
-    /// returns what the first made.
+    /// Approve on a `sort`, `delegate` or `handoff` item: runs its action once. A second
+    /// approve returns what the first made.
     mutating func approveProposal(_ id: String) throws(Refusal) -> DemoProposalOutcome {
         guard let i = taskItems.firstIndex(where: { $0.id == id }) else { throw Refusal(.badRequest, "\(id) is not an item") }
         if taskItems[i].answer == .approve, let made = plans.made[id] {
@@ -210,10 +228,15 @@ extension DemoWork {
         guard taskItems[i].state == .open, taskItems[i].answers.contains(.approve) else {
             throw Refusal(.badRequest, "approve is not an answer of \(id)")
         }
+        if let h = taskItems[i].handoff {
+            let (item, request, change) = try assistant.handOn(h)
+            plans.made[id] = DemoPlans.Made(work: item, request: request)
+            return .delegated(item, request, change, answered(i))
+        }
         if let d = taskItems[i].delegate {
             guard let w = assistant.work.first(where: { $0.id == d.work }) else { throw Refusal(.badRequest, "no Work item \(d.work)") }
             let (item, request, change) = try assistant.ask(d.work, rev: w.rev, scope: d.scope, workspace: d.workspace,
-                                                            purpose: d.purpose)
+                                                            purpose: d.purpose, worker: d.worker, by: .overall)
             plans.made[id] = DemoPlans.Made(work: item, request: request)
             return .delegated(item, request, change, answered(i))
         }

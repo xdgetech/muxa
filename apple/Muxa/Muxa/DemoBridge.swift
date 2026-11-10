@@ -96,6 +96,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         work = content.work
         work.offersAskAgent = Self.workLevel >= workAskAgent
         work.keepsMemory = Self.workLevel >= workPolicies
+        if Self.workLevel < workStaff { work.forgetStaff() }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-old-items") { work.ageForDeleteOld() }
         #endif
@@ -110,22 +111,24 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:11",
+            "task-loop", "tasks-changed", "viewport", "history", "work:12",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:11" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:12" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:11" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:12" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:11" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:12" ? "work:3" : $0 } }
         // A bridge from before Protect and Delete Old (ADR 0046) and Captures (ADR 0048): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:11" ? "work:7" : $0 } }
+        if arguments.contains("-work7") { return all.map { $0 == "work:12" ? "work:7" : $0 } }
         // A bridge from before the overall assistant (ADR 0049): no Today, pins or notes.
-        if arguments.contains("-work9") { return all.map { $0 == "work:11" ? "work:9" : $0 } }
+        if arguments.contains("-work9") { return all.map { $0 == "work:12" ? "work:9" : $0 } }
         // A bridge from before policies (ADR 0050): no Policies, Not today or hypotheses.
-        if arguments.contains("-work10") { return all.map { $0 == "work:11" ? "work:10" : $0 } }
+        if arguments.contains("-work10") { return all.map { $0 == "work:12" ? "work:10" : $0 } }
+        // A bridge from before staff and hand-offs (ADR 0051): one assistant per workspace.
+        if arguments.contains("-work11") { return all.map { $0 == "work:12" ? "work:11" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -405,6 +408,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 switch item.kind {
                 case .sort, .delegate: Self.workLevel >= workPlans
                 case .hypothesis: Self.workLevel >= workPolicies
+                case .handoff: Self.workLevel >= workStaff
                 default: true
                 }
             }

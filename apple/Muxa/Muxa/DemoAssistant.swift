@@ -16,6 +16,8 @@ struct DemoAssistant: Sendable {
     var requestsByRev: [String: String] = [:]
     /// Runs started since launch, for their record ids.
     var runCount = 0
+    /// Each workspace's staff, the lead marked (`work` level 12, ADR 0051).
+    var staff: [String: [StaffMember]] = [:]
 
     typealias Refusal = DemoWork.Refusal
 

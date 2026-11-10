@@ -6,6 +6,9 @@ import MuxaProtocol
 extension DemoBridge {
     func serveCaptures(_ req: Request) async {
         guard Self.workLevel >= workAssistant else { return unsupported(req.id, Self.noRequest) }
+        if Self.workLevel < workStaff, Self.namesWorker(req) {
+            return emit(.result(id: req.id, error: ErrorBody(code: .badRequest, message: "unknown field worker"), sessions: nil))
+        }
         switch req {
         case .capture(let id, let clientId, let text, _, let workspace, let assist?):
             captureAndAsk(id, clientId: clientId, text: text, workspace: workspace, assist: assist)
@@ -73,14 +76,23 @@ extension DemoBridge {
             case .failure(let refusal):
                 emit(.result(id: id, error: refusal.body, sessions: nil))
             }
-        case .requestAssistant(let id, let item, let rev, let scope, let workspace, let purpose, _):
+        case .requestAssistant(let id, let item, let rev, let scope, let workspace, let purpose, let worker):
             changeRequest(id) { a throws(DemoWork.Refusal) in
-                try a.ask(item, rev: rev, scope: scope, workspace: workspace, purpose: purpose)
+                try a.ask(item, rev: rev, scope: scope, workspace: workspace, purpose: purpose, worker: worker)
             }
         case .cancelRequest(let id, let request, let version):
             changeRequest(id) { a throws(DemoWork.Refusal) in try a.cancel(request, version: version) }
         default:
             unsupported(req.id, Self.noRequest)
+        }
+    }
+
+    /// A level 11 host knows no `worker` (ADR 0051).
+    private static func namesWorker(_ req: Request) -> Bool {
+        switch req {
+        case .requestAssistant(_, _, _, _, _, _, let worker): worker != nil
+        case .capture(_, _, _, _, _, let assist): assist?.worker != nil
+        default: false
         }
     }
 

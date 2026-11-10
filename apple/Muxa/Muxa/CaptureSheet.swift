@@ -51,6 +51,10 @@ struct CaptureSheet: View {
                 // Below "Start a Task instead…", so a phone's keyboard leaves both in view.
                 if model.isConnected && !kept {
                     assistant
+                    let staff = model.pickableStaff(in: draft.workspace)
+                    if !staff.isEmpty {
+                        StaffPicker(staff: staff, selection: $draft.worker, id: "capture-staff")
+                    }
                 }
                 if let message = error ?? visibleProblem {
                     Section {
@@ -62,6 +66,7 @@ struct CaptureSheet: View {
                     }
                 }
             }
+            .accessibilityIdentifier("capture-form")
             .navigationTitle("Capture")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -97,6 +102,8 @@ struct CaptureSheet: View {
             .interactiveDismissDisabled(saving || (!draft.trimmed.isEmpty && !kept))
             .onAppear { textFocused = true }
             .onChange(of: draft) { if !kept { error = nil } }
+            // A member belongs to one workspace's staff.
+            .onChange(of: draft.workspace) { draft.worker = nil }
         }
     }
 

@@ -21,6 +21,7 @@ extension PaneSession {
     @discardableResult
     public func capture(clientId: String, text: String, workspace: String?, assist: AssistSpec? = nil) async throws -> Capture {
         try requireCaptures()
+        if assist?.worker != nil { try requireStaff() }
         var requestId: UInt64 = 0
         do {
             try await request { id in

@@ -64,9 +64,12 @@ extension DemoAssistant {
     }
 
     /// `request-assistant`. The same `work` and `rev` return the request already made;
-    /// a new `rev` adds a version to the workspace's request and ends the older run.
+    /// a new `rev` adds a version to the workspace's request and ends the older run. In a
+    /// workspace with staff (level 12), `worker` names the member of step 1; nil is the
+    /// lead. `by` says who named it.
     mutating func ask(
-        _ id: String, rev: UInt64, scope: AssistScope, workspace: String?, purpose: String?
+        _ id: String, rev: UInt64, scope: AssistScope, workspace: String?, purpose: String?, worker: String? = nil,
+        by: StepBy = .user
     ) throws(Refusal) -> (WorkItem, AssistantRequest, RunChange) {
         guard let w = work.firstIndex(where: { $0.id == id }) else { throw Refusal(.badRequest, "no Work item \(id)") }
         if let made = requestsByRev["\(id) \(rev)"], let r = requests.first(where: { $0.id == made }) {
@@ -77,6 +80,7 @@ extension DemoAssistant {
         guard let workspace = workspace ?? work[w].workspace else { throw Refusal(.badRequest, "\(id) has no workspace") }
         guard (purpose?.utf8.count ?? 0) <= 4096 else { throw Refusal(.badRequest, "the purpose is over 4096 bytes") }
         try Self.checkAssistant(in: workspace)
+        let member = try member(worker, in: workspace)
         var change = RunChange()
         let r: Int
         if let i = requests.firstIndex(where: { $0.work == id && $0.workspace == workspace }) {
@@ -93,17 +97,12 @@ extension DemoAssistant {
             r = requests.count - 1
             work[w].requests.append(requests[r].id)
         }
-        runCount += 1
-        let run = DemoRun(
-            task: String(format: "t-q%05d", runCount),
-            session: "\(scope.raw)-\(requests[r].id)-v\(requests[r].version)-" + String(format: "t-q%05d", runCount),
-            started: Date())
-        runs[requests[r].id] = run
+        let run = startRun(r)
         change.started = run
-        requests[r].run = run.task
-        requests[r].delivery = .pending
-        requests[r].deliveryAt = Self.now
-        requests[r].updatedAt = Self.now
+        requests[r].steps = member.map {
+            [RequestStep(step: 1, worker: $0, by: worker == nil ? .lead : by, delivery: .pending,
+                         deliveryAt: Self.now, run: run.task)]
+        } ?? []
         work[w].rev += 1
         work[w].updatedAt = Self.now
         requestsByRev["\(id) \(rev)"] = requests[r].id
@@ -130,7 +129,8 @@ extension DemoAssistant {
         }
         let (sorted, made) = try sort(saved.id, rev: saved.rev, action: .work, into: nil, title: nil)
         guard let made else { throw Refusal(.internal, "the capture made no Work item") }
-        let (item, request, change) = try ask(made.id, rev: made.rev, scope: assist.scope, workspace: workspace, purpose: assist.purpose)
+        let (item, request, change) = try ask(
+            made.id, rev: made.rev, scope: assist.scope, workspace: workspace, purpose: assist.purpose, worker: assist.worker)
         return (sorted, item, request, change, nil)
     }
 
@@ -140,15 +140,14 @@ extension DemoAssistant {
               let w = work.firstIndex(where: { $0.id == requests[r].work })
         else { throw Refusal(.badRequest, "\(id) is not a request") }
         guard requests[r].version == version else { throw Refusal(.conflict, "\(id) is at version \(requests[r].version)") }
-        guard !requests[r].results.contains(where: { $0.version == version }) else {
+        let newest = requests[r].steps.last?.step ?? 1
+        guard !requests[r].results.contains(where: { $0.version == version && ($0.step ?? 1) == newest }) else {
             throw Refusal(.badRequest, "\(id) v\(version) has its result")
         }
         var change = RunChange()
         if let old = runs.removeValue(forKey: id) {
             change.ended.append(old)
-            requests[r].delivery = .cancelled
-            requests[r].deliveryAt = Self.now
-            requests[r].updatedAt = Self.now
+            setDelivery(r, .cancelled, at: Self.now)
             requests[r].run = nil
         }
         return (work[w], requests[r], change)
@@ -175,22 +174,47 @@ extension DemoAssistant {
         return ended
     }
 
-    private mutating func setDelivery(_ r: Int, _ delivery: Delivery, at: UInt64) {
+    /// The request's delivery is its newest step's.
+    mutating func setDelivery(_ r: Int, _ delivery: Delivery, at: UInt64) {
         guard requests[r].delivery != delivery else { return }
         requests[r].delivery = delivery
         requests[r].deliveryAt = at
         requests[r].updatedAt = Self.now
+        if let last = requests[r].steps.indices.last {
+            requests[r].steps[last].delivery = delivery
+            requests[r].steps[last].deliveryAt = at
+        }
+    }
+
+    /// A new run for the request's current version, or its next step: pending from now.
+    mutating func startRun(_ r: Int) -> DemoRun {
+        runCount += 1
+        let task = String(format: "t-q%05d", runCount)
+        let run = DemoRun(
+            task: task, session: "\(requests[r].scope.raw)-\(requests[r].id)-v\(requests[r].version)-\(task)",
+            started: Date())
+        runs[requests[r].id] = run
+        requests[r].run = run.task
+        requests[r].delivery = .pending
+        requests[r].deliveryAt = Self.now
+        requests[r].updatedAt = Self.now
+        return run
     }
 
     private mutating func storeResult(_ r: Int) {
         let request = requests[r]
         let other = work.first { $0.id != request.work && $0.workspace == request.workspace }?.id
+        // Inside a version none is stale: each step keeps its Result (ADR 0051 §5).
         let stale = request.results.map { old -> AssistResult in
             var kept = old
-            kept.stale = true
+            kept.stale = old.stale || old.version != request.version
             return kept
         }
-        let fresh = Self.result(version: request.version, at: Self.now, duplicate: other)
+        var fresh = Self.result(version: request.version, at: Self.now, duplicate: other)
+        if let step = request.steps.last {
+            fresh.worker = step.worker
+            fresh.step = step.step
+        }
         requests[r].results = Array(([fresh] + stale).prefix(10))
         requests[r].run = nil
         setDelivery(r, .resulted, at: Self.now)

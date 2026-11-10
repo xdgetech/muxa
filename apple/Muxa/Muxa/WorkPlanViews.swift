@@ -76,14 +76,17 @@ struct DueSection: View {
     }
 }
 
-/// A Result's proposed `NOTES.md` for its workspace's assistant (ADR 0049 §1). The app
-/// has no copy of the live file, so it shows the whole proposed text. Update Notes
-/// writes it only while the host's file is still the one the run read.
+/// A Result's proposed `NOTES.md` for its workspace's assistant (ADR 0049 §1), or, from a
+/// staff member other than the lead, its own notes file (ADR 0051 §5). The app has no
+/// copy of the live file, so it shows the whole proposed text. Update Notes writes it
+/// only while the host's file is still the one the run read.
 struct NotesSection: View {
     @Environment(AppModel.self) private var model
     let request: AssistantRequest
     let result: AssistResult
     let notes: Notes
+    /// Keeps identifiers apart when a chain shows one per step.
+    var tag: String?
     @State private var applying = false
     @State private var error: String?
 
@@ -92,24 +95,34 @@ struct NotesSection: View {
             Text(notes.text.isEmpty ? "Empty the notes." : notes.text)
                 .font(.callout.monospaced())
                 .textSelection(.enabled)
-                .accessibilityIdentifier("work-notes-text")
+                .accessibilityIdentifier(id("work-notes-text"))
             if model.session.notesApplied(request, result) {
                 Label("Notes updated on the host.", systemImage: Icon.done).foregroundStyle(Theme.done)
-                    .accessibilityIdentifier("work-notes-applied")
+                    .accessibilityIdentifier(id("work-notes-applied"))
             } else {
                 Button("Update Notes", systemImage: Icon.note, action: apply)
                     .disabled(applying || !model.isConnected)
-                    .accessibilityIdentifier("work-update-notes")
+                    .accessibilityIdentifier(id("work-update-notes"))
             }
             if let error {
                 Label(error, systemImage: Icon.warning).foregroundStyle(Theme.failure)
-                    .accessibilityIdentifier("work-notes-error")
+                    .accessibilityIdentifier(id("work-notes-error"))
             }
         } header: {
             Text("Proposed Notes")
         } footer: {
-            Text("The full new NOTES.md of \(request.workspace)'s assistant. Nothing changes until you update it.")
+            Text("The full new \(file). Nothing changes until you update it.")
         }
+    }
+
+    private func id(_ base: String) -> String { tag.map { "\(base)-\($0)" } ?? base }
+
+    /// Only the lead writes the workspace's `NOTES.md`; another member keeps its own.
+    private var file: String {
+        if let lead = model.session.lead(of: request.workspace), let worker = result.worker, worker != lead.worker {
+            return "notes of \(worker), a staff member of \(request.workspace)"
+        }
+        return "NOTES.md of \(request.workspace)'s assistant"
     }
 
     private func apply() {

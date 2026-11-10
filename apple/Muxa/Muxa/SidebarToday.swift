@@ -94,6 +94,7 @@ struct SidebarTodaySection: View {
 
 /// One row of the plan: the target's title, why, the minutes and what comes next. The
 /// title opens the Work item or the Inbox item; Why shows the basis and what is missing.
+/// A `delegate` row names the staff member the plan picked (ADR 0051 §7).
 struct TodayRow: View {
     @Environment(AppModel.self) private var model
     let row: PlanRow
@@ -107,6 +108,9 @@ struct TodayRow: View {
                     Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                     Text("\(row.minutes.shown) · Next: \(row.next)").font(.caption).foregroundStyle(.secondary)
                         .lineLimit(2)
+                    if let delegate = row.item.flatMap(model.item)?.delegate, delegate.worker != nil {
+                        Label(delegate.shown, systemImage: Icon.staff).font(.caption).foregroundStyle(.secondary)
+                    }
                     if let mark = row.work.flatMap(model.workItem).flatMap(model.requestMark) {
                         Text(mark).font(.caption).foregroundStyle(Theme.attention)
                     }

@@ -22,7 +22,11 @@ struct WorkDetail: View {
                 captures(item)
                 ForEach(requests) { request in
                     RequestSection(request: request)
-                    ResultSections(request: request)
+                    if model.usesStaff, !request.steps.isEmpty {
+                        ChainSections(request: request)
+                    } else {
+                        ResultSections(request: request)
+                    }
                 }
                 tasks(item)
                 if item.state == .waitingDecision {

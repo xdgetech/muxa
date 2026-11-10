@@ -69,23 +69,26 @@ extension PaneSession {
 
     /// Writes a Result's proposed notes to the workspace's live `NOTES.md`. A live file
     /// that changed since the run read it is `conflict` with `notesConflict`.
+    /// At level 12 `step` names the step: the host writes its member's file, which is
+    /// `NOTES.md` only for the lead.
     public func applyNotes(of request: AssistantRequest, result: AssistResult) async throws {
         guard let notes = result.notes else { return }
-        try await applyNotes(source: request.id, version: result.version, notes: notes)
+        if result.step != nil { try requireStaff() }
+        try await applyNotes(source: request.id, version: result.version, step: result.step, notes: notes)
     }
 
     /// Writes a plan's proposed notes to the overall workspace's `NOTES.md`.
     public func applyNotes(of plan: Plan) async throws {
         guard let notes = plan.notes else { return }
-        try await applyNotes(source: plan.id, version: plan.rev, notes: notes)
+        try await applyNotes(source: plan.id, version: plan.rev, step: nil, notes: notes)
     }
 
-    /// This device applied the Result's notes.
+    /// This device applied the Result's notes. Each step of a version proposes its own.
     public func notesApplied(_ request: AssistantRequest, _ result: AssistResult) -> Bool {
-        appliedNotes.contains(Self.notesKey(request.id, result.version))
+        appliedNotes.contains(Self.notesKey(request.id, result.version, step: result.step))
     }
 
-    private func applyNotes(source: String, version: UInt64, notes: Notes) async throws {
+    private func applyNotes(source: String, version: UInt64, step: UInt32?, notes: Notes) async throws {
         try requirePlans()
         var requestId: UInt64 = 0
         defer {
@@ -96,15 +99,18 @@ extension PaneSession {
         do {
             try await request { id in
                 requestId = id
-                return .applyNotes(id: id, source: source, version: version, base: notes.base)
+                return .applyNotes(id: id, source: source, version: version, base: notes.base, step: step)
             }
         } catch Failure.bridge(let body) where body.code == .conflict {
             throw Failure.bridge(ErrorBody(code: .conflict, message: Self.notesConflict))
         }
-        appliedNotes.insert(Self.notesKey(source, version))
+        appliedNotes.insert(Self.notesKey(source, version, step: step))
     }
 
-    private static func notesKey(_ source: String, _ version: UInt64) -> String { "\(source) \(version)" }
+    /// A result without `step` is step 1.
+    private static func notesKey(_ source: String, _ version: UInt64, step: UInt32?) -> String {
+        "\(source) \(version) \(step ?? 1)"
+    }
 
     func requirePlans() throws {
         guard canPlan else {

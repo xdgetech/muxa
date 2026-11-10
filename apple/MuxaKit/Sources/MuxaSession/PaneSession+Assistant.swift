@@ -58,13 +58,16 @@ extension PaneSession {
     /// Asks the workspace's agent to work on `item`. Asking again with the item's new
     /// `rev` adds a version to that workspace's request. A refusal keeps the host's
     /// message: no daemon, a budget reached with its reset time, or a stale `rev`.
+    /// `worker` names a staff member (level 12); nil asks the workspace's lead.
     @discardableResult
     public func ask(
-        _ item: WorkItem, scope: AssistScope, purpose: String? = nil, workspace: String? = nil
+        _ item: WorkItem, scope: AssistScope, purpose: String? = nil, workspace: String? = nil, worker: String? = nil
     ) async throws -> AssistantRequest {
         try requireCaptures()
+        if worker != nil { try requireStaff() }
         let made = try await changingRequest { id in
-            .requestAssistant(id: id, work: item.id, rev: item.rev, scope: scope, workspace: workspace, purpose: purpose)
+            .requestAssistant(
+                id: id, work: item.id, rev: item.rev, scope: scope, workspace: workspace, purpose: purpose, worker: worker)
         }
         // The item's order and derived state are the list's.
         await loadWork()

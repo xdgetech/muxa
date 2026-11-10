@@ -26,12 +26,15 @@ extension AppModel {
         for request in session.requests(of: item) { seenResults.markSeen(request, on: currentHostID) }
     }
 
-    /// Asks the assistant. Returns the host's message when it refused.
-    func askAssistant(_ item: WorkItem, scope: AssistScope, purpose: String, workspace: String?) async -> String? {
+    /// Asks the assistant; `worker` names a staff member, nil lets the lead decide.
+    /// Returns the host's message when it refused.
+    func askAssistant(
+        _ item: WorkItem, scope: AssistScope, purpose: String, workspace: String?, worker: String? = nil
+    ) async -> String? {
         let p = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             try await session.ask(item, scope: scope, purpose: p.isEmpty ? nil : p,
-                                  workspace: item.workspace == nil ? workspace : nil)
+                                  workspace: item.workspace == nil ? workspace : nil, worker: worker)
             return nil
         } catch {
             return PaneSession.describe(error)

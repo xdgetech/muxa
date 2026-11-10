@@ -95,4 +95,7 @@ enum Icon {
     static let forget = "eraser"
     static let moveUp = "arrow.up"
     static let moveDown = "arrow.down"
+    /// A request passed from one staff member to the next (ADR 0051).
+    static let handoff = "arrow.turn.down.right"
+    static let staff = "person.2"
 }

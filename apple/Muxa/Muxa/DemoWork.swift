@@ -162,9 +162,9 @@ struct DemoWork: Sendable {
         sessions: [runSession(routine: "linear-triage", task: "t-r00002", number: 90, state: .waiting, ago: 120)],
         taskItems: testItems, assistant: .tests)
 
-    /// Try the Demo and the store screenshots, with the overall assistant (`DemoPlans.swift`)
-    /// and what the user told it (`DemoPolicies.swift`).
-    static let showcase = showcaseRemembered
+    /// Try the Demo and the store screenshots, with the overall assistant (`DemoPlans.swift`),
+    /// what the user told it (`DemoPolicies.swift`) and the staff (`DemoStaff.swift`).
+    static let showcase = showcaseStaffed
 
     static let showcaseBase = DemoWork(
         routines: routines(running: nil), entries: entries, sessions: [], taskItems: showcaseItems, assistant: .showcase)

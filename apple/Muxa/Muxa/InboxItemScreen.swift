@@ -56,6 +56,11 @@ struct InboxItemScreen: View {
                         .padding(12)
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
+                if let handoff = item.handoff {
+                    HandoffProposalView(proposal: handoff)
+                        .padding(12)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                }
                 if let hypothesis = item.hypothesis {
                     HypothesisProposalView(proposal: hypothesis)
                         .padding(12)
@@ -297,7 +302,7 @@ private struct OverallProposal: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let d = item.delegate {
-                LabeledContent("Asks", value: "\(d.workspace)'s assistant")
+                LabeledContent("Asks", value: d.asked)
                     .accessibilityIdentifier("item-delegate-workspace")
                 LabeledContent("Scope", value: d.scope.shown.capitalized)
                 LabeledContent("Work Item", value: model.workItem(d.work)?.title ?? d.work)

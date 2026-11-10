@@ -127,8 +127,11 @@ extension BasisKind {
 }
 
 extension DelegateProposal {
-    /// The delegate's name is its workspace's (ADR 0049 §8).
-    var shown: String { "\(workspace)'s assistant · \(scope.shown)" }
+    /// Who it asks: the staff member the plan picked (ADR 0051 §7), else the delegate,
+    /// whose name is its workspace's (ADR 0049 §8).
+    var asked: String { worker.map { "\($0) in \(workspace)" } ?? "\(workspace)'s assistant" }
+
+    var shown: String { "\(asked) · \(scope.shown)" }
 }
 
 extension SortAction {

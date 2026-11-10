@@ -13,6 +13,8 @@ public struct CaptureDraft: Equatable, Sendable {
     public var scope: AssistScope = .research
     /// What the assistant should look at; empty sends none.
     public var purpose: String = ""
+    /// The staff member to ask (level 12); nil lets the workspace's lead decide.
+    public var worker: String?
 
     /// The host keeps at most 16 KiB of text.
     public static let maxBytes = 16 * 1024
@@ -48,7 +50,7 @@ public struct CaptureDraft: Equatable, Sendable {
     /// `assist` as Ask Assistant sends it.
     public var assist: AssistSpec {
         let p = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
-        return AssistSpec(scope: scope, purpose: p.isEmpty ? nil : p)
+        return AssistSpec(scope: scope, purpose: p.isEmpty ? nil : p, worker: worker)
     }
 
     /// The host keeps at most 4096 bytes of purpose.
