@@ -70,6 +70,7 @@ pub fn write(config: &Config, plan: &str, dir: &Path) -> Result<(), String> {
         hypotheses,
         corrections,
         slots,
+        staff: part.staff.clone(),
     };
     let text = OverallBrief {
         plan: plan.to_owned(),

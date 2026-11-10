@@ -96,6 +96,7 @@ enum RawProposal {
         scope: String,
         purpose: String,
         reason: String,
+        worker: Option<String>,
     },
 }
 
@@ -305,6 +306,7 @@ fn proposals(raw: Vec<serde_json::Value>, reasons: &mut Vec<String>) -> Vec<Prop
                 scope,
                 purpose,
                 reason,
+                worker,
             } => {
                 if let Some(j) = delegates.insert(workspace.clone(), i) {
                     reasons.push(format!(
@@ -312,7 +314,14 @@ fn proposals(raw: Vec<serde_json::Value>, reasons: &mut Vec<String>) -> Vec<Prop
                          proposal per workspace."
                     ));
                 }
-                delegate(&at, work, workspace, &scope, purpose, reason, reasons)
+                let asked = Asked {
+                    work,
+                    workspace,
+                    purpose,
+                    reason,
+                    worker,
+                };
+                delegate(&at, asked, &scope, reasons)
             }
         };
         out.extend(checked);
@@ -371,15 +380,23 @@ fn sort(
     }))
 }
 
-fn delegate(
-    at: &str,
+/// A delegate proposal's text fields, as the file holds them.
+struct Asked {
     work: String,
     workspace: String,
-    scope: &str,
     purpose: String,
     reason: String,
-    reasons: &mut Vec<String>,
-) -> Option<Proposal> {
+    worker: Option<String>,
+}
+
+fn delegate(at: &str, a: Asked, scope: &str, reasons: &mut Vec<String>) -> Option<Proposal> {
+    let Asked {
+        work,
+        workspace,
+        purpose,
+        reason,
+        worker,
+    } = a;
     if !is_work_id(&work) {
         reasons.push(format!(
             "{at}.work must be a Work item's id: w- and 8 hex digits."
@@ -397,10 +414,13 @@ fn delegate(
             None
         }
     };
+    if worker.as_deref().is_some_and(|w| !is_name(w)) {
+        reasons.push(format!("{at}.worker must be a staff member's name."));
+    }
     text(&format!("{at}.purpose"), &purpose, MAX_PURPOSE, reasons);
     text(&format!("{at}.reason"), &reason, MAX_LINE, reasons);
     Some(Proposal::Delegate(DelegateProposal {
-        worker: None,
+        worker,
         work,
         workspace,
         scope: scope?,

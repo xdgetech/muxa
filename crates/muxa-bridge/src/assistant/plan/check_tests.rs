@@ -229,6 +229,42 @@ fn proposals_must_name_an_unsorted_capture_and_an_askable_workspace() {
     );
 }
 
+#[test]
+fn a_delegate_names_only_a_staff_member_the_brief_listed() {
+    let s = Store::new(vec![work("w-00000001")]);
+    let carried = Carried {
+        staff: [("work".to_owned(), vec!["lisk-research".to_owned()])].into(),
+        ..Carried::default()
+    };
+    let told = Told {
+        carried: &carried,
+        ..Told::nothing()
+    };
+    let facts = Facts {
+        work: &s.work,
+        items: &s.items,
+        captures: &s.captures,
+        workspaces: &s.workspaces,
+        told,
+    };
+    let ask = |worker: &str| {
+        json!({"kind": "delegate", "work": "w-00000001", "workspace": "work",
+               "scope": "research", "purpose": "Find prices.", "reason": "Due.",
+               "worker": worker})
+    };
+    let listed = plan_file(vec![], vec![ask("lisk-research")]);
+    assert_eq!(against(&checked(&listed), &facts), Vec::<String>::new());
+    let unlisted = plan_file(vec![], vec![ask("lisk-sales")]);
+    let reasons = against(&checked(&unlisted), &facts);
+    assert_eq!(reasons.len(), 1, "{reasons:?}");
+    assert!(
+        reasons[0].starts_with("proposals[0].worker is not on the staff the brief lists"),
+        "{reasons:?}"
+    );
+    // A plan briefed before staff listed none: any worker is unknown.
+    assert_eq!(s.reasons(&listed).len(), 1);
+}
+
 struct Host {
     base: PathBuf,
     config: Config,

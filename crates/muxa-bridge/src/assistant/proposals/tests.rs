@@ -573,3 +573,41 @@ async fn a_host_approval_of_a_review_workspace_is_not_made() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn approve_asks_the_staff_member_the_plan_named() {
+    let worker = |name: &str| {
+        format!("[[worker]]\nname = \"{name}\"\ndescription = \"Job\"\nagent = \"claude-code\"\n")
+    };
+    let staff = format!(
+        "staff = [\"w-lead\", \"w-research\"]\n{}{}",
+        worker("w-lead"),
+        worker("w-research")
+    );
+    let h = host("review", "review", "", &staff);
+    let w = h.work("Compare vendor offers");
+    let mut named = delegate_to(&w, "w");
+    if let Proposal::Delegate(d) = &mut named {
+        d.worker = Some("w-research".into());
+    }
+    h.plan(10, &[named]);
+    inbox::publish(h.config());
+    let item = h.item(ItemKind::Delegate);
+    assert!(
+        item.question.starts_with("Ask w-research of w to compare:"),
+        "{}",
+        item.question
+    );
+    let (first, _) = h.approve(&item.id).await;
+    let Message::WorkSaved {
+        request: Some(q), ..
+    } = &first[0]
+    else {
+        panic!("{first:?}")
+    };
+    let step = &q.steps[0];
+    assert_eq!(
+        (step.worker.as_str(), step.by),
+        ("w-research", muxa_protocol::StepBy::Overall)
+    );
+}

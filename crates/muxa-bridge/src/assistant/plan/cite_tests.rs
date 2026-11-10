@@ -91,6 +91,7 @@ fn store() -> Store {
                 "x-00000005",
             ]),
             slots: 3,
+            staff: Default::default(),
         },
         policies: vec![policy("y-00000001", None), policy("y-00000002", Some(5))],
         hypotheses: vec![

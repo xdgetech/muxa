@@ -135,6 +135,15 @@ fn proposal<'a>(
                     "{at}.workspace is not a workspace you may ask (see the brief)."
                 ));
             }
+            // As an unknown id: only a member the brief listed (ADR 0051 §2).
+            if d.worker
+                .as_deref()
+                .is_some_and(|w| !facts.told.listed(&d.workspace, w))
+            {
+                reasons.push(format!(
+                    "{at}.worker is not on the staff the brief lists for that workspace; name                      one listed there, or leave worker out to let its lead decide."
+                ));
+            }
         }
     }
 }

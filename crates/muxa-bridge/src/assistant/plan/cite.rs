@@ -2,7 +2,7 @@
 //! on the plan record where the run cannot write, and still live in the
 //! store. A forgotten or deleted record cannot be a reason, and a guess
 //! grounded in Later alone, or in one workspace's habits, is refused.
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use muxa_protocol::{Correction, CorrectionKind, Hypothesis, Policy};
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,10 @@ pub struct Carried {
     pub corrections: Vec<String>,
     #[serde(default)]
     pub slots: usize,
+    /// The staff members the brief listed, by workspace (ADR 0051 §2): the
+    /// workers a `delegate` may name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub staff: BTreeMap<String, Vec<String>>,
 }
 
 #[cfg(test)]
@@ -37,6 +41,7 @@ static NOTHING: Carried = Carried {
     hypotheses: Vec::new(),
     corrections: Vec::new(),
     slots: 0,
+    staff: BTreeMap::new(),
 };
 
 impl Carried {
@@ -85,6 +90,14 @@ impl Told<'static> {
 }
 
 impl Told<'_> {
+    /// Whether the brief listed `worker` on `workspace`'s staff.
+    pub fn listed(&self, workspace: &str, worker: &str) -> bool {
+        self.carried
+            .staff
+            .get(workspace)
+            .is_some_and(|names| names.iter().any(|n| n == worker))
+    }
+
     fn live(&self, record: &str, id: &str) -> bool {
         let (carried, live) = match record {
             "policy" => (

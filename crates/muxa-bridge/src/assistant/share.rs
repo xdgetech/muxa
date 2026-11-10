@@ -1,7 +1,9 @@
 //! What the overall assistant reads of each workspace (ADR 0049 §3): a pure
 //! filter from store data to the shared part of its brief. Never: findings'
 //! text or sources, a workspace's Capture text, paths, Result files or notes.
-use std::collections::HashMap;
+//! A sharing workspace's staff is configuration: its names and job
+//! descriptions cross at `outline` and above (ADR 0051 §2).
+use std::collections::{BTreeMap, HashMap};
 
 use muxa_protocol::{
     AssistResult, AssistScope, AssistantRequest, Capture, CaptureState, Delivery, Due, InboxItem,
@@ -22,6 +24,8 @@ const MAX_POINTS: usize = 3;
 const MAX_POINT: usize = 200;
 /// Characters of a title.
 const MAX_TITLE: usize = 200;
+/// Characters of a staff member's job description, which is at most 1 KiB.
+const MAX_DESCRIPTION: usize = 1024;
 /// Bytes of one Capture's text, so that several fit under the cap.
 const MAX_CAPTURE: usize = 4096;
 const CUT_MARK: char = '…';
@@ -51,6 +55,8 @@ pub struct Shared {
     pub workspaces: Vec<String>,
     /// Entries left out, the oldest first, to stay within [`MAX_SHARED`].
     pub left_out: usize,
+    /// The staff members it lists, by workspace: who a `delegate` may name.
+    pub staff: BTreeMap<String, Vec<String>>,
 }
 
 /// How much of a workspace's data crosses. `Own` is data of nobody or of
@@ -66,6 +72,8 @@ struct Member {
     name: String,
     share: Share,
     requests: OverallRequests,
+    /// Empty without `staff`.
+    staff: Vec<super::staff::Member>,
 }
 
 /// Section 0 holds the overall assistant's own data; section `i + 1` member `i`.
@@ -84,6 +92,7 @@ impl Sections {
                 name: w.name.clone(),
                 share: workspaces.share(&w.name),
                 requests: workspaces.overall_requests(&w.name),
+                staff: super::staff::members(workspaces, &w.name),
             })
             .collect();
         Self {
@@ -154,6 +163,15 @@ pub fn shared(workspaces: &Workspaces, input: &Input<'_>) -> Shared {
         text: render(&sections, &entries, left_out, input.now),
         workspaces: sections.members.iter().map(|m| m.name.clone()).collect(),
         left_out,
+        staff: sections
+            .members
+            .iter()
+            .filter(|m| !m.staff.is_empty())
+            .map(|m| {
+                let names = m.staff.iter().map(|s| s.worker.clone()).collect();
+                (m.name.clone(), names)
+            })
+            .collect(),
     }
 }
 
@@ -443,9 +461,27 @@ fn render(s: &Sections, entries: &[Entry], left_out: usize, now: u64) -> String 
             "### Workspace {:?}\n\nIt shares {share}; {asks}.\n\n",
             m.name
         ));
+        staff(&mut out, &m.staff);
         section(&mut out, entries, i + 1);
     }
     out
+}
+
+/// The host's own words for each member, so not fenced as data.
+fn staff(out: &mut String, members: &[super::staff::Member]) {
+    if members.is_empty() {
+        return;
+    }
+    out.push_str(
+        "Its staff. Name one as \"worker\" in a delegate proposal to ask that member; \
+         leave \"worker\" out to let the lead decide.\n\n",
+    );
+    for m in members {
+        let lead = if m.lead { " (the lead)" } else { "" };
+        let job = one_line(&m.description, MAX_DESCRIPTION);
+        out.push_str(&format!("- {}{lead}: {job}\n", m.worker));
+    }
+    out.push('\n');
 }
 
 fn section(out: &mut String, entries: &[Entry], section: usize) {

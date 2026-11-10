@@ -71,9 +71,11 @@ impl OverallBrief {
              adds it to the Work item \"work\", \"note\" keeps it as a note. \"title\": one \
              line, at most 200 characters.\n  \
              - {{\"kind\": \"delegate\", \"work\", \"workspace\", \"scope\", \"purpose\", \
-             \"reason\"}} asks a workspace above that you may ask to work on an open Work item. \
-             scope is \"research\", \"compare\" or \"draft\". \"purpose\": the ask, 1 byte to \
-             1 KiB. \"reason\": why, 1 to 500 bytes. At most one per workspace.\n\
+             \"reason\", \"worker\"?}} asks a workspace above that you may ask to work on an open \
+             Work item. scope is \"research\", \"compare\" or \"draft\". \"purpose\": the ask, 1 \
+             byte to 1 KiB. \"reason\": why, 1 to 500 bytes. \"worker\": a member of the \
+             staff listed for that workspace; leave it out to let its lead decide. At most one \
+             per workspace.\n\
              - \"notes\": optional, the full new text of your notes, at most 16 KiB.\n\
              - \"hypotheses\": optional, at most {slots} in this plan. A hypothesis is your \
              guess at a preference of the user, which muxa asks the user to confirm or \
@@ -142,6 +144,7 @@ mod tests {
                 text: "## What the workspaces share\n\nshared-part\n\n".into(),
                 workspaces: vec!["Sum".into()],
                 left_out: 0,
+                staff: Default::default(),
             },
             memory: "## What the user told you\n\nmemory-part\n\n".into(),
             slots: 2,
@@ -162,6 +165,7 @@ mod tests {
         assert!(text.contains("Pinned Work items"));
         assert!(text.contains("\"laterAt\""));
         assert!(text.contains("1 byte to 1 KiB"));
+        assert!(text.contains("\"worker\": a member of the staff listed for that workspace"));
         assert!(text.contains("\"hypotheses\": optional, at most 2 in this plan"));
         assert!(text.contains("Deferred corrections alone are no ground"));
         assert_eq!(text.lines().last(), Some("muxa-plan: p-0a1b2c3d"));
