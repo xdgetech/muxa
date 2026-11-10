@@ -25,3 +25,15 @@
 {"type":"update-work","id":424,"work":"w-0b1c2d3e","rev":6,"action":"unpin"}
 {"type":"update-inbox","id":425,"entry":"i-1a2b3c4d","action":"approve"}
 {"type":"update-inbox","id":426,"entry":"i-2b3c4d5e","action":"approve"}
+{"type":"add-policy","id":430,"text":"This week, recruiting comes before sales.","scope":"all","until":1763218799}
+{"type":"add-policy","id":431,"text":"Personal errands go after 18:00.","scope":"personal","from":1762700000}
+{"type":"update-policy","id":432,"policy":"y-0a1b2c3d","rev":1,"action":"edit","text":"This week, recruiting comes before sales and support.","until":1763218799}
+{"type":"update-policy","id":433,"policy":"y-1b2c3d4e","rev":2,"action":"delete"}
+{"type":"update-plan","id":434,"plan":"p-3d4e5f6a","rev":1,"action":"reorder","order":["w-7b8c9d0e","w-0b1c2d3e","i-1a2b3c4d"]}
+{"type":"update-plan","id":435,"plan":"p-3d4e5f6a","rev":2,"action":"dismiss","row":"i-1a2b3c4d","text":"Waiting for the vendor."}
+{"type":"update-plan","id":436,"plan":"p-0a1b2c3d","rev":2,"action":"dismiss","row":"w-7b8c9d0e"}
+{"type":"update-inbox","id":437,"entry":"i-3c4d5e6f","action":"reject","text":"Sales still matters on Mondays."}
+{"type":"update-inbox","id":438,"entry":"i-4d5e6f7a","action":"confirm"}
+{"type":"forget","id":439,"record":"x-0c1d2e3f"}
+{"type":"forget","id":440,"record":"h-2b3c4d5e"}
+{"type":"forget","id":441,"record":"h-3c4d5e6f"}

@@ -93,6 +93,7 @@ pub fn line(item: &InboxItem, now: u64) -> String {
         ItemKind::Briefing => "briefing",
         ItemKind::Sort => "sort",
         ItemKind::Delegate => "delegate",
+        ItemKind::Hypothesis => "hypothesis",
     };
     let mut state = wire(json!(item.state));
     if item.state == ItemState::Open && item.later_at.is_some() {

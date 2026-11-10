@@ -231,6 +231,8 @@ pub enum InboxAction {
     /// Any open item: sends `text` with the item to the workspace's Ask session,
     /// and leaves the item open (ADR 0041, level 6).
     AskAgent,
+    /// A `hypothesis`: makes a policy of it (level 10, ADR 0048).
+    Confirm,
 }
 
 #[cfg(test)]

@@ -17,6 +17,8 @@ public let workWorktreeEnd: UInt32 = 7
 public let workAssistant: UInt32 = 8
 /// Level 9: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0047).
 public let workPlans: UInt32 = 9
+/// Level 10: policies, corrections and hypotheses (ADR 0048).
+public let workPolicies: UInt32 = 10
 
 /// The highest `work` level in `capabilities`; 0 when the host has none.
 public func workLevel(_ capabilities: [String]) -> UInt32 {
@@ -207,4 +209,6 @@ public enum InboxAction: String, Codable, Sendable {
     case reply
     /// Sends the item and the text to the workspace's Ask session; the item stays open (ADR 0041).
     case askAgent = "ask-agent"
+    /// A `hypothesis`: makes a policy of it (level 10, ADR 0048).
+    case confirm
 }

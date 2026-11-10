@@ -279,6 +279,7 @@ fun InboxAction.title(item: InboxItem): String = when (this) {
     InboxAction.CHOOSE -> "Choose"
     InboxAction.READ -> "Mark Read"
     InboxAction.ASK_AGENT -> "Ask Agent"
+    InboxAction.CONFIRM -> "Confirm"
 }
 
 val InboxItem.kindTitle: String

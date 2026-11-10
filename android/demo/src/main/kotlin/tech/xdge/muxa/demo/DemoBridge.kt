@@ -231,6 +231,9 @@ class DemoBridge(
             is Request.Capture, is Request.SortCapture, is Request.UpdateWork, is Request.GetWork,
             is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
             is Request.ApplyNotes, is Request.PlanNow -> servePlans(req)
+            // The demo has no policies yet (`work` level 10, ADR 0048).
+            is Request.AddPolicy, is Request.UpdatePolicy, is Request.UpdatePlan, is Request.Forget ->
+                fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }

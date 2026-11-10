@@ -108,6 +108,11 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Drop => Plan::Status(TaskStatus::Dropped),
         Retry => Plan::Restart,
         Branch => Plan::Branch,
+        // Hypotheses come with work level 10 (ADR 0048 slice C5).
+        Confirm => return Err(bad("hypothesis items need work level 10")),
+        Reject if item.kind == ItemKind::Hypothesis => {
+            return Err(bad("hypothesis items need work level 10"));
+        }
         // Approve runs in `assistant::proposals`, which `routines::handle` calls first.
         Reject if matches!(item.kind, ItemKind::Sort | ItemKind::Delegate) => Plan::Nothing,
         Approve if matches!(item.kind, ItemKind::Sort | ItemKind::Delegate) => {

@@ -197,6 +197,8 @@ fn new_plan(
                 unanswered: Vec::new(),
                 stale: Vec::new(),
                 changed: Vec::new(),
+                user_order: Vec::new(),
+                dismissed: Vec::new(),
                 notes: None,
                 reason: refused.map(super::reason),
             };

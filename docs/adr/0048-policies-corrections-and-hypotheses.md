@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. No slice is implemented.
+Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slice C0 (the wire types) is built; hosts do not advertise level 10 yet.
 
 ## Context
 
@@ -56,7 +56,7 @@ The brief gains a section "## What the user told you", before the notes, built o
 ### 5. Explain and forget
 
 - **Why.** A Today row's Why lists its `basis`; a `policy`, `hypothesis` or `correction` entry shows the record's text from `inbox-list` (§6), with Edit on a policy and Forget on the others. An id with no record shows "forgotten".
-- **Forget.** `forget {id}` removes a correction or a `proposed`, `rejected` or `expired` hypothesis. Forgetting a correction also removes every `proposed` hypothesis whose `evidence` names it, so no derived guess outlives its ground (spec §8). A `confirmed` hypothesis is gone already; its policy is the user's word and stays until the user deletes it. A policy is deleted, not forgotten: `update-policy delete`.
+- **Forget.** `forget {record}` removes a correction or a `proposed`, `rejected` or `expired` hypothesis. Forgetting a correction also removes every `proposed` hypothesis whose `evidence` names it, so no derived guess outlives its ground (spec §8). A `confirmed` hypothesis is gone already; its policy is the user's word and stays until the user deletes it. A policy is deleted, not forgotten: `update-policy delete`.
 - **What forgetting guarantees.** The next brief is built from live records, so it cannot carry the record, and a `basis` citing its id is refused. A plan run started before the forget read the old brief and may still cite it; its plan is listed with that entry as "forgotten". Kept plans are history, like Results (ADR 0046 §4): they keep their rows and `basis` texts. The clients say so next to Forget. `NOTES.md` is the agent's; the brief forbids copying this section into it, and the default `notes = "review"` lets the user see when it did.
 - **Tests.** A correction `reason` and a hypothesis `text` carry sentinels. After `forget`, the next brief lacks them, a plan citing the ids is refused, and the daemon's log never had them (ADR 0046 A2's grep).
 
@@ -69,7 +69,7 @@ The brief gains a section "## What the user told you", before the notes, built o
 | `update-plan {plan, rev, action: reorder / dismiss, order?[], row?, text?}` | `plan-saved {plan, entry}`; the plan gains `userOrder[]` and `dismissed[]`; not the newest `resulted` plan is `conflict` |
 | `update-inbox {entry, action: reject, text?}` on `sort`, `delegate`, `hypothesis` | `inbox-saved`; `text` is the correction's `reason` |
 | `update-inbox {entry, action: confirm}` on a `hypothesis` item | `policy-saved`, `inbox-saved` |
-| `forget {id}`, `id` an `x-` or `h-` | `result`; an unknown id is `bad-request`; a `confirmed` hypothesis is `bad-request` naming its policy |
+| `forget {record}`, `record` an `x-` or `h-` (not `id`, which every request uses for itself) | `result`; an unknown id is `bad-request`; a `confirmed` hypothesis is `bad-request` naming its policy |
 
 `inbox-list` gains `policies[]` (active, then expired), `hypotheses[]` (`proposed` and `rejected`, newest first) and `corrections[]` (newest first, at most 50). A plan row's `basis.kind` takes the three new values; a level 9 client shows an unknown kind as unknown and ignores the `hypothesis` item kind and the new arrays, as the contract already says. `update-work later`, `pin` and `unpin` record corrections at every level, since they are the host's own observation. The full contract goes into `protocol/PROTOCOL.md`, "Policies, corrections and hypotheses"; fixtures in `protocol/fixtures/assistant/`. Clients send the new requests only at `work:10`; a level 9 host answers them `bad-request`.
 

@@ -57,6 +57,8 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Briefing => vec![Dismiss],
         // The overall assistant's proposals (ADR 0047 §4): no agent to ask.
         ItemKind::Sort | ItemKind::Delegate => return vec![Approve, Reject, Later],
+        // ADR 0048 §3; the host makes none before slice C5.
+        ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
     };
     // An item with a session sends its text to its own agent (ADR 0040 §4).
     if item.session.is_none() {
@@ -106,6 +108,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         proposal: entry.proposal.clone(),
         sort: None,
         delegate: None,
+        hypothesis: None,
         answers: Vec::new(),
     };
     item.answers = answers(&item);

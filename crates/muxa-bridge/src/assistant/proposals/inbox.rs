@@ -308,6 +308,7 @@ fn item_for(p: &Proposal, facts: &Facts, id: String, at: u64) -> Option<InboxIte
         proposal: None,
         sort,
         delegate,
+        hypothesis: None,
         answers: Vec::new(),
     };
     item.answers = crate::items::answers(&item);

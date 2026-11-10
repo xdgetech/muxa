@@ -234,6 +234,7 @@ pub(crate) fn start_failed(
             proposal: None,
             sort: None,
             delegate: None,
+            hypothesis: None,
             answers: Vec::new(),
         };
         item.answers = super::answers(&item);
@@ -457,6 +458,7 @@ fn make(
         proposal: None,
         sort: None,
         delegate: None,
+        hypothesis: None,
         answers: Vec::new(),
     };
     let since = match need {

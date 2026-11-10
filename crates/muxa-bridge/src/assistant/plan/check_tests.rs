@@ -301,6 +301,8 @@ impl Host {
                     unanswered: Vec::new(),
                     stale: Vec::new(),
                     changed: Vec::new(),
+                    user_order: Vec::new(),
+                    dismissed: Vec::new(),
                     notes: None,
                     reason: None,
                 })

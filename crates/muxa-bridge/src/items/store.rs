@@ -217,6 +217,7 @@ pub(crate) fn tests_item(id: &str, state: ItemState) -> InboxItem {
         proposal: None,
         sort: None,
         delegate: None,
+        hypothesis: None,
         answers: Vec::new(),
     }
 }

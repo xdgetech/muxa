@@ -27,6 +27,9 @@ const val WORK_ASSISTANT = 8
 /** Level 9: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0047). */
 const val WORK_PLANS = 9
 
+/** Level 10: policies, corrections and hypotheses (ADR 0048). */
+const val WORK_POLICIES = 10
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }
@@ -118,4 +121,7 @@ enum class InboxAction {
 
     /** Sends the item and its text to the workspace's Ask session; the item stays open (ADR 0041). */
     @SerialName("ask-agent") ASK_AGENT,
+
+    /** A `hypothesis`: makes a policy of it (level 10, ADR 0048). */
+    @SerialName("confirm") CONFIRM,
 }

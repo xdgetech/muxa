@@ -60,6 +60,7 @@ extension InboxAction {
         case .later: "Later"
         case .read: "Mark Read"
         case .askAgent: "Ask Agent"
+        case .confirm: "Confirm"
         }
     }
 }

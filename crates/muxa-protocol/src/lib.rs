@@ -4,6 +4,7 @@
 mod assistant;
 mod items;
 mod plans;
+mod policies;
 mod restart_recovery;
 mod routines;
 mod workers;
@@ -16,6 +17,10 @@ pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_I
 pub use plans::{
     AssistantInfo, Basis, BasisKind, ChangeKind, DelegateInfo, DelegateProposal, Minutes,
     OverallRequests, Plan, PlanChange, PlanRow, Share, SortProposal, WORK_PLANS,
+};
+pub use policies::{
+    Confidence, Correction, CorrectionKind, Hypothesis, HypothesisProposal, HypothesisState,
+    PlanAction, Policy, PolicyAction, WORK_POLICIES,
 };
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
@@ -443,6 +448,61 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         minutes: Option<u32>,
     },
+    /// Keep a policy in the user's words (`work` level 10, ADR 0048). A
+    /// `policy-saved` comes before the `result`.
+    AddPolicy {
+        id: u64,
+        /// 1 to 500 bytes. Never logged.
+        text: String,
+        /// `all`, or one workspace's name.
+        scope: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        until: Option<u64>,
+    },
+    /// Edit or delete a policy. A stale `rev` is `conflict`. `edit` sends a
+    /// `policy-saved` before the `result`; `delete` only the `result`.
+    UpdatePolicy {
+        id: u64,
+        /// The `y-` id.
+        policy: String,
+        rev: u64,
+        action: PolicyAction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        until: Option<u64>,
+    },
+    /// Reorder Today's rows, or remove one, on the newest `resulted` plan.
+    /// A `plan-saved` comes before the `result`.
+    UpdatePlan {
+        id: u64,
+        /// The `p-` id.
+        plan: String,
+        rev: u64,
+        action: PlanAction,
+        /// With `reorder`: every row's Work item or Inbox item, in the new order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        order: Vec<String>,
+        /// With `dismiss`: the row's Work item or Inbox item.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        row: Option<String>,
+        /// With `dismiss`: the user's reason, kept on the correction. Never logged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+    },
+    /// Remove a correction `x-…` or a hypothesis `h-…`, and the proposed
+    /// hypotheses a forgotten correction is evidence of.
+    Forget {
+        id: u64,
+        /// The record's id. Not `id`, which is the request's.
+        record: String,
+    },
     /// The client is leaving; the bridge exits.
     Bye {
         id: u64,
@@ -497,6 +557,10 @@ impl Request {
             | Request::GetWork { id, .. }
             | Request::ApplyNotes { id, .. }
             | Request::PlanNow { id, .. }
+            | Request::AddPolicy { id, .. }
+            | Request::UpdatePolicy { id, .. }
+            | Request::UpdatePlan { id, .. }
+            | Request::Forget { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -706,6 +770,15 @@ pub enum Message {
         /// Level 9: the overall assistant and the delegates.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         assistant: Option<Box<AssistantInfo>>,
+        /// Level 10: active policies, then expired ones.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        policies: Vec<Policy>,
+        /// Level 10: `proposed` and `rejected` hypotheses, newest first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        hypotheses: Vec<Hypothesis>,
+        /// Level 10: at most 50 corrections, newest first.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        corrections: Vec<Correction>,
     },
     /// What an `update-inbox` wrote, sent just before its `result`: the
     /// Routine entry, the item, or both for a Routine's item.
@@ -755,6 +828,9 @@ pub enum Message {
     },
     /// What a `plan-now` or `apply-notes` wrote, sent just before its `result`.
     PlanSaved { plan: u64, entry: Box<Plan> },
+    /// What an `add-policy`, an `update-policy edit` or a `confirm` wrote,
+    /// sent just before its `result` (`work` level 10).
+    PolicySaved { policy: u64, entry: Policy },
     /// The bridge is exiting.
     Bye { reason: String },
 }

@@ -818,7 +818,7 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(let id, let entries, let items, let work, let captures, let requests, let plans, let assistant):
+        case .inboxList(let id, let entries, let items, let work, let captures, let requests, let plans, let assistant, _, _, _):
             inboxListings[id] = InboxListing(
                 entries: entries, items: items, work: work, captures: captures, requests: requests, plans: plans,
                 assistant: assistant)
@@ -858,8 +858,9 @@ public final class PaneSession {
             startedSessions[start] = StartedSession(id: session, name: name)
         case .bye(let reason):
             Task { await teardown(reason: reason) }
+        // Policies come with `work` level 10 (ADR 0048); no client asks for them yet.
         case .screen, .output, .paneGone, .chatEntries, .chatEnded, .docContent, .docEnded, .unknown,
-            .diffContent, .diffEnded, .imageContent, .imageEnded:
+            .diffContent, .diffEnded, .imageContent, .imageEnded, .policySaved:
             break
         }
     }

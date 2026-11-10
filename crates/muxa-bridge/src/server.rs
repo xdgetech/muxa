@@ -728,6 +728,17 @@ impl Worker {
                 }
                 return None;
             }
+            // The host side comes with `work` level 10 (ADR 0048); until it
+            // advertises that level, no client sends these.
+            Request::AddPolicy { .. }
+            | Request::UpdatePolicy { .. }
+            | Request::UpdatePlan { .. }
+            | Request::Forget { .. } => {
+                return Some(Err(error_body(
+                    ErrorCode::Unsupported,
+                    "this host has no policies yet: update muxa-bridge",
+                )));
+            }
             Request::Bye { .. } => Ok(()),
         };
         Some(result.map_err(|e| convert::error(&e)))

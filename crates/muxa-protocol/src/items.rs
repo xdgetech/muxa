@@ -3,7 +3,10 @@
 //! `work` level 3 or higher.
 use serde::{Deserialize, Serialize};
 
-use crate::{ChatPrompt, DelegateProposal, InboxAction, Proposal, SortProposal, SourceLink};
+use crate::{
+    ChatPrompt, DelegateProposal, HypothesisProposal, InboxAction, Proposal, SortProposal,
+    SourceLink,
+};
 
 /// Level 3: Inbox items (`items` in `inbox-list`, the answers of ADR 0033).
 pub const WORK_ITEMS: u32 = 3;
@@ -66,6 +69,9 @@ pub struct InboxItem {
     /// With kind `delegate`: what approve does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegate: Option<DelegateProposal>,
+    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 10, ADR 0048).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hypothesis: Option<HypothesisProposal>,
     /// The answers the host accepts now, in the order to show them. Empty
     /// once the item is answered or resolved.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -87,6 +93,8 @@ pub enum ItemKind {
     Sort,
     /// Level 9: the overall assistant proposes to ask a workspace's delegate.
     Delegate,
+    /// Level 10: the overall assistant proposes a hypothesis about the user.
+    Hypothesis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

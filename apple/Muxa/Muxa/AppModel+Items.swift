@@ -34,6 +34,7 @@ extension ItemKind {
         case .briefing: "Briefing"
         case .sort: "Sort"
         case .delegate: "Delegate"
+        case .hypothesis: "Hypothesis"
         case .other(let raw): raw.capitalized
         }
     }
@@ -47,6 +48,7 @@ extension ItemKind {
         case .briefing: Icon.briefing
         case .sort: Icon.capture
         case .delegate: Icon.assistant
+        case .hypothesis: Icon.ask
         case .other: "tray"
         }
     }

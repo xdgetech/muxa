@@ -227,6 +227,50 @@ sealed interface Request {
     /** Start an overall run now (`work` level 9); [minutes] is the time the user has. A `plan-saved` comes first. */
     @Serializable data class PlanNow(override val id: Long, val minutes: Int? = null) : Request
 
+    /**
+     * Keep a policy in the user's words (`work` level 10, ADR 0048). [scope] is `all` or a workspace; [from]
+     * and [until] are epoch seconds. A `policy-saved` comes first.
+     */
+    @Serializable
+    data class AddPolicy(
+        override val id: Long,
+        val text: String,
+        val scope: String,
+        val from: Long? = null,
+        val until: Long? = null,
+    ) : Request
+
+    /** Edit or delete a policy. A stale [rev] is `conflict`. `edit` sends a `policy-saved` first; `delete` only the `result`. */
+    @Serializable
+    data class UpdatePolicy(
+        override val id: Long,
+        val policy: String,
+        val rev: Long,
+        val action: PolicyAction,
+        val text: String? = null,
+        val scope: String? = null,
+        val from: Long? = null,
+        val until: Long? = null,
+    ) : Request
+
+    /**
+     * Reorder Today's rows ([order]), or remove one ([row], with the reason in [text]), on the newest `resulted`
+     * plan. A `plan-saved` comes first.
+     */
+    @Serializable
+    data class UpdatePlan(
+        override val id: Long,
+        val plan: String,
+        val rev: Long,
+        val action: PlanAction,
+        val order: kotlin.collections.List<String> = emptyList(),
+        val row: String? = null,
+        val text: String? = null,
+    ) : Request
+
+    /** Remove a correction `x-…` or a hypothesis `h-…`; [record] because [id] is the request's. */
+    @Serializable data class Forget(override val id: Long, val record: String) : Request
+
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request
 }

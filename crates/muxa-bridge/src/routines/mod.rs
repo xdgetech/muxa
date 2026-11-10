@@ -100,6 +100,10 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     requests: assistant.requests,
                     plans,
                     assistant: info.map(Box::new),
+                    // Policies come with level 10 (ADR 0048).
+                    policies: Vec::new(),
+                    hypotheses: Vec::new(),
+                    corrections: Vec::new(),
                 },
             )
         }

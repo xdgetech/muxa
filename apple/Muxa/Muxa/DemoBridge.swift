@@ -225,6 +225,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             answer(id, outcome)
         case .recoverRestart(let id, _, _, _, _):
             unsupported(id)
+        // The demo has no policies yet (`work` level 10, ADR 0048).
+        case .addPolicy, .updatePolicy, .updatePlan, .forget:
+            unsupported(req.id, Self.noRequest)
         case .applyNotes, .planNow:
             servePlans(req)
         case .capture, .sortCapture, .updateWork, .requestAssistant, .cancelRequest, .getWork:

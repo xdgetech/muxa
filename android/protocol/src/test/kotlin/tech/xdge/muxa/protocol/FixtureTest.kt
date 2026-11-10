@@ -133,10 +133,10 @@ class FixtureTest {
     @Test
     fun assistantContractRoundTrips() {
         val requests = lines("assistant/requests.jsonl")
-        assertEquals(27, requests.size)
+        assertEquals(39, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(23, messages.size)
+        assertEquals(37, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -248,6 +248,67 @@ class FixtureTest {
         assertEquals(BasisKind("habit"), saved.entry.top[0].basis[0].kind)
         assertEquals(ChangeKind("split"), saved.entry.changed[0].change)
         assertEquals(tree(odd), tree(Wire.encode(saved)))
+    }
+
+    @Test
+    fun policyContractRoundTrips() {
+        val requests = lines("assistant/requests.jsonl").map(Wire::decodeRequest)
+        val messages = lines("assistant/messages.jsonl").map(Wire::decodeMessage)
+        val added = requests[27] as Request.AddPolicy
+        assertTrue(added.scope == "all" && added.from == null && added.until != null)
+        assertEquals(PolicyAction.EDIT, (requests[29] as Request.UpdatePolicy).action)
+        val deleted = requests[30] as Request.UpdatePolicy
+        assertTrue(deleted.action == PolicyAction.DELETE && deleted.text == null)
+        val reorder = requests[31] as Request.UpdatePlan
+        assertTrue(reorder.action == PlanAction.REORDER && reorder.order.size == 3 && reorder.row == null)
+        val dismiss = requests[32] as Request.UpdatePlan
+        assertTrue(dismiss.action == PlanAction.DISMISS && dismiss.row != null && dismiss.text != null)
+        val reject = requests[34] as Request.UpdateInbox
+        assertTrue(reject.action == InboxAction.REJECT && reject.text != null)
+        assertEquals(InboxAction.CONFIRM, (requests[35] as Request.UpdateInbox).action)
+        assertEquals(Request.Forget(441, "h-3c4d5e6f"), requests[38])
+
+        assertEquals(WORK_POLICIES, workLevel((messages[23] as Message.Hello).capabilities))
+        val saved = messages[24] as Message.PolicySaved
+        assertTrue(saved.entry.id.startsWith("y-") && saved.entry.source == "user")
+        assertEquals(ErrorCode.CONFLICT, (messages[26] as Message.Result).error?.code)
+        // A delete answers with the result only.
+        assertEquals(Message.Result(433), messages[28])
+        val plan = (messages[29] as Message.PlanSaved).entry
+        assertTrue(plan.userOrder.size == plan.top.size && plan.dismissed == listOf("i-1a2b3c4d"))
+        val kinds = plan.top.flatMap { row -> row.basis.map { it.kind } }
+        assertTrue(kinds.containsAll(listOf(BasisKind.POLICY, BasisKind.HYPOTHESIS, BasisKind.CORRECTION)))
+        val made = (messages[32] as Message.PolicySaved).entry
+        val confirmed = (messages[33] as Message.InboxSaved).item!!
+        assertTrue(made.source == confirmed.hypothesis?.hypothesis && confirmed.answer == InboxAction.CONFIRM)
+        assertEquals(ErrorCode.BAD_REQUEST, (messages[35] as Message.Result).error?.code)
+
+        val list = messages[36] as Message.InboxList
+        assertEquals(ItemKind.HYPOTHESIS, list.items[0].kind)
+        assertEquals(listOf(InboxAction.CONFIRM, InboxAction.REJECT, InboxAction.LATER), list.items[0].answers)
+        assertEquals(Confidence.LOW, list.items[0].hypothesis?.confidence)
+        assertEquals(3, list.policies.size)
+        assertEquals(listOf(HypothesisState.PROPOSED, HypothesisState.REJECTED), list.hypotheses.map { it.state })
+        assertEquals(
+            listOf(
+                CorrectionKind.DISMISSED, CorrectionKind.REORDERED, CorrectionKind.REJECTED, CorrectionKind.DEFERRED,
+                CorrectionKind.PINNED,
+            ),
+            list.corrections.map { it.kind },
+        )
+        val reordered = list.corrections[1]
+        assertTrue(reordered.row == null && reordered.before.size == reordered.after.size)
+        // A client before level 10 reads an inbox-list without the new arrays.
+        val old = Wire.decodeMessage("""{"type":"inbox-list","inbox":1,"entries":[]}""") as Message.InboxList
+        assertTrue(old.policies.isEmpty() && old.hypotheses.isEmpty() && old.corrections.isEmpty())
+        // Unknown values keep their names.
+        val odd = """{"type":"inbox-list","inbox":1,"entries":[],"hypotheses":[{"id":"h-1","text":"t","scope":"all",""" +
+            """"evidence":["x-1"],"confidence":"high","state":"paused","plan":"p-1","expiresAt":1,"at":1}],""" +
+            """"corrections":[{"id":"x-1","kind":"skipped","at":1,"plan":"p-1","inTop":false}]}"""
+        val decoded = Wire.decodeMessage(odd) as Message.InboxList
+        assertEquals(Confidence("high") to HypothesisState("paused"), decoded.hypotheses[0].confidence to decoded.hypotheses[0].state)
+        assertEquals(CorrectionKind("skipped"), decoded.corrections[0].kind)
+        assertEquals(tree(odd), tree(Wire.encode(decoded)))
     }
 
     @Test

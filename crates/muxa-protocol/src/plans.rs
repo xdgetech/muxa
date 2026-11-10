@@ -48,6 +48,12 @@ pub struct Plan {
     /// Derived against the previous plan.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed: Vec<PlanChange>,
+    /// Level 10: Today's rows in the user's order, from `update-plan reorder`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub user_order: Vec<String>,
+    /// Level 10: rows the user removed from Today, from `update-plan dismiss`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dismissed: Vec<String>,
     /// The overall assistant's proposed notes. Never logged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<Notes>,
@@ -107,6 +113,12 @@ pub enum BasisKind {
     Time,
     /// The user's pin.
     Manual,
+    /// Level 10: a policy `y-…` in `source` (ADR 0048).
+    Policy,
+    /// Level 10: a hypothesis `h-…` in `source`.
+    Hypothesis,
+    /// Level 10: a correction `x-…` in `source`.
+    Correction,
 }
 
 /// A row that entered, left or moved since the previous plan.

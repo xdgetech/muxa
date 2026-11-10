@@ -1255,6 +1255,8 @@ class PaneSession(
             is Message.WorkSaved -> savedWork[message.work] = message
             is Message.WorkDetail -> workDetailListings[message.work] = message
             is Message.PlanSaved -> savedPlans[message.plan] = message.entry
+            // Policies come with `work` level 10 (ADR 0048); no client asks for them yet.
+            is Message.PolicySaved -> {}
             is Message.Unknown -> {}
         }
     }

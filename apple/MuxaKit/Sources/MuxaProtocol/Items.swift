@@ -41,6 +41,8 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     public var sort: SortProposal?
     /// With kind `delegate`: what approve does.
     public var delegate: DelegateProposal?
+    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 10, ADR 0048).
+    public var hypothesis: HypothesisProposal?
     /// The answers the host accepts now, in the order to show them. Unknown
     /// actions are left out: PROTOCOL.md says to show them as nothing.
     public var answers: [InboxAction]
@@ -51,7 +53,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         answer: InboxAction? = nil, summary: String? = nil, task: String? = nil, session: String? = nil,
         pane: String? = nil, prompt: ChatPrompt? = nil, attachments: Attachments = Attachments(),
         routine: String? = nil, proposal: Proposal? = nil, sort: SortProposal? = nil,
-        delegate: DelegateProposal? = nil, answers: [InboxAction] = []
+        delegate: DelegateProposal? = nil, hypothesis: HypothesisProposal? = nil, answers: [InboxAction] = []
     ) {
         self.id = id
         self.kind = kind
@@ -75,6 +77,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         self.proposal = proposal
         self.sort = sort
         self.delegate = delegate
+        self.hypothesis = hypothesis
         self.answers = answers
     }
 }
@@ -82,7 +85,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 extension InboxItem: Codable {
     private enum Key: String, CodingKey {
         case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, answeredAt, answer
-        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, answers
+        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, answers
     }
 
     public init(from decoder: any Decoder) throws {
@@ -109,6 +112,7 @@ extension InboxItem: Codable {
         proposal = try c.decodeIfPresent(Proposal.self, forKey: .proposal)
         sort = try c.decodeIfPresent(SortProposal.self, forKey: .sort)
         delegate = try c.decodeIfPresent(DelegateProposal.self, forKey: .delegate)
+        hypothesis = try c.decodeIfPresent(HypothesisProposal.self, forKey: .hypothesis)
         answers = (try c.decodeIfPresent([String].self, forKey: .answers) ?? []).compactMap(InboxAction.init(rawValue:))
     }
 
@@ -136,6 +140,7 @@ extension InboxItem: Codable {
         try c.encodeIfPresent(proposal, forKey: .proposal)
         try c.encodeIfPresent(sort, forKey: .sort)
         try c.encodeIfPresent(delegate, forKey: .delegate)
+        try c.encodeIfPresent(hypothesis, forKey: .hypothesis)
         if !answers.isEmpty { try c.encode(answers, forKey: .answers) }
     }
 }
@@ -153,11 +158,13 @@ public enum ItemKind: Equatable, Hashable, Sendable {
     case sort
     /// Level 9: the overall assistant proposes to ask a workspace's delegate.
     case delegate
+    /// Level 10: the overall assistant proposes a hypothesis about the user.
+    case hypothesis
     case other(String)
 
     private static let names: [(ItemKind, String)] = [
         (.ask, "ask"), (.review, "review"), (.failure, "failure"), (.proposal, "proposal"), (.briefing, "briefing"),
-        (.sort, "sort"), (.delegate, "delegate"),
+        (.sort, "sort"), (.delegate, "delegate"), (.hypothesis, "hypothesis"),
     ]
 
     public init(raw: String) {

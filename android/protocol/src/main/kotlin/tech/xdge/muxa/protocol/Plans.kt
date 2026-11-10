@@ -35,6 +35,10 @@ data class Plan(
     val stale: List<String> = emptyList(),
     /** Derived against the previous plan. */
     val changed: List<PlanChange> = emptyList(),
+    /** Level 10: Today's rows in the user's order, from `update-plan reorder`. */
+    val userOrder: List<String> = emptyList(),
+    /** Level 10: rows the user removed from Today, from `update-plan dismiss`. */
+    val dismissed: List<String> = emptyList(),
     /** The overall assistant's proposed notes. Never logged. */
     val notes: Notes? = null,
     /** Why a plan is `failed` or `cancelled`: host text naming ids and limits. */
@@ -74,6 +78,15 @@ value class BasisKind(val raw: String) {
 
         /** The user's pin. */
         val MANUAL = BasisKind("manual")
+
+        /** Level 10: a policy `y-…` in `source` (ADR 0048). */
+        val POLICY = BasisKind("policy")
+
+        /** Level 10: a hypothesis `h-…` in `source`. */
+        val HYPOTHESIS = BasisKind("hypothesis")
+
+        /** Level 10: a correction `x-…` in `source`. */
+        val CORRECTION = BasisKind("correction")
     }
 }
 

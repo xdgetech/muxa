@@ -164,7 +164,7 @@ struct FixtureTests {
         #expect(workLevel(capabilities) == workRoutines)
         #expect(workLevel(["work:2", "work:x", "workers"]) == 2)
         #expect(workLevel(["task-records"]) == 0)
-        guard case .inboxList(_, let entries, let items, _, _, _, _, _) = try Wire.decodeMessage(messages[3]) else {
+        guard case .inboxList(_, let entries, let items, _, _, _, _, _, _, _, _) = try Wire.decodeMessage(messages[3]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(entries.map(\.disposition) == ["open", "later"])
@@ -187,7 +187,7 @@ struct FixtureTests {
             Issue.record("expected hello"); return
         }
         #expect(workLevel(capabilities) == workItems)
-        guard case .inboxList(_, let entries, let items, _, _, _, _, _) = try Wire.decodeMessage(messages[1]) else {
+        guard case .inboxList(_, let entries, let items, _, _, _, _, _, _, _, _) = try Wire.decodeMessage(messages[1]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(entries.isEmpty)
@@ -224,10 +224,10 @@ struct FixtureTests {
 
     @Test func assistantContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl")
-        #expect(requests.count == 27)
+        #expect(requests.count == 39)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("assistant/messages.jsonl")
-        #expect(messages.count == 23)
+        #expect(messages.count == 37)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -252,7 +252,7 @@ struct FixtureTests {
             Issue.record("expected hello"); return
         }
         #expect(workLevel(capabilities) == workAssistant)
-        guard case .inboxList(_, _, _, let work, let captures, let listed, _, _) = try Wire.decodeMessage(messages[6]) else {
+        guard case .inboxList(_, _, _, let work, let captures, let listed, _, _, _, _, _) = try Wire.decodeMessage(messages[6]) else {
             Issue.record("expected inbox-list"); return
         }
         #expect(work.map(\.state) == [.waitingDecision, .inProgress, .open, .open, .done, .withdrawn])
@@ -264,7 +264,7 @@ struct FixtureTests {
         #expect(results[0].findings.allSatisfy { !$0.sources.isEmpty })
         // A client before level 8 reads an inbox-list without the new arrays.
         let old = try Wire.decodeMessage(Data(#"{"type":"inbox-list","inbox":1,"entries":[]}"#.utf8))
-        guard case .inboxList(_, _, _, let none, let noCaptures, let noRequests, _, _) = old else {
+        guard case .inboxList(_, _, _, let none, let noCaptures, let noRequests, _, _, _, _, _) = old else {
             Issue.record("expected inbox-list"); return
         }
         #expect(none.isEmpty && noCaptures.isEmpty && noRequests.isEmpty)
@@ -315,7 +315,7 @@ struct FixtureTests {
         guard case .workSaved(_, let pinned, _) = messages[17] else { Issue.record("expected work-saved"); return }
         #expect(pinned.pinnedAt != nil && pinned.due != nil)
 
-        guard case .inboxList(_, _, let items, let work, _, _, let plans, let assistant?) = messages[18] else {
+        guard case .inboxList(_, _, let items, let work, _, _, let plans, let assistant?, _, _, _) = messages[18] else {
             Issue.record("expected inbox-list with plans"); return
         }
         #expect(items.map(\.kind) == [.sort, .delegate])
@@ -344,8 +344,63 @@ struct FixtureTests {
         #expect(plans.allSatisfy { $0.reason == nil })
         // A client before level 9 reads an inbox-list without plans.
         let old = try Wire.decodeMessage(Data(#"{"type":"inbox-list","inbox":1,"entries":[]}"#.utf8))
-        guard case .inboxList(_, _, _, _, _, _, let none, nil) = old else { Issue.record("expected inbox-list"); return }
+        guard case .inboxList(_, _, _, _, _, _, let none, nil, _, _, _) = old else { Issue.record("expected inbox-list"); return }
         #expect(none.isEmpty)
+    }
+
+    @Test func policyContractRoundTrips() throws {
+        let requests = try Self.lines("assistant/requests.jsonl").map(Wire.decodeRequest)
+        let messages = try Self.lines("assistant/messages.jsonl").map(Wire.decodeMessage)
+        guard case .addPolicy(_, _, "all", nil, _?) = requests[27] else { Issue.record("expected add-policy"); return }
+        guard case .updatePolicy(_, _, _, .edit, _?, _, _, _) = requests[29],
+            case .updatePolicy(_, _, _, .delete, nil, nil, nil, nil) = requests[30]
+        else { Issue.record("expected edit and delete"); return }
+        guard case .updatePlan(_, _, _, .reorder, let order, nil, nil) = requests[31],
+            case .updatePlan(_, _, _, .dismiss, [], _?, _?) = requests[32]
+        else { Issue.record("expected reorder and dismiss"); return }
+        #expect(order.count == 3)
+        guard case .updateInboxEntry(_, _, .reject, _, _?, _, _) = requests[34],
+            case .updateInboxEntry(_, _, .confirm, _, nil, _, _) = requests[35]
+        else { Issue.record("expected reject with a reason and confirm"); return }
+        #expect(requests[38] == .forget(id: 441, record: "h-3c4d5e6f"))
+
+        guard case .hello(_, _, _, let capabilities) = messages[23] else { Issue.record("expected hello"); return }
+        #expect(workLevel(capabilities) == workPolicies)
+        guard case .policySaved(430, let added) = messages[24] else { Issue.record("expected policy-saved"); return }
+        #expect(added.id.hasPrefix("y-") && added.source == "user" && added.until != nil)
+        guard case .result(_, let conflict?, _) = messages[26], case .result(433, nil, _) = messages[28] else {
+            Issue.record("expected the limit and a delete's bare result"); return
+        }
+        #expect(conflict.code == .conflict)
+        guard case .planSaved(_, let plan) = messages[29] else { Issue.record("expected plan-saved"); return }
+        #expect(plan.userOrder.count == plan.top.count && plan.dismissed == ["i-1a2b3c4d"])
+        let kinds = Set(plan.top.flatMap { $0.basis.map(\.kind) })
+        #expect(kinds.isSuperset(of: [.policy, .hypothesis, .correction]))
+        guard case .policySaved(_, let made) = messages[32], case .inboxSaved(_, _, let confirmed?) = messages[33] else {
+            Issue.record("expected confirm's policy and item"); return
+        }
+        #expect(made.source == confirmed.hypothesis?.hypothesis && confirmed.answer == .confirm)
+        guard case .result(_, let forgot?, _) = messages[35] else { Issue.record("expected an error"); return }
+        #expect(forgot.code == .badRequest)
+
+        guard case .inboxList(_, _, let items, _, _, _, _, _, let policies, let hypotheses, let corrections) = messages[36]
+        else { Issue.record("expected inbox-list"); return }
+        #expect(items[0].kind == .hypothesis && items[0].answers == [.confirm, .reject, .later])
+        #expect(items[0].hypothesis?.confidence == .low)
+        #expect(policies.count == 3)
+        #expect(hypotheses.map(\.state) == [.proposed, .rejected])
+        #expect(corrections.map(\.kind) == [.dismissed, .reordered, .rejected, .deferred, .pinned])
+        #expect(corrections[1].row == nil && corrections[1].before.count == corrections[1].after.count)
+        #expect(corrections[3].reason == nil && !corrections[3].inTop)
+    }
+
+    @Test func unknownPolicyValuesStillDecode() throws {
+        let decode = { (json: String) in Data(json.utf8) }
+        #expect(try JSONDecoder().decode(CorrectionKind.self, from: decode(#""skipped""#)) == .other("skipped"))
+        #expect(try JSONDecoder().decode(Confidence.self, from: decode(#""high""#)) == .other("high"))
+        #expect(try JSONDecoder().decode(HypothesisState.self, from: decode(#""paused""#)) == .other("paused"))
+        #expect(try JSONDecoder().decode(ItemKind.self, from: decode(#""hypothesis""#)) == .hypothesis)
+        #expect(try JSONDecoder().decode(BasisKind.self, from: decode(#""policy""#)) == .policy)
     }
 
     @Test func unknownPlanValuesStillDecode() throws {

@@ -187,6 +187,12 @@ sealed interface Message {
         val plans: List<Plan> = emptyList(),
         /** Level 9: the overall assistant and the delegates. */
         val assistant: AssistantInfo? = null,
+        /** Level 10: active policies, then expired ones (ADR 0048). */
+        val policies: List<Policy> = emptyList(),
+        /** Level 10: `proposed` and `rejected` hypotheses, newest first. */
+        val hypotheses: List<Hypothesis> = emptyList(),
+        /** Level 10: at most 50 corrections, newest first. */
+        val corrections: List<Correction> = emptyList(),
     ) : Message
 
     /** What an `update-inbox` wrote, just before its `result`: the Routine entry, the item, or both for a Routine's item. */
@@ -225,6 +231,10 @@ sealed interface Message {
     /** What a `plan-now` or `apply-notes` wrote, just before its `result`. */
     @Serializable
     data class PlanSaved(val plan: Long, val entry: Plan) : Message
+
+    /** What an `add-policy`, an `update-policy edit` or a `confirm` wrote, just before its `result` (`work` level 10). */
+    @Serializable
+    data class PolicySaved(val policy: Long, val entry: Policy) : Message
 
     /** The bridge is exiting. */
     @Serializable

@@ -443,8 +443,8 @@ fn assistant_fixtures_round_trip() {
     use muxa_protocol::{
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 27);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 23);
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 39);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 37);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -738,4 +738,215 @@ fn plan_fixtures_round_trip() {
     assert!(
         matches!(old, Message::InboxList { plans, assistant, .. } if plans.is_empty() && assistant.is_none())
     );
+}
+
+#[test]
+fn policy_fixtures_round_trip() {
+    use muxa_protocol::{
+        BasisKind, Confidence, CorrectionKind, ErrorCode, HypothesisState, InboxAction, ItemKind,
+        ItemState, PlanAction, PolicyAction, WORK_POLICIES, work_level,
+    };
+    let read = |name: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/assistant/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[27],
+        Request::AddPolicy { scope, until: Some(_), .. } if scope == "all"
+    ));
+    assert!(matches!(
+        &requests[29],
+        Request::UpdatePolicy {
+            action: PolicyAction::Edit,
+            text: Some(_),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &requests[30],
+        Request::UpdatePolicy {
+            action: PolicyAction::Delete,
+            text: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &requests[31],
+        Request::UpdatePlan { action: PlanAction::Reorder, order, row: None, .. } if order.len() == 3
+    ));
+    assert!(matches!(
+        &requests[32],
+        Request::UpdatePlan {
+            action: PlanAction::Dismiss,
+            row: Some(_),
+            text: Some(_),
+            ..
+        }
+    ));
+    assert!(matches!(
+        &requests[34],
+        Request::UpdateInbox {
+            action: InboxAction::Reject,
+            text: Some(_),
+            ..
+        }
+    ));
+    assert!(matches!(
+        requests[35],
+        Request::UpdateInbox {
+            action: InboxAction::Confirm,
+            ..
+        }
+    ));
+    let forgotten: Vec<&str> = requests[36..]
+        .iter()
+        .map(|r| match r {
+            Request::Forget { record, .. } => record.as_str(),
+            _ => panic!(),
+        })
+        .collect();
+    assert_eq!(forgotten, ["x-0c1d2e3f", "h-2b3c4d5e", "h-3c4d5e6f"]);
+
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[23] else {
+        panic!()
+    };
+    assert_eq!(work_level(capabilities), WORK_POLICIES);
+    let Message::PolicySaved { policy: 430, entry } = &messages[24] else {
+        panic!()
+    };
+    assert!(entry.id.starts_with("y-") && entry.source == "user" && entry.text.len() <= 500);
+    let Message::Result { error: Some(e), .. } = &messages[26] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::Conflict);
+    let Message::PolicySaved { entry, .. } = &messages[27] else {
+        panic!()
+    };
+    assert_eq!(entry.rev, 2);
+    // A delete answers with the result only.
+    assert!(matches!(
+        messages[28],
+        Message::Result {
+            id: Some(433),
+            error: None,
+            ..
+        }
+    ));
+    let Message::PlanSaved { entry: plan, .. } = &messages[29] else {
+        panic!()
+    };
+    assert_eq!(plan.user_order.len(), plan.top.len());
+    assert_eq!(plan.dismissed, ["i-1a2b3c4d"]);
+    let kinds: Vec<BasisKind> = plan
+        .top
+        .iter()
+        .flat_map(|r| r.basis.iter().map(|b| b.kind))
+        .collect();
+    for kind in [
+        BasisKind::Policy,
+        BasisKind::Hypothesis,
+        BasisKind::Correction,
+    ] {
+        assert!(kinds.contains(&kind));
+    }
+    let Message::Result { error: Some(e), .. } = &messages[30] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::Conflict);
+    let Message::InboxSaved {
+        item: Some(rejected),
+        ..
+    } = &messages[31]
+    else {
+        panic!()
+    };
+    assert_eq!(rejected.answer, Some(InboxAction::Reject));
+    // Confirm: the policy it made, then the answered item.
+    let Message::PolicySaved { entry: made, .. } = &messages[32] else {
+        panic!()
+    };
+    let Message::InboxSaved {
+        item: Some(confirmed),
+        ..
+    } = &messages[33]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        Some(made.source.as_str()),
+        confirmed.hypothesis.as_ref().map(|h| h.hypothesis.as_str())
+    );
+    let Message::Result { error: Some(e), .. } = &messages[35] else {
+        panic!()
+    };
+    assert_eq!(e.code, ErrorCode::BadRequest);
+
+    let Message::InboxList {
+        items,
+        policies,
+        hypotheses,
+        corrections,
+        ..
+    } = &messages[36]
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (items[0].kind, items[0].state),
+        (ItemKind::Hypothesis, ItemState::Open)
+    );
+    assert_eq!(
+        items[0].answers,
+        [
+            InboxAction::Confirm,
+            InboxAction::Reject,
+            InboxAction::Later
+        ]
+    );
+    assert_eq!(
+        items[0].hypothesis.as_ref().map(|h| h.confidence),
+        Some(Confidence::Low)
+    );
+    assert!(policies.iter().all(|p| p.id.starts_with("y-")));
+    assert_eq!(
+        hypotheses.iter().map(|h| h.state).collect::<Vec<_>>(),
+        [HypothesisState::Proposed, HypothesisState::Rejected]
+    );
+    assert!(
+        hypotheses
+            .iter()
+            .all(|h| (1..=5).contains(&h.evidence.len()))
+    );
+    assert_eq!(
+        corrections.iter().map(|c| c.kind).collect::<Vec<_>>(),
+        [
+            CorrectionKind::Dismissed,
+            CorrectionKind::Reordered,
+            CorrectionKind::Rejected,
+            CorrectionKind::Deferred,
+            CorrectionKind::Pinned
+        ]
+    );
+    assert!(corrections.windows(2).all(|w| w[0].at >= w[1].at));
+    let reordered = &corrections[1];
+    assert!(reordered.row.is_none() && reordered.before.len() == reordered.after.len());
+    assert!(corrections[3].reason.is_none());
+    // A client before level 10 reads an inbox-list without the new arrays.
+    let old: Message =
+        serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
+    assert!(matches!(old, Message::InboxList { policies, .. } if policies.is_empty()));
 }

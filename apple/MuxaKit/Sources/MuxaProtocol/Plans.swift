@@ -32,6 +32,10 @@ public struct Plan: Equatable, Sendable, Identifiable {
     public var stale: [String]
     /// Derived against the previous plan.
     public var changed: [PlanChange]
+    /// Level 10: Today's rows in the user's order, from `update-plan reorder`.
+    public var userOrder: [String]
+    /// Level 10: rows the user removed from Today, from `update-plan dismiss`.
+    public var dismissed: [String]
     /// The overall assistant's proposed notes.
     public var notes: Notes?
     /// Why a plan is `failed` or `cancelled`: host text naming ids and limits.
@@ -41,7 +45,7 @@ public struct Plan: Equatable, Sendable, Identifiable {
         id: String, rev: UInt64, at: UInt64, inputsAt: UInt64, delivery: Delivery, deliveryAt: UInt64,
         minutes: UInt32? = nil, run: String? = nil, workspaces: [String] = [], top: [PlanRow] = [],
         dueSoon: [String] = [], unanswered: [String] = [], stale: [String] = [], changed: [PlanChange] = [],
-        notes: Notes? = nil, reason: String? = nil
+        userOrder: [String] = [], dismissed: [String] = [], notes: Notes? = nil, reason: String? = nil
     ) {
         self.id = id
         self.rev = rev
@@ -57,6 +61,8 @@ public struct Plan: Equatable, Sendable, Identifiable {
         self.unanswered = unanswered
         self.stale = stale
         self.changed = changed
+        self.userOrder = userOrder
+        self.dismissed = dismissed
         self.notes = notes
         self.reason = reason
     }
@@ -65,7 +71,7 @@ public struct Plan: Equatable, Sendable, Identifiable {
 extension Plan: Codable {
     private enum Key: String, CodingKey {
         case id, rev, at, inputsAt, delivery, deliveryAt, minutes, run, workspaces, top, dueSoon, unanswered, stale
-        case changed, notes, reason
+        case changed, userOrder, dismissed, notes, reason
     }
 
     public init(from decoder: any Decoder) throws {
@@ -84,6 +90,8 @@ extension Plan: Codable {
         unanswered = try c.decodeIfPresent([String].self, forKey: .unanswered) ?? []
         stale = try c.decodeIfPresent([String].self, forKey: .stale) ?? []
         changed = try c.decodeIfPresent([PlanChange].self, forKey: .changed) ?? []
+        userOrder = try c.decodeIfPresent([String].self, forKey: .userOrder) ?? []
+        dismissed = try c.decodeIfPresent([String].self, forKey: .dismissed) ?? []
         notes = try c.decodeIfPresent(Notes.self, forKey: .notes)
         reason = try c.decodeIfPresent(String.self, forKey: .reason)
     }
@@ -104,6 +112,8 @@ extension Plan: Codable {
         if !unanswered.isEmpty { try c.encode(unanswered, forKey: .unanswered) }
         if !stale.isEmpty { try c.encode(stale, forKey: .stale) }
         if !changed.isEmpty { try c.encode(changed, forKey: .changed) }
+        if !userOrder.isEmpty { try c.encode(userOrder, forKey: .userOrder) }
+        if !dismissed.isEmpty { try c.encode(dismissed, forKey: .dismissed) }
         try c.encodeIfPresent(notes, forKey: .notes)
         try c.encodeIfPresent(reason, forKey: .reason)
     }
@@ -195,10 +205,13 @@ public enum BasisKind: Equatable, Hashable, Sendable {
     case due, dependency, goal, time
     /// The user's pin.
     case manual
+    /// Level 10: a policy, a hypothesis or a correction, by id in `source` (ADR 0048).
+    case policy, hypothesis, correction
     case other(String)
 
     private static let names: [(BasisKind, String)] = [
         (.due, "due"), (.dependency, "dependency"), (.goal, "goal"), (.time, "time"), (.manual, "manual"),
+        (.policy, "policy"), (.hypothesis, "hypothesis"), (.correction, "correction"),
     ]
 
     public init(raw: String) {

@@ -118,6 +118,9 @@ extension BasisKind {
         case .goal: "Goal"
         case .time: "Time"
         case .manual: "You"
+        case .policy: "Policy"
+        case .hypothesis: "Hypothesis"
+        case .correction: "Correction"
         case .other: "Other"
         }
     }

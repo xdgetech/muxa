@@ -125,6 +125,21 @@ public enum Request: Equatable, Sendable {
     /// Start an overall run now (`work` level 9); `minutes` is the time the user has.
     /// A `plan-saved` comes first.
     case planNow(id: UInt64, minutes: UInt32? = nil)
+    /// Keep a policy in the user's words (`work` level 10, ADR 0048): `scope` is `all` or a
+    /// workspace; `from` and `until` are epoch seconds. A `policy-saved` comes first.
+    case addPolicy(id: UInt64, text: String, scope: String, from: UInt64? = nil, until: UInt64? = nil)
+    /// Edit or delete a policy. A stale `rev` is `conflict`. `edit` sends a `policy-saved`
+    /// first; `delete` only the `result`.
+    case updatePolicy(
+        id: UInt64, policy: String, rev: UInt64, action: PolicyAction, text: String? = nil, scope: String? = nil,
+        from: UInt64? = nil, until: UInt64? = nil)
+    /// Reorder Today's rows (`order`), or remove one (`row`, with the reason in `text`), on
+    /// the newest `resulted` plan. A `plan-saved` comes first.
+    case updatePlan(
+        id: UInt64, plan: String, rev: UInt64, action: PlanAction, order: [String] = [], row: String? = nil,
+        text: String? = nil)
+    /// Remove a correction `x-…` or a hypothesis `h-…`; `record` because `id` is the request's.
+    case forget(id: UInt64, record: String)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -141,7 +156,9 @@ public enum Request: Equatable, Sendable {
             .updateInboxEntry(let id, _, _, _, _, _, _), .startSession(let id, _, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
             .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _),
-            .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _), .planNow(let id, _):
+            .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _), .planNow(let id, _),
+            .addPolicy(let id, _, _, _, _), .updatePolicy(let id, _, _, _, _, _, _, _),
+            .updatePlan(let id, _, _, _, _, _, _), .forget(let id, _):
             id
         }
     }
@@ -155,6 +172,7 @@ extension Request: Codable {
         case routine, entry, until, option, worktree
         case clientId, source, assist, capture, work, workRev, into, request, version, purpose
         case due, minutes
+        case policy, from, plan, order, row, record
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -293,6 +311,32 @@ extension Request: Codable {
         case .planNow(let id, let minutes):
             try c.head("plan-now", id)
             try c.encodeIfPresent(minutes, forKey: .minutes)
+        case .addPolicy(let id, let text, let scope, let from, let until):
+            try c.head("add-policy", id)
+            try c.encode(text, forKey: .text)
+            try c.encode(scope, forKey: .scope)
+            try c.encodeIfPresent(from, forKey: .from)
+            try c.encodeIfPresent(until, forKey: .until)
+        case .updatePolicy(let id, let policy, let rev, let action, let text, let scope, let from, let until):
+            try c.head("update-policy", id)
+            try c.encode(policy, forKey: .policy)
+            try c.encode(rev, forKey: .rev)
+            try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(text, forKey: .text)
+            try c.encodeIfPresent(scope, forKey: .scope)
+            try c.encodeIfPresent(from, forKey: .from)
+            try c.encodeIfPresent(until, forKey: .until)
+        case .updatePlan(let id, let plan, let rev, let action, let order, let row, let text):
+            try c.head("update-plan", id)
+            try c.encode(plan, forKey: .plan)
+            try c.encode(rev, forKey: .rev)
+            try c.encode(action, forKey: .action)
+            if !order.isEmpty { try c.encode(order, forKey: .order) }
+            try c.encodeIfPresent(row, forKey: .row)
+            try c.encodeIfPresent(text, forKey: .text)
+        case .forget(let id, let record):
+            try c.head("forget", id)
+            try c.encode(record, forKey: .record)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -462,6 +506,28 @@ extension Request: Codable {
                 base: try c.decode(String.self, forKey: .base))
         case "plan-now":
             self = .planNow(id: id, minutes: try c.decodeIfPresent(UInt32.self, forKey: .minutes))
+        case "add-policy":
+            self = .addPolicy(
+                id: id, text: try c.decode(String.self, forKey: .text), scope: try c.decode(String.self, forKey: .scope),
+                from: try c.decodeIfPresent(UInt64.self, forKey: .from),
+                until: try c.decodeIfPresent(UInt64.self, forKey: .until))
+        case "update-policy":
+            self = .updatePolicy(
+                id: id, policy: try c.decode(String.self, forKey: .policy), rev: try c.decode(UInt64.self, forKey: .rev),
+                action: try c.decode(PolicyAction.self, forKey: .action),
+                text: try c.decodeIfPresent(String.self, forKey: .text),
+                scope: try c.decodeIfPresent(String.self, forKey: .scope),
+                from: try c.decodeIfPresent(UInt64.self, forKey: .from),
+                until: try c.decodeIfPresent(UInt64.self, forKey: .until))
+        case "update-plan":
+            self = .updatePlan(
+                id: id, plan: try c.decode(String.self, forKey: .plan), rev: try c.decode(UInt64.self, forKey: .rev),
+                action: try c.decode(PlanAction.self, forKey: .action),
+                order: try c.decodeIfPresent([String].self, forKey: .order) ?? [],
+                row: try c.decodeIfPresent(String.self, forKey: .row),
+                text: try c.decodeIfPresent(String.self, forKey: .text))
+        case "forget":
+            self = .forget(id: id, record: try c.decode(String.self, forKey: .record))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

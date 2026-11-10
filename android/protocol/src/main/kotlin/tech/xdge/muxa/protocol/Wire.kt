@@ -56,6 +56,7 @@ object Wire {
         kind<Message.WorkSaved>("work-saved"),
         kind<Message.WorkDetail>("work-detail"),
         kind<Message.PlanSaved>("plan-saved"),
+        kind<Message.PolicySaved>("policy-saved"),
         kind<Message.Bye>("bye"),
     )
 
@@ -103,6 +104,10 @@ object Wire {
         kind<Request.GetWork>("get-work"),
         kind<Request.ApplyNotes>("apply-notes"),
         kind<Request.PlanNow>("plan-now"),
+        kind<Request.AddPolicy>("add-policy"),
+        kind<Request.UpdatePolicy>("update-policy"),
+        kind<Request.UpdatePlan>("update-plan"),
+        kind<Request.Forget>("forget"),
         kind<Request.Bye>("bye"),
     )
 
