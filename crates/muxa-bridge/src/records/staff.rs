@@ -138,8 +138,14 @@ impl RawStaff {
 }
 
 /// Each member must be a Claude Code `[[worker]]` with a description that
-/// this workspace may use (ADR 0048 §7, ADR 0051 §1).
-pub(super) fn check(staff: &Staff, workspace: &str, workers: &[Worker]) -> Result<(), String> {
+/// this workspace may use (ADR 0048 §7, ADR 0051 §1). A Codex worker may be
+/// one when the host owns Codex threads (`codex_threads`, ADR 0028).
+pub(super) fn check(
+    staff: &Staff,
+    workspace: &str,
+    workers: &[Worker],
+    codex_threads: bool,
+) -> Result<(), String> {
     for name in &staff.members {
         let w = workers
             .iter()
@@ -151,10 +157,14 @@ pub(super) fn check(staff: &Staff, workspace: &str, workers: &[Worker]) -> Resul
                  worker's workspaces"
             ));
         }
-        if w.agent != WorkerAgent::ClaudeCode {
+        let delivered = match w.agent {
+            WorkerAgent::ClaudeCode => true,
+            WorkerAgent::Codex => codex_threads,
+        };
+        if !delivered {
             return Err(format!(
-                "staff worker {name:?} runs {}, which has no automatic prompt delivery yet \
-                 (ADR 0028); staff must be Claude Code workers",
+                "staff worker {name:?} runs {}, which has no automatic prompt delivery \
+                 without [codex] owned_threads = true (ADR 0028); use a Claude Code worker",
                 w.agent.id()
             ));
         }

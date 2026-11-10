@@ -303,8 +303,9 @@ pub(super) fn check_worker(
     delegate: &Delegate,
     workspace: &str,
     workers: &[Worker],
+    codex_threads: bool,
 ) -> Result<(), String> {
-    staff::check(&delegate.staff, workspace, workers)?;
+    staff::check(&delegate.staff, workspace, workers, codex_threads)?;
     writer::check(&delegate.writer, workspace, workers)?;
     let Some(name) = &delegate.worker else {
         return Ok(());

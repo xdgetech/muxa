@@ -10,7 +10,7 @@ use super::record::RunOf;
 use super::schedule;
 use super::store::{RoutineState, RoutineStore, StateError};
 use crate::records::routines::Routine;
-use crate::records::workers::WorkerAgent;
+use crate::records::workers::{WorkerAgent, WorkerChoice};
 use crate::records::{LoopState, Status, Store, StoreError, Workspaces, now};
 use crate::task_records::{Config, Context, NewTask, create};
 
@@ -48,9 +48,9 @@ impl From<StateError> for StartError {
     }
 }
 
-/// Codex cannot run a Routine until it has session ownership (ADR 0026,
-/// Consequences; ADR 0028): a Routine has no person to type its prompt.
-pub const CODEX: &str = "a Routine needs automatic prompt delivery, which Codex does not have yet (ADR 0028). Use a Claude Code worker for this Routine.";
+/// Codex runs a Routine only on a thread muxa owns (ADR 0026, Consequences;
+/// ADR 0028): a Routine has no person to type its prompt.
+pub const CODEX: &str = "a Routine needs automatic prompt delivery, which Codex has only with [codex] owned_threads = true and the shared daemon (ADR 0028). Turn it on after the checks in ADR 0028, or use a Claude Code worker for this Routine.";
 
 /// Whether the Routine would start Codex: a Codex worker, or a default
 /// command whose program is `codex`.
@@ -72,6 +72,19 @@ pub fn runs_codex(workspaces: &Workspaces, routine: &Routine, fallback: &str) ->
                 == Some("codex")
         }
     }
+}
+
+/// Whether the Routine's Codex would run on a thread muxa owns.
+pub fn owned_codex(workspaces: &Workspaces, routine: &Routine, fallback: &str) -> bool {
+    let choice = match routine.worker.as_deref() {
+        Some(name) => WorkerChoice::Named(name),
+        None => WorkerChoice::WorkspaceDefault,
+    };
+    workspaces
+        .resolve_worker(&routine.workspace, choice, None, fallback)
+        .ok()
+        .and_then(|resolved| crate::task_records::owned::launch(workspaces, &resolved))
+        .is_some()
 }
 
 pub fn occurrence(routine: &Routine, when: When) -> String {
@@ -111,7 +124,9 @@ pub async fn start(
         let occurrence = occurrence(&routine, when);
         let store = RoutineStore::open(&dir(&config)?)?;
         let fail = |e: StartError| fail_claimless(&store, &routine, &occurrence, when, e);
-        if runs_codex(&workspaces, &routine, &fallback) {
+        if runs_codex(&workspaces, &routine, &fallback)
+            && !owned_codex(&workspaces, &routine, &fallback)
+        {
             return Err(fail(StartError::Unsupported(CODEX.into())));
         }
         let instructions = routine

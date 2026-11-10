@@ -273,7 +273,7 @@ impl Workspaces {
         }
         for w in &list {
             if let Some(d) = &w.assistant {
-                assistant::check_worker(d, &w.name, &workers)
+                assistant::check_worker(d, &w.name, &workers, codex_threads)
                     .map_err(|r| invalid(format!("workspace {:?}: assistant {r}", w.name)))?;
             }
         }

@@ -25,6 +25,18 @@ fn parse(assistant: &str, host: &str) -> Result<Workspaces, String> {
 }
 
 #[test]
+fn a_codex_staff_member_needs_owned_threads() {
+    let staff = "delegate = true\nstaff = [\"lisk-strategist\", \"codex-helper\"]";
+    let off = parse(staff, "").unwrap_err();
+    assert!(off.contains("owned_threads"), "{off}");
+    let w = parse(staff, "[codex]\nowned_threads = true").unwrap();
+    assert_eq!(
+        w.delegate("lisk").unwrap().staff.members,
+        ["lisk-strategist", "codex-helper"]
+    );
+}
+
+#[test]
 fn a_workspace_without_staff_resolves_as_before() {
     let w = parse("delegate = true\nworker = \"lisk-strategist\"", "").unwrap();
     let d = w.delegate("lisk").unwrap();

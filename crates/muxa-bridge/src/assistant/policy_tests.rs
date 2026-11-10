@@ -96,6 +96,38 @@ fn codex_and_an_agent_without_adapter_are_refused_by_name() {
 }
 
 #[test]
+fn codex_delegates_with_owned_threads_and_the_shared_daemon() {
+    const OWNED: &str = "[codex]\nowned_threads = true\n";
+    let host = format!("{ON}{OWNED}");
+    for ws in [
+        "[workspace.assistant]\ndelegate = true\nworker = \"Cx\"",
+        "[workspace.agent]\ncommand = \"codex --yolo\"\n[workspace.assistant]\ndelegate = true",
+    ] {
+        let (root, w) = workspaces("owned", &host, ws);
+        assert!(delegated(&w, "w", None, "claude").is_ok(), "{ws}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+    let unguarded = refused(
+        &host,
+        "[workspace.agent]\ncommand = \"codex --no-daemon\"\n[workspace.assistant]\ndelegate = true",
+    );
+    assert_eq!(unguarded.code, ErrorCode::Unsupported);
+    assert!(
+        unguarded.message.contains("owned_threads"),
+        "{}",
+        unguarded.message
+    );
+    let plans = "[workspace.agent]\ncommand = \"codex\"\n[workspace.assistant]\noverall = true";
+    let (root, w) = workspaces("overall", &host, plans);
+    assert!(overall(&w, "claude").is_ok());
+    let _ = std::fs::remove_dir_all(root);
+    let (root, w) = workspaces("overall-off", ON, plans);
+    let off = overall(&w, "claude").unwrap_err();
+    assert!(off.message.contains("Codex"), "{}", off.message);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn claude_code_by_worker_or_default_command_is_the_delegate() {
     let (root, w) = workspaces(
         "ok",

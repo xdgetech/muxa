@@ -5,11 +5,11 @@ use muxa_protocol::{ErrorBody, ErrorCode};
 
 use crate::convert::error_body;
 use crate::records::assistant::{AssistantHost, Delegate};
-use crate::records::workers::{LaunchCommand, WorkerChoice};
+use crate::records::workers::{ResolvedWorker, WorkerChoice};
 use crate::records::{Record, Status, Workspaces};
-use crate::task_records::reading;
+use crate::task_records::{owned, reading};
 
-/// The program of the one adapter with automatic delivery and finished turns.
+/// The programs of the adapters with automatic delivery and finished turns.
 const CLAUDE: &str = "claude";
 const CODEX: &str = "codex";
 
@@ -72,7 +72,7 @@ pub fn delegated(
     let resolved = workspaces
         .resolve_worker(workspace, choice, None, fallback)
         .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))?;
-    check_agent(workspace, &resolved.command)?;
+    check_agent(workspaces, workspace, &resolved)?;
     Ok(Delegated {
         workspace: workspace.to_owned(),
         worker: resolved.worker,
@@ -107,7 +107,7 @@ pub fn overall(workspaces: &Workspaces, fallback: &str) -> Result<Delegated, Err
     let resolved = workspaces
         .resolve_worker(&w.name, choice, None, fallback)
         .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))?;
-    check_agent(&w.name, &resolved.command)?;
+    check_agent(workspaces, &w.name, &resolved)?;
     Ok(Delegated {
         workspace: w.name.clone(),
         worker: resolved.worker,
@@ -116,15 +116,23 @@ pub fn overall(workspaces: &Workspaces, fallback: &str) -> Result<Delegated, Err
     })
 }
 
-/// A run needs automatic prompt delivery and a finished turn: Claude Code today.
-fn check_agent(workspace: &str, command: &LaunchCommand) -> Result<(), ErrorBody> {
-    match reading::program(command) {
+/// A run needs automatic prompt delivery and a finished turn: Claude Code,
+/// or Codex on a thread muxa owns (ADR 0028).
+fn check_agent(
+    workspaces: &Workspaces,
+    workspace: &str,
+    resolved: &ResolvedWorker,
+) -> Result<(), ErrorBody> {
+    match reading::program(&resolved.command) {
         Some(CLAUDE) => Ok(()),
+        Some(CODEX) if owned::launch(workspaces, resolved).is_some() => Ok(()),
         Some(CODEX) => Err(error_body(
             ErrorCode::Unsupported,
             format!(
-                "workspace {workspace:?} delegates to Codex, which has no automatic prompt \
-                 delivery yet (ADR 0028). Set [workspace.assistant] worker to a Claude Code worker."
+                "workspace {workspace:?} delegates to Codex, which has automatic prompt \
+                 delivery only with [codex] owned_threads = true and the shared daemon \
+                 (ADR 0028). Turn it on after the checks in ADR 0028, or set \
+                 [workspace.assistant] worker to a Claude Code worker."
             ),
         )),
         _ => Err(error_body(

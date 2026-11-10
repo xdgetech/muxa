@@ -116,6 +116,20 @@ fn counterexamples_name_the_workspace_and_the_writer() {
 }
 
 #[test]
+fn the_writer_stays_claude_code_with_owned_codex_threads() {
+    let root = std::env::temp_dir();
+    let root = root.to_string_lossy();
+    let text = format!(
+        "[assistant]\nenabled = true\n[codex]\nowned_threads = true\n\
+         [[workspace]]\nname = \"lisk\"\nroot = \"{root}\"\n[workspace.assistant]\n\
+         {STAFF}\nwriter = \"codex-writer\"\n\
+         [[workspace]]\nname = \"other\"\nroot = \"{root}\"\n{WORKERS}"
+    );
+    let e = Workspaces::parse(&text, Path::new("w.toml"), None).unwrap_err();
+    assert!(e.to_string().contains("\"codex-writer\" runs codex"), "{e}");
+}
+
+#[test]
 fn the_host_approves_10_writes_a_day_unless_it_says_otherwise() {
     use crate::records::assistant::DEFAULT_WRITES_PER_DAY;
     let with = |host: &str| {
