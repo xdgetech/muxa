@@ -47,6 +47,15 @@ pub(crate) async fn end(
             return Err(error_body(ErrorCode::WouldLoseWork, why));
         }
     }
+    // Before the session closes and the worktree goes (ADR 0053 §3).
+    let (config, saved) = (cx.records.clone(), claim.record().clone());
+    let proposed = blocking(move || {
+        Ok(config
+            .load_workspaces()
+            .ok()
+            .and_then(|w| crate::workspace_memory::closeout::read(&w, &saved)))
+    })
+    .await?;
     let mode = match choice {
         WorktreeEnd::Remove => CloseMode::Close,
         WorktreeEnd::Force => CloseMode::Force,
@@ -86,6 +95,9 @@ pub(crate) async fn end(
             .clone();
         drop(claim);
         crate::items::produce::task_closed(&config, &id);
+        if let Some(end) = &proposed {
+            crate::workspace_memory::closeout::propose(&config, end, crate::records::now());
+        }
         Ok(record)
     })
     .await?;

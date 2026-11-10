@@ -65,9 +65,18 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         }
         // ADR 0050 §3: `assistant::hypotheses` answers confirm and reject.
         ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
-        // Stored by a newer host: no answer has a known meaning. This host
-        // makes no `memory` items yet (ADR 0053 slice M2).
-        ItemKind::Memory | ItemKind::Unknown => return Vec::new(),
+        // ADR 0053 §3: a text over 4 KiB, or with control characters, is
+        // copied by hand.
+        ItemKind::Memory => {
+            let text = item.memory.as_ref().map_or("", |m| m.text.as_str());
+            return if crate::workspace_memory::approvable(text) {
+                vec![Approve, Reject, Later]
+            } else {
+                vec![Reject, Later]
+            };
+        }
+        // Stored by a newer host: no answer has a known meaning.
+        ItemKind::Unknown => return Vec::new(),
     };
     // An item with a session sends its text to its own agent (ADR 0040 §4).
     if item.session.is_none() {

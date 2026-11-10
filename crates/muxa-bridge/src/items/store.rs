@@ -73,12 +73,13 @@ impl TaskItems {
         u32::try_from(gone.len()).unwrap_or(u32::MAX)
     }
 
-    /// The one item that is open or later, if any. ADR 0033 allows one.
+    /// The one item that is open or later, if any. ADR 0033 allows one; a
+    /// `memory` item (ADR 0053 §3) is beside it, never it.
     pub fn current_mut(&mut self) -> Option<&mut StoredItem> {
-        self.items
-            .iter_mut()
-            .rev()
-            .find(|s| matches!(s.item.state, ItemState::Open | ItemState::Later))
+        self.items.iter_mut().rev().find(|s| {
+            matches!(s.item.state, ItemState::Open | ItemState::Later)
+                && s.item.kind != muxa_protocol::ItemKind::Memory
+        })
     }
 
     /// Drops the oldest closed items, then the oldest of all, down to [`KEEP_ITEMS`].

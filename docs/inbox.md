@@ -178,6 +178,18 @@ The writer's Task reports what it did in its own `review` item. muxa does not ch
 
 muxa for tmux (`prefix + T`): the preview shows a `write` item's target and content whole. `a` approves after the target is shown once more and confirmed with `y`. `r` rejects, `l` moves it down. `muxa-cli inbox show ITEM` prints the item with its content, and `muxa-cli assist writes WORKSPACE` lists a workspace's writes.
 
+## Workspace memory (ADR 0053)
+
+With `work:14`, a Task that ends with text under "For the workspace" in its `TASK.md` proposes it for the workspace memory, `<root>/.muxa/WORKSPACE.md`. Each Task makes at most one Decisions item of kind `memory`; it stays open after the Task closed.
+
+1. **The item.** The title is the Task's title. The question is "`<title>` proposes to add to the workspace memory". It links the Task.
+2. **The text** is shown whole, above Approve, Reject and Later: plain text in a fixed-width font, no rendered Markdown, no active links. Approve names the workspace once more to confirm.
+3. **Approve** sends the item's hash, so the host appends only the text the user saw. The host appends it under `## <title> (<task>, <YYYY-MM-DD>)`. Approving twice appends once. When the file would pass 16 KiB, approve is refused with the sizes and the item stays open: ask the lead to shorten the file, then approve again.
+4. **No Approve** when the text is over 4 KiB or has control characters; the summary says why. Copy what you need by hand. **Reject** writes nothing. **Later** moves it down.
+5. **`memory = "auto"`** appends at the Task's end without an item. A refused append makes the item, with the reason in its summary. **`memory = "off"`** proposes nothing.
+
+A client below `work:14` shows a `memory` item as an unknown kind, without Approve.
+
 ## Tasks and Sessions modes
 
 - Tasks mode lists Routines first, then every Task grouped by what it needs: Needs attention, Ready for review, Running, No agent, Closed (`protocol/fixtures/inbox/groups.jsonl`). Closed lists a Task for a day after its last change; an item can still open an older one. A Task with a session opens its pane, as a Sessions row does; its detail is Task Info in the pane's More menu (ADR 0044). A Task without a session, or a closed one, shows its detail. A Routine's detail shows its workspace, trigger, enabled flag, worker, project, next run, last success, last failure, a running run with Open Terminal, and Run now. Run now on a bridge without the daemon shows the host's message.

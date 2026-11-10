@@ -9,6 +9,7 @@ pub(crate) mod close;
 mod create;
 pub(crate) mod end;
 mod facts;
+pub(crate) mod for_workspace;
 pub(crate) mod handoff;
 mod memory;
 pub(crate) mod observation;
@@ -642,12 +643,25 @@ fn write_status(
         Some(rev) => rev,
         None => store.get(task).map_err(|e| store_error(&e))?.rev,
     };
+    let ends = matches!(status, TaskStatus::Done | TaskStatus::Dropped);
+    // A broken workspaces file is logged by the load; the end goes on without memory.
+    let workspaces = ends.then(|| config.load_workspaces().ok()).flatten();
+    let mut proposed = None;
     let record = store
-        .update(task, rev, |r| r.status = new)
+        .update(task, rev, |r| {
+            r.status = new;
+            // Under the Task's lock, before its session closes (ADR 0053 §3).
+            proposed = workspaces
+                .as_ref()
+                .and_then(|w| crate::workspace_memory::closeout::read(w, r));
+        })
         .map_err(|e| store_error(&e))?;
     tracing::info!(task = %record.id, rev = record.rev, "task status set");
-    if matches!(status, TaskStatus::Done | TaskStatus::Dropped) {
+    if ends {
         crate::items::produce::task_closed(config, task);
+    }
+    if let Some(end) = &proposed {
+        crate::workspace_memory::closeout::propose(config, end, crate::records::now());
     }
     Ok(record)
 }

@@ -172,3 +172,37 @@ fn give_copies_the_live_file_and_removes_a_copy_without_one() {
     assert!(e.contains(&root.0.join(NOTES).display().to_string()), "{e}");
     assert!(!run.0.join(NOTES).exists());
 }
+
+#[test]
+fn append_adds_once_after_a_blank_line_and_refuses_past_the_cap() {
+    let d = temp();
+    let block = "## A (t-1, 2026-11-11)\n\nOne.\n";
+    let mark = |t: &str| t.contains("(t-1, ");
+    let got = append(&d.0, block, mark).unwrap();
+    assert_eq!(
+        got,
+        Appended::Added {
+            size: block.len() as u64
+        }
+    );
+    assert_eq!(read(&d.0).unwrap().text, block);
+    assert_eq!(append(&d.0, block, mark).unwrap(), Appended::Present);
+    live(&d.0, b"# Mine");
+    append(&d.0, "## B (t-2, 2026-11-11)\n\nTwo.\n", |_| false).unwrap();
+    assert_eq!(
+        read(&d.0).unwrap().text,
+        "# Mine\n\n## B (t-2, 2026-11-11)\n\nTwo.\n"
+    );
+    live(&d.0, &[b'a'; MAX_NOTES - 4]);
+    let e = append(&d.0, "12345", |_| false).unwrap_err();
+    assert!(
+        matches!(e, NotesError::WouldExceed { size: 16_387, .. }),
+        "{e}"
+    );
+    assert!(
+        e.to_string()
+            .contains("would be 16,387 bytes; the cap is 16 KiB"),
+        "{e}"
+    );
+    assert_eq!(read(&d.0).unwrap().text.len(), MAX_NOTES - 4);
+}

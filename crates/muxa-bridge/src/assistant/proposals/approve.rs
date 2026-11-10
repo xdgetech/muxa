@@ -111,6 +111,7 @@ pub async fn approve(cx: &Context, found: Found, by: By) -> Result<Approved, Err
         ItemKind::Sort => blocking(move || sort(&config, found, by, now())).await,
         ItemKind::Handoff => super::handoff::approve(cx, found).await,
         ItemKind::Write => super::write::approve(cx, found).await,
+        ItemKind::Memory => super::memory::approve(cx, found).await,
         _ => delegate(cx, found, by).await,
     }
 }

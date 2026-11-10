@@ -88,6 +88,12 @@ pub enum NotesError {
     NotUtf8 { path: PathBuf, size: u64 },
     #[error("{path} is a symlink or not a regular file; it must be a regular file.")]
     NotRegular { path: PathBuf },
+    #[error(
+        "{} would be {} bytes; the cap is 16 KiB. Ask the lead to shorten it, then approve again.",
+        path.display(),
+        grouped(*size)
+    )]
+    WouldExceed { path: PathBuf, size: u64 },
     #[error("{path} changed since the run read it; ask again.")]
     Changed { path: PathBuf },
     #[error("cannot {action} {path}: {source}")]
@@ -234,6 +240,60 @@ fn same_dir(a: &Path, b: &Path) -> bool {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,
     }
+}
+
+/// What [`append`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Appended {
+    /// The file is this many bytes now.
+    Added { size: u64 },
+    /// `present` found the block's mark already: nothing was written.
+    Present,
+}
+
+/// Blocking. Appends `block` to the workspace memory at `root`, after a
+/// blank line, unless `present` finds it in the live text already. The
+/// result may not pass [`MAX_NOTES`]. The caller holds the workspace's OS
+/// lock, so the read and the rename are one step for every process.
+pub fn append(
+    root: &Path,
+    block: &str,
+    present: impl Fn(&str) -> bool,
+) -> Result<Appended, NotesError> {
+    let place = Place::Workspace;
+    let path = root.join(place.file());
+    let _one = WRITES.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = folder(root, &place.folders()?, true)?.ok_or_else(|| missing(root))?;
+    let live = read_in(&dir, place.name(), &path)?;
+    if present(&live.text) {
+        return Ok(Appended::Present);
+    }
+    let gap = match live.text.as_str() {
+        "" => "",
+        t if t.ends_with("\n\n") => "",
+        t if t.ends_with('\n') => "\n",
+        _ => "\n\n",
+    };
+    let text = format!("{}{gap}{block}", live.text);
+    let size = text.len() as u64;
+    if text.len() > MAX_NOTES {
+        return Err(NotesError::WouldExceed { path, size });
+    }
+    write_in(&dir, place.name(), &path, text.as_bytes())?;
+    Ok(Appended::Added { size })
+}
+
+/// `17210` as `17,210`.
+fn grouped(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn empty() -> Snapshot {

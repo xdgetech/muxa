@@ -44,6 +44,9 @@ pub struct Approval {
     /// `max_writes_per_day` while it runs and once it made its Task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub write_at: Option<u64>,
+    /// Epoch seconds: a `memory` item's text is in the workspace memory (ADR 0053 §3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_at: Option<u64>,
 }
 
 impl Approval {
@@ -56,7 +59,10 @@ impl Approval {
 
     /// The action ran and made what it records.
     pub fn done(&self) -> bool {
-        self.capture.is_some() || self.request.is_some() || self.task.is_some()
+        self.capture.is_some()
+            || self.request.is_some()
+            || self.task.is_some()
+            || self.memory_at.is_some()
     }
 
     /// Counts against `max_writes_per_day` from `day_start`: approved, or being approved.
@@ -76,6 +82,7 @@ impl Approval {
 pub fn hash(item: &InboxItem) -> Option<String> {
     let (kind, body) = match item.kind {
         ItemKind::Write => return item.write.as_ref().map(|w| w.hash.clone()),
+        ItemKind::Memory => return item.memory.as_ref().map(|m| m.hash.clone()),
         ItemKind::Sort => ("sort", serde_json::to_vec(item.sort.as_ref()?)),
         ItemKind::Delegate => ("delegate", serde_json::to_vec(item.delegate.as_ref()?)),
         ItemKind::Handoff => ("handoff", serde_json::to_vec(item.handoff.as_ref()?)),

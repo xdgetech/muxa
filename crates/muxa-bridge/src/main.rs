@@ -24,6 +24,7 @@ mod tasks;
 mod utc;
 mod viewport;
 mod watch;
+mod workspace_memory;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

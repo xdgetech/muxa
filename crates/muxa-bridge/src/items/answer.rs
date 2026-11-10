@@ -144,11 +144,15 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         }
         // Approve runs in `assistant::proposals`, which `routines::handle` calls first.
         // Reject on a hand-off ends the chain with the results it has (ADR 0051 §3);
-        // on a write it makes no Task (ADR 0052 §2).
+        // on a write it makes no Task (ADR 0052 §2); on a memory item it writes nothing.
         Reject
             if matches!(
                 item.kind,
-                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff | ItemKind::Write
+                ItemKind::Sort
+                    | ItemKind::Delegate
+                    | ItemKind::Handoff
+                    | ItemKind::Write
+                    | ItemKind::Memory
             ) =>
         {
             Plan::Nothing
@@ -156,7 +160,11 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Approve
             if matches!(
                 item.kind,
-                ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff | ItemKind::Write
+                ItemKind::Sort
+                    | ItemKind::Delegate
+                    | ItemKind::Handoff
+                    | ItemKind::Write
+                    | ItemKind::Memory
             ) =>
         {
             return Err(bad("approve on a proposal item runs through the assistant"));

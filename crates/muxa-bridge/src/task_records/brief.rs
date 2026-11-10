@@ -34,8 +34,8 @@ const NOTES: &str = "## Progress\n\nNothing yet.\n\n\
      ## Decisions\n\nNothing yet.\n\n\
      ## Next actions\n\nNothing yet.\n";
 /// The agent-owned section a Task's close-out reads (ADR 0053 §3).
-const FOR_WORKSPACE: &str = "## For the workspace";
-const NOTHING_YET: &str = "Nothing yet.";
+pub(super) const FOR_WORKSPACE: &str = "## For the workspace";
+pub(super) const NOTHING_YET: &str = "Nothing yet.";
 /// The bridge-owned pointer to the copy (ADR 0053 §2).
 const MEMORY: &str = "## Workspace memory\n\n\
      .muxa/WORKSPACE.md in this folder is a copy of what this workspace has learned: \
@@ -255,7 +255,7 @@ fn first_notes(text: &str, offset: usize) -> Option<usize> {
         .find(|at| *at >= offset && (*at == 0 || text.as_bytes()[*at - 1] == b'\n'))
 }
 
-fn marker_at(r: &Record, text: &str) -> Option<usize> {
+pub(super) fn marker_at(r: &Record, text: &str) -> Option<usize> {
     let offset = managed_offset(r, text);
     let worker = worker_frame(r, text);
     let candidate = text[offset..]

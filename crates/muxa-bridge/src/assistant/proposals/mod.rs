@@ -4,11 +4,13 @@
 //! to a workspace with `overall_requests = "auto"` is approved by the host
 //! itself: the item is kept, answered `approve`, so the user sees what was
 //! sent. Sorting is always reviewed. A `write` item's approve makes one
-//! Task of the workspace's writer (ADR 0052 §3, in `write.rs`).
+//! Task of the workspace's writer (ADR 0052 §3, in `write.rs`); a `memory`
+//! item's appends a Task's text to the workspace memory (ADR 0053, `memory.rs`).
 mod approval;
 pub mod approve;
 mod handoff;
 pub mod inbox;
+mod memory;
 mod write;
 
 use std::sync::Arc;
@@ -18,7 +20,7 @@ use muxa_protocol::{ErrorBody, Message};
 use crate::task_records::Context;
 use approve::{Approved, By, Made};
 
-/// `update-inbox approve` on a `sort`, `delegate`, `handoff` or `write` item:
+/// `update-inbox approve` on a `sort`, `delegate`, `handoff`, `write` or `memory` item:
 /// `capture-saved`, `work-saved` or `task-saved` with what it made, then
 /// `inbox-saved`, and the error for `result`. None for any other item.
 /// `shown` is the hash of the write the client showed whole; a `write` item
@@ -35,7 +37,9 @@ pub async fn answer(
         Ok(None) => return None,
         Err(e) => return Some((Vec::new(), Some(e))),
     };
-    if let Err(e) = write::hash_shown(&found, shown) {
+    if let Err(e) =
+        write::hash_shown(&found, shown).and_then(|()| memory::hash_shown(&found, shown))
+    {
         return Some((Vec::new(), Some(e)));
     }
     Some(match approve::approve(cx, found, By::User).await {
