@@ -559,6 +559,17 @@ async fn a_three_step_chain_under_review_makes_two_items_and_three_runs() {
         task_md.contains("Step 1, lisk-chief-of-staff:"),
         "{task_md}"
     );
+    // The earlier step in full, beside the goal's cut summary.
+    let file = std::fs::read_to_string(h.dir(&run2).join(".muxa/assistant/steps/1.json")).unwrap();
+    let earlier: Value = serde_json::from_str(&file).unwrap();
+    assert_eq!(
+        (earlier["step"].clone(), earlier["worker"].clone()),
+        (json!(1), json!(LEAD))
+    );
+    assert_eq!(earlier["result"]["summary"], "Two options.");
+    assert_eq!(earlier["result"]["findings"][0]["text"], "Option B fits.");
+    assert_eq!(earlier["handoff"]["worker"], STRATEGIST);
+    assert!(!h.dir(&run2).join(".muxa/assistant/steps/2.json").exists());
     let second = until_item(&mut conn, &q.id, 1, 2).await;
     approved(&approve(&mut conn, &second.id).await);
     let done = until_q(&mut conn, &h, &q.id, "step 3 resulted", resulted(3)).await;
@@ -582,6 +593,11 @@ async fn a_three_step_chain_under_review_makes_two_items_and_three_runs() {
         ]
     );
     assert!(done.steps[2].handoff.is_none());
+    let run3 = done.steps[2].run.clone().unwrap();
+    for k in [1, 2] {
+        let path = h.dir(&run3).join(format!(".muxa/assistant/steps/{k}.json"));
+        assert!(path.is_file(), "step 3 reads step {k} in full");
+    }
     let items = handoff_items(&mut conn, &q.id).await;
     assert_eq!(items.len(), 2, "{items:?}");
     assert!(items.iter().all(|i| i.state == ItemState::Answered));

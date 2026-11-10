@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-10; its questions were answered with the recommended values, and staff are workers. It extends ADR 0048 §4, §7 and §8 and ADR 0049 §1, §3 and §4 without changing them, and keeps ADR 0049 §4's rule that delegation crosses workspaces one level deep, through the overall assistant and the user. It raises one limit of ADR 0022 (a worker's `description`). It does not change ADR 0050. Slices D0 (the wire types) D1 (`staff`, `lead`, `handoffs` and `max_steps` in configuration) D2 (`worker` on requests, the brief's staff section, member notes) D3 (`handoff` in the result check, step markers and claims) D4 (`handoff` items, `review` and `auto`, the chain's end) and D5 (the overall brief's staff, `worker` on `delegate`) are built; hosts do not advertise level 12 yet.
+Proposed on 2026-11-10; its questions were answered with the recommended values, and staff are workers. It extends ADR 0048 §4, §7 and §8 and ADR 0049 §1, §3 and §4 without changing them, and keeps ADR 0049 §4's rule that delegation crosses workspaces one level deep, through the overall assistant and the user. It raises one limit of ADR 0022 (a worker's `description`). It does not change ADR 0050. Slices D0 (the wire types) D1 (`staff`, `lead`, `handoffs` and `max_steps` in configuration) D2 (`worker` on requests, the brief's staff section, member notes) D3 (`handoff` in the result check, step markers and claims) D4 (`handoff` items, `review` and `auto`, the chain's end) D5 (the overall brief's staff, `worker` on `delegate`) and D6 (`apply-notes {step?}`, the earlier steps' files) are built; hosts do not advertise level 12 yet.
 
 ## Context
 

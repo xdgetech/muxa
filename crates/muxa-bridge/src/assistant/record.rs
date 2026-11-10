@@ -92,13 +92,6 @@ impl RunFor {
         extra
     }
 
-    pub fn notes_base(&self) -> Option<&str> {
-        match self {
-            Self::Request(r) => r.notes_base.as_deref(),
-            Self::Plan(p) => Some(&p.notes_base),
-        }
-    }
-
     /// The request or the plan the run answers.
     pub fn source(&self) -> &str {
         match self {
@@ -187,7 +180,8 @@ pub fn prepare(dir: &Path) -> std::io::Result<()> {
 }
 
 /// Before the agent starts: [`prepare`], the copy of the notes whose base
-/// the record holds, and an overall run's brief. `root` is the workspace's.
+/// the record holds, a later step's earlier steps, and an overall run's
+/// brief. `root` is the workspace's.
 pub fn prepare_run(
     config: &Config,
     record: &Record,
@@ -195,21 +189,28 @@ pub fn prepare_run(
     dir: &Path,
 ) -> Result<(), String> {
     prepare(dir).map_err(|e| format!("cannot create the assistant run folder: {e}"))?;
-    let run = record.assistant_run();
-    if let Some(RunFor::Request(r)) = &run {
-        if let (Some(base), Some(shared)) = (&r.notes_base, &r.shared_base) {
-            let copied = super::notes::copy_at(root, dir, r.notes_place(), base)
-                .and_then(|()| super::notes::copy_into(root, dir, shared));
+    match record.assistant_run() {
+        Some(RunFor::Request(r)) => {
+            let copied = match (&r.notes_base, &r.shared_base) {
+                (Some(base), Some(shared)) => {
+                    super::notes::copy_at(root, dir, r.notes_place(), base)
+                        .and_then(|()| super::notes::copy_into(root, dir, shared))
+                }
+                (Some(base), None) => super::notes::copy_into(root, dir, base),
+                (None, _) => Ok(()),
+            };
             copied.map_err(|e| e.to_string())?;
-            return Ok(());
+            let steps = super::step_files::write(config, &r, dir)?;
+            if steps > 0 {
+                tracing::info!(task = %record.id, request = %r.request, step = r.step(), steps, "earlier steps written");
+            }
+            Ok(())
         }
-    }
-    if let Some(base) = run.as_ref().and_then(RunFor::notes_base) {
-        super::notes::copy_into(root, dir, base).map_err(|e| e.to_string())?;
-    }
-    match run {
-        Some(RunFor::Plan(p)) => super::plan::brief::write(config, &p.plan, dir),
-        _ => Ok(()),
+        Some(RunFor::Plan(p)) => {
+            super::notes::copy_into(root, dir, &p.notes_base).map_err(|e| e.to_string())?;
+            super::plan::brief::write(config, &p.plan, dir)
+        }
+        None => Ok(()),
     }
 }
 

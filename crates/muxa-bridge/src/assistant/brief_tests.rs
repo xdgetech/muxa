@@ -220,3 +220,52 @@ fn every_section_keeps_to_its_budget() {
         }
     }
 }
+
+#[test]
+fn a_last_step_with_every_staff_input_at_its_limit_fits_a_record() {
+    use super::super::staff::Member;
+    use super::super::staff_brief::Earlier;
+    use crate::records::staff::{Handoffs, MAX_DESCRIPTION, MAX_STAFF, MAX_STEPS};
+    let mut b = brief(AssistScope::Compare);
+    b.title = "é".repeat(MAX_TITLE + 50);
+    b.purpose = Some("あ".repeat(MAX_PURPOSE));
+    b.captures = (0..6)
+        .map(|i| format!("{i}{}", "ü".repeat(8 * 1024)))
+        .collect();
+    b.results = (1..=10)
+        .rev()
+        .map(|v| result(v, true, &"ß".repeat(2048)))
+        .collect();
+    b.step = MAX_STEPS;
+    let members: Vec<Member> = (0..MAX_STAFF)
+        .map(|i| Member {
+            worker: format!("member-{i}-{}", "n".repeat(40)),
+            description: "d".repeat(MAX_DESCRIPTION),
+            lead: i == 0,
+        })
+        .collect();
+    b.staff = Some(StaffBrief {
+        worker: members[MAX_STAFF - 1].worker.clone(),
+        description: "d".repeat(MAX_DESCRIPTION),
+        step: MAX_STEPS,
+        max_steps: MAX_STEPS,
+        handoffs: Handoffs::Review,
+        earlier: (1..MAX_STEPS)
+            .map(|k| Earlier {
+                step: k,
+                worker: members[k as usize].worker.clone(),
+                summary: "`".repeat(4096),
+            })
+            .collect(),
+        asked: Some((members[1].worker.clone(), "`".repeat(1024))),
+        members,
+    });
+    let g = b.goal();
+    assert!(g.len() <= MAX_GOAL, "{} bytes", g.len());
+    assert!(g.contains("## Staff") && g.contains("### Earlier steps"));
+    assert!(g.contains(".muxa/assistant/steps/<step>.json"));
+    assert_eq!(
+        g.lines().next_back(),
+        Some(format!("muxa-request: q-0000000a v3 s{MAX_STEPS}").as_str())
+    );
+}

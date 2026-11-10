@@ -32,6 +32,7 @@ pub mod share;
 pub mod staff;
 pub mod staff_brief;
 pub mod start;
+pub mod step_files;
 pub mod steps;
 pub mod store;
 mod tick;

@@ -267,3 +267,65 @@ fn the_copys_own_text_proposes_nothing_and_oversized_notes_fail_the_check() {
     assert!(log.contains("notes must be at most 16 KiB"), "{log}");
     assert!(!log.contains(SENTINEL), "{log}");
 }
+
+#[test]
+fn each_step_applies_its_own_workers_notes_by_hash() {
+    let h = host("review");
+    let worker = |name: &str| {
+        format!("[[worker]]\nname = \"{name}\"\ndescription = \"Job\"\nagent = \"claude-code\"\n")
+    };
+    std::fs::write(
+        h.config.workspaces.as_ref().unwrap(),
+        format!(
+            "[assistant]\nenabled = true\n[[workspace]]\nname = \"w\"\nroot = \"{}\"\n\
+             [workspace.assistant]\ndelegate = true\nstaff = [\"lead\", \"member\"]\n{}{}",
+            h.root.display(),
+            worker("lead"),
+            worker("member"),
+        ),
+    )
+    .unwrap();
+    h.set_live("# Shared\n");
+    let member = Place::Member("member");
+    let empty = notes::read_at(&h.root, member).unwrap().base;
+    let (q, _) = h.asked(None);
+    let proposed = |step: u32, worker: &str, text: &str, base: &str| {
+        let mut r: muxa_protocol::AssistResult = serde_json::from_value(json!({
+            "version": 1, "at": 1, "summary": "s", "step": step, "worker": worker,
+        }))
+        .unwrap();
+        r.notes = Some(muxa_protocol::Notes {
+            text: text.into(),
+            base: base.into(),
+        });
+        r
+    };
+    let shared_base = notes::base_of(b"# Shared\n");
+    Shelf::<AssistantRequest>::open(h.state())
+        .unwrap()
+        .update::<_, StateError>(&q.id, |q| {
+            q.results = vec![
+                proposed(2, "member", "# Member\n", &empty),
+                proposed(1, "lead", "# Lead\n", &shared_base),
+            ];
+            Ok(())
+        })
+        .unwrap();
+
+    // No step: the version's last, the member's own file only.
+    apply_notes(&h.config, &q.id, 1, &empty, None).unwrap();
+    assert_eq!(notes::read_at(&h.root, member).unwrap().text, "# Member\n");
+    assert_eq!(h.live(), "# Shared\n");
+    let again = apply_notes(&h.config, &q.id, 1, &empty, Some(2)).unwrap_err();
+    assert_eq!(again.code, ErrorCode::Conflict);
+    // Step 1 is the lead's: the workspace's NOTES.md, by its own hash.
+    let wrong = apply_notes(&h.config, &q.id, 1, &empty, Some(1)).unwrap_err();
+    assert_eq!(wrong.code, ErrorCode::BadRequest);
+    h.set_live("# Edited\n");
+    let changed = apply_notes(&h.config, &q.id, 1, &shared_base, Some(1)).unwrap_err();
+    assert_eq!(changed.code, ErrorCode::Conflict);
+    h.set_live("# Shared\n");
+    apply_notes(&h.config, &q.id, 1, &shared_base, Some(1)).unwrap();
+    assert_eq!(h.live(), "# Lead\n");
+    assert_eq!(notes::read_at(&h.root, member).unwrap().text, "# Member\n");
+}
