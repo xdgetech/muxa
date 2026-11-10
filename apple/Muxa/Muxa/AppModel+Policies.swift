@@ -61,9 +61,10 @@ extension AppModel {
         await attempt { try await session.reject(item, reason: reason) }
     }
 
-    /// A Reject that takes a reason: on the overall assistant's proposals and hypotheses.
+    /// A Reject that takes a reason: on the overall assistant's proposals and hypotheses,
+    /// and on a write (ADR 0052 §2).
     func rejectTakesReason(_ item: InboxItem) -> Bool {
-        usesPolicies && [.sort, .delegate, .hypothesis].contains(item.kind)
+        usesPolicies && [.sort, .delegate, .hypothesis, .write].contains(item.kind)
     }
 
     private func attempt(_ body: () async throws -> some Any) async -> String? {

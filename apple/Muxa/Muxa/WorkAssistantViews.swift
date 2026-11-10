@@ -208,6 +208,7 @@ struct AskSection: View {
         if !staff.isEmpty {
             StaffPicker(staff: staff, selection: $worker, id: "work-ask-staff")
         }
+        WriterSection(workspace: item.workspace ?? workspace)
         Section {
             Picker("Scope", selection: $scope) {
                 ForEach(AssistScope.choices, id: \.self) { Text($0.shown.capitalized).tag($0) }

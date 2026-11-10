@@ -27,6 +27,9 @@ struct WorkDetail: View {
                     } else {
                         ResultSections(request: request)
                     }
+                    if model.usesWrites {
+                        RequestWritesSection(request: request)
+                    }
                 }
                 tasks(item)
                 if item.state == .waitingDecision {

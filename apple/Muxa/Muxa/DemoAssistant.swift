@@ -18,6 +18,10 @@ struct DemoAssistant: Sendable {
     var runCount = 0
     /// Each workspace's staff, the lead marked (`work` level 12, ADR 0051).
     var staff: [String: [StaffMember]] = [:]
+    /// Each workspace's writer (`work` level 13, ADR 0052); one with a writer takes `review`.
+    var writers: [String: WriterInfo] = [:]
+    /// False as a level 12 host keeps it: `inbox-list` sends no `writes`.
+    var listsWrites = true
 
     typealias Refusal = DemoWork.Refusal
 

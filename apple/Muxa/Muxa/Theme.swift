@@ -98,4 +98,6 @@ enum Icon {
     /// A request passed from one staff member to the next (ADR 0051).
     static let handoff = "arrow.turn.down.right"
     static let staff = "person.2"
+    /// A write outside the host that a Result proposes (ADR 0052).
+    static let write = "paperplane"
 }

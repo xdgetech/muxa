@@ -18,10 +18,22 @@ extension PaneSession {
     /// Answers `item` and returns it as the host saved it. A refusal lists the Inbox
     /// again, because another device or the terminal may have answered first.
     /// Complete Task and Drop Task take `worktree` as `updateTask` does.
+    /// Approve on a `write` item goes through `approveWrite(_:shown:)`, which sends the hash
+    /// of the write the screen showed whole (ADR 0052); here it is refused.
     @discardableResult
     public func answer(
         _ item: InboxItem, _ action: InboxAction, text: String? = nil, option: UInt32? = nil,
         worktree: WorktreeEnd = .remove
+    ) async throws -> InboxItem {
+        if action == .approve, item.kind == .write {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.writeNotShown))
+        }
+        return try await respond(item, action, text: text, option: option, worktree: worktree, hash: nil)
+    }
+
+    /// `answer` with the `hash` a write's approve carries.
+    func respond(
+        _ item: InboxItem, _ action: InboxAction, text: String?, option: UInt32?, worktree: WorktreeEnd, hash: String?
     ) async throws -> InboxItem {
         guard canUseItems else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.itemsUnsupported))
@@ -30,20 +42,23 @@ extension PaneSession {
         // The overall assistant's proposals (ADR 0049 §4): approve sorts a Capture or asks a
         // delegate, and a `capture-saved` or `work-saved` comes before `inbox-saved`. Confirm
         // on a hypothesis sends `policy-saved` first (ADR 0050). Approve on a hand-off starts
-        // the next step, with `work-saved` first (ADR 0051).
-        let proposes = [.sort, .delegate, .hypothesis, .handoff].contains(item.kind)
+        // the next step, with `work-saved` first (ADR 0051). Approve on a write starts the
+        // writer's Task, with `task-saved` first (ADR 0052).
+        let proposes = [.sort, .delegate, .hypothesis, .handoff, .write].contains(item.kind)
         var requestId: UInt64 = 0
         defer {
             savedCaptures[requestId] = nil
             savedWork[requestId] = nil
             savedRequests[requestId] = nil
             savedPolicies[requestId] = nil
+            savedTasks[requestId] = nil
         }
         do {
             try await request { id in
                 requestId = id
                 return .updateInboxEntry(
-                    id: id, entry: item.id, action: action, until: nil, text: text, option: option, worktree: end)
+                    id: id, entry: item.id, action: action, until: nil, text: text, option: option, worktree: end,
+                    hash: hash)
             }
         } catch Failure.bridge(let body) where body.code == .conflict && !proposes {
             savedItems[requestId] = nil
@@ -62,6 +77,10 @@ extension PaneSession {
         case .read, .protect, .unprotect: break
         // The host moved the item down (ADR 0040): its order is the list's.
         case .later: await loadWork()
+        // The writer's Task is listed under its Work item and among the Tasks.
+        case .approve where item.kind == .write:
+            await loadWork()
+            await loadTasks()
         // An approved proposal sorted a Capture, made a request or started a step: the Work list changed.
         // A rejected or confirmed one made a correction or a policy.
         case _ where proposes: await loadWork()

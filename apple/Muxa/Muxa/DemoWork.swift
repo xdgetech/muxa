@@ -163,8 +163,9 @@ struct DemoWork: Sendable {
         taskItems: testItems, assistant: .tests)
 
     /// Try the Demo and the store screenshots, with the overall assistant (`DemoPlans.swift`),
-    /// what the user told it (`DemoPolicies.swift`) and the staff (`DemoStaff.swift`).
-    static let showcase = showcaseStaffed
+    /// what the user told it (`DemoPolicies.swift`), the staff (`DemoStaff.swift`) and their
+    /// writes (`DemoWrites.swift`).
+    static let showcase = showcaseWriting
 
     static let showcaseBase = DemoWork(
         routines: routines(running: nil), entries: entries, sessions: [], taskItems: showcaseItems, assistant: .showcase)

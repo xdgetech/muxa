@@ -54,6 +54,8 @@ extension DemoWork {
         guard var info = plans.assistant else { return nil }
         for i in info.delegates.indices {
             info.delegates[i].staff = assistant.staff[info.delegates[i].workspace] ?? []
+            info.delegates[i].writer = assistant.writers[info.delegates[i].workspace]
+            if assistant.listsWrites { info.delegates[i].writes = info.delegates[i].writer == nil ? Writes.none : .review }
         }
         return info
     }

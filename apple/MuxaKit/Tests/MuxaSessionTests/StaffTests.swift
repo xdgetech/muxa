@@ -25,7 +25,7 @@ final class StaffBridge: PlanBridge, @unchecked Sendable {
 
     override func send(_ line: Data) async throws {
         let req = try Wire.decodeRequest(line)
-        guard case .updateInboxEntry(let id, let entry, let action, _, _, _, _) = req,
+        guard case .updateInboxEntry(let id, let entry, let action, _, _, _, _, _) = req,
               let i = items.firstIndex(where: { $0.id == entry }), let h = items[i].handoff
         else { return try await super.send(line) }
         if action == .approve {

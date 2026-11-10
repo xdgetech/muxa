@@ -97,6 +97,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         work.offersAskAgent = Self.workLevel >= workAskAgent
         work.keepsMemory = Self.workLevel >= workPolicies
         if Self.workLevel < workStaff { work.forgetStaff() }
+        if Self.workLevel < workWrites { work.forgetWrites() }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-old-items") { work.ageForDeleteOld() }
         #endif
@@ -111,24 +112,26 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:12",
+            "task-loop", "tasks-changed", "viewport", "history", "work:13",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:12" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:13" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:12" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:13" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:12" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:13" ? "work:3" : $0 } }
         // A bridge from before Protect and Delete Old (ADR 0046) and Captures (ADR 0048): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:12" ? "work:7" : $0 } }
+        if arguments.contains("-work7") { return all.map { $0 == "work:13" ? "work:7" : $0 } }
         // A bridge from before the overall assistant (ADR 0049): no Today, pins or notes.
-        if arguments.contains("-work9") { return all.map { $0 == "work:12" ? "work:9" : $0 } }
+        if arguments.contains("-work9") { return all.map { $0 == "work:13" ? "work:9" : $0 } }
         // A bridge from before policies (ADR 0050): no Policies, Not today or hypotheses.
-        if arguments.contains("-work10") { return all.map { $0 == "work:12" ? "work:10" : $0 } }
+        if arguments.contains("-work10") { return all.map { $0 == "work:13" ? "work:10" : $0 } }
         // A bridge from before staff and hand-offs (ADR 0051): one assistant per workspace.
-        if arguments.contains("-work11") { return all.map { $0 == "work:12" ? "work:11" : $0 } }
+        if arguments.contains("-work11") { return all.map { $0 == "work:13" ? "work:11" : $0 } }
+        // A bridge from before write proposals (ADR 0052): no writer and no write items.
+        if arguments.contains("-work12") { return all.map { $0 == "work:13" ? "work:12" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -409,6 +412,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 case .sort, .delegate: Self.workLevel >= workPlans
                 case .hypothesis: Self.workLevel >= workPolicies
                 case .handoff: Self.workLevel >= workStaff
+                case .write: Self.workLevel >= workWrites
                 default: true
                 }
             }
@@ -438,6 +442,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             protect(id: id, item: entry, action == .protect)
         case .deleteInbox(let id, let days):
             deleteOld(id: id, days: days)
+        case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, let hash) where isWriteItem(entry):
+            approveWrite(id: id, item: entry, hash: hash)
         // `until` is ignored: Later moves an item down (ADR 0040).
         case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, _) where isOverallProposal(entry):
             approveProposal(id: id, item: entry)
@@ -511,6 +517,35 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             emit(.inboxSaved(inbox: id, entry: saved, item: item))
             ok(id)
             if created { emit(.sessionsChanged) }
+        case .failure(let refusal):
+            emit(.result(id: id, error: refusal.body, sessions: nil))
+        }
+    }
+
+    /// A `write` item (ADR 0052): approve needs its hash. A level 12 host does not know the kind.
+    private func isWriteItem(_ id: String) -> Bool {
+        lock.withLock { work.taskItems.contains { $0.id == id && $0.kind == .write } }
+    }
+
+    /// Approve on a write: `task-saved` with the writer's Task, then `inbox-saved`. Without
+    /// the write's hash it is `bad-request`, as the host answers, and nothing is made.
+    private func approveWrite(id: UInt64, item: String, hash: String?) {
+        guard Self.workLevel >= workWrites else {
+            return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "unknown item kind write"), sessions: nil))
+        }
+        let outcome = lock.withLock { () -> Result<(TaskRecord, InboxItem, Bool), DemoWork.Refusal> in
+            do throws(DemoWork.Refusal) {
+                let (record, saved, made) = try work.approveWrite(item, hash: hash, tasks: &tasks)
+                if made { sessions.append(Self.taskSession(record, number: 20 + sessions.count)) }
+                return .success((record, saved, made))
+            } catch { return .failure(error) }
+        }
+        switch outcome {
+        case .success(let (record, saved, made)):
+            emit(.taskSaved(task: id, record: record))
+            emit(.inboxSaved(inbox: id, entry: nil, item: saved))
+            ok(id)
+            if made { emit(.sessionsChanged) }
         case .failure(let refusal):
             emit(.result(id: id, error: refusal.body, sessions: nil))
         }

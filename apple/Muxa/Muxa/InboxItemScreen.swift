@@ -13,6 +13,8 @@ struct InboxItemScreen: View {
     @State private var reply = ""
     @State private var approving: InboxItem?
     @State private var rejecting: InboxItem?
+    /// A write whose Approve waits on the confirmation that names its target once more.
+    @State private var confirmingWrite: InboxItem?
     @State private var sending = false
     @State private var failure: String?
     @State private var lostWork: LostWork?
@@ -36,7 +38,8 @@ struct InboxItemScreen: View {
                         .accessibilityIdentifier("item-question")
                     sourceLine(item)
                 }
-                if let summary = item.summary, !summary.isEmpty {
+                // A write's reason is plain text in its block: nothing of a write renders Markdown.
+                if let summary = item.summary, !summary.isEmpty, item.kind != .write {
                     ItemSummaryText(item: item, summary: summary)
                 }
                 if let question = item.prompt?.question {
@@ -58,6 +61,11 @@ struct InboxItemScreen: View {
                 }
                 if let handoff = item.handoff {
                     HandoffProposalView(proposal: handoff)
+                        .padding(12)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+                }
+                if item.kind == .write, let write = item.write {
+                    WriteProposalView(item: item, write: write)
                         .padding(12)
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
@@ -84,6 +92,15 @@ struct InboxItemScreen: View {
             }
         }
         .rejectReason(item: $rejecting) { item, reason in send(item, .reject, reason: reason) }
+        .confirmationDialog(
+            "Approve this write?", isPresented: Binding(get: { confirmingWrite != nil }, set: { if !$0 { confirmingWrite = nil } }),
+            titleVisibility: .visible, presenting: confirmingWrite
+        ) { item in
+            Button("Approve") { approveWrite(item) }.accessibilityIdentifier("write-confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: { item in
+            Text(verbatim: "The writer writes it to \(item.write?.target ?? "")")
+        }
         .lostWorkAlert($lostWork)
         .alert("Can't Answer", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
@@ -91,7 +108,7 @@ struct InboxItemScreen: View {
             Text(failure ?? "")
         }
         .background {
-            let main = ItemAnswers(item, replying: hasReply).main
+            let main = ItemAnswers(item, replying: hasReply, showsWrite: model.showsWrite(item)).main
             Button("Send the Main Answer") { if let main { perform(item, main) } }
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(main == nil || sending)
@@ -130,7 +147,7 @@ struct InboxItemScreen: View {
     /// does with the item, apart from what the agent asked.
     @ViewBuilder
     private func topBar(_ item: InboxItem) -> some View {
-        let answers = ItemAnswers(item)
+        let answers = ItemAnswers(item, showsWrite: model.showsWrite(item))
         if answers.later {
             Button(InboxAction.later.title(for: item.kind), systemImage: Icon.later) { perform(item, .later) }
                 .tint(Theme.later)
@@ -173,7 +190,7 @@ struct InboxItemScreen: View {
     /// The answers to what the agent asked, then the reply box.
     @ViewBuilder
     private func answerBar(_ item: InboxItem) -> some View {
-        let answers = ItemAnswers(item, replying: hasReply)
+        let answers = ItemAnswers(item, replying: hasReply, showsWrite: model.showsWrite(item))
         let options = answers.chooses ? item.prompt?.options ?? [] : []
         if !options.isEmpty || !answers.decisions.isEmpty || answers.text != nil {
             VStack(spacing: 8) {
@@ -238,10 +255,26 @@ struct InboxItemScreen: View {
     private func perform(_ item: InboxItem, _ action: InboxAction) {
         switch action {
         case .approve where item.kind == .proposal: approving = item
+        // Only a write shown whole has Approve; its confirmation names the target once more.
+        case .approve where item.kind == .write: if model.showsWrite(item) { confirmingWrite = item }
         // A reason is offered, never required (ADR 0050 §2).
         case .reject where model.rejectTakesReason(item): rejecting = item
         case _ where action.needsText && !hasReply: replying = true
         default: send(item, action)
+        }
+    }
+
+    /// Sends the hash of the write this screen shows (ADR 0052): the listed item's write.
+    private func approveWrite(_ item: InboxItem) {
+        guard let shown = item.write else { return }
+        sending = true
+        Task {
+            defer { sending = false }
+            do {
+                answered(try await model.session.approveWrite(item, shown: shown))
+            } catch {
+                failure = PaneSession.describe(error)
+            }
         }
     }
 

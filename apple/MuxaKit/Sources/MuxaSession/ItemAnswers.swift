@@ -22,9 +22,13 @@ public struct ItemAnswers: Equatable, Sendable {
     /// `choose` is offered: the prompt's options are the decisions.
     public var chooses: Bool
 
-    /// `replying`: the reply box has text.
-    public init(_ item: InboxItem, replying: Bool = false) {
-        let answers = item.answers.filter { $0 != .read && $0 != .protect && $0 != .unprotect }
+    /// `replying`: the reply box has text. `showsWrite`: the screen shows a `write` item's
+    /// content whole and approves it with its hash (ADR 0052); elsewhere a write has no Approve.
+    public init(_ item: InboxItem, replying: Bool = false, showsWrite: Bool = false) {
+        let approves = item.kind != .write || (showsWrite && item.write != nil)
+        let answers = item.answers.filter {
+            $0 != .read && $0 != .protect && $0 != .unprotect && (approves || $0 != .approve)
+        }
         chooses = answers.contains(.choose)
         done = answers.first { $0 == .keepOpen || $0 == .dismiss }
         later = answers.contains(.later)

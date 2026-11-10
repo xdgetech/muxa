@@ -55,6 +55,7 @@ struct CaptureSheet: View {
                     if !staff.isEmpty {
                         StaffPicker(staff: staff, selection: $draft.worker, id: "capture-staff")
                     }
+                    WriterSection(workspace: draft.workspace)
                 }
                 if let message = error ?? visibleProblem {
                     Section {
