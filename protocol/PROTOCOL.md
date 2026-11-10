@@ -8,6 +8,7 @@ The contract between `muxa-bridge` and its clients. The fixtures in `fixtures/` 
 - Each direction is a stream of JSON objects, one per line, in UTF-8. Lines end with `\n`.
 - Byte payloads (`data`) are standard base64. Pane content is raw bytes, not UTF-8 text.
 - Unknown fields must be ignored. A client must ignore message types it does not know. The bridge answers unknown request types with a `bad-request` error.
+- A newer host may add a value to an enumerated field of a message: a kind, a state, an answer, a delivery, a code. A client reads the rest of the message and shows that value as unknown. One new value never fails a whole list. Requests are stricter: the bridge answers a request that names a value it does not know, `unknown` included, with `bad-request` before any change.
 - One request line is at most 4 MiB.
 
 ## Session
@@ -623,4 +624,4 @@ A bridge with `work` level 2 starts ask sessions: the workspace's agent in a rep
 
 ## Versioning
 
-`protocol` changes only on incompatible changes. Adding a message type, a request type, an optional field or a capability is compatible. Clients check `capabilities` before using optional features.
+`protocol` changes only on incompatible changes. Adding a message type, a request type, an optional field, a value of an enumerated message field or a capability is compatible. Clients check `capabilities` before using optional features.

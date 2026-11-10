@@ -152,6 +152,7 @@ fn entry_line(e: &InboxEntry) -> String {
     let kind = match e.kind {
         InboxEntryKind::Briefing => "briefing",
         InboxEntryKind::Proposal => "proposal",
+        InboxEntryKind::Unknown => "unknown",
     };
     let state = match (e.disposition, e.later_at, &e.task) {
         (Disposition::Open, Some(_), _) => "later".into(),

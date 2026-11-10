@@ -52,7 +52,7 @@ fn fill_states(s: &mut Session, agents: &Registry, procs: &Processes) {
 }
 
 fn set_status(p: &mut Pane, found: &Found) {
-    p.agent = found.status.as_ref().map(convert::agent_status);
+    p.agent = found.status.as_ref().and_then(convert::agent_status);
 }
 
 /// A session without `@agent_repo_dir` gets the repo of its first visible pane.

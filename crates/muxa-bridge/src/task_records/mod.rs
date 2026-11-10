@@ -624,13 +624,14 @@ fn write_status(
     rev: Option<u64>,
     status: TaskStatus,
 ) -> Result<Record, ErrorBody> {
+    let new = status_of(status)?;
     let store = config.store()?;
     let rev = match rev {
         Some(rev) => rev,
         None => store.get(task).map_err(|e| store_error(&e))?.rev,
     };
     let record = store
-        .update(task, rev, |r| r.status = status_of(status))
+        .update(task, rev, |r| r.status = new)
         .map_err(|e| store_error(&e))?;
     tracing::info!(task = %record.id, rev = record.rev, "task status set");
     if matches!(status, TaskStatus::Done | TaskStatus::Dropped) {
@@ -691,12 +692,17 @@ fn finished(r: &Record) -> bool {
     matches!(r.status, Status::Done | Status::Dropped)
 }
 
-fn status_of(s: TaskStatus) -> Status {
+/// A request never decodes an unknown status; this keeps the store safe anyway.
+fn status_of(s: TaskStatus) -> Result<Status, ErrorBody> {
     match s {
-        TaskStatus::Open => Status::Open,
-        TaskStatus::Review => Status::Review,
-        TaskStatus::Done => Status::Done,
-        TaskStatus::Dropped => Status::Dropped,
+        TaskStatus::Open => Ok(Status::Open),
+        TaskStatus::Review => Ok(Status::Review),
+        TaskStatus::Done => Ok(Status::Done),
+        TaskStatus::Dropped => Ok(Status::Dropped),
+        TaskStatus::Unknown => Err(convert::error_body(
+            ErrorCode::BadRequest,
+            "unknown status; this muxa-bridge does not know it",
+        )),
     }
 }
 

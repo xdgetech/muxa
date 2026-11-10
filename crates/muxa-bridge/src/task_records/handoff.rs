@@ -457,7 +457,7 @@ pub async fn agent_pane(
         let adapter_status = found
             .as_ref()
             .and_then(|(_, found)| found.status.as_ref())
-            .map(crate::convert::agent_status);
+            .and_then(crate::convert::agent_status);
         let seen = found.map(|(agent, found)| Seen {
             agent: agent.to_owned(),
             session: found.session.as_ref().map(|s| s.id.clone()),

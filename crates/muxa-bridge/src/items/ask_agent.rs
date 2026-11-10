@@ -162,6 +162,7 @@ fn prompt(item: &InboxItem, text: &str) -> String {
         ItemKind::Sort => "proposal to sort a capture",
         ItemKind::Delegate => "proposal to ask a delegate",
         ItemKind::Hypothesis => "hypothesis about the user",
+        ItemKind::Unknown => "item",
     };
     let source = match &item.routine {
         Some(r) => format!("Routine {r}"),

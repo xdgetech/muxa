@@ -166,6 +166,9 @@ pub struct InboxEntry {
 pub enum InboxEntryKind {
     Briefing,
     Proposal,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -175,6 +178,9 @@ pub enum Disposition {
     Later,
     Approved,
     Dismissed,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,6 +239,9 @@ pub enum InboxAction {
     AskAgent,
     /// A `hypothesis`: makes a policy of it (level 10, ADR 0048).
     Confirm,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[cfg(test)]

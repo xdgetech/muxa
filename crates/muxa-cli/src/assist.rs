@@ -11,7 +11,10 @@ use crate::conn::Conn;
 use crate::work::{self, WAIT};
 
 pub fn scope(name: &str) -> Option<AssistScope> {
-    serde_json::from_value(json!(name)).ok()
+    // A name this build does not know decodes as `Unknown`; the host refuses it.
+    serde_json::from_value(json!(name))
+        .ok()
+        .filter(muxa_protocol::Known::is_known)
 }
 
 /// `assist WORK …`.

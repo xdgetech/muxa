@@ -264,6 +264,8 @@ fn item_for(p: &Proposal, facts: &Facts, id: String, at: u64) -> Option<InboxIte
                     (format!("Add the Capture to: {}", w.title), w.title.clone())
                 }
                 SortAction::Note => (format!("Keep the Capture as a note: {line}"), line),
+                // The plan check accepts only known actions.
+                SortAction::Unknown => return None,
             }
         }
         Proposal::Delegate(d) => {

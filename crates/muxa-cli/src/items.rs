@@ -28,7 +28,10 @@ pub struct Answer {
 
 /// The kebab-case name on the wire.
 pub fn action(name: &str) -> Option<InboxAction> {
-    serde_json::from_value(json!(name)).ok()
+    // A name this build does not know decodes as `Unknown`; the host refuses it.
+    serde_json::from_value(json!(name))
+        .ok()
+        .filter(muxa_protocol::Known::is_known)
 }
 
 impl Answer {
@@ -94,6 +97,7 @@ pub fn line(item: &InboxItem, now: u64) -> String {
         ItemKind::Sort => "sort",
         ItemKind::Delegate => "delegate",
         ItemKind::Hypothesis => "hypothesis",
+        ItemKind::Unknown => "unknown",
     };
     let mut state = wire(json!(item.state));
     if item.state == ItemState::Open && item.later_at.is_some() {

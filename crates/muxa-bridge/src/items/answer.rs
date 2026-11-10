@@ -108,6 +108,8 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Drop => Plan::Status(TaskStatus::Dropped),
         Retry => Plan::Restart,
         Branch => Plan::Branch,
+        // `answers` never lists it, so the check above refused it already.
+        Unknown => return Err(not_allowed(item, answer.action, &allowed)),
         // Hypotheses come with work level 10 (ADR 0048 slice C5).
         Confirm => return Err(bad("hypothesis items need work level 10")),
         Reject if item.kind == ItemKind::Hypothesis => {

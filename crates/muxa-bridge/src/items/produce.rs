@@ -279,7 +279,7 @@ pub(crate) fn question(
             Some((PromptKind::Question, Some(q))) => q.to_owned(),
             Some((PromptKind::Question, None)) => "The agent asks a question".into(),
             Some((PromptKind::Plan, _)) => "Approve the plan?".into(),
-            None => "The agent waits for you".into(),
+            Some((PromptKind::Unknown, _)) | None => "The agent waits for you".into(),
         },
         Need::Turn(..) | Need::Passed(_) => format!("Ready for review: {title}"),
         Need::Error(_) => "The agent stopped with an error".into(),

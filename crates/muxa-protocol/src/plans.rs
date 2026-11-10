@@ -119,6 +119,9 @@ pub enum BasisKind {
     Hypothesis,
     /// Level 10: a correction `x-…` in `source`.
     Correction,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A row that entered, left or moved since the previous plan.
@@ -136,6 +139,9 @@ pub enum ChangeKind {
     Entered,
     Left,
     Moved,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A `sort` Inbox item's action: what `sort-capture` would do.
@@ -197,6 +203,9 @@ pub enum Share {
     None,
     Outline,
     Summaries,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Whether the overall assistant may ask this workspace (ADR 0047 §4).
@@ -209,4 +218,7 @@ pub enum OverallRequests {
     Review,
     /// Sent without approval, within every budget.
     Auto,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }

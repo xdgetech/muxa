@@ -36,7 +36,10 @@ pub struct NewCapture {
 }
 
 pub fn source(name: &str) -> Option<CaptureSource> {
-    serde_json::from_value(json!(name)).ok()
+    // A name this build does not know decodes as `Unknown`; the host refuses it.
+    serde_json::from_value(json!(name))
+        .ok()
+        .filter(muxa_protocol::Known::is_known)
 }
 
 /// A fresh client id: the time, the process and a random number.

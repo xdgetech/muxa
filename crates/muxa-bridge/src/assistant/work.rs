@@ -85,6 +85,9 @@ pub fn sort(config: &Config, s: Sort) -> Result<(Capture, Option<WorkItem>), Err
                 Some(link_capture(&works, work, &c.id, at)?)
             }
             SortAction::Note => None,
+            SortAction::Unknown => {
+                return Err(bad("sort-capture: unknown action").into());
+            }
         };
         if let Some(item) = &item {
             c.work.push(item.id.clone());
@@ -115,6 +118,8 @@ fn check_sort(config: &Config, s: &Sort) -> Result<Option<String>, ErrorBody> {
         }
         SortAction::Note if s.work.is_some() => Err(bad("sort-capture: note takes no work id")),
         SortAction::Link | SortAction::Note => Ok(None),
+        // A request never decodes one; refused here too, before any write.
+        SortAction::Unknown => Err(bad("sort-capture: unknown action")),
     }
 }
 

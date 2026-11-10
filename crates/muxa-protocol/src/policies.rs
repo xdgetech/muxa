@@ -74,6 +74,9 @@ pub enum CorrectionKind {
     Unpinned,
     /// Later: "not now", never "unimportant".
     Deferred,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The overall assistant's guess at a preference, which the user confirms or rejects.
@@ -103,6 +106,9 @@ pub struct Hypothesis {
 pub enum Confidence {
     Low,
     Medium,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +120,9 @@ pub enum HypothesisState {
     Rejected,
     /// Nobody answered it in 14 days.
     Expired,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A `hypothesis` Inbox item's payload: what `confirm` makes a policy of.

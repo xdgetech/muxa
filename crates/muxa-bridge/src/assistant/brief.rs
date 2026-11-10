@@ -158,12 +158,14 @@ pub fn scope_name(scope: AssistScope) -> &'static str {
         AssistScope::Research => "research",
         AssistScope::Compare => "compare",
         AssistScope::Draft => "draft",
+        AssistScope::Unknown => "unknown",
     }
 }
 
 fn scope_rule(scope: AssistScope) -> &'static str {
     match scope {
-        AssistScope::Research => {
+        // A scope a newer host stored gets the narrowest rule.
+        AssistScope::Research | AssistScope::Unknown => {
             "Research and report. Read what you need: the web, files, the workspace's repos. \
              Change nothing outside this folder: no edits, commits, messages or changes in \
              external systems."

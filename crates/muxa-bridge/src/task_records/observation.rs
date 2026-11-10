@@ -164,7 +164,7 @@ fn apply(session: &mut Session, record: &Record, agents: &Registry, procs: Optio
             }
             procs
                 .and_then(|procs| accepted(session, pane, record, agents, procs))
-                .and_then(|(_, found)| found.status.as_ref().map(convert::agent_status))
+                .and_then(|(_, found)| found.status.as_ref().and_then(convert::agent_status))
         })
         .collect();
     for (pane, status) in session.panes.iter_mut().zip(statuses) {

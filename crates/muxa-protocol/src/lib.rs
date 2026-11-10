@@ -3,6 +3,7 @@
 
 mod assistant;
 mod items;
+mod known;
 mod plans;
 mod policies;
 mod restart_recovery;
@@ -14,6 +15,7 @@ pub use assistant::{
     WorkAction, WorkItem, WorkState,
 };
 pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_ITEMS};
+pub use known::Known;
 pub use plans::{
     AssistantInfo, Basis, BasisKind, ChangeKind, DelegateInfo, DelegateProposal, Minutes,
     OverallRequests, Plan, PlanChange, PlanRow, Share, SortProposal, WORK_PLANS,
@@ -254,6 +256,7 @@ pub enum Request {
         task: String,
         /// The `rev` the client last saw.
         rev: u64,
+        #[serde(deserialize_with = "known::known")]
         status: TaskStatus,
         /// With `done` or `dropped`: what happens to the Task's worktree
         /// (`work` level 7, ADR 0043). Without it, the worktree stays.
@@ -327,6 +330,7 @@ pub enum Request {
         id: u64,
         /// e.g. `e-1a2b3c4d`, or an item's `i-` id.
         entry: String,
+        #[serde(deserialize_with = "known::known")]
         action: InboxAction,
         /// With `later`: epoch seconds.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -358,7 +362,11 @@ pub enum Request {
         #[serde(rename = "clientId")]
         client_id: String,
         text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            deserialize_with = "known::known_opt",
+            skip_serializing_if = "Option::is_none"
+        )]
         source: Option<CaptureSource>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         workspace: Option<String>,
@@ -371,6 +379,7 @@ pub enum Request {
         id: u64,
         capture: String,
         rev: u64,
+        #[serde(deserialize_with = "known::known")]
         action: SortAction,
         /// With `link`: the Work item.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -408,6 +417,7 @@ pub enum Request {
         id: u64,
         work: String,
         rev: u64,
+        #[serde(deserialize_with = "known::known")]
         scope: AssistScope,
         /// Absent: the Work item's workspace.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -938,6 +948,9 @@ pub enum LoopState {
     Paused,
     Passed,
     Stopped,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why a loop is `paused` or `stopped`.
@@ -962,6 +975,9 @@ pub enum LoopReason {
     Status,
     /// The user stopped it.
     User,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The last check a loop ran.
@@ -997,6 +1013,9 @@ pub enum PendingPromptKind {
     Start,
     /// The prompt of `restart-agent`.
     Restart,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// One agent that worked on a task, as the bridge started or restarted it.
@@ -1038,6 +1057,9 @@ pub enum RunReason {
     Start,
     /// `restart-agent` replaced the agent.
     Restart,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Set by the user; separate from the agent's state. A passing Task Loop moves
@@ -1050,6 +1072,9 @@ pub enum TaskStatus {
     Review,
     Done,
     Dropped,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A workspace from the host's config; `create-task` names one.
@@ -1125,6 +1150,9 @@ pub enum DocKind {
     Repo,
     /// Written by the pane's agent outside the repo.
     Plan,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1213,6 +1241,9 @@ pub enum ChangeStatus {
     Untracked,
     /// A merge conflict.
     Conflicted,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// One item of an agent conversation, the same for every agent.
@@ -1236,6 +1267,9 @@ pub enum ChatKind {
     Assistant,
     Tool,
     Notice,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A choice the agent waits on, e.g. a permission. The adapter knows the agent's
@@ -1261,6 +1295,9 @@ pub enum PromptKind {
     Question,
     /// The agent asks to leave plan mode.
     Plan,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1312,6 +1349,9 @@ pub enum ErrorCode {
     WouldLoseWork,
     Tmux,
     Internal,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1364,6 +1404,8 @@ pub enum Role {
     Agent,
     Shell,
     Hidden,
+    /// Also a role a newer host added.
+    #[serde(other)]
     Unknown,
 }
 
@@ -1383,6 +1425,9 @@ pub enum AgentState {
     Idle,
     Done,
     Error,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 mod base64_bytes {

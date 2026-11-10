@@ -37,6 +37,9 @@ pub enum CaptureSource {
     App,
     Tmux,
     Cli,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +49,9 @@ pub enum CaptureState {
     Received,
     /// Sorted into a Work item, linked to one, or kept as a note.
     Sorted,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The user's unfinished work. Only the user completes or withdraws it.
@@ -98,6 +104,9 @@ pub enum WorkState {
     WaitingDecision,
     Done,
     Withdrawn,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// One delegation of a Work item to a workspace's agent. Each `version`
@@ -136,6 +145,9 @@ pub enum AssistScope {
     Research,
     Compare,
     Draft,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Derived from the run record and the adapter, never from the agent's words.
@@ -156,6 +168,9 @@ pub enum Delivery {
     TimedOut,
     CancelRequested,
     Cancelled,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// What a run returned, after the host's check.
@@ -242,6 +257,7 @@ pub struct PossibleDuplicate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistSpec {
+    #[serde(deserialize_with = "crate::known::known")]
     pub scope: AssistScope,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
@@ -256,6 +272,9 @@ pub enum SortAction {
     Link,
     /// Keep the Capture as a note; no Work item.
     Note,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

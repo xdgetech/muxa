@@ -950,3 +950,126 @@ fn policy_fixtures_round_trip() {
         serde_json::from_str(r#"{"type":"inbox-list","inbox":1,"entries":[]}"#).unwrap();
     assert!(matches!(old, Message::InboxList { policies, .. } if policies.is_empty()));
 }
+
+/// The fixtures' `inbox-list` lines with the values a newer host may add: an
+/// older client still reads the whole list, and sees each new value as unknown.
+#[test]
+fn a_newer_hosts_values_decode_as_unknown() {
+    use muxa_protocol::{
+        AssistScope, BasisKind, ChangeKind, Confidence, CorrectionKind, Delivery, HypothesisState,
+        InboxAction, ItemKind, ItemState, OverallRequests, Share, WorkState,
+    };
+    use serde_json::{Value, json};
+    let lists: Vec<Value> = std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/assistant/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+    .lines()
+    .map(|l| serde_json::from_str::<Value>(l).unwrap())
+    .filter(|v| v["type"] == "inbox-list")
+    .collect();
+    let mut plans = lists[1].clone();
+    plans["items"][0]["kind"] = json!("reminder");
+    plans["items"][0]["state"] = json!("snoozed");
+    plans["items"][0]["answers"] = json!(["approve", "snooze", "later"]);
+    plans["work"][0]["state"] = json!("blocked");
+    plans["captures"][0]["source"] = json!("mail");
+    plans["requests"][0]["delivery"] = json!("queued");
+    plans["requests"][0]["scope"] = json!("summarize");
+    plans["plans"][0]["delivery"] = json!("queued");
+    plans["plans"][0]["top"][0]["basis"][0]["kind"] = json!("calendar");
+    plans["plans"][0]["changed"][0]["change"] = json!("split");
+    plans["assistant"]["delegates"][0]["share"] = json!("everything");
+    plans["assistant"]["delegates"][0]["overallRequests"] = json!("ask-first");
+    let Message::InboxList {
+        items,
+        work,
+        captures,
+        requests,
+        plans,
+        assistant: Some(assistant),
+        ..
+    } = serde_json::from_value(plans).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (items[0].kind, items[0].state),
+        (ItemKind::Unknown, ItemState::Unknown)
+    );
+    assert_eq!(
+        items[0].answers,
+        [
+            InboxAction::Approve,
+            InboxAction::Unknown,
+            InboxAction::Later
+        ]
+    );
+    assert_eq!(work[0].state, WorkState::Unknown);
+    assert_eq!(captures[0].source, muxa_protocol::CaptureSource::Unknown);
+    assert_eq!(
+        (requests[0].delivery, requests[0].scope),
+        (Delivery::Unknown, AssistScope::Unknown)
+    );
+    assert_eq!(plans[0].delivery, Delivery::Unknown);
+    assert_eq!(plans[0].top[0].basis[0].kind, BasisKind::Unknown);
+    assert_eq!(plans[0].changed[0].change, ChangeKind::Unknown);
+    assert_eq!(
+        (
+            assistant.delegates[0].share,
+            assistant.delegates[0].overall_requests
+        ),
+        (Share::Unknown, OverallRequests::Unknown)
+    );
+
+    let mut policies = lists[2].clone();
+    policies["hypotheses"][0]["state"] = json!("superseded");
+    policies["hypotheses"][0]["confidence"] = json!("high");
+    policies["corrections"][0]["kind"] = json!("snoozed");
+    let Message::InboxList {
+        hypotheses,
+        corrections,
+        ..
+    } = serde_json::from_value(policies).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (hypotheses[0].state, hypotheses[0].confidence),
+        (HypothesisState::Unknown, Confidence::Unknown)
+    );
+    assert_eq!(corrections[0].kind, CorrectionKind::Unknown);
+
+    // Tasks, errors and panes too.
+    let task = r#"{"type":"task-saved","task":1,"record":{"id":"t-000001","rev":1,"workspace":"w","title":"T","goal":"G","status":"paused","createdAt":1,"updatedAt":1,"runs":[{"id":1,"startedAt":1,"reason":"resume"}]}}"#;
+    let Message::TaskSaved { record, .. } = serde_json::from_str(task).unwrap() else {
+        panic!()
+    };
+    assert_eq!(record.status, muxa_protocol::TaskStatus::Unknown);
+    assert_eq!(record.runs[0].reason, muxa_protocol::RunReason::Unknown);
+    let error = r#"{"type":"result","id":1,"error":{"code":"rate-limited","message":"m"}}"#;
+    let Message::Result { error: Some(e), .. } = serde_json::from_str(error).unwrap() else {
+        panic!()
+    };
+    assert_eq!(e.code, muxa_protocol::ErrorCode::Unknown);
+}
+
+/// A request names only values the host knows: a newer client's value, or
+/// `unknown` itself, is still a decode error, so the bridge refuses it.
+#[test]
+fn a_request_with_an_unknown_value_is_refused() {
+    for line in [
+        r#"{"type":"update-inbox","id":1,"entry":"i-1a2b3c4d","action":"snooze"}"#,
+        r#"{"type":"update-inbox","id":1,"entry":"i-1a2b3c4d","action":"unknown"}"#,
+        r#"{"type":"update-task","id":1,"task":"t-000001","rev":2,"status":"unknown"}"#,
+        r#"{"type":"capture","id":1,"clientId":"x","text":"t","source":"mail"}"#,
+        r#"{"type":"capture","id":1,"clientId":"x","text":"t","workspace":"w","assist":{"scope":"summarize"}}"#,
+        r#"{"type":"sort-capture","id":1,"capture":"c-0a1b2c3d","rev":1,"action":"unknown"}"#,
+        r#"{"type":"request-assistant","id":1,"work":"w-0a1b2c3d","rev":1,"scope":"summarize"}"#,
+    ] {
+        assert!(serde_json::from_str::<Request>(line).is_err(), "{line}");
+    }
+    let known = r#"{"type":"capture","id":1,"clientId":"x","text":"t","source":"tmux","assist":{"scope":"draft"}}"#;
+    assert!(serde_json::from_str::<Request>(known).is_ok());
+}

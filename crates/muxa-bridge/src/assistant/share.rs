@@ -102,7 +102,7 @@ impl Sections {
         }
         let i = self.members.iter().position(|m| m.name == name)?;
         let level = match self.members[i].share {
-            Share::None => return None,
+            Share::None | Share::Unknown => return None,
             Share::Outline => Level::Outline,
             Share::Summaries => Level::Summaries,
         };
@@ -435,7 +435,7 @@ fn render(s: &Sections, entries: &[Entry], left_out: usize, now: u64) -> String 
             _ => "summaries",
         };
         let asks = match m.requests {
-            OverallRequests::None => "you may not ask it",
+            OverallRequests::None | OverallRequests::Unknown => "you may not ask it",
             OverallRequests::Review => "you may propose requests to it; the user approves each",
             OverallRequests::Auto => "you may propose requests to it",
         };

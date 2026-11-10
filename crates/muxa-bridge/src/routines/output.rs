@@ -205,7 +205,8 @@ fn check_item(raw: RawItem) -> Result<Item, Vec<String>> {
     }
     let fields = (raw.action, raw.target, raw.content);
     let proposal = match (kind, fields) {
-        (Some(InboxEntryKind::Briefing), (None, None, None)) | (None, _) => None,
+        (Some(InboxEntryKind::Briefing), (None, None, None))
+        | (None | Some(InboxEntryKind::Unknown), _) => None,
         (Some(InboxEntryKind::Briefing), _) => {
             reasons.push("a briefing has no action, target or content.".into());
             None

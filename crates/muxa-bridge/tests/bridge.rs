@@ -59,6 +59,38 @@ async fn rejects_bad_requests_and_keeps_going() {
         error_code(&bridge.result(Some(77)).await),
         Some(ErrorCode::BadRequest)
     );
+    // An action or status a newer client knows, or `unknown` itself, is not
+    // taken as one: protocol enums read unknown values only in messages.
+    for (id, line) in [
+        (
+            70,
+            r#"{"type":"update-inbox","id":70,"entry":"i-1a2b3c4d","action":"snooze"}"#,
+        ),
+        (
+            71,
+            r#"{"type":"update-inbox","id":71,"entry":"i-1a2b3c4d","action":"unknown"}"#,
+        ),
+        (
+            72,
+            r#"{"type":"update-task","id":72,"task":"t-000001","rev":1,"status":"unknown"}"#,
+        ),
+        (
+            73,
+            r#"{"type":"sort-capture","id":73,"capture":"c-0a1b2c3d","rev":1,"action":"unknown"}"#,
+        ),
+    ] {
+        bridge.send_raw(line).await;
+        // Refused when decoded, before any lookup of the entry or the task.
+        let Message::Result { error: Some(e), .. } = bridge.result(Some(id)).await else {
+            panic!("{line} was taken")
+        };
+        assert_eq!(e.code, ErrorCode::BadRequest, "{line}");
+        assert!(
+            e.message.contains("does not know it"),
+            "{line}: {}",
+            e.message
+        );
+    }
     bridge
         .send_raw(&format!(
             r#"{{"type":"text","id":78,"pane":"%0","text":"{}"}}"#,

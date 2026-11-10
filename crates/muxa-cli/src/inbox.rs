@@ -68,14 +68,16 @@ pub fn item<'a>(record: &'a TaskRecord, sessions: &'a [Session]) -> Item<'a> {
         .iter()
         .find(|s| s.task_id.as_deref() == Some(record.id.as_str()));
     // A shell in the foreground means the state is likely stale: no state.
+    // A state a newer host added is no state either.
     let agent = session
         .and_then(agent_pane)
         .filter(|p| !p.shell_foreground)
-        .and_then(|p| p.agent.as_ref());
+        .and_then(|p| p.agent.as_ref())
+        .filter(|a| a.state != AgentState::Unknown);
     let group = match (record.status, agent.map(|a| a.state)) {
         (TaskStatus::Done | TaskStatus::Dropped, _) => Group::Closed,
         _ if loop_needs_user(record) => Group::NeedsAttention,
-        (_, None) => Group::NoAgent,
+        (_, None | Some(AgentState::Unknown)) => Group::NoAgent,
         (_, Some(AgentState::Waiting | AgentState::Error)) => Group::NeedsAttention,
         (_, Some(AgentState::Running)) => Group::Running,
         (_, Some(AgentState::Idle | AgentState::Done)) => Group::ReadyForReview,
@@ -105,7 +107,7 @@ fn loop_needs_user(record: &TaskRecord) -> bool {
     record.r#loop.as_ref().is_some_and(|l| match l.state {
         LoopState::Paused => true,
         LoopState::Stopped => !matches!(l.reason, Some(LoopReason::User | LoopReason::Status)),
-        LoopState::Armed | LoopState::Checking | LoopState::Passed => false,
+        LoopState::Armed | LoopState::Checking | LoopState::Passed | LoopState::Unknown => false,
     })
 }
 

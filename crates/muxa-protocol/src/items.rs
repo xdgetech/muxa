@@ -95,6 +95,9 @@ pub enum ItemKind {
     Delegate,
     /// Level 10: the overall assistant proposes a hypothesis about the user.
     Hypothesis,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +109,9 @@ pub enum ItemState {
     /// The need ended without an answer from the Inbox, e.g. the user
     /// answered in the terminal.
     Resolved,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// What the item's evidence is. The client opens each through the pane's

@@ -29,6 +29,7 @@ pub(crate) async fn end(
     status: TaskStatus,
     choice: WorktreeEnd,
 ) -> Result<Record, ErrorBody> {
+    let new = status_of(status)?;
     let env = cx.env().await?;
     let sessions = muxa_tmux::list_sessions(&env.client)
         .await
@@ -80,7 +81,7 @@ pub(crate) async fn end(
     let id = task.to_owned();
     let record = blocking(move || {
         let record = claim
-            .update(|r| r.status = status_of(status))
+            .update(|r| r.status = new)
             .map_err(|e| store_error(&e))?
             .clone();
         drop(claim);

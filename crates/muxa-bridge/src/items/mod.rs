@@ -59,6 +59,8 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Sort | ItemKind::Delegate => return vec![Approve, Reject, Later],
         // ADR 0048 §3; the host makes none before slice C5.
         ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
+        // Stored by a newer host: no answer has a known meaning.
+        ItemKind::Unknown => return Vec::new(),
     };
     // An item with a session sends its text to its own agent (ADR 0040 §4).
     if item.session.is_none() {
@@ -76,12 +78,15 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         Disposition::Later => (ItemState::Open, None),
         Disposition::Approved => (ItemState::Answered, Some(InboxAction::Approve)),
         Disposition::Dismissed => (ItemState::Answered, Some(InboxAction::Dismiss)),
+        // Stored by a newer host: no known action.
+        Disposition::Unknown => (ItemState::Resolved, None),
     };
     let mut item = InboxItem {
         id: entry.id.clone(),
         kind: match entry.kind {
             InboxEntryKind::Briefing => ItemKind::Briefing,
             InboxEntryKind::Proposal => ItemKind::Proposal,
+            InboxEntryKind::Unknown => ItemKind::Unknown,
         },
         state,
         question: entry.title.clone(),
