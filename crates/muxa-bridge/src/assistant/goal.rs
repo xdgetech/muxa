@@ -58,6 +58,10 @@ pub fn prepare(
     };
     let mut brief = Brief::gather(config, &item, q)?;
     brief.staff = staff_brief(&workspaces, q, worker.as_deref(), step);
+    brief.writes = ws
+        .assistant
+        .as_ref()
+        .is_some_and(|d| d.writer.active().is_some());
     if brief.staff.is_some() {
         // This version's earlier steps are in the staff section, cut.
         brief.results.retain(|r| r.version != q.version);

@@ -37,6 +37,7 @@ pub mod steps;
 pub mod store;
 mod tick;
 pub mod work;
+pub mod writes;
 
 pub use assist::NO_DAEMON;
 pub use tick::tick;

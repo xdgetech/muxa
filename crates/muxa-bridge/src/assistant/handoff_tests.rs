@@ -10,6 +10,7 @@ fn chain(step: u32) -> Chain {
         step,
         max_steps: 3,
         handoffs: Handoffs::Review,
+        writes: false,
     }
 }
 

@@ -25,6 +25,15 @@ impl Default for Writer {
     }
 }
 
+impl Writer {
+    /// The worker that performs approved writes, when the workspace takes them.
+    pub fn active(&self) -> Option<&str> {
+        self.worker
+            .as_deref()
+            .filter(|_| self.writes == Writes::Review)
+    }
+}
+
 /// The shape of both fields. `staff` and `worker` are the workspace's
 /// readers: a member that reads for the assistant never writes.
 pub(super) fn parse(

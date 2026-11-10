@@ -20,7 +20,7 @@ pub(super) struct RawHandoff {
     purpose: String,
 }
 
-/// What a step's hand-off is checked against.
+/// What a step's hand-off and writes are checked against.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Chain {
     /// The workspace's staff; empty without `staff`.
@@ -30,11 +30,14 @@ pub struct Chain {
     pub step: u32,
     pub max_steps: u32,
     pub handoffs: Handoffs,
+    /// The workspace takes write proposals: it has an active writer (ADR 0052 §3).
+    pub writes: bool,
 }
 
 impl Chain {
     /// The chain `run` belongs to, from the request as stored and the
-    /// workspace's configuration now. Without `staff` no hand-off passes.
+    /// workspace's configuration now. Without `staff` no hand-off passes;
+    /// without a writer no write does.
     pub fn of(workspaces: &Workspaces, q: &AssistantRequest, run: &RequestRun) -> Self {
         let Some(d) = workspaces
             .get(&q.workspace)
@@ -44,6 +47,7 @@ impl Chain {
         };
         let step = run.step();
         Self {
+            writes: d.writer.active().is_some(),
             staff: d.staff.members.clone(),
             workers: q
                 .steps

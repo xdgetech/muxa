@@ -32,7 +32,29 @@ fn brief(scope: AssistScope) -> Brief {
         version: 3,
         step: 1,
         staff: None,
+        writes: false,
     }
+}
+
+/// ADR 0052 §1, §3: with a writer, the result may propose writes the user
+/// approves; without one, changes outside the host are suggestions in next.
+#[test]
+fn the_result_rule_for_writes_follows_the_workspace() {
+    let none = brief(AssistScope::Draft).goal();
+    assert!(none.contains("go into \"next\" as suggestions"), "{none}");
+    assert!(!none.contains("\"writes\""), "{none}");
+    let review = Brief {
+        writes: true,
+        ..brief(AssistScope::Draft)
+    }
+    .goal();
+    assert!(
+        review.contains("\"writes\": optional, at most 3"),
+        "{review}"
+    );
+    assert!(review.contains("The user reads each one"), "{review}");
+    assert!(review.contains("Never make such a change yourself"));
+    assert!(review.len() <= crate::records::MAX_GOAL);
 }
 
 #[test]

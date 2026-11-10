@@ -367,6 +367,7 @@ fn a_hand_off_passes_only_within_its_chain() {
         step: 1,
         max_steps: 3,
         handoffs: Handoffs::Review,
+        writes: false,
     };
     let mut v = good();
     v["handoff"] = json!({"worker": "strategist", "purpose": "Compare them."});

@@ -16,6 +16,7 @@ use serde::Deserialize;
 use super::handoff::{Chain, RawHandoff};
 use super::notes::{MAX_NOTES, base_of};
 use super::record::RequestRun;
+use super::writes::RawWrite;
 use crate::routines::output::valid_url;
 
 /// The result folder, relative to the run's directory.
@@ -56,6 +57,8 @@ struct RawResult {
     possible_duplicates: Vec<RawDuplicate>,
     notes: Option<String>,
     handoff: Option<RawHandoff>,
+    #[serde(default)]
+    writes: Vec<RawWrite>,
 }
 
 #[derive(Deserialize)]
@@ -216,11 +219,12 @@ pub fn check(bytes: &[u8], run: &RequestRun, chain: &Chain) -> Result<Checked, V
     let handoff = raw
         .handoff
         .and_then(|h| super::handoff::check(h, chain, &mut reasons));
+    let writes = super::writes::check(raw.writes, chain.writes, &mut reasons);
     if !reasons.is_empty() {
         return Err(reasons);
     }
     let result = AssistResult {
-        writes: Vec::new(),
+        writes,
         version: run.version,
         at: 0,
         summary: raw.summary,
