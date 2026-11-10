@@ -1,18 +1,17 @@
 //! A client of Codex's App Server (ADR 0028): one JSON-RPC connection per call,
-//! through `codex app-server proxy` to the shared daemon. Blocking. Every
-//! failure is an [`Error`]; callers read any error as unknown, never as idle.
-use std::io::{BufRead, BufReader, Read, Write};
+//! through `codex app-server proxy` to the shared daemon, one message per
+//! WebSocket text message. Blocking. Every failure is an [`Error`]; callers
+//! read any error as unknown, never as idle.
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
+use super::proxy::Proxy;
+
 /// How long one call may take, from spawning the proxy to its answer.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(15);
-/// An answer line longer than this is cut and fails to parse.
-const MAX_LINE: u64 = 1 << 20;
 /// The rollout format the Codex adapter reads (ADR 0028, Consequences).
 const HISTORY_MODE: &str = "legacy";
 
@@ -25,6 +24,15 @@ pub enum Error {
     },
     #[error("the Codex app server connection was lost")]
     Lost,
+    /// No WebSocket: for example the proxy found no daemon to relay to.
+    #[error("the Codex app server WebSocket handshake failed: {0}")]
+    Handshake(String),
+    #[error("{method} is {bytes} bytes; the Codex app server takes at most {limit}")]
+    TooLarge {
+        method: &'static str,
+        bytes: usize,
+        limit: usize,
+    },
     #[error("the Codex app server did not answer within {0:?}")]
     Timeout(Duration),
     /// The server's message is left out: it may echo what was sent.
@@ -216,10 +224,11 @@ impl Endpoint {
             "threadId": id.as_str(),
             "input": [{"type": "text", "text": text}],
         });
-        conn.write(METHOD, params).map_err(|error| TurnError {
-            uncertain: matches!(error, Error::Lost),
-            error,
-        })?;
+        conn.write(METHOD, METHOD, params)
+            .map_err(|error| TurnError {
+                uncertain: matches!(error, Error::Lost),
+                error,
+            })?;
         match conn.answer(METHOD) {
             Ok(_) => Ok(()),
             Err(error @ Error::Rpc { .. }) => Err(not_sent(error)),
@@ -228,6 +237,15 @@ impl Endpoint {
                 uncertain: true,
             }),
         }
+    }
+
+    /// `initialize`, then one request; the whole response, result or error.
+    /// For the developer's checks (`muxa-bridge codex-rpc`), not for runs.
+    pub fn request(&self, method: &str, params: Value) -> Result<Value, Error> {
+        const LABEL: &str = "the request";
+        let mut conn = Connection::open(self)?;
+        conn.write(LABEL, method, params)?;
+        conn.response(LABEL)
     }
 }
 
@@ -271,121 +289,79 @@ fn status(v: &Value) -> Option<Status> {
     })
 }
 
-/// One proxy process, initialized. Dropping it ends the process.
+/// One proxy connection, initialized. Dropping it ends the proxy.
 struct Connection {
-    child: Child,
-    stdin: ChildStdin,
-    lines: mpsc::Receiver<Vec<u8>>,
+    proxy: Proxy,
     next: u64,
-    deadline: Instant,
-    timeout: Duration,
 }
 
 impl Connection {
     fn open(endpoint: &Endpoint) -> Result<Self, Error> {
-        let mut child = endpoint
-            .command(&["app-server", "proxy"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|source| Error::Spawn {
-                program: endpoint.program.clone(),
-                source,
-            })?;
-        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(Error::Lost);
-        };
-        let (tx, lines) = mpsc::channel();
-        std::thread::spawn(move || {
-            let mut reader = BufReader::new(stdout);
-            loop {
-                let mut line = Vec::new();
-                match (&mut reader).take(MAX_LINE).read_until(b'\n', &mut line) {
-                    Ok(0) | Err(_) => return,
-                    Ok(_) => {
-                        if tx.send(line).is_err() {
-                            return;
-                        }
-                    }
-                }
-            }
-        });
-        let mut conn = Self {
-            child,
-            stdin,
-            lines,
-            next: 0,
-            deadline: Instant::now() + endpoint.timeout,
-            timeout: endpoint.timeout,
-        };
+        let proxy = Proxy::open(
+            endpoint.command(&["app-server", "proxy"]),
+            &endpoint.program,
+            Instant::now() + endpoint.timeout,
+            endpoint.timeout,
+        )?;
+        let mut conn = Self { proxy, next: 0 };
         let info = json!({
             "clientInfo": {"name": "muxa", "version": env!("CARGO_PKG_VERSION")},
             // `historyMode` is experimental (ADR 0028, fact 5).
             "capabilities": {"experimentalApi": true},
         });
         conn.call("initialize", info)?;
-        conn.send(&json!({"method": "initialized"}))?;
+        conn.send("initialized", &json!({"method": "initialized"}))?;
         Ok(conn)
     }
 
     fn call(&mut self, method: &'static str, params: Value) -> Result<Value, Error> {
-        self.write(method, params)?;
+        self.write(method, method, params)?;
         self.answer(method)
     }
 
-    fn write(&mut self, method: &'static str, params: Value) -> Result<(), Error> {
+    /// Writes request `name`; `method` labels its errors.
+    fn write(&mut self, method: &'static str, name: &str, params: Value) -> Result<(), Error> {
         self.next += 1;
-        self.send(&json!({"id": self.next, "method": method, "params": params}))
+        self.send(
+            method,
+            &json!({"id": self.next, "method": name, "params": params}),
+        )
     }
 
-    fn send(&mut self, msg: &Value) -> Result<(), Error> {
-        let mut line = msg.to_string();
-        line.push('\n');
-        self.stdin
-            .write_all(line.as_bytes())
-            .and_then(|()| self.stdin.flush())
-            .map_err(|_| Error::Lost)
+    fn send(&mut self, method: &'static str, msg: &Value) -> Result<(), Error> {
+        self.proxy.send(method, msg.to_string())
     }
 
-    /// The answer to the last request; notifications and server requests are skipped.
+    /// The result of the last request.
     fn answer(&mut self, method: &'static str) -> Result<Value, Error> {
+        let msg = self.response(method)?;
+        if let Some(error) = msg.get("error") {
+            let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
+            return Err(Error::Rpc { method, code });
+        }
+        msg.get("result").cloned().ok_or(Error::Shape {
+            method,
+            what: "result",
+        })
+    }
+
+    /// The whole response to the last request; notifications and server
+    /// requests are skipped.
+    fn response(&mut self, method: &'static str) -> Result<Value, Error> {
         loop {
-            let left = self.deadline.saturating_duration_since(Instant::now());
-            let line = match self.lines.recv_timeout(left) {
-                Ok(line) => line,
-                Err(mpsc::RecvTimeoutError::Timeout) => return Err(Error::Timeout(self.timeout)),
-                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Lost),
-            };
-            let Ok(msg) = serde_json::from_slice::<Value>(&line) else {
+            let text = self.proxy.recv(method)?;
+            let Ok(msg) = serde_json::from_slice::<Value>(&text) else {
                 return Err(Error::Shape {
                     method,
-                    what: "JSON line",
+                    what: "JSON message",
                 });
             };
-            if msg.get("method").is_some()
-                || msg.get("id").and_then(Value::as_u64) != Some(self.next)
+            if msg.get("method").is_none()
+                && msg.get("id").and_then(Value::as_u64) == Some(self.next)
             {
-                continue;
+                return Ok(msg);
             }
-            if let Some(error) = msg.get("error") {
-                let code = error.get("code").and_then(Value::as_i64).unwrap_or(0);
-                return Err(Error::Rpc { method, code });
-            }
-            return msg.get("result").cloned().ok_or(Error::Shape {
-                method,
-                what: "result",
-            });
         }
-    }
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
     }
 }
 

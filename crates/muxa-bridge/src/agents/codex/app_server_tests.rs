@@ -160,3 +160,76 @@ fn a_missing_program_and_a_failed_daemon_are_errors() {
         Err(Error::Daemon(_))
     ));
 }
+
+/// Raw JSON through `codex app-server proxy` with `input` on stdin.
+fn raw(home: &Home, args: &[&str], input: &str) -> std::process::Output {
+    use std::io::Write;
+    let mut child = Command::new(FAKE)
+        .args(args)
+        .env(super::super::DIR_ENV, &home.0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(input.as_bytes()).unwrap();
+    drop(stdin);
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn the_proxy_answers_raw_json_lines_with_nothing() {
+    let home = Home::new("raw");
+    let init = concat!(
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":"#,
+        r#"{"clientInfo":{"name":"raw","version":"0"}}}"#,
+        "\n"
+    );
+    let proxied = raw(&home, &["app-server", "proxy"], init);
+    assert!(proxied.status.success());
+    assert!(proxied.stdout.is_empty(), "the proxy wants WebSocket");
+    let private = raw(&home, &["app-server"], init);
+    let answer: Value = serde_json::from_slice(
+        private
+            .stdout
+            .split(|b| *b == b'\n')
+            .find(|l| l.starts_with(br#"{"id""#))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(answer["result"]["userAgent"], "fake", "stdio keeps lines");
+}
+
+#[test]
+fn a_message_over_the_daemons_limit_is_not_sent() {
+    let home = Home::new("limit");
+    let app = home.endpoint();
+    let thread = app.start_thread(&home.0).unwrap();
+    home.steer("max-message", "400");
+    let big = "x".repeat(400);
+    let refused = app.start_turn(&thread.id, &big).unwrap_err();
+    assert!(!refused.uncertain, "nothing was written");
+    assert!(matches!(refused.error, Error::TooLarge { limit: 400, .. }));
+    assert!(home.log("turns.log").is_empty());
+    app.start_turn(&thread.id, "short").unwrap();
+    assert_eq!(home.log("turns.log").len(), 1);
+}
+
+#[test]
+fn a_request_returns_the_whole_response() {
+    let home = Home::new("request");
+    let app = home.endpoint();
+    let started = app
+        .request(
+            "thread/start",
+            json!({"cwd": home.0, "historyMode": "legacy"}),
+        )
+        .unwrap();
+    let id = started["result"]["thread"]["id"].as_str().unwrap();
+    assert!(ThreadId::parse(id).is_ok());
+    let unknown = app
+        .request("thread/read", json!({"threadId": "nope"}))
+        .unwrap();
+    assert!(unknown["error"]["message"].is_string());
+    assert!(unknown.get("result").is_none());
+}

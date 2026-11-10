@@ -19,6 +19,7 @@ use super::{AgentAdapter, AgentSession, ChatEvent, ChatSource, Error, Found, Pan
 
 pub mod app_server;
 pub mod owned;
+mod proxy;
 
 pub const ID: &str = "codex";
 /// Moves Codex's state, and with it the rollouts (ADR 0016).

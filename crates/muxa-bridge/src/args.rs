@@ -33,6 +33,16 @@ the flags above, writes a LaunchAgent (macOS) or a systemd user unit (Linux)
 and starts it; `--print` shows the file and changes nothing.
 Logs go to stderr; MUXA_LOG sets the level (default: warn; the daemon: info).";
 
+/// Not in [`USAGE`]: a tool for the developer's checks of ADR 0028.
+pub const CODEX_RPC_USAGE: &str =
+    "usage: muxa-bridge codex-rpc [--codex PROGRAM] [--codex-home DIR] METHOD [JSON_PARAMS]
+
+Sends `initialize`, then one request, to the Codex app-server daemon through
+`codex app-server proxy`, the way muxa's runs do. Prints the result as JSON;
+an error answer goes to stderr and exits 1. JSON_PARAMS defaults to {}.
+  --codex PROGRAM   the codex to run (default: codex)
+  --codex-home DIR  CODEX_HOME for the proxy (default: the inherited one)";
+
 /// Non-interactive SSH sessions often lack Homebrew's directories in PATH.
 const TMUX_CANDIDATES: [&str; 2] = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
 
@@ -42,8 +52,10 @@ const DEFAULT_IDLE: Duration = Duration::from_secs(60);
 pub enum Action {
     Serve(Args),
     Daemon(Daemon),
+    CodexRpc(CodexRpc),
     Version,
-    Help,
+    /// The usage text to print.
+    Help(&'static str),
 }
 
 /// `muxa-bridge daemon <op> [flags]`.
@@ -53,6 +65,15 @@ pub struct Daemon {
     pub args: Args,
     /// `install --print`: show the file, change nothing.
     pub print: bool,
+}
+
+/// `muxa-bridge codex-rpc ...`: one App Server request (ADR 0028 checklist).
+#[derive(Debug, PartialEq, Eq)]
+pub struct CodexRpc {
+    pub program: String,
+    pub home: Option<PathBuf>,
+    pub method: String,
+    pub params: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,7 +175,37 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
             other => other,
         });
     }
+    if args.first().is_some_and(|a| a == "codex-rpc") {
+        return parse_codex_rpc(args.split_off(1));
+    }
     parse_flags(args, |_| false)
+}
+
+fn parse_codex_rpc(args: Vec<std::ffi::OsString>) -> Result<Action, lexopt::Error> {
+    use lexopt::prelude::*;
+    let mut parser = lexopt::Parser::from_args(args);
+    let mut program = "codex".to_owned();
+    let mut home = None;
+    let mut positional = Vec::new();
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Long("codex") => program = parser.value()?.string()?,
+            Long("codex-home") => home = Some(absolute(parser.value()?.into(), "--codex-home")?),
+            Long("help") | Short('h') => return Ok(Action::Help(CODEX_RPC_USAGE)),
+            Value(v) if positional.len() < 2 => positional.push(v.string()?),
+            _ => return Err(arg.unexpected()),
+        }
+    }
+    let mut positional = positional.into_iter();
+    let method = positional
+        .next()
+        .ok_or_else(|| lexopt::Error::from("codex-rpc wants a METHOD"))?;
+    Ok(Action::CodexRpc(CodexRpc {
+        program,
+        home,
+        method,
+        params: positional.next().unwrap_or_else(|| "{}".to_owned()),
+    }))
 }
 
 /// The serve flags, plus the switches `extra` accepts.
@@ -223,7 +274,7 @@ fn parse_flags(
                 out.daemon_dir = Some(absolute(parser.value()?.into(), "--daemon-dir")?)
             }
             Long("version") => return Ok(Action::Version),
-            Long("help") | Short('h') => return Ok(Action::Help),
+            Long("help") | Short('h') => return Ok(Action::Help(USAGE)),
             Long(flag) if extra(flag) => {}
             _ => return Err(arg.unexpected()),
         }
@@ -382,6 +433,40 @@ mod tests {
         assert!(parse_strs(&["daemon"]).is_err());
         assert!(parse_strs(&["daemon", "bogus"]).is_err());
         assert!(parse_strs(&["daemon", "status", "--daemon-dir", "rel"]).is_err());
+    }
+
+    #[test]
+    fn parses_codex_rpc() {
+        assert_eq!(
+            parse_strs(&[
+                "codex-rpc",
+                "--codex",
+                "/x/codex",
+                "--codex-home",
+                "/h",
+                "thread/read",
+                r#"{"threadId":"t"}"#,
+            ])
+            .unwrap(),
+            Action::CodexRpc(CodexRpc {
+                program: "/x/codex".into(),
+                home: Some("/h".into()),
+                method: "thread/read".into(),
+                params: r#"{"threadId":"t"}"#.into(),
+            })
+        );
+        let Action::CodexRpc(c) = parse_strs(&["codex-rpc", "thread/list"]).unwrap() else {
+            panic!("not codex-rpc")
+        };
+        assert_eq!((c.program.as_str(), c.params.as_str()), ("codex", "{}"));
+        assert_eq!(c.home, None);
+        assert!(parse_strs(&["codex-rpc"]).is_err());
+        assert!(parse_strs(&["codex-rpc", "m", "{}", "extra"]).is_err());
+        assert!(parse_strs(&["codex-rpc", "--codex-home", "rel", "m"]).is_err());
+        assert_eq!(
+            parse_strs(&["codex-rpc", "--help"]).unwrap(),
+            Action::Help(CODEX_RPC_USAGE)
+        );
     }
 
     #[test]

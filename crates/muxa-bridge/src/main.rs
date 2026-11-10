@@ -32,19 +32,26 @@ use std::sync::Arc;
 use args::Action;
 
 fn main() -> ExitCode {
+    let rpc = std::env::args_os().nth(1).is_some_and(|a| a == "codex-rpc");
+    let usage = if rpc {
+        args::CODEX_RPC_USAGE
+    } else {
+        args::USAGE
+    };
     let args = match args::parse(std::env::args_os().skip(1)) {
         Ok(Action::Serve(args)) => args,
         Ok(Action::Daemon(d)) => return daemon::main(d),
+        Ok(Action::CodexRpc(c)) => return codex_rpc(c),
         Ok(Action::Version) => {
             println!("muxa-bridge {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Ok(Action::Help) => {
-            println!("{}", args::USAGE);
+        Ok(Action::Help(text)) => {
+            println!("{text}");
             return ExitCode::SUCCESS;
         }
         Err(e) => {
-            eprintln!("muxa-bridge: {e}\n{}", args::USAGE);
+            eprintln!("muxa-bridge: {e}\n{usage}");
             return ExitCode::from(2);
         }
     };
@@ -96,6 +103,41 @@ fn main() -> ExitCode {
     match end {
         server::End::TmuxExited | server::End::WriterFailed => ExitCode::FAILURE,
         _ => ExitCode::SUCCESS,
+    }
+}
+
+/// `muxa-bridge codex-rpc`: one request through muxa's own App Server client.
+/// The output goes to the developer's terminal, never to a log.
+fn codex_rpc(c: args::CodexRpc) -> ExitCode {
+    let params = match serde_json::from_str::<serde_json::Value>(&c.params) {
+        Ok(v) if v.is_object() => v,
+        _ => {
+            eprintln!("muxa-bridge codex-rpc: JSON_PARAMS must be a JSON object");
+            return ExitCode::from(2);
+        }
+    };
+    let endpoint = agents::codex::app_server::Endpoint::new(c.program, c.home);
+    let response = match endpoint.request(&c.method, params) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("muxa-bridge codex-rpc: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).unwrap_or_default();
+    match (response.get("result"), response.get("error")) {
+        (Some(result), _) => {
+            println!("{}", pretty(result));
+            ExitCode::SUCCESS
+        }
+        (None, Some(error)) => {
+            eprintln!("muxa-bridge codex-rpc: error answer\n{}", pretty(error));
+            ExitCode::FAILURE
+        }
+        (None, None) => {
+            eprintln!("muxa-bridge codex-rpc: the answer has no result or error");
+            ExitCode::FAILURE
+        }
     }
 }
 
