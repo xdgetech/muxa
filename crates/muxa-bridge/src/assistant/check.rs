@@ -55,7 +55,7 @@ fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
         .dir
         .as_ref()
         .ok_or_else(|| one("The run has no directory.".into()))?;
-    let found = result::read(dir, &run)?;
+    let mut found = result::read(dir, &run)?;
     let state_dir = config
         .state_dir
         .as_ref()
@@ -77,6 +77,10 @@ fn publish(config: &Config, record: &Record) -> Result<Stored, Vec<String>> {
     let at = now();
     let notes = found.notes.clone();
     let stored = requests.update::<_, Failure>(&run.request, |q| {
+        if !q.steps.is_empty() {
+            found.worker = record.worker().map(str::to_owned);
+            found.step = Some(run.step());
+        }
         result::store(q, found, at).map_err(Failure::Refused)
     });
     match stored {

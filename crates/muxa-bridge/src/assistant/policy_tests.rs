@@ -26,7 +26,7 @@ fn workspaces(name: &str, host: &str, ws: &str) -> (PathBuf, Workspaces) {
 
 fn refused(host: &str, ws: &str) -> ErrorBody {
     let (root, w) = workspaces("refused", host, ws);
-    let e = delegated(&w, "w", "claude").unwrap_err();
+    let e = delegated(&w, "w", None, "claude").unwrap_err();
     let _ = std::fs::remove_dir_all(root);
     e
 }
@@ -49,7 +49,7 @@ fn a_workspace_needs_the_host_switch_and_its_own_delegate() {
     );
     let (root, w) = workspaces("unknown", ON, "");
     assert_eq!(
-        delegated(&w, "x", "claude").unwrap_err().code,
+        delegated(&w, "x", None, "claude").unwrap_err().code,
         ErrorCode::BadRequest
     );
     let _ = std::fs::remove_dir_all(root);
@@ -103,7 +103,7 @@ fn claude_code_by_worker_or_default_command_is_the_delegate() {
         "[workspace.agent]\ncommand = \"env A=1 /opt/bin/claude --x\"\n\
          [workspace.assistant]\ndelegate = true\nmax_open_runs = 2",
     );
-    let d = delegated(&w, "w", "codex").unwrap();
+    let d = delegated(&w, "w", None, "codex").unwrap();
     assert_eq!((d.worker, d.delegate.max_open_runs), (None, 2));
     assert_eq!(d.host.max_runs_per_day, 3);
     let _ = std::fs::remove_dir_all(root);
@@ -113,7 +113,7 @@ fn claude_code_by_worker_or_default_command_is_the_delegate() {
         "[workspace.assistant]\ndelegate = true\nworker = \"Cl\"",
     );
     assert_eq!(
-        delegated(&w, "w", "aider").unwrap().worker.as_deref(),
+        delegated(&w, "w", None, "aider").unwrap().worker.as_deref(),
         Some("Cl")
     );
     let _ = std::fs::remove_dir_all(root);
@@ -132,6 +132,9 @@ fn run(id: &str, ws: &str, request: &str, status: Status, created: u64) -> Recor
             version: 1,
             work: "w-00000001".into(),
             notes_base: None,
+            step: None,
+            member: None,
+            shared_base: None,
         }
         .fields(),
     );
@@ -177,7 +180,7 @@ fn each_limit_is_a_conflict_that_names_it_and_its_reset() {
         ON,
         "[workspace.assistant]\ndelegate = true\nmax_runs_per_day = 2",
     );
-    let d = delegated(&w, "w", "claude").unwrap();
+    let d = delegated(&w, "w", None, "claude").unwrap();
     let _ = std::fs::remove_dir_all(root);
     assert!(check(Usage::default(), &d, "R").is_ok());
     let cases = [

@@ -160,6 +160,9 @@ fn run_for(work: &WorkItem, q: &AssistantRequest) -> RequestRun {
         version: q.version,
         work: work.id.clone(),
         notes_base: None,
+        step: None,
+        member: None,
+        shared_base: None,
     }
 }
 

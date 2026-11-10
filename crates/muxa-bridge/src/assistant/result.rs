@@ -391,13 +391,17 @@ pub fn store(
             run: result.version,
         });
     }
-    if q.results.iter().any(|r| r.version == result.version) {
+    let step = result.step.unwrap_or(1);
+    let same = |r: &AssistResult| r.version == result.version && r.step.unwrap_or(1) == step;
+    // A step before the newest has its result: the next step began after it.
+    if q.results.iter().any(same) || step < super::steps::current(q) {
         return Ok(Stored::Already);
     }
     if matches!(q.delivery, Delivery::CancelRequested | Delivery::Cancelled) {
         return Err(Refused::Cancelled(q.id.clone()));
     }
-    for older in &mut q.results {
+    // Inside a version nothing is stale: a chain is one answer in parts (ADR 0051 §3).
+    for older in q.results.iter_mut().filter(|r| r.version < result.version) {
         older.stale = true;
     }
     result.at = at;
@@ -407,6 +411,7 @@ pub fn store(
     q.delivery = Delivery::Resulted;
     q.delivery_at = at;
     q.updated_at = at;
+    super::steps::sync(q);
     Ok(Stored::New)
 }
 

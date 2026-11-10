@@ -1,6 +1,8 @@
-//! A delegate's notes, `<root>/.muxa/assistant/NOTES.md` (ADR 0049 §1): the
-//! snapshot a run reads, and the checked write of a proposal. Each folder is
-//! opened without following a symlink. Errors name paths and sizes, never text.
+//! A delegate's notes, `<root>/.muxa/assistant/NOTES.md` (ADR 0049 §1), and a
+//! staff member's own, `<root>/.muxa/assistant/staff/<worker>/NOTES.md`
+//! (ADR 0051 §5): the snapshot a run reads, and the checked write of a
+//! proposal. Each folder is opened without following a symlink. Errors name
+//! paths and sizes, never text.
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
@@ -14,7 +16,41 @@ use sha2::{Digest, Sha256};
 /// Relative to a workspace root, and to a run folder for the copy.
 pub const NOTES: &str = ".muxa/assistant/NOTES.md";
 const FOLDERS: [&str; 2] = [".muxa", "assistant"];
+/// Under [`FOLDERS`]: one folder per staff member.
+const STAFF: &str = "staff";
 const NAME: &str = "NOTES.md";
+
+/// Which notes file: the workspace's, which its lead keeps, or a member's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place<'a> {
+    Workspace,
+    /// A worker name, one path segment (checked at config load and again here).
+    Member(&'a str),
+}
+
+impl Place<'_> {
+    fn folders(&self) -> Result<Vec<&str>, NotesError> {
+        let mut out = FOLDERS.to_vec();
+        if let Self::Member(worker) = self {
+            let plain = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.');
+            if worker.is_empty() || matches!(*worker, "." | "..") || !worker.bytes().all(plain) {
+                return Err(NotesError::NotRegular {
+                    path: PathBuf::from(STAFF).join(worker),
+                });
+            }
+            out.extend([STAFF, worker]);
+        }
+        Ok(out)
+    }
+
+    /// The file, relative to a workspace root or a run folder.
+    pub fn file(&self) -> String {
+        match self {
+            Self::Workspace => NOTES.to_owned(),
+            Self::Member(worker) => format!(".muxa/assistant/{STAFF}/{worker}/{NAME}"),
+        }
+    }
+}
 /// Bytes.
 pub const MAX_NOTES: usize = 16 << 10;
 
@@ -58,8 +94,13 @@ pub fn base_of(bytes: &[u8]) -> String {
 
 /// Blocking. The live notes of the workspace at `root`; empty without a file.
 pub fn read(root: &Path) -> Result<Snapshot, NotesError> {
-    match folder(root, false)? {
-        Some(dir) => read_in(&dir, &root.join(NOTES)),
+    read_at(root, Place::Workspace)
+}
+
+/// Blocking. The live notes at `place` under `root`; empty without a file.
+pub fn read_at(root: &Path, place: Place<'_>) -> Result<Snapshot, NotesError> {
+    match folder(root, &place.folders()?, false)? {
+        Some(dir) => read_in(&dir, &root.join(place.file())),
         None => Ok(empty()),
     }
 }
@@ -67,10 +108,15 @@ pub fn read(root: &Path) -> Result<Snapshot, NotesError> {
 /// Blocking. When the live notes of the workspace at `root` last changed,
 /// in epoch seconds; None without a file. Reads no content.
 pub fn modified(root: &Path) -> Result<Option<u64>, NotesError> {
-    let Some(dir) = folder(root, false)? else {
+    modified_at(root, Place::Workspace)
+}
+
+/// Blocking. As [`modified`], for the notes at `place`.
+pub fn modified_at(root: &Path, place: Place<'_>) -> Result<Option<u64>, NotesError> {
+    let Some(dir) = folder(root, &place.folders()?, false)? else {
         return Ok(None);
     };
-    let path = root.join(NOTES);
+    let path = root.join(place.file());
     let stat = match rustix::fs::statat(dir.as_fd(), NAME, AtFlags::SYMLINK_NOFOLLOW) {
         Ok(stat) => stat,
         Err(Errno::NOENT) => return Ok(None),
@@ -85,28 +131,40 @@ pub fn modified(root: &Path) -> Result<Option<u64>, NotesError> {
 /// Blocking. Copies the live notes into the run folder `dir`, as long as
 /// they are still the ones whose hash the run recorded as `base`.
 pub fn copy_into(root: &Path, dir: &Path, base: &str) -> Result<(), NotesError> {
-    let live = read(root)?;
+    copy_at(root, dir, Place::Workspace, base)
+}
+
+/// Blocking. As [`copy_into`], for the notes at `place`; the copy lands at
+/// the same place under `dir`.
+pub fn copy_at(root: &Path, dir: &Path, place: Place<'_>, base: &str) -> Result<(), NotesError> {
+    let live = read_at(root, place)?;
     if live.base != base {
         return Err(NotesError::Changed {
-            path: root.join(NOTES),
+            path: root.join(place.file()),
         });
     }
-    let stage = folder(dir, true)?.ok_or_else(|| missing(dir))?;
-    write_in(&stage, &dir.join(NOTES), live.text.as_bytes())
+    let stage = folder(dir, &place.folders()?, true)?.ok_or_else(|| missing(dir))?;
+    write_in(&stage, &dir.join(place.file()), live.text.as_bytes())
 }
 
 /// Blocking. Replaces the live notes with `text` while they still hash to
 /// `base`; creates `.muxa/assistant` when missing.
 pub fn apply(root: &Path, text: &str, base: &str) -> Result<(), NotesError> {
-    let path = root.join(NOTES);
+    apply_at(root, Place::Workspace, text, base)
+}
+
+/// Blocking. As [`apply`], for the notes at `place`.
+pub fn apply_at(root: &Path, place: Place<'_>, text: &str, base: &str) -> Result<(), NotesError> {
+    let path = root.join(place.file());
     if text.len() > MAX_NOTES || text.contains('\0') {
         return Err(NotesError::TooLarge {
             path,
             size: text.len() as u64,
         });
     }
+    let folders = place.folders()?;
     let _one = WRITES.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = folder(root, true)?.ok_or_else(|| missing(root))?;
+    let dir = folder(root, &folders, true)?.ok_or_else(|| missing(root))?;
     let live = match read_in(&dir, &path) {
         Ok(live) => live,
         Err(e @ NotesError::Io { .. }) => return Err(e),
@@ -132,13 +190,13 @@ fn missing(dir: &Path) -> NotesError {
     }
 }
 
-/// `<base>/.muxa/assistant`, opened. None when a folder is missing and
-/// `create` is false.
-fn folder(base: &Path, create: bool) -> Result<Option<OwnedFd>, NotesError> {
+/// `<base>/<folders>`, opened. None when a folder is missing and `create`
+/// is false.
+fn folder(base: &Path, folders: &[&str], create: bool) -> Result<Option<OwnedFd>, NotesError> {
     let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
     let mut dir = rustix::fs::open(base, flags, Mode::empty()).map_err(io("open", base))?;
     let mut path = base.to_path_buf();
-    for name in FOLDERS {
+    for name in folders.iter().copied() {
         path.push(name);
         if create {
             let mode = Mode::RWXU | Mode::RGRP | Mode::XGRP | Mode::ROTH | Mode::XOTH;

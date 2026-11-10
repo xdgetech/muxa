@@ -28,6 +28,7 @@ pub struct Delegated {
 pub fn delegated(
     workspaces: &Workspaces,
     workspace: &str,
+    worker: Option<&str>,
     fallback: &str,
 ) -> Result<Delegated, ErrorBody> {
     if workspaces.get(workspace).is_none() {
@@ -61,8 +62,10 @@ pub fn delegated(
             ),
         )
     })?;
-    // Without `staff`, the lead is `worker`, else the workspace's agent (ADR 0051 §1).
-    let choice = match delegate.lead() {
+    // The named member, else the lead: without `staff`, `worker`, else the
+    // workspace's agent (ADR 0051 §1, §2).
+    let picked = super::staff::pick(&delegate, workspace, worker)?;
+    let choice = match picked.as_deref() {
         Some(name) => WorkerChoice::Named(name),
         None => WorkerChoice::WorkspaceDefault,
     };

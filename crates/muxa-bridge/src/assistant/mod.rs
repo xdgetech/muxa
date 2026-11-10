@@ -14,6 +14,7 @@ pub mod delivery;
 mod derive;
 pub mod detail;
 pub mod forget;
+pub mod goal;
 pub mod hypotheses;
 pub mod info;
 pub mod memory;
@@ -26,7 +27,10 @@ pub mod proposals;
 pub mod record;
 pub mod result;
 pub mod share;
+pub mod staff;
+pub mod staff_brief;
 pub mod start;
+pub mod steps;
 pub mod store;
 mod tick;
 pub mod work;
@@ -63,9 +67,6 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             workspace,
             assist,
         } => {
-            if assist.as_ref().is_some_and(|a| a.worker.is_some()) {
-                return (Vec::new(), Some(no_staff_yet()));
-            }
             let config = Arc::clone(&cx.records);
             let spec = assist.clone();
             let new = capture::NewCapture {
@@ -181,9 +182,6 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             purpose,
             worker,
         } => {
-            if worker.is_some() {
-                return (Vec::new(), Some(no_staff_yet()));
-            }
             if !cx.daemon {
                 return (
                     Vec::new(),
@@ -196,6 +194,8 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 scope,
                 workspace,
                 purpose,
+                worker,
+                asker: muxa_protocol::StepBy::User,
             };
             match ask::ask(cx, a).await {
                 Ok((entry, request, error)) => (
@@ -254,11 +254,10 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             base,
             step,
         } => {
-            if step.is_some() {
-                return (Vec::new(), Some(no_staff_yet()));
-            }
             let config = Arc::clone(&cx.records);
-            match blocking(move || apply::apply_notes(&config, &source, version, &base)).await {
+            let applied =
+                blocking(move || apply::apply_notes(&config, &source, version, &base, step));
+            match applied.await {
                 Ok(apply::Applied::Request(entry, request)) => (
                     vec![Message::WorkSaved {
                         work: id,
@@ -389,15 +388,6 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             )),
         ),
     }
-}
-
-/// `worker` and `step` are `work` level 12 (ADR 0051), which this host does
-/// not advertise yet.
-fn no_staff_yet() -> ErrorBody {
-    error_body(
-        ErrorCode::BadRequest,
-        "worker and step need work level 12; this host is at 11",
-    )
 }
 
 /// Blocking. The item as a list shows it, with its derived state.

@@ -29,6 +29,8 @@ fn brief(scope: AssistScope) -> Brief {
         tasks: Vec::new(),
         request: "q-0000000a".into(),
         version: 3,
+        step: 1,
+        staff: None,
     }
 }
 

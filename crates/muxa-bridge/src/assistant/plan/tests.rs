@@ -118,16 +118,17 @@ fn a_plans_notes_apply_to_the_overall_root_at_its_rev() {
         base: base_of(b""),
     };
     let p = h.plan(100, Delivery::Resulted, Some(proposal.clone()));
-    let stale = apply_notes(&h.config, &p.id, 1, &proposal.base).unwrap_err();
+    let stale = apply_notes(&h.config, &p.id, 1, &proposal.base, None).unwrap_err();
     assert_eq!(stale.code, ErrorCode::Conflict);
     let bare = h.plan(200, Delivery::Resulted, None);
-    let none = apply_notes(&h.config, &bare.id, 2, &proposal.base).unwrap_err();
+    let none = apply_notes(&h.config, &bare.id, 2, &proposal.base, None).unwrap_err();
     assert_eq!(none.code, ErrorCode::BadRequest);
-    let Applied::Plan(entry) = apply_notes(&h.config, &p.id, 2, &proposal.base).unwrap() else {
+    let Applied::Plan(entry) = apply_notes(&h.config, &p.id, 2, &proposal.base, None).unwrap()
+    else {
         panic!("a plan's notes reply with the plan")
     };
     assert_eq!(entry.id, p.id);
     assert_eq!(notes::read(&h.root).unwrap().text, text);
-    let again = apply_notes(&h.config, &p.id, 2, &proposal.base).unwrap_err();
+    let again = apply_notes(&h.config, &p.id, 2, &proposal.base, None).unwrap_err();
     assert_eq!(again.code, ErrorCode::Conflict, "the live file changed");
 }

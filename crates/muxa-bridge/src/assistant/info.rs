@@ -6,7 +6,7 @@ use crate::records::Workspaces;
 use crate::records::assistant::Role;
 use crate::records::workspaces::Workspace;
 
-/// Blocking: reads the time of each delegate's notes, never their text.
+/// Blocking: reads the time of each delegate's and member's notes, never their text.
 /// None while the host is off, or when no workspace has `[workspace.assistant]`.
 pub fn info(workspaces: &Workspaces) -> Option<AssistantInfo> {
     if !workspaces.assistant().enabled {
@@ -18,11 +18,11 @@ pub fn info(workspaces: &Workspaces) -> Option<AssistantInfo> {
         .iter()
         .filter(|w| matches!(w.role, Role::Member { .. }))
         .map(|w| DelegateInfo {
-            staff: Vec::new(),
             workspace: w.name.clone(),
             share: workspaces.share(&w.name),
             overall_requests: workspaces.overall_requests(&w.name),
             notes_at: notes_at(w),
+            staff: super::staff::listed(workspaces, w),
         })
         .collect();
     (overall.is_some() || !delegates.is_empty()).then_some(AssistantInfo { overall, delegates })

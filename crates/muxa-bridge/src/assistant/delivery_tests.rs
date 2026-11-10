@@ -39,6 +39,9 @@ fn record() -> Record {
             version: 2,
             work: "w-0000000b".into(),
             notes_base: None,
+            step: None,
+            member: None,
+            shared_base: None,
         }
         .fields(),
     );

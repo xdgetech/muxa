@@ -224,6 +224,9 @@ impl Host {
                 version: 1,
                 work: "w-00000000".into(),
                 notes_base: None,
+                step: None,
+                member: None,
+                shared_base: None,
             })
             .fields(),
         );

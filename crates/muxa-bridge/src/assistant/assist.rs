@@ -59,8 +59,9 @@ pub async fn assist(cx: &Context, capture: Capture, spec: AssistSpec) -> Assiste
         };
     }
     let (fallback, ws, c) = (cx.tasks.command.clone(), workspace.clone(), capture.clone());
+    let worker = spec.worker.clone();
     let sorted = super::blocking(move || {
-        ask::precheck(&config, &ws, &fallback)?;
+        ask::precheck(&config, &ws, worker.as_deref(), &fallback)?;
         let sort = Sort {
             capture: c.id.clone(),
             rev: c.rev,
@@ -86,6 +87,8 @@ pub async fn assist(cx: &Context, capture: Capture, spec: AssistSpec) -> Assiste
         scope: spec.scope,
         workspace: Some(workspace),
         purpose: spec.purpose,
+        worker: spec.worker,
+        asker: muxa_protocol::StepBy::User,
     };
     match ask::ask(cx, a).await {
         Ok((item, q, error)) => Assisted {

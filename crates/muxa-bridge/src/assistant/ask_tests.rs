@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use muxa_protocol::WorkState;
 
 use super::*;
+use crate::assistant::record::RequestRun;
 use crate::routines::store::StateError;
 
 struct Host {
@@ -44,7 +45,7 @@ fn host(delegate: &str) -> Host {
 
 impl Host {
     fn delegated(&self) -> Delegated {
-        policy::delegated(&self.config.load_workspaces().unwrap(), "w", "claude").unwrap()
+        policy::delegated(&self.config.load_workspaces().unwrap(), "w", None, "claude").unwrap()
     }
 
     fn work(&self, state: WorkState) -> WorkItem {
@@ -99,7 +100,7 @@ impl Host {
     fn record(&self, id: &str, request: &str, version: u64, kind: bool, status: &str) {
         let mut r: Record = serde_json::from_value(serde_json::json!({
             "version": 1, "id": id, "rev": 1, "workspace": "w", "title": "Hosting",
-            "goal": format!("Brief.\n\n{}", marker(request, version)),
+            "goal": format!("Brief.\n\n{}", crate::assistant::steps::marker(request, version, 1)),
             "status": status, "createdAt": crate::records::now(), "updatedAt": 1,
         }))
         .unwrap();
@@ -110,6 +111,9 @@ impl Host {
                     version,
                     work: "w-00000000".into(),
                     notes_base: None,
+                    step: None,
+                    member: None,
+                    shared_base: None,
                 }
                 .fields(),
             );
@@ -126,6 +130,8 @@ fn ask_for(work: &WorkItem, rev: u64) -> Ask {
         scope: AssistScope::Research,
         workspace: None,
         purpose: Some("Find a host".into()),
+        worker: None,
+        asker: muxa_protocol::StepBy::User,
     }
 }
 

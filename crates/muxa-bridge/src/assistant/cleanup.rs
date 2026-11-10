@@ -88,6 +88,9 @@ mod tests {
             version,
             work: "w-0000000b".into(),
             notes_base: None,
+            step: None,
+            member: None,
+            shared_base: None,
         })
         .fields();
         let dir = ws.get("w").unwrap().assistant_dir("Plan", id).unwrap();

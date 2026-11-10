@@ -268,6 +268,8 @@ async fn delegate(cx: &Context, f: Found, by: By) -> Result<Approved, ErrorBody>
         scope: p.scope,
         workspace: Some(p.workspace.clone()),
         purpose: Some(p.purpose.clone()),
+        worker: p.worker.clone(),
+        asker: muxa_protocol::StepBy::Overall,
     };
     let config = Arc::clone(&cx.records);
     match ask::ask(cx, a).await {

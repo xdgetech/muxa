@@ -178,18 +178,20 @@ fn unstarted(shelf: &Shelf<AssistantRequest>, q: &AssistantRequest, records: &[R
     if delivery::settled(q.delivery) && q.delivery != Delivery::CancelRequested {
         return;
     }
-    let found = super::ask::existing(records, &q.id, q.version).map(|r| r.id.clone());
+    let step = super::steps::current(q);
+    let found = super::steps::existing(records, &q.id, q.version, step).map(|r| r.id.clone());
     let changed = shelf.update_with_extra(
         &q.id,
         |q, extra| -> Result<_, crate::routines::store::StateError> {
             if q.run.is_some() {
                 return Ok(None);
             }
-            let claim = super::ask::creating(extra, q.version);
+            let claim = super::steps::creating(extra, q.version, step);
             if let Some(task) = &found {
                 q.run = Some(task.clone());
                 extra.remove(super::ask::CREATING_FIELD);
                 q.updated_at = now;
+                super::steps::sync(q);
                 return Ok(Some("assistant run found again"));
             }
             let fresh =
@@ -204,6 +206,7 @@ fn unstarted(shelf: &Shelf<AssistantRequest>, q: &AssistantRequest, records: &[R
             extra.remove(super::ask::CREATING_FIELD);
             q.delivery_at = now;
             q.updated_at = now;
+            super::steps::sync(q);
             Ok(Some("assistant run did not start"))
         },
     );
@@ -228,10 +231,13 @@ fn save(shelf: &Shelf<AssistantRequest>, seen: &AssistantRequest, state: Deliver
     let saved = shelf.update(
         &seen.id,
         |q| -> Result<_, crate::routines::store::StateError> {
-            let same = q.version == seen.version && q.delivery == seen.delivery;
+            let same = q.version == seen.version
+                && q.delivery == seen.delivery
+                && super::steps::current(q) == super::steps::current(seen);
             if same {
                 q.delivery = state;
                 q.delivery_at = at;
+                super::steps::sync(q);
             }
             Ok(same)
         },

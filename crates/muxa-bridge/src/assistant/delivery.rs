@@ -48,12 +48,18 @@ pub fn derive(q: &AssistantRequest, f: &Facts<'_>) -> (Delivery, u64) {
     if settled(q.delivery) {
         return (q.delivery, q.delivery_at);
     }
-    if let Some(r) = q.results.iter().find(|r| r.version == q.version) {
+    let step = super::steps::current(q);
+    let answered = q
+        .results
+        .iter()
+        .find(|r| r.version == q.version && r.step.unwrap_or(1) == step);
+    if let Some(r) = answered {
         return (Delivery::Resulted, r.at);
     }
     let Some(record) = f.record.filter(|r| {
-        r.request_run()
-            .is_some_and(|run| run.request == q.id && run.version == q.version)
+        r.request_run().is_some_and(|run| {
+            run.request == q.id && run.version == q.version && run.step() == step
+        })
     }) else {
         return (q.delivery, q.delivery_at);
     };
@@ -151,6 +157,7 @@ pub fn timeout(workspaces: &Workspaces, workspace: &str) -> u64 {
 /// Blocking. Sets each request's delivery as a list shows it.
 pub fn refresh(config: &Config, requests: &mut [AssistantRequest], now: u64) {
     if requests.iter().all(|q| settled(q.delivery)) {
+        requests.iter_mut().for_each(super::steps::sync);
         return;
     }
     let records: HashMap<String, Record> = config
@@ -168,6 +175,7 @@ pub fn refresh(config: &Config, requests: &mut [AssistantRequest], now: u64) {
             now,
         };
         (q.delivery, q.delivery_at) = derive(q, &facts);
+        super::steps::sync(q);
     }
 }
 

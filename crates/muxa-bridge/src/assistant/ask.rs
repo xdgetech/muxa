@@ -1,15 +1,17 @@
 //! `request-assistant` (ADR 0048 §3, §4): one request version per Work item
-//! `rev`, and one run per version. The run is a record of kind
-//! `assistant-run` made by `create()`, found again after a crash by its
-//! goal's last line, as `start.rs` finds a Task.
+//! `rev`, and one run per version and step (ADR 0051 §3). The run is a
+//! record of kind `assistant-run` made by `create()`, found again after a
+//! crash by its goal's last line, as `start.rs` finds a Task.
 use std::sync::{Arc, Mutex};
 
-use muxa_protocol::{AssistScope, AssistantRequest, Delivery, ErrorBody, ErrorCode, WorkItem};
-use serde_json::json;
+use muxa_protocol::{
+    AssistScope, AssistantRequest, Delivery, ErrorBody, ErrorCode, StepBy, WorkItem,
+};
 
-use super::brief::{Brief, marker};
 use super::policy::{self, Delegated, Starting};
-use super::record::{RequestRun, RunFor};
+use super::record::RunFor;
+use super::steps;
+pub use super::steps::CREATING_FIELD;
 use super::store::{Extra, Shelf};
 use super::work::{Fail, check_rev, closed};
 use crate::convert::error_body;
@@ -18,8 +20,6 @@ use crate::task_records::{Config, Context, NewTask, create};
 
 /// Seconds a `creating` claim holds the version before another may create its run.
 pub const CREATING_LIMIT: u64 = 180;
-/// The request file's claim, `[version, since]`.
-pub const CREATING_FIELD: &str = "creating";
 /// The request file's Work item `rev` that made the current version.
 const ASKED_FIELD: &str = "askedRev";
 /// Bytes, as the brief keeps.
@@ -37,6 +37,21 @@ pub struct Ask {
     pub scope: AssistScope,
     pub workspace: Option<String>,
     pub purpose: Option<String>,
+    /// A staff member of the workspace; None: its lead (ADR 0051 §2).
+    pub worker: Option<String>,
+    /// Who names `worker`: the user or the overall assistant.
+    pub asker: StepBy,
+}
+
+impl Ask {
+    /// Who picked the first step's worker.
+    fn by(&self) -> StepBy {
+        if self.worker.is_some() {
+            self.asker
+        } else {
+            StepBy::Lead
+        }
+    }
 }
 
 /// What `begin` decided.
@@ -95,13 +110,23 @@ fn delegate_for(config: &Config, a: &Ask, fallback: &str) -> Result<Delegated, E
         .clone()
         .or(item.workspace)
         .ok_or_else(|| bad(format!("Work item {} has no workspace; send one", a.work)))?;
-    policy::delegated(&config.load_workspaces()?, &workspace, fallback)
+    policy::delegated(
+        &config.load_workspaces()?,
+        &workspace,
+        a.worker.as_deref(),
+        fallback,
+    )
 }
 
 /// Blocking. The refusals `ask` gives before any write, for `capture {assist}`
 /// to check before it sorts the Capture.
-pub fn precheck(config: &Config, workspace: &str, fallback: &str) -> Result<(), ErrorBody> {
-    let delegated = policy::delegated(&config.load_workspaces()?, workspace, fallback)?;
+pub fn precheck(
+    config: &Config,
+    workspace: &str,
+    worker: Option<&str>,
+    fallback: &str,
+) -> Result<(), ErrorBody> {
+    let delegated = policy::delegated(&config.load_workspaces()?, workspace, worker, fallback)?;
     let _one = CLAIMS
         .lock()
         .map_err(|_| error_body(ErrorCode::Internal, "the assistant claim lock broke"))?;
@@ -132,7 +157,7 @@ fn begin(config: &Config, a: &Ask, d: &Delegated, at: u64) -> Result<Step, Error
         let replacing = found.as_ref().map(|(q, _)| q.id.as_str());
         budget(config, d, replacing.as_slice(), at)?;
         let q = match found {
-            Some((q, _)) => next_version(&requests, &q.id, a, at)?,
+            Some((q, _)) => next_version(&requests, &q.id, d, a, at)?,
             None => new_request(&requests, w, d, a, at)?,
         };
         if !w.requests.contains(&q.id) {
@@ -189,8 +214,16 @@ fn link(w: &mut WorkItem, request: &str, rev: u64, at: u64) {
 fn claim(version: u64, at: u64, rev: u64) -> Extra {
     let mut extra = Extra::new();
     extra.insert(ASKED_FIELD.into(), rev.into());
-    extra.insert(CREATING_FIELD.into(), json!([version, at]));
+    extra.insert(CREATING_FIELD.into(), steps::claim(version, 1, at));
     extra
+}
+
+/// A new version's steps: none without a staff (ADR 0051 §1).
+fn first_steps(d: &Delegated, a: &Ask, at: u64) -> Vec<muxa_protocol::RequestStep> {
+    if d.delegate.staff.members.is_empty() {
+        return Vec::new();
+    }
+    steps::first(d.worker.as_deref(), a.by(), at)
 }
 
 fn new_request(
@@ -202,7 +235,6 @@ fn new_request(
 ) -> Result<AssistantRequest, Fail> {
     requests.create_with_extra(|id| {
         let q = AssistantRequest {
-            steps: Vec::new(),
             id,
             work: w.id.clone(),
             version: 1,
@@ -215,6 +247,7 @@ fn new_request(
             purpose: a.purpose.clone(),
             run: None,
             results: Vec::new(),
+            steps: first_steps(d, a, at),
         };
         Ok::<_, Fail>((q, claim(1, at, a.rev)))
     })
@@ -224,6 +257,7 @@ fn new_request(
 fn next_version(
     requests: &Shelf<AssistantRequest>,
     id: &str,
+    d: &Delegated,
     a: &Ask,
     at: u64,
 ) -> Result<AssistantRequest, Fail> {
@@ -238,6 +272,7 @@ fn next_version(
         for r in &mut q.results {
             r.stale = true;
         }
+        q.steps = first_steps(d, a, at);
         extra.extend(claim(q.version, at, a.rev));
         Ok(q.clone())
     })?;
@@ -259,14 +294,17 @@ fn claim_run(
         if q.version != version || q.run.is_some() || super::delivery::settled(q.delivery) {
             return Ok(None);
         }
-        if let Some(r) = existing(&records, &q.id, version) {
+        let step = steps::current(q);
+        if let Some(r) = steps::existing(&records, &q.id, version, step) {
             q.run = Some(r.id.clone());
             q.updated_at = at;
             extra.remove(CREATING_FIELD);
-            tracing::info!(request = %q.id, version, task = %r.id, "assistant run found again");
+            steps::sync(q);
+            tracing::info!(request = %q.id, version, step, task = %r.id, "assistant run found again");
             return Ok(None);
         }
-        if creating(extra, version).is_some_and(|since| at.saturating_sub(since) < CREATING_LIMIT) {
+        let claimed = steps::creating(extra, version, step);
+        if claimed.is_some_and(|since| at.saturating_sub(since) < CREATING_LIMIT) {
             return Err(error_body(
                 ErrorCode::Conflict,
                 format!("a run for request {} is starting; wait for it", q.id),
@@ -274,27 +312,10 @@ fn claim_run(
             .into());
         }
         budget(config, d, &[q.id.as_str()], at)?;
-        extra.insert(CREATING_FIELD.into(), json!([version, at]));
+        extra.insert(CREATING_FIELD.into(), steps::claim(version, step, at));
         Ok(Some(q.clone()))
     })?;
     Ok(claimed.flatten())
-}
-
-/// The claim's start, when it is for `version`.
-pub fn creating(extra: &Extra, version: u64) -> Option<u64> {
-    let claim = extra.get(CREATING_FIELD)?;
-    (claim.get(0)?.as_u64()? == version).then_some(claim.get(1)?.as_u64()?)
-}
-
-/// The run that `marker` names. Only a record made for the version counts:
-/// a goal's text alone cannot claim another request's run.
-pub fn existing<'a>(records: &'a [Record], request: &str, version: u64) -> Option<&'a Record> {
-    let mark = marker(request, version);
-    records.iter().find(|r| {
-        r.request_run()
-            .is_some_and(|run| run.request == request && run.version == version)
-            && r.goal.lines().next_back() == Some(mark.as_str())
-    })
 }
 
 /// Blocking. Refuses a run past a budget. `replacing` are the requests or
@@ -316,7 +337,7 @@ pub(super) fn budget(
         let Ok(Some((q, extra))) = requests.get_with_extra(&q.id) else {
             continue;
         };
-        if let Some(since) = creating(&extra, q.version) {
+        if let Some(since) = steps::creating(&extra, q.version, steps::current(&q)) {
             if at.saturating_sub(since) < CREATING_LIMIT {
                 starting.push(Starting {
                     request: q.id,
@@ -336,33 +357,19 @@ pub(super) fn budget(
 /// did not start.
 async fn start_run(cx: &Context, q: AssistantRequest, d: &Delegated) -> Option<ErrorBody> {
     let config = Arc::clone(&cx.records);
-    let (work_id, req) = (q.work.clone(), q.clone());
-    let made = super::blocking(move || {
-        let item = super::shelf::<WorkItem>(&config)?
-            .get(&work_id)
-            .map_err(|e| super::state_error(&e))?
-            .ok_or_else(|| bad(format!("no Work item {work_id}")))?;
-        // An invalid notes file fails the start before any record or session (ADR 0049 §1).
-        let root = super::apply::workspace_root(&config, &req.workspace)?;
-        let notes = super::notes::read(&root).map_err(|e| super::apply::refused(&e))?;
-        Ok((Brief::gather(&config, &item, &req)?.goal(), notes.base))
-    })
-    .await;
+    let (req, delegate) = (q.clone(), d.worker.clone());
+    let made =
+        super::blocking(move || super::goal::prepare(&config, &req, delegate.as_deref())).await;
     let (record, error) = match made {
         Err(e) => (None, Some(e)),
-        Ok((goal, notes_base)) => {
-            tracing::info!(request = %q.id, version = q.version, workspace = %q.workspace, "assistant run starting");
+        Ok(p) => {
+            tracing::info!(request = %q.id, version = q.version, step = p.run.step(), worker = ?p.worker, workspace = %q.workspace, "assistant run starting");
             let new = NewTask {
                 workspace: q.workspace.clone(),
-                worker: d.worker.clone(),
+                worker: p.worker,
                 title: title(&q),
-                goal,
-                assistant: Some(RunFor::Request(RequestRun {
-                    request: q.id.clone(),
-                    version: q.version,
-                    work: q.work.clone(),
-                    notes_base: Some(notes_base),
-                })),
+                goal: p.goal,
+                assistant: Some(RunFor::Request(p.run)),
                 ..NewTask::default()
             };
             match cx.env().await {
@@ -397,7 +404,7 @@ fn finish(
     super::shelf::<AssistantRequest>(config)?.update_with_extra(
         id,
         |q, extra| -> Result<(), Fail> {
-            if creating(extra, version).is_some() {
+            if steps::creating(extra, version, steps::current(q)).is_some() {
                 extra.remove(CREATING_FIELD);
             }
             if q.version != version {
@@ -411,6 +418,7 @@ fn finish(
                 q.delivery_at = at;
             }
             q.updated_at = at;
+            steps::sync(q);
             Ok(())
         },
     )?;
@@ -445,13 +453,13 @@ pub fn reply(
 
 /// Ids only: the title names the run's folder and session, which logs and
 /// tmux show, and a Work item's title comes from Capture text (ADR 0048 §11).
+/// A step after the first adds `s<step>`.
 fn title(q: &AssistantRequest) -> String {
-    format!(
-        "{} {} v{}",
-        super::brief::scope_name(q.scope),
-        q.id,
-        q.version
-    )
+    let scope = super::brief::scope_name(q.scope);
+    match steps::current(q) {
+        1 => format!("{scope} {} v{}", q.id, q.version),
+        k => format!("{scope} {} v{} s{k}", q.id, q.version),
+    }
 }
 
 fn check_purpose(purpose: Option<&str>) -> Result<(), ErrorBody> {

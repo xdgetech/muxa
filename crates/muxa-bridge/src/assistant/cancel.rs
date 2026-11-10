@@ -68,7 +68,8 @@ fn mark(config: &Config, id: &str, version: u64) -> Result<(String, Next), Error
             )
             .into());
         }
-        let next = match (&q.run, super::ask::creating(extra, version)) {
+        let step = super::steps::current(q);
+        let next = match (&q.run, super::steps::creating(extra, version, step)) {
             (Some(run), _) => Next::Close(run.clone()),
             (None, Some(since)) if at.saturating_sub(since) < super::ask::CREATING_LIMIT => {
                 Next::Wait
@@ -93,6 +94,7 @@ fn mark(config: &Config, id: &str, version: u64) -> Result<(String, Next), Error
         q.delivery = Delivery::CancelRequested;
         q.delivery_at = at;
         q.updated_at = at;
+        super::steps::sync(q);
         Ok((q.work.clone(), next))
     })?;
     let marked =
@@ -111,6 +113,7 @@ pub fn cancelled(config: &Config, id: &str, version: u64) -> Result<(), ErrorBod
         q.delivery = Delivery::Cancelled;
         q.delivery_at = at;
         q.updated_at = at;
+        super::steps::sync(q);
         Ok(true)
     })?;
     if changed == Some(true) {

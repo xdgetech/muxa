@@ -34,10 +34,38 @@ pub struct RequestRun {
     pub version: u64,
     /// `w-…`: the request's Work item.
     pub work: String,
-    /// The SHA-256 of the notes the run read at its start (ADR 0049 §1).
-    /// None: a run from before notes, which may not propose any.
+    /// The SHA-256 of the notes the run read at its start, and may propose
+    /// (ADR 0049 §1): its own member's file, or the workspace's. None: a run
+    /// from before notes, which may not propose any.
     #[serde(default, rename = "notesBase", skip_serializing_if = "Option::is_none")]
     pub notes_base: Option<String>,
+    /// The step of a request with a staff (ADR 0051 §3). None: step 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<u32>,
+    /// A member who is not the lead: its own notes are the ones it proposes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
+    /// With `member`: the SHA-256 of the workspace's notes it reads as data.
+    #[serde(
+        default,
+        rename = "sharedBase",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub shared_base: Option<String>,
+}
+
+impl RequestRun {
+    pub fn step(&self) -> u32 {
+        self.step.unwrap_or(1)
+    }
+
+    /// The notes file this run proposes.
+    pub fn notes_place(&self) -> super::notes::Place<'_> {
+        match &self.member {
+            Some(w) => super::notes::Place::Member(w),
+            None => super::notes::Place::Workspace,
+        }
+    }
 }
 
 /// The plan an overall run answers (ADR 0049 §5).
@@ -168,6 +196,14 @@ pub fn prepare_run(
 ) -> Result<(), String> {
     prepare(dir).map_err(|e| format!("cannot create the assistant run folder: {e}"))?;
     let run = record.assistant_run();
+    if let Some(RunFor::Request(r)) = &run {
+        if let (Some(base), Some(shared)) = (&r.notes_base, &r.shared_base) {
+            let copied = super::notes::copy_at(root, dir, r.notes_place(), base)
+                .and_then(|()| super::notes::copy_into(root, dir, shared));
+            copied.map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
     if let Some(base) = run.as_ref().and_then(RunFor::notes_base) {
         super::notes::copy_into(root, dir, base).map_err(|e| e.to_string())?;
     }
@@ -211,6 +247,9 @@ mod tests {
             version: 2,
             work: "w-0000000b".into(),
             notes_base: Some("e3b0".into()),
+            step: None,
+            member: None,
+            shared_base: None,
         };
         let mut r = record(RunFor::Request(run.clone()).fields());
         assert!(r.is_assistant_run() && r.is_background_run() && !r.is_routine_run());

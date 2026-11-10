@@ -1,11 +1,12 @@
 //! `apply-notes` and `notes = "auto"` (ADR 0049 §1): a stored proposal
-//! replaces the workspace's live notes only while they still hash to its
-//! base. Logs carry ids, sizes and hashes, never the text.
+//! replaces the live notes only while they still hash to its base. A staff
+//! member's proposal goes to its own file (ADR 0051 §5), found by the run
+//! that made it. Logs carry ids, sizes and hashes, never the text.
 use std::path::PathBuf;
 
 use muxa_protocol::{AssistantRequest, ErrorBody, ErrorCode, Notes, Plan, WorkItem};
 
-use super::notes::{self, NotesError};
+use super::notes::{self, NotesError, Place};
 use crate::convert::error_body;
 use crate::records::Record;
 use crate::records::assistant::NotesMode;
@@ -24,14 +25,19 @@ pub enum Applied {
 }
 
 /// Blocking. Applies the notes that `source` proposed: a request's result
-/// of `version`, or a plan at `rev` `version`.
+/// of `version` and `step` (None: the version's last step), or a plan at
+/// `rev` `version`.
 pub fn apply_notes(
     config: &Config,
     source: &str,
     version: u64,
     base: &str,
+    step: Option<u32>,
 ) -> Result<Applied, ErrorBody> {
     if is_id(source, "p-") {
+        if step.is_some() {
+            return Err(bad("apply-notes: step is for a request, not a plan"));
+        }
         return apply_plan(config, source, version, base).map(Applied::Plan);
     }
     if !is_id(source, "q-") {
@@ -43,27 +49,43 @@ pub fn apply_notes(
         .get(source)
         .map_err(|e| super::state_error(&e))?
         .ok_or_else(|| bad(format!("no request {source}")))?;
-    let proposal = q
+    let step_of = |r: &muxa_protocol::AssistResult| r.step.unwrap_or(1);
+    let wanted = step.or_else(|| {
+        q.results
+            .iter()
+            .filter(|r| r.version == version)
+            .map(step_of)
+            .max()
+    });
+    let found = q
         .results
         .iter()
-        .find(|r| r.version == version)
-        .and_then(|r| r.notes.clone())
-        .ok_or_else(|| {
-            bad(format!(
-                "request {source} has no proposed notes at version {version}"
-            ))
-        })?;
+        .find(|r| r.version == version && Some(step_of(r)) == wanted);
+    let step = wanted.unwrap_or(1);
+    let proposal = found.and_then(|r| r.notes.clone()).ok_or_else(|| {
+        bad(format!(
+            "request {source} has no proposed notes at version {version}, step {step}"
+        ))
+    })?;
     if proposal.base != base {
         return Err(bad(
             "apply-notes: base is not the proposal's; list the request again",
         ));
     }
+    let member = member_of(
+        config,
+        &q,
+        version,
+        step,
+        found.and_then(|r| r.worker.as_deref()),
+    )?;
+    let place = member.as_deref().map_or(Place::Workspace, Place::Member);
     let root = workspace_root(config, &q.workspace)?;
-    notes::apply(&root, &proposal.text, &proposal.base).map_err(|e| {
-        tracing::info!(request = %q.id, version, base = shown(base), error = %e, "notes not applied");
+    notes::apply_at(&root, place, &proposal.text, &proposal.base).map_err(|e| {
+        tracing::info!(request = %q.id, version, step, base = shown(base), error = %e, "notes not applied");
         refused(&e)
     })?;
-    tracing::info!(request = %q.id, version, base = shown(base), bytes = proposal.text.len(), "notes applied");
+    tracing::info!(request = %q.id, version, step, member = ?member, base = shown(base), bytes = proposal.text.len(), "notes applied");
     super::ask::reply(config, &q.work, &q.id).map(|(w, q)| Applied::Request(w, q))
 }
 
@@ -107,6 +129,34 @@ fn apply_plan(config: &Config, id: &str, rev: u64, base: &str) -> Result<Plan, E
     Ok(super::plan::listed(config, plan))
 }
 
+/// Blocking. The member whose own notes step `step` of `version` proposed;
+/// None for the workspace's notes. The step's run recorded it at its start;
+/// without the run, the staff as configured now decides.
+fn member_of(
+    config: &Config,
+    q: &AssistantRequest,
+    version: u64,
+    step: u32,
+    worker: Option<&str>,
+) -> Result<Option<String>, ErrorBody> {
+    let recorded = config.records_if_any().into_iter().find_map(|r| {
+        let run = r.request_run()?;
+        (run.request == q.id && run.version == version && run.step() == step).then_some(run)
+    });
+    if let Some(run) = recorded {
+        return Ok(run.member);
+    }
+    let workspaces = config.load_workspaces()?;
+    let place = workspaces
+        .get(&q.workspace)
+        .and_then(|w| w.assistant.as_ref())
+        .map_or(Place::Workspace, |d| super::staff::notes_of(d, worker));
+    Ok(match place {
+        Place::Member(w) => Some(w.to_owned()),
+        Place::Workspace => None,
+    })
+}
+
 /// Blocking. After a result with notes is stored: with `notes = "auto"`,
 /// the host applies them. A changed base keeps the proposal for the user.
 /// `source` and `version` are the request and its version, or the plan and its `rev`.
@@ -126,7 +176,10 @@ pub fn auto_apply(config: &Config, record: &Record, source: &str, version: u64, 
         return;
     }
     let (request, base) = (source, shown(&proposal.base));
-    match notes::apply(&workspace.root, &proposal.text, &proposal.base) {
+    // A member's run proposes its own notes; a plan's and a lead's, the workspace's.
+    let member = record.request_run().and_then(|r| r.member);
+    let place = member.as_deref().map_or(Place::Workspace, Place::Member);
+    match notes::apply_at(&workspace.root, place, &proposal.text, &proposal.base) {
         Ok(()) => tracing::info!(
             task = %record.id, request = %request, version, base,
             bytes = proposal.text.len(), "notes applied at publish"

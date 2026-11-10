@@ -135,6 +135,9 @@ impl Host {
             version: 1,
             work: work.id.clone(),
             notes_base: Some(notes::read(&self.root).unwrap().base),
+            step: None,
+            member: None,
+            shared_base: None,
         };
         let mut result = json!({"version": 1, "request": q.id, "requestVersion": 1,
                                 "summary": "Plan A fits."});
@@ -190,14 +193,15 @@ fn review_stores_the_proposal_and_apply_writes_it_while_the_base_holds() {
     assert_eq!(notes.base, notes::base_of(b"# Old\n"));
     assert_eq!(h.live(), "# Old\n", "review never writes at publish");
 
-    let wrong_base = apply_notes(&h.config, &q.id, 1, &"0".repeat(64)).unwrap_err();
+    let wrong_base = apply_notes(&h.config, &q.id, 1, &"0".repeat(64), None).unwrap_err();
     assert_eq!(wrong_base.code, ErrorCode::BadRequest);
-    let no_version = apply_notes(&h.config, &q.id, 2, &notes.base).unwrap_err();
+    let no_version = apply_notes(&h.config, &q.id, 2, &notes.base, None).unwrap_err();
     assert_eq!(no_version.code, ErrorCode::BadRequest);
-    let plan = apply_notes(&h.config, "p-00000001", 1, &notes.base).unwrap_err();
+    let plan = apply_notes(&h.config, "p-00000001", 1, &notes.base, None).unwrap_err();
     assert_eq!(plan.code, ErrorCode::BadRequest, "no such plan");
 
-    let Applied::Request(item, request) = apply_notes(&h.config, &q.id, 1, &notes.base).unwrap()
+    let Applied::Request(item, request) =
+        apply_notes(&h.config, &q.id, 1, &notes.base, None).unwrap()
     else {
         panic!("a request's notes reply with the request")
     };
@@ -207,7 +211,7 @@ fn review_stores_the_proposal_and_apply_writes_it_while_the_base_holds() {
     );
     assert_eq!(h.live(), text);
     // Applied once, the live file is no longer the proposal's base.
-    let again = apply_notes(&h.config, &q.id, 1, &notes.base).unwrap_err();
+    let again = apply_notes(&h.config, &q.id, 1, &notes.base, None).unwrap_err();
     assert_eq!(again.code, ErrorCode::Conflict);
     assert!(!again.message.contains(SENTINEL), "{}", again.message);
 }
@@ -218,7 +222,7 @@ fn a_changed_base_is_a_conflict_and_keeps_the_users_edit() {
     let (q, _) = h.published(Some("# Proposed\n"));
     h.set_live("# Edited by the user\n");
     let base = q.results[0].notes.as_ref().unwrap().base.clone();
-    let e = apply_notes(&h.config, &q.id, 1, &base).unwrap_err();
+    let e = apply_notes(&h.config, &q.id, 1, &base, None).unwrap_err();
     assert_eq!(e.code, ErrorCode::Conflict);
     assert!(e.message.contains("ask again"), "{}", e.message);
     assert_eq!(h.live(), "# Edited by the user\n");
