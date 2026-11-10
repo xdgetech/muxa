@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. It answers the open item of ADR 0027 section 2 and the Codex gate of ADR 0024 and 0026. Slices S1 to S7 are built behind `[codex] owned_threads` in `workspaces.toml`, which is off by default. Keep it off until the developer's checklist at the end passes with a real login. Only fakes (`tests/data/codex-fake.py`) and a no-login probe of Codex 0.167.0's transport (`scripts/codex-app-server-probe.sh`, facts 6 and 7) have checked the code.
+Proposed. It answers the open item of ADR 0027 section 2 and the Codex gate of ADR 0024 and 0026. Slices S1 to S7 are built behind `[codex] owned_threads` in `workspaces.toml`, which is off by default. Keep it off until the developer's checklist at the end passes with a real login. Only fakes (`tests/data/codex-fake.py`) and no-login probes of Codex 0.167.0 (`scripts/codex-app-server-probe.sh`, facts 6, 7, 9 and 10) have checked the code. The developer's first real-login run failed at checklist step 2 (fact 8). Revision 1 below changes how the thread is created because of it.
 
 ## Context
 
@@ -21,6 +21,9 @@ Facts this ADR relies on:
 5. A no-model probe on a private stdio app-server, with a temporary `CODEX_HOME` and no login: `thread/start` returned an id, status `idle` and a rollout `path` that contains the id. No file existed on disk yet, and `thread/list` was empty. The default history mode was `paginated`; `historyMode: "legacy"` was accepted (experimental opt-in).
 6. Codex 0.167.0: `codex app-server proxy` relays raw bytes to the daemon's control socket, `$CODEX_HOME/app-server-control/app-server-control.sock`. That socket speaks WebSocket. Newline-delimited JSON-RPC through the proxy gets no answer, and the proxy exits 0. A WebSocket upgrade gets `101 Switching Protocols` with `x-codex-websocket-max-unfragmented-message-bytes: 16777216`. The private stdio server (`codex app-server`) keeps newline-delimited JSON ([findings](../findings/codex-app-server.md)).
 7. Through the proxy with WebSocket, on a daemon in a temporary `CODEX_HOME` with no login: `thread/start` returns an id, `idle` and `legacy`, and a second connection reads the thread `idle`. After `daemon stop` and `daemon start` the thread reads `notLoaded`. After `daemon restart` an empty thread still read `idle`.
+8. *Developer, real login, Codex 0.167.0, through `muxa-bridge codex-rpc`.* `thread/start {cwd, historyMode: "legacy"}` returned an id, `idle` and `legacy`, and a new connection read it `idle`. About 10 s later, `codex resume <id>` in a `tmux -L muxa-test-codex` pane ended at once. About 20 s after creation, `turn/start` got -32600 `thread not found` and `thread/read` got -32600 `thread not loaded`, twice, 15 s apart. The rollout at `thread.path` did not exist. muxa's first order (thread on a short connection, then `codex resume`, then `turn/start`) cannot work.
+9. *Probe, no login.* An empty thread (no turn, no rollout) stays loaded while a connection that started it is open (checked up to 140 s). With no such connection it is gone 50 to 70 s later; reads from other connections do not extend it. Fact 8 saw it gone by 20 s, so the delay is not fixed and muxa must not depend on it ([findings](../findings/codex-app-server.md#threads)).
+10. *Probe, no login; the TUI ran with a model provider on a closed local port.* `codex resume <id>` on an empty thread exits 1 at once, held or not: `thread/resume failed: no rollout found for thread id <id> (code -32600)`. `thread/start` takes no input. `thread/name/set` on the empty thread writes the rollout's `session_meta` line, with no model call. Then `codex resume <id>` opens the empty thread, and while the TUI runs the thread stays `idle` (checked at 90 s) and takes `turn/start` from a new connection. A saved thread that nothing holds reads `notLoaded`, and `turn/start` on it gets `thread not found`.
 
 ## Decision
 
@@ -35,8 +38,8 @@ Facts this ADR relies on:
 
 ### Choose C
 
-1. Before dispatch, muxa calls `thread/start` through `codex app-server proxy`, with the run's cwd and the workspace's agent environment. It stores the returned thread id on the reserved run, in the same durable step as `prepared` (ADR 0024).
-2. The pane runs `codex resume <thread-id>`. The TUI is a viewer of the thread. It is not the proof of ownership.
+1. Before dispatch, muxa calls `thread/start` through `codex app-server proxy`, with the run's cwd and the workspace's agent environment, and then `thread/name/set` on the same connection, which saves the thread (Revision 1). It stores the returned thread id on the reserved run, in the same durable step as `prepared` (ADR 0024).
+2. The pane runs `codex resume <thread-id>`. The TUI is a viewer of the thread, and it keeps the thread loaded. It is not the proof of ownership.
 3. Readiness is `thread/read` status `idle` on the stored id. `notLoaded`, `systemError`, a missing field or any error is unknown. Unknown never gets input.
 4. Delivery keeps ADR 0024's claim: persist `delivering`, then call `turn/start` on the stored id. A JSON-RPC result is a definite send. A lost connection or timeout is uncertain and is not retried.
 5. State comes from the thread status, so an approval shows as `waiting`. Chat reads the rollout at the thread's `path`, found by id, not by cwd and time. The adapter reports `process_bound = true` only for a run with a stored thread id.
@@ -45,20 +48,40 @@ Facts this ADR relies on:
 
 C is chosen over B because the proof does not depend on what the TUI shows. It is chosen over A because A cannot prove anything before the first turn while the daemon is shared.
 
+### Revision 1 (2026-11-10): save the thread before the pane resumes it
+
+**Before.** Item 1 created the thread on a connection of its own and closed it. Item 2 then started `codex resume <id>`. The first `turn/start` came later, on a new connection.
+
+**Why it changed.** The developer's real-login run (fact 8): `codex resume` ended at once, and 20 s after creation the daemon no longer knew the thread. The probes explain both (facts 9 and 10): a thread with no rollout cannot be resumed, and the daemon drops it soon after no connection holds it.
+
+**Now.**
+
+1. Under the creation claim, one connection sends `thread/start` and then `thread/name/set` with the name `muxa <record id>`. `thread/name/set` writes the rollout's first line, so the thread is saved before the connection closes.
+2. Unless the file at `thread.path` exists then, the creation fails before any pane starts.
+3. The record gets `codexThread`, and the pane runs `codex resume <id>` as before. The TUI loads the saved thread and keeps it loaded.
+4. Readiness and delivery do not change: a fresh `idle` read, `delivering`, then `turn/start` on a new connection. A thread that nothing holds reads `notLoaded`, which is unknown, so it gets no input.
+
+| | Hold a connection until the first turn | Create the thread at the first delivery | Save it with `thread/name/set` (chosen) |
+|---|---|---|---|
+| What changes | the daemon keeps one connection per run open through the start wait, sends the first turn on it, and starts the TUI only once the rollout exists | `thread/start` and the first `turn/start` move under the delivery claim; the pane starts after them | one more request at creation |
+| Cost | a registry of open connections in the daemon, lost on a daemon restart; a pane that waits before it runs the TUI, while the start wait needs an agent in the pane | ADR 0024's checks before delivery read the pane, which does not exist yet; the creation and delivery claims merge | it depends on a side effect of an experimental request. The rollout is checked at creation, so a change in Codex fails closed |
+
+ADR 0024's guarantees stay: the creation claim covers the thread and the record, `delivering` is persisted before every `turn/start`, and an uncertain send is never retried. Invariant 6 stays: muxa reports only the status `thread/read` gives.
+
 ### The developer checks these by hand before it is enabled
 
 Use a real login, a throwaway tmux server (`tmux -L muxa-test-codex`), a scratch repo and a disposable prompt. Record only the version, ids, statuses and pass or fail.
 
-1. `thread/start` through `codex app-server proxy` on the logged-in daemon returns an id with status `idle`, and starts no turn.
-2. `codex resume <id>` in a pane opens that thread before its first turn. If it fails, record the error and try `turn/start` first, then `resume`.
-3. `turn/start` with the fixed prompt runs in that thread. The attached TUI shows it. `thread/read` moves from `active` to `idle`. The rollout at `path` appears and holds the turn.
+1. `thread/start` and `thread/name/set` through `codex app-server proxy` on the logged-in daemon return an id with status `idle`, write the rollout's `session_meta` line, and start no turn.
+2. `codex resume <id>` in a pane opens that saved thread before its first turn, and keeps it loaded after the creating connection has closed.
+3. `turn/start` with the fixed prompt runs in that thread. The attached TUI shows it. `thread/read` moves from `active` to `idle`. The rollout at `path` holds the turn.
 4. A command that needs approval shows `active` with `waitingOnApproval`.
 5. After `/new` in the TUI, `turn/start` on the stored id still reaches the owned thread, not the new one.
 6. With a second Codex in the same cwd, its sessions never bind to the run.
 7. With a workspace `CODEX_HOME`, the thread is created under that home, and the TUI finds it.
 8. After `codex app-server daemon restart`, the stored thread reads as `notLoaded` or fails, and muxa sends no input.
 
-If check 1, 3 or 5 fails with the installed version, keep the fallback. If only check 2 fails, C still works with `turn/start` before `resume`; ADR 0024's order then needs a short amendment.
+If check 1, 2, 3 or 5 fails with the installed version, keep the fallback.
 
 ### Slices
 
@@ -80,8 +103,8 @@ All seven slices are built.
 2. **Which runs.** Only background runs: Routine runs and assistant runs (a delegate, a staff member, the overall assistant's plans). Tasks, ask sessions and manual sessions keep today's behavior (Decision item 7).
 3. **The writer stays Claude Code** (ADR 0052 E1), also with the switch on. It performs an approved external write, and a wrong turn there has an effect outside the host. Revisit after the checks pass.
 4. **Not owned, so still refused:** a Codex command with `--no-daemon` or `--remote`, and a workspace `command` that is not plain words starting with a `codex` program (for example `exec codex` or `codex $FLAGS`).
-5. **Transport.** Each call spawns `codex app-server proxy` with the run's `CODEX_HOME`, opens a WebSocket over its stdin and stdout (`agents/codex/proxy.rs`, `tungstenite`), sends `initialize` with `experimentalApi`, then one request. Each JSON-RPC message is one text message. A message over the limit in the 101 answer is not sent. The proxy, not the socket path, is the transport: it finds the socket of the run's `CODEX_HOME` itself. Before `thread/start`, muxa runs `codex app-server daemon start`, because the TUI that would start the daemon runs only after the thread exists. A thread starts with `cwd` (the run folder) and `historyMode: "legacy"`; the full workspace env goes to that one call.
-6. **The record.** `codexThread {version, run, id, path, program, home}` is written under the creation claim before the pane exists. It counts only for the run it names. A damaged field, or one for another run, gives no state and no input.
+5. **Transport.** Each call spawns `codex app-server proxy` with the run's `CODEX_HOME`, opens a WebSocket over its stdin and stdout (`agents/codex/proxy.rs`, `tungstenite`), sends `initialize` with `experimentalApi`, then one request. Each JSON-RPC message is one text message. A message over the limit in the 101 answer is not sent. The proxy, not the socket path, is the transport: it finds the socket of the run's `CODEX_HOME` itself. Before `thread/start`, muxa runs `codex app-server daemon start`, because the TUI that would start the daemon runs only after the thread exists. A thread starts with `cwd` (the run folder) and `historyMode: "legacy"`; the full workspace env goes to that one connection. `thread/name/set` follows on it (Revision 1). The name is `muxa <record id>`, never the title, which can be an approved write's action (ADR 0052 §6).
+6. **The record.** `codexThread {version, run, id, path, program, home}` is written under the creation claim before the pane exists, once the rollout at `path` exists. It counts only for the run it names. A damaged field, or one for another run, gives no state and no input.
 7. **The pane** runs `codex resume <id> <worker args>`: the id comes first, so a flag cannot take it as its value. Worker args reach the viewer. Whether they reach turns that muxa starts is checklist item 9.
 8. **State.** `idle` is idle, `active` is running, `active` with `waitingOnApproval` or `waitingOnUserInput` is waiting, `notLoaded` and `systemError` are unknown. The time comes from the rollout's last turn event only when it agrees with the status; else it is absent. A pane back at a shell has no agent.
 9. **Delivery.** A fresh `thread/read` must say `idle` under the delivery claim. Then `delivering` is persisted, then `turn/start`. A result is sent. An error answer is not sent: the start wait ends with its not-sent note, and the Loop stops with `not-sent`. A lost connection or a timeout after the request is uncertain: the claim stays for recovery and nothing is sent again.
@@ -93,6 +116,8 @@ All seven slices are built.
 - The bridge gets a second input path for Codex: a turn sent by id, not typed keys. Claude keeps typed input.
 - muxa depends on the shared daemon for guarded Codex runs. A worker command with `--no-daemon` or `--remote` cannot be guarded and keeps the fallback.
 - The App Server API is experimental. Every call fails closed to unknown, and the fallback prompt stays as the safety net.
+- muxa depends on `thread/name/set` writing the rollout of an empty thread (Revision 1). Creation checks the file, so a Codex that stops writing it fails the run before its pane starts.
+- The TUI in the pane keeps the thread loaded between turns. After it exits, or after `/new` moves it to another thread, the owned thread reads `notLoaded` within about a minute and gets no input.
 - The shared daemon keeps the environment of whoever started it. A workspace env other than `CODEX_HOME` may not reach the turn. This is true for any daemon-mode Codex today.
 - New threads default to paginated history. Option C may request `legacy` so the rollout reader keeps working. Manual sessions may already use paginated history; the Codex Chat reader needs a separate check for that.
 - Nothing copies authentication, adds credentials or edits the user's Codex config.
@@ -101,7 +126,7 @@ All seven slices are built.
 
 Run it with your real Codex login, before you set `owned_threads = true` on a host you use. Use a scratch repo, a disposable prompt and a throwaway tmux server; never the default server. Record only the Codex version, thread ids, statuses and pass or fail.
 
-Setup, in a new shell. The checks go through muxa's own App Server client (`muxa-bridge codex-rpc`), so they test the code path that runs use: `codex app-server proxy`, a WebSocket over its stdio (fact 6), `initialize`, one request, then the connection closes. `scripts/codex-app-server-probe.sh` re-checks the no-login facts first, without your login.
+Setup, in a new shell. The checks go through muxa's own App Server client (`muxa-bridge codex-rpc`), so they test the code path that runs use: `codex app-server proxy`, a WebSocket over its stdio (fact 6), `initialize`, one request, then the connection closes. `--hold SECONDS` keeps the connection open that long after the answer and prints each notification's method and ids to stderr; it stands in for muxa's one connection that sends `thread/start` and `thread/name/set` (Revision 1). `scripts/codex-app-server-probe.sh` re-checks the no-login facts first, without your login.
 
 ```sh
 codex --version                       # record it
@@ -112,20 +137,45 @@ export CHECK=/tmp/muxa-codex-check
 mkdir -p "$CHECK/repo" "$CHECK/root/.muxa" "$CHECK/state" && cd "$CHECK/repo"
 ```
 
-1. `codex app-server daemon start`, then `rpc thread/start '{"cwd":"'"$PWD"'","historyMode":"legacy"}'`. Expected: the result has `thread.id`, `thread.status.type` `"idle"`, a `thread.path` that contains the id, and `thread.historyMode` `"legacy"`. Save the id: `export T=<id>`. Then `rpc thread/read '{"threadId":"'"$T"'"}'` on a new connection still says `idle`: no turn started.
-2. `tmux -L muxa-test-codex new-session -d -s v "codex resume $T"; sleep 3; tmux -L muxa-test-codex capture-pane -p -t v`. Expected: the TUI shows the empty thread, not a picker or an error. On failure, record the error, do step 3 first, then this step.
-3. `rpc turn/start '{"threadId":"'"$T"'","input":[{"type":"text","text":"Reply with the word ok."}]}'`. It returns after the answer and closes its connection, as muxa does. Then `rpc thread/read '{"threadId":"'"$T"'"}' | jq -c .thread.status` while the turn runs and after. Expected: a result with `turn`; `status` `active` then `idle`, so the turn goes on after the connection closed; the TUI (`capture-pane` again) shows the turn; the file at `thread.path` exists and has `task_started` and `task_complete` lines.
-4. With a default approval policy, `rpc turn/start '{"threadId":"'"$T"'","input":[{"type":"text","text":"Run touch approval-check in this folder."}]}'`, then `rpc thread/read '{"threadId":"'"$T"'"}' | jq -c .thread.status`. Expected: `{"type":"active","activeFlags":["waitingOnApproval"]}`. Deny it in the TUI.
-5. Type `/new` in the TUI (`tmux -L muxa-test-codex send-keys -t v /new Enter`), then repeat step 3 on `$T`. Expected: the turn lands in `$T` (its `path` grows), not in the TUI's new thread.
+1. Create and save the thread as muxa does, on a connection held for 30 s:
+
+   ```sh
+   codex app-server daemon start
+   rpc --hold 30 thread/start '{"cwd":"'"$PWD"'","historyMode":"legacy"}' >"$CHECK/thread.json" 2>"$CHECK/held.log" &
+   until jq -e .thread.id "$CHECK/thread.json" >/dev/null 2>&1; do sleep 0.2; done
+   export T="$(jq -r .thread.id "$CHECK/thread.json")" P="$(jq -r .thread.path "$CHECK/thread.json")"
+   jq -c '.thread | {id, status, historyMode, path}' "$CHECK/thread.json"
+   rpc thread/name/set '{"threadId":"'"$T"'","name":"muxa check"}'
+   head -1 "$P" | jq -r .type
+   rpc thread/read '{"threadId":"'"$T"'"}' | jq -c .thread.status
+   ```
+
+   Expected: `status` `{"type":"idle"}`, `historyMode` `"legacy"` and a `path` that contains `$T`; `thread/name/set` prints `{}`; the rollout's first line is `session_meta`; the read on a new connection says `{"type":"idle"}`, so no turn started.
+2. Open it in the viewer while the hold lasts, then let the hold end:
+
+   ```sh
+   tmux -L muxa-test-codex -f /dev/null new-session -d -s v -x 200 -y 50
+   tmux -L muxa-test-codex set-option -g remain-on-exit on
+   tmux -L muxa-test-codex new-window -t v "codex resume $T"
+   sleep 5; tmux -L muxa-test-codex capture-pane -p -t v
+   tmux -L muxa-test-codex display -p -t v '#{pane_dead} #{pane_dead_status}'
+   sleep 100; cat "$CHECK/held.log"
+   rpc thread/read '{"threadId":"'"$T"'"}' | jq -c .thread.status
+   ```
+
+   Expected: the TUI shows the empty thread with `muxa check` in its footer, not a sign-in screen, a picker or an error; `pane_dead` is `0`. If it first asks whether to trust the folder, answer in the pane (`tmux -L muxa-test-codex attach -t v`, detach with the prefix and `d`). `held.log` has `event thread/started thread=$T status=idle` and ends with `held 30s; closing`. More than 70 s after the hold ended, the thread still reads `{"type":"idle"}`: the TUI keeps it loaded. On failure, record the screen's error line and the read's error answer.
+3. `rpc turn/start '{"threadId":"'"$T"'","input":[{"type":"text","text":"Reply with the word ok."}]}' | jq -c .turn.status`. It returns once the turn is accepted and closes its connection, as muxa does. Then `rpc thread/read '{"threadId":"'"$T"'"}' | jq -c .thread.status` while the turn runs and after, and `jq -r .payload.type "$P" | grep -c task_complete`. Expected: `"inProgress"`; `status` `active` then `idle`, so the turn goes on after the connection closed; the TUI (`tmux -L muxa-test-codex capture-pane -p -t v`) shows the turn and its answer; the rollout has one `task_complete`.
+4. With a default approval policy, `rpc turn/start '{"threadId":"'"$T"'","input":[{"type":"text","text":"Run touch approval-check in this folder."}]}' >/dev/null; sleep 10; rpc thread/read '{"threadId":"'"$T"'"}' | jq -c .thread.status`. Expected: `{"type":"active","activeFlags":["waitingOnApproval"]}`, and the TUI shows the approval. Deny it in the TUI.
+5. Type `/new` in the TUI (`tmux -L muxa-test-codex send-keys -t v /new Enter`), then repeat step 3 on `$T` at once. Expected: the turn lands in `$T` (`grep -c task_complete` grows by one), not in the TUI's new thread. Then `sleep 90; rpc thread/read '{"threadId":"'"$T"'"}' | jq -c .thread.status`. Expected: `{"type":"notLoaded"}`, because nothing holds `$T` now; muxa treats it as unknown and sends nothing. Record what you see.
 6. Start a second Codex in the same folder in another pane (`tmux -L muxa-test-codex new-window -d -t v codex`) and talk to it. Expected: `thread/read` on `$T` does not change, and its `path` does not grow.
 7. Pick a workspace's Codex home, `export W=<that home>`. Repeat steps 1 to 3 with `CODEX_HOME="$W" codex app-server daemon start`, `rpc --codex-home "$W" ...` for every call, and `CODEX_HOME="$W" codex resume $T` in the pane. Expected: `thread.path` is under `$W`, and the TUI finds the thread.
 8. `codex app-server daemon restart`, then `rpc thread/read '{"threadId":"'"$T"'"}'`. Expected: an error answer (exit 1), or `status` `notLoaded`; muxa treats both as unknown. Record what you see: without a login, an empty thread still read `idle` after `restart` (fact 7). If it reads `idle`, also run `codex app-server daemon stop`, `codex app-server daemon start` and read again. Expected then: `notLoaded`.
-9. Start a thread, then `codex resume $T --sandbox read-only` (or your worker's flags), then step 3 with "Create a file named flag-check". Record whether the turn kept the viewer's flag. If it did not, set sandbox and approval for owned runs in that Codex home's `config.toml`.
+9. Create and save a thread as in step 1, then `codex resume $T --sandbox read-only` (or your worker's flags), then step 3 with "Create a file named flag-check". Record whether the turn kept the viewer's flag. If it did not, set sandbox and approval for owned runs in that Codex home's `config.toml`.
 
 Then muxa end to end, on the same throwaway server:
 
 10. Write `$CHECK/workspaces.toml` with `[codex]` `owned_threads = true`, one workspace `w` with `root = "$CHECK/root"`, `[workspace.agent] command = "codex"`, `[workspace.routines] enabled = true`, and a Routine in `$CHECK/root/.muxa/routines.toml` as in `docs/examples/routines.toml`. Run `"$MUXA_BRIDGE" daemon run --socket muxa-test-codex --daemon-dir /tmp/mxd-codex --state-dir "$CHECK/state" --workspaces "$CHECK/workspaces.toml"`, and in another shell `muxa-cli --bridge "$MUXA_BRIDGE --socket muxa-test-codex --daemon-dir /tmp/mxd-codex --state-dir $CHECK/state --workspaces $CHECK/workspaces.toml" routine run w/<name>`. Expected: the run's record in `$CHECK/state` has `codexThread` with `run` 1; its pane runs `codex resume <that id>`; the start prompt arrives as one turn in that thread; the Routine publishes; `/tmp/mxd-codex/daemon.log` holds ids and no prompt or instruction text.
 
-If 1, 3 or 5 fails, keep the switch off. If only 2 fails, amend the order (Decision, the last paragraph of the checks above) before turning it on.
+If 1, 2, 3 or 5 fails, keep the switch off.
 
 Clean up: `tmux -L muxa-test-codex kill-server; rm -rf "$CHECK" /tmp/mxd-codex`.
