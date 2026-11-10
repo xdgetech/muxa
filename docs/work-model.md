@@ -32,7 +32,7 @@ This defines the product concepts used by the vision and milestone plan. Propose
 
 | Concept | Question it answers | Identity and lifetime |
 |---|---|---|
-| Delegate notes | What does a workspace's assistant remember between runs? | `<root>/.muxa/assistant/NOTES.md`, one per workspace with `[workspace.assistant]`. A run reads a copy and may propose a new text; it is written only when the user applies it, or by the host with `notes = "auto"` |
+| Delegate notes | What does a workspace's assistant remember between runs? | The workspace memory, `<root>/.muxa/WORKSPACE.md` (ADR 0053), one per workspace. A run reads a copy and may propose a new text; it is written only when the user applies it, or by the host with `notes = "auto"` |
 | Overall assistant | Who looks across workspaces? | One workspace with `overall = true`. It reads only what each workspace's `share` allows, and asks other workspaces only through proposals |
 | Plan | What should I do next? | `p-<8hex>`: one overall run's answer, at most 3 rows with reasons and minutes. Made on a schedule or by Plan Now. The host keeps 7 |
 | Proposal | What does the overall assistant want to do for me? | An Inbox item of kind `sort` or `delegate`, from the newest plan only |

@@ -133,7 +133,7 @@ fn task_md_holds_the_goal_and_where_the_work_is() {
     assert_eq!(
         &text[notes..],
         format!(
-            "{MARKER}\n\n## Progress\n\nNothing yet.\n\n## Decisions\n\nNothing yet.\n\n## Next actions\n\nNothing yet.\n"
+            "{MARKER}\n\n## Progress\n\nNothing yet.\n\n## Decisions\n\nNothing yet.\n\n## Next actions\n\nNothing yet.\n\n## For the workspace\n\nNothing yet.\n"
         )
     );
 }

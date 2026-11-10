@@ -6,7 +6,7 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use muxa_protocol::{OverallRequests, Share};
+use muxa_protocol::{MemoryMode, OverallRequests, Share};
 use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
@@ -68,6 +68,8 @@ pub struct Workspace {
     pub assistant: Option<Delegate>,
     /// What it is to the overall assistant (ADR 0049 §2–§4).
     pub role: Role,
+    /// What a Task's close-out does with "For the workspace" (ADR 0053 §3).
+    pub memory: MemoryMode,
 }
 
 /// The configured workspaces, in file order.
@@ -117,6 +119,17 @@ struct RawWorkspace {
     park_after: Option<String>,
     routines: Option<RawGate>,
     assistant: Option<RawDelegate>,
+    memory: Option<String>,
+}
+
+/// `review` (the default), `auto` or `off`.
+fn memory_mode(raw: Option<&str>) -> Result<MemoryMode, String> {
+    match raw {
+        None | Some("review") => Ok(MemoryMode::Review),
+        Some("auto") => Ok(MemoryMode::Auto),
+        Some("off") => Ok(MemoryMode::Off),
+        Some(_) => Err("memory must be \"review\", \"auto\" or \"off\"".into()),
+    }
 }
 
 #[derive(Deserialize)]
@@ -241,6 +254,8 @@ impl Workspaces {
                 .transpose()
                 .map_err(|r| invalid(format!("workspace {:?}: assistant {r}", w.name)))?
                 .unwrap_or_default();
+            let memory = memory_mode(w.memory.as_deref())
+                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
             list.push(Workspace {
                 name: w.name,
                 root,
@@ -251,6 +266,7 @@ impl Workspaces {
                 routines,
                 assistant: delegate,
                 role,
+                memory,
             });
         }
         let mut overall = list.iter().filter(|w| w.role == Role::Overall);

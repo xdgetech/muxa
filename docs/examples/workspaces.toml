@@ -19,6 +19,12 @@
 #        item: it writes .muxa/HANDOFF.md and closes the Task's session. The
 #        Task, its TASK.md and its directory stay; Resume starts it again
 #        (ADR 0034). Without it, nothing is parked.
+# memory  optional; "review", "auto" or "off" (ADR 0053). <root>/.muxa/
+#        WORKSPACE.md is what this workspace has learned: every Task, staff
+#        and Routine run reads a copy of it. At a Task's end, its agent's
+#        "For the workspace" section in TASK.md is proposed for it. "review"
+#        (the default): you approve each addition in the Inbox. "auto": muxa
+#        appends it at once. "off": muxa proposes nothing.
 #
 # [workspace.agent]  optional; how this workspace's agents start (ADR 0016).
 #   command  the agent command; else the bridge's --task-command (claude).
@@ -79,7 +85,7 @@
 #   run_timeout       "30m", "12h" or "2d": a run with no result by then is
 #                     timed-out; the agent is not stopped (default "30m")
 #   notes             "review" or "auto": who writes a run's proposed
-#                     <root>/.muxa/assistant/NOTES.md (default "review": you
+#                     <root>/.muxa/WORKSPACE.md (default "review": you
 #                     apply each one) (ADR 0049)
 #   share             "none", "outline" or "summaries": what the overall
 #                     assistant reads of this workspace (default "summaries"
@@ -133,6 +139,8 @@ name = "Company"
 root = "~/work/company"
 # Remove the # sign to park Tasks idle for 12 hours.
 # park_after = "12h"
+# Remove the # sign to add what Tasks learn without asking.
+# memory = "auto"
 
 [workspace.agent]
 env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company" }

@@ -121,10 +121,18 @@ pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
-        // Reported from ADR 0053 slice M1 on.
-        memory: None,
-        memory_at: None,
+        memory: Some(w.memory),
+        memory_at: memory_at(w),
     }
+}
+
+/// When `.muxa/WORKSPACE.md` last changed. An unusable file shows as none;
+/// a run's start reports it in full.
+fn memory_at(w: &crate::records::Workspace) -> Option<u64> {
+    crate::assistant::notes::modified(&w.root).unwrap_or_else(|e| {
+        tracing::warn!(workspace = %w.name, error = %e, "cannot read the time of the workspace memory");
+        None
+    })
 }
 
 /// A worker's public metadata. Args, instructions and env stay on the host.

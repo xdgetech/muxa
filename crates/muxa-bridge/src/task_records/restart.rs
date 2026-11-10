@@ -59,9 +59,14 @@ pub(super) async fn restart_record(
     let config = Arc::clone(&env.records);
     let snapshot = record.clone();
     let fallback = env.tasks.command.clone();
-    let resolved = blocking(move || {
+    let (resolved, memory_root) = blocking(move || {
         let workspaces = config.load_workspaces()?;
-        resolve(&workspaces, &snapshot, worker.as_deref(), rev, &fallback)
+        let root = workspaces.get(&snapshot.workspace).map(|w| w.root.clone());
+        if let Some(root) = &root {
+            super::memory::check(root).map_err(|m| error_body(ErrorCode::BadRequest, m))?;
+        }
+        let resolved = resolve(&workspaces, &snapshot, worker.as_deref(), rev, &fallback)?;
+        Ok((resolved, root))
     })
     .await?;
     let config = Arc::clone(&env.records);
@@ -108,6 +113,9 @@ pub(super) async fn restart_record(
     let session = found.session.number();
     let pane = found.pane.number();
     let (next_claim, mut op) = blocking(move || {
+        if let Some(root) = &memory_root {
+            super::memory::give(&record, root, &dir).map_err(failed)?;
+        }
         let files = prepare_files(&record, &dir, &op_id, seen.clone(), since, &resolved)?;
         let reserved_run = record
             .runs

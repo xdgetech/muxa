@@ -228,7 +228,7 @@ pub struct Due {
     pub timezone: String,
 }
 
-/// A run's proposed replacement of the workspace's `.muxa/assistant/NOTES.md`.
+/// A run's proposed replacement of the workspace memory, `.muxa/WORKSPACE.md`.
 /// `apply-notes` writes it only while the live file still hashes to `base`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

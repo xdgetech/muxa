@@ -10,6 +10,7 @@ mod create;
 pub(crate) mod end;
 mod facts;
 pub(crate) mod handoff;
+mod memory;
 pub(crate) mod observation;
 pub(crate) mod owned;
 pub(crate) mod park;

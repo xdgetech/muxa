@@ -590,7 +590,7 @@ async fn without_a_daemon_automatic_processing_is_off() {
 const NOTES_MARK: &str = "notes-mark-3b6f";
 
 fn notes_path(h: &Host) -> PathBuf {
-    h.base.join("w/.muxa/assistant/NOTES.md")
+    h.base.join("w/.muxa/WORKSPACE.md")
 }
 
 fn with_notes(text: &str) -> Value {
@@ -630,7 +630,7 @@ async fn notes_are_read_at_the_start_proposed_and_applied_only_on_request() {
         let (code, message) = error_of(&answer);
         assert_eq!(code, ErrorCode::BadRequest);
         assert!(
-            message.contains("NOTES.md") && message.contains(needle),
+            message.contains("WORKSPACE.md") && message.contains(needle),
             "{message}"
         );
         assert!(!message.contains(NOTES_MARK), "{message}");
@@ -659,10 +659,10 @@ async fn notes_are_read_at_the_start_proposed_and_applied_only_on_request() {
     let (_, q) = ask(&mut conn, &item).await;
     let run = q.run.clone().expect("a run");
     let done = until(&mut conn, &h, &q.id, Delivery::Resulted).await;
-    let copy = std::fs::read_to_string(h.dir(&run).join(".muxa/assistant/NOTES.md")).unwrap();
+    let copy = std::fs::read_to_string(h.dir(&run).join(".muxa/WORKSPACE.md")).unwrap();
     assert_eq!(copy, old);
     let task_md = std::fs::read_to_string(h.dir(&run).join(".muxa/TASK.md")).unwrap();
-    assert!(task_md.contains(".muxa/assistant/NOTES.md"), "{task_md}");
+    assert!(task_md.contains(".muxa/WORKSPACE.md"), "{task_md}");
     let notes = done.results[0].notes.clone().expect("proposed notes");
     assert_eq!(
         (notes.text.as_str(), notes.base.clone()),

@@ -335,6 +335,16 @@ async fn start(
     claim: Option<&mut Option<ClaimedTask>>,
 ) -> Result<Started, Failure> {
     let client = &*env.client;
+    let (config, saved) = (Arc::clone(&env.records), record.clone());
+    let memory_root = blocking(move || {
+        let root = super::memory::root_of(&config, &saved)?;
+        if let Some(root) = &root {
+            super::memory::check(root).map_err(|m| error_body(ErrorCode::BadRequest, m))?;
+        }
+        Ok(root)
+    })
+    .await
+    .map_err(|e| Failure::before(e.message))?;
     let launched = match target {
         Target::Repo(req) => {
             let req = TaskRequest {
@@ -457,7 +467,12 @@ async fn start(
         } else {
             brief::create(&dir, &saved, in_repo)
         };
-        result.map_err(|m| error_body(ErrorCode::Internal, m))
+        result.map_err(|m| error_body(ErrorCode::Internal, m))?;
+        match &memory_root {
+            Some(root) => super::memory::give(&saved, root, &dir)
+                .map_err(|m| error_body(ErrorCode::Internal, m)),
+            None => Ok(()),
+        }
     })
     .await
     .map_err(|e| Failure::after(&launched, e.message))?;

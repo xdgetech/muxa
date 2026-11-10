@@ -23,7 +23,7 @@ fn temp() -> Dir {
 }
 
 fn live(root: &Path, bytes: &[u8]) {
-    std::fs::create_dir_all(root.join(".muxa/assistant")).unwrap();
+    std::fs::create_dir_all(root.join(".muxa")).unwrap();
     std::fs::write(root.join(NOTES), bytes).unwrap();
 }
 
@@ -66,22 +66,21 @@ fn a_symlink_is_refused_for_the_file_and_for_its_folders() {
     let d = temp();
     let elsewhere = d.0.join("elsewhere.md");
     std::fs::write(&elsewhere, SENTINEL).unwrap();
-    std::fs::create_dir_all(d.0.join(".muxa/assistant")).unwrap();
+    std::fs::create_dir_all(d.0.join(".muxa")).unwrap();
     std::os::unix::fs::symlink(&elsewhere, d.0.join(NOTES)).unwrap();
     let e = read(&d.0).unwrap_err();
     assert!(matches!(e, NotesError::NotRegular { .. }), "{e}");
 
     let other = temp();
     std::fs::create_dir_all(other.0.join("real")).unwrap();
-    std::fs::write(other.0.join("real/NOTES.md"), SENTINEL).unwrap();
-    std::fs::create_dir_all(other.0.join(".muxa")).unwrap();
-    std::os::unix::fs::symlink(other.0.join("real"), other.0.join(".muxa/assistant")).unwrap();
+    std::fs::write(other.0.join("real/WORKSPACE.md"), SENTINEL).unwrap();
+    std::os::unix::fs::symlink(other.0.join("real"), other.0.join(".muxa")).unwrap();
     let e = read(&other.0).unwrap_err();
     assert!(matches!(e, NotesError::NotRegular { .. }), "{e}");
     let e = apply(&other.0, "new", &base_of(b"")).unwrap_err();
     assert!(matches!(e, NotesError::NotRegular { .. }), "{e}");
     assert_eq!(
-        std::fs::read_to_string(other.0.join("real/NOTES.md")).unwrap(),
+        std::fs::read_to_string(other.0.join("real/WORKSPACE.md")).unwrap(),
         SENTINEL
     );
 }
@@ -104,11 +103,11 @@ fn apply_writes_while_the_base_holds_and_creates_the_folder() {
     let e = apply(&d.0, "# Third\n", &base_of(b"# Second\n")).unwrap_err();
     assert!(matches!(e, NotesError::Changed { .. }), "{e}");
     assert_eq!(read(&d.0).unwrap().text, "# Edited by hand\n");
-    let leftovers: Vec<_> = std::fs::read_dir(d.0.join(".muxa/assistant"))
+    let leftovers: Vec<_> = std::fs::read_dir(d.0.join(".muxa"))
         .unwrap()
         .map(|e| e.unwrap().file_name())
         .collect();
-    assert_eq!(leftovers, ["NOTES.md"]);
+    assert_eq!(leftovers, ["WORKSPACE.md"]);
 }
 
 #[test]
@@ -134,8 +133,42 @@ fn modified_is_the_files_time_and_never_follows_a_symlink() {
 
     let other = temp();
     std::fs::write(other.0.join("elsewhere.md"), SENTINEL).unwrap();
-    std::fs::create_dir_all(other.0.join(".muxa/assistant")).unwrap();
+    std::fs::create_dir_all(other.0.join(".muxa")).unwrap();
     std::os::unix::fs::symlink(other.0.join("elsewhere.md"), other.0.join(NOTES)).unwrap();
     let e = modified(&other.0).unwrap_err();
     assert!(matches!(e, NotesError::NotRegular { .. }), "{e}");
+}
+
+#[test]
+fn the_workspace_file_is_workspace_md_and_the_old_notes_are_only_seen() {
+    let d = temp();
+    assert_eq!(NOTES, ".muxa/WORKSPACE.md");
+    std::fs::create_dir_all(d.0.join(".muxa/assistant")).unwrap();
+    std::fs::write(d.0.join(OLD_NOTES), SENTINEL).unwrap();
+    assert!(old_notes_present(&d.0));
+    assert_eq!(read(&d.0).unwrap().text, "", "the old file is not read");
+    assert_eq!(
+        Place::Member("w").file(),
+        ".muxa/assistant/staff/w/NOTES.md"
+    );
+    assert!(!old_notes_present(&temp().0));
+}
+
+#[test]
+fn give_copies_the_live_file_and_removes_a_copy_without_one() {
+    let (root, run) = (temp(), temp());
+    assert_eq!(give(&root.0, &run.0).unwrap(), None);
+    assert!(!run.0.join(NOTES).exists(), "no live file leaves no copy");
+    live(&root.0, b"# Learned\n");
+    let base = give(&root.0, &run.0).unwrap();
+    assert_eq!(base, Some(base_of(b"# Learned\n")));
+    assert_eq!(std::fs::read(run.0.join(NOTES)).unwrap(), b"# Learned\n");
+    std::fs::remove_file(root.0.join(NOTES)).unwrap();
+    assert_eq!(give(&root.0, &run.0).unwrap(), None);
+    assert!(!run.0.join(NOTES).exists(), "the stale copy is gone");
+    live(&root.0, &[b'a'; MAX_NOTES + 1]);
+    let e = give(&root.0, &run.0).unwrap_err().to_string();
+    assert!(e.contains("16385 bytes"), "{e}");
+    assert!(e.contains(&root.0.join(NOTES).display().to_string()), "{e}");
+    assert!(!run.0.join(NOTES).exists());
 }

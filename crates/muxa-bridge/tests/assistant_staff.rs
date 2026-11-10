@@ -287,12 +287,9 @@ async fn a_request_runs_as_the_named_member_or_the_lead_with_its_own_notes() {
     );
     assert!(task_md.contains(&format!("- {STRATEGIST}: Strategist.")));
     assert!(task_md.contains("This is step 1 of at most 3"));
-    assert_eq!(
-        h.notes(".muxa/assistant/NOTES.md"),
-        Some(lead_notes.clone())
-    );
+    assert_eq!(h.notes(".muxa/WORKSPACE.md"), Some(lead_notes.clone()));
 
-    // A named member: its own notes file, never NOTES.md.
+    // A named member: its own notes file, never WORKSPACE.md.
     let other = work_item(&mut conn, "c-staff-2").await;
     let q = ask(&mut conn, &other, Some(STRATEGIST)).await;
     assert_eq!(
@@ -305,12 +302,9 @@ async fn a_request_runs_as_the_named_member_or_the_lead_with_its_own_notes() {
     assert_eq!(done.results[0].worker.as_deref(), Some(STRATEGIST));
     let own = format!(".muxa/assistant/staff/{STRATEGIST}/NOTES.md");
     assert_eq!(h.notes(&own), Some(own_notes));
-    assert_eq!(
-        h.notes(".muxa/assistant/NOTES.md"),
-        Some(lead_notes.clone())
-    );
+    assert_eq!(h.notes(".muxa/WORKSPACE.md"), Some(lead_notes.clone()));
     // The member read the shared notes as data, and its own copy.
-    let copy = std::fs::read_to_string(dir.join(".muxa/assistant/NOTES.md")).unwrap();
+    let copy = std::fs::read_to_string(dir.join(".muxa/WORKSPACE.md")).unwrap();
     assert_eq!(copy, lead_notes);
     assert!(dir.join(&own).is_file());
     let task_md = std::fs::read_to_string(dir.join(".muxa/TASK.md")).unwrap();

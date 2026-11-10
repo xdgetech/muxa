@@ -326,6 +326,31 @@ fn the_example_config_loads() {
 }
 
 #[test]
+fn memory_is_review_by_default_and_refuses_another_word() {
+    use muxa_protocol::MemoryMode;
+    let dir = temp("memory");
+    let ws = |extra: &str| {
+        config(
+            &dir,
+            &format!(
+                "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n{extra}",
+                dir.display()
+            ),
+        )
+    };
+    let mode = |extra: &str| ws(extra).unwrap().all()[0].memory;
+    assert_eq!(mode(""), MemoryMode::Review);
+    assert_eq!(mode("memory = \"review\""), MemoryMode::Review);
+    assert_eq!(mode("memory = \"auto\""), MemoryMode::Auto);
+    assert_eq!(mode("memory = \"off\""), MemoryMode::Off);
+    let e = ws("memory = \"always\"").unwrap_err().to_string();
+    assert!(
+        e.contains("memory must be \"review\", \"auto\" or \"off\""),
+        "{e}"
+    );
+}
+
+#[test]
 fn workspaces_load_and_validate() {
     let dir = temp("config");
     std::fs::create_dir_all(dir.join("work/app")).unwrap();
@@ -470,6 +495,12 @@ fn the_wire_workspace_lists_its_repos_and_omits_none() {
     ws.repos.clear();
     let json = serde_json::to_value(crate::convert::workspace(&ws)).unwrap();
     assert!(json.get("repos").is_none(), "{json}");
+    assert_eq!(json["memory"], "review");
+    assert!(json.get("memoryAt").is_none(), "no file: {json}");
+    std::fs::create_dir_all(ws.root.join(".muxa")).unwrap();
+    std::fs::write(ws.root.join(".muxa/WORKSPACE.md"), "# Learned\n").unwrap();
+    let wire = crate::convert::workspace(&ws);
+    assert!(wire.memory_at.is_some_and(|at| at > 0));
 }
 
 fn workspace(name: &str) -> (PathBuf, Workspace) {
@@ -486,6 +517,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         routines: None,
         assistant: None,
         role: Default::default(),
+        memory: muxa_protocol::MemoryMode::Review,
     };
     (dir, ws)
 }

@@ -454,6 +454,7 @@ mod tests {
             routines: None,
             assistant: None,
             role: Default::default(),
+            memory: muxa_protocol::MemoryMode::Review,
         };
         assert!(
             ws.may_loop(&record(Some(&repo), Some(&other))).is_ok(),

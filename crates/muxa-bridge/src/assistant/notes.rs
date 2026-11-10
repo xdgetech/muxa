@@ -1,8 +1,9 @@
-//! A delegate's notes, `<root>/.muxa/assistant/NOTES.md` (ADR 0049 §1), and a
-//! staff member's own, `<root>/.muxa/assistant/staff/<worker>/NOTES.md`
-//! (ADR 0051 §5): the snapshot a run reads, and the checked write of a
-//! proposal. Each folder is opened without following a symlink. Errors name
-//! paths and sizes, never text.
+//! The workspace memory, `<root>/.muxa/WORKSPACE.md` (ADR 0053 §1), which is
+//! also the lead's notes, and a staff member's own notes,
+//! `<root>/.muxa/assistant/staff/<worker>/NOTES.md` (ADR 0051 §5): the
+//! snapshot a run reads, the checked write of a proposal, and the append of
+//! a Task's close-out. Each folder is opened without following a symlink.
+//! Errors name paths and sizes, never text.
 use std::fs::File;
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
@@ -14,13 +15,16 @@ use rustix::io::Errno;
 use sha2::{Digest, Sha256};
 
 /// Relative to a workspace root, and to a run folder for the copy.
-pub const NOTES: &str = ".muxa/assistant/NOTES.md";
-const FOLDERS: [&str; 2] = [".muxa", "assistant"];
-/// Under [`FOLDERS`]: one folder per staff member.
+pub const NOTES: &str = ".muxa/WORKSPACE.md";
+/// The lead's notes before ADR 0053: reported as a problem, never read.
+pub const OLD_NOTES: &str = ".muxa/assistant/NOTES.md";
+const WORKSPACE_NAME: &str = "WORKSPACE.md";
+/// A member's folder is `.muxa/assistant/staff/<worker>`.
+const MEMBER_FOLDERS: [&str; 3] = [".muxa", "assistant", STAFF];
 const STAFF: &str = "staff";
-const NAME: &str = "NOTES.md";
+const MEMBER_NAME: &str = "NOTES.md";
 
-/// Which notes file: the workspace's, which its lead keeps, or a member's own.
+/// Which file: the workspace memory, which the lead keeps, or a member's own notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Place<'a> {
     Workspace,
@@ -30,24 +34,33 @@ pub enum Place<'a> {
 
 impl Place<'_> {
     fn folders(&self) -> Result<Vec<&str>, NotesError> {
-        let mut out = FOLDERS.to_vec();
-        if let Self::Member(worker) = self {
-            let plain = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.');
-            if worker.is_empty() || matches!(*worker, "." | "..") || !worker.bytes().all(plain) {
-                return Err(NotesError::NotRegular {
-                    path: PathBuf::from(STAFF).join(worker),
-                });
-            }
-            out.extend([STAFF, worker]);
+        let Self::Member(worker) = self else {
+            return Ok(vec![".muxa"]);
+        };
+        let plain = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.');
+        if worker.is_empty() || matches!(*worker, "." | "..") || !worker.bytes().all(plain) {
+            return Err(NotesError::NotRegular {
+                path: PathBuf::from(STAFF).join(worker),
+            });
         }
+        let mut out = MEMBER_FOLDERS.to_vec();
+        out.push(worker);
         Ok(out)
+    }
+
+    /// The file's name in its folder.
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Workspace => WORKSPACE_NAME,
+            Self::Member(_) => MEMBER_NAME,
+        }
     }
 
     /// The file, relative to a workspace root or a run folder.
     pub fn file(&self) -> String {
         match self {
             Self::Workspace => NOTES.to_owned(),
-            Self::Member(worker) => format!(".muxa/assistant/{STAFF}/{worker}/{NAME}"),
+            Self::Member(worker) => format!(".muxa/assistant/{STAFF}/{worker}/{MEMBER_NAME}"),
         }
     }
 }
@@ -67,13 +80,13 @@ pub struct Snapshot {
 
 #[derive(Debug, thiserror::Error)]
 pub enum NotesError {
-    #[error("{path} is {size} bytes; notes are at most 16 KiB. Shorten it, then ask again.")]
+    #[error("{path} is {size} bytes; it may be at most 16 KiB. Shorten it, then try again.")]
     TooLarge { path: PathBuf, size: u64 },
-    #[error("{path} ({size} bytes) holds a NUL byte; notes are UTF-8 text.")]
+    #[error("{path} ({size} bytes) holds a NUL byte; it must be UTF-8 text.")]
     Nul { path: PathBuf, size: u64 },
     #[error("{path} ({size} bytes) is not UTF-8 text.")]
     NotUtf8 { path: PathBuf, size: u64 },
-    #[error("{path} is a symlink or not a regular file; notes must be a regular file.")]
+    #[error("{path} is a symlink or not a regular file; it must be a regular file.")]
     NotRegular { path: PathBuf },
     #[error("{path} changed since the run read it; ask again.")]
     Changed { path: PathBuf },
@@ -100,7 +113,7 @@ pub fn read(root: &Path) -> Result<Snapshot, NotesError> {
 /// Blocking. The live notes at `place` under `root`; empty without a file.
 pub fn read_at(root: &Path, place: Place<'_>) -> Result<Snapshot, NotesError> {
     match folder(root, &place.folders()?, false)? {
-        Some(dir) => read_in(&dir, &root.join(place.file())),
+        Some(dir) => read_in(&dir, place.name(), &root.join(place.file())),
         None => Ok(empty()),
     }
 }
@@ -117,7 +130,7 @@ pub fn modified_at(root: &Path, place: Place<'_>) -> Result<Option<u64>, NotesEr
         return Ok(None);
     };
     let path = root.join(place.file());
-    let stat = match rustix::fs::statat(dir.as_fd(), NAME, AtFlags::SYMLINK_NOFOLLOW) {
+    let stat = match rustix::fs::statat(dir.as_fd(), place.name(), AtFlags::SYMLINK_NOFOLLOW) {
         Ok(stat) => stat,
         Err(Errno::NOENT) => return Ok(None),
         Err(e) => return Err(io("read", &path)(e)),
@@ -144,11 +157,16 @@ pub fn copy_at(root: &Path, dir: &Path, place: Place<'_>, base: &str) -> Result<
         });
     }
     let stage = folder(dir, &place.folders()?, true)?.ok_or_else(|| missing(dir))?;
-    write_in(&stage, &dir.join(place.file()), live.text.as_bytes())
+    write_in(
+        &stage,
+        place.name(),
+        &dir.join(place.file()),
+        live.text.as_bytes(),
+    )
 }
 
 /// Blocking. Replaces the live notes with `text` while they still hash to
-/// `base`; creates `.muxa/assistant` when missing.
+/// `base`; creates the folders when missing.
 pub fn apply(root: &Path, text: &str, base: &str) -> Result<(), NotesError> {
     apply_at(root, Place::Workspace, text, base)
 }
@@ -165,7 +183,7 @@ pub fn apply_at(root: &Path, place: Place<'_>, text: &str, base: &str) -> Result
     let folders = place.folders()?;
     let _one = WRITES.lock().unwrap_or_else(|e| e.into_inner());
     let dir = folder(root, &folders, true)?.ok_or_else(|| missing(root))?;
-    let live = match read_in(&dir, &path) {
+    let live = match read_in(&dir, place.name(), &path) {
         Ok(live) => live,
         Err(e @ NotesError::Io { .. }) => return Err(e),
         // A run only ever reads a valid file: an invalid one has changed.
@@ -174,7 +192,48 @@ pub fn apply_at(root: &Path, place: Place<'_>, text: &str, base: &str) -> Result
     if live.base != base {
         return Err(NotesError::Changed { path });
     }
-    write_in(&dir, &path, text.as_bytes())
+    write_in(&dir, place.name(), &path, text.as_bytes())
+}
+
+/// Blocking. Whether the lead's notes from before ADR 0053 are still at
+/// [`OLD_NOTES`]. Reads no content.
+pub fn old_notes_present(root: &Path) -> bool {
+    std::fs::symlink_metadata(root.join(OLD_NOTES)).is_ok()
+}
+
+/// Blocking. A Task run's copy of the workspace memory (ADR 0053 §2): the
+/// live file into `<dir>/.muxa/WORKSPACE.md`, and its hash. Without a live
+/// file, or with an empty one, an older copy is removed and None returned.
+pub fn give(root: &Path, dir: &Path) -> Result<Option<String>, NotesError> {
+    let live = read(root)?;
+    let place = Place::Workspace;
+    if same_dir(root, dir) {
+        return Ok((!live.text.is_empty()).then_some(live.base));
+    }
+    if live.text.is_empty() {
+        if let Some(stage) = folder(dir, &place.folders()?, false)? {
+            match rustix::fs::unlinkat(stage.as_fd(), place.name(), AtFlags::empty()) {
+                Ok(()) | Err(Errno::NOENT) => {}
+                Err(e) => return Err(io("remove", &dir.join(place.file()))(e)),
+            }
+        }
+        return Ok(None);
+    }
+    let stage = folder(dir, &place.folders()?, true)?.ok_or_else(|| missing(dir))?;
+    write_in(
+        &stage,
+        place.name(),
+        &dir.join(place.file()),
+        live.text.as_bytes(),
+    )?;
+    Ok(Some(live.base))
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
 }
 
 fn empty() -> Snapshot {
@@ -186,7 +245,7 @@ fn empty() -> Snapshot {
 
 fn missing(dir: &Path) -> NotesError {
     NotesError::NotRegular {
-        path: dir.join(FOLDERS.join("/")),
+        path: dir.join(".muxa"),
     }
 }
 
@@ -215,9 +274,9 @@ fn folder(base: &Path, folders: &[&str], create: bool) -> Result<Option<OwnedFd>
     Ok(Some(dir))
 }
 
-fn read_in(dir: &OwnedFd, path: &Path) -> Result<Snapshot, NotesError> {
+fn read_in(dir: &OwnedFd, name: &str, path: &Path) -> Result<Snapshot, NotesError> {
     let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
-    let fd = match rustix::fs::openat(dir.as_fd(), NAME, flags, Mode::empty()) {
+    let fd = match rustix::fs::openat(dir.as_fd(), name, flags, Mode::empty()) {
         Ok(fd) => fd,
         Err(Errno::NOENT) => return Ok(empty()),
         Err(Errno::LOOP) => return Err(not_regular(path)),
@@ -262,13 +321,13 @@ fn read_in(dir: &OwnedFd, path: &Path) -> Result<Snapshot, NotesError> {
 }
 
 /// Through a temp file and a rename in the same folder, so no reader sees half of it.
-fn write_in(dir: &OwnedFd, path: &Path, bytes: &[u8]) -> Result<(), NotesError> {
+fn write_in(dir: &OwnedFd, name: &str, path: &Path, bytes: &[u8]) -> Result<(), NotesError> {
     let rand = getrandom::u32().map_err(|e| NotesError::Io {
         action: "write",
         path: path.to_owned(),
         source: std::io::Error::other(e.to_string()),
     })?;
-    let tmp = format!(".{NAME}.{rand:08x}.tmp");
+    let tmp = format!(".{name}.{rand:08x}.tmp");
     let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let mode = Mode::RUSR | Mode::WUSR | Mode::RGRP | Mode::ROTH;
     let fd =
@@ -283,7 +342,7 @@ fn write_in(dir: &OwnedFd, path: &Path, bytes: &[u8]) -> Result<(), NotesError> 
             source,
         })
         .and_then(|()| {
-            rustix::fs::renameat(dir.as_fd(), tmp.as_str(), dir.as_fd(), NAME)
+            rustix::fs::renameat(dir.as_fd(), tmp.as_str(), dir.as_fd(), name)
                 .map_err(io("write", path))
         });
     if let Err(e) = written {

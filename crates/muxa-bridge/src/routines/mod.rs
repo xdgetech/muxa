@@ -242,7 +242,7 @@ pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), 
             info(r, &state, at)
         })
         .collect();
-    let problems = workspaces
+    let mut problems: Vec<RoutineProblem> = workspaces
         .routine_problems()
         .iter()
         .map(|p| {
@@ -253,7 +253,28 @@ pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), 
             }
         })
         .collect();
+    problems.extend(old_notes(&workspaces));
     Ok((entries, problems))
+}
+
+/// Blocking. Workspaces that still have the lead's notes from before ADR
+/// 0053 §1: muxa no longer reads them, and the user moves them in git.
+fn old_notes(workspaces: &crate::records::Workspaces) -> Vec<RoutineProblem> {
+    use crate::assistant::notes::{NOTES, OLD_NOTES, old_notes_present};
+    workspaces
+        .all()
+        .iter()
+        .filter(|w| old_notes_present(&w.root))
+        .map(|w| {
+            tracing::warn!(workspace = %w.name, "old notes file is no longer read");
+            RoutineProblem {
+                workspace: w.name.clone(),
+                reason: format!(
+                    "move {OLD_NOTES} to {NOTES} (git mv); muxa no longer reads {OLD_NOTES}"
+                ),
+            }
+        })
+        .collect()
 }
 
 /// The wire form. `nextDue` only for an enabled Routine with a trigger.
