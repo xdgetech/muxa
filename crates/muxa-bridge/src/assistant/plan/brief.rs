@@ -9,6 +9,7 @@ use std::path::Path;
 
 use muxa_protocol::{Capture, Delivery, Hypothesis, Plan};
 
+use super::cite::Carried;
 use crate::assistant::corrections;
 use crate::assistant::memory::{self, Memory, Records};
 use crate::assistant::overall_brief::{OverallBrief, marker};
@@ -62,12 +63,20 @@ pub fn write(config: &Config, plan: &str, dir: &Path) -> Result<(), String> {
         since,
     };
     let part = shared(&workspaces, &input);
-    let told = memory(config, &workspaces, at)?;
+    let (told, slots) = memory(config, &workspaces, at)?;
+    let [policies, hypotheses, _, corrections] = told.ids.clone();
+    let carried = Carried {
+        policies,
+        hypotheses,
+        corrections,
+        slots,
+    };
     let text = OverallBrief {
         plan: plan.to_owned(),
         minutes: this.minutes,
         shared: part.clone(),
-        memory: told.text,
+        memory: told.text.clone(),
+        slots,
     }
     .render();
     let path = dir.join(BRIEF);
@@ -78,11 +87,13 @@ pub fn write(config: &Config, plan: &str, dir: &Path) -> Result<(), String> {
         .open(&path)
         .and_then(|mut f| f.write_all(text.as_bytes()).and_then(|()| f.sync_all()));
     written.map_err(|e| format!("cannot write {}: {e}", dir.join(STAGE_DIR).display()))?;
+    // On the plan record, where the run cannot write: what it may cite.
     shelf
-        .update(plan, |p| -> Result<(), StateError> {
+        .update_with_extra(plan, |p, extra| -> Result<(), StateError> {
             p.inputs_at = at;
             p.workspaces = part.workspaces.clone();
             p.rev += 1;
+            carried.put(extra);
             Ok(())
         })
         .map_err(|e| e.to_string())?;
@@ -95,13 +106,15 @@ pub fn write(config: &Config, plan: &str, dir: &Path) -> Result<(), String> {
         hypotheses = told.held[1] + told.held[2],
         corrections = told.held[3],
         memory_left_out = told.left_out.iter().sum::<usize>(),
+        slots,
         "overall brief written"
     );
     Ok(())
 }
 
-/// Blocking. "What the user told you", from the records live at `now`.
-fn memory(config: &Config, workspaces: &Workspaces, now: u64) -> Result<Memory, String> {
+/// Blocking. "What the user told you", from the records live at `now`, and
+/// the hypotheses the plan may propose.
+fn memory(config: &Config, workspaces: &Workspaces, now: u64) -> Result<(Memory, usize), String> {
     let policies = crate::assistant::policies::list(config, now).map_err(|e| e.message)?;
     let hypotheses = crate::assistant::shelf::<Hypothesis>(config)
         .map_err(|e| e.message)?
@@ -114,7 +127,8 @@ fn memory(config: &Config, workspaces: &Workspaces, now: u64) -> Result<Memory, 
         corrections: &corrections,
         now,
     };
-    Ok(memory::memory(workspaces, &records))
+    let slots = crate::assistant::hypotheses::slots(&hypotheses, now);
+    Ok((memory::memory(workspaces, &records), slots))
 }
 
 /// The newest plan older than `plan` that has an answer.

@@ -6,9 +6,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use muxa_protocol::{
-    Capture, CaptureState, Delivery, InboxItem, ItemState, Plan, WorkItem, WorkState,
+    Capture, CaptureState, Correction, Delivery, Hypothesis, InboxItem, ItemState, Plan, Policy,
+    WorkItem, WorkState,
 };
 
+use super::cite::{self, Carried, Told};
 use super::file::{self, Checked, MAX_TOP, Proposal};
 use crate::assistant::record::PlanRun;
 use crate::assistant::result::Stored;
@@ -26,6 +28,7 @@ pub struct Facts<'a> {
     pub items: &'a [InboxItem],
     pub captures: &'a [Capture],
     pub workspaces: &'a Workspaces,
+    pub told: Told<'a>,
 }
 
 fn closed(w: &WorkItem) -> bool {
@@ -65,6 +68,7 @@ pub fn against(checked: &Checked, facts: &Facts<'_>) -> Vec<String> {
     for (i, p) in checked.proposals.iter().enumerate() {
         proposal(i, p, facts, &open_work, &mut reasons);
     }
+    reasons.extend(cite::reasons(checked, &facts.told, facts.workspaces));
     reasons
 }
 
@@ -186,8 +190,9 @@ pub fn publish(config: &Config, record: &Record, run: &PlanRun) -> Result<Stored
         .dir
         .as_ref()
         .ok_or_else(|| one("The run has no directory.".into()))?;
-    let checked = file::read(dir, run)?;
-    let gathered = gather(config).map_err(|e| {
+    let mut checked = file::read(dir, run)?;
+    let at = now();
+    let gathered = gather(config, &run.plan, at).map_err(|e| {
         tracing::warn!(task = %record.id, error = %e, "cannot read the store for a plan");
         one(retry())
     })?;
@@ -200,12 +205,19 @@ pub fn publish(config: &Config, record: &Record, run: &PlanRun) -> Result<Stored
         items: &gathered.items,
         captures: &gathered.captures,
         workspaces: &workspaces,
+        told: Told {
+            carried: &gathered.carried,
+            policies: &gathered.policies,
+            hypotheses: &gathered.hypotheses,
+            corrections: &gathered.corrections,
+            now: at,
+        },
     };
     let reasons = against(&checked, &facts);
     if !reasons.is_empty() {
         return Err(reasons);
     }
-    let at = now();
+    let hypotheses = std::mem::take(&mut checked.hypotheses);
     let (rows, proposals) = (checked.top.len(), checked.proposals.len());
     let notes = checked.notes.clone();
     let due_soon = super::derive::due_soon(&gathered.work, at);
@@ -216,6 +228,9 @@ pub fn publish(config: &Config, record: &Record, run: &PlanRun) -> Result<Stored
     match stored {
         Ok(Some(s)) => {
             tracing::info!(task = %record.id, plan = %run.plan, rows, proposals, stored = ?s, "plan stored");
+            if s == Stored::New {
+                crate::assistant::hypotheses::adopt(config, &run.plan, hypotheses, at);
+            }
             if let (Stored::New, Some(notes)) = (s, &notes) {
                 let rev = shelf.get(&run.plan).ok().flatten().map_or(0, |p| p.rev);
                 crate::assistant::apply::auto_apply(config, record, &run.plan, rev, notes);
@@ -240,15 +255,20 @@ fn retry() -> String {
     "muxa could not store the plan. It checks again after your next turn.".into()
 }
 
-/// Work items, Inbox items and Captures as the store holds them.
+/// The store as the check reads it: Work items, Inbox items, Captures, and
+/// what the user told the overall assistant, with what the brief carried.
 struct Gathered {
     work: Vec<WorkItem>,
     items: Vec<InboxItem>,
     captures: Vec<Capture>,
+    carried: Carried,
+    policies: Vec<Policy>,
+    hypotheses: Vec<Hypothesis>,
+    corrections: Vec<Correction>,
 }
 
 /// Blocking. Errors name paths and ids, never content.
-fn gather(config: &Config) -> Result<Gathered, String> {
+fn gather(config: &Config, plan: &str, now: u64) -> Result<Gathered, String> {
     let text = |e: muxa_protocol::ErrorBody| e.message;
     let work = crate::assistant::shelf::<WorkItem>(config)
         .map_err(text)?
@@ -260,10 +280,23 @@ fn gather(config: &Config) -> Result<Gathered, String> {
         .map_err(|e| e.to_string())?;
     let entries = crate::routines::inbox::list(config).map_err(text)?;
     let items = crate::items::list(config, &entries).map_err(text)?;
+    let carried = super::shelf(config)
+        .map_err(text)?
+        .get_with_extra(plan)
+        .map_err(|e| e.to_string())?
+        .map(|(_, extra)| Carried::of(&extra))
+        .unwrap_or_default();
     Ok(Gathered {
         work,
         items,
         captures,
+        carried,
+        policies: crate::assistant::policies::list(config, now).map_err(text)?,
+        hypotheses: crate::assistant::shelf::<Hypothesis>(config)
+            .map_err(text)?
+            .all()
+            .map_err(|e| e.to_string())?,
+        corrections: crate::assistant::corrections::live(config, now).map_err(text)?,
     })
 }
 

@@ -90,19 +90,13 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 let now = crate::records::now();
                 let policies = crate::assistant::policies::list(&config, now)?;
                 let corrections = crate::assistant::corrections::list(&config, now)?;
-                Ok((
-                    entries,
-                    items,
-                    assistant,
-                    plans,
-                    info,
-                    policies,
-                    corrections,
-                ))
+                let hypotheses = crate::assistant::hypotheses::list(&config, now)?;
+                let told = (policies, hypotheses, corrections);
+                Ok((entries, items, assistant, plans, info, told))
             })
             .await
             .map(
-                |(entries, items, assistant, plans, info, policies, corrections)| {
+                |(entries, items, assistant, plans, info, (policies, hypotheses, corrections))| {
                     Message::InboxList {
                         inbox: id,
                         entries,
@@ -113,8 +107,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                         plans,
                         assistant: info.map(Box::new),
                         policies,
-                        // Hypotheses come with a later slice (ADR 0048).
-                        hypotheses: Vec::new(),
+                        hypotheses,
                         corrections,
                     }
                 },

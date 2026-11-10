@@ -322,6 +322,7 @@ fn no_sentinel_and_no_unshared_name_reaches_the_text() {
         minutes: None,
         shared: s.clone(),
         memory: String::new(),
+        slots: 0,
     }
     .render();
     for mark in [

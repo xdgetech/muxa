@@ -32,6 +32,8 @@ pub struct Memory {
     /// Policies, proposed hypotheses, rejected hypotheses, corrections.
     pub held: [usize; 4],
     pub left_out: [usize; 4],
+    /// The ids each part holds: what a plan may cite.
+    pub ids: [Vec<String>; 4],
 }
 
 const POLICIES: usize = 0;
@@ -83,8 +85,9 @@ struct CorrectionOut<'a> {
     reason: Option<&'a str>,
 }
 
-/// One JSON line, and its time: the oldest leaves first.
+/// One JSON line, its record and its time: the oldest leaves first.
 struct Line {
+    id: String,
     at: u64,
     text: String,
 }
@@ -117,6 +120,9 @@ pub fn memory(workspaces: &Workspaces, r: &Records<'_>) -> Memory {
         text,
         held: parts.each_ref().map(Vec::len),
         left_out,
+        ids: parts
+            .each_ref()
+            .map(|p| p.iter().map(|l| l.id.clone()).collect()),
     }
 }
 
@@ -143,7 +149,7 @@ fn parts(workspaces: &Workspaces, r: &Records<'_>) -> [Vec<Line>; 4] {
         hypotheses
             .iter()
             .filter(|h| h.state == state)
-            .filter_map(|h| line(h.at, &hypothesis_out(h, full)))
+            .filter_map(|h| line(&h.id, h.at, &hypothesis_out(h, full)))
             .collect()
     };
     let mut corrections: Vec<&Correction> = r
@@ -156,13 +162,13 @@ fn parts(workspaces: &Workspaces, r: &Records<'_>) -> [Vec<Line>; 4] {
     [
         policies
             .iter()
-            .filter_map(|p| line(p.created_at, &policy_out(p)))
+            .filter_map(|p| line(&p.id, p.created_at, &policy_out(p)))
             .collect(),
         hypotheses_in(HypothesisState::Proposed, true),
         hypotheses_in(HypothesisState::Rejected, false),
         corrections
             .iter()
-            .filter_map(|c| line(c.at, &correction_out(c)))
+            .filter_map(|c| line(&c.id, c.at, &correction_out(c)))
             .collect(),
     ]
 }
@@ -219,9 +225,10 @@ fn correction_out(c: &Correction) -> CorrectionOut<'_> {
     }
 }
 
-fn line(at: u64, out: &impl Serialize) -> Option<Line> {
+fn line(id: &str, at: u64, out: &impl Serialize) -> Option<Line> {
     match serde_json::to_string(out) {
         Ok(json) => Some(Line {
+            id: id.to_owned(),
             at,
             text: json + "\n",
         }),

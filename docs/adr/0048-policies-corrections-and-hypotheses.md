@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`) and C3 (the brief's memory section) are built; hosts do not advertise level 10 yet.
+Proposed on 2026-11-10; its open questions were answered with the recommended values the same day. It implements stage PA3 of ADR 0045 ([specification](../personal-assistant.md) §7, §8, §11, §12) on top of ADR 0047. It adds to ADR 0047 §5 (`basis`, `changed[]`, plan history) and §9 without changing them, and keeps ADR 0040: Later moves an item down and means nothing else. Slices C0 (the wire types), C1 (the policy store), C2 (corrections and `update-plan`), C3 (the brief's memory section) and C4 (hypotheses and citations in the plan file) are built; hosts do not advertise level 10 yet.
 
 ## Context
 
@@ -124,3 +124,8 @@ Logs carry ids, kinds, counts, scopes and states; never policy text, reasons, hy
 | C9 | Android | the same |
 | C10 | docs: `agents.md`, `inbox.md`, `work-model.md`, `SECURITY.md`, `plan.md` | — |
 | — | **PA3 done** | spec §11 PA3: fake agent on a `-L` server through the daemon; a policy that contradicts a proposed hypothesis is cited and the hypothesis is not; a `deferred`-only hypothesis never appears; a forgotten record is absent from the next plan's brief and basis |
+
+## Implementation notes
+
+- C4: the ids a run's brief carried (policies, `proposed` hypotheses, corrections) and its free slots are kept on the plan record in the state directory (`carried`), written with `inputsAt`. The run folder is the agent's, so it cannot hold them. The check also requires each cited record to be live at check time, so a record forgotten after the brief is refused too.
+- C4: a hypothesis's `text` is one paragraph, so that `confirm` makes a policy of it unchanged. A hypothesis whose normalized text (case, spacing and a closing period aside) repeats an active policy or a `proposed` or `rejected` hypothesis is not stored; the plan still is.

@@ -11,6 +11,7 @@ use muxa_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::assistant::hypotheses::{NewHypothesis, is_id};
 use crate::assistant::record::PlanRun;
 use crate::assistant::result::{
     MAX_LINE, MAX_TITLE, count, is_work_id, one_line, parse_reason, proposal, read_file, text,
@@ -43,6 +44,9 @@ struct RawPlan {
     #[serde(default)]
     proposals: Vec<serde_json::Value>,
     notes: Option<String>,
+    /// Each one parsed alone, as proposals are.
+    #[serde(default)]
+    hypotheses: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -109,6 +113,7 @@ pub struct Checked {
     pub top: Vec<PlanRow>,
     pub proposals: Vec<Proposal>,
     pub notes: Option<Notes>,
+    pub hypotheses: Vec<NewHypothesis>,
 }
 
 /// Reads the plan in `dir` for `run`. The reasons are for the agent's check log.
@@ -149,6 +154,7 @@ pub fn validate(bytes: &[u8], run: &PlanRun) -> Result<Checked, Vec<String>> {
     let notes = raw
         .notes
         .and_then(|t| proposal(t, Some(&run.notes_base), &mut reasons));
+    let hypotheses = super::hypotheses::parse(raw.hypotheses, &mut reasons);
     if !reasons.is_empty() {
         return Err(reasons);
     }
@@ -156,6 +162,7 @@ pub fn validate(bytes: &[u8], run: &PlanRun) -> Result<Checked, Vec<String>> {
         top,
         proposals,
         notes,
+        hypotheses,
     })
 }
 
@@ -227,12 +234,23 @@ fn basis(at: &str, b: RawBasis, reasons: &mut Vec<String>) -> Option<Basis> {
         "goal" => Some(BasisKind::Goal),
         "time" => Some(BasisKind::Time),
         "manual" => Some(BasisKind::Manual),
+        "policy" => Some(BasisKind::Policy),
+        "hypothesis" => Some(BasisKind::Hypothesis),
+        "correction" => Some(BasisKind::Correction),
         _ => None,
     };
     if kind.is_none() {
         reasons.push(format!(
-            "{at}.kind must be due, dependency, goal, time or manual."
+            "{at}.kind must be due, dependency, goal, time, manual, policy, hypothesis or \
+             correction."
         ));
+    }
+    if let Some((record, prefix)) = kind.and_then(cited) {
+        if !b.source.as_deref().is_some_and(|s| is_id(s, prefix)) {
+            reasons.push(format!(
+                "{at}.source must be the id of the {record} it cites: {prefix} and 8 hex digits."
+            ));
+        }
     }
     text(&format!("{at}.text"), &b.text, MAX_LINE, reasons);
     let bad_source =
@@ -249,6 +267,16 @@ fn basis(at: &str, b: RawBasis, reasons: &mut Vec<String>) -> Option<Basis> {
         source: b.source,
         at: b.at,
     })
+}
+
+/// A record a `basis` of `kind` cites, and its ids' prefix.
+pub fn cited(kind: BasisKind) -> Option<(&'static str, &'static str)> {
+    match kind {
+        BasisKind::Policy => Some(("policy", "y-")),
+        BasisKind::Hypothesis => Some(("hypothesis", "h-")),
+        BasisKind::Correction => Some(("correction", "x-")),
+        _ => None,
+    }
 }
 
 fn proposals(raw: Vec<serde_json::Value>, reasons: &mut Vec<String>) -> Vec<Proposal> {
@@ -380,13 +408,8 @@ fn delegate(
     }))
 }
 
-/// `c-` and 8 lowercase hex digits, as the store makes them.
 fn is_capture_id(id: &str) -> bool {
-    id.strip_prefix("c-").is_some_and(|h| {
-        h.len() == 8
-            && h.bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    })
+    is_id(id, "c-")
 }
 
 /// An id or a name to look up: one line, at most [`MAX_NAME`] bytes.

@@ -110,6 +110,7 @@ impl Store {
             items: &self.items,
             captures: &self.captures,
             workspaces: &self.workspaces,
+            told: Told::nothing(),
         };
         let reasons = against(&checked(v), &facts);
         for r in &reasons {
@@ -456,4 +457,49 @@ fn a_stopped_loop_fails_the_plan_unless_a_user_stopped_it() {
     let p = h.plans().get(&plan.id).unwrap().unwrap();
     assert_eq!(p.delivery, Delivery::Failed);
     assert_eq!(p.reason.as_deref(), Some("No valid plan."));
+}
+
+#[test]
+fn a_plans_hypotheses_are_stored_only_when_the_brief_backs_them() {
+    use crate::assistant::corrections::{self, Seen};
+    use muxa_protocol::{CorrectionKind, HypothesisState};
+    let h = host();
+    let open = h.work(work("w-00000000"));
+    let plan = h.plan();
+    let seen = Seen::row(CorrectionKind::Dismissed, &open.id, None);
+    let x = corrections::record(&h.config, &plan, seen, now()).unwrap();
+    let carried = Carried {
+        corrections: vec![x.id.clone()],
+        slots: 3,
+        ..Carried::default()
+    };
+    h.plans()
+        .update_with_extra::<_, StateError>(&plan.id, |_, extra| {
+            carried.put(extra);
+            Ok(())
+        })
+        .unwrap();
+    let record = h.record(&plan.id);
+    let mut v = plan_file(vec![row("work", &open.id)], vec![]);
+    v["plan"] = json!(plan.id);
+    v["hypotheses"] = json!([{"text": format!("Not on Fridays. {MARK}"), "scope": "all",
+                              "evidence": ["x-0000000f"], "confidence": "low"}]);
+    assert_eq!(h.check(&record, &v, 1), 1);
+    let log = h.log(1);
+    assert!(
+        log.contains("hypotheses[0].evidence[0] is not a correction"),
+        "{log}"
+    );
+    assert!(!log.contains(MARK), "{log}");
+
+    v["hypotheses"][0]["evidence"] = json!([x.id]);
+    assert_eq!(h.check(&record, &v, 2), 0);
+    let stored = crate::assistant::shelf::<muxa_protocol::Hypothesis>(&h.config)
+        .unwrap()
+        .all()
+        .unwrap();
+    assert_eq!(stored.len(), 1, "{stored:?}");
+    assert_eq!(stored[0].state, HypothesisState::Proposed);
+    assert_eq!(stored[0].plan, plan.id);
+    assert_eq!(stored[0].evidence, [x.id]);
 }

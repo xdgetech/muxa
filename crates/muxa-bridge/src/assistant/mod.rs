@@ -13,6 +13,7 @@ pub mod corrections;
 pub mod delivery;
 mod derive;
 pub mod detail;
+pub mod hypotheses;
 pub mod info;
 pub mod memory;
 pub mod notes;

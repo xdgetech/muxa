@@ -48,4 +48,15 @@ fn the_brief_carries_what_the_user_told_from_the_store_and_no_unshared_record() 
     assert!(at("## What the user told you") < at("## Your notes"));
     assert!(at(&shared.id) < at(&mine.id), "policies before corrections");
     assert!(!text.contains(UNSHARED), "{text}");
+    assert!(text.contains("\"hypotheses\": optional, at most 3 in this plan"));
+    // What the run may cite is on the plan record, not in its folder.
+    let (_, extra) = super::super::shelf(&h.config)
+        .unwrap()
+        .get_with_extra(&pending.id)
+        .unwrap()
+        .unwrap();
+    let carried = Carried::of(&extra);
+    assert_eq!(carried.policies, [shared.id]);
+    assert_eq!(carried.corrections, [mine.id]);
+    assert_eq!(carried.slots, 3);
 }

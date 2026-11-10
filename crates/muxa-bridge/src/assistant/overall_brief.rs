@@ -15,6 +15,8 @@ pub struct OverallBrief {
     pub shared: Shared,
     /// "What the user told you": policies, hypotheses and corrections.
     pub memory: String,
+    /// Hypotheses this plan may propose.
+    pub slots: usize,
 }
 
 impl OverallBrief {
@@ -58,7 +60,10 @@ impl OverallBrief {
              <= high <= 1440. \"basis\": at most 5 reasons, each {{\"kind\", \"text\", \
              \"source\"?, \"at\"?}}: kind is \"due\", \"dependency\", \"goal\", \"time\" or \
              \"manual\"; text 1 to 500 bytes; source a URL, path or id; at epoch seconds. \
-             \"missing\": at most 5, what you would need to know to rank the row better.\n\
+             \"missing\": at most 5, what you would need to know to rank the row better. \
+             A basis of kind \"policy\", \"hypothesis\" or \"correction\" cites a record \
+             of \"What the user told you\": its \"source\" is the record's id (y-…, h-… or \
+             x-…), and its \"text\" says how the record shaped the row.\n\
              - \"proposals\": at most 10. muxa shows each one to the user, who approves or \
              rejects it.\n  \
              - {{\"kind\": \"sort\", \"capture\", \"action\", \"workspace\"?, \"title\"?, \
@@ -69,7 +74,13 @@ impl OverallBrief {
              \"reason\"}} asks a workspace above that you may ask to work on an open Work item. \
              scope is \"research\", \"compare\" or \"draft\". \"purpose\": the ask, 1 byte to \
              1 KiB. \"reason\": why, 1 to 500 bytes. At most one per workspace.\n\
-             - \"notes\": optional, the full new text of your notes, at most 16 KiB.\n\n\
+             - \"notes\": optional, the full new text of your notes, at most 16 KiB.\n\
+             - \"hypotheses\": optional, at most {slots} in this plan. A hypothesis is your \
+             guess at a preference of the user, which muxa asks the user to confirm or \
+             reject. Each is {{\"text\", \"scope\", \"evidence\", \"confidence\"}}: \
+             text, 1 to 500 bytes in one paragraph, as the user would write a policy; scope \
+             \"all\" or a workspace above other than yours; evidence, 1 to 5 correction ids \
+             (x-…) from \"What the user told you\"; confidence \"low\" or \"medium\".\n\n\
              Rules:\n\n\
              - Pinned Work items (with \"pinnedAt\") fill the first rows, oldest pin first, as \
              many as fit. muxa refuses a plan that does not.\n\
@@ -77,6 +88,17 @@ impl OverallBrief {
              done or withdrawn one.\n\
              - A \"purpose\" carries the ask in your own words. Never copy a workspace's \
              summary, questions or Capture text into it: the receiving workspace reads it.\n\
+             - When a policy shaped a row, cite it in that row's basis. Cite a hypothesis \
+             only when it shaped the row.\n\
+             - Cite only ids listed in \"What the user told you\". muxa refuses any other \
+             id, and an id the user forgot since.\n\
+             - Deferred corrections alone are no ground for a hypothesis: Later means not \
+             now.\n\
+             - A hypothesis with scope \"all\" needs evidence from more than one workspace, \
+             or from the user's own rows (with no workspace, or yours). A habit in one \
+             workspace belongs to that workspace.\n\
+             - Never propose a hypothesis that repeats a policy or a hypothesis listed \
+             above.\n\
              - In every text, line breaks and tabs are the only control characters.\n\n\
              Example:\n\n\
              ```json\n\
@@ -87,6 +109,7 @@ impl OverallBrief {
              \"sort\", \"capture\": \"c-4e5f6a7b\", \"action\": \"note\"}}]}}\n\
              ```\n\n",
             plan = self.plan,
+            slots = self.slots,
         )
     }
 }
@@ -121,6 +144,7 @@ mod tests {
                 left_out: 0,
             },
             memory: "## What the user told you\n\nmemory-part\n\n".into(),
+            slots: 2,
         }
     }
 
@@ -138,6 +162,8 @@ mod tests {
         assert!(text.contains("Pinned Work items"));
         assert!(text.contains("\"laterAt\""));
         assert!(text.contains("1 byte to 1 KiB"));
+        assert!(text.contains("\"hypotheses\": optional, at most 2 in this plan"));
+        assert!(text.contains("Deferred corrections alone are no ground"));
         assert_eq!(text.lines().last(), Some("muxa-plan: p-0a1b2c3d"));
         assert!(!brief(None).render().contains("minutes now"));
     }

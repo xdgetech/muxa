@@ -215,3 +215,68 @@ fn a_symlinked_or_oversized_file_is_refused() {
     assert!(read(&dir, &run()).is_ok());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+fn hypothesis(evidence: Value) -> Value {
+    json!({"text": format!("Mornings are for writing. {MARK}"), "scope": "all",
+           "evidence": evidence, "confidence": "medium"})
+}
+
+#[test]
+fn hypotheses_and_cited_records_pass_with_their_ids() {
+    let mut r = row("w-0b1c2d3e");
+    r["basis"] = json!([{"kind": "policy", "text": "You said so.", "source": "y-0a1b2c3d"},
+                        {"kind": "hypothesis", "text": "My guess.", "source": "h-0a1b2c3d"},
+                        {"kind": "correction", "text": "You moved it.", "source": "x-0a1b2c3d"}]);
+    let mut v = plan(vec![r], vec![]);
+    v["hypotheses"] = json!([hypothesis(json!(["x-0a1b2c3d", "x-1a2b3c4d"]))]);
+    let c = check(&v).unwrap();
+    let kinds: Vec<BasisKind> = c.top[0].basis.iter().map(|b| b.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            BasisKind::Policy,
+            BasisKind::Hypothesis,
+            BasisKind::Correction
+        ]
+    );
+    assert_eq!(c.hypotheses.len(), 1);
+    assert_eq!(c.hypotheses[0].evidence, ["x-0a1b2c3d", "x-1a2b3c4d"]);
+}
+
+#[test]
+fn bad_hypotheses_and_citations_are_refused_by_index() {
+    let mut r = row("w-0b1c2d3e");
+    r["basis"] = json!([{"kind": "policy", "text": "You said so."},
+                        {"kind": "correction", "text": "Moved.", "source": "y-0a1b2c3d"}]);
+    let mut v = plan(vec![r], vec![]);
+    let mut two_lines = hypothesis(json!(["x-0a1b2c3d"]));
+    two_lines["text"] = json!(format!("One.\nTwo. {MARK}"));
+    let mut sure = hypothesis(json!(["x-0a1b2c3d"]));
+    sure["confidence"] = json!("high");
+    let mut extra = hypothesis(json!(["x-0a1b2c3d"]));
+    extra["state"] = json!("confirmed");
+    v["hypotheses"] = json!([
+        hypothesis(json!([])),
+        hypothesis(json!(["x-0a1b2c3d", "x-0a1b2c3d", "w-0a1b2c3d"])),
+        two_lines,
+        sure,
+        extra
+    ]);
+    let reasons = refused(&v);
+    let first = |r: &String| r.split([' ', ':']).next().unwrap_or_default().to_owned();
+    assert_eq!(
+        reasons.iter().map(first).collect::<Vec<_>>(),
+        [
+            "top[0].basis[0].source",
+            "top[0].basis[1].source",
+            "hypotheses",
+            "hypotheses[0].evidence",
+            "hypotheses[1].evidence[1]",
+            "hypotheses[1].evidence[2]",
+            "hypotheses[2].text",
+            "hypotheses[3].confidence",
+            "hypotheses[4]",
+        ],
+        "{reasons:?}"
+    );
+}

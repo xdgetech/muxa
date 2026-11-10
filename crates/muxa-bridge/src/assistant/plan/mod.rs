@@ -4,8 +4,10 @@
 //! A plan never changes a Work item, an Inbox item, their order or `laterAt`.
 pub mod brief;
 pub mod check;
+pub mod cite;
 mod derive;
 pub mod file;
+mod hypotheses;
 pub mod schedule;
 pub mod start;
 pub(super) mod tick;

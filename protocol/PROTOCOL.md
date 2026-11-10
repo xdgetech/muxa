@@ -538,12 +538,12 @@ An overall run works as an `assistant-run` does, with a plan instead of a reques
   - `sort`: `capture` an unsorted Capture, `action` `work`, `link` or `note`, `work` (an open Work item) with `link` only, and, with action `work` only, optional `workspace` (a workspace on the host) and `title` (at most 200 characters, one line), as `sort-capture` takes them.
   - `delegate`: `work` an open Work item, `workspace` one the overall assistant may ask (`overallRequests` is not `none`), `scope`, `purpose` 1 byte to 1 KiB, `reason` 1 to 500 bytes. At most one per `workspace`.
 - `notes`: optional, at most 16 KiB.
-- `hypotheses`, with `work` level 10: optional, at most 3, each `{text, scope, evidence[], confidence}`. `text` is 1 to 500 bytes; `scope` is `all` or a workspace on the host; `evidence` is 1 to 5 correction ids the brief carried; `confidence` is `low` or `medium`. The check refuses, naming the index:
+- `hypotheses`, with `work` level 10: optional, at most 3, each `{text, scope, evidence[], confidence}`. `text` is 1 to 500 bytes in one paragraph, as a policy's; `scope` is `all` or a workspace on the host other than the overall one; `evidence` is 1 to 5 correction ids the brief carried; `confidence` is `low` or `medium`. The host keeps the ids the brief carried, and how many hypotheses it allowed, with the plan, outside the run folder. An id is cited only while its record is still live: a policy not expired, a `proposed` hypothesis, a kept correction. The check refuses, naming the index:
   - an `evidence` id the brief did not carry;
   - `evidence` of `deferred` corrections only: Later alone is no ground;
   - `scope: all` whose evidence rows all belong to one sharing workspace. Rows of nobody's items, and of the overall workspace, count as the user's own;
   - more hypotheses than the slots the brief names (10 `proposed` at once).
-  The host stores each as a `proposed` hypothesis (Policies, corrections and hypotheses below).
+  The host stores each as a `proposed` hypothesis (Policies, corrections and hypotheses below), unless its text repeats an active policy or a `proposed` or `rejected` hypothesis (case, spacing and a closing period aside).
 - With `work` level 10, a `basis` of kind `policy`, `hypothesis` or `correction` has the record's id in `source`. An id the brief did not carry is refused.
 - In every text, line breaks and tabs are the only control characters. The whole file is at most 64 KiB of UTF-8 without NUL. It is a regular file, and neither it nor `.muxa` or `.muxa/assistant` is a symlink. Unknown fields are refused, so the host's fields cannot be written by the agent.
 
