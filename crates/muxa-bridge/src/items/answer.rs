@@ -133,10 +133,10 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Branch => Plan::Branch,
         // `answers` never lists it, so the check above refused it already.
         Unknown => return Err(not_allowed(item, answer.action, &allowed)),
-        // Hypotheses come with work level 10 (ADR 0048 slice C5).
-        Confirm => return Err(bad("hypothesis items need work level 10")),
+        // `routines::handle` sends them to `assistant::hypotheses` first.
+        Confirm => return Err(bad("confirm on a hypothesis runs through the assistant")),
         Reject if item.kind == ItemKind::Hypothesis => {
-            return Err(bad("hypothesis items need work level 10"));
+            return Err(bad("reject on a hypothesis runs through the assistant"));
         }
         // Approve runs in `assistant::proposals`, which `routines::handle` calls first.
         Reject if matches!(item.kind, ItemKind::Sort | ItemKind::Delegate) => Plan::Nothing,

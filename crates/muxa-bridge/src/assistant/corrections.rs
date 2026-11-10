@@ -132,8 +132,9 @@ pub fn after_work(config: &Config, item: &WorkItem, action: WorkAction, changed:
     }
 }
 
-/// Blocking. After `update-inbox` on an item: `reject` of a `sort` or
-/// `delegate` item, and `later` on an item the current plan listed.
+/// Blocking. After `update-inbox` on an item: `reject` of a `sort`,
+/// `delegate` or `hypothesis` item, and `later` on an item the current
+/// plan listed.
 pub fn after_answer(
     config: &Config,
     item: &InboxItem,
@@ -141,7 +142,10 @@ pub fn after_answer(
     reason: Option<String>,
     now: u64,
 ) {
-    let proposal = matches!(item.kind, ItemKind::Sort | ItemKind::Delegate);
+    let proposal = matches!(
+        item.kind,
+        ItemKind::Sort | ItemKind::Delegate | ItemKind::Hypothesis
+    );
     let kind = match action {
         InboxAction::Reject if proposal => CorrectionKind::Rejected,
         InboxAction::Later => CorrectionKind::Deferred,

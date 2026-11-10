@@ -1,7 +1,7 @@
 //! The user's policies (ADR 0048 §1): `add-policy`, `update-policy`, their
 //! expiry, and their place in `inbox-list`. Only the user writes one; no run
 //! does. Texts never reach a log or an error message.
-use muxa_protocol::{ErrorBody, ErrorCode, Policy, PolicyAction};
+use muxa_protocol::{ErrorBody, ErrorCode, Hypothesis, HypothesisState, Policy, PolicyAction};
 
 use super::store::Shelf;
 use super::work::{Fail, check_rev};
@@ -80,6 +80,47 @@ pub fn add(config: &Config, fields: Fields, now: u64) -> Result<Policy, ErrorBod
         })
         .map_err(ErrorBody::from)?;
     tracing::info!(policy = %policy.id, scope = %policy.scope, "policy added");
+    Ok(policy)
+}
+
+/// Blocking. The policy a confirmed hypothesis makes: its text and scope,
+/// with `source` its id. A second call returns the first one's policy.
+pub fn from_hypothesis(config: &Config, h: &Hypothesis, now: u64) -> Result<Policy, ErrorBody> {
+    let shelf = super::shelf::<Policy>(config)?;
+    let _folder = shelf.lock_folder().map_err(|e| super::state_error(&e))?;
+    let all = shelf.all().map_err(|e| super::state_error(&e))?;
+    if let Some(made) = all.into_iter().find(|p| p.source == h.id) {
+        return Ok(made);
+    }
+    match h.state {
+        HypothesisState::Proposed => {}
+        HypothesisState::Confirmed => {
+            return Err(bad(format!(
+                "the policy made from {} was deleted; add it again with add-policy",
+                h.id
+            )));
+        }
+        _ => return Err(bad(format!("hypothesis {} is no longer proposed", h.id))),
+    }
+    check_text(&h.text)?;
+    check_scope(config, &h.scope)?;
+    check_room(&shelf, None, now)?;
+    let policy = shelf
+        .create(|id| {
+            Ok::<_, Fail>(Policy {
+                id,
+                rev: 1,
+                text: h.text.clone(),
+                scope: h.scope.clone(),
+                from: None,
+                until: None,
+                source: h.id.clone(),
+                created_at: now,
+                updated_at: now,
+            })
+        })
+        .map_err(ErrorBody::from)?;
+    tracing::info!(policy = %policy.id, hypothesis = %h.id, scope = %policy.scope, "policy confirmed");
     Ok(policy)
 }
 

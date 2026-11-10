@@ -36,6 +36,7 @@ pub async fn tick(cx: &Context) {
         let plans = super::plan::tick::scan(&config, &workspaces, now);
         super::policies::prune(&config, now);
         super::corrections::prune(&config, now);
+        super::hypotheses::tick(&config, now);
         (scan(&config, now), plans)
     })
     .await;

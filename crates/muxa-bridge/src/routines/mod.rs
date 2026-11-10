@@ -58,6 +58,23 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             }
         }
     }
+    if let Request::UpdateInbox {
+        id,
+        entry,
+        action: action @ (muxa_protocol::InboxAction::Confirm | muxa_protocol::InboxAction::Reject),
+        text,
+        ..
+    } = &req
+    {
+        if entry.starts_with("i-") {
+            let answered =
+                crate::assistant::hypotheses::answer::answer(cx, *id, entry, *action, text.clone())
+                    .await;
+            if let Some(answer) = answered {
+                return answer;
+            }
+        }
+    }
     let result = match req {
         Request::ListRoutines { id } => {
             let config = Arc::clone(&cx.records);

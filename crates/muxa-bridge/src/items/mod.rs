@@ -57,7 +57,7 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Briefing => vec![Dismiss],
         // The overall assistant's proposals (ADR 0047 §4): no agent to ask.
         ItemKind::Sort | ItemKind::Delegate => return vec![Approve, Reject, Later],
-        // ADR 0048 §3; the host makes none before slice C5.
+        // ADR 0048 §3: `assistant::hypotheses` answers confirm and reject.
         ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
         // Stored by a newer host: no answer has a known meaning.
         ItemKind::Unknown => return Vec::new(),

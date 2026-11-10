@@ -2,11 +2,15 @@
 //! preferences that a plan proposes and the user confirms or rejects. The
 //! host stores them as `proposed`, with limits and an end. Texts never reach
 //! a log or an error message.
+pub mod answer;
+pub mod items;
+
 use std::collections::HashSet;
 
 use muxa_protocol::{Confidence, ErrorBody, Hypothesis, HypothesisState, Policy};
 
 use super::policies::expired;
+use super::work::Fail;
 use crate::routines::store::StateError;
 use crate::task_records::Config;
 
@@ -16,6 +20,9 @@ pub const MAX_PER_PLAN: usize = 3;
 pub const MAX_PROPOSED: usize = 10;
 /// Seconds a `proposed` hypothesis waits for an answer: 14 days.
 pub const PROPOSED_FOR: u64 = 14 * 86_400;
+/// Seconds a `rejected` one stays in the brief, and an `expired` one is
+/// kept for Forget after its end: 90 days.
+pub const REJECTED_FOR: u64 = 90 * 86_400;
 
 /// A hypothesis as a plan file proposes it, checked on its own.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +171,86 @@ pub fn list(config: &Config, now: u64) -> Result<Vec<Hypothesis>, ErrorBody> {
         .collect();
     all.sort_by(|a, b| (b.at, &b.id).cmp(&(a.at, &a.id)));
     Ok(all)
+}
+
+/// Blocking. The daemon's tick: ends what is due, then makes the newest
+/// plan's items.
+pub fn tick(config: &Config, now: u64) {
+    if !config.state_dir.as_ref().is_some_and(|d| d.is_dir()) {
+        return;
+    }
+    expire(config, now);
+    items::publish(config, now);
+}
+
+/// A `proposed` one past its 14 days is `expired` and its open item
+/// resolved; a `rejected` one leaves after its 90 days, an `expired` one 90
+/// days after it ended. Failures are logged and tried again next tick.
+fn expire(config: &Config, now: u64) {
+    let shelf = match super::shelf::<Hypothesis>(config) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(error = %e.message, "cannot open the hypotheses");
+            return;
+        }
+    };
+    let Ok(all) = shelf.all() else { return };
+    let mut ended = HashSet::new();
+    for h in all {
+        let due = match h.state {
+            HypothesisState::Proposed => h.expires_at <= now,
+            HypothesisState::Rejected => h.expires_at <= now,
+            HypothesisState::Expired => h.expires_at.saturating_add(REJECTED_FOR) <= now,
+            _ => false,
+        };
+        if !due {
+            continue;
+        }
+        if h.state == HypothesisState::Proposed {
+            let expired = shelf.update::<_, StateError>(&h.id, |stored| {
+                let still = stored.state == HypothesisState::Proposed && stored.expires_at <= now;
+                if still {
+                    stored.state = HypothesisState::Expired;
+                }
+                Ok(still)
+            });
+            match expired {
+                Ok(Some(true)) => {
+                    tracing::info!(hypothesis = %h.id, "hypothesis expired unanswered");
+                    ended.insert(h.id);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(hypothesis = %h.id, error = %e, "cannot expire a hypothesis")
+                }
+            }
+            continue;
+        }
+        // An answer since the listing may have changed it.
+        let state = h.state;
+        let removed = shelf.remove_if(&h.id, |stored| {
+            if stored.state == state {
+                Ok(())
+            } else {
+                Err(Fail::Client(crate::convert::error_body(
+                    muxa_protocol::ErrorCode::Conflict,
+                    "changed",
+                )))
+            }
+        });
+        match removed {
+            Ok(Some(_)) => {
+                tracing::info!(hypothesis = %h.id, state = ?state, "old hypothesis removed")
+            }
+            Ok(None) | Err(Fail::Client(_)) => {}
+            Err(Fail::State(e)) => {
+                tracing::warn!(hypothesis = %h.id, error = %e, "cannot remove a hypothesis")
+            }
+        }
+    }
+    if let Err(e) = items::each(config, &ended, items::resolve) {
+        tracing::warn!(error = %e.message, "cannot resolve expired hypothesis items");
+    }
 }
 
 #[cfg(test)]
