@@ -6,8 +6,9 @@ use std::sync::Arc;
 use muxa_protocol::{ErrorBody, ErrorCode};
 use muxa_tmux::Client;
 
-use super::{Config, Pending, blocking, brief, handoff, store_error};
+use super::{Config, Pending, blocking, brief, handoff, owned, store_error};
 use crate::agents::Registry;
+use crate::agents::codex::app_server::ThreadId;
 use crate::convert::{error_body, task_error};
 use crate::records::lifecycle::ProcessIdentity;
 use crate::records::store::ClaimedTask;
@@ -74,7 +75,8 @@ impl Failure {
 /// Where the agent of a new task works.
 enum Target {
     Repo(TaskRequest),
-    Dir(Workspace),
+    /// With the launch of a Codex thread muxa owns, for a background run (ADR 0028).
+    Dir(Workspace, Option<owned::Launch>),
     /// A reading Task: its own folder, and the repo's main checkout to read.
     Read(Workspace, std::path::PathBuf),
 }
@@ -93,7 +95,7 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
             Err(e) => return (None, Some(task_error(&e))),
         },
         Target::Read(_, main) => (Some(main.clone()), None),
-        Target::Dir(_) => (None, None),
+        Target::Dir(..) => (None, None),
     };
     let mut extra = match (&new.routine, &new.assistant) {
         (Some(r), _) => r.fields(),
@@ -124,10 +126,10 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
             Err(e) => return (None, Some(e)),
         };
     tracing::info!(task = %record.id, "task recorded");
-    if record.worker().is_some() {
-        return create_worker(env, record, &target, &resolved).await;
+    if record.worker().is_some() || matches!(target, Target::Dir(_, Some(_))) {
+        return create_guarded(env, record, &target, &resolved).await;
     }
-    match start(env, &record, &target, &resolved).await {
+    match start(env, &record, &target, &resolved, None).await {
         Ok(started) => linked(env, record, started.launched).await,
         Err(failure) => failed(env, record, failure).await,
     }
@@ -169,7 +171,10 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
     }
     let repo = match &new.repo {
         None if new.branch.is_none() && new.base.is_none() => {
-            return Ok((Target::Dir(workspace), resolved));
+            let owned = background
+                .then(|| owned::launch(&workspaces, &resolved))
+                .flatten();
+            return Ok((Target::Dir(workspace, owned), resolved));
         }
         None => return Err(bad("branch and base need a repo".into())),
         Some(r) => workspace
@@ -320,12 +325,14 @@ struct Started {
     initial: Option<(muxa_tmux::PaneId, ProcessIdentity)>,
 }
 
-/// Launches the agent, tags its session and writes `TASK.md`.
+/// Launches the agent, tags its session and writes `TASK.md`. `claim` is
+/// the creation claim of a guarded start.
 async fn start(
     env: &Env,
     record: &Record,
     target: &Target,
     resolved: &ResolvedWorker,
+    claim: Option<&mut Option<ClaimedTask>>,
 ) -> Result<Started, Failure> {
     let client = &*env.client;
     let launched = match target {
@@ -367,7 +374,7 @@ async fn start(
                 .launch_in_dir(client, &dir, workspace.agent.as_ref())
                 .await
         }
-        Target::Dir(workspace) => {
+        Target::Dir(workspace, owned) => {
             let dir = match record.routine_run() {
                 Some(run) => {
                     let dir = workspace
@@ -401,7 +408,12 @@ async fn start(
                     .task_dir(&record.title, &record.id)
                     .map_err(Failure::before)?,
             };
-            if resolved.worker.is_some() {
+            if let Some(launch) = owned {
+                let slot = claim.ok_or_else(|| Failure::before("the creation claim is missing"))?;
+                let thread = owned_thread(record, launch, &dir, slot).await?;
+                builtin::Builtin::with_argv(launch.argv(&thread))
+                    .launch_in_dir(client, &dir, Some(&resolved.environment)).await
+            } else if resolved.worker.is_some() {
                 builtin::Builtin::with_worker(resolved)
                     .launch_in_dir(client, &dir, Some(&resolved.environment)).await
             } else {
@@ -411,7 +423,8 @@ async fn start(
         }
     }
     .map_err(Failure::before)?;
-    let initial = if resolved.worker.is_some() {
+    let guarded = resolved.worker.is_some() || matches!(target, Target::Dir(_, Some(_)));
+    let initial = if guarded {
         Some(
             startup_identity(env, &launched)
                 .await
@@ -452,6 +465,46 @@ async fn start(
     // action (ADR 0052 §6): the record keeps it, the log does not.
     tracing::info!(task = %record.id, session = %launched.id, "task linked");
     Ok(Started { launched, initial })
+}
+
+/// Creates the run's Codex thread in `dir`, and stores it for the reserved
+/// run under the creation claim before any pane exists (ADR 0028 §1).
+async fn owned_thread(
+    record: &Record,
+    launch: &owned::Launch,
+    dir: &std::path::Path,
+    slot: &mut Option<ClaimedTask>,
+) -> Result<ThreadId, Failure> {
+    let (launch, cwd) = (launch.clone(), dir.to_path_buf());
+    let created =
+        tokio::task::spawn_blocking(move || launch.create_thread(&cwd).map(|t| (launch, t)))
+            .await
+            .map_err(|_| Failure::before("the Codex thread start stopped"))?;
+    let (launch, thread) = created.map_err(|e| {
+        tracing::warn!(task = %record.id, error = %e, "cannot create the codex thread");
+        Failure::before(format!("cannot create the Codex thread: {e}"))
+    })?;
+    let mut claim = slot
+        .take()
+        .ok_or_else(|| Failure::before("the creation claim is missing"))?;
+    let id = thread.id.clone();
+    let (claim, saved) = tokio::task::spawn_blocking(move || {
+        let owned = launch.owned(claim.record().reserved_run(), &thread);
+        let saved = claim
+            .update(|r| {
+                if let Err(e) = r.set_owned_thread(&owned) {
+                    tracing::warn!(error = %e, "cannot encode the codex thread");
+                }
+            })
+            .map(|_| ());
+        (claim, saved)
+    })
+    .await
+    .map_err(|_| Failure::before("the Codex thread record stopped"))?;
+    *slot = Some(claim);
+    saved.map_err(|e| Failure::before(format!("cannot record the Codex thread: {e}")))?;
+    tracing::info!(task = %record.id, thread = %id, "codex thread created");
+    Ok(id)
 }
 
 /// The `@muxa_task` the launched session carries already.
@@ -523,7 +576,8 @@ fn spawn_prompt(env: &Env, record: &Record, session: muxa_tmux::SessionId) {
 
 /// Hold the lifecycle claim from the first external effect through the startup
 /// record. Failure bookkeeping uses this guard rather than reacquiring it.
-async fn create_worker(
+/// A named worker and an owned Codex run start this way.
+async fn create_guarded(
     env: &Env,
     record: Record,
     target: &Target,
@@ -538,11 +592,17 @@ async fn create_worker(
             .map_err(|error| store_error(&error))
     })
     .await;
-    let claim = match claim {
-        Ok(claim) => claim,
+    let mut slot = match claim {
+        Ok(claim) => Some(claim),
         Err(error) => return (Some(record), Some(error)),
     };
-    let started = match start(env, &record, target, resolved).await {
+    let started = start(env, &record, target, resolved, Some(&mut slot)).await;
+    let Some(claim) = slot else {
+        tracing::warn!(task = %record.id, "the creation claim was lost");
+        let error = error_body(ErrorCode::TaskFailed, "the creation claim was lost");
+        return (Some(record), Some(error));
+    };
+    let started = match started {
         Ok(started) => started,
         Err(failure) => return failed_worker(Arc::clone(&env.records), claim, failure).await,
     };
@@ -550,7 +610,7 @@ async fn create_worker(
         return failed_worker(
             Arc::clone(&env.records),
             claim,
-            Failure::after(&started.launched, "worker startup identity is missing"),
+            Failure::after(&started.launched, "the agent's startup identity is missing"),
         )
         .await;
     };

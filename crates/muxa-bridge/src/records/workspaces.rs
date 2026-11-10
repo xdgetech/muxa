@@ -78,6 +78,8 @@ pub struct Workspaces {
     routines: Vec<Routine>,
     problems: Vec<RoutineProblem>,
     assistant: AssistantHost,
+    /// `[codex] owned_threads` (ADR 0028); off without it.
+    codex_threads: bool,
 }
 
 #[derive(Deserialize)]
@@ -91,6 +93,15 @@ struct RawConfig {
     #[serde(default)]
     routine: Vec<toml::Value>,
     assistant: Option<RawHost>,
+    codex: Option<RawCodex>,
+}
+
+/// `[codex]`: the host's switch for Codex threads that muxa owns (ADR 0028).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCodex {
+    #[serde(default)]
+    owned_threads: bool,
 }
 
 #[derive(Deserialize)]
@@ -250,6 +261,7 @@ impl Workspaces {
                 first.name, second.name
             )));
         }
+        let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);
         let mut worker_names = HashSet::new();
         let mut workers = Vec::with_capacity(raw.worker.len());
         for raw_worker in raw.worker {
@@ -289,7 +301,14 @@ impl Workspaces {
             routines: all_routines,
             problems,
             assistant: host,
+            codex_threads,
         })
+    }
+
+    /// Whether a background Codex run gets a thread muxa creates and sends
+    /// its turns to (ADR 0028). Off by default.
+    pub fn codex_threads(&self) -> bool {
+        self.codex_threads
     }
 
     /// The host's `[assistant]`; off without the table.

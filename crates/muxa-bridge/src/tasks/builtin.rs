@@ -21,7 +21,8 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct Builtin {
     command: String,
-    explicit: Option<LaunchCommand>,
+    /// One entry runs through the shell; more are executed directly.
+    explicit: Option<Vec<String>>,
 }
 
 impl Builtin {
@@ -34,9 +35,20 @@ impl Builtin {
 
     /// Native argv stays distinct until muxa-tmux quotes it for control mode.
     pub fn with_worker(worker: &ResolvedWorker) -> Self {
+        let argv = match &worker.command {
+            LaunchCommand::Shell(command) => vec![command.clone()],
+            LaunchCommand::Native { program, args } => std::iter::once((*program).to_owned())
+                .chain(args.iter().cloned())
+                .collect(),
+        };
+        Self::with_argv(argv)
+    }
+
+    /// An argv muxa built, such as `codex resume <thread>` (ADR 0028).
+    pub fn with_argv(argv: Vec<String>) -> Self {
         Self {
             command: String::new(),
-            explicit: Some(worker.command.clone()),
+            explicit: Some(argv),
         }
     }
 
@@ -58,16 +70,8 @@ impl Builtin {
             tracing::info!(keys = ?a.keys(), custom_command = a.command.is_some(), "agent environment");
         }
         let (session, pane) = match &self.explicit {
-            Some(explicit) => {
-                let command = match explicit {
-                    LaunchCommand::Shell(command) => vec![command.clone()],
-                    LaunchCommand::Native { program, args } => {
-                        std::iter::once((*program).to_owned())
-                            .chain(args.iter().cloned())
-                            .collect()
-                    }
-                };
-                muxa_tmux::new_session_command(client, name, &dir.to_string_lossy(), env, &command)
+            Some(argv) => {
+                muxa_tmux::new_session_command(client, name, &dir.to_string_lossy(), env, argv)
                     .await?
             }
             None => {

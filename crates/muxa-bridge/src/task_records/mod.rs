@@ -11,6 +11,7 @@ pub(crate) mod end;
 mod facts;
 pub(crate) mod handoff;
 pub(crate) mod observation;
+pub(crate) mod owned;
 pub(crate) mod park;
 pub(crate) mod reading;
 pub mod remote;
