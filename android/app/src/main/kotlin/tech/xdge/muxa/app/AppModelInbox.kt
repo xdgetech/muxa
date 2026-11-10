@@ -4,6 +4,7 @@ import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.protocol.RoutineInfo
 import tech.xdge.muxa.protocol.Session
+import tech.xdge.muxa.protocol.WriteProposal
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.defaultPane
 import tech.xdge.muxa.session.key
@@ -12,6 +13,9 @@ import tech.xdge.muxa.session.key
 sealed interface InboxPrompt {
     /** A proposal item's action, target and content, before approval. */
     data class ApproveItem(val item: InboxItem) : InboxPrompt
+
+    /** A `write` item's target once more, before Approve sends [write]'s hash (ADR 0052 §7). */
+    data class ApproveWrite(val item: InboxItem, val write: WriteProposal) : InboxPrompt
 
     /** Reject on the overall assistant's item, with an optional reason the host records (ADR 0050 §2). */
     data class RejectItem(val item: InboxItem) : InboxPrompt

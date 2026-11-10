@@ -46,6 +46,7 @@ import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
+import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.StepBy
 import tech.xdge.muxa.protocol.CorrectionKind
 import tech.xdge.muxa.protocol.PlanAction
@@ -69,8 +70,8 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_STAFF] each workspace has staff and a request runs as a
- * chain of steps (ADR 0051); at [WORK_POLICIES] it keeps policies, corrections and hypotheses (ADR 0050); at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
+ * [workLevel] is the `work` level it advertises; at [WORK_WRITES] Results propose writes that the user approves by
+ * hash (ADR 0052); at [WORK_STAFF] each workspace has staff and a request runs as a chain of steps (ADR 0051); at [WORK_POLICIES] it keeps policies, corrections and hypotheses (ADR 0050); at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
  * at [WORK_ASSISTANT] it keeps Captures and Work items (ADR 0048); below [WORK_DELETE_INBOX] it plays a host from before
  * Protect and Delete Old (ADR 0046), below [WORK_WORKTREE_END] one whose Done keeps the worktree (ADR 0043),
  * below [WORK_ASK_AGENT] one from before Ask Agent (ADR 0041), below [WORK_CLOSE_ASK] one from before closing
@@ -165,6 +166,15 @@ class DemoBridge(
                 s.named.forEach { (id, worker) -> items.item(id)?.let { items.save(naming(it, worker)) } }
                 p.replaceLastRow(s.todayRow)
             }
+        }
+    }
+
+    /** Write proposals (ADR 0052) at level 13: work's writer, a Work item whose Results propose writes, and their `write` items. */
+    private val writes: DemoWrites? = plans?.let { p ->
+        content.writes(now())?.takeIf { workLevel >= WORK_WRITES }?.also { w ->
+            p.writers(w.writers)
+            assistant.add(w.work, w.request)
+            items.add(w.items)
         }
     }
 
@@ -316,6 +326,8 @@ class DemoBridge(
                 protect(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.HANDOFF) {
                 answerHandoff(req, now)
+            } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.WRITE) {
+                answerWrite(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.HYPOTHESIS) {
                 answerHypothesis(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind }.let { it == ItemKind.SORT || it == ItemKind.DELEGATE }) {
@@ -579,6 +591,44 @@ class DemoBridge(
     }
 
     /**
+     * Approve, Reject or Later on a `write` item (ADR 0052 §2). Approve needs the hash of the write the
+     * client showed; then it starts one Task of the writer, and a second approve returns the same Task.
+     * Reject takes an optional reason and starts nothing.
+     */
+    private fun answerWrite(req: Request.UpdateInbox, now: Long) {
+        val outcome = synchronized(lock) {
+            try {
+                val w = writes ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, NO_REQUEST)
+                val item = items.item(req.entry) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item ${req.entry}")
+                if (req.action != InboxAction.APPROVE) {
+                    if (req.action == InboxAction.REJECT) req.text?.let { policies?.checkReason(it) }
+                    return@synchronized ProposalOutcome(items.answer(item.id, req.action, req.text, null, now, nextLaterAt(now)).item, emptyList(), null)
+                }
+                val write = w.checkHash(item, req.hash)
+                val made = item.task?.let { t -> tasks.firstOrNull { it.id == t } }
+                val record = made ?: run {
+                    if (item.state != ItemState.OPEN) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "Inbox item ${item.id} is closed")
+                    val writer = w.writerOf(item.workspace)
+                    val work = assistant.request(write.request)?.work
+                    approvedTask(item.workspace, write.action, DemoWrites.goal(item, write), null, now, writer.worker, work).also {
+                        assistant.wrote(write.request, write.hash, it.id)
+                    }
+                }
+                val answered = if (made != null) {
+                    item
+                } else {
+                    item.copy(state = ItemState.ANSWERED, answer = InboxAction.APPROVE, answeredAt = now, laterAt = null, answers = emptyList(), task = record.id)
+                        .also(items::save)
+                }
+                ProposalOutcome(answered, listOf(Message.TaskSaved(req.id, record)), null, started = made == null)
+            } catch (e: DemoWork.Refusal) {
+                ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))
+            }
+        }
+        finish(req.id, outcome)
+    }
+
+    /**
      * A new version or a cancel ends the chain: a `handoff` item that waits on [request] is resolved,
      * except one about version [keep]. The caller holds the lock.
      */
@@ -824,13 +874,21 @@ class DemoBridge(
     }
 
     /** The Task an approval creates, with a running agent in its own session. The caller holds the lock. */
-    private fun approvedTask(workspace: String, title: String, goal: String, project: String?, now: Long): TaskRecord {
+    private fun approvedTask(
+        workspace: String,
+        title: String,
+        goal: String,
+        project: String?,
+        now: Long,
+        worker: String? = null,
+        work: String? = null,
+    ): TaskRecord {
         val id = "t-new%03d".format(++createdCount)
         val name = slug(title)
         val dir = "/$workspace/tasks/$name-$id"
         val record = TaskRecord(
             id, rev = 1, workspace = workspace, title = title, goal = goal, status = TaskStatus.OPEN,
-            createdAt = now, updatedAt = now, project = project, dir = dir, session = name,
+            createdAt = now, updatedAt = now, project = project, dir = dir, session = name, worker = worker, work = work,
         )
         tasks = tasks + record
         val n = 20 + sessions.size

@@ -48,6 +48,7 @@ import tech.xdge.muxa.app.reply
 import tech.xdge.muxa.app.setReply
 import tech.xdge.muxa.app.answer
 import tech.xdge.muxa.app.canDeleteInbox
+import tech.xdge.muxa.app.canWrite
 import tech.xdge.muxa.app.protect
 import tech.xdge.muxa.app.tap
 import tech.xdge.muxa.protocol.InboxAction
@@ -58,6 +59,7 @@ import tech.xdge.muxa.session.choices
 import tech.xdge.muxa.session.isProtected
 import tech.xdge.muxa.session.isWaiting
 import tech.xdge.muxa.session.mainAnswer
+import tech.xdge.muxa.session.offered
 
 /**
  * One Inbox item (docs/inbox.md, "The item screen"): the question and its source, the summary
@@ -68,7 +70,8 @@ import tech.xdge.muxa.session.mainAnswer
 @Composable
 fun ItemDetail(model: AppModel, id: String?, modifier: Modifier) {
     val item = id?.let(model::item)
-    val waiting = item?.takeIf { model.usesItems && it.isWaiting(System.currentTimeMillis() / 1000) }
+    // A `write` item offers Approve only where this screen shows its content whole (ADR 0052 §2).
+    val waiting = item?.takeIf { model.usesItems && it.isWaiting(System.currentTimeMillis() / 1000) }?.offered(model.canWrite)
     Column(modifier.navigationBarsPadding().imePadding()) {
         TopAppBar(
             title = { Text(item?.kindTitle ?: "Inbox", maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -83,6 +86,7 @@ fun ItemDetail(model: AppModel, id: String?, modifier: Modifier) {
             !model.usesItems -> InboxEmpty(model, OLDER_HOST, "item")
             item == null && model.inboxItems.isEmpty() -> InboxEmpty(model, NOTHING, "item")
             item == null -> Placeholder("Pick a question.")
+            waiting == null && item.kind == ItemKind.WRITE && item.task != null -> WriteStarted(model, item)
             waiting == null -> Placeholder("This question is answered.")
             else -> {
                 Column(
@@ -115,6 +119,7 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
         Field("Content", p.content, mono = true)
     }
     OverallProposal(model, item)
+    WriteView(model, item)
     ItemAttachments(model, item)
     if (item.kind == ItemKind.ASK && item.prompt == null) {
         Text(
@@ -281,7 +286,7 @@ private val InboxAction.tag: String get() = wire
  */
 fun InboxAction.title(item: InboxItem): String = when (this) {
     InboxAction.APPROVE -> when (item.kind) {
-        ItemKind.PROPOSAL -> "Approve…"
+        ItemKind.PROPOSAL, ItemKind.WRITE -> "Approve…"
         ItemKind.ASK -> "Allow"
         else -> "Approve"
     }
@@ -311,5 +316,6 @@ val InboxItem.kindTitle: String
         ItemKind.DELEGATE -> "Request"
         ItemKind.HYPOTHESIS -> "Hypothesis"
         ItemKind.HANDOFF -> "Hand-off"
+        ItemKind.WRITE -> "Write"
         else -> kind.raw
     }

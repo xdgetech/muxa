@@ -71,6 +71,7 @@ private fun StepRow(model: AppModel, request: AssistantRequest, row: ChainStep, 
         )
         val result = row.result ?: return@Column
         ResultView(model, request, result, tag = "chain-result-$key")
+        ResultWrites(model, request, result)
         val file = notesFile(step.worker, staff)
         NotesProposal(model, request, result, "${step.worker} proposes these notes for later runs. They replace $file.", "chain-notes-$key")
     }

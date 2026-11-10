@@ -76,6 +76,9 @@ internal interface DemoContent {
     /** Staff and hand-offs (ADR 0051); a host at `work` level 12 serves them. */
     fun staff(now: Long): DemoStaff? = null
 
+    /** Write proposals and the writer (ADR 0052); a host at `work` level 13 serves them. */
+    fun writes(now: Long): DemoWrites? = null
+
     /** Tasks whose branch is not merged: ending one with `worktree: remove` is `would-lose-work` (ADR 0043). */
     val unmerged: Set<String> get() = emptySet()
 }
@@ -418,6 +421,8 @@ internal object TestContent : DemoContent {
     override fun policies(now: Long) = DemoPolicies.tests(now)
 
     override fun staff(now: Long) = DemoStaff.tests(now)
+
+    override fun writes(now: Long) = DemoWrites.tests(now)
 
     override val unmerged = setOf("t-perf01")
 

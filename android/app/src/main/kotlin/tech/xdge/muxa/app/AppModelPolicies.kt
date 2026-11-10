@@ -68,7 +68,7 @@ suspend fun AppModel.dismissTodayRow(target: String, reason: String): String? {
     return refusal { session.dismissRow(plan, target, reason.trim().ifEmpty { null }) }
 }
 
-/** Reject on the overall assistant's items takes an optional reason at `work:11`; elsewhere it goes now. */
+/** Reject on the assistants' items, and on a write, takes an optional reason at `work:11`; elsewhere it goes now. */
 fun AppModel.asksRejectReason(item: InboxItem): Boolean = canKeepPolicies && item.kind in REASONED_KINDS
 
 /** Sends Reject with the user's [reason], if any. */
@@ -84,6 +84,6 @@ private suspend fun refusal(call: suspend () -> Unit): String? = try {
     PaneSession.describe(e)
 }
 
-private val REASONED_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS)
+private val REASONED_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.WRITE)
 
 private const val CANNOT_CLEAR = "A start or an end can't be removed yet. Delete the policy and add it again."

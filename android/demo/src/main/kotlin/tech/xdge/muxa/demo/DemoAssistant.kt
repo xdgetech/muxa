@@ -280,7 +280,18 @@ internal class DemoAssistant(
         return Asked(item, moved, runId, null)
     }
 
-    /** The fixtures' chain at level 12 (ADR 0051): a Work item with its request, already worked on. */
+    /**
+     * An approved write (ADR 0052): the Result's write with [hash] names the writer's [task], and the
+     * Work item lists the Task, as the host's record with `work` does.
+     */
+    fun wrote(request: String, hash: String, task: String) {
+        val q = requests.firstOrNull { it.id == request } ?: return
+        val results = q.results.map { r -> r.copy(writes = r.writes.map { if (it.hash == hash) it.copy(task = task) else it }) }
+        requests = requests.map { if (it.id == q.id) it.copy(results = results) else it }
+        work = work.map { if (it.id == q.work && task !in it.tasks) it.copy(tasks = it.tasks + task) else it }
+    }
+
+    /** The fixtures' chain at level 12 (ADR 0051), or level 13's writes: a Work item with its request, already worked on. */
     fun add(item: WorkItem, request: AssistantRequest) {
         work = work + item
         requests = requests + request

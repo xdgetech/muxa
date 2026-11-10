@@ -20,7 +20,7 @@ import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
-import tech.xdge.muxa.protocol.WORK_STAFF
+import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.WorkspaceChecks
 import tech.xdge.muxa.protocol.WorkspaceInfo
@@ -382,9 +382,9 @@ class AppModel(
     fun tryDemo() {
         showSettings = false
         demoTaskRecords = true
-        // Try the Demo shows Captures, Work items (ADR 0048), Today (ADR 0049), policies (ADR 0050) and staff
-        // (ADR 0051); the UI tests pick their level.
-        demoWorkLevel = WORK_STAFF
+        // Try the Demo shows Captures, Work items (ADR 0048), Today (ADR 0049), policies (ADR 0050), staff
+        // (ADR 0051) and write proposals (ADR 0052); the UI tests pick their level.
+        demoWorkLevel = WORK_WRITES
         demoOldItems = false
         beginDemo(DemoBridge.Content.SHOWCASE, alerts = true, Host(name = "Demo", target = SshTarget(host = "demo.invalid", user = "demo")))
         canLeaveDemo = true

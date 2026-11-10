@@ -75,7 +75,14 @@ internal fun RequestSection(model: AppModel, item: WorkItem, request: AssistantR
         }
         error?.let { Text(it, Modifier.testTag("request-error-${request.id}"), color = Theme.failure) }
         // A chain (ADR 0051) shows each step with its own Result; a request without steps is one.
-        if (request.steps.isEmpty()) for (result in request.currentResults) ResultView(model, request, result) else ChainSection(model, request)
+        if (request.steps.isEmpty()) {
+            for (result in request.currentResults) {
+                ResultView(model, request, result)
+                ResultWrites(model, request, result)
+            }
+        } else {
+            ChainSection(model, request)
+        }
         val earlier = request.earlierResults
         if (earlier.isNotEmpty()) {
             DetailHeader("Earlier")
@@ -84,6 +91,8 @@ internal fun RequestSection(model: AppModel, item: WorkItem, request: AssistantR
                     DetailNote("v${result.version} · ${AgentSummary.age(result.at)}")
                     Text(result.summary, style = MaterialTheme.typography.bodySmall)
                 }
+                // An older Result's write item stays open: its text is fixed (ADR 0052 §2).
+                ResultWrites(model, request, result)
             }
         }
     }
@@ -162,6 +171,7 @@ internal fun AskPanel(model: AppModel, item: WorkItem, requests: List<AssistantR
             WorkspacePicker(model, picked, "Workspace", "ask-workspace") { picked = it }
         }
         StaffPicker(model, workspace, worker, "ask-staff") { worker = it }
+        WriterNote(model, workspace, "ask-writer")
         OutlinedTextField(
             purpose, {
                 purpose = it

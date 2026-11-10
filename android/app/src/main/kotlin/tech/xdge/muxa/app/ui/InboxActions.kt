@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import tech.xdge.muxa.protocol.InboxAction
+import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.protocol.Proposal
 
 /** The Inbox's questions before an action, and its failures. Shown over the Inbox screen. */
@@ -37,6 +38,7 @@ fun InboxDialogs(model: AppModel) {
         is InboxPrompt.ApproveItem -> prompt.item.proposal?.let { p ->
             ProposalDialog(model, prompt.item.title, prompt.item.workspace, p) { model.answer(prompt.item, InboxAction.APPROVE) }
         }
+        is InboxPrompt.ApproveWrite -> ApproveWriteDialog(model, prompt.item, prompt.write)
         is InboxPrompt.DeleteOld -> DeleteOldDialog(model, prompt)
         is InboxPrompt.RejectItem -> RejectDialog(model, prompt.item)
         null -> {}
@@ -61,7 +63,7 @@ private fun RejectDialog(model: AppModel, item: InboxItem) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(item.question, maxLines = 3)
-                ReasonField(reason, "reject-reason") { reason = it }
+                ReasonField(reason, "reject-reason", if (item.kind == ItemKind.WRITE) WRITE_REJECT_NOTE else PLAN_NOTE) { reason = it }
             }
         },
         confirmButton = { TextButton({ model.reject(item, reason) }, Modifier.testTag("reject-confirm")) { Text("Reject") } },
@@ -71,13 +73,18 @@ private fun RejectDialog(model: AppModel, item: InboxItem) {
 
 /** The optional reason the assistant reads with a correction. */
 @Composable
-internal fun ReasonField(reason: String, tag: String, change: (String) -> Unit) {
+internal fun ReasonField(reason: String, tag: String, note: String = PLAN_NOTE, change: (String) -> Unit) {
     OutlinedTextField(
         reason, change, Modifier.fillMaxWidth().testTag(tag),
         label = { Text("Reason (optional)") }, maxLines = 3,
-        supportingText = { Text("The overall assistant reads it with the next plan.") },
+        supportingText = { Text(note) },
     )
 }
+
+private const val PLAN_NOTE = "The overall assistant reads it with the next plan."
+
+private const val WRITE_REJECT_NOTE = "Nothing is written and no Task starts."
+
 
 /** Names the count first; with none, there is nothing to confirm (docs/inbox.md). */
 @Composable

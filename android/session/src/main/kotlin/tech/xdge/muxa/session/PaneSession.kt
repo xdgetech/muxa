@@ -55,11 +55,13 @@ import tech.xdge.muxa.protocol.WORK_ITEMS
 import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
+import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorktreeEnd
+import tech.xdge.muxa.protocol.WriteProposal
 import tech.xdge.muxa.protocol.workLevel
 import tech.xdge.muxa.terminal.PaneRenderer
 import tech.xdge.muxa.transport.BridgeChannel
@@ -202,6 +204,9 @@ class PaneSession(
 
         /** The host asks a named staff member and runs a request as a chain of steps (ADR 0051). */
         val canAskStaff get() = workLevel >= WORK_STAFF
+
+        /** Results propose writes; Approve on a `write` item sends the hash of the content shown (ADR 0052). */
+        val canWrite get() = workLevel >= WORK_WRITES
     }
 
     private val _state = MutableStateFlow(State())
@@ -594,6 +599,7 @@ class PaneSession(
      * `later` takes no time (ADR 0040). Returns the item as the host saved it. A refusal lists the Inbox again,
      * since another device may have answered first; an `ask` whose menu changed is [Failure.ItemChanged].
      * Done and Drop end the Task with its worktree, as [updateTask] does with [forceWorktree].
+     * Approve on a `write` item goes only through [approveWrite]: it needs the content the user saw.
      */
     suspend fun answer(
         item: InboxItem,
@@ -601,18 +607,41 @@ class PaneSession(
         text: String? = null,
         option: Int? = null,
         forceWorktree: Boolean = false,
+    ): InboxItem {
+        if (item.kind == ItemKind.WRITE && action == InboxAction.APPROVE) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, WRITE_NOT_SHOWN))
+        return answering(item, action, text, option, forceWorktree, hash = null)
+    }
+
+    /**
+     * Approve on a `write` item (ADR 0052 §2): [shown] is the write whose content this client showed
+     * whole, and its `hash` binds the approve to that text. The host starts one Task of the writer;
+     * a budget or a missing writer is [Failure.Refused] with the host's reason, and the item stays open.
+     */
+    suspend fun approveWrite(item: InboxItem, shown: WriteProposal): InboxItem {
+        if (!_state.value.canWrite) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, WRITES_UNSUPPORTED))
+        if (item.kind != ItemKind.WRITE) throw Failure.Bridge(ErrorBody(ErrorCode.BAD_REQUEST, "${item.id} proposes no write"))
+        return answering(item, InboxAction.APPROVE, null, null, false, shown.hash)
+    }
+
+    private suspend fun answering(
+        item: InboxItem,
+        action: InboxAction,
+        text: String?,
+        option: Int?,
+        forceWorktree: Boolean,
+        hash: String?,
     ): InboxItem = withContext(dispatcher) {
         if (!_state.value.canAnswerItems) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ITEMS_UNSUPPORTED))
         var requestId = 0L
         val worktree = worktreeEnd(action in ENDING_ACTIONS, forceWorktree)
         // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0049 §4); a
         // confirmed `hypothesis` writes a policy, and a reject a correction (ADR 0050 §3); an
-        // approved `handoff` starts the next step (ADR 0051 §3).
+        // approved `handoff` starts the next step (ADR 0051 §3), and an approved `write` the writer's Task (ADR 0052 §3).
         val proposal = item.kind in OVERALL_KINDS
         try {
             request { id ->
                 requestId = id
-                Request.UpdateInbox(id, item.id, action, text = text, option = option, worktree = worktree)
+                Request.UpdateInbox(id, item.id, action, text = text, option = option, worktree = worktree, hash = hash)
             }
         } catch (e: Failure) {
             forgetAnswer(requestId)
@@ -642,6 +671,7 @@ class PaneSession(
         savedCaptures.remove(requestId)
         savedWork.remove(requestId)
         savedPolicies.remove(requestId)
+        savedTasks.remove(requestId)
     }
 
     /**
@@ -1495,8 +1525,17 @@ class PaneSession(
         /** Shown when the host has no staff (ADR 0051). */
         const val STAFF_UNSUPPORTED = "This host does not ask staff members. Update muxa-bridge on the host."
 
-        /** The assistants' items: answering one may write a Capture, a Work item, a request's step, a policy or a correction. */
-        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF)
+        /** Shown when the host takes no write proposals (ADR 0052). */
+        const val WRITES_UNSUPPORTED = "This host takes no write proposals. Update muxa-bridge on the host."
+
+        /** Approve on a `write` item without its content shown whole: nothing is sent (ADR 0052 §2). */
+        const val WRITE_NOT_SHOWN = "Open the write and read its whole content to approve it."
+
+        /**
+         * The assistants' items: answering one may write a Capture, a Work item, a request's step, a
+         * policy, a correction or the writer's Task.
+         */
+        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF, ItemKind.WRITE)
 
         /** A plan's id starts with it; a request's with `q-`. */
         private const val PLAN_PREFIX = "p-"

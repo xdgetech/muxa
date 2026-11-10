@@ -26,6 +26,8 @@ import tech.xdge.muxa.protocol.Share
 import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.SortProposal
 import tech.xdge.muxa.protocol.StaffMember
+import tech.xdge.muxa.protocol.WriterInfo
+import tech.xdge.muxa.protocol.Writes
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
 import java.security.MessageDigest
@@ -111,6 +113,11 @@ internal class DemoPlans(
                 else -> d.copy(staff = d.staff.map { if (it.worker == member) it.copy(notesAt = now) else it })
             }
         }
+    }
+
+    /** Each workspace's writer joins its delegate; one without a writer takes no writes (`work` level 13, ADR 0052 §3). */
+    fun writers(writers: Map<String, WriterInfo>) {
+        delegates = delegates.map { d -> writers[d.workspace].let { d.copy(writer = it, writes = if (it == null) Writes.NONE else Writes.REVIEW) } }
     }
 
     /** Each workspace's staff joins its delegate (`work` level 12, ADR 0051 §1). */
