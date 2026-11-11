@@ -62,6 +62,8 @@ import tech.xdge.muxa.session.isWaiting
 import tech.xdge.muxa.session.mainAnswer
 import tech.xdge.muxa.session.offered
 import tech.xdge.muxa.session.memoryOffered
+import tech.xdge.muxa.session.handOffTitle
+import tech.xdge.muxa.session.reviewPlaceholder
 
 /**
  * One Inbox item (docs/inbox.md, "The item screen"): the question and its source, the summary
@@ -124,6 +126,7 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
     OverallProposal(model, item)
     WriteView(model, item)
     MemoryView(model, item)
+    ResultReviewView(item)
     ItemAttachments(model, item)
     if (item.kind == ItemKind.ASK && item.prompt == null) {
         Text(
@@ -265,7 +268,7 @@ private fun Composer(model: AppModel, item: InboxItem, action: InboxAction, text
     val placeholder = when {
         action == InboxAction.ASK_AGENT -> "Ask the workspace's agent…"
         item.kind == ItemKind.ASK -> "Deny, then tell the agent…"
-        else -> "Reply to the agent…"
+        else -> item.reviewPlaceholder ?: "Reply to the agent…"
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         OutlinedTextField(
@@ -286,16 +289,22 @@ private val InboxAction.tag: String get() = wire
 
 /**
  * Labels name the result (ADR 0033 §4a, ADR 0040). A proposal keeps Approve and Reject; an
- * answer that changes the Task names it; ✓ is "Done" for TalkBack.
+ * answer that changes the Task names it; ✓ is "Done" for TalkBack. On a `result` item, approve
+ * hands off to the next member, and on a `write` item, reply is Revise (ADR 0058 §2, §4).
  */
 fun InboxAction.title(item: InboxItem): String = when (this) {
     InboxAction.APPROVE -> when (item.kind) {
         ItemKind.PROPOSAL, ItemKind.WRITE, ItemKind.MEMORY -> "Approve…"
         ItemKind.ASK -> "Allow"
+        ItemKind.RESULT -> item.handOffTitle ?: "Hand off"
         else -> "Approve"
     }
     InboxAction.REJECT -> if (item.kind == ItemKind.ASK) "Deny" else "Reject"
-    InboxAction.REPLY -> if (item.kind == ItemKind.ASK) "Deny & Send" else "Send"
+    InboxAction.REPLY -> when (item.kind) {
+        ItemKind.ASK -> "Deny & Send"
+        ItemKind.WRITE -> "Revise"
+        else -> "Send"
+    }
     InboxAction.ACCEPT -> "Complete Task"
     InboxAction.KEEP_OPEN, InboxAction.DISMISS -> "Done"
     InboxAction.RETRY -> "Retry"
@@ -322,5 +331,6 @@ val InboxItem.kindTitle: String
         ItemKind.HANDOFF -> "Hand-off"
         ItemKind.WRITE -> "Write"
         ItemKind.MEMORY -> "Memory"
+        ItemKind.RESULT -> "Result"
         else -> kind.raw
     }

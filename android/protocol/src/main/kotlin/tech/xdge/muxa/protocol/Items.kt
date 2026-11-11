@@ -62,6 +62,8 @@ data class InboxItem(
     val write: WriteProposal? = null,
     /** With kind `memory`: the text approve appends to the workspace's WORKSPACE.md (`work` level 14, ADR 0053). [task] is the same Task. */
     val memory: MemoryProposal? = null,
+    /** With kind `result`: the Result to review (`work` level 16, ADR 0058). */
+    val result: ResultReview? = null,
     /** The answers the host accepts now, in the order to show them. Unknown actions are left out: PROTOCOL.md says to show them as nothing. */
     @Serializable(with = KnownActionsSerializer::class)
     val answers: List<InboxAction> = emptyList(),
@@ -100,6 +102,9 @@ value class ItemKind(val raw: String) {
 
         /** Level 14: a Task's end proposes to add to the workspace memory. */
         val MEMORY = ItemKind("memory")
+
+        /** Level 16: a request's Result to review (ADR 0058). */
+        val RESULT = ItemKind("result")
     }
 }
 

@@ -134,10 +134,10 @@ class FixtureTest {
     @Test
     fun assistantContractRoundTrips() {
         val requests = lines("assistant/requests.jsonl")
-        assertEquals(49, requests.size)
+        assertEquals(53, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("assistant/messages.jsonl")
-        assertEquals(58, messages.size)
+        assertEquals(62, messages.size)
         messages.forEach {
             val message = Wire.decodeMessage(it)
             assertFalse("fixture type is unknown: $it", message is Message.Unknown)
@@ -490,6 +490,49 @@ class FixtureTest {
         assertTrue(workspaces.all { it.name.isNotEmpty() && it.root != null })
     }
 
+    /** ADR 0058: a `result` item carries the Result to review; its answers are existing actions, and Send and Revise are `reply` with the text. */
+    @Test
+    fun aResultItemIsAnsweredWithExistingActions() {
+        val requests = lines("assistant/requests.jsonl").map(Wire::decodeRequest)
+        val messages = lines("assistant/messages.jsonl").map(Wire::decodeMessage)
+        assertEquals(WORK_RESULT_REVIEW, workLevel(listOf("work:16")))
+        val items = (messages[58] as Message.InboxList).items
+        val r = items[0].result!!
+        assertEquals(ItemKind.RESULT to 2, items[0].kind to r.step)
+        assertEquals("lisk-architect", r.handoff?.worker)
+        assertTrue(r.findings.isNotEmpty() && r.files.isNotEmpty())
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REPLY, InboxAction.DISMISS, InboxAction.LATER), items[0].answers)
+        // Without a staff: no worker, no hand-off, no approve.
+        val plain = items[1].result!!
+        assertTrue(plain.worker == null && plain.handoff == null)
+        assertFalse(InboxAction.APPROVE in items[1].answers)
+        // A write item takes reply: Revise.
+        assertTrue(InboxAction.REPLY in items[2].answers)
+        val send = requests[50] as Request.UpdateInbox
+        assertTrue(send.action == InboxAction.REPLY && send.text != null)
+        // Send: a new version whose first step is the same member, asked by the user.
+        val q = (messages[59] as Message.WorkSaved).request!!
+        assertEquals(3L to StepBy.USER, q.version to q.steps[0].by)
+        assertEquals("lisk-strategist", q.steps[0].worker)
+        assertTrue(q.results.all { it.stale })
+        val sent = (messages[60] as Message.InboxSaved).item!!
+        assertEquals(ItemState.ANSWERED to InboxAction.REPLY, sent.state to sent.answer)
+    }
+
+    /** A level 15 client knows no `result` kind: it reads the list, shows the item as unknown, and still has every answer the host lists. */
+    @Test
+    fun aLevel15ClientReadsAResultItemAsUnknownWithItsAnswers() {
+        val line = lines("assistant/messages.jsonl")[58]
+        val old = Json { ignoreUnknownKeys = true }.decodeFromString(Level15List.serializer(), line)
+        val level15 = setOf("ask", "review", "failure", "proposal", "briefing", "sort", "delegate", "hypothesis", "handoff", "write", "memory")
+        val first = old.items[0]
+        assertFalse(first.kind in level15)
+        assertTrue(first.summary != null)
+        // Plain InboxAction, which fails on a name it does not know: every answer is one the old client has.
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REPLY, InboxAction.DISMISS, InboxAction.LATER), first.answers)
+        assertEquals("write", old.items[2].kind)
+    }
+
     @Test
     fun unknownWorkStatesAndDeliveriesStillDecode() {
         val line = """{"type":"work-saved","work":1,"entry":{"id":"w-00000001","rev":1,"title":"t","state":"blocked",""" +
@@ -727,3 +770,8 @@ private data class Level11Request(val delivery: Delivery, val run: String? = nul
 @Serializable private data class Level13Workspace(val name: String, val root: String? = null)
 
 @Serializable private data class Level13TaskList(val workspaces: List<Level13Workspace>)
+
+// What a level 15 client knows of an `inbox-list` with `result` items.
+@Serializable private data class Level15Item(val kind: String, val summary: String? = null, val answers: List<InboxAction> = emptyList())
+
+@Serializable private data class Level15List(val items: List<Level15Item>)

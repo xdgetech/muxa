@@ -33,6 +33,8 @@ internal class DemoStaff(
     val work: WorkItem,
     val request: AssistantRequest,
     val handoff: InboxItem,
+    /** At level 16 (ADR 0058): the same Result as a `result` item that offers the hand-off, and a Result without a staff member. */
+    val reviews: List<InboxItem>,
     /** The member each `delegate` item names, by item id. */
     val named: Map<String, String>,
     /** Today's last row at this level: a `delegate` item that names a member. */
@@ -56,6 +58,7 @@ internal class DemoStaff(
             ),
             work = "w-0000b005", request = "q-0000a002", item = "i-0000f001", title = "Choose an error tracker",
             purpose = "Which error tracker fits a team of five",
+            plain = Plain("i-0000f002", DemoResults.tests(now).first(), "Renew the domain"),
             named = mapOf("i-0000e002" to "home-planner"),
             row = PlanRow(
                 item = "i-0000e002", why = "Nobody asked about the offsite yet.", next = "Approve the request.",
@@ -69,6 +72,7 @@ internal class DemoStaff(
             members = mapOf("work" to WORK_STAFF),
             work = "w-5c00b004", request = "q-5c00a002", item = "i-5c00f001", title = "Pick a status page provider",
             purpose = "Which status page fits our uptime checks",
+            plain = Plain("i-5c00f002", DemoResults.showcase(now).first(), "Move invoices to Stripe Billing"),
             named = mapOf("i-5c00e002" to "work-research"),
             row = PlanRow(
                 item = "i-5c00e002", why = "The Task needs a choice before it goes on.", next = "Approve the request to work-research.",
@@ -85,6 +89,7 @@ internal class DemoStaff(
             item: String,
             title: String,
             purpose: String,
+            plain: Plain,
             named: Map<String, String>,
             row: PlanRow,
         ): DemoStaff {
@@ -121,7 +126,14 @@ internal class DemoStaff(
                 handoff = HandoffProposal(request, 1, 2, work, "work-writer", "work-review", toReview.purpose),
                 answers = ANSWERS,
             )
-            return DemoStaff(members, w, q, handoff, named, row)
+            val reviews = listOf(
+                DemoReviews.item(item, q, results[0], title, toReview),
+                DemoReviews.item(plain.item, plain.request, plain.request.results.first { !it.stale }, plain.title),
+            )
+            return DemoStaff(members, w, q, handoff, reviews, named, row)
         }
+
+        /** A request of the fixtures from before staff: its Result names no member. */
+        private class Plain(val item: String, val request: AssistantRequest, val title: String)
     }
 }

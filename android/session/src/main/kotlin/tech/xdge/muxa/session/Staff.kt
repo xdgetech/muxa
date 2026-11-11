@@ -55,10 +55,18 @@ val AssistantRequest.chain: List<ChainStep> get() = steps.map { ChainStep(it, re
 /** The last step asks to pass the request on and no later step exists yet. */
 val AssistantRequest.askedHandoff: RequestStep? get() = steps.lastOrNull()?.takeIf { it.handoff != null }
 
-/** The `handoff` Inbox item about [step] of this request's current version, open or closed, from [items]. */
+/**
+ * The Inbox item that offers [step]'s hand-off at this request's current version, open or closed, from [items]:
+ * a `handoff` item, or at level 16 a `result` item with a hand-off (ADR 0058 §1).
+ */
 fun AssistantRequest.handoffItem(step: RequestStep, items: List<InboxItem>): InboxItem? = items.firstOrNull { item ->
-    val h = item.handoff
-    item.kind == ItemKind.HANDOFF && h != null && h.request == id && h.version == version && h.step == step.step
+    when (item.kind) {
+        ItemKind.HANDOFF -> item.handoff.let { it != null && it.request == id && it.version == version && it.step == step.step }
+        ItemKind.RESULT -> item.result.let {
+            it?.handoff != null && it.request == id && it.version == version && it.step == step.step
+        }
+        else -> false
+    }
 }
 
 /** What the chain's next row says about a hand-off that no step took. */
@@ -78,9 +86,14 @@ fun handoffState(item: InboxItem?): HandoffState? = when {
     else -> HandoffState.ENDED
 }
 
-/** The answers the chain row offers for a waiting hand-off, in the host's order: Approve and Reject. */
+/**
+ * The answers the chain row offers for a waiting hand-off, in the host's order: Approve and Reject on a
+ * `handoff` item, Hand off and Done on a `result` item (ADR 0058 §2).
+ */
 val InboxItem.handoffAnswers: List<InboxAction>
-    get() = answers.filter { it == InboxAction.APPROVE || it == InboxAction.REJECT }
+    get() = answers.filter {
+        it == InboxAction.APPROVE || it == InboxAction.REJECT || (kind == ItemKind.RESULT && it == InboxAction.DISMISS)
+    }
 
 /**
  * The file a Result's notes replace: the lead's are the workspace's `NOTES.md`, any other member's

@@ -44,6 +44,10 @@ internal class DemoItems(private var items: List<InboxItem>) {
     fun waitingHandoffs(request: String): List<InboxItem> =
         items.filter { it.kind == ItemKind.HANDOFF && it.state == ItemState.OPEN && it.handoff?.request == request }
 
+    /** The open `result` items about [request] (ADR 0058). */
+    fun waitingResults(request: String): List<InboxItem> =
+        items.filter { it.kind == ItemKind.RESULT && it.state == ItemState.OPEN && it.result?.request == request }
+
     /** The overall assistant's proposal items join the list (ADR 0049). */
     fun add(more: List<InboxItem>) {
         items = items + more

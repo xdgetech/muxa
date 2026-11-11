@@ -58,6 +58,7 @@ import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
 import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
+import tech.xdge.muxa.protocol.WORK_RESULT_REVIEW
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.WorkAction
@@ -213,6 +214,9 @@ class PaneSession(
 
         /** Task ends propose to the workspace memory; Approve on a `memory` item sends the hash of the text shown (ADR 0053). */
         val canKeepMemory get() = workLevel >= WORK_MEMORY
+
+        /** Every Result is a `result` item, and a `write` item takes Revise (ADR 0058): Work rows drop "Result ready". */
+        val reviewsResults get() = workLevel >= WORK_RESULT_REVIEW
 
         /**
          * The overall assistant's workspace when the host opens its root Ask session (ADR 0054):
@@ -612,7 +616,9 @@ class PaneSession(
      * since another device may have answered first; an `ask` whose menu changed is [Failure.ItemChanged].
      * Done and Drop end the Task with its worktree, as [updateTask] does with [forceWorktree].
      * Approve on a `write` item goes only through [approveWrite], and on a `memory` item through
-     * [approveMemory]: each needs the text the user saw.
+     * [approveMemory]: each needs the text the user saw. On a `result` item (ADR 0058), `approve` hands off
+     * and `reply` with [text] asks the member again as a new version; `reply` on a `write` item is Revise.
+     * A budget reached is [Failure.Refused], and the item stays open.
      */
     suspend fun answer(
         item: InboxItem,
@@ -1587,7 +1593,7 @@ class PaneSession(
          * The assistants' items: answering one may write a Capture, a Work item, a request's step, a
          * policy, a correction or the writer's Task.
          */
-        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF, ItemKind.WRITE)
+        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF, ItemKind.WRITE, ItemKind.RESULT)
 
         /** A plan's id starts with it; a request's with `q-`. */
         private const val PLAN_PREFIX = "p-"

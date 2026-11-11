@@ -19,6 +19,7 @@ import tech.xdge.muxa.protocol.WORK_PLANS
 import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
 import tech.xdge.muxa.protocol.WORK_ASK_ROOT
+import tech.xdge.muxa.protocol.WORK_RESULT_REVIEW
 import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
@@ -58,8 +59,10 @@ class MainActivity : ComponentActivity() {
                 // A host from before ask sessions (ADR 0031), Inbox items (ADR 0033) or
                 // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0048),
                 // with the overall assistant's plans (ADR 0049), with policies (ADR 0050), with staff (ADR 0051),
-                // with write proposals (ADR 0052), with workspace memory (ADR 0053), or with Talk to Assistant (ADR 0054).
+                // with write proposals (ADR 0052), with workspace memory (ADR 0053), with Talk to Assistant (ADR 0054),
+                // or with Results to review (ADR 0058).
                 workLevel = when {
+                    intent.getBooleanExtra(EXTRA_WORK16, false) -> WORK_RESULT_REVIEW
                     intent.getBooleanExtra(EXTRA_WORK15, false) -> WORK_ASK_ROOT
                     intent.getBooleanExtra(EXTRA_WORK14, false) -> WORK_MEMORY
                     intent.getBooleanExtra(EXTRA_WORK13, false) -> WORK_WRITES
@@ -179,6 +182,9 @@ class MainActivity : ComponentActivity() {
 
         /** A bridge that opens the overall assistant's root Ask session: Talk to Assistant (ADR 0054). */
         const val EXTRA_WORK15 = "work15"
+
+        /** A bridge whose Results are `result` items, and whose `write` items take Revise (ADR 0058). */
+        const val EXTRA_WORK16 = "work16"
 
         /** The failure and the last proposal are four days old, for Delete Old (ADR 0046). */
         const val EXTRA_OLD_ITEMS = "old-items"

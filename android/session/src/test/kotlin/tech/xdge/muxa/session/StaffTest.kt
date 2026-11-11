@@ -28,6 +28,7 @@ import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.OverallRequests
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.RequestStep
+import tech.xdge.muxa.protocol.ResultReview
 import tech.xdge.muxa.protocol.Share
 import tech.xdge.muxa.protocol.StaffMember
 import tech.xdge.muxa.protocol.StepBy
@@ -205,6 +206,26 @@ class StaffTest {
         // An item about another version or step is not this step's.
         assertNull(q.handoffItem(q.steps.first(), listOf(bridge.handoff)))
         assertNull(q.copy(version = 2).handoffItem(step, listOf(bridge.handoff)))
+    }
+
+    /** At level 16 a `result` item offers the hand-off (ADR 0058 §1): Hand off and Done answer it in the chain. */
+    @Test
+    fun aResultItemWithAHandoffWaitsAsTheStepsHandoff() {
+        val bridge = StaffBridge(12)
+        val q = bridge.request
+        val step = q.steps.last()
+        val h = bridge.handoff.handoff!!
+        val review = bridge.handoff.copy(
+            kind = ItemKind.RESULT, handoff = null,
+            result = ResultReview(h.request, h.version, h.step, h.work, h.from, handoff = Handoff(h.worker, h.purpose)),
+            answers = listOf(InboxAction.APPROVE, InboxAction.REPLY, InboxAction.DISMISS, InboxAction.LATER),
+        )
+        val open = q.handoffItem(step, listOf(review))
+        assertEquals(HandoffState.WAITING, handoffState(open))
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.DISMISS), open?.handoffAnswers)
+        assertEquals(HandoffState.ENDED, handoffState(review.copy(state = ItemState.ANSWERED, answer = InboxAction.DISMISS)))
+        // A Result without a hand-off offers none.
+        assertNull(q.handoffItem(step, listOf(review.copy(result = review.result!!.copy(handoff = null)))))
     }
 
     @Test

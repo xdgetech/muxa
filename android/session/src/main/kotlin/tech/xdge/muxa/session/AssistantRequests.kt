@@ -5,6 +5,7 @@ import tech.xdge.muxa.protocol.AssistScope
 import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.Delivery
+import tech.xdge.muxa.protocol.WORK_RESULT_REVIEW
 import tech.xdge.muxa.protocol.WorkItem
 
 // Assistant requests as the clients show them (ADR 0048 §6, §10). The host derives `delivery`;
@@ -69,10 +70,17 @@ val AssistantRequest.earlierResults: List<AssistResult> get() = results.filter {
 fun requestsOf(item: WorkItem, listed: List<AssistantRequest>, fallback: List<AssistantRequest> = emptyList()): List<AssistantRequest> =
     item.requests.mapNotNull { id -> listed.firstOrNull { it.id == id } ?: fallback.firstOrNull { it.id == id } }
 
-/** The Work row's note on its newest request: "Result ready", else its delivery state. Null without one. */
-fun assistNote(item: WorkItem, listed: List<AssistantRequest>): String? {
+/**
+ * The Work row's note on its newest request: "Result ready", else its delivery state. Null without one.
+ * From [workLevel] 16 a Result's unread `result` item is the marker (ADR 0058 §5): a resulted request has no note.
+ */
+fun assistNote(item: WorkItem, listed: List<AssistantRequest>, workLevel: Int): String? {
     val newest = requestsOf(item, listed).maxByOrNull { it.updatedAt } ?: return null
-    return if (newest.delivery == Delivery.RESULTED) RESULT_READY else "assistant ${newest.delivery.label}"
+    return when {
+        newest.delivery != Delivery.RESULTED -> "assistant ${newest.delivery.label}"
+        workLevel >= WORK_RESULT_REVIEW -> null
+        else -> RESULT_READY
+    }
 }
 
 /** The Work row's marker for a request with a result. */

@@ -38,7 +38,7 @@ fun AppModel.workItem(id: String): WorkItem? = state.work.firstOrNull { it.id ==
 val AppModel.listedRequests: List<AssistantRequest> get() = if (canCapture) state.requests else emptyList()
 
 /** The Work row's note on its newest request; null without one. */
-fun AppModel.assistNote(item: WorkItem): String? = assistNote(item, listedRequests)
+fun AppModel.assistNote(item: WorkItem): String? = assistNote(item, listedRequests, state.workLevel)
 
 /** `+` (ADR 0035 §5, changed by ADR 0048): Capture on a host with `work:9`, else New Task. */
 fun AppModel.openPlus() {
