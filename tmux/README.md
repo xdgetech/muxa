@@ -46,7 +46,8 @@ Skipping the pane you look at needs `set -g focus-events on`.
 
 With muxa, you also get one notification per new assistant result:
 `Assistant result: <Work item title>`. The tree's Inbox poll sends it, through a
-tree pane, the first time it sees the result (see [muxa](#muxa)).
+tree pane, the first time it sees the result (see [muxa](#muxa)). The result
+itself waits in the Inbox as an unread `📋` item.
 
 ## Install
 
@@ -195,8 +196,7 @@ apps show, with a goal and a status.
     in this order:
     1. Today (with `work` level 10, below).
     2. `Decisions N`: every item that is not a Routine's briefing, in muxa's order.
-    3. `Work N · K new`: the open Work items, the ones with a new result first.
-       `· K new` is left out when there is none.
+    3. `Work N`: the open Work items, in muxa's order.
     4. `▸ Routine N`: the Routine's briefings. The section starts folded, and
        only its header shows. `Enter` or `space` on the header unfolds it
        (`▾`) or folds it again. The global option `@agents_inbox_unfolded`
@@ -237,15 +237,13 @@ apps show, with a goal and a status.
     version and ends the older run. A Work row that was asked shows its newest
     request's delivery, such as `asked: processing`. The item below the list
     shows the request and the newest Result's summary; `muxa-cli assist show
-    WORK` prints all of it. A Work item whose newest request has a result you
-    have not looked at shows `· new result` and comes first among the Work
-    items; the header counts them. A new version or a new delivery is a new result. Selecting the
-    Work item (its preview shows), `v`, `o` or `Enter` marks it looked at.
-    This machine keeps what it notified and what you looked at in
+    WORK` prints all of it. A new result is a `📋` item in Decisions (with
+    `work` level 16, below), unread until you look at it; Work rows carry no
+    mark of their own. This machine keeps which results it notified in
     `$XDG_STATE_HOME/muxa/tmux-results.json` (else
     `~/.local/state/muxa/tmux-results.json`), one entry per listed Work item.
-    The first poll takes the results already there as looked at. On a Capture, `w` makes a Work item from it and `n`
-    keeps it as a note.
+    The first poll takes the results already there as notified. On a Capture,
+    `w` makes a Work item from it and `n` keeps it as a note.
   - With `work` level 10 and an overall assistant (ADR 0049), a Today section
     (`☀`) comes first: the queue of the newest plan with a result, up to 10
     rows, most important first (ADR 0057). Each row has its time estimate and
@@ -284,10 +282,20 @@ apps show, with a goal and a status.
     which member takes it, numbered with the lead marked; a number or a name
     picks one (`muxa-cli assist WORK --worker NAME`), and `Enter` lets the lead
     decide. The item below the list shows the request's steps, one row per
-    member, with the member each step hands on to. `👥` items are hand-offs:
-    one member asks to pass the request to the next. `a` approves and starts
-    the next step, `r` rejects and ends the request with the results it has,
-    `l` is Later. A `🤝` item names the member the plan picked.
+    member, with the member each step hands on to. `👥` items are hand-offs
+    from a host before level 16: one member asks to pass the request to the
+    next. `a` approves and starts the next step, `r` rejects and ends the
+    request with the results it has, `l` is Later. A `🤝` item names the
+    member the plan picked.
+  - With `work` level 16 (ADR 0058), every Result of a staff member is a `📋`
+    item, reviewed like a Task: the summary, then its findings, open
+    questions, next steps and files, and the hand-off it proposes. `a` hands
+    off to the next member, `s` asks for the text and sends it to the member
+    who wrote the Result, who goes on from it as a new version of the
+    request, `d` is ✓ Done (closes it and ends the chain), `l` is Later. On a
+    `📤` write item, `s` is Revise: the member writes a new draft, and the
+    item closes. `muxa-cli inbox answer ITEM handoff | send --text T | done |
+    revise --text T` does the same.
   - With `work` level 13 (ADR 0052), `📤` items are writes a staff member
     proposes outside the host: a post or a comment. The item shows the action,
     the target and the content whole, as plain text, and says when it comes

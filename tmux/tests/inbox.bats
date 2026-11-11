@@ -243,8 +243,9 @@ shift_tab() { key Escape '[' Z; }
 # items. The fixture's level 10 list (with plans) is plan_inbox's.
 work_inbox() {
   # The level 12 list of ADR 0051 has no plans either: staff.bats reads it.
+  # The level 16 list of result items (ADR 0058) is results.bats'.
   jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list" and .plans == null and
-      ((.assistant.delegates // []) | any(.staff) | not)) |
+      ((.assistant.delegates // []) | any(.staff) | not) and all(.items[]; .kind != "result")) |
     {work: 9, items: $items[0].items, entries: [], runs: [], workItems: .work, captures, requests}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }

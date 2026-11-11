@@ -19,6 +19,9 @@
 # Approve asks once more with the target, and Reject takes a reason.
 # With level 14 (ADR 0053), memory items show a Task's text for the workspace
 # memory whole; Approve asks once more with the workspace.
+# With level 16 (ADR 0058), every assistant Result is a result item: a Hand
+# off, s Send, d Done; on a write item, s is Revise. Its unread dot is what
+# marks a result as new.
 # prefix + T lists sections under header rows (sec:<name>); Tab and Shift-Tab
 # move between headers, and Enter or space folds Routine.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
@@ -92,7 +95,7 @@ EOF
 JQ_DEFS='
   def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰",
     "sort": "🗂", "delegate": "🤝", "hypothesis": "💡", "handoff": "👥",
-    "write": "📤", "memory": "🧠"}[.kind] // "•";
+    "write": "📤", "memory": "🧠", "result": "📋"}[.kind] // "•";
   def since($t): ($now - $t) as $s |
     if $s < 60 then "\($s)s" elif $s < 3600 then "\($s / 60 | floor)m"
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
@@ -105,17 +108,19 @@ JQ_DEFS='
   def protect_act($w): if $w < 8 then empty elif .protectedAt then "unprotect" else "protect" end;
   # Labels name the result as the apps do (ADR 0033 §4a, ADR 0040): ✓ closes only
   # the item, and an answer that changes the Task names it. A proposal keeps
-  # Approve and Reject.
+  # Approve and Reject. A result hands off and sends; a write revises (ADR 0058).
   def answer_label($a):
-    (.kind == "ask") as $ask |
-    {"approve": (if $ask then "Allow" else "Approve" end), "accept": "Complete Task",
+    (.kind == "ask") as $ask | (.kind == "result") as $result |
+    {"approve": (if $ask then "Allow" elif $result then "Hand off to \(.result.handoff.worker // "" | gsub("[\\x00-\\x1f\\x7f]"; ""))"
+       else "Approve" end), "accept": "Complete Task",
      "retry": "Retry", "reject": (if $ask then "Deny" else "Reject" end),
-     "reply": (if $ask then "Deny & Send" else "Send" end),
+     "reply": (if $ask then "Deny & Send" elif .kind == "write" then "Revise" else "Send" end),
      "keep-open": "✓ Done", "ask-agent": "Ask Agent",
      "drop": "Drop Task", "later": "Later", "dismiss": "✓ Done", "confirm": "Confirm"}[$a] // $a;
   # [{key, act, group}] as the apps place them (ADR 0040): triage is the top bar
   # and its … menu, answers are the decisions and the reply box. `a` is never
-  # Complete Task, which the apps keep in the menu.
+  # Complete Task, which the apps keep in the menu. On a result, a is Hand off,
+  # s Send and d Done (ADR 0058).
   def keymap: (.answers // []) as $a |
     def pick($acts): [$a[] | select(IN($acts[]))][0] // empty;
     def bind($key; $act; $group): {key: $key, act: $act, group: $group};
@@ -128,6 +133,15 @@ JQ_DEFS='
      (pick(["reply", "ask-agent"]) | bind("s"; .; "answer"))];
   # Text the user or an agent wrote, without terminal control characters.
   def plain: gsub("[\\x00-\\x08\\x0b-\\x1f\\x7f]"; "");
+  # The Result of a result item: who wrote it, its lists, and the hand-off a starts.
+  def review_lines: .result as $r | ($r.worker // "the assistant" | plain) as $who |
+    "From: \($who) · v\($r.version) step \($r.step)",
+    (["Findings", ($r.findings // [])], ["Open questions", ($r.openQuestions // [])],
+     ["Next steps", ($r.next // [])], ["Files", ($r.files // [])] |
+      select(.[1] | length > 0) | "", "\u001b[1m\(.[0])\u001b[0m", (.[1][] | "  - \(plain)")),
+    (if $r.handoff then "", "Hand off to \($r.handoff.worker | plain): \($r.handoff.purpose | plain)",
+      "a starts it; s sends \($who) what to do instead; d ends the request with what it has."
+     else "", "s sends \($who) what to do next; d closes it." end), "";
   def work_word: {"in-progress": "in progress", "waiting-decision": "waiting on decision",
     "done": "done", "withdrawn": "withdrawn"}[.state] // "open";
   def open_work: (.workItems // [])[] | select(.state != "done" and .state != "withdrawn");
@@ -223,12 +237,12 @@ detail() {
 
 # prefix + T in sections, each after a header row: Today, then Decisions
 # (every item but a Routine's briefing, in muxa's order), the open Work items
-# with a result not looked at first (results.sh), Routine (the briefings,
-# folded unless unfolded) and the unsorted Captures (ADR 0048). Empty
-# sections are left out. Rows: <id> TAB <display>; a header's id is sec:<name>.
+# in muxa's order, Routine (the briefings, folded unless unfolded) and the
+# unsorted Captures (ADR 0048). A new Result is an unread result item in
+# Decisions (ADR 0058). Empty sections are left out. Rows: <id> TAB
+# <display>; a header's id is sec:<name>.
 list() {
-  iq -r --argjson fresh "$("$S/results.sh" new "$1")" \
-    --arg unfolded " $(opt "$INBOX_UNFOLDED_OPT" "") " "$JQ_DEFS"'
+  iq -r --arg unfolded " $(opt "$INBOX_UNFOLDED_OPT" "") " "$JQ_DEFS"'
     def header($id; $name; $n; $rest): "sec:\($id)\t\u001b[1m\($name) \($n)\u001b[0m\($rest)";
     def item_row: "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(marks)\u001b[0m";
     . as $root | (.requests // []) as $reqs |
@@ -245,11 +259,10 @@ list() {
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
     ([.items[] | shown | select(.kind != "briefing")] | select(length > 0) |
       header("decisions"; "Decisions"; length; ""), (.[] | item_row)),
-    ([open_work] | map(select(.id | IN($fresh[]))) as $new |
-      $new + map(select(.id | IN($fresh[]) | not)) | select(length > 0) |
-      header("work"; "Work"; length; if ($new | length) > 0 then " · \($new | length) new" else "" end),
+    ([open_work] | select(length > 0) |
+      header("work"; "Work"; length; ""),
       (.[] |
-      "\(.id)\t  ◆ \(.title | plain)\(if .id | IN($fresh[]) then " \u001b[1m· new result\u001b[0m" else "" end)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m")),
+      "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m")),
     ([.items[] | shown | select(.kind == "briefing")] | select(length > 0) |
       ($unfolded | contains(" routine ")) as $open |
       header("routine"; "\(if $open then "▾" else "▸" end) Routine"; length;
@@ -265,7 +278,7 @@ list() {
 view_section() {
   case "$1" in
     sec:decisions) echo "Items that need your answer: reviews, failures, permissions and proposals." ;;
-    sec:work) echo "Open Work items; the ones with a new result come first." ;;
+    sec:work) echo "Open Work items. A new result is a result item in Decisions." ;;
     sec:routine) echo "Routine reports. Enter or space unfolds or folds them." ;;
     sec:unsorted) echo "Captures not sorted into a Work item yet." ;;
   esac
@@ -406,7 +419,7 @@ view_capture() {
 # keys: triage on one line, answers on the next.
 view() {
   case "$1" in
-    w-*) "$S/results.sh" seen "$1" "$2"; view_work "$@"; return ;;
+    w-*) view_work "$@"; return ;;
     c-*) view_capture "$@"; return ;;
     today:*) view_today "$@"; return ;;
     sec:*) view_section "$1"; return ;;
@@ -422,11 +435,13 @@ view() {
     (.handoff // empty |
       "From: \(.from | plain) → \(.worker | plain) · step \(.step + 1)", "Ask: \(.purpose | plain)",
       "Approve starts the next step; Reject ends the request with what it has.", ""),
+    (select(.result) | review_lines),
     (.write // empty | ([$reqs[] | select(.id == $i.write.request) | .version][0] // .version) as $current |
       "Action: \(.action | plain)", "To: \(.target | plain)",
       "From: \(.worker // "the assistant" | plain) · v\(.version)\(if .version < $current then " · from an older result" else "" end)",
       "", "Content, written exactly as below:", (.content | plain), "",
-      "Approve starts one Task of the writer with this text; muxa does not check the result.", ""),
+      "Approve starts one Task of the writer with this text; muxa does not check the result.",
+      (if ($i.answers // []) | index("reply") then "s asks \(.worker // "the assistant" | plain) for a new draft." else empty end), ""),
     (.memory // empty |
       "From: Task \(.task)",
       "", "Added to the workspace memory exactly as below:", (.text | plain), "",
@@ -579,7 +594,15 @@ ask_reason() {
 text_prompt() {
   case "$1" in
     ask-agent) echo "Request for the workspace's agent, with this item (the item stays open):" ;;
-    reply) if [ "$2" = ask ]; then echo "Deny, then tell the agent instead:"; else echo "Message for the agent:"; fi ;;
+    reply)
+      case "$2" in
+        ask) echo "Deny, then tell the agent instead:" ;;
+        # ADR 0058: the member who wrote it goes on, as a new version.
+        result) echo "What should ${3:-the assistant} do next? It continues from this result:" ;;
+        write) echo "What should ${3:-the assistant} change in the draft? It writes a new one:" ;;
+        *) echo "Message for the agent:" ;;
+      esac
+      ;;
   esac
 }
 
@@ -656,7 +679,9 @@ EOF
     reply | ask-agent)
       clear
       kind="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .kind' "$json")"
-      printf '%s\n\n' "$(text_prompt "$act" "$kind")"
+      row="$(jq -r --arg item "$id" '.items[] | select(.id == $item) |
+        (.result.worker // .write.worker // "") | gsub("[\\x00-\\x1f\\x7f]"; "")' "$json")"
+      printf '%s\n\n' "$(text_prompt "$act" "$kind" "$row")"
       IFS= read -r -e -p '> ' text || return 0
       [ -n "$text" ] || return 0
       set -- "$@" "$act" --text "$text"
@@ -832,7 +857,6 @@ ui() {
       D) delete_old "$json" ;;
       enter | o)
         case "$id" in
-          w-*) "$S/results.sh" seen "$id" "$json" ;;
           today:*)
             # Moves to the row of the target; a target not listed stays put.
             target="$(today_target "$id" "$json")"

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2016  # jq programs: $ is jq's, not the shell's
-# Assistant results the user has not looked at: prefix + T marks their Work
-# items, and the Inbox poll notifies once per result. muxa never sees this
-# state; it lives in one file on this machine (results_file).
+# Assistant results the Inbox poll notifies once each. The Inbox's own
+# `result` items (ADR 0058) are what marks a result as new; this only keeps
+# which results this machine notified, in one file (results_file).
 # Usage: results.sh track <inbox json>  (the poll: record and notify)
-#        results.sh seen <work id> <inbox json> | new <inbox json>
 set -u
 . "$(dirname "$0")/lib.sh"
 
@@ -42,7 +41,7 @@ lock() {
 }
 unlock() { rmdir "$LOCK" 2>/dev/null; }
 
-# The saved state, {"<work id>": {"key", "seen"}}, or {} when there is none.
+# The saved state, {"<work id>": {"key"}}, or {} when there is none.
 saved() { if [ -s "$STATE" ]; then cat "$STATE"; else echo '{}'; fi; }
 
 # Replaces the state with stdin, atomically; an unchanged state is not written.
@@ -59,8 +58,8 @@ save() {
 }
 
 # The poll: keeps one entry per open Work item with a result, so Work items
-# no longer listed drop out. A result not saved yet is new and notifies once.
-# The first run saves what is there as seen: no notifications for old results.
+# no longer listed drop out. A result not saved yet notifies once. The first
+# run saves what is there: no notifications for old results.
 track() {
   local json="$1" first=false out title
   [ -s "$json" ] || return 0
@@ -69,9 +68,7 @@ track() {
   out="$(saved | jq -r --argjson first "$first" --slurpfile inbox "$json" "$JQ_RESULTS"'
     . as $old | [$inbox[0] | results] as $now |
     [$now[] | select($old[.work].key != .key)] as $fresh |
-    (reduce $now[] as $r ({}; .[$r.work] =
-      (if $old[$r.work].key == $r.key then $old[$r.work] else {key: $r.key, seen: $first} end))
-     | tojson),
+    (reduce $now[] as $r ({}; .[$r.work] = {key: $r.key}) | tojson),
     (if $first then empty else $fresh[] | .title end)')" || { unlock; return 1; }
   printf '%s\n' "$out" | head -n 1 | save
   unlock
@@ -81,29 +78,7 @@ track() {
   return 0
 }
 
-# The user looked at a Work item: its current result is seen. Before the first
-# poll there is nothing to mark.
-seen() {
-  local work="$1" json="$2" next
-  [ -f "$STATE" ] || return 0
-  lock || return 0
-  next="$(saved | jq -c --arg work "$work" --slurpfile inbox "$json" "$JQ_RESULTS"'
-    [$inbox[0] | results | select(.work == $work)][0] as $r |
-    if $r then .[$work] = {key: $r.key, seen: true} else . end')" &&
-    printf '%s\n' "$next" | save
-  unlock
-}
-
-# The Work ids with a result not looked at, as a JSON array.
-new() {
-  saved | jq -c --slurpfile inbox "$1" "$JQ_RESULTS"'
-    . as $s | [$inbox[0] | results | select($s[.work].key == .key and ($s[.work].seen | not)) | .work]
-  ' 2>/dev/null || echo '[]'
-}
-
 case "${1:-}" in
   track) track "${2:?inbox json}" ;;
-  seen) seen "${2:?work id}" "${3:?inbox json}" ;;
-  new) new "${2:?inbox json}" ;;
-  *) echo "usage: results.sh track <json> | seen <work id> <json> | new <json>" >&2; exit 2 ;;
+  *) echo "usage: results.sh track <json>" >&2; exit 2 ;;
 esac
