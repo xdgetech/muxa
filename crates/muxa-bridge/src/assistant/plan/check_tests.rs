@@ -159,16 +159,12 @@ fn a_pinned_item_must_take_the_first_rows_in_pin_order() {
         reasons[0].contains("start with the 2 pinned Work items"),
         "{reasons:?}"
     );
-    // Four pins: the three oldest fill the plan.
-    let four = Store::new(
-        (1..=4)
-            .map(|n| pinned(&format!("w-0000000{n}"), n))
-            .collect(),
-    );
-    let three = (1..=3)
-        .map(|n| row("work", &format!("w-0000000{n}")))
+    // Eleven pins: the ten oldest fill the plan.
+    let eleven = Store::new((1..=11).map(|n| pinned(&format!("w-{n:08x}"), n)).collect());
+    let ten = (1..=10)
+        .map(|n| row("work", &format!("w-{n:08x}")))
         .collect();
-    assert!(four.reasons(&plan_file(three, vec![])).is_empty());
+    assert!(eleven.reasons(&plan_file(ten, vec![])).is_empty());
 }
 
 #[test]

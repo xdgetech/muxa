@@ -1,8 +1,8 @@
-//! Starting an overall run (ADR 0049 §5, §9): `plan-now` or a schedule's
-//! occurrence. One plan is made at a time; a plan whose run timed out or
+//! Starting an overall run (ADR 0049 §5, §9): `plan-now`, a schedule's
+//! occurrence, or Today's refill (ADR 0055 §3). One plan is made at a time; a plan whose run timed out or
 //! whose prompt was interrupted is `cancelled` by the next. Budgets are the
-//! overall workspace's and the host's. A scheduled plan past a budget is
-//! kept as a `failed` plan with the reason, and the next occurrence runs.
+//! overall workspace's and the host's. A scheduled or refill plan past a
+//! budget is kept as a `failed` plan with the reason, and the next occurrence runs.
 use std::sync::Arc;
 
 use muxa_protocol::{Delivery, ErrorBody, ErrorCode, Plan};
@@ -30,11 +30,13 @@ pub enum How {
     Now { at: u64, minutes: Option<u32> },
     /// A schedule's occurrence at `at`.
     Scheduled { at: u64, occurrence: String },
+    /// Today's refill at `at`, after every row of the plan `after` closed.
+    Refill { at: u64, after: String },
 }
 
 enum Claimed {
     Run(Plan, Box<Delegated>),
-    /// A scheduled plan past a budget: kept `failed`, with no run.
+    /// A scheduled or refill plan past a budget: kept `failed`, with no run.
     Skipped(Plan),
 }
 
@@ -75,13 +77,16 @@ fn claim(config: &Config, how: &How, fallback: &str, now: u64) -> Result<Claimed
         }
         Unsettled::Replaceable(plans) => plans,
     };
+    if let How::Refill { after, .. } = how {
+        mark_refilled(&shelf, after, now)?;
+    }
     let ids: Vec<&str> = replacing.iter().map(|p| p.id.as_str()).collect();
     if let Err(e) = budget(config, &d, &ids, now) {
-        let How::Scheduled { .. } = how else {
+        if matches!(how, How::Now { .. }) {
             return Err(e);
-        };
+        }
         let plan = new_plan(&shelf, how, &d, now, Some(&e.message))?;
-        tracing::info!(plan = %plan.id, "scheduled plan skipped: a budget is reached");
+        tracing::info!(plan = %plan.id, "automatic plan skipped: a budget is reached");
         prune(&shelf);
         return Ok(Claimed::Skipped(plan));
     }
@@ -91,6 +96,31 @@ fn claim(config: &Config, how: &How, fallback: &str, now: u64) -> Result<Claimed
     let plan = new_plan(&shelf, how, &d, now, None)?;
     prune(&shelf);
     Ok(Claimed::Run(plan, Box::new(d)))
+}
+
+/// Claims the one refill of the emptied plan `after`, before any run or
+/// budget: a failed or cancelled refill never starts another.
+pub(super) fn mark_refilled(shelf: &Shelf<Plan>, after: &str, now: u64) -> Result<(), ErrorBody> {
+    let marked = shelf
+        .update_with_extra(
+            after,
+            |_, extra| -> Result<bool, crate::routines::store::StateError> {
+                if extra.contains_key(super::refill::REFILLED_FIELD) {
+                    return Ok(false);
+                }
+                extra.insert(super::refill::REFILLED_FIELD.into(), json!(now));
+                Ok(true)
+            },
+        )
+        .map_err(|e| crate::assistant::state_error(&e))?;
+    match marked {
+        Some(true) => Ok(()),
+        Some(false) => Err(error_body(
+            ErrorCode::Conflict,
+            format!("plan {after} was refilled already"),
+        )),
+        None => Err(error_body(ErrorCode::Conflict, format!("no plan {after}"))),
+    }
 }
 
 /// The plans without an answer.
@@ -175,6 +205,7 @@ fn new_plan(
     let (at, minutes, occurrence) = match how {
         How::Now { at, minutes } => (*at, *minutes, None),
         How::Scheduled { at, occurrence } => (*at, None, Some(occurrence.clone())),
+        How::Refill { at, .. } => (*at, None, None),
     };
     shelf
         .create_with_extra(|id| {

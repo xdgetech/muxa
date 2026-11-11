@@ -214,7 +214,7 @@ class FixtureTest {
         assertTrue(list.items[1].delegate != null && list.items[0].delegate == null)
         assertTrue(list.plans.size == 2 && list.plans[0].at > list.plans[1].at)
         val plan = list.plans[0]
-        assertTrue(plan.top.size <= 3)
+        assertTrue(plan.top.size <= 10)
         assertTrue(list.work[0].pinnedAt != null)
         assertEquals(list.work[0].id, plan.top[0].work)
         // A Later item is never in a plan's top; with a near due it is in dueSoon.

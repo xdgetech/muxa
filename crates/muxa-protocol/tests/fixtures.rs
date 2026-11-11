@@ -678,7 +678,7 @@ fn plan_fixtures_round_trip() {
     assert!(work[0].pinned_at.is_some());
     let plan = &plans[0];
     assert!(plans[0].at > plans[1].at);
-    assert!(plan.top.len() <= 3);
+    assert!(plan.top.len() <= 10);
     assert_eq!(plan.top[0].work.as_deref(), Some(work[0].id.as_str()));
     let later: Vec<&str> = work
         .iter()

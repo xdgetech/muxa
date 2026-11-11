@@ -59,6 +59,7 @@ pub async fn tick(cx: &Context) {
     }
     super::cleanup::remove(plan.dirs).await;
     super::plan::schedule::tick(cx).await;
+    super::plan::refill::tick(cx).await;
     super::proposals::tick(cx).await;
     super::chain::tick(cx).await;
 }

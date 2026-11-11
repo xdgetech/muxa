@@ -74,11 +74,12 @@ fn the_proposals_keep_their_kind_when_stored() {
 }
 
 #[test]
-fn four_rows_are_refused() {
-    let rows = (1..=4).map(|n| row(&format!("w-0000000{n}"))).collect();
-    let reasons = refused(&plan(rows, vec![]));
+fn ten_rows_pass_and_eleven_are_refused() {
+    let rows = |n: u32| (1..=n).map(|i| row(&format!("w-{i:08x}"))).collect();
+    assert_eq!(check(&plan(rows(10), vec![])).unwrap().top.len(), 10);
+    let reasons = refused(&plan(rows(11), vec![]));
     assert!(
-        reasons.iter().any(|r| r.contains("top has more than 3")),
+        reasons.iter().any(|r| r.contains("top has more than 10")),
         "{reasons:?}"
     );
 }

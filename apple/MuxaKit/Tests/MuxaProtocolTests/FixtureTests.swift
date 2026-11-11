@@ -325,7 +325,7 @@ struct FixtureTests {
         #expect(items[0].sort?.action == .work && items[1].delegate?.scope == .compare)
         #expect(plans.count == 2 && plans[0].at > plans[1].at)
         let plan = plans[0]
-        #expect(plan.top.count <= 3)
+        #expect(plan.top.count <= 10)
         #expect(plan.top[0].work == work[0].id && work[0].pinnedAt != nil)
         // A Later item is never in a plan's top; with a near due it is in dueSoon.
         let later = work.filter { $0.laterAt != nil }.map(\.id)
