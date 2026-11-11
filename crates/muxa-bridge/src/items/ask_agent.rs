@@ -164,6 +164,7 @@ fn prompt(item: &InboxItem, text: &str) -> String {
         ItemKind::Handoff => "hand-off between staff members",
         ItemKind::Write => "proposed write outside this host",
         ItemKind::Memory => "proposed addition to the workspace memory",
+        ItemKind::Result => "result of a staff member to review",
         ItemKind::Unknown => "item",
     };
     let source = match &item.routine {

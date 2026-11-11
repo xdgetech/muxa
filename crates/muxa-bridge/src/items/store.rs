@@ -219,6 +219,7 @@ pub fn new_id() -> Result<String, StateError> {
 #[cfg(test)]
 pub(crate) fn tests_item(id: &str, state: ItemState) -> InboxItem {
     InboxItem {
+        result: None,
         memory: None,
         write: None,
         handoff: None,

@@ -457,8 +457,8 @@ fn assistant_fixtures_round_trip() {
     use muxa_protocol::{
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 49);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 58);
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 53);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 62);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -1730,4 +1730,107 @@ fn inbox_delete_fixtures_round_trip() {
             deleted: 12
         }
     ));
+}
+
+fn assistant_lines(name: &str) -> Vec<String> {
+    std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/assistant/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+    .lines()
+    .map(str::to_owned)
+    .collect()
+}
+
+/// ADR 0058: a `result` item carries the Result to review, and its answers
+/// are existing actions; Send and Revise are `reply` with the text.
+#[test]
+fn a_result_item_is_answered_with_existing_actions() {
+    use muxa_protocol::{InboxAction, ItemKind, ItemState, StepBy, WORK_RESULT_REVIEW};
+    assert_eq!(
+        muxa_protocol::work_capability(WORK_RESULT_REVIEW),
+        "work:16"
+    );
+    let requests = assistant_lines("requests.jsonl");
+    let messages = assistant_lines("messages.jsonl");
+    let Message::InboxList { items, .. } = serde_json::from_str(&messages[58]).unwrap() else {
+        panic!()
+    };
+    let r = items[0].result.as_ref().unwrap();
+    assert_eq!((items[0].kind, r.step), (ItemKind::Result, 2));
+    assert_eq!(r.handoff.as_ref().unwrap().worker, "lisk-architect");
+    assert!(!r.findings.is_empty() && !r.files.is_empty());
+    assert_eq!(
+        items[0].answers,
+        [
+            InboxAction::Approve,
+            InboxAction::Reply,
+            InboxAction::Dismiss,
+            InboxAction::Later
+        ]
+    );
+    // Without a staff: no worker, no hand-off, no approve.
+    let plain = items[1].result.as_ref().unwrap();
+    assert!(plain.worker.is_none() && plain.handoff.is_none());
+    assert!(!items[1].answers.contains(&InboxAction::Approve));
+    // A write item takes reply: Revise.
+    assert!(items[2].answers.contains(&InboxAction::Reply));
+    let Request::UpdateInbox {
+        action: InboxAction::Reply,
+        text: Some(_),
+        ..
+    } = serde_json::from_str(&requests[50]).unwrap()
+    else {
+        panic!()
+    };
+    // Send: a new version whose first step is the same member, asked by the user.
+    let Message::WorkSaved {
+        request: Some(q), ..
+    } = serde_json::from_str(&messages[59]).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!((q.version, q.steps[0].by), (3, StepBy::User));
+    assert_eq!(q.steps[0].worker, "lisk-strategist");
+    assert!(q.results.iter().all(|r| r.stale));
+    let Message::InboxSaved {
+        item: Some(sent), ..
+    } = serde_json::from_str(&messages[60]).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (sent.state, sent.answer),
+        (ItemState::Answered, Some(InboxAction::Reply))
+    );
+}
+
+/// A level 15 client knows no `result` kind: it reads the list, shows the
+/// item as unknown, and still has every answer the host lists.
+#[test]
+fn a_level_15_client_reads_a_result_item_as_unknown_with_its_answers() {
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    #[serde(rename_all = "lowercase")]
+    enum OldKind {
+        Write,
+        #[serde(other)]
+        Unknown,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldItem {
+        kind: OldKind,
+        summary: Option<String>,
+        answers: Vec<muxa_protocol::InboxAction>,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldList {
+        items: Vec<OldItem>,
+    }
+    let old: OldList = serde_json::from_str(&assistant_lines("messages.jsonl")[58]).unwrap();
+    let first = &old.items[0];
+    assert_eq!(first.kind, OldKind::Unknown);
+    assert!(first.summary.is_some());
+    assert!(first.answers.iter().all(muxa_protocol::Known::is_known));
+    assert_eq!(old.items[2].kind, OldKind::Write);
 }

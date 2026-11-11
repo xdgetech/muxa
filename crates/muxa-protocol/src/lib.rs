@@ -8,6 +8,7 @@ mod memory;
 mod plans;
 mod policies;
 mod restart_recovery;
+mod review;
 mod routines;
 mod staff;
 mod workers;
@@ -29,6 +30,7 @@ pub use policies::{
     PlanAction, Policy, PolicyAction, WORK_POLICIES,
 };
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
+pub use review::{ResultReview, WORK_RESULT_REVIEW};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,

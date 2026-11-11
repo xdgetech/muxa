@@ -59,11 +59,19 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],
         ItemKind::Proposal => vec![Approve, Reject],
         ItemKind::Briefing => vec![Dismiss],
-        // The overall assistant's proposals (ADR 0049 §4), a staff
-        // member's hand-off (ADR 0051 §3) and a proposed write (ADR 0052
-        // §2): no agent to ask.
-        ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff | ItemKind::Write => {
+        // The overall assistant's proposals (ADR 0049 §4) and a staff
+        // member's hand-off from before ADR 0058: no agent to ask.
+        ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff => {
             return vec![Approve, Reject, Later];
+        }
+        // A proposed write (ADR 0052 §2); `reply` asks for a new draft (ADR 0058 §4).
+        ItemKind::Write => return vec![Approve, Reject, Reply, Later],
+        // ADR 0058 §2: hand off while offered, send, done, later.
+        ItemKind::Result => {
+            let handoff = item.result.as_ref().is_some_and(|r| r.handoff.is_some());
+            let mut a = if handoff { vec![Approve] } else { Vec::new() };
+            a.extend([Reply, Dismiss, Later]);
+            return a;
         }
         // ADR 0050 §3: `assistant::hypotheses` answers confirm and reject.
         ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
@@ -100,6 +108,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         Disposition::Unknown => (ItemState::Resolved, None),
     };
     let mut item = InboxItem {
+        result: None,
         memory: None,
         write: None,
         handoff: None,

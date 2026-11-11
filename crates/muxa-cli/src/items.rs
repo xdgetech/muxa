@@ -152,6 +152,7 @@ pub fn line(item: &InboxItem, now: u64) -> String {
         ItemKind::Handoff => "handoff",
         ItemKind::Write => "write",
         ItemKind::Memory => "memory",
+        ItemKind::Result => "result",
         ItemKind::Unknown => "unknown",
     };
     let mut state = wire(json!(item.state));
