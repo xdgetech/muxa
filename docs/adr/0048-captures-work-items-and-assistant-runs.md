@@ -126,6 +126,10 @@ On a host, a request run and the scheduled plan failed with no trace: Claude Cod
 
 [ADR 0058](0058-a-result-is-reviewed-like-a-task.md) answers "Do a Result's open questions become Inbox items?" for the whole Result: at `work:16` each stored Result makes one `result` item, with its open questions in it, answered with Send, Done and Later. Its unread state replaces §10's device-local "Result ready", which clients keep only for a host below level 16. A Result still never changes the Work item.
 
+## Addendum (2026-11-11): a Result may propose a Task
+
+[ADR 0060](0060-the-assistant-proposes-tasks.md) adds `task {workspace?, repo?, title, goal}` to §4's result file. A run that finds the request needs code or other changes on this host proposes a Task instead of answering that it cannot. Its `result` item offers Start Task, which starts one Task linked to the Work item, in plan mode. The scope's rule "change nothing outside this folder" stays.
+
 ## Delivery slices
 
 | Slice | Scope | Acceptance |

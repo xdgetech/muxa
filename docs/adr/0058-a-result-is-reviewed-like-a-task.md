@@ -87,3 +87,7 @@ Logs carry ids, versions, steps, worker names and the answer. Never the text, th
   - Keeping `handoff` items and adding `result` items beside them: two items for one Result.
   - New wire actions `send`, `handoff`, `done`: clients before level 16 would show none of them.
   - Done completing the Work item: the Work item is the user's (ADR 0048 §4); a Result never changes it.
+
+## Addendum (2026-11-11): Start Task
+
+[ADR 0060](0060-the-assistant-proposes-tasks.md) §2 adds an answer to §2. A `result` item whose version proposes a Task offers **Start Task**: `approve` when the item offers no hand-off, else the new action `start-task` beside `approve` (Hand off). Start Task starts one Task in plan mode, answers the item with that action, sets its `task` and ends the chain. Send and Done are unchanged.
