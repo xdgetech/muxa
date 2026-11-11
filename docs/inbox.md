@@ -142,7 +142,28 @@ Pins and due dates live on Work items:
 - A Work row shows "pinned" and "due <date>" after its state.
 - Work detail shows a Result's proposed notes (`WORKSPACE.md` for the lead, a member's `NOTES.md`) in full, with **Update Notes**. The apps keep no copy of the live file, so they show the whole text, not a diff. A changed live file is `conflict`: ask again.
 
-muxa for tmux (`prefix + T`): Today comes first, with `new` or `moved` on a row. `o` or `Enter` on a row goes to its item in the list. `t` plans now and asks for the minutes first (`Enter` gives no limit). `P` on a Work item pins or unpins it. `sort` and `delegate` items take `a` Approve, `r` Reject and `l` Later.
+muxa for tmux (`prefix + T`): Today comes first, with `new` or `moved` on a row. `o` on a row goes to its item in the list. `t` is Re-rank: it asks for the minutes first (`Enter` gives no limit). `P` on a Work item pins or unpins it. `sort` and `delegate` items take `a` Approve, `r` Reject and `l` Later.
+
+### What each Today row asks (ADR 0059)
+
+A row names what to do before its title: `▶ 1. Review changes · improve ordoq jibai state  20–40 min`. The verb comes from the target: Review changes (a Task's review), Allow or deny (a Task's menu), Read result (a staff member's result), Check text to send (a write), Decide or Read (a briefing), Fix (a failure), Check memory note, and Start (a Work item). An item the client does not know is Open.
+
+The row's preview, in muxa for tmux:
+
+```
+Do: <what the plan says to do next>
+Enter  Open the Task (review)
+s      Send to the Task's agent…
+also:  c Complete Task   d ✓ Done   l Later   o Go to the item
+plan:  K/J move   x not today   t Re-rank (2 of 3 runs left today)
+```
+
+1. **Enter** is the main action. A Task's review or menu opens its session. Any other item, and a Work item, goes to its row in the list.
+2. **s** sends text, and names who gets it: the Task's agent (`reply`; on a menu, it denies first), the staff member who wrote a result, the writer of a draft (Revise), the workspace's Ask session with a briefing (`ask-agent`), or, for a Work item with `work:17`, the secretary with the Work item (`muxa-cli ask --root --workspace <overall> --work WORK --text T`).
+3. **also** lists the target's other keys.
+4. **plan** changes the queue, not the target. **Re-rank** (`t`, `muxa-cli plan now`) ranks the queue again from what is open now. Each one is a run of the overall workspace's `max_runs_per_day`. With `work:17`, the host sends `assistant.overallRuns`, and the line says how many are left today.
+
+The iOS and Android apps keep the layout above until their follow-up (ADR 0059 §7).
 
 ## Policies, Today order and hypotheses (ADR 0050)
 
@@ -156,7 +177,7 @@ With `work:11`, the user can correct the newest plan and tell the overall assist
 
 Forget removes a record from what the assistant reads next, with the hypotheses based on it. Plans made before keep their reasons. Later and Not Today never tell the assistant that an item is unimportant.
 
-muxa for tmux (`prefix + T`): `K` and `J` move a Today row up and down. `x` takes a row off Today and asks for a reason (`Enter` gives none). `💡` items are hypotheses: `a` Confirm, `r` Reject with an optional reason, `l` Later. `y` opens the Policies list: `n` adds a policy, `e` edits, `d` deletes, `f` forgets a hypothesis or a correction. Plan Now is `t`, because `p` is Protect.
+muxa for tmux (`prefix + T`): `K` and `J` move a Today row up and down. `x` takes a row off Today and asks for a reason (`Enter` gives none). `💡` items are hypotheses: `a` Confirm, `r` Reject with an optional reason, `l` Later. `y` opens the Policies list: `n` adds a policy, `e` edits, `d` deletes, `f` forgets a hypothesis or a correction. Re-rank is `t`, because `p` is Protect.
 
 ## Staff and hand-offs (ADR 0051)
 
