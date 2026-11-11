@@ -37,6 +37,16 @@ Do not edit it. Your plan runs propose changes to it, and the user approves them
   muxa counts every request against its budgets. When it refuses one, tell the user why and stop.
 - Ask for a plan: `muxa-cli plan now [--minutes N]`.
 
+## When the user asks what to do next
+
+Today is a queue, most important first (ADR 0055). Work it with the user one row at a time.
+
+1. Read `muxa-cli plan --json`. When its `delivery` is `resulted`, the queue is its `top`: in `userOrder` when that is set, without rows that have `targetState` (closed) or are in `dismissed` (not today).
+   When the newest plan has no result yet or failed, `muxa-cli plan` prints the last plan with a result. Its row marked `next` is the first in the queue.
+2. Name only the first row of the queue: its title, why, and next step.
+3. When the user resolves it, read the plan again and name the next row. Do not list the whole queue unless the user asks.
+4. When the queue is empty or the plan is from an earlier day, say so and ask whether to run `muxa-cli plan now`. muxa also plans again by itself once every row is closed, so check for a newer plan first.
+
 ## What needs the user's yes
 
 Ask first, in plain words, and wait for a clear yes to that exact thing:

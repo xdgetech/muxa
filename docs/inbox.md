@@ -119,8 +119,10 @@ Unsorted
 
 With `work:10` and an overall assistant, a **Today** section comes above Decisions. It shows the newest plan with a result.
 
-1. **Rows**: at most 3. Each row shows its Work item's or Inbox item's title, the why, the minutes and the next step. A row of a Work item whose request has no answer yet, or whose newest Result is older than the item, says so. Tapping a row opens its Work item or Inbox item.
-   A plan never changes, so a row whose item you closed stays. It shows the item's title dimmed, with how it ended: "✓ done", "withdrawn", "✓ answered", "resolved", or "gone" when the host no longer has it. Tapping it opens nothing.
+1. **Rows**: a queue of up to 10, most important first (ADR 0055). Each row shows its Work item's or Inbox item's title, the why, the minutes and the next step. A row of a Work item whose request has no answer yet, or whose newest Result is older than the item, says so. Tapping a row opens its Work item or Inbox item.
+   - The first open row says **Next**. Work down the queue in that order.
+   - A row whose item you closed (done, withdrawn, answered, resolved, or gone from the host) is hidden.
+   - When every row is closed or Not today, the section says "All done", and the host makes a new plan by itself. It makes one such plan per emptied plan, within the overall assistant's budgets. A reached budget shows as a failed plan with its reason.
 2. **Why** opens the row's basis (due, dependency, goal, time or manual, with its source and time) and what is missing.
 3. **Due soon**: one line under the rows, "Due soon, moved down by you: …", for items you moved down with Later that are due within 24 hours. They are never rows.
 4. **New**: the header shows New when a plan arrived that this device has not shown yet. A new plan replaces the rows but never changes the selection or the scroll.
