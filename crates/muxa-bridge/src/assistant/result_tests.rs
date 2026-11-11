@@ -397,6 +397,7 @@ fn a_task_proposal_passes_in_the_request_workspace() {
         name: "lisk".into(),
         root: root.canonicalize().unwrap(),
         repos: Vec::new(),
+        missing_repos: Vec::new(),
         agent: None,
         loop_checks: None,
         park_after: None,

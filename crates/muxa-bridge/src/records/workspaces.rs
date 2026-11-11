@@ -55,6 +55,9 @@ pub struct Workspace {
     /// Canonical. They may lie outside `root` (ADR 0015); the repos under
     /// `root` need no entry (ADR 0031, `repos.rs`).
     pub repos: Vec<PathBuf>,
+    /// Listed repos that do not exist, as written with `~/` expanded. They
+    /// are skipped so the rest of the host keeps working.
+    pub missing_repos: Vec<PathBuf>,
     /// How its agents start; None means as `--task-command` (ADR 0016).
     pub agent: Option<AgentSettings>,
     /// The checks a loop may run; None means no loops here (ADR 0019).
@@ -222,11 +225,7 @@ impl Workspaces {
             }
             let root = resolve(&w.root, home)
                 .map_err(|r| invalid(format!("workspace {:?}: root {r}", w.name)))?;
-            let repos = w
-                .repos
-                .iter()
-                .map(|r| resolve(r, home))
-                .collect::<Result<Vec<_>, _>>()
+            let (repos, missing_repos) = resolve_repos(&w.name, &w.repos, home)
                 .map_err(|r| invalid(format!("workspace {:?}: repo {r}", w.name)))?;
             let agent = match w.agent {
                 Some(a) => a
@@ -260,6 +259,7 @@ impl Workspaces {
                 name: w.name,
                 root,
                 repos,
+                missing_repos,
                 agent,
                 loop_checks,
                 park_after,
@@ -577,6 +577,37 @@ fn check_name(name: &str) -> Result<(), &'static str> {
 
 /// Expands `~/`, then canonicalizes an absolute, existing path.
 fn resolve(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+    let path = expand(raw, home)?;
+    path.canonicalize()
+        .map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The listed repos that resolve, and those that do not exist. A renamed
+/// repo must not break every other workspace and the Inbox; any other
+/// error still makes the file invalid.
+fn resolve_repos(
+    workspace: &str,
+    raw: &[String],
+    home: Option<&Path>,
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), String> {
+    let mut found = Vec::with_capacity(raw.len());
+    let mut missing = Vec::new();
+    for r in raw {
+        let path = expand(r, home)?;
+        match path.canonicalize() {
+            Ok(p) => found.push(p),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                tracing::warn!(workspace, path = %path.display(), "a listed repo does not exist; it is skipped");
+                missing.push(path);
+            }
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        }
+    }
+    Ok((found, missing))
+}
+
+/// `raw` with a leading `~/` expanded; it must be absolute.
+fn expand(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     let path = match raw.strip_prefix("~/").or((raw == "~").then_some("")) {
         Some(rest) => home
             .ok_or_else(|| format!("{raw:?} starts with ~ but HOME is not set"))?
@@ -586,8 +617,7 @@ fn resolve(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     if !path.is_absolute() {
         return Err(format!("{raw:?} is not an absolute path"));
     }
-    path.canonicalize()
-        .map_err(|e| format!("{}: {e}", path.display()))
+    Ok(path)
 }
 
 #[cfg(test)]

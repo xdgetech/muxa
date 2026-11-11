@@ -283,7 +283,27 @@ pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), 
         })
         .collect();
     problems.extend(old_notes(&workspaces));
+    problems.extend(missing_repos(&workspaces));
     Ok((entries, problems))
+}
+
+/// Listed repos that do not exist. The load skipped and logged them; the
+/// user fixes `workspaces.toml`.
+fn missing_repos(workspaces: &crate::records::Workspaces) -> Vec<RoutineProblem> {
+    workspaces
+        .all()
+        .iter()
+        .flat_map(|w| {
+            w.missing_repos.iter().map(|path| RoutineProblem {
+                workspace: w.name.clone(),
+                reason: format!(
+                    "repo {} in workspaces.toml does not exist; muxa skips it until you \
+                     fix or remove that entry",
+                    path.display()
+                ),
+            })
+        })
+        .collect()
 }
 
 /// Blocking. Workspaces that still have the lead's notes from before ADR

@@ -21,6 +21,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         name: "lisk".into(),
         root: root.to_owned(),
         repos,
+        missing_repos: Vec::new(),
         agent: None,
         loop_checks: None,
         park_after: None,
@@ -167,4 +168,25 @@ fn a_folder_name_shared_by_two_listed_repos_is_ambiguous() {
         ws.repo_path("app"),
         Err(RepoError::NotFound { .. })
     ));
+}
+
+#[test]
+fn a_missing_listed_repo_fails_with_its_path() {
+    let root = temp("missing-listed");
+    let gone = root.join("elsewhere/jibaisup");
+    let mut ws = workspace(&root, Vec::new());
+    ws.missing_repos = vec![gone.clone()];
+    let want = Err(RepoError::Missing {
+        name: "jibaisup".into(),
+        path: gone.clone(),
+    });
+    assert_eq!(ws.repo_path("jibaisup"), want);
+    let by_path = gone.to_string_lossy().into_owned();
+    assert!(matches!(
+        ws.repo_path(&by_path),
+        Err(RepoError::Missing { .. })
+    ));
+    let message = ws.repo_path("jibaisup").unwrap_err().to_string();
+    assert!(message.contains("does not exist"), "{message}");
+    assert!(!ws.repo_list().contains(&gone));
 }

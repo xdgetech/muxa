@@ -235,6 +235,7 @@ mod tests {
             name: "muxa".into(),
             root: root.canonicalize().unwrap(),
             repos: Vec::new(),
+            missing_repos: Vec::new(),
             agent: None,
             loop_checks: None,
             park_after: None,
