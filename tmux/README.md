@@ -244,7 +244,10 @@ apps show, with a goal and a status.
     the list shows a row's why, next step, time and basis. `o` or `Enter` on a
     row goes to its Work item or Inbox item in the list. Every other key on a
     row acts on that target, as on its own row: `d` completes a Work item, and
-    an item's answers (`d` ✓ Done, `c` Complete Task, `a`, `r`) answer it. `t` anywhere asks the
+    an item's answers (`d` ✓ Done, `c` Complete Task, `a`, `r`) answer it. A
+    row whose target is closed stays in place as one dimmed line with its
+    title and how it ended (`✓ done`, `✓ answered`, `gone`); its target's keys
+    do nothing there. `t` anywhere asks the
     overall assistant for a plan now (`muxa-cli plan now`); it asks for the
     minutes you have first, and `Enter` gives no limit. `P` on a Work item pins
     it, so it is listed first and fills the first plan rows, or unpins it. The

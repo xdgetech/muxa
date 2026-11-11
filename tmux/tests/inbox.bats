@@ -474,6 +474,25 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   [[ "$out" == *"Left the plan: w-5f6a7b8c"* ]]
 }
 
+@test "a Today row whose target closed shows its title dimmed with the state, and takes no target keys" {
+  # The user answered the sort item and the host no longer has w-7b8c9d0e;
+  # neither is listed, so only the host's title and targetState name them.
+  plan_inbox | jq -c '.items |= map(select(.id != "i-1a2b3c4d")) |
+    .workItems |= map(select(.id != "w-7b8c9d0e")) |
+    .plans[0].top[2].targetState = "answered" |
+    .plans[0].top[1] |= (del(.title) | .targetState = "gone")' >"$TMPDIR/p.json"
+  out="$(plain_list "$TMPDIR/p.json")"
+  [[ "$out" == *$'today:2\t  2. w-7b8c9d0e · gone'* ]]
+  [[ "$out" == *$'today:3\t  3. Make a Work item in work: Try the tool for business B · ✓ answered'* ]]
+  [[ "$(inbox list "$TMPDIR/p.json" | grep '^today:3')" == *$'\e[2m3. Make a Work item'* ]]
+  out="$(plain_view today:3 "$TMPDIR/p.json")"
+  [[ "$out" == *"i-1a2b3c4d · ✓ answered"* ]]
+  [[ "$out" != *"o Open"* ]]
+  [[ "$out" != *"a Approve"* ]]
+  [ "$(inbox target today:3 "$TMPDIR/p.json")" = "" ]
+  [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
+}
+
 @test "a failed newest plan shows its reason, and the rows stay the last result's" {
   plan_inbox | jq -c --slurpfile m "$ROOT/../protocol/fixtures/assistant/messages.jsonl" \
     '.plans = [($m[] | select(.type == "plan-saved" and .entry.delivery == "failed") | .entry)] + .plans' \

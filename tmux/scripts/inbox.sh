@@ -19,7 +19,7 @@
 # prefix + T lists sections under header rows (sec:<name>); Tab and Shift-Tab
 # move between headers, and Enter or space folds Routine.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
-#        inbox.sh target <today row> <json>  (the item a Today row opens)
+#        inbox.sh target <today row> <json>  (the item a Today row opens; none once closed)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh order <today row> up|down <json>  (the row ids plan reorder sends)
 #        inbox.sh worker <work id> <json>  (asks on stdin which staff member; prints the name)
@@ -155,6 +155,13 @@ JQ_DEFS='
       "\(.kind)\(if .row then " \(.row)" else "" end)"][0]
     else .text end // "forgotten";
   def title_of($root; $id): ([($root.workItems // [])[], ($root.items // [])[] | select(.id == $id) | .title][0] // $id) | plain;
+  # A Today row: its target as listed, else the title the host sent (an item
+  # no longer listed), else its id. A closed target says how it ended.
+  def row_title($root): row_id as $id |
+    ([($root.workItems // [])[], ($root.items // [])[] | select(.id == $id) | .title][0] // .title // $id) | plain;
+  def closed_target: .targetState != null;
+  def target_word: {"answered": "✓ answered", "resolved": "resolved", "done": "✓ done",
+    "withdrawn": "withdrawn", "gone": "gone"}[.targetState] // "closed";
   def mins: "\(.minutes.low)–\(.minutes.high) min";
   def mark($p): (.work // .item) as $t |
     {"entered": " · new", "moved": " · moved"}[[($p.changed // [])[] | select(.id == $t) | .change][0] // ""] // "";
@@ -214,10 +221,12 @@ list() {
     (select(has_today) |
       "today:\t☀ \u001b[1mToday\u001b[0m  \u001b[2m\(plan_status)\u001b[0m",
       (shown_plan | . as $p | today_rows | to_entries[] | .value as $r |
-        if $r | not_today($p) then
-          "today:\(.key + 1)\t  \u001b[2m\(.key + 1). \(title_of($root; $r | row_id)) · not today\u001b[0m"
+        if $r | closed_target then
+          "today:\(.key + 1)\t  \u001b[2m\(.key + 1). \($r | row_title($root)) · \($r | target_word)\u001b[0m"
+        elif $r | not_today($p) then
+          "today:\(.key + 1)\t  \u001b[2m\(.key + 1). \($r | row_title($root)) · not today\u001b[0m"
         else
-          "today:\(.key + 1)\t  \(.key + 1). \(title_of($root; $r | row_id))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
+          "today:\(.key + 1)\t  \(.key + 1). \($r | row_title($root))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
         end),
       (shown_plan | select((.dueSoon // []) | length > 0) |
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
@@ -339,8 +348,8 @@ view_today() {
       "", "o Open   t Plan Now"
     else
       shown_plan | . as $p | today_rows[$row | tonumber - 1] // empty |
-      "\($row). \u001b[1m\(title_of($root; row_id))\u001b[0m",
-      "\u001b[2m\(row_id)\(mark($p))\(if not_today($p) then " · not today" else "" end)\u001b[0m", "",
+      "\($row). \u001b[1m\(row_title($root))\u001b[0m",
+      "\u001b[2m\(row_id)\(if closed_target then " · \(target_word)" else "" end)\(mark($p))\(if not_today($p) then " · not today" else "" end)\u001b[0m", "",
       "Why: \(.why | plain)", "Next: \(.next | plain)",
       "Time: \(mins), about \(.minutes.estimated)",
       (if (.basis // []) | length > 0 then "", "\u001b[1mBasis\u001b[0m",
@@ -348,11 +357,12 @@ view_today() {
        else empty end),
       (if (.missing // []) | length > 0 then "", "\u001b[1mWould help\u001b[0m", (.missing[] | "  \(plain)")
        else empty end),
-      row_id as $target |
+      row_id as $target | closed_target as $closed |
       ([$root.items[]? | select(.id == $target)][0] // null) as $item |
       "", (if $memory then "K/J Move   " + (if not_today($p) then "" else "x Not today   " end) else "" end) +
-        "o Open   t Plan Now",
-      (if $item then
+        (if $closed then "" else "o Open   " end) + "t Plan Now",
+      (if $closed then empty
+       elif $item then
         [$item | keymap[] | select(.key != "x") | . as $k | "\($k.key) \($item | answer_label($k.act))"] |
         select(length > 0) | join("   ")
        elif ($target | startswith("w-")) then "d Complete   l Later   a Ask Assistant"
@@ -585,7 +595,7 @@ EOF
       ;;
     plan:dismiss)
       clear
-      row="$(today_target "$id" "$json")"
+      row="$(today_row "$id" "$json")"
       [ -n "$row" ] || return 0
       text="$(ask_reason "Not today: the row stays in the plan as one line.")" || return 0
       set -- plan dismiss "$row"
@@ -688,12 +698,19 @@ preview_wrap() {
   if fzf --help 2>/dev/null | grep -q 'wrap-word'; then echo wrap-word; else echo wrap; fi
 }
 
+# The item a Today row opens and whose keys it takes: none once it is closed.
 today_target() {
   iq -r --arg row "${1#today:}" "$JQ_DEFS"'
     shown_plan |
     if $row == "due" then (.dueSoon // [])[0] // empty
     elif $row == "" then empty
-    else today_rows[$row | tonumber - 1] // empty | row_id end' "$2"
+    else today_rows[$row | tonumber - 1] // empty | select(closed_target | not) | row_id end' "$2"
+}
+
+# The id a Today row names, also when its target is closed.
+today_row() {
+  iq -r --arg row "${1#today:}" "$JQ_DEFS"'
+    shown_plan | today_rows[$row | tonumber - 1] // empty | row_id' "$2"
 }
 
 # The whole item in the pager, for a screen too small for the preview.
