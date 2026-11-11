@@ -159,6 +159,13 @@ impl Server {
     pub fn xdg_state(&self) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("muxa-xdg-{}", self.socket))
     }
+
+    /// `XDG_CONFIG_HOME` of the bridges and daemons a test starts: empty, so
+    /// one without `--workspaces` never reads the developer's
+    /// `workspaces.toml` and never starts its agents (ADR 0056).
+    pub fn xdg_config(&self) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("muxa-xdgc-{}", self.socket))
+    }
 }
 
 /// The bridge binary on a test server.
@@ -178,6 +185,7 @@ impl Bridge {
             .args(extra)
             .env_remove("TMUX")
             .env("XDG_STATE_HOME", server.xdg_state())
+            .env("XDG_CONFIG_HOME", server.xdg_config())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)
