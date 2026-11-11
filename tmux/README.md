@@ -214,7 +214,9 @@ apps show, with a goal and a status.
     line of the items you moved down with Later that are due soon. The heading
     says when the plan was made, or that the newest plan failed. The item below
     the list shows a row's why, next step, time and basis. `o` or `Enter` on a
-    row goes to its Work item or Inbox item in the list. `t` anywhere asks the
+    row goes to its Work item or Inbox item in the list. Every other key on a
+    row acts on that target, as on its own row: `d` completes a Work item, and
+    an item's answers (`d` ✓ Done, `c` Complete Task, `a`, `r`) answer it. `t` anywhere asks the
     overall assistant for a plan now (`muxa-cli plan now`); it asks for the
     minutes you have first, and `Enter` gives no limit. `P` on a Work item pins
     it, so it is listed first and fills the first plan rows, or unpins it. The

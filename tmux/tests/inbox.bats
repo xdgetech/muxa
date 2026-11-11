@@ -429,6 +429,23 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   wait_for 'grep -q "^work pin w-7b8c9d0e --json$" "$TMPDIR/bin/calls"'
 }
 
+@test "prefix+T: a Today row takes its target's keys, d completes a Work item" {
+  fake_cli
+  plan_inbox >"$ITEMS"
+  [[ "$(plain_view today:3 "$ITEMS")" == *"a Approve   r Reject"* ]]
+  [[ "$(plain_view today:1 "$ITEMS")" == *"d Complete   l Later   a Ask Assistant"* ]]
+  attach
+  key C-b T
+  sleep 1
+  key j j j
+  key a
+  wait_for 'grep -q "^inbox answer i-1a2b3c4d approve --json$" "$TMPDIR/bin/calls"'
+  sleep 1
+  key k k
+  key d
+  wait_for 'grep -q "^work done w-0b1c2d3e --json$" "$TMPDIR/bin/calls"'
+}
+
 @test "with work level 8, p protects or unprotects and the item shows it" {
   [ "$(inbox key i-2c3d4e5f p "$ITEMS")" = "" ]
   jq -c '.work = 8 | .items[2].protectedAt = 1762160000' "$ITEMS" >"$TMPDIR/w7.json"

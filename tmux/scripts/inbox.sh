@@ -275,8 +275,15 @@ view_today() {
        else empty end),
       (if (.missing // []) | length > 0 then "", "\u001b[1mWould help\u001b[0m", (.missing[] | "  \(plain)")
        else empty end),
+      row_id as $target |
+      ([$root.items[]? | select(.id == $target)][0] // null) as $item |
       "", (if $memory then "K/J Move   " + (if not_today($p) then "" else "x Not today   " end) else "" end) +
-        "o Open   t Plan Now"
+        "o Open   t Plan Now",
+      (if $item then
+        [$item | keymap[] | select(.key != "x") | . as $k | "\($k.key) \($item | answer_label($k.act))"] |
+        select(length > 0) | join("   ")
+       elif ($target | startswith("w-")) then "d Complete   l Later   a Ask Assistant"
+       else empty end)
     end,
     "\u001b[2mq close\u001b[0m"
   ' "$2"
@@ -601,6 +608,12 @@ item_dir() {
 
 # What a Today row opens: the Work item or Inbox item its plan row names, or
 # the first item due soon.
+# Wraps the preview at words when this fzf knows wrap-word; else fzf cuts
+# lines at any character, also inside a word.
+preview_wrap() {
+  if fzf --help 2>/dev/null | grep -q 'wrap-word'; then echo wrap-word; else echo wrap; fi
+}
+
 today_target() {
   iq -r --arg row "${1#today:}" "$JQ_DEFS"'
     shown_plan |
@@ -677,7 +690,7 @@ ui() {
     # --sync so start:pos lands after the rows load, also after an answer.
     picked="$(printf '%s\n' "$rows" | fzf --sync --ansi --no-input --delimiter '\t' --with-nth 2 --no-sort \
       --layout reverse --info hidden --pointer '▌' --highlight-line \
-      --preview "'$S/inbox.sh' view {1} '$json'" --preview-window 'down,70%,wrap,border-top' \
+      --preview "'$S/inbox.sh' view {1} '$json'" --preview-window "down,70%,$(preview_wrap),border-top" \
       --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
       --bind 'space:preview-page-down,b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
       --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,t,K,J,y,D,1,2,3,4,5,6,7,8,9')" || break
@@ -710,12 +723,22 @@ ui() {
         sleep 1.5
         ;;
       *)
+        # A Today row's own keys first (t, y, K, J, x), then its target's.
+        aid="$id"
         act="$(key_action "$id" "$key" "$json")"
+        case "$id" in
+          today:*)
+            if [ -z "$act" ]; then
+              aid="$(today_target "$id" "$json")"
+              [ -z "$aid" ] || act="$(key_action "$aid" "$key" "$json")"
+            fi
+            ;;
+        esac
         case "$act" in
           "") ;;
-          open:*) open_evidence "$id" "${act#open:}" "$json" ;;
+          open:*) open_evidence "$aid" "${act#open:}" "$json" ;;
           *)
-            answer "$id" "$act" "$json"
+            answer "$aid" "$act" "$json"
             # The moved row keeps the cursor.
             case "$act" in
               plan:up) focus="today:$((${id#today:} - 1))" ;;
