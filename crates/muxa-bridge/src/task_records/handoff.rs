@@ -51,7 +51,47 @@ pub fn restart(at: u64) -> Prompt {
     }
 }
 
+/// Why a prompt was not typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cause {
+    /// The agent never reported a finished turn, for no reason muxa knows.
+    NotIdle,
+    /// Claude Code shows its trust dialog (`agents::claude::trust`).
+    AsksTrust,
+}
+
+/// The record field that says, in epoch seconds, that the agent showed
+/// Claude Code's trust dialog when its prompt was given up.
+pub const ASKS_TRUST_FIELD: &str = "agentAsksTrust";
+
+/// Why a background run never got its prompt, when muxa knows. `root` is
+/// the workspace's root: trusting it trusts every run folder in it. A
+/// Task's own note says it already; a run's session closes.
+pub fn trust_reason(r: &Record, root: Option<&std::path::Path>) -> Option<String> {
+    if !r.extra.contains_key(ASKS_TRUST_FIELD) {
+        return None;
+    }
+    let root = root.or(r.dir.as_deref())?;
+    Some(format!(
+        "Claude Code has not trusted {}. Open claude there once and accept.",
+        root.display()
+    ))
+}
+
 impl Prompt {
+    /// The record's note when the prompt was not typed for `cause`.
+    pub fn note(&self, cause: Cause) -> String {
+        match cause {
+            Cause::NotIdle => self.not_sent.to_owned(),
+            Cause::AsksTrust => format!(
+                "Claude Code asks whether to trust this folder, so the prompt was not sent. \
+                 In its pane, choose \"{}\", then type: {}",
+                crate::agents::claude::trust::LABEL,
+                self.text
+            ),
+        }
+    }
+
     /// The prompt a recorded wait is for. A restart's wait began at the restart.
     pub fn of(wait: PendingPrompt) -> Self {
         match wait.kind {
@@ -139,11 +179,13 @@ pub async fn send_prompt(
     let deadline = tokio::time::Instant::now() + Duration::from_secs(left);
     // The Task's pane, for the failure item if the prompt is never sent.
     let mut last_pane: Option<(String, String)> = None;
+    let mut last_pane_id: Option<PaneId> = None;
     let seen = loop {
         let mut seen = None;
         let found = observed_pane(&client, &agents, &config, which.clone(), &observer).await;
         if let Some(f) = &found {
             last_pane = Some((f.session.to_string(), f.pane.to_string()));
+            last_pane_id = Some(f.pane);
         }
         if let Some(found) = found.and_then(|found| bound_observation(&record, pending, found)) {
             if record
@@ -264,7 +306,7 @@ pub async fn send_prompt(
                                 finish_claimed_wait(claim, pending, seen, at).await;
                             }
                             owned::Delivery::NotSent => {
-                                abandon_claimed_wait(claim, pending, prompt.not_sent).await;
+                                abandon_claimed_wait(claim, pending).await;
                             }
                             // Even partial input is uncertain; no automatic second attempt.
                             owned::Delivery::Uncertain => {}
@@ -279,24 +321,30 @@ pub async fn send_prompt(
         }
         tokio::time::sleep(PROMPT_POLL).await;
     };
-    tracing::info!(task, "agent not idle; prompt not sent");
-    give_up(config, task, pending, seen, last_pane, prompt.not_sent).await;
+    let cause = match last_pane_id {
+        Some(pane) if crate::agents::claude::trust::asks(&client, pane).await => Cause::AsksTrust,
+        _ => Cause::NotIdle,
+    };
+    tracing::info!(task, cause = ?cause, "agent not idle; prompt not sent");
+    give_up(config, task, pending, seen, last_pane, cause).await;
 }
 
-/// The prompt was not typed in time: the wait ends with `note`, and the
-/// Task's failure item says so. `pane` is the Task's (`$n`, `%n`) when known.
+/// The prompt was not typed in time: the wait ends with the note for
+/// `cause`, and the Task's failure item says so. `pane` is the Task's
+/// (`$n`, `%n`) when known.
 pub async fn give_up(
     config: Arc<Config>,
     task: String,
     pending: PendingPrompt,
     seen: Option<Seen>,
     pane: Option<(String, String)>,
-    note: &'static str,
+    cause: Cause,
 ) {
-    end_wait(&config, task.clone(), pending, seen, note).await;
+    end_wait(&config, task.clone(), pending, seen, cause).await;
     let (session, pane) = pane.unzip();
+    let note = Prompt::of(pending).note(cause);
     let failed = tokio::task::spawn_blocking(move || {
-        crate::items::produce::start_failed(&config, &task, session, pane, note);
+        crate::items::produce::start_failed(&config, &task, session, pane, &note);
     });
     if let Err(e) = failed.await {
         tracing::warn!(error = %e, "the start failure's inbox item did not run");
@@ -404,10 +452,10 @@ async fn end_wait(
     task: String,
     pending: PendingPrompt,
     seen: Option<Seen>,
-    note: &'static str,
+    cause: Cause,
 ) {
     write(config, task, move |r| {
-        not_sent(r, pending, seen.as_ref(), note, crate::records::now());
+        not_sent(r, pending, seen.as_ref(), cause, crate::records::now());
     })
     .await;
 }
@@ -415,12 +463,15 @@ async fn end_wait(
 /// An active loop stops with `not-sent`. Left armed, it would check the
 /// agent's first finished turn, which no prompt asked for, and type a fail
 /// prompt as the agent's first instruction.
-fn not_sent(r: &mut Record, pending: PendingPrompt, seen: Option<&Seen>, note: &str, now: u64) {
+fn not_sent(r: &mut Record, pending: PendingPrompt, seen: Option<&Seen>, cause: Cause, now: u64) {
     if r.pending_prompt() != Some(pending) {
         return;
     }
     r.set_pending_prompt(None);
-    r.note = Some(note.to_owned());
+    r.note = Some(Prompt::of(pending).note(cause));
+    if cause == Cause::AsksTrust {
+        r.extra.insert(ASKS_TRUST_FIELD.into(), now.into());
+    }
     if let (Some(seen), Some(run)) = (seen, r.run_mut(pending.run)) {
         run.fill(seen);
     }
@@ -463,12 +514,12 @@ async fn thread_idle(observer: &Observer) -> bool {
 
 /// The send was refused: nothing reached the agent. The wait ends with the
 /// note, as when the agent never became ready; nothing is retried.
-async fn abandon_claimed_wait(mut claim: ClaimedTask, pending: PendingPrompt, note: &'static str) {
+async fn abandon_claimed_wait(mut claim: ClaimedTask, pending: PendingPrompt) {
     let result = blocking(move || {
         claim
             .update(move |r| {
                 r.extra.remove(crate::records::lifecycle::FIELD);
-                not_sent(r, pending, None, note, crate::records::now());
+                not_sent(r, pending, None, Cause::NotIdle, crate::records::now());
             })
             .map_err(|e| super::store_error(&e))?;
         Ok(())
@@ -900,7 +951,7 @@ mod tests {
                 session: Some("old-session".into()),
                 transcript: None,
             }),
-            "obsolete timeout",
+            Cause::NotIdle,
         )
         .await;
         let result = store.get(&record.id).unwrap();
@@ -940,12 +991,12 @@ mod tests {
                 ..pending
             },
             None,
-            "obsolete",
+            Cause::NotIdle,
             130,
         );
         assert_eq!(other, record, "another wait's give-up changes nothing");
 
-        not_sent(&mut record, pending, None, START.not_sent, 130);
+        not_sent(&mut record, pending, None, Cause::NotIdle, 130);
         assert!(record.pending_prompt().is_none());
         assert_eq!(record.note.as_deref(), Some(START.not_sent));
         let lp = record.task_loop().unwrap().unwrap();
@@ -961,11 +1012,52 @@ mod tests {
         };
         record.set_loop(Some(&passed)).unwrap();
         record.set_pending_prompt(Some(pending));
-        not_sent(&mut record, pending, None, START.not_sent, 140);
+        not_sent(&mut record, pending, None, Cause::NotIdle, 140);
         assert_eq!(
             record.task_loop().unwrap(),
             Some(passed),
             "an ended loop stays"
+        );
+    }
+
+    #[test]
+    fn a_trust_dialog_marks_the_record_and_its_note_says_what_to_do() {
+        let mut record: Record = serde_json::from_value(serde_json::json!({
+            "version":1,"id":"t-000001","rev":1,"workspace":"work","title":"fixture",
+            "goal":"","status":"open","createdAt":100,"updatedAt":100,
+            "dir":"/r/assistant/x-t-000001"
+        }))
+        .unwrap();
+        let run = record.start_run(crate::records::RunReason::Start, 100);
+        let pending = PendingPrompt {
+            kind: PromptKind::Start,
+            since: 100,
+            run,
+        };
+        record.set_pending_prompt(Some(pending));
+        assert_eq!(trust_reason(&record, None), None, "no dialog seen");
+
+        not_sent(&mut record, pending, None, Cause::AsksTrust, 130);
+        assert_eq!(record.extra.get(ASKS_TRUST_FIELD), Some(&130.into()));
+        assert_eq!(
+            record.note.as_deref(),
+            Some(
+                "Claude Code asks whether to trust this folder, so the prompt was not sent. \
+                 In its pane, choose \"Yes, I trust this folder\", then type: Read \
+                 .muxa/TASK.md and start."
+            )
+        );
+        assert_eq!(
+            trust_reason(&record, Some(std::path::Path::new("/r"))).as_deref(),
+            Some("Claude Code has not trusted /r. Open claude there once and accept.")
+        );
+        assert_eq!(
+            trust_reason(&record, None).as_deref(),
+            Some(
+                "Claude Code has not trusted /r/assistant/x-t-000001. Open claude there once \
+                 and accept."
+            ),
+            "without a workspace, the run's folder"
         );
     }
 

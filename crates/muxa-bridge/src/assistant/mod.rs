@@ -14,6 +14,7 @@ pub mod corrections;
 pub mod delivery;
 mod derive;
 pub mod detail;
+mod failures;
 pub mod forget;
 pub mod goal;
 pub mod handoff;

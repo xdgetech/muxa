@@ -406,6 +406,63 @@ async fn plan_now_makes_a_plan_with_the_users_minutes() {
     daemon.shutdown().await;
 }
 
+/// The `failure` items the Inbox lists.
+async fn failures(conn: &mut Conn) -> Vec<InboxItem> {
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    match listed.first() {
+        Some(Message::InboxList { items, .. }) => items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Failure)
+            .cloned()
+            .collect(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// An overall run whose agent never becomes idle fails, and one item says why.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plan_whose_agent_never_becomes_idle_makes_one_failure_item() {
+    let h = Host::new("idle", "overall = true\nplans = []");
+    h.steer("hold", &json!(true));
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let answer = conn.request(json!({"type": "plan-now"})).await;
+    let Some(Message::PlanSaved { entry, .. }) = answer.first() else {
+        panic!("{answer:?}")
+    };
+    let id = entry.id.clone();
+    until_plans(
+        &mut conn,
+        &h,
+        "the failed plan",
+        Duration::from_secs(120),
+        |p| {
+            p.iter()
+                .any(|p| p.id == id && p.delivery == Delivery::Failed)
+        },
+    )
+    .await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while failures(&mut conn).await.is_empty() {
+        assert!(Instant::now() < deadline, "no failure item");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    let found = failures(&mut conn).await;
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(
+        found[0].question,
+        "The agent did not become ready within 30 seconds, so its prompt was not sent."
+    );
+    assert_eq!(
+        (found[0].title.as_str(), found[0].workspace.as_str()),
+        ("Overall plan", "Overall")
+    );
+    assert_eq!(found[0].answers[0], InboxAction::Dismiss);
+    assert!(h.turns().is_empty(), "{:?}", h.turns());
+    daemon.shutdown().await;
+}
+
 /// The open and answered `delegate` items, and the requests listed.
 async fn delegates(conn: &mut Conn) -> (Vec<InboxItem>, Vec<muxa_protocol::AssistantRequest>) {
     let listed = conn.request(json!({"type": "list-inbox"})).await;

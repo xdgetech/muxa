@@ -38,7 +38,9 @@ pub async fn tick(cx: &Context) {
         super::corrections::prune(&config, now);
         super::hypotheses::tick(&config, now);
         super::write_items::scan(&config);
-        (scan(&config, now), plans)
+        let todo = scan(&config, now);
+        super::failures::scan(&config, now);
+        (todo, plans)
     })
     .await;
     let (mut plan, plans) = scanned.unwrap_or_else(|e| {

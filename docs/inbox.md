@@ -51,7 +51,7 @@ Inbox (3)
 |---|---|---|
 | `ask` | Allow, Deny; a question shows its options; reply box: Deny & Send | Protect, Open Session |
 | `review` | reply box: Send | Complete Task, Protect, Open Session |
-| `failure` | Retry; reply box: Send | Drop Task, Protect, Open Session |
+| `failure` | Retry; reply box: Send. An assistant run's: reply box: Ask Agent | Drop Task, Protect, Open Session. An assistant run's: Protect |
 | `proposal` | Approve, Reject; reply box: Ask Agent | Protect |
 | `briefing` | reply box: Ask Agent | Protect |
 
@@ -109,6 +109,7 @@ Unsorted
 - Swipe on a Work row: right is **Complete**, left is **Later** (moves it to the bottom, never hides it).
 - Swipe on an Unsorted row: right makes a **Work Item**, left keeps it as a **Note**. A "Not sent" row swipes left to **Delete**.
 - A Work row with an assistant request shows its newest delivery: `pending`, `received`, `processing`, `unconfirmed`, `failed`, `timed-out`, `cancel-requested` or `cancelled` (ADR 0048 §6). These are derived from the run on every list; `failed` and `timed-out` show as needing attention.
+- A `failed` request step, and a failed plan, also make one `failure` item in Decisions, with the reason as its question (ADR 0048, addendum 2026-11-11). For example: "Claude Code has not trusted `<workspace root>`. Open claude there once and accept." It has no Task and no session: its answers are ✓, Ask Agent and Later.
 - **Result ready** replaces the delivery when the newest Result was not shown on this device yet. The device keeps the ids and versions it showed, never the Result's text. Opening the Work item clears it.
 - The Work detail shows the Captures' full texts, each request with its delivery and Results, Cancel, Ask Again, and Open Session while the run lives. Result files are paths; the Reader cannot open them yet.
 - `+` opens Capture: text, an optional workspace, **Save**, **Ask Assistant** and "Start a Task instead…". A host below `work:9` keeps New Task.

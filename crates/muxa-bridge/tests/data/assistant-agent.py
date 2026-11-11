@@ -10,6 +10,8 @@ STEER_DIR/turns.log. Files in STEER_DIR steer it:
   fixed.json  written there on the fail prompt
   hold        present: it starts on a dialog (state running) until answered
               appears
+  trust       present: it shows Claude Code's trust dialog, with no state,
+              until answered appears
   stall       present at the start prompt: the turn stays running until
               release appears, then writes first.json
 A member NAME reads first.NAME.json and fixed.NAME.json before the shared
@@ -109,6 +111,12 @@ def write(name):
 
 def main():
     tmux("set-option", "-p", "-t", PANE, "@muxa_role", "agent")
+    if steer("trust"):
+        # As Claude Code 2.1.322 draws it (docs/findings/claude-code-trust.md).
+        print(" Quick safety check: Is this a project you created or one you trust?")
+        print(" ❯ No, exit")
+        print("   Yes, I trust this folder", flush=True)
+        wait_for("answered")
     if steer("hold"):
         state("running")
         wait_for("answered")

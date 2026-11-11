@@ -328,7 +328,8 @@ fn scan(config: &Config, at: u64) -> Vec<(String, String, Date)> {
             }
         };
         if state.running.is_some() {
-            reconcile(&store, &records, routine, &state, at);
+            let root = workspaces.get(&routine.workspace).map(|w| w.root.as_path());
+            reconcile(&store, &records, routine, root, &state, at);
             continue;
         }
         let Some(trigger) = &routine.trigger else {
@@ -370,6 +371,7 @@ fn reconcile(
     store: &RoutineStore,
     records: &Store,
     routine: &Routine,
+    root: Option<&std::path::Path>,
     state: &RoutineState,
     at: u64,
 ) {
@@ -388,7 +390,7 @@ fn reconcile(
                 tracing::debug!(task, error = %e, "cannot read a routine run");
                 None
             }
-            Ok(r) => ended(&r).map(|why| (Some(task.clone()), why)),
+            Ok(r) => ended(&r, root).map(|why| (Some(task.clone()), why)),
         },
     };
     let Some((task, why)) = ended else { return };
@@ -421,14 +423,18 @@ const NOT_STARTED: &str = "The start prompt was not typed: the agent did not bec
                            within 30 seconds. Open the run's session to see why.";
 
 /// Why the run's record says it ended, or None while it may still publish.
-fn ended(r: &crate::records::Record) -> Option<String> {
+/// `root` is the workspace's, which the user trusts for every run folder.
+fn ended(r: &crate::records::Record, root: Option<&std::path::Path>) -> Option<String> {
     match r.status {
         Status::Done => return Some("The run ended without a publish.".into()),
         Status::Dropped => return Some("The run was dropped.".into()),
         Status::Open | Status::Review => {}
     }
     match r.task_loop() {
-        Ok(Some(lp)) if lp.never_started() => Some(NOT_STARTED.into()),
+        Ok(Some(lp)) if lp.never_started() => Some(
+            crate::task_records::handoff::trust_reason(r, root)
+                .unwrap_or_else(|| NOT_STARTED.into()),
+        ),
         Ok(Some(lp)) if lp.state == LoopState::Stopped => Some(format!(
             "The output check stopped: {}.",
             lp.reason.map_or("unknown".to_owned(), String::from)

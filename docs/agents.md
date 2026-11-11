@@ -99,7 +99,7 @@ A Routine (ADR 0026, `src/routines/`) is a `[[routine]]` in a workspace's `<root
 
 ## Assistant runs
 
-An assistant request (ADR 0048, `src/assistant/`) asks one workspace's agent, its delegate, to work on a Work item. Each run is a task record of kind `assistant-run`, with the same create path, session tag, delivery claims and Loop engine as a Routine run. `list-tasks`, the Inbox items and park skip it.
+An assistant request (ADR 0048, `src/assistant/`) asks one workspace's agent, its delegate, to work on a Work item. Each run is a task record of kind `assistant-run`, with the same create path, session tag, delivery claims and Loop engine as a Routine run. `list-tasks`, the Inbox's per-turn items and park skip it.
 
 - **Configuration.** In `workspaces.toml` (`docs/examples/workspaces.toml`):
   - `[assistant]` at the top level is the host's switch: `enabled`, and `max_runs_per_day` across all workspaces (default 20). Without it, no workspace takes requests.
@@ -111,6 +111,7 @@ An assistant request (ADR 0048, `src/assistant/`) asks one workspace's agent, it
 - **The brief.** `.muxa/TASK.md` holds the Work item's title, the scope (`research`, `compare` or `draft`) and its rule, the purpose, the linked Captures as written, and Earlier work: the request's earlier Results and the Tasks started for the item, newest first. Captures and earlier summaries are marked as data, not instructions. The Result section states the schema below.
 - **The result file.** The agent writes `.muxa/assistant/result.json`, then ends its turn. The schema and limits are in `protocol/PROTOCOL.md`, "Assistant result file".
 - **The check.** It runs in the daemon's process (`assistant/result.rs`). On a pass, one locked write stores the Result as a new version on the request; older Results become `stale`. The Work item does not change. On a fail, the reasons go to `.muxa/checks/<attempt>.log`, and the loop types: `The assistant result did not pass the check. The reasons are in .muxa/checks/<attempt>.log. Fix .muxa/assistant/result.json, then end your turn.` After 3 fails, the request is `failed`.
+- **A failure reaches the Inbox.** A `failed` request step, and a failed plan, make one `failure` item with the reason (ADR 0048, addendum 2026-11-11). When the agent did not become idle within 30 s, the daemon looks at the agent pane for Claude Code's trust dialog. If it shows, the reason is "Claude Code has not trusted `<workspace root>`. Open claude there once and accept." Trusting the root trusts every run folder in it (`docs/findings/claude-code-trust.md`). muxa never writes Claude Code's config. A Task stuck on the dialog gets the same cause in its own failure item, and a Routine in its last failure.
 - **After the run.** A stored Result closes the session on the daemon's next tick. The folder stays until the next version stores a Result, or for 7 days. After `run_timeout` with no Result, the request is `timed-out`, but the agent is not stopped, and a later Result is still stored. `cancel-request` and a new version end the older run.
 - **Logs.** Ids, sizes and states only. Never Capture text, a brief or a Result.
 

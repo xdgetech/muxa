@@ -14,7 +14,9 @@ use std::time::{Duration, Instant};
 
 use common::daemon::{Conn, Daemon};
 use common::{Bridge, Server};
-use muxa_protocol::{AssistantRequest, Delivery, ErrorCode, Message, WorkItem};
+use muxa_protocol::{
+    AssistantRequest, Delivery, ErrorCode, InboxAction, InboxItem, ItemKind, Message, WorkItem,
+};
 use serde_json::{Value, json};
 
 const AGENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/assistant-agent.py");
@@ -482,6 +484,12 @@ async fn invalid_results_fail_the_request_after_three_checks() {
         "a failed run keeps its session for inspection"
     );
     assert_eq!(h.runs(), 1);
+    // A refused result is the request's failure: one item says so.
+    let failure = one_failure(&mut conn).await;
+    assert_eq!(
+        failure.question,
+        "The agent's result did not pass the check, also after the fail prompts."
+    );
     let log = daemon.log();
     for mark in MARKS {
         assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
@@ -722,6 +730,79 @@ async fn with_notes_auto_a_passing_result_writes_the_notes_at_publish() {
     assert!(log.contains("notes applied at publish"), "{log}");
     for mark in MARKS.iter().chain([&NOTES_MARK]) {
         assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
+    }
+    daemon.shutdown().await;
+}
+
+/// The `failure` items the Inbox lists.
+async fn failures(conn: &mut Conn) -> Vec<InboxItem> {
+    let listed = conn.request(json!({"type": "list-inbox"})).await;
+    match listed.first() {
+        Some(Message::InboxList { items, .. }) => items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Failure)
+            .cloned()
+            .collect(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Waits for the first failure item, then checks that later ticks make no
+/// second one.
+async fn one_failure(conn: &mut Conn) -> InboxItem {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while failures(conn).await.is_empty() {
+        assert!(Instant::now() < deadline, "no failure item");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    let found = failures(conn).await;
+    assert_eq!(found.len(), 1, "{found:?}");
+    found[0].clone()
+}
+
+/// The agent shows Claude Code's trust dialog and never becomes idle: the
+/// request fails and the Inbox says why, once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_stuck_on_the_trust_dialog_fails_with_one_failure_item() {
+    let h = Host::new("trust", "");
+    h.steer("trust", &json!(true));
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let item = work_item(&mut conn, "c-trust", "w").await;
+    let (_, q) = ask(&mut conn, &item).await;
+    let run = q.run.clone().unwrap();
+    until(&mut conn, &h, &q.id, Delivery::Failed).await;
+    let failure = one_failure(&mut conn).await;
+    assert_eq!(
+        failure.question,
+        format!(
+            "Claude Code has not trusted {}. Open claude there once and accept.",
+            h.base.join("w").display()
+        )
+    );
+    assert_eq!(failure.title, item.title);
+    assert_eq!(
+        (failure.workspace.as_str(), failure.task.as_deref()),
+        ("w", None)
+    );
+    assert_eq!(
+        failure.answers,
+        [
+            InboxAction::Dismiss,
+            InboxAction::AskAgent,
+            InboxAction::Later
+        ]
+    );
+    assert!(
+        h.turns().is_empty(),
+        "typed into the dialog: {:?}",
+        h.turns()
+    );
+    assert!(h.record(&run)["agentAsksTrust"].is_u64());
+    let log = daemon.log();
+    for text in ["has not trusted", "Yes, I trust", "Quick safety check"] {
+        assert!(!log.contains(text), "the daemon log holds {text}:\n{log}");
     }
     daemon.shutdown().await;
 }

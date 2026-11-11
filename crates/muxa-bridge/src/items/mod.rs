@@ -50,6 +50,8 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
             None => vec![Dismiss],
         },
         ItemKind::Review => vec![Accept, Reply, KeepOpen],
+        // An assistant run's failure has no Task to drop (ADR 0048 addendum).
+        ItemKind::Failure if item.task.is_none() => vec![Dismiss],
         // Retry and Reply reach the agent: they need its session.
         ItemKind::Failure if item.session.is_none() => vec![Drop, Dismiss],
         ItemKind::Failure => vec![Retry, Reply, Drop, Dismiss],
@@ -293,6 +295,10 @@ mod tests {
         assert_eq!(answers(&failure), [Drop, Dismiss, AskAgent, Later]);
         failure.session = Some("$1".into());
         assert_eq!(answers(&failure), [Retry, Reply, Drop, Dismiss, Later]);
+        // An assistant run's failure: no Task to drop or retry.
+        failure.session = None;
+        failure.task = None;
+        assert_eq!(answers(&failure), [Dismiss, AskAgent, Later]);
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
     }
 

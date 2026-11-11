@@ -387,8 +387,8 @@ pub async fn resume_prompts(cx: &Context) {
         };
         let Some(env) = env else {
             tracing::info!(task, age, "a prompt wait ran out while no process waited");
-            let note = handoff::Prompt::of(pending).not_sent;
-            handoff::give_up(Arc::clone(&cx.records), task, pending, None, None, note).await;
+            let cause = handoff::Cause::NotIdle;
+            handoff::give_up(Arc::clone(&cx.records), task, pending, None, None, cause).await;
             continue;
         };
         tracing::info!(task, age, "resuming a prompt wait");

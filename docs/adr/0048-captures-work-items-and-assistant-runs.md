@@ -113,6 +113,15 @@ New error types carry ids and paths only. Logs hold ids, sizes and states, never
   - Requests typed into the workspace's Ask session: not durable, no claim or result contract (spec §10).
   - An MCP server in muxa for results: a new contract; PA2 or later.
 
+## Addendum (2026-11-11): failure items and Claude Code's trust dialog
+
+On a host, a request run and the scheduled plan failed with no trace: Claude Code showed its trust dialog in the new run folder, the start prompt was never typed, the run was dropped and its session closed. Nothing reached the Inbox.
+
+1. **A failed run makes one `failure` item.** When a request's step (ADR 0051) or a plan (ADR 0049 §5) is `failed`, the daemon's tick makes one item in the run's item file. The key is `failure:<request>:<version>:<step>` or `failure:<plan>`, so it is made once, also after Delete Old. Only failures of the last 24 hours make one: older ones, from before this addendum, ask nothing. The item has no Task and no session, so its answers are Dismiss, Ask Agent and Later. Its question is the reason, cut to 200 characters; a longer reason is whole in the summary. The reason is, in order: the trust dialog (2), the plan's own `reason`, the run's loop (the prompt was not sent, the result did not pass the check after the fail prompts, the agent exited or stopped with an error), a start error, else "The run ended without a valid result." A refused result is one of these. A request with no run makes no item: `request-assistant` answered with the error. A Routine keeps its failure on the Routine (ADR 0026); it gets the trust reason too.
+2. **The trust dialog is recognized, not predicted.** When the 30 s wait for an idle agent ends, the daemon asks muxa-tmux whether the agent pane shows "Yes, I trust this folder" (`capture-pane -p -J`, a fixed string; only a yes or no comes back, nothing is logged). On a yes, the record gets `agentAsksTrust`, and the reason becomes "Claude Code has not trusted `<workspace root>`. Open claude there once and accept." A Task's own failure item says to accept in its pane, then type the prompt. Facts and version: `docs/findings/claude-code-trust.md`.
+   - Not taken: checking `projects[…].hasTrustDialogAccepted` in the agent's Claude config before the run, and refusing. It would be faster, but it copies a private rule (the walk stops at a git root, the home folder is never recorded, two environment variables change it), and the pane's shell can set another `CLAUDE_CONFIG_DIR` than the workspace env. A wrong copy refuses runs that would work. Recognizing the dialog can only miss: then the generic reason stays.
+   - Not taken: skipping the dialog. Claude Code has no flag for it in an interactive session, and muxa never writes its config.
+
 ## Delivery slices
 
 | Slice | Scope | Acceptance |
