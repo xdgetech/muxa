@@ -11,6 +11,7 @@ mod restart_recovery;
 mod review;
 mod routines;
 mod staff;
+mod today;
 mod workers;
 mod writes;
 pub use assistant::{
@@ -38,6 +39,7 @@ pub use routines::{
     WORK_END_REMOVES, WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
 pub use staff::{Handoff, HandoffProposal, RequestStep, StaffMember, StepBy, WORK_STAFF};
+pub use today::{RunBudget, WORK_TODAY_ACTIONS};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 pub use writes::{ResultWrite, WORK_WRITES, WriteProposal, WriterInfo, Writes};
 
@@ -380,6 +382,13 @@ pub enum Request {
         /// The open root Ask session, or a new one.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         root: bool,
+        /// Level 17, with `root`: typed into the session's agent as
+        /// `ask-agent` types an item's request (ADR 0059). Never logged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        /// Level 17, with `text`: the Work item the text is about (`w-…`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work: Option<String>,
     },
     /// Save the user's input (`work` level 9, ADR 0048). The same `clientId`
     /// returns the stored Capture and writes nothing. A `capture-saved` comes

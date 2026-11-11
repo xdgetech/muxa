@@ -1,0 +1,4 @@
+{"type":"hello","protocol":1,"bridge":"0.1.0","tmux":"3.5a","capabilities":["task-records","work:17"]}
+{"type":"inbox-list","inbox":60,"entries":[],"assistant":{"overall":"secretary","overallRuns":{"left":2,"max":3}}}
+{"type":"session-started","start":61,"session":"$9","name":"ask-secretary"}
+{"type":"result","id":61}

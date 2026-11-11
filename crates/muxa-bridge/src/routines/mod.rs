@@ -117,11 +117,12 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 let plans =
                     crate::assistant::plan::list(&config, &assistant.work, &assistant.requests)?;
                 // A broken workspaces file is logged by the load; the list still answers.
-                let info = config
-                    .load_workspaces()
-                    .ok()
-                    .and_then(|w| crate::assistant::info::info(&w));
                 let now = crate::records::now();
+                let info = config.load_workspaces().ok().and_then(|w| {
+                    let mut info = crate::assistant::info::info(&w)?;
+                    info.overall_runs = crate::assistant::info::overall_runs(&config, &w, now);
+                    Some(info)
+                });
                 let policies = crate::assistant::policies::list(&config, now)?;
                 let corrections = crate::assistant::corrections::list(&config, now)?;
                 let hypotheses = crate::assistant::hypotheses::list(&config, now)?;

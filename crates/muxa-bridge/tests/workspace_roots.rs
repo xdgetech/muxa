@@ -626,3 +626,76 @@ async fn start_session_with_root_opens_the_overall_assistants_ask_session() {
         assert!(after.lines().any(|l| l == line), "{line} changed:\n{after}");
     }
 }
+
+/// ADR 0059: Send to the secretary on a Today Work item types the Work item
+/// and the text into the overall workspace's root Ask session.
+#[tokio::test]
+async fn start_session_with_text_types_the_work_item_into_the_root_session() {
+    let server = Server::start();
+    let mut entity = Entity::new("ask-root-text");
+    idle_agent(&entity);
+    let before = server.layout();
+    let mut bridge = entity.bridge(&server, false).await;
+
+    let (saved, result) = send(
+        &mut bridge,
+        json!({"type": "capture", "clientId": "c-root-text", "text": "Compare vendor offers",
+               "workspace": "lisk"}),
+    )
+    .await;
+    ok(&result);
+    let Some(Message::CaptureSaved { entry, .. }) = saved.first() else {
+        panic!("{saved:?}")
+    };
+    let (sorted, result) = send(
+        &mut bridge,
+        json!({"type": "sort-capture", "capture": entry.id, "rev": entry.rev, "action": "work"}),
+    )
+    .await;
+    ok(&result);
+    let Some(Message::CaptureSaved {
+        work: Some(work), ..
+    }) = sorted.first()
+    else {
+        panic!("{sorted:?}")
+    };
+
+    let req = json!({"type": "start-session", "workspace": "lisk", "root": true,
+                     "text": "Ask legal about offer B.", "work": work.id});
+    let (messages, result) = send(&mut bridge, req).await;
+    ok(&result);
+    let session = messages
+        .iter()
+        .find_map(|m| match m {
+            Message::SessionStarted { session, .. } => Some(session.clone()),
+            _ => None,
+        })
+        .expect("session-started");
+    assert_eq!(option(&server, &session, "@muxa_ask_root"), "1");
+    let pane = server.pane(&format!("{session}:"));
+    common::wait_until(|| {
+        let shown = server.capture(&pane).join("\n");
+        shown.contains(&format!("About this Work item ({}", work.id))
+            && shown.contains("Compare vendor offers")
+            && shown.contains("My request: Ask legal about offer B.")
+    })
+    .await;
+
+    // Text needs root; work needs text; an unknown Work item types nothing.
+    for bad in [
+        json!({"type": "start-session", "workspace": "lisk", "repo": "app", "text": "x"}),
+        json!({"type": "start-session", "workspace": "lisk", "root": true, "work": work.id}),
+        json!({"type": "start-session", "workspace": "lisk", "root": true, "text": "Never typed.",
+               "work": "w-00000000"}),
+        json!({"type": "start-session", "workspace": "lisk", "root": true, "text": ""}),
+    ] {
+        let (_, result) = send(&mut bridge, bad).await;
+        assert_eq!(error_code(&result), ErrorCode::BadRequest);
+    }
+    assert!(!server.capture(&pane).join("\n").contains("Never typed."));
+
+    let after = server.layout();
+    for line in before.lines() {
+        assert!(after.lines().any(|l| l == line), "{line} changed:\n{after}");
+    }
+}

@@ -77,7 +77,7 @@ sequenceDiagram
 | `list-inbox` | `id` | list the stored Inbox entries (capability `work` level 1); an `inbox-list` comes before the `result` |
 | `update-inbox` | `id`, `entry`, `action`, optional `text`, `option`, `worktree` (`work` level 7) | approve, dismiss or move down a stored entry; an `inbox-saved` comes before the `result` |
 | `delete-inbox` | `id`, `olderThanDays` | remove the Inbox items made more than that many days ago, except protected ones (capability `work` level 8); an `inbox-deleted` comes before the `result` |
-| `start-session` | `id`, `workspace`, `repo` or `root: true` | start an ask session: the workspace's agent in the repo's main checkout, with no Task (capability `work` level 2, Ask sessions below); with `root` instead of `repo`, open the workspace's root Ask session (level 15); a `session-started` comes before the `result` |
+| `start-session` | `id`, `workspace`, `repo` or `root: true` | start an ask session: the workspace's agent in the repo's main checkout, with no Task (capability `work` level 2, Ask sessions below); with `root` instead of `repo`, open the workspace's root Ask session (level 15), and with `text` and optional `work`, type a message into its agent (level 17, Today actions below); a `session-started` comes before the `result` |
 | `bye` | `id` | the bridge exits |
 
 Pane ids look like `%12`. Session ids look like `$1`, and window ids like `@4`. Ids are the only way to target anything.
@@ -335,7 +335,7 @@ A bridge with the `tasks-changed` capability sends `tasks-changed` when a task r
 
 ## Routines and stored Inbox entries
 
-A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041), level 7 `worktree` on `update-task` and `update-inbox` (ADR 0043), level 8 `protect`, `unprotect` and `delete-inbox` (ADR 0046), level 9 Captures, Work items and assistant requests (ADR 0048), level 10 delegate notes, plans, the overall assistant's proposals, pins and deadlines (ADR 0049), level 11 policies, corrections and hypotheses (ADR 0050), and level 15 `start-session` with `root` (ADR 0054). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
+A Routine runs an agent on a trigger and publishes briefings and proposals to Inbox (ADR 0026). The host advertises the capability `work:<level>`; Routines and stored entries need level 1 or higher. Level 2 adds relative repos, a branch from the title and ask sessions (ADR 0031). Level 3 adds Inbox items (ADR 0033), level 4 reading Tasks, `branch-task` and `park-task` (ADR 0034), level 5 closing ask sessions with `close-task` (ADR 0039), level 6 `ask-agent` on an Inbox item and the workspace's Ask session (ADR 0041), level 7 `worktree` on `update-task` and `update-inbox` (ADR 0043), level 8 `protect`, `unprotect` and `delete-inbox` (ADR 0046), level 9 Captures, Work items and assistant requests (ADR 0048), level 10 delegate notes, plans, the overall assistant's proposals, pins and deadlines (ADR 0049), level 11 policies, corrections and hypotheses (ADR 0050), level 15 `start-session` with `root` (ADR 0054), level 16 result items (ADR 0058), and level 17 `start-session` with `text` and `assistant.overallRuns` (ADR 0059). Newer features raise the level instead of adding a capability each (ADR 0027 section 5). Read the highest level; ignore a `work:` value that is not a number.
 
 1. `list-routines` sends `routine-list {routines, entries[], problems[]?}`. A Routine has:
    - `workspace` and `name`: together, its id;
@@ -633,6 +633,18 @@ A bridge with `work` level 16 makes every request Result an Inbox item, answered
 6. A client before level 16 shows a `result` item as an unknown kind. Its `summary` and `answers` are known values, so it still offers Approve, the reply box, ✓ and Later.
 
 Logs on the host carry ids, versions, steps, worker names and answers, never a text, a summary or a result.
+
+## Today actions
+
+A bridge with `work` level 17 lets a client name each Today row's action, and send a message about a Work item to the secretary (ADR 0059). Levels add up. Clients send `text` and `work` on `start-session` only at level 17; a level 16 host ignores both and only opens the session, so a client must not send them to it. Fixtures: `fixtures/today-actions/`.
+
+1. `start-session {workspace, root: true, text, work?}` opens the workspace's root Ask session as item 8 of Ask sessions does, then types one prompt into its agent pane, with the rules of `ask-agent` (item 7 there): a new agent gets up to 30 seconds to report `idle`; a menu, an unknown state or a person typing in the last 5 seconds is `conflict`, and nothing is typed. `text` is 1 to 4096 bytes. With `work`, the prompt starts with the Work item: its id, state, workspace, title and its newest result's summary, then the line `The whole item: muxa-cli work show <work>`, then `My request: <text>`. Without `work`, the prompt is `text` as it is. On success: `session-started`, then `result`.
+   - `text` with `repo` or without `root`, `work` without `text`, an empty or longer `text`, and an unknown `work` are `bad-request`.
+   - On Today, a Work item's Send uses the overall workspace (`assistant.overall`): its root Ask session is the secretary (ADR 0054).
+2. `inbox-list`'s `assistant` gains `overallRuns {left, max}` when the host has an overall workspace. `max` is the overall workspace's `max_runs_per_day`. `left` is how many runs a plan may still start today: the smaller of what that `max` and the host's `[assistant] max_runs_per_day` leave, counting the runs and plans being made since the host's midnight. Clients show it next to Re-rank (`plan-now`): "2 of 3 runs left today". A host before level 17 sends none.
+3. Row labels, the primary action and the receiver of Send are the client's, from the target's kind (ADR 0059 §1–§4). The host sends no new field for them.
+
+The text and the Work item's texts never reach a log; the host logs the Work item's id and the session.
 
 ## Workspace memory
 

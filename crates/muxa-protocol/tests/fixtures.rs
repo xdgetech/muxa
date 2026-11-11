@@ -168,6 +168,57 @@ fn restart_recovery_fixtures_preserve_public_identity_and_unknown_values() {
     assert_eq!(operation.actions, ["future-action"]);
 }
 
+/// ADR 0059: Send to the secretary with a Work item, and what a Re-rank has
+/// left today.
+#[test]
+fn today_action_fixtures_round_trip() {
+    use muxa_protocol::{RunBudget, WORK_TODAY_ACTIONS, work_level};
+    let read = |file: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/today-actions/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    assert_eq!(round_trip::<Request>("today-actions/requests.jsonl"), 2);
+    assert_eq!(round_trip::<Message>("today-actions/messages.jsonl"), 4);
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[0],
+        Request::StartSession { root: true, repo: None, text: Some(t), work: Some(w), .. }
+            if t.starts_with("Ask legal") && w == "w-7b8c9d0e"
+    ));
+    assert!(matches!(
+        &requests[1],
+        Request::StartSession {
+            text: Some(_),
+            work: None,
+            ..
+        }
+    ));
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[0] else {
+        panic!("expected hello")
+    };
+    assert_eq!(work_level(capabilities), WORK_TODAY_ACTIONS);
+    let Message::InboxList { assistant, .. } = &messages[1] else {
+        panic!("expected inbox-list")
+    };
+    assert_eq!(
+        assistant.as_ref().and_then(|a| a.overall_runs),
+        Some(RunBudget { left: 2, max: 3 })
+    );
+}
+
 #[test]
 fn workspace_fixtures_round_trip() {
     use muxa_protocol::{WORK_ASK, work_level};

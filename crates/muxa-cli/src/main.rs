@@ -30,7 +30,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task (done | drop) ID [--force] [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
-       muxa-cli [--bridge CMD] ask --root --workspace W [--json]
+       muxa-cli [--bridge CMD] ask --root --workspace W [--text T [--work WORK]] [--json]
        muxa-cli [--bridge CMD] ask close SESSION [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
        muxa-cli [--bridge CMD] task new --read --workspace W --title T --goal G
@@ -98,7 +98,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  ask about its code: no task and no worktree. Prints the
                  session id. Without --workspace, the one that has REPO
   ask --root     opens the workspace's Ask session at its root, or starts it:
-                 the one Ask Agent uses, also the overall assistant's (ADR 0054)
+                 the one Ask Agent uses, also the overall assistant's (ADR 0054).
+                 --text T types T into its agent; --work WORK puts the Work
+                 item before it: Send to the secretary on Today (work level
+                 17, ADR 0059)
   ask close SESSION
                  closes an ask session, by id ($3) or name. Its agent stops;
                  the main checkout and its files stay as they are
@@ -247,11 +250,13 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  NOTES.md) of the item's requests, the
                  request or the plan; --apply writes it on the host, unless
                  the file changed since the run read it
-  plan           the overall assistant's newest plan: up to 3 rows with why,
+  plan           the overall assistant's newest plan: up to 10 rows with why,
                  next and minutes, Due soon, and the unanswered and stale
                  requests. A plan without a result shows its reason
-  plan now       asks the overall assistant for a plan now; --minutes N is
-                 the time you have. Needs an overall workspace and the daemon
+  plan now       Re-rank: re-ranks the queue from what's open now. Asks the
+                 overall assistant for a plan now; --minutes N is the time
+                 you have. Each one is a run of the overall workspace's
+                 max_runs_per_day. Needs an overall workspace and the daemon
   plan reorder ID...
                  puts Today's rows in your order: each row of the newest
                  plan with a result once, by Work item or Inbox item id
@@ -286,6 +291,7 @@ enum Cmd {
     },
     AskRoot {
         workspace: String,
+        send: Option<ask::SendText>,
         json: bool,
     },
     Ask {
@@ -570,6 +576,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         )),
     };
     let is_answer = matches!(words.as_slice(), [w, a, _, _] if w == "inbox" && a == "answer");
+    let is_ask_root = root && matches!(words.as_slice(), [w] if w == "ask");
     let is_policy_add = matches!(words.as_slice(), [w, a, _] if w == "policy" && a == "add");
     let is_policy_edit = matches!(words.as_slice(), [w, e, _] if w == "policy" && e == "edit");
     let is_dismiss = matches!(words.as_slice(), [w, d, _] if w == "plan" && d == "dismiss");
@@ -578,9 +585,9 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "--option requires inbox answer".into(),
         ));
     }
-    if text.is_some() && !is_answer && !is_policy_edit {
+    if text.is_some() && !is_answer && !is_policy_edit && !is_ask_root {
         return Err(lexopt::Error::Custom(
-            "--text requires inbox answer or policy edit".into(),
+            "--text requires inbox answer, policy edit or ask --root".into(),
         ));
     }
     if hash.is_some() && !is_answer {
@@ -677,8 +684,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "capture --assist needs --workspace: the workspace whose assistant to ask".into(),
         ));
     }
-    if new.work.is_some() && !is_new {
-        return Err(lexopt::Error::Custom("--work requires task new".into()));
+    if new.work.is_some() && !is_new && !(is_ask_root && text.is_some()) {
+        return Err(lexopt::Error::Custom(
+            "--work requires task new, or ask --root with --text".into(),
+        ));
     }
     let is_delete = matches!(words.as_slice(), [w, d] if w == "inbox" && d == "delete");
     if older_than.is_some() != is_delete {
@@ -711,6 +720,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         },
         [w] if w == "ask" && root => Cmd::AskRoot {
             workspace: new.workspace.clone(),
+            send: text.clone().map(|text| ask::SendText {
+                text,
+                work: new.work.clone(),
+            }),
             json,
         },
         [w, repo] if w == "ask" => Cmd::Ask {
@@ -1083,7 +1096,11 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             workspace,
             json,
         } => ask::ask(&mut conn, &repo, workspace, json).await,
-        Cmd::AskRoot { workspace, json } => ask::root(&mut conn, &workspace, json).await,
+        Cmd::AskRoot {
+            workspace,
+            send,
+            json,
+        } => ask::root(&mut conn, &workspace, send, json).await,
         Cmd::CloseAsk { session, json } => ask::close(&mut conn, &session, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Close {
@@ -1348,8 +1365,15 @@ mod tests {
         ));
         assert!(matches!(
             parse(&["ask", "--root", "--workspace", "secretary", "--json"]),
-            Ok(Some((_, Cmd::AskRoot { workspace, json: true }))) if workspace == "secretary"
+            Ok(Some((_, Cmd::AskRoot { workspace, send: None, json: true }))) if workspace == "secretary"
         ));
+        assert!(matches!(
+            parse(&["ask", "--root", "--workspace", "secretary", "--text", "Ask legal", "--work", "w-1"]),
+            Ok(Some((_, Cmd::AskRoot { send: Some(ask::SendText { text, work: Some(w) }), .. })))
+                if text == "Ask legal" && w == "w-1"
+        ));
+        assert!(parse(&["ask", "--root", "--workspace", "s", "--work", "w-1"]).is_err());
+        assert!(parse(&["ask", "app", "--text", "hi"]).is_err());
     }
 
     /// ADR 0033 removed Move down and Later on the Task.

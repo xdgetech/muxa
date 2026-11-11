@@ -49,3 +49,7 @@ The secretary's brief (ADR 0054) tells it: when the user asks what to do next, a
   - Refill on every closed row: one run per answer, and a plan that changes while the user reads it.
   - A host-side queue that merges plans: a second ranking next to the agent's, and rows the agent never saw.
   - Dimming closed rows at the end of the list: still noise, and it pushes the open rows apart from the header on a phone.
+
+## Addendum (2026-11-11): rows say what to do
+
+[ADR 0059](0059-today-rows-say-what-to-do.md) changes how §2 shows a row: the verb of its target comes before the title, and the preview leads with Do, Enter, Send and the plan keys. Plan Now is Re-rank in muxa for tmux, with the runs left today. The queue, Next and the refill stay as above.

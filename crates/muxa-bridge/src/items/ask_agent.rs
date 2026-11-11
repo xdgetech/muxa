@@ -44,6 +44,83 @@ pub async fn ask(
     ])
 }
 
+/// `start-session` with `root` and `text` (ADR 0059): the text, after the
+/// Work item `work` when given, typed into the workspace's root Ask session
+/// as [`ask`] types an item's request. On Today, the workspace of a Work
+/// item's Send is the overall one: the secretary.
+pub async fn ask_root(
+    cx: &Context,
+    request: u64,
+    workspace: &str,
+    work: Option<&str>,
+    text: &str,
+) -> Result<Vec<Message>, ErrorBody> {
+    if text.trim().is_empty() || text.len() > MAX_TEXT {
+        return Err(bad(format!(
+            "start-session text must be 1 to {MAX_TEXT} bytes"
+        )));
+    }
+    let about = match work {
+        Some(work) => {
+            let (config, work) = (Arc::clone(&cx.records), work.to_owned());
+            let detail = tokio::task::spawn_blocking(move || {
+                crate::assistant::detail::detail(&config, &work)
+            })
+            .await
+            .map_err(|e| error_body(ErrorCode::Internal, format!("work lookup failed: {e}")))??;
+            Some(detail)
+        }
+        None => None,
+    };
+    let env = cx.env().await?;
+    let (session, name, fresh) = root_session(&env, workspace).await?;
+    deliver(&env, session, &work_prompt(about.as_ref(), text), fresh).await?;
+    tracing::info!(work = ?work, session = %session, fresh, "sent to the workspace's root agent");
+    Ok(vec![Message::SessionStarted {
+        start: request,
+        session: session.to_string(),
+        name,
+    }])
+}
+
+/// Pure. The Work item as the agent reads it, then the user's text. Without
+/// a Work item, the text alone.
+fn work_prompt(about: Option<&crate::assistant::detail::Detail>, text: &str) -> String {
+    let Some(d) = about else {
+        return text.to_owned();
+    };
+    let w = &d.entry;
+    let state = serde_json::to_value(w.state)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".into());
+    let place = w
+        .workspace
+        .as_deref()
+        .map(|ws| format!(", in workspace {ws}"))
+        .unwrap_or_default();
+    let mut out = format!(
+        "About this Work item ({}, {state}{place}):\n\n{}\n",
+        w.id, w.title
+    );
+    let newest = d
+        .requests
+        .iter()
+        .filter_map(|q| q.results.first())
+        .max_by_key(|r| r.at);
+    if let Some(r) = newest {
+        out.push_str(&format!(
+            "\nNewest result (v{}):\n{}\n",
+            r.version, r.summary
+        ));
+    }
+    out.push_str(&format!(
+        "\nThe whole item: muxa-cli work show {}\n\nMy request: {text}",
+        w.id
+    ));
+    out
+}
+
 /// The item as listed, if it is open: a Task's item or a Routine's entry.
 async fn open_item(cx: &Context, id: &str) -> Result<InboxItem, ErrorBody> {
     let (config, id) = (Arc::clone(&cx.records), id.to_owned());
@@ -230,6 +307,36 @@ mod tests {
         assert!(p.contains("\n**10/14 projects done.**\n"));
         assert!(p.contains("\nLinks:\n- https://linear.app/x/ENA-257\n"));
         assert!(p.ends_with("\nMy request: Put this in Notion."));
+    }
+
+    #[test]
+    fn the_secretary_gets_the_work_item_then_the_request() {
+        use muxa_protocol::{AssistantRequest, WorkItem};
+        let entry: WorkItem = serde_json::from_value(serde_json::json!({
+            "id": "w-0a1b2c3d", "rev": 3, "title": "Compare vendor offers",
+            "state": "in-progress", "createdAt": 1, "updatedAt": 2, "workspace": "work"
+        }))
+        .unwrap();
+        let request: AssistantRequest = serde_json::from_value(serde_json::json!({
+            "id": "q-0a1b2c3d", "work": "w-0a1b2c3d", "version": 2, "workspace": "work",
+            "scope": "compare", "delivery": "resulted", "deliveryAt": 5, "createdAt": 1,
+            "updatedAt": 5,
+            "results": [{"version": 2, "at": 5, "summary": "Offer B is cheaper."}]
+        }))
+        .unwrap();
+        let detail = crate::assistant::detail::Detail {
+            entry,
+            captures: Vec::new(),
+            requests: vec![request],
+        };
+        let p = work_prompt(Some(&detail), "Ask legal about B.");
+        assert!(p.starts_with(
+            "About this Work item (w-0a1b2c3d, in-progress, in workspace work):\n\nCompare vendor offers\n"
+        ));
+        assert!(p.contains("\nNewest result (v2):\nOffer B is cheaper.\n"));
+        assert!(p.contains("muxa-cli work show w-0a1b2c3d"));
+        assert!(p.ends_with("\nMy request: Ask legal about B."));
+        assert_eq!(work_prompt(None, "Hello."), "Hello.");
     }
 
     #[test]

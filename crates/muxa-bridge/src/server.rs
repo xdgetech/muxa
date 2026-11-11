@@ -114,9 +114,10 @@ where
         // due dates (ADR 0049), 11 policies, corrections and hypotheses (ADR 0050), 12 staff
         // and hand-offs (ADR 0051), 13 write proposals (ADR 0052), 14 workspace memory (ADR 0053),
         // 15 opens a workspace's root Ask session without an item (ADR 0054), 16 makes every
-        // request Result an item to review (ADR 0058).
+        // request Result an item to review (ADR 0058), 17 sends a message about a Work item
+        // to the secretary and says what a Re-rank has left today (ADR 0059).
         capabilities.push(muxa_protocol::work_capability(
-            muxa_protocol::WORK_RESULT_REVIEW,
+            muxa_protocol::WORK_TODAY_ACTIONS,
         ));
     }
     // Checked once per session (ADR 0019); each record request looks again.
@@ -603,8 +604,54 @@ impl Worker {
             Request::StartSession {
                 id,
                 workspace,
+                repo: None,
+                root: true,
+                text: Some(text),
+                work,
+            } => {
+                let (cx, out) = (self.records_context(), self.out.clone());
+                self.pending.spawn(async move {
+                    let sent = crate::items::ask_agent::ask_root(
+                        &cx,
+                        id,
+                        &workspace,
+                        work.as_deref(),
+                        &text,
+                    )
+                    .await;
+                    let error = match sent {
+                        Ok(messages) => {
+                            for msg in messages {
+                                let _ = out.send(msg).await;
+                            }
+                            None
+                        }
+                        Err(e) => Some(e),
+                    };
+                    let _ = out
+                        .send(Message::Result {
+                            id: Some(id),
+                            error,
+                            sessions: None,
+                        })
+                        .await;
+                });
+                return None;
+            }
+            Request::StartSession { text: Some(_), .. }
+            | Request::StartSession { work: Some(_), .. } => {
+                return Some(Err(error_body(
+                    ErrorCode::BadRequest,
+                    "start-session takes text only with root and without a repo, \
+                     and work only with text",
+                )));
+            }
+            Request::StartSession {
+                id,
+                workspace,
                 repo,
                 root,
+                ..
             } => {
                 let client = Arc::clone(&self.client);
                 let config = Arc::clone(&self.tasks);

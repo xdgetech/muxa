@@ -212,6 +212,10 @@ pub struct AssistantInfo {
     pub overall: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub delegates: Vec<DelegateInfo>,
+    /// Level 17: what a Re-rank has left today (ADR 0059). Absent: no
+    /// overall workspace, or an older host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overall_runs: Option<crate::RunBudget>,
 }
 
 /// A workspace with `[workspace.assistant]`.
