@@ -449,7 +449,8 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 8"
   [ "$output" = "$(printf '%s\n' today: today:1 today:2 today:3 today:due sec:decisions i-1a2b3c4d i-2b3c4d5e)" ]
   out="$(plain_list "$TMPDIR/p.json")"
-  [[ "$out" == *$'today:1\t  1. Prepare the quarterly report  60–120 min · moved'* ]]
+  [[ "$out" == *$'today:1\t▶ 1. Prepare the quarterly report  60–120 min · moved'* ]]
+  [[ "$out" == *$'today:2\t  2. Compare vendor offers'* ]]
   [[ "$out" == *$'today:3\t  3. Try the tool for business B  1–5 min · new'* ]]
   [[ "$out" == *"Due soon, moved down by you: Renew the passport"* ]]
   [[ "$out" == *"Prepare the quarterly report  open · "*" · pinned · due 2025-11-12 07:00Z · work"* ]]
@@ -474,23 +475,33 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   [[ "$out" == *"Left the plan: w-5f6a7b8c"* ]]
 }
 
-@test "a Today row whose target closed shows its title dimmed with the state, and takes no target keys" {
-  # The user answered the sort item and the host no longer has w-7b8c9d0e;
-  # neither is listed, so only the host's title and targetState name them.
-  plan_inbox | jq -c '.items |= map(select(.id != "i-1a2b3c4d")) |
-    .workItems |= map(select(.id != "w-7b8c9d0e")) |
-    .plans[0].top[2].targetState = "answered" |
+@test "Today hides a row whose target closed, numbers the open rows and marks the first Next" {
+  # The user completed the first row and the host no longer has w-7b8c9d0e.
+  plan_inbox | jq -c '.workItems |= map(select(.id != "w-7b8c9d0e")) |
+    .plans[0].top[0].targetState = "done" |
     .plans[0].top[1] |= (del(.title) | .targetState = "gone")' >"$TMPDIR/p.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 3"
+  [ "$output" = "$(printf '%s\n' today: today:3 today:due)" ]
   out="$(plain_list "$TMPDIR/p.json")"
-  [[ "$out" == *$'today:2\t  2. w-7b8c9d0e · gone'* ]]
-  [[ "$out" == *$'today:3\t  3. Make a Work item in work: Try the tool for business B · ✓ answered'* ]]
-  [[ "$(inbox list "$TMPDIR/p.json" | grep '^today:3')" == *$'\e[2m3. Make a Work item'* ]]
+  [[ "$out" == *$'today:3\t▶ 1. Try the tool for business B  1–5 min'* ]]
+  [[ "$out" != *"Prepare the quarterly report  60"* ]]
+  [[ "$out" != *"· gone"* ]]
   out="$(plain_view today:3 "$TMPDIR/p.json")"
-  [[ "$out" == *"i-1a2b3c4d · ✓ answered"* ]]
+  [[ "$out" == *"▶ 1. Try the tool for business B"* ]]
+  [[ "$out" == *"i-1a2b3c4d · next"* ]]
+  # A row picked before the list reloaded still says how it ended, and opens nothing.
+  out="$(plain_view today:2 "$TMPDIR/p.json")"
+  [[ "$out" == *"w-7b8c9d0e · gone"* ]]
   [[ "$out" != *"o Open"* ]]
-  [[ "$out" != *"a Approve"* ]]
-  [ "$(inbox target today:3 "$TMPDIR/p.json")" = "" ]
-  [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
+  [ "$(inbox target today:2 "$TMPDIR/p.json")" = "" ]
+  [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
+}
+
+@test "when every row is closed Today says all done, and shows no row" {
+  plan_inbox | jq -c '.plans[0].top |= map(.targetState = "done")' >"$TMPDIR/p.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 2"
+  [ "$output" = "$(printf '%s\n' today: today:due)" ]
+  [[ "$(plain_view today: "$TMPDIR/p.json")" == *"All done. A new plan follows when the budget allows."* ]]
 }
 
 @test "a failed newest plan shows its reason, and the rows stay the last result's" {

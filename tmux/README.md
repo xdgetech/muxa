@@ -241,17 +241,19 @@ apps show, with a goal and a status.
     The first poll takes the results already there as looked at. On a Capture, `w` makes a Work item from it and `n`
     keeps it as a note.
   - With `work` level 10 and an overall assistant (ADR 0049), a Today section
-    (`☀`) comes first: up to 3 rows of the newest plan with a result, each with
-    its time estimate and `new` or `moved` since the plan before, then one
-    line of the items you moved down with Later that are due soon. The heading
+    (`☀`) comes first: the queue of the newest plan with a result, up to 10
+    rows, most important first (ADR 0055). Each row has its time estimate and
+    `new` or `moved` since the plan before. The first open row is marked `▶`:
+    do it next. Then one line of the items you moved down with Later that are
+    due soon. The heading
     says when the plan was made, or that the newest plan failed. The item below
     the list shows a row's why, next step, time and basis. `o` or `Enter` on a
     row goes to its Work item or Inbox item in the list. Every other key on a
     row acts on that target, as on its own row: `d` completes a Work item, and
     an item's answers (`d` ✓ Done, `c` Complete Task, `a`, `r`) answer it. A
-    row whose target is closed stays in place as one dimmed line with its
-    title and how it ended (`✓ done`, `✓ answered`, `gone`); its target's keys
-    do nothing there. `t` anywhere asks the
+    row whose target is closed is hidden, and the numbers count the open rows.
+    When every row is closed or Not today, the host makes a new plan by
+    itself, within the overall assistant's budgets. `t` anywhere asks the
     overall assistant for a plan now (`muxa-cli plan now`); it asks for the
     minutes you have first, and `Enter` gives no limit. `P` on a Work item pins
     it, so it is listed first and fills the first plan rows, or unpins it. The

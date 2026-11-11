@@ -53,7 +53,7 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
 
 @test "Today follows the order the user chose, and a dismissed row is one line" {
   out="$(plain inbox list "$ITEMS")"
-  [[ "$out" == *$'today:1\t  1. Compare vendor offers  30–60 min'* ]]
+  [[ "$out" == *$'today:1\t▶ 1. Compare vendor offers  30–60 min'* ]]
   [[ "$out" == *$'today:2\t  2. Prepare the quarterly report  60–120 min'* ]]
   [[ "$out" == *$'today:3\t  3. Try the tool for business B · not today'* ]]
   [ "$(inbox target today:1 "$ITEMS")" = w-7b8c9d0e ]
@@ -85,6 +85,25 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [ "$(inbox order today:1 down "$ITEMS" | tr '\n' ' ')" = "w-0b1c2d3e w-7b8c9d0e i-1a2b3c4d " ]
   [ "$(inbox order today:3 up "$ITEMS" | tr '\n' ' ')" = "w-7b8c9d0e i-1a2b3c4d w-0b1c2d3e " ]
   [ "$(inbox order today:3 down "$ITEMS")" = "" ]
+  [ "$(inbox neighbor today:1 down "$ITEMS")" = 2 ]
+}
+
+@test "K and J skip a hidden closed row, and Next skips a row that is not today" {
+  # Rows in the user's order: w-7b8c9d0e, w-0b1c2d3e (done), i-1a2b3c4d (not today).
+  jq -c '.plans[0].top |= map(if .work == "w-0b1c2d3e" then .targetState = "done" else . end)' \
+    "$ITEMS" >"$TMPDIR/closed.json"
+  [ "$(inbox key today:1 J "$TMPDIR/closed.json")" = plan:down ]
+  [ "$(inbox key today:3 K "$TMPDIR/closed.json")" = plan:up ]
+  [ "$(inbox neighbor today:1 down "$TMPDIR/closed.json")" = 3 ]
+  [ "$(inbox order today:1 down "$TMPDIR/closed.json" | tr '\n' ' ')" = "i-1a2b3c4d w-0b1c2d3e w-7b8c9d0e " ]
+  out="$(plain inbox list "$TMPDIR/closed.json")"
+  [[ "$out" == *$'today:1\t▶ 1. Compare vendor offers'* ]]
+  [[ "$out" == *$'today:3\t  2. Try the tool for business B · not today'* ]]
+  # With the first row not today, the next open row is Next.
+  jq -c '.plans[0].dismissed = ["w-7b8c9d0e"]' "$ITEMS" >"$TMPDIR/skip.json"
+  out="$(plain inbox list "$TMPDIR/skip.json")"
+  [[ "$out" == *$'today:1\t  1. Compare vendor offers · not today'* ]]
+  [[ "$out" == *$'today:2\t▶ 2. Prepare the quarterly report'* ]]
 }
 
 @test "below work:11 the Today keys and y do nothing" {

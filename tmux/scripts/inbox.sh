@@ -7,6 +7,9 @@
 # With level 9, Work items (w-) and unsorted Captures (c-) follow the items;
 # `a` on a Work item asks its workspace's assistant. With level 10, Today rows
 # (today:) of the newest plan come first (ADR 0049); `t` asks for a plan.
+# Today is a queue (ADR 0055): rows whose target closed are hidden, and the
+# first open row that is not "not today" is Next (▶). A row id keeps its
+# place in the plan, so the numbers shown count the open rows only.
 # With level 11 (ADR 0050), K/J move a Today row, x takes it off Today, y
 # opens the Policies list (policies.sh), and hypothesis items take Confirm.
 # With level 12 (ADR 0051), `a` on a Work item asks which staff member takes
@@ -20,6 +23,7 @@
 # move between headers, and Enter or space folds Routine.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens; none once closed)
+#        inbox.sh neighbor <today row> up|down <json>  (the open row a move swaps with)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh order <today row> up|down <json>  (the row ids plan reorder sends)
 #        inbox.sh worker <work id> <json>  (asks on stdin which staff member; prints the name)
@@ -160,6 +164,16 @@ JQ_DEFS='
   def row_title($root): row_id as $id |
     ([($root.workItems // [])[], ($root.items // [])[] | select(.id == $id) | .title][0] // .title // $id) | plain;
   def closed_target: .targetState != null;
+  # Today as a queue (ADR 0055): {key, value} of today_rows whose target is
+  # open; the key is its place in the plan.
+  def shown_rows: [today_rows | to_entries[] | select(.value | closed_target | not)];
+  def next_key($p): [shown_rows[] | select(.value | not_today($p) | not) | .key][0];
+  # The number shown: 1-based among the open rows.
+  def shown_number($i): ([shown_rows[] | .key] | index($i)) as $k | if $k == null then $i + 1 else $k + 1 end;
+  # The plan index of the open row a move up or down swaps with, or null.
+  def neighbor($i; $dir): [shown_rows[] | .key] as $vis | ($vis | index($i)) as $k |
+    if $k == null then null elif $dir == "up" then (if $k > 0 then $vis[$k - 1] else null end)
+    else $vis[$k + 1] end;
   def target_word: {"answered": "✓ answered", "resolved": "resolved", "done": "✓ done",
     "withdrawn": "withdrawn", "gone": "gone"}[.targetState] // "closed";
   def mins: "\(.minutes.low)–\(.minutes.high) min";
@@ -220,13 +234,12 @@ list() {
     . as $root | (.requests // []) as $reqs |
     (select(has_today) |
       "today:\t☀ \u001b[1mToday\u001b[0m  \u001b[2m\(plan_status)\u001b[0m",
-      (shown_plan | . as $p | today_rows | to_entries[] | .value as $r |
-        if $r | closed_target then
-          "today:\(.key + 1)\t  \u001b[2m\(.key + 1). \($r | row_title($root)) · \($r | target_word)\u001b[0m"
-        elif $r | not_today($p) then
-          "today:\(.key + 1)\t  \u001b[2m\(.key + 1). \($r | row_title($root)) · not today\u001b[0m"
+      (shown_plan | . as $p | next_key($p) as $next | shown_rows | to_entries[] |
+        (.key + 1) as $n | .value.key as $i | .value.value as $r |
+        if $r | not_today($p) then
+          "today:\($i + 1)\t  \u001b[2m\($n). \($r | row_title($root)) · not today\u001b[0m"
         else
-          "today:\(.key + 1)\t  \(.key + 1). \($r | row_title($root))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
+          "today:\($i + 1)\t\(if $i == $next then "▶" else " " end) \($n). \($r | row_title($root))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
         end),
       (shown_plan | select((.dueSoon // []) | length > 0) |
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
@@ -338,7 +351,9 @@ view_today() {
         (if (.stale // []) | length > 0 then "Stale results: \(.stale | join(" "))" else empty end),
         ([(.changed // [])[] | select(.change == "left") | .id] | select(length > 0) |
           "Left the plan: \(join(" "))"),
-        (if (.top // []) | length == 0 then "Nothing to rank." else empty end), ""),
+        (if (.top // []) | length == 0 then "Nothing to rank."
+         elif (shown_rows | length) == 0 then "All done. A new plan follows when the budget allows."
+         else empty end), ""),
       "t Plan Now\(if $memory then "   y Policies" else "" end)"
     elif $row == "due" then
       shown_plan |
@@ -347,9 +362,10 @@ view_today() {
         "◆ \(.title | plain)\(pin_due)"),
       "", "o Open   t Plan Now"
     else
-      shown_plan | . as $p | today_rows[$row | tonumber - 1] // empty |
-      "\($row). \u001b[1m\(row_title($root))\u001b[0m",
-      "\u001b[2m\(row_id)\(if closed_target then " · \(target_word)" else "" end)\(mark($p))\(if not_today($p) then " · not today" else "" end)\u001b[0m", "",
+      shown_plan | . as $p | ($row | tonumber - 1) as $i | shown_number($i) as $n |
+      (next_key($p) == $i) as $first | today_rows[$i] // empty |
+      "\(if $first then "▶ " else "" end)\($n). \u001b[1m\(row_title($root))\u001b[0m",
+      "\u001b[2m\(row_id)\(if $first then " · next" else "" end)\(if closed_target then " · \(target_word)" else "" end)\(mark($p))\(if not_today($p) then " · not today" else "" end)\u001b[0m", "",
       "Why: \(.why | plain)", "Next: \(.next | plain)",
       "Time: \(mins), about \(.minutes.estimated)",
       (if (.basis // []) | length > 0 then "", "\u001b[1mBasis\u001b[0m",
@@ -453,11 +469,10 @@ key_action() {
     today:[1-9]*:[KJx])
       [ "$level" -ge 11 ] || return 0
       iq -r --arg row "${1#today:}" --arg key "$2" "$JQ_DEFS"'
-        shown_plan | . as $p | today_rows as $rows | ($row | tonumber) as $n |
-        $rows[$n - 1] // empty |
+        shown_plan | . as $p | ($row | tonumber - 1) as $i | today_rows[$i] // empty |
         if $key == "x" then (if not_today($p) then empty else "plan:dismiss" end)
-        elif $key == "K" then (if $n > 1 then "plan:up" else empty end)
-        else (if $n < ($rows | length) then "plan:down" else empty end) end' "$3"
+        elif $key == "K" then (if ($p | neighbor($i; "up")) != null then "plan:up" else empty end)
+        else (if ($p | neighbor($i; "down")) != null then "plan:down" else empty end) end' "$3"
       return
       ;;
     w-*:P)
@@ -485,14 +500,22 @@ key_action() {
 
 pause() { echo "Press Enter."; read -r _; }
 
-# Today's row ids, one per line, with Today row <row> moved up or down by one:
-# the order plan reorder sends (ADR 0050).
+# Today's row ids, one per line, with Today row <row> swapped with the open
+# row above or below it: the order plan reorder sends (ADR 0050). Hidden
+# closed rows keep their places.
 today_order() {
   iq -r --arg row "${1#today:}" --arg dir "$2" "$JQ_DEFS"'
     shown_plan | [today_rows[] | row_id] as $ids | ($row | tonumber - 1) as $i |
-    (if $dir == "up" then $i - 1 else $i + 1 end) as $j |
-    if $i < 0 or $j < 0 or $j >= ($ids | length) then empty
+    neighbor($i; $dir) as $j |
+    if $i < 0 or $j == null then empty
     else $ids | .[$i] as $a | .[$j] as $b | .[$i] = $b | .[$j] = $a | .[] end' "$3"
+}
+
+# The 1-based plan place of the open row Today row <row> swaps with, where
+# the moved row lands.
+today_neighbor() {
+  iq -r --arg row "${1#today:}" --arg dir "$2" "$JQ_DEFS"'
+    shown_plan | neighbor($row | tonumber - 1; $dir) // empty | . + 1' "$3"
 }
 
 # Asks which staff member takes a Work item's request (ADR 0051 §2), when its
@@ -844,12 +867,11 @@ ui() {
           "") ;;
           open:*) open_evidence "$aid" "${act#open:}" "$json" ;;
           *)
-            answer "$aid" "$act" "$json"
-            # The moved row keeps the cursor.
+            # The moved row keeps the cursor: it lands in its neighbor's place.
             case "$act" in
-              plan:up) focus="today:$((${id#today:} - 1))" ;;
-              plan:down) focus="today:$((${id#today:} + 1))" ;;
+              plan:up | plan:down) focus="today:$(today_neighbor "$id" "${act#plan:}" "$json")" ;;
             esac
+            answer "$aid" "$act" "$json"
             ;;
         esac
         ;;
@@ -867,6 +889,7 @@ case "${1:-}" in
   target) today_target "${2:?today row}" "${3:?json}" ;;
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
   order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
+  neighbor) today_neighbor "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   worker) pick_worker "${2:?work id}" "${3:?json}" ;;
   jump) jump "${2:?next or prev}" "${3:?row}" "${4:-}" ;;
   space) space_action "${2:-}" ;;

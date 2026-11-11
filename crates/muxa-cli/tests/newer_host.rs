@@ -92,7 +92,7 @@ fn inbox_work_and_plan_show_a_newer_hosts_values_as_unknown() {
     for part in [
         "p-2c3d4e5f  unknown  ",
         "\nLast plan with a result\np-0a1b2c3d  resulted  ",
-        "1. w-0b1c2d3e  Prepare the quarterly report  60-120 min, about 90\n",
+        "1. w-0b1c2d3e  Prepare the quarterly report  60-120 min, about 90  next\n",
         "   Why: The calendar says so.\n",
     ] {
         assert!(plan.contains(part), "{part:?} in {plan}");
