@@ -182,6 +182,12 @@ apps show, with a goal and a status.
   workspace's own Ask session at its root: `muxa-cli ask --root --workspace W
   --json` opens it, or starts it. Pick the overall assistant's workspace to
   talk to the assistant: that row is its only one.
+- The assistant's chat stays open (ADR 0056): the muxa daemon keeps the overall
+  workspace's root Ask session running, and the tree lists it first under Ask,
+  marked `assistant`. Its jump key or `Enter` goes there. When you close it,
+  or its agent exits, the daemon opens it again within about 10 seconds, with
+  the same Claude Code conversation. `resident = false` in the overall
+  workspace's `[workspace.assistant]` turns this off.
 - `prefix + T` shows the Inbox (ADR 0033): one row per question an agent or a
   Routine has for you, with the selected item below the list: its question, the
   agent's last message, its numbered evidence and its keys.
@@ -343,6 +349,9 @@ tasks through the names below. They stay stable; a change to one is a breaking c
   holds one window of another session while a phone or tablet shows it. The
   tree, the status line, the keys and the sidebars skip it, and `close.sh`
   kills it with the session whose window it holds.
+- `@muxa_secretary`: `1` on the assistant's chat, the overall workspace's
+  root Ask session that the muxa daemon keeps open (ADR 0056). The tree
+  lists it first under Ask.
 
 ## Test
 

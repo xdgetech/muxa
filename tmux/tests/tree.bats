@@ -47,6 +47,20 @@ tree() { "$ROOT/scripts/tree.sh" "$@" | strip_ansi; }
   [ "${lines[10]}" = "s:base	 5    base" ]
 }
 
+@test "the assistant's chat is first in Ask (ADR 0056)" {
+  tx new-session -d -s ask-app-1
+  tx set-option -t =ask-app-1: @muxa_ask work
+  tx new-session -d -s ask-me
+  tx set-option -t =ask-me: @muxa_ask me
+  tx set-option -t =ask-me: @muxa_ask_root 1
+  tx set-option -t =ask-me: @muxa_secretary 1
+  run tree
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "g:ask	▾ Ask 2" ]
+  [ "${lines[1]}" = "s:ask-me	 1    ask-me assistant" ]
+  [ "${lines[2]}" = "s:ask-app-1	 2    ask-app-1" ]
+}
+
 @test "an assistant run is never a Task: it lists under Assistant (ADR 0048)" {
   mkdir -p "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001" "$BATS_TEST_TMPDIR/w/assistant/hosting-t-000004"
   tx new-session -d -s fix -c "$BATS_TEST_TMPDIR/w/tasks/fix-t-000001"
