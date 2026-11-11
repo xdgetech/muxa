@@ -160,7 +160,7 @@ async fn new_sh_links_the_session_when_it_creates_it() {
     let server = agents_server(&checkout);
     assert_eq!(
         server.tmux(&["show-options", "-gqv", "@agents_features"]),
-        "muxa-task"
+        "muxa-task plan-mode"
     );
     // The tag is there before anything else could set it: new.sh ran alone.
     let repo = Repo::new("contract-link");
