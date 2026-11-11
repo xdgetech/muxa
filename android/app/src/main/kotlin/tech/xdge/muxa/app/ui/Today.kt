@@ -38,12 +38,14 @@ import tech.xdge.muxa.app.item
 import tech.xdge.muxa.app.openPlanRow
 import tech.xdge.muxa.app.planIsNew
 import tech.xdge.muxa.app.planNow
+import tech.xdge.muxa.app.planRowTitle
 import tech.xdge.muxa.app.shownPlan
 import tech.xdge.muxa.app.workItem
 import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanRow
 import tech.xdge.muxa.session.addressee
 import tech.xdge.muxa.session.dueSoonLine
+import tech.xdge.muxa.session.isClosed
 import tech.xdge.muxa.session.isDismissed
 import tech.xdge.muxa.session.todayRows
 import tech.xdge.muxa.session.label
@@ -119,16 +121,25 @@ private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, coun
     val target = row.target ?: return
     var why by remember(plan.id, target) { mutableStateOf(false) }
     val work = row.work?.let(model::workItem)
-    val title = work?.title ?: row.item?.let { model.item(it)?.question } ?: target
+    val title = model.planRowTitle(row)
     // A `delegate` the plan addressed to a staff member names it (ADR 0051 §7).
     val delegate = row.item?.let { model.item(it)?.delegate }?.takeIf { it.worker != null }
     val marks = work?.let(plan::marks).orEmpty()
     Column(Modifier.fillMaxWidth().testTag("today-row-$target")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(
-                Modifier.weight(1f).clickable { model.openPlanRow(row) }.padding(start = 16.dp, top = 10.dp, bottom = 10.dp).testTag("today-open-$target"),
+                Modifier.weight(1f).clickable(enabled = !row.isClosed) { model.openPlanRow(row) }.padding(start = 16.dp, top = 10.dp, bottom = 10.dp).testTag("today-open-$target"),
             ) {
-                Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val state = row.targetState
+                if (state == null) {
+                    Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                } else {
+                    // The plan keeps a row whose target closed: dimmed, with how it ended.
+                    Text(
+                        "$title · ${state.label}", Modifier.testTag("today-closed-$target"), maxLines = 2,
+                        overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 delegate?.let { Text("Asks ${it.addressee}", Modifier.testTag("today-staff-$target"), style = MaterialTheme.typography.labelMedium) }
                 Text(row.why, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(

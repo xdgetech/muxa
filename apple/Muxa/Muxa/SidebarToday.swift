@@ -104,7 +104,13 @@ struct TodayRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Button { model.open(row) } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.title(of: row)).lineLimit(2)
+                    if let state = row.targetState {
+                        // The plan keeps a row whose target closed: dimmed, with how it ended.
+                        Text("\(model.title(of: row)) · \(state.shown)").lineLimit(2).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("today-closed-\(row.target)")
+                    } else {
+                        Text(model.title(of: row)).lineLimit(2)
+                    }
                     Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                     Text("\(row.minutes.shown) · Next: \(row.next)").font(.caption).foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -120,6 +126,7 @@ struct TodayRow: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.primary)
+            .disabled(row.isClosed)
             .accessibilityIdentifier("today-row-\(row.target)")
             if !row.basis.isEmpty || !row.missing.isEmpty {
                 Button(showsWhy ? "Hide Why" : "Why") { showsWhy.toggle() }
@@ -208,21 +215,25 @@ private struct CitedRecordActions: View {
     }
 }
 
-/// A row the user removed from Today: one line, still opening its item.
+/// A row the user removed from Today: one line, still opening its item while it is open.
 private struct DismissedTodayRow: View {
     @Environment(AppModel.self) private var model
     let row: PlanRow
 
     var body: some View {
         Button { model.open(row) } label: {
-            Label("Not today: \(model.title(of: row))", systemImage: Icon.notToday)
-                .font(.caption)
-                .lineLimit(1)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            Label(
+                "Not today: \(model.title(of: row))\(row.targetState.map { " · \($0.shown)" } ?? "")",
+                systemImage: Icon.notToday
+            )
+            .font(.caption)
+            .lineLimit(1)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
+        .disabled(row.isClosed)
         .accessibilityIdentifier("today-dismissed-\(row.target)")
     }
 }

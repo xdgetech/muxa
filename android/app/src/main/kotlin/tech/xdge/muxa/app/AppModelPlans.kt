@@ -8,10 +8,12 @@ import tech.xdge.muxa.protocol.PlanRow
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkspaceInfo
 import tech.xdge.muxa.session.PaneSession
+import tech.xdge.muxa.session.isClosed
 import tech.xdge.muxa.session.pickable
 import tech.xdge.muxa.session.planIsNew
 import tech.xdge.muxa.session.rowOf
 import tech.xdge.muxa.session.shown
+import tech.xdge.muxa.session.shownTitle
 
 // The overall assistant's plans, pins, deadlines and notes (ADR 0049). The host ranks and writes;
 // a new plan never changes the selection, the scroll or any order here.
@@ -42,9 +44,15 @@ fun AppModel.todayRow(item: WorkItem): PlanRow? = shownPlan?.rowOf(item.id)
 /** A row opens its Work item or Inbox item; the plan counts as seen. */
 fun AppModel.openPlanRow(row: PlanRow) {
     seenPlan = shownPlan?.id
+    // A closed target may be in no list: the row opens nothing.
+    if (row.isClosed) return
     row.work?.let { workDetail = it }
     row.item?.let { openItem(it) }
 }
+
+/** The title a Today row shows: its Work item's or Inbox item's as listed, else the host's. */
+fun AppModel.planRowTitle(row: PlanRow): String =
+    row.shownTitle(row.work?.let { workItem(it)?.title } ?: row.item?.let { item(it)?.question })
 
 /** The New Task and Capture pickers' workspaces: not the overall assistant's (ADR 0049 §2). */
 val AppModel.pickableWorkspaces: List<WorkspaceInfo> get() = state.tasks?.workspaces.orEmpty().pickable(state.assistant)

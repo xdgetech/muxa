@@ -31,6 +31,7 @@ import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.dismissTodayRow
 import tech.xdge.muxa.app.memory
 import tech.xdge.muxa.app.moveTodayRow
+import tech.xdge.muxa.app.planRowTitle
 import tech.xdge.muxa.app.rowTitle
 import tech.xdge.muxa.protocol.Basis
 import tech.xdge.muxa.protocol.PlanRow
@@ -112,7 +113,7 @@ private fun NotTodayDialog(model: AppModel, target: String, close: () -> Unit) {
 internal fun DismissedRow(model: AppModel, row: PlanRow) {
     val target = row.target ?: return
     DetailNote(
-        "Not today · ${model.rowTitle(target)}",
+        "Not today · ${model.planRowTitle(row)}${row.targetState?.let { " · ${it.label}" }.orEmpty()}",
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("today-dismissed-$target"),
     )
 }

@@ -138,6 +138,21 @@ struct PlanTests {
         #expect(!session.isUnanswered(request))
     }
 
+    @Test func aRowWhoseTargetClosedShowsTheHostsTitleAndState() {
+        let closed = PlanRow(item: "i-cdc2e97d", why: "w", next: "n", minutes: Minutes(low: 1, high: 2, estimated: 1),
+                             title: "Approve the plan?", targetState: .answered)
+        #expect(closed.isClosed)
+        #expect(closed.shownTitle(listed: nil) == "Approve the plan?")
+        #expect(closed.shownTitle(listed: "Listed") == "Listed")
+        #expect(closed.targetState?.shown == "✓ answered")
+        let gone = PlanRow(work: "w-00000002", why: "w", next: "n", minutes: Minutes(low: 1, high: 2, estimated: 1),
+                           targetState: .gone)
+        #expect(gone.shownTitle(listed: nil) == "w-00000002" && gone.targetState?.shown == "gone")
+        #expect(TargetState.other("archived").shown == "closed")
+        let open = PlanRow(work: "w-00000001", why: "w", next: "n", minutes: Minutes(low: 1, high: 2, estimated: 1))
+        #expect(!open.isClosed)
+    }
+
     @Test func aLevel9HostShowsNoPlans() async throws {
         let bridge = PlanBridge()
         let session = try await connected(bridge, level: "work:9")

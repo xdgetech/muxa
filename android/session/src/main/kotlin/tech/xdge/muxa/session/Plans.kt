@@ -10,6 +10,7 @@ import tech.xdge.muxa.protocol.Due
 import tech.xdge.muxa.protocol.Minutes
 import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanRow
+import tech.xdge.muxa.protocol.TargetState
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkspaceInfo
 import java.time.DateTimeException
@@ -48,6 +49,23 @@ fun planIsNew(shown: Plan?, seen: String?): Boolean = shown != null && seen != n
 
 /** The row's Work item or Inbox item id. */
 val PlanRow.target: String? get() = work ?: item
+
+/** The host says the row's target is no longer open. Today keeps the row, dimmed, and it opens nothing. */
+val PlanRow.isClosed: Boolean get() = targetState != null
+
+/** The title Today shows: the target as this device [listed] it, else the host's title, else the id. */
+fun PlanRow.shownTitle(listed: String?): String = listed ?: title ?: target.orEmpty()
+
+/** How a closed row's target ended, as Today shows it after the title. */
+val TargetState.label: String
+    get() = when (this) {
+        TargetState.ANSWERED -> "✓ answered"
+        TargetState.RESOLVED -> "resolved"
+        TargetState.DONE -> "✓ done"
+        TargetState.WITHDRAWN -> "withdrawn"
+        TargetState.GONE -> "gone"
+        else -> "closed"
+    }
 
 /** "60–120 min", or "5 min" when the estimate has no range. */
 val Minutes.label: String get() = if (low == high) "$low min" else "$low–$high min"

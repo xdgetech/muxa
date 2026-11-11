@@ -32,6 +32,7 @@ import tech.xdge.muxa.protocol.Minutes
 import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanRow
+import tech.xdge.muxa.protocol.TargetState
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
@@ -318,6 +319,22 @@ class AssistantRequestTest {
         val e = refusal { session.planNow() }
         assertTrue(e is PaneSession.Failure.Refused)
         assertEquals("plan p-00000002 is being made", PaneSession.describe(e))
+    }
+
+    @Test
+    fun aRowWhoseTargetClosedShowsTheHostsTitleAndState() {
+        val minutes = Minutes(1, 2, 1)
+        val closed = PlanRow(item = "i-cdc2e97d", why = "w", next = "n", minutes = minutes,
+            title = "Approve the plan?", targetState = TargetState.ANSWERED)
+        assertTrue(closed.isClosed)
+        assertEquals("Approve the plan?", closed.shownTitle(null))
+        assertEquals("Listed", closed.shownTitle("Listed"))
+        assertEquals("✓ answered", closed.targetState?.label)
+        val gone = PlanRow(work = "w-2", why = "w", next = "n", minutes = minutes, targetState = TargetState.GONE)
+        assertEquals("w-2", gone.shownTitle(null))
+        assertEquals("gone", gone.targetState?.label)
+        assertEquals("closed", TargetState("archived").label)
+        assertFalse(PlanRow(work = "w-1", why = "w", next = "n", minutes = minutes).isClosed)
     }
 
     @Test

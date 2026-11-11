@@ -130,3 +130,13 @@ Logs carry ids, counts, hashes, states and schedule times; never notes, plan tex
 | B9 | Android | the same |
 | B10 | docs: `agents.md`, `inbox.md`, `work-model.md`, `SECURITY.md`, `plan.md` | — |
 | — | **PA2 done** | spec §11 PA2: results merged without aggregated credentials; unanswered and stale shown; Later, pins and the selection untouched |
+
+## Addendum (2026-11-11): Today rows whose target closed
+
+A plan never changes, so a Today row stays after the user closes its target. Clients listed only open items, so such a row showed its bare id (`i-cdc2e97d`), and the user could not tell what state it was in.
+
+1. **The host names each row.** When it lists plans, the host derives each row's `title` (the Work item's title, or the Inbox item's question) and, when the target is no longer open, `targetState`: `answered` or `resolved` for an Inbox item, `done` or `withdrawn` for a Work item, `gone` when the item is no longer on the host. It reads every item, closed ones too. Nothing is stored: old plans get both fields, and the plan file is unchanged.
+2. **Clients keep the row.** A row whose target is not open shows its title dimmed, with the state word, in its place. Keys and taps that act on the target do nothing; the preview or detail says the state. A client falls back to the id only without a title.
+3. **No new level.** Both fields are optional and only the host sends them, at `work:10`. An older host sends neither, and the row shows as before.
+
+`dueSoon[]` is not changed. It holds open Work items when the plan is stored; one the user closed later can still show its id. That is a follow-up.

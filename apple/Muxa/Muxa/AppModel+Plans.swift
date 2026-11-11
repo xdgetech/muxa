@@ -29,9 +29,11 @@ extension AppModel {
         seenPlan = (currentHostID, session.currentPlan?.id)
     }
 
-    /// Opens a Today row's Work item or Inbox item. Only a tap changes the selection.
+    /// Opens a Today row's Work item or Inbox item. Only a tap changes the selection. A
+    /// closed target opens nothing: it may be in no list.
     func open(_ row: PlanRow) {
         markPlanSeen()
+        if row.isClosed { return }
         if let work = row.work {
             select(.work(work))
         } else if let item = row.item {
@@ -84,11 +86,10 @@ extension AppModel {
         return nil
     }
 
-    /// The title a Today row shows: its Work item's or its Inbox item's.
+    /// The title a Today row shows: its Work item's or its Inbox item's, else the host's.
     func title(of row: PlanRow) -> String {
-        if let work = row.work { return workItem(work)?.title ?? work }
-        if let id = row.item { return item(id)?.question ?? id }
-        return ""
+        let listed = row.work.flatMap { workItem($0)?.title } ?? row.item.flatMap { item($0)?.question }
+        return row.shownTitle(listed: listed)
     }
 }
 

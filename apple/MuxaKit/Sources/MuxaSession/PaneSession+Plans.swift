@@ -127,3 +127,27 @@ extension PaneSession {
         }
     }
 }
+
+extension PlanRow {
+    /// The host says the row's target is no longer open. Today keeps the row, dimmed, and it
+    /// opens nothing.
+    public var isClosed: Bool { targetState != nil }
+
+    /// The title Today shows: the target as this device lists it, else the host's title for
+    /// a target no longer listed, else the id.
+    public func shownTitle(listed: String?) -> String { listed ?? title ?? rowId ?? "" }
+}
+
+extension TargetState {
+    /// How a closed row's target ended, as Today shows it after the title.
+    public var shown: String {
+        switch self {
+        case .answered: "✓ answered"
+        case .resolved: "resolved"
+        case .done: "✓ done"
+        case .withdrawn: "withdrawn"
+        case .gone: "gone"
+        case .other: "closed"
+        }
+    }
+}
