@@ -38,11 +38,14 @@ attach() {
 }
 
 key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
+# A terminal's Shift-Tab bytes: tmux 3.7 drops `send-keys -K BTab` before the
+# popup, while ESC [ Z typed on the client reaches it.
+shift_tab() { key Escape '[' Z; }
 
 @test "the list holds open and later items, in muxa's order, and no closed ones" {
   run bash -c "'$ROOT/scripts/inbox.sh' list '$ITEMS' | cut -f1"
   [ "$status" -eq 0 ]
-  [ "$output" = "$(printf '%s\n' i-0a1b2c3d i-2c3d4e5f i-3d4e5f6a e-1a2b3c4d)" ]
+  [ "$output" = "$(printf '%s\n' sec:decisions i-0a1b2c3d i-2c3d4e5f i-3d4e5f6a e-1a2b3c4d)" ]
 }
 
 @test "an item shows its question, summary, numbered evidence and its keys" {
@@ -248,9 +251,9 @@ work_inbox() {
 
 @test "on work:9 the list ends with the open Work items, then the unsorted Captures" {
   work_inbox >"$TMPDIR/w.json"
-  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | cut -f1 | tail -n 5"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | cut -f1 | tail -n 7"
   [ "$status" -eq 0 ]
-  [ "$output" = "$(printf '%s\n' w-6a7b8c9d w-5f6a7b8c w-7b8c9d0e w-8c9d0e1f c-4e5f6a7b)" ]
+  [ "$output" = "$(printf '%s\n' sec:work w-6a7b8c9d w-5f6a7b8c w-7b8c9d0e w-8c9d0e1f sec:unsorted c-4e5f6a7b)" ]
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/w.json' | grep '^w-8c9d0e1f' | sed \$'s/\x1b\\\\[[0-9;]*m//g'"
   [[ "$output" == *"Read the Rust async book  open · "*" · later"* ]]
 }
@@ -323,6 +326,113 @@ work_inbox() {
   wait_for 'grep -q "^assist w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
 }
 
+# The work:9 list with two Routine briefings: the proposal made one, and a
+# second one after the items.
+briefed_inbox() {
+  work_inbox | jq -c '.items[3].kind = "briefing" |
+    .items += [.items[3] | .id = "e-2b3c4d5e" | .question = "Morning brief: 3 new issues"]'
+}
+
+@test "the list has sections: Decisions, Work, Routine folded, Unsorted, each with its count" {
+  briefed_inbox >"$TMPDIR/b.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/b.json' | cut -f1"
+  [ "$output" = "$(printf '%s\n' sec:decisions i-0a1b2c3d i-2c3d4e5f i-3d4e5f6a \
+    sec:work w-6a7b8c9d w-5f6a7b8c w-7b8c9d0e w-8c9d0e1f sec:routine sec:unsorted c-4e5f6a7b)" ]
+  out="$(plain_list "$TMPDIR/b.json")"
+  [[ "$out" == *$'sec:decisions\tDecisions 3\n'* ]]
+  [[ "$out" == *$'sec:work\tWork 4\n'* ]]
+  [[ "$out" == *$'sec:routine\t▸ Routine 2  Enter unfold\n'* ]]
+  [[ "$out" == *$'sec:unsorted\tUnsorted 1\n'* ]]
+  tx set-option -g @agents_inbox_unfolded routine
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/b.json' | cut -f1 | sed -n '10,12p'"
+  [ "$output" = "$(printf '%s\n' sec:routine e-1a2b3c4d e-2b3c4d5e)" ]
+  [[ "$(plain_list "$TMPDIR/b.json")" == *$'sec:routine\t▾ Routine 2  Enter fold\n'* ]]
+}
+
+@test "empty sections are left out" {
+  briefed_inbox | jq -c '.items |= map(select(.kind == "briefing")) | .workItems = [] | .captures = []' >"$TMPDIR/b.json"
+  [ "$(inbox list "$TMPDIR/b.json" | cut -f1)" = sec:routine ]
+}
+
+@test "a section header shows what it holds, and item keys do nothing on it" {
+  briefed_inbox >"$TMPDIR/b.json"
+  [ "$(inbox view sec:routine "$TMPDIR/b.json")" = "Routine reports. Enter or space unfolds or folds them." ]
+  [[ "$(inbox view sec:decisions "$TMPDIR/b.json")" == "Items that need your answer"* ]]
+  for sec in decisions work routine unsorted; do
+    for k in a c d l r s x w n p P 1; do
+      [ "$(inbox key "sec:$sec" "$k" "$TMPDIR/b.json")" = "" ]
+    done
+  done
+}
+
+@test "Tab and Shift-Tab move to the next and the previous header, around the ends" {
+  [ "$(inbox jump next 1 '1 5 10')" = "pos(5)" ]
+  [ "$(inbox jump next 4 '1 5 10')" = "pos(10)" ]
+  [ "$(inbox jump next 9 '1 5 10')" = "pos(1)" ]
+  [ "$(inbox jump prev 5 '1 5 10')" = "pos(5)" ]
+  [ "$(inbox jump prev 4 '1 5 10')" = "pos(1)" ]
+  [ "$(inbox jump prev 0 '1 5 10')" = "pos(10)" ]
+  [ "$(inbox space sec:routine)" = accept ]
+  [ "$(inbox space i-0a1b2c3d)" = preview-page-down ]
+}
+
+@test "the sidebar shows other items before Routine briefings" {
+  fake_cli
+  jq -c '.items = [.items[3] | .kind = "briefing"] + .items[:3]' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  inbox cache --force
+  run bash -c "'$ROOT/scripts/inbox.sh' rows | cut -f1"
+  [ "$output" = "$(printf '%s\n' I: i:i-0a1b2c3d i:i-2c3d4e5f i:i-3d4e5f6a)" ]
+  [[ "$(inbox rows | head -n 1)" == *"Inbox"*" 4"* ]]
+}
+
+@test "prefix+T: Enter unfolds Routine, space folds it, Tab and Shift-Tab reach it" {
+  fake_cli
+  briefed_inbox | jq -c '.workItems = [] | .captures = []' >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  # The cursor starts on the first item; Tab goes to the Routine header.
+  key Tab
+  key Enter
+  wait_for '[ "$(tx show-options -gv @agents_inbox_unfolded)" = routine ]'
+  sleep 1
+  # The cursor stayed on the header; the briefing below it takes its keys.
+  key j r
+  wait_for 'grep -q "^inbox answer e-1a2b3c4d reject --json$" "$TMPDIR/bin/calls"'
+  sleep 1
+  shift_tab
+  key Space
+  wait_for '[ -z "$(tx show-options -gv @agents_inbox_unfolded)" ]'
+}
+
+@test "prefix+T: keys on a header do nothing; Shift-Tab goes to the item's header" {
+  fake_cli
+  briefed_inbox >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key j
+  shift_tab
+  key a
+  sleep 1
+  key d
+  sleep 1
+  key j a
+  wait_for 'grep -q "^inbox answer i-0a1b2c3d approve --json$" "$TMPDIR/bin/calls"'
+  [ "$(grep -c "^inbox answer" "$TMPDIR/bin/calls")" = 1 ]
+}
+
+@test "prefix+T: Tab from the last header goes around to the first" {
+  fake_cli
+  briefed_inbox | jq -c '.workItems = [] | .captures = []' >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key Tab Tab
+  key j a
+  wait_for 'grep -q "^inbox answer i-0a1b2c3d approve --json$" "$TMPDIR/bin/calls"'
+}
+
 # A work:10 Inbox (ADR 0049): the contract's plans, overall assistant, and sort
 # and delegate items. The level 11 list (with policies) is policies.bats'.
 plan_inbox() {
@@ -336,8 +446,8 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
 
 @test "on work:10 Today comes first: the plan's rows, then the Due soon line" {
   plan_inbox >"$TMPDIR/p.json"
-  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 7"
-  [ "$output" = "$(printf '%s\n' today: today:1 today:2 today:3 today:due i-1a2b3c4d i-2b3c4d5e)" ]
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 8"
+  [ "$output" = "$(printf '%s\n' today: today:1 today:2 today:3 today:due sec:decisions i-1a2b3c4d i-2b3c4d5e)" ]
   out="$(plain_list "$TMPDIR/p.json")"
   [[ "$out" == *$'today:1\t  1. Prepare the quarterly report  60–120 min · moved'* ]]
   [[ "$out" == *$'today:3\t  3. Try the tool for business B  1–5 min · new'* ]]

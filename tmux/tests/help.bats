@@ -18,6 +18,13 @@ teardown() { teardown_server; }
   [[ "$out" == *"  l d a          on a Work item: Later, Complete, ask its assistant"* ]]
 }
 
+@test "help lists the Inbox section keys" {
+  run "$ROOT/scripts/help.sh"
+  out="$(printf '%s\n' "$output" | strip_ansi)"
+  [[ "$out" == *"  Tab S-Tab      the next or the previous section header"* ]]
+  [[ "$out" == *"  Enter          on the Routine header: unfold or fold the briefings"* ]]
+}
+
 @test "help lists the Today keys of ADR 0049" {
   run "$ROOT/scripts/help.sh"
   out="$(printf '%s\n' "$output" | strip_ansi)"

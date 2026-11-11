@@ -16,11 +16,14 @@
 # Approve asks once more with the target, and Reject takes a reason.
 # With level 14 (ADR 0053), memory items show a Task's text for the workspace
 # memory whole; Approve asks once more with the workspace.
+# prefix + T lists sections under header rows (sec:<name>); Tab and Shift-Tab
+# move between headers, and Enter or space folds Routine.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh order <today row> up|down <json>  (the row ids plan reorder sends)
 #        inbox.sh worker <work id> <json>  (asks on stdin which staff member; prints the name)
+#        inbox.sh jump next|prev <row> <header rows> | space <id>  (fzf actions)
 #        inbox.sh ui <client> [item id]
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -31,6 +34,8 @@ CACHE="$(agents_run_dir)/inbox.json"
 LOCK_LIMIT=60
 # muxa's work level with protect and delete-inbox.
 WORK_DELETE=8
+# Inbox sections that start folded and the user unfolded, space-separated.
+INBOX_UNFOLDED_OPT=@agents_inbox_unfolded
 
 muxa() { "$S/muxa.sh" cli "$@"; }
 
@@ -167,12 +172,14 @@ JQ_DEFS='
     ($t.links // [] | .[] | {kind: "link", ref: .url, label: ((.title // .url) + "  " + .url)})];
 '
 
-# The sidebar's section: a heading row, then the first open items.
+# The sidebar's section: a heading row, then the first open items, Routine
+# briefings after every other item.
 rows() {
   [ -s "$CACHE" ] || return 0
   "$S/muxa.sh" available || return 0
   iq -r --argjson max "$(opt @agents_inbox_rows 3)" "$JQ_DEFS"'
-    select((.work // 0) >= 3) | [.items[] | select(.state == "open")] as $open |
+    select((.work // 0) >= 3) | [.items[] | select(.state == "open")] |
+    (map(select(.kind != "briefing")) + map(select(.kind == "briefing"))) as $open |
     "I:\t\u001b[1mInbox\u001b[0m" + (if ($open | length) > 0 then " \($open | length)" else "\u001b[2m · nothing needs you\u001b[0m" end),
     ($open[:$max][] | "i:\(.id)\t \(dot) \(icon) \(.question)")
   ' "$CACHE"
@@ -193,11 +200,16 @@ detail() {
   esac
 }
 
-# prefix + T: one row per open or later item, then the open Work items, those
-# with a result not looked at first (results.sh), and the unsorted Captures
-# (ADR 0048): <id> TAB <display>.
+# prefix + T in sections, each after a header row: Today, then Decisions
+# (every item but a Routine's briefing, in muxa's order), the open Work items
+# with a result not looked at first (results.sh), Routine (the briefings,
+# folded unless unfolded) and the unsorted Captures (ADR 0048). Empty
+# sections are left out. Rows: <id> TAB <display>; a header's id is sec:<name>.
 list() {
-  iq -r --argjson fresh "$("$S/results.sh" new "$1")" "$JQ_DEFS"'
+  iq -r --argjson fresh "$("$S/results.sh" new "$1")" \
+    --arg unfolded " $(opt "$INBOX_UNFOLDED_OPT" "") " "$JQ_DEFS"'
+    def header($id; $name; $n; $rest): "sec:\($id)\t\u001b[1m\($name) \($n)\u001b[0m\($rest)";
+    def item_row: "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(marks)\u001b[0m";
     . as $root | (.requests // []) as $reqs |
     (select(has_today) |
       "today:\t☀ \u001b[1mToday\u001b[0m  \u001b[2m\(plan_status)\u001b[0m",
@@ -209,12 +221,71 @@ list() {
         end),
       (shown_plan | select((.dueSoon // []) | length > 0) |
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
-    (.items[] | shown |
-    "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(marks)\u001b[0m"),
-    ([open_work] | map(select(.id | IN($fresh[]))) + map(select(.id | IN($fresh[]) | not)) | .[] |
-    "\(.id)\t  ◆ \(.title | plain)\(if .id | IN($fresh[]) then " \u001b[1m· new result\u001b[0m" else "" end)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
-    ((.captures // [])[] | "\(.id)\t  ✎ \(first_line)  \u001b[2munsorted · \(age)\u001b[0m")
+    ([.items[] | shown | select(.kind != "briefing")] | select(length > 0) |
+      header("decisions"; "Decisions"; length; ""), (.[] | item_row)),
+    ([open_work] | map(select(.id | IN($fresh[]))) as $new |
+      $new + map(select(.id | IN($fresh[]) | not)) | select(length > 0) |
+      header("work"; "Work"; length; if ($new | length) > 0 then " · \($new | length) new" else "" end),
+      (.[] |
+      "\(.id)\t  ◆ \(.title | plain)\(if .id | IN($fresh[]) then " \u001b[1m· new result\u001b[0m" else "" end)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m")),
+    ([.items[] | shown | select(.kind == "briefing")] | select(length > 0) |
+      ($unfolded | contains(" routine ")) as $open |
+      header("routine"; "\(if $open then "▾" else "▸" end) Routine"; length;
+        "  \u001b[2mEnter \(if $open then "fold" else "unfold" end)\u001b[0m"),
+      (if $open then .[] | item_row else empty end)),
+    ([(.captures // [])[]] | select(length > 0) |
+      header("unsorted"; "Unsorted"; length; ""),
+      (.[] | "\(.id)\t  ✎ \(first_line)  \u001b[2munsorted · \(age)\u001b[0m"))
   ' "$1"
+}
+
+# A section header's preview: what the section holds.
+view_section() {
+  case "$1" in
+    sec:decisions) echo "Items that need your answer: reviews, failures, permissions and proposals." ;;
+    sec:work) echo "Open Work items; the ones with a new result come first." ;;
+    sec:routine) echo "Routine reports. Enter or space unfolds or folds them." ;;
+    sec:unsorted) echo "Captures not sorted into a Work item yet." ;;
+  esac
+}
+
+# The fzf action for Tab (next) or Shift-Tab (prev) on row <n>, fzf's 0-based
+# {n}: pos() of the next or previous of <headers>, the header rows' 1-based
+# numbers. It wraps around.
+jump() {
+  local dir="$1" row=$(($2 + 1)) h first="" last="" pick=""
+  for h in $3; do
+    [ -n "$first" ] || first="$h"
+    if [ "$dir" = next ]; then
+      [ -z "$pick" ] && [ "$h" -gt "$row" ] && pick="$h"
+    elif [ "$h" -lt "$row" ]; then
+      pick="$h"
+    fi
+    last="$h"
+  done
+  if [ -z "$pick" ]; then
+    if [ "$dir" = next ]; then pick="$first"; else pick="$last"; fi
+  fi
+  [ -z "$pick" ] || echo "pos($pick)"
+}
+
+# The fzf action for space: accept on the Routine header (ui folds it), else
+# scroll the preview.
+space_action() {
+  if [ "$1" = sec:routine ]; then echo accept; else echo preview-page-down; fi
+}
+
+# Folds or unfolds a section that starts folded, for this tmux server.
+toggle_fold() {
+  local s out=""
+  for s in $(opt "$INBOX_UNFOLDED_OPT" ""); do
+    [ "$s" = "$1" ] || out="$out $s"
+  done
+  case " $(opt "$INBOX_UNFOLDED_OPT" "") " in
+    *" $1 "*) ;;
+    *) out="$out $1" ;;
+  esac
+  t set-option -g "$INBOX_UNFOLDED_OPT" "${out# }"
 }
 
 # A Work item: its title, state, links, its newest request and Result
@@ -312,6 +383,7 @@ view() {
     w-*) "$S/results.sh" seen "$1" "$2"; view_work "$@"; return ;;
     c-*) view_capture "$@"; return ;;
     today:*) view_today "$@"; return ;;
+    sec:*) view_section "$1"; return ;;
   esac
   iq -r --arg item "$1" "$JQ_DEFS"'
     (.work // 0) as $w | (.requests // []) as $reqs | .items[] | select(.id == $item) | . as $i |
@@ -383,7 +455,7 @@ key_action() {
         if .pinnedAt then "work:unpin" else "work:pin" end' "$3"
       return
       ;;
-    today:*) return ;;
+    today:* | sec:*) return ;;
     w-*:l) echo work:later; return ;;
     w-*:d) echo work:done; return ;;
     w-*:a) echo assist; return ;;
@@ -669,15 +741,16 @@ EOF
 }
 
 ui() {
-  local client="$1" focus="${2:-}" json rows pos picked key id act sid target
+  local client="$1" focus="${2:-}" fetch=1 json rows heads pos picked key id act sid target
   json="$(agents_run_dir)/inbox-ui-$$.json"
   trap 'rm -f "$json"' EXIT
   while :; do
-    if ! muxa inbox --json </dev/null >"$json" 2>/dev/null; then
+    if [ "$fetch" = 1 ] && ! muxa inbox --json </dev/null >"$json" 2>/dev/null; then
       echo "muxa could not list the Inbox; try muxa-cli inbox."
       pause
       return 1
     fi
+    fetch=1
     # An older muxa has no items: its Task list instead.
     if [ "$(jq -r '.work // 0' "$json")" -lt 3 ]; then
       exec "$S/muxa.sh" inbox-ui "$client"
@@ -688,18 +761,31 @@ ui() {
       sleep 1.5
       break
     fi
-    pos="$(printf '%s\n' "$rows" | awk -F'\t' -v f="$focus" '$1 == f { print NR; exit }')"
+    # The focused row, else the first row that is not a section header.
+    pos="$(printf '%s\n' "$rows" | awk -F'\t' -v f="$focus" '
+      $1 == f { print NR; found = 1; exit }
+      !first && $1 !~ /^sec:/ { first = NR }
+      END { if (!found) print (first ? first : 1) }')"
+    heads="$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "today:" || $1 ~ /^sec:/ { printf "%s ", NR }')"
     # --sync so start:pos lands after the rows load, also after an answer.
     picked="$(printf '%s\n' "$rows" | fzf --sync --ansi --no-input --delimiter '\t' --with-nth 2 --no-sort \
       --layout reverse --info hidden --pointer '▌' --highlight-line \
       --preview "'$S/inbox.sh' view {1} '$json'" --preview-window "down,70%,$(preview_wrap),border-top" \
-      --bind "start:pos(${pos:-1})" --bind 'j:down,k:up,q:abort' \
-      --bind 'space:preview-page-down,b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
+      --bind "start:pos($pos)" --bind 'j:down,k:up,q:abort' \
+      --bind "tab:transform:'$S/inbox.sh' jump next {n} '$heads'" \
+      --bind "btab:transform:'$S/inbox.sh' jump prev {n} '$heads'" \
+      --bind "space:transform:'$S/inbox.sh' space {1}" \
+      --bind 'b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
       --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,t,K,J,y,D,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
     [ -n "$id" ] || continue
+    case "$id:$key" in
+      # Space's accept leaves the key empty.
+      sec:routine:enter | sec:routine:) toggle_fold routine; fetch=0; continue ;;
+      sec:*:enter | sec:*:o | sec:*:v) fetch=0; continue ;;
+    esac
     case "$key" in
       ctrl-r) continue ;;
       v) read_item "$id" "$json" ;;
@@ -765,6 +851,8 @@ case "${1:-}" in
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
   order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   worker) pick_worker "${2:?work id}" "${3:?json}" ;;
+  jump) jump "${2:?next or prev}" "${3:?row}" "${4:-}" ;;
+  space) space_action "${2:-}" ;;
   ui) tty_utf8; ui "${2:?client}" "${3:-}" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | ui <client> [item id]" >&2; exit 2 ;;
+  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | jump next|prev <row> <header rows> | space <id> | ui <client> [item id]" >&2; exit 2 ;;
 esac

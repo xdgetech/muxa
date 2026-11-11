@@ -54,7 +54,9 @@ notified() { cat "$TMPDIR/notified" 2>/dev/null; }
   run work_rows "$ITEMS"
   [[ "${lines[0]}" == "◆ Check what the visa renewal needs · new result  in progress · asked: resulted · "* ]]
   [[ "${lines[1]}" == "◆ Draft the merged onboarding page  "* ]]
+  [ "$(inbox list "$ITEMS" | grep '^sec:work' | cut -f2 | strip_ansi)" = "Work 4 · 1 new" ]
   inbox view w-5f6a7b8c "$ITEMS" >/dev/null
+  [ "$(inbox list "$ITEMS" | grep '^sec:work' | cut -f2 | strip_ansi)" = "Work 4" ]
   run work_rows "$ITEMS"
   [[ "${lines[0]}" == "◆ Draft the merged onboarding page  "* ]]
   [[ "$output" != *"new result"* ]]

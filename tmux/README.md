@@ -130,6 +130,7 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_min_width` | `100` | narrower clients (a phone) get no tree |
 | `@agents_folded` | | the folded sections of the tree, space-separated: `tasks routines assistant ask sessions`. `Enter` and `space` set it |
 | `@agents_inbox_rows` | `3` | Inbox items the tree shows above the sessions |
+| `@agents_inbox_unfolded` | | the `prefix + T` sections that start folded and you unfolded, space-separated: `routine`. `Enter` and `space` on the header set it |
 | `@agents_inbox_refresh` | `5` | seconds between two `muxa-cli inbox --json` calls for the tree |
 | `@agents_split` | `50` | terminal pane width, % of a new task window. Showing, hiding or resizing the tree keeps the current split |
 | `@agents_check_gh` | `on` | ask `gh` whether the PR is merged before `x` |
@@ -180,6 +181,22 @@ apps show, with a goal and a status.
 - `prefix + T` shows the Inbox (ADR 0033): one row per question an agent or a
   Routine has for you, with the selected item below the list: its question, the
   agent's last message, its numbered evidence and its keys.
+  - The list has sections, each under a header row with its name and count,
+    in this order:
+    1. Today (with `work` level 10, below).
+    2. `Decisions N`: every item that is not a Routine's briefing, in muxa's order.
+    3. `Work N · K new`: the open Work items, the ones with a new result first.
+       `· K new` is left out when there is none.
+    4. `▸ Routine N`: the Routine's briefings. The section starts folded, and
+       only its header shows. `Enter` or `space` on the header unfolds it
+       (`▾`) or folds it again. The global option `@agents_inbox_unfolded`
+       keeps the unfolded sections (`routine`) until the tmux server stops.
+    5. `Unsorted N`: the unsorted Captures.
+
+    An empty section is left out. `Tab` moves to the next header and
+    `Shift-Tab` to the previous one; both go around at the ends. A header is
+    not an item: the item keys do nothing on it, and the item below the list
+    says what the section holds. The cursor starts on the first item.
   - `j`/`k` move. The keys sit on two lines, as on the apps' item screen
     (ADR 0040). The first line is triage: `l` Later (the item moves below the
     others and stays there until you answer it), `d` ✓ Done (closes only the
@@ -204,7 +221,7 @@ apps show, with a goal and a status.
     count. It deletes every item older than that, open or closed, except
     protected ones. A protected item still takes `l`, `d` and every answer.
   - With `work` level 9, the open Work items (`◆`) and the unsorted Captures
-    (`✎`) follow the items. On a Work item, `l` Later moves it below the others
+    (`✎`) have their sections. On a Work item, `l` Later moves it below the others
     and `d` completes it; its Tasks keep running. `a` asks its workspace's
     assistant (`muxa-cli assist WORK`, scope research); asking again adds a
     version and ends the older run. A Work row that was asked shows its newest
@@ -212,7 +229,7 @@ apps show, with a goal and a status.
     shows the request and the newest Result's summary; `muxa-cli assist show
     WORK` prints all of it. A Work item whose newest request has a result you
     have not looked at shows `· new result` and comes first among the Work
-    items. A new version or a new delivery is a new result. Selecting the
+    items; the header counts them. A new version or a new delivery is a new result. Selecting the
     Work item (its preview shows), `v`, `o` or `Enter` marks it looked at.
     This machine keeps what it notified and what you looked at in
     `$XDG_STATE_HOME/muxa/tmux-results.json` (else
@@ -277,7 +294,7 @@ apps show, with a goal and a status.
     `work` level 3, `prefix + T` shows the older Task list: `Enter` goes to the
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.
 - The tree starts with the Inbox section: the count and the first open items
-  (`@agents_inbox_rows`). `Enter` on a row opens that item in `prefix + T`.
+  (`@agents_inbox_rows`), with Routine briefings after every other item. `Enter` on a row opens that item in `prefix + T`.
   The section reads a cache that one sidebar refreshes through `muxa-cli inbox
   --json` every `@agents_inbox_refresh` seconds.
 - Without muxa-cli, or without a muxa workspace (`~/.config/muxa/workspaces.toml`),
