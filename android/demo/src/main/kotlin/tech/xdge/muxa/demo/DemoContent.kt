@@ -82,6 +82,9 @@ internal interface DemoContent {
     /** Workspace memory (ADR 0053); a host at `work` level 14 serves it. */
     fun memory(now: Long): DemoMemory? = null
 
+    /** Proposed Tasks and plan items (ADR 0060), at `work` level 18. */
+    fun proposals(now: Long): DemoProposals? = null
+
     /** Tasks whose branch is not merged: ending one with `worktree: remove` is `would-lose-work` (ADR 0043). */
     val unmerged: Set<String> get() = emptySet()
 }
@@ -428,6 +431,8 @@ internal object TestContent : DemoContent {
     override fun writes(now: Long) = DemoWrites.tests(now)
 
     override fun memory(now: Long) = DemoMemory.tests(now)
+
+    override fun proposals(now: Long) = DemoProposals.tests(now)
 
     override val unmerged = setOf("t-perf01")
 

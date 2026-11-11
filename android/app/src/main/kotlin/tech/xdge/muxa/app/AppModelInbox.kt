@@ -24,6 +24,9 @@ sealed interface InboxPrompt {
     /** Reject on the overall assistant's item, with an optional reason the host records (ADR 0050 §2). */
     data class RejectItem(val item: InboxItem) : InboxPrompt
 
+    /** Approve plan pressed nothing: approve in the Task's terminal, with Open Session (ADR 0060 §5). */
+    data class ApproveInTerminal(val item: InboxItem) : InboxPrompt
+
     /** Delete Old's confirmation: [count] listed items older than [days], not protected (ADR 0046). */
     data class DeleteOld(val days: Int, val count: Int) : InboxPrompt
 }

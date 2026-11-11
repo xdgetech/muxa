@@ -154,6 +154,8 @@ data class AssistantInfo(
     /** The overall assistant's workspace. Leave it out of workspace pickers. */
     val overall: String? = null,
     val delegates: List<DelegateInfo> = emptyList(),
+    /** Level 17: the overall workspace's runs left today (ADR 0059 §5). Null: no overall workspace, or an older host. */
+    val overallRuns: RunBudget? = null,
 )
 
 /** A workspace with `[workspace.assistant]`. */

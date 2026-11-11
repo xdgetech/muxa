@@ -29,4 +29,6 @@ data class ResultReview(
     val files: List<String> = emptyList(),
     /** The hand-off the step proposes; `approve` starts it while it is offered. */
     val handoff: Handoff? = null,
+    /** Level 18: the Task the version proposes; Start Task starts it (ADR 0060 §2). */
+    val task: TaskProposal? = null,
 )

@@ -50,6 +50,9 @@ import tech.xdge.muxa.protocol.WORK_STAFF
 import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.WORK_RESULT_REVIEW
+import tech.xdge.muxa.protocol.WORK_TODAY_ACTIONS
+import tech.xdge.muxa.protocol.WORK_TASK_PROPOSALS
+import tech.xdge.muxa.protocol.TaskProposal
 import tech.xdge.muxa.protocol.HandoffProposal
 import tech.xdge.muxa.protocol.StepBy
 import tech.xdge.muxa.protocol.CorrectionKind
@@ -74,7 +77,9 @@ import java.util.UUID
  */
 /**
  * [taskRecords] false plays a bridge from before task records, for the old New Task sheet's test.
- * [workLevel] is the `work` level it advertises; at [WORK_RESULT_REVIEW] each Result is a `result` item to hand off,
+ * [workLevel] is the `work` level it advertises; at [WORK_TASK_PROPOSALS] Results and the secretary propose Tasks that
+ * start in plan mode, and plan items approve the plan (ADR 0060); at [WORK_TODAY_ACTIONS] the secretary takes a Work item's
+ * Send and Re-rank says the runs left today (ADR 0059); at [WORK_RESULT_REVIEW] each Result is a `result` item to hand off,
  * send on, or close, and a `write` item takes Revise (ADR 0058); at [WORK_MEMORY] a Task's end proposes to the workspace memory
  * (ADR 0053); at [WORK_WRITES] Results propose writes that the user approves by
  * hash (ADR 0052); at [WORK_STAFF] each workspace has staff and a request runs as a chain of steps (ADR 0051); at [WORK_POLICIES] it keeps policies, corrections and hypotheses (ADR 0050); at [WORK_PLANS] it has the overall assistant's plans (ADR 0049);
@@ -200,6 +205,24 @@ class DemoBridge(
         }
     }
 
+    /**
+     * Proposed Tasks (ADR 0060) at level 18: the secretary's `new-task` item and its Today row, the Tasks the
+     * staff's Results propose, and plan items.
+     */
+    private val proposals: DemoProposals? = content.proposals(now())?.takeIf { workLevel >= WORK_TASK_PROPOSALS }?.also { p ->
+        items.add(p.items)
+        p.resultTasks.forEach { (id, task) -> items.item(id)?.let { items.save(DemoProposals.withTask(it, task)) } }
+        plans?.addRow(p.todayRow)
+    }
+
+    /** The Task each proposal started, by the proposal: Start Task again returns it (ADR 0060 §2). */
+    private val startedProposals = mutableMapOf<String, String>()
+    private var proposedCount = 0
+
+    init {
+        if (workLevel >= WORK_TODAY_ACTIONS) plans?.runsMax = RUNS_PER_DAY
+    }
+
     /** The workspaces `list-tasks` names: the overall assistant's is one of them. */
     private val listedWorkspaces = content.workspaces + listOfNotNull(plans?.let { WorkspaceInfo(it.overall) })
     private val images = content.images(now())
@@ -308,6 +331,7 @@ class DemoBridge(
             is Request.RequestAssistant, is Request.CancelRequest -> serveAssistant(req)
             is Request.ApplyNotes, is Request.PlanNow -> servePlans(req)
             is Request.AddPolicy, is Request.UpdatePolicy, is Request.UpdatePlan, is Request.Forget -> servePolicies(req)
+            is Request.ProposeTask -> proposeTask(req)
             is Request.Ping, is Request.Unwatch, is Request.RawBytes -> ok(req.id)
             is Request.Bye -> out.close()
         }
@@ -351,6 +375,10 @@ class DemoBridge(
                 answerHandoff(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.RESULT) {
                 answerResult(req, now)
+            } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.NEW_TASK) {
+                answerNewTask(req, now)
+            } else if (req.action == InboxAction.APPROVE && proposals?.stuckPlans?.contains(req.entry) == true) {
+                fail(req.id, ErrorCode.CONFLICT, STUCK_PLAN)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.WRITE) {
                 answerWrite(req, now)
             } else if (synchronized(lock) { items.item(req.entry)?.kind } == ItemKind.MEMORY) {
@@ -627,8 +655,14 @@ class DemoBridge(
             try {
                 val item = items.item(req.entry) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item ${req.entry}")
                 val r = item.result ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${item.id} has no result")
+                val task = r.task
                 when (req.action) {
-                    InboxAction.APPROVE -> handOff(item, req.id, now)
+                    // Without a hand-off, approve starts the proposed Task (ADR 0060 §2).
+                    InboxAction.APPROVE -> if (r.handoff == null && task != null) startProposed(item, task, req, now) else handOff(item, req.id, now)
+                    InboxAction.START_TASK -> {
+                        if (task == null) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${item.id} proposes no Task")
+                        startProposed(item, task, req, now)
+                    }
                     InboxAction.REPLY -> followUp(item, r.request, r.worker, req, now)
                     else -> ProposalOutcome(items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item, emptyList(), null)
                 }
@@ -669,6 +703,70 @@ class DemoBridge(
         val answered = closed(item, InboxAction.REPLY, now)
         endChain(a.request.id, keep = a.request.version)
         return ProposalOutcome(answered, listOf(Message.WorkSaved(req.id, derived(a.work), a.request)), null, started = a.run != null)
+    }
+
+    /**
+     * Start Task, Send, Done or Later on the secretary's `new-task` item (ADR 0060 §3). Send types the proposal
+     * and the text into the secretary's session, and the item stays open.
+     */
+    private fun answerNewTask(req: Request.UpdateInbox, now: Long) {
+        val outcome = synchronized(lock) {
+            try {
+                val item = items.item(req.entry) ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "no Inbox item ${req.entry}")
+                val task = item.newTask ?: throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${item.id} proposes no Task")
+                when (req.action) {
+                    InboxAction.APPROVE -> startProposed(item, task, req, now)
+                    InboxAction.REPLY -> {
+                        if (req.text.isNullOrBlank()) throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "reply needs text")
+                        val overall = plans?.overall ?: throw DemoWork.Refusal(ErrorCode.UNSUPPORTED, "this host has no overall workspace")
+                        val session = rootSession(overall).first
+                        ProposalOutcome(item, listOf(Message.SessionStarted(req.id, session.id, session.name)), null)
+                    }
+                    else -> ProposalOutcome(items.answer(item.id, req.action, null, null, now, nextLaterAt(now)).item, emptyList(), null)
+                }
+            } catch (e: DemoWork.Refusal) {
+                ProposalOutcome(null, emptyList(), ErrorBody(e.code, e.message ?: ""))
+            }
+        }
+        finish(req.id, outcome)
+        if (outcome.item?.kind == ItemKind.NEW_TASK && req.action == InboxAction.REPLY) emit(Message.SessionsChanged)
+    }
+
+    /**
+     * Start Task (ADR 0060 §2, §3): one Task in plan mode, linked to the Work item. Start Task again, or on another
+     * item that offers the same proposal, returns the same Task. The caller holds the lock.
+     */
+    private fun startProposed(item: InboxItem, task: TaskProposal, req: Request.UpdateInbox, now: Long): ProposalOutcome {
+        if (req.action !in item.answers && item.task == null) {
+            throw DemoWork.Refusal(ErrorCode.BAD_REQUEST, "${req.action} does not answer Inbox item ${item.id} now")
+        }
+        val r = item.result
+        val key = if (r != null) "${r.request} v${r.version} s${task.step ?: r.step}" else item.id
+        val made = (item.task ?: startedProposals[key])?.let { t -> tasks.firstOrNull { it.id == t } }
+        val record = made ?: approvedTask(task.workspace, task.title, DemoProposals.goal(item, task), null, now, work = task.work ?: r?.work)
+        startedProposals[key] = record.id
+        val answered = if (item.task != null) item else DemoProposals.started(item, req.action, record.id, record.title, now).also(items::save)
+        // Beside a hand-off the chain ends here, as Done ends it.
+        if (r?.handoff != null) endChain(r.request, keep = null)
+        return ProposalOutcome(answered, listOf(Message.TaskSaved(req.id, record)), null, started = made == null)
+    }
+
+    /** `propose-task` (ADR 0060 §3): one `new-task` item; the same proposal while its item is open returns it. */
+    private fun proposeTask(req: Request.ProposeTask) {
+        if (workLevel < WORK_TASK_PROPOSALS) return fail(req.id, ErrorCode.BAD_REQUEST, "propose-task needs work level 18")
+        val problem = when {
+            content.workspaces.none { it.name == req.workspace } -> "${req.workspace} is not a workspace"
+            req.title.isBlank() || req.title.length > MAX_TITLE || '\n' in req.title -> "a title is one line of 1 to $MAX_TITLE characters"
+            req.goal.isBlank() || req.goal.toByteArray().size > MAX_GOAL -> "a goal is 1 to $MAX_GOAL bytes"
+            else -> null
+        }
+        if (problem != null) return fail(req.id, ErrorCode.BAD_REQUEST, problem)
+        val task = TaskProposal(req.workspace, req.repo, req.title, req.goal, req.work)
+        val item = synchronized(lock) {
+            items.openProposal(task) ?: DemoProposals.newTask("i-%08x".format(0xe1000000L + ++proposedCount), now(), task).also { items.add(listOf(it)) }
+        }
+        emit(Message.InboxSaved(req.id, item = item))
+        ok(req.id)
     }
 
     /** [item] answered with [action], stored. The caller holds the lock. */
@@ -895,6 +993,17 @@ class DemoBridge(
         if (req.repo != null) return fail(req.id, ErrorCode.BAD_REQUEST, "start-session takes a repo, or root without a repo")
         if (listedWorkspaces.none { it.name == req.workspace }) {
             return fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
+        }
+        // Level 17 types text about a Work item into the session (ADR 0059 §4); a level 16 host ignores both.
+        if (workLevel >= WORK_TODAY_ACTIONS) {
+            val text = req.text
+            val problem = when {
+                text == null && req.work != null -> "work needs text"
+                text != null && (text.isBlank() || text.toByteArray().size > MAX_GOAL) -> "text is 1 to $MAX_GOAL bytes"
+                req.work?.let { w -> synchronized(lock) { assistant.workItem(w) } == null } == true -> "no Work item ${req.work}"
+                else -> null
+            }
+            if (problem != null) return fail(req.id, ErrorCode.BAD_REQUEST, problem)
         }
         val (session, started) = synchronized(lock) { rootSession(req.workspace) }
         emit(Message.SessionStarted(req.id, session.id, session.name))
@@ -1511,6 +1620,14 @@ class DemoBridge(
 
     companion object {
         const val CHAT_PANE = "%1"
+
+        /** The overall workspace's `max_runs_per_day` at level 17 (ADR 0059 §5). */
+        private const val RUNS_PER_DAY = 3
+        private const val MAX_TITLE = 200
+        private const val MAX_GOAL = 4096
+
+        /** The host's `conflict` when a plan menu shows no single manual option (ADR 0060 §5). */
+        const val STUCK_PLAN = "the plan menu does not show one \"Yes, manually approve edits\" option; approve the plan in the Task's terminal"
 
         /** The Inbox answers whose text goes to the agent as its next prompt. */
         private val PROMPT_ACTIONS = setOf(InboxAction.REPLY)

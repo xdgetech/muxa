@@ -32,6 +32,7 @@ import tech.xdge.muxa.app.dismissTodayRow
 import tech.xdge.muxa.app.memory
 import tech.xdge.muxa.app.moveTodayRow
 import tech.xdge.muxa.app.planRowTitle
+import tech.xdge.muxa.app.rowItem
 import tech.xdge.muxa.app.rowTitle
 import tech.xdge.muxa.protocol.Basis
 import tech.xdge.muxa.protocol.PlanRow
@@ -39,6 +40,7 @@ import tech.xdge.muxa.session.Cited
 import tech.xdge.muxa.session.label
 import tech.xdge.muxa.session.line
 import tech.xdge.muxa.session.summary
+import tech.xdge.muxa.session.rowVerb
 import tech.xdge.muxa.session.target
 
 // Today's corrections and its memory (ADR 0050 §5, §7): move a row, take it out for today with an
@@ -113,7 +115,7 @@ private fun NotTodayDialog(model: AppModel, target: String, close: () -> Unit) {
 internal fun DismissedRow(model: AppModel, row: PlanRow) {
     val target = row.target ?: return
     DetailNote(
-        "Not today · ${model.planRowTitle(row)}",
+        "Not today · ${rowVerb(row, model.rowItem(row))} · ${model.planRowTitle(row)}",
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("today-dismissed-$target"),
     )
 }

@@ -20,6 +20,8 @@ import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
 import tech.xdge.muxa.protocol.WORK_ASK_ROOT
 import tech.xdge.muxa.protocol.WORK_RESULT_REVIEW
+import tech.xdge.muxa.protocol.WORK_TODAY_ACTIONS
+import tech.xdge.muxa.protocol.WORK_TASK_PROPOSALS
 import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
@@ -60,8 +62,10 @@ class MainActivity : ComponentActivity() {
                 // closing ask sessions (ADR 0039), or one with Captures and Work items (ADR 0048),
                 // with the overall assistant's plans (ADR 0049), with policies (ADR 0050), with staff (ADR 0051),
                 // with write proposals (ADR 0052), with workspace memory (ADR 0053), with Talk to Assistant (ADR 0054),
-                // or with Results to review (ADR 0058).
+                // with Results to review (ADR 0058), with Today actions (ADR 0059), or with Task proposals (ADR 0060).
                 workLevel = when {
+                    intent.getBooleanExtra(EXTRA_WORK18, false) -> WORK_TASK_PROPOSALS
+                    intent.getBooleanExtra(EXTRA_WORK17, false) -> WORK_TODAY_ACTIONS
                     intent.getBooleanExtra(EXTRA_WORK16, false) -> WORK_RESULT_REVIEW
                     intent.getBooleanExtra(EXTRA_WORK15, false) -> WORK_ASK_ROOT
                     intent.getBooleanExtra(EXTRA_WORK14, false) -> WORK_MEMORY
@@ -185,6 +189,12 @@ class MainActivity : ComponentActivity() {
 
         /** A bridge whose Results are `result` items, and whose `write` items take Revise (ADR 0058). */
         const val EXTRA_WORK16 = "work16"
+
+        /** A bridge that sends a Work item to the secretary and says the runs left today (ADR 0059). */
+        const val EXTRA_WORK17 = "work17"
+
+        /** A bridge whose assistant proposes Tasks that start in plan mode (ADR 0060). */
+        const val EXTRA_WORK18 = "work18"
 
         /** The failure and the last proposal are four days old, for Delete Old (ADR 0046). */
         const val EXTRA_OLD_ITEMS = "old-items"

@@ -76,7 +76,7 @@ val InboxItem.buttons: ItemButtons
         chooses = InboxAction.CHOOSE in answers,
     )
 
-private val DECISIONS = setOf(InboxAction.APPROVE, InboxAction.CONFIRM, InboxAction.REJECT, InboxAction.RETRY)
+private val DECISIONS = setOf(InboxAction.APPROVE, InboxAction.START_TASK, InboxAction.CONFIRM, InboxAction.REJECT, InboxAction.RETRY)
 
 /** The options a `choose` answers with, by index; empty when the item takes no `choose`. */
 val InboxItem.choices: List<ChatPrompt.Option>
@@ -84,10 +84,12 @@ val InboxItem.choices: List<ChatPrompt.Option>
 
 /**
  * What Ctrl+Shift+Enter sends (ADR 0033 §4a.3): the reply box's action while it has [text], else
- * the host's first answer, unless that is `choose`, `later` or a text answer.
+ * Start Task where the item proposes one (ADR 0060 §8), else the host's first answer, unless that
+ * is `choose`, `later` or a text answer.
  */
 fun InboxItem.mainAnswer(text: String = ""): InboxAction? {
     if (text.isNotBlank()) buttons.text?.let { return it }
+    startTaskAction?.let { return it }
     return answers.firstOrNull { it != InboxAction.READ }
         ?.takeIf { it != InboxAction.CHOOSE && it != InboxAction.LATER && !it.needsText }
 }

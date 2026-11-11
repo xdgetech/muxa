@@ -64,6 +64,9 @@ import tech.xdge.muxa.session.offered
 import tech.xdge.muxa.session.memoryOffered
 import tech.xdge.muxa.session.handOffTitle
 import tech.xdge.muxa.session.reviewPlaceholder
+import tech.xdge.muxa.session.isPlan
+import tech.xdge.muxa.session.startTaskAction
+import tech.xdge.muxa.session.startedTask
 
 /**
  * One Inbox item (docs/inbox.md, "The item screen"): the question and its source, the summary
@@ -91,7 +94,7 @@ fun ItemDetail(model: AppModel, id: String?, modifier: Modifier) {
             !model.usesItems -> InboxEmpty(model, OLDER_HOST, "item")
             item == null && model.inboxItems.isEmpty() -> InboxEmpty(model, NOTHING, "item")
             item == null -> Placeholder("Pick a question.")
-            waiting == null && item.kind == ItemKind.WRITE && item.task != null -> WriteStarted(model, item)
+            waiting == null && item.startedTask != null -> TaskStarted(model, item)
             waiting == null -> Placeholder("This question is answered.")
             else -> {
                 Column(
@@ -127,6 +130,8 @@ private fun ItemBody(model: AppModel, item: InboxItem) {
     WriteView(model, item)
     MemoryView(model, item)
     ResultReviewView(item)
+    ProposedTaskCard(item)
+    PlanNote(item)
     ItemAttachments(model, item)
     if (item.kind == ItemKind.ASK && item.prompt == null) {
         Text(
@@ -267,7 +272,9 @@ private fun AnswerBar(model: AppModel, item: InboxItem) {
 private fun Composer(model: AppModel, item: InboxItem, action: InboxAction, text: String, busy: Boolean) {
     val placeholder = when {
         action == InboxAction.ASK_AGENT -> "Ask the workspace's agent…"
+        item.isPlan -> "Keep planning & send…"
         item.kind == ItemKind.ASK -> "Deny, then tell the agent…"
+        item.kind == ItemKind.NEW_TASK -> "Tell the secretary what to change…"
         else -> item.reviewPlaceholder ?: "Reply to the agent…"
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -290,20 +297,27 @@ private val InboxAction.tag: String get() = wire
 /**
  * Labels name the result (ADR 0033 §4a, ADR 0040). A proposal keeps Approve and Reject; an
  * answer that changes the Task names it; ✓ is "Done" for TalkBack. On a `result` item, approve
- * hands off to the next member, and on a `write` item, reply is Revise (ADR 0058 §2, §4).
+ * hands off to the next member, and on a `write` item, reply is Revise (ADR 0058 §2, §4). The answer
+ * that starts a proposed Task is Start Task, and a plan item approves or keeps the plan (ADR 0060 §8).
  */
 fun InboxAction.title(item: InboxItem): String = when (this) {
-    InboxAction.APPROVE -> when (item.kind) {
-        ItemKind.PROPOSAL, ItemKind.WRITE, ItemKind.MEMORY -> "Approve…"
-        ItemKind.ASK -> "Allow"
-        ItemKind.RESULT -> item.handOffTitle ?: "Hand off"
+    InboxAction.APPROVE -> when {
+        item.startTaskAction == InboxAction.APPROVE -> "Start Task"
+        item.isPlan -> "Approve plan"
+        item.kind == ItemKind.PROPOSAL || item.kind == ItemKind.WRITE || item.kind == ItemKind.MEMORY -> "Approve…"
+        item.kind == ItemKind.ASK -> "Allow"
+        item.kind == ItemKind.RESULT -> item.handOffTitle ?: "Hand off"
         else -> "Approve"
     }
-    InboxAction.REJECT -> if (item.kind == ItemKind.ASK) "Deny" else "Reject"
-    InboxAction.REPLY -> when (item.kind) {
-        ItemKind.ASK -> "Deny & Send"
-        ItemKind.WRITE -> "Revise"
-        else -> "Send"
+    InboxAction.START_TASK -> "Start Task"
+    InboxAction.REJECT -> when {
+        item.isPlan -> "Keep planning"
+        item.kind == ItemKind.ASK -> "Deny"
+        else -> "Reject"
+    }
+    InboxAction.REPLY -> when {
+        item.isPlan -> "Keep planning & Send"
+        else -> replyTitle(item)
     }
     InboxAction.ACCEPT -> "Complete Task"
     InboxAction.KEEP_OPEN, InboxAction.DISMISS -> "Done"
@@ -318,9 +332,15 @@ fun InboxAction.title(item: InboxItem): String = when (this) {
     InboxAction.UNPROTECT -> "Unprotect"
 }
 
+private fun replyTitle(item: InboxItem): String = when (item.kind) {
+    ItemKind.ASK -> "Deny & Send"
+    ItemKind.WRITE -> "Revise"
+    else -> "Send"
+}
+
 val InboxItem.kindTitle: String
     get() = when (kind) {
-        ItemKind.ASK -> "Question"
+        ItemKind.ASK -> if (isPlan) "Plan" else "Question"
         ItemKind.REVIEW -> "Review"
         ItemKind.FAILURE -> "Failure"
         ItemKind.PROPOSAL -> "Proposal"
@@ -332,5 +352,6 @@ val InboxItem.kindTitle: String
         ItemKind.WRITE -> "Write"
         ItemKind.MEMORY -> "Memory"
         ItemKind.RESULT -> "Result"
+        ItemKind.NEW_TASK -> "Proposed Task"
         else -> kind.raw
     }

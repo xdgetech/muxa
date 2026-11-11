@@ -40,6 +40,7 @@ import tech.xdge.muxa.session.isClosed
 import tech.xdge.muxa.session.isPinned
 import tech.xdge.muxa.session.requestsOf
 import tech.xdge.muxa.session.taskItem
+import tech.xdge.muxa.session.workSend
 
 /**
  * One Work item, read with `get-work` on open: Captures → Request → Result → Tasks → the decision
@@ -152,7 +153,17 @@ private fun Actions(model: AppModel, item: WorkItem, busy: Boolean) {
         if (model.canCreateTasks) {
             TextButton({ model.startWorkTask(item) }, Modifier.testTag("work-start-task"), enabled = !busy) { Text("Start a Task") }
         }
+        SecretaryButton(model, item, busy)
     }
+}
+
+/** Send to the secretary (ADR 0059 §4): the text and this Work item go to the overall workspace's root Ask session, at `work:17`. */
+@Composable
+private fun SecretaryButton(model: AppModel, item: WorkItem, busy: Boolean) {
+    val send = workSend(item.id, model.state.secretary) ?: return
+    var open by remember(item.id) { mutableStateOf(false) }
+    TextButton({ open = true }, Modifier.testTag("work-send-secretary"), enabled = !busy) { Text("Send to the Secretary") }
+    if (open) TodaySendDialog(model, send, item.id) { open = false }
 }
 
 @Composable

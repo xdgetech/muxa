@@ -533,6 +533,76 @@ class FixtureTest {
         assertEquals("write", old.items[2].kind)
     }
 
+    /** ADR 0059: `start-session` types text about a Work item into the root Ask session, and `assistant` says the runs left today. */
+    @Test
+    fun todayActionsRoundTrip() {
+        val requests = lines("today-actions/requests.jsonl")
+        assertEquals(2, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("today-actions/messages.jsonl")
+        assertEquals(4, messages.size)
+        messages.forEach {
+            val message = Wire.decodeMessage(it)
+            assertFalse("fixture type is unknown: $it", message is Message.Unknown)
+            assertEquals(it, tree(it), tree(Wire.encode(message)))
+        }
+        val hello = Wire.decodeMessage(messages[0]) as Message.Hello
+        assertEquals(WORK_TODAY_ACTIONS, workLevel(hello.capabilities))
+        val assistant = (Wire.decodeMessage(messages[1]) as Message.InboxList).assistant!!
+        assertEquals(RunBudget(left = 2, max = 3), assistant.overallRuns)
+        val send = Wire.decodeRequest(requests[0]) as Request.StartSession
+        assertEquals(listOf("secretary", "w-7b8c9d0e"), listOf(send.workspace, send.work))
+        assertTrue(send.root && send.text != null && send.repo == null)
+        val plain = Wire.decodeRequest(requests[1]) as Request.StartSession
+        assertTrue(plain.work == null && plain.text != null)
+    }
+
+    /** ADR 0060: a Result and the secretary propose Tasks; Start Task is `approve`, or `start-task` beside a hand-off. */
+    @Test
+    fun taskProposalsRoundTrip() {
+        val requests = lines("task-proposals/requests.jsonl")
+        assertEquals(5, requests.size)
+        requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
+        val messages = lines("task-proposals/messages.jsonl").map { line ->
+            Wire.decodeMessage(line).also {
+                assertFalse("fixture type is unknown: $line", it is Message.Unknown)
+                assertEquals(line, tree(line), tree(Wire.encode(it)))
+            }
+        }
+        assertEquals(7, messages.size)
+        assertEquals(WORK_TASK_PROPOSALS, workLevel((messages[0] as Message.Hello).capabilities))
+        val items = (messages[1] as Message.InboxList).items
+        val alone = items[0].result!!.task!!
+        assertEquals(Triple("muxa", "muxa", "muxa-research"), Triple(alone.workspace, alone.repo, alone.worker))
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.REPLY, InboxAction.DISMISS, InboxAction.LATER), items[0].answers)
+        // Beside a hand-off, approve hands off and start-task starts the Task.
+        assertTrue(items[1].result!!.handoff != null && items[1].result!!.task != null)
+        assertEquals(listOf(InboxAction.APPROVE, InboxAction.START_TASK), items[1].answers.take(2))
+        val proposed = items[2]
+        assertEquals(ItemKind.NEW_TASK to "w-1a2b3c4d", proposed.kind to proposed.newTask?.work)
+        // Started: the item names the Task.
+        val started = (messages[5] as Message.InboxSaved).item!!
+        assertEquals(Triple(ItemState.ANSWERED, InboxAction.APPROVE, "t-7f3a2c"), Triple(started.state, started.answer, started.task))
+        assertEquals("w-1a2b3c4d", (messages[4] as Message.TaskSaved).record.work)
+        val propose = Wire.decodeRequest(requests[0]) as Request.ProposeTask
+        assertEquals(Triple("muxa", "muxa", "w-1a2b3c4d"), Triple(propose.workspace, propose.repo, propose.work))
+        val home = Wire.decodeRequest(requests[1]) as Request.ProposeTask
+        assertTrue(home.repo == null && home.work == null)
+        assertEquals(InboxAction.START_TASK, (Wire.decodeRequest(requests[3]) as Request.UpdateInbox).action)
+    }
+
+    /** A level 17 client knows no `new-task` kind and no `start-task`: it reads the list and drops the action it does not know. */
+    @Test
+    fun aLevel17ClientReadsTaskProposalsWithKnownAnswers() {
+        val line = lines("task-proposals/messages.jsonl")[1]
+        val old = Json { ignoreUnknownKeys = true }.decodeFromString(Level17List.serializer(), line)
+        assertEquals("new-task", old.items[2].kind)
+        assertEquals(listOf("approve", "reply", "dismiss", "later"), old.items[2].answers)
+        // Beside a hand-off, the only answer it does not know is start-task: its Approve hands off.
+        val level17 = InboxAction.entries.filter { it != InboxAction.START_TASK }.map { InboxAction.serializer().descriptor.getElementName(it.ordinal) }
+        assertEquals(listOf("start-task"), old.items[1].answers.filter { it !in level17 })
+    }
+
     @Test
     fun unknownWorkStatesAndDeliveriesStillDecode() {
         val line = """{"type":"work-saved","work":1,"entry":{"id":"w-00000001","rev":1,"title":"t","state":"blocked",""" +
@@ -775,3 +845,8 @@ private data class Level11Request(val delivery: Delivery, val run: String? = nul
 @Serializable private data class Level15Item(val kind: String, val summary: String? = null, val answers: List<InboxAction> = emptyList())
 
 @Serializable private data class Level15List(val items: List<Level15Item>)
+
+// What a level 17 client knows of an `inbox-list` with Task proposals: the answers as plain names.
+@Serializable private data class Level17Item(val kind: String, val answers: List<String> = emptyList())
+
+@Serializable private data class Level17List(val items: List<Level17Item>)

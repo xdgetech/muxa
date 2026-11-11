@@ -42,6 +42,7 @@ fun InboxDialogs(model: AppModel) {
         is InboxPrompt.ApproveMemory -> ApproveMemoryDialog(model, prompt.item, prompt.memory)
         is InboxPrompt.DeleteOld -> DeleteOldDialog(model, prompt)
         is InboxPrompt.RejectItem -> RejectDialog(model, prompt.item)
+        is InboxPrompt.ApproveInTerminal -> ApproveInTerminalDialog(model, prompt.item)
         null -> {}
     }
     model.inboxError?.let { error ->

@@ -36,7 +36,9 @@ import tech.xdge.muxa.app.canKeepPolicies
 import tech.xdge.muxa.app.canTalkToAssistant
 import tech.xdge.muxa.app.hasToday
 import tech.xdge.muxa.app.item
-import tech.xdge.muxa.app.openPlanRow
+import tech.xdge.muxa.app.doRow
+import tech.xdge.muxa.app.overallRuns
+import tech.xdge.muxa.app.rowItem
 import tech.xdge.muxa.app.planIsNew
 import tech.xdge.muxa.app.planNow
 import tech.xdge.muxa.app.planRowTitle
@@ -54,21 +56,23 @@ import tech.xdge.muxa.session.queue
 import tech.xdge.muxa.session.label
 import tech.xdge.muxa.session.marks
 import tech.xdge.muxa.session.planStatus
+import tech.xdge.muxa.session.rowVerb
 import tech.xdge.muxa.session.planning
 import tech.xdge.muxa.session.target
 
 // Today, above Decisions (ADR 0049 §5): the newest plan's rows. Its keys are row positions, so a
 // newer plan keeps the list's scroll; nothing here changes the selection.
 
-/** The header with New and Plan now, the newest plan's state, the rows, then the Due soon line. */
+/** The header with New and Re-rank, the runs left today, the newest plan's state, the rows, then the Due soon line. */
 fun LazyListScope.todaySection(model: AppModel) {
     if (!model.hasToday) return
     val plan = model.shownPlan
     val status = planStatus(model.state.plans)
     item(key = "h-today") { TodayHeader(model) }
+    model.overallRuns?.let { runs -> item(key = "today-runs") { TodayNote("Re-rank: ${runs.label}", "today-runs") } }
     status?.let { item(key = "today-status") { TodayNote(it, "today-status") } }
     when {
-        plan == null && status == null -> item(key = "today-empty") { TodayNote("No plan yet. Plan now asks the overall assistant.", "today-empty") }
+        plan == null && status == null -> item(key = "today-empty") { TodayNote("No plan yet. Re-rank asks the overall assistant.", "today-empty") }
         plan != null && plan.top.isEmpty() -> item(key = "today-empty") { TodayNote("Nothing to rank in the newest plan.", "today-empty") }
         plan != null && plan.isDone -> item(key = "today-done") { TodayNote("All done. A new plan follows when the budget allows.", "today-done") }
     }
@@ -108,7 +112,7 @@ private fun TodayHeader(model: AppModel) {
             if (model.canKeepPolicies) {
                 TextButton({ model.policiesShown = true }, Modifier.testTag("today-policies")) { Text("Policies") }
             }
-            TextButton({ model.planNowShown = true }, Modifier.testTag("today-plan-now"), enabled = !planning) { Text("Plan now") }
+            TextButton({ model.planNowShown = true }, Modifier.testTag("today-plan-now"), enabled = !planning) { Text("Re-rank") }
         }
     }
 }
@@ -122,23 +126,23 @@ private fun TodayNote(text: String, tag: String) = Text(
 )
 
 /**
- * The target's title, why, the minutes and the host's marks; Why opens the basis and what is missing.
- * At `work:11` the … menu moves the row and removes it for today. [index] of [count] open rows;
- * [isNext] marks the row to do next.
+ * What to do and the target's title, why, the minutes and the host's marks (ADR 0059 §1). A tap does
+ * the primary action; Details opens Do, the actions and the reasons. At `work:11` the … menu moves the
+ * row and removes it for today. [index] of [count] open rows; [isNext] marks the row to do next.
  */
 @Composable
 private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, count: Int, isNext: Boolean) {
     val target = row.target ?: return
     var why by remember(plan.id, target) { mutableStateOf(false) }
     val work = row.work?.let(model::workItem)
-    val title = model.planRowTitle(row)
+    val title = "${rowVerb(row, model.rowItem(row))} · ${model.planRowTitle(row)}"
     // A `delegate` the plan addressed to a staff member names it (ADR 0051 §7).
     val delegate = row.item?.let { model.item(it)?.delegate }?.takeIf { it.worker != null }
     val marks = work?.let(plan::marks).orEmpty()
     Column(Modifier.fillMaxWidth().testTag("today-row-$target")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(
-                Modifier.weight(1f).clickable { model.openPlanRow(row) }.padding(start = 16.dp, top = 10.dp, bottom = 10.dp).testTag("today-open-$target"),
+                Modifier.weight(1f).clickable { model.doRow(row) }.padding(start = 16.dp, top = 10.dp, bottom = 10.dp).testTag("today-open-$target"),
             ) {
                 if (isNext) {
                     Text(
@@ -146,7 +150,7 @@ private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, coun
                         color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium,
                     )
                 }
-                Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(title, Modifier.testTag("today-title-$target"), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 delegate?.let { Text("Asks ${it.addressee}", Modifier.testTag("today-staff-$target"), style = MaterialTheme.typography.labelMedium) }
                 Text(row.why, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
@@ -156,20 +160,14 @@ private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, coun
                     color = if (marks.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else Theme.attention,
                 )
             }
-            TextButton({ why = !why }, Modifier.testTag("today-why-$target")) { Text(if (why) "Hide" else "Why") }
+            TextButton({ why = !why }, Modifier.testTag("today-why-$target")) { Text(if (why) "Hide" else "Details") }
             if (model.canKeepPolicies) TodayRowMenu(model, target, index, count)
         }
-        if (why) {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp).testTag("today-why-text-$target"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                DetailNote("Next: ${row.next}")
-                for (b in row.basis) BasisLine(model, b)
-                for (m in row.missing) DetailNote("Would help: $m")
-            }
-        }
+        if (why) RowDetail(model, row, target)
     }
 }
 
-/** Plan now with the time the user has, optional. The plan comes when the overall assistant is done. */
+/** Re-rank (ADR 0059 §5) with the time the user has, optional. The plan comes when the overall assistant is done. */
 @Composable
 fun PlanNowDialog(model: AppModel) {
     if (!model.planNowShown) return
@@ -185,10 +183,11 @@ fun PlanNowDialog(model: AppModel) {
     }
     AlertDialog(
         onDismissRequest = { if (!sending) model.planNowShown = false },
-        title = { Text("Plan Now") },
+        title = { Text("Re-rank") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("The overall assistant ranks what to do next. The plan shows under Today when it is ready.")
+                Text("The overall assistant re-ranks the queue from what is open now. The plan shows under Today when it is ready.")
+                model.overallRuns?.let { Text("It uses one run: ${it.label}.", Modifier.testTag("plan-now-runs")) }
                 OutlinedTextField(
                     minutes, {
                         minutes = it
@@ -212,7 +211,7 @@ fun PlanNowDialog(model: AppModel) {
                         sending = false
                         if (error == null) model.planNowShown = false
                     }
-                }, Modifier.testTag("plan-now-confirm"), enabled = problem == null) { Text("Plan") }
+                }, Modifier.testTag("plan-now-confirm"), enabled = problem == null) { Text("Re-rank") }
             }
         },
         dismissButton = { TextButton({ model.planNowShown = false }, enabled = !sending) { Text("Cancel") } },
