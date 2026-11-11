@@ -14,6 +14,7 @@ mod lifecycle;
 mod parser;
 mod pending;
 mod roles;
+mod screen_text;
 mod sizing;
 mod snapshot;
 
@@ -33,5 +34,6 @@ pub use lifecycle::{
     set_session_option, shell_after_exit, switch_client,
 };
 pub use parser::{Notification, Reply};
+pub use screen_text::screen_shows;
 pub use sizing::{Grid, follows_device, release_size, resize_client, take_size, window_size};
 pub use snapshot::{Screen, snapshot};

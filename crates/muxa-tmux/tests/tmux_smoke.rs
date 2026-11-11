@@ -223,6 +223,40 @@ async fn snapshot_and_input_round_trip() {
     ));
 }
 
+/// A colored text, and one the terminal wrapped, read as plain text.
+#[tokio::test]
+async fn screen_shows_finds_colored_and_wrapped_text() {
+    let server = Server::start();
+    let pane = server.first_pane();
+    let (client, _notes) = Client::attach(&server.options(), None).unwrap();
+    let long = format!("{}wrapped-end", "x".repeat(75));
+    send_text(
+        &client,
+        pane,
+        &format!("clear; printf '\\033[1;32mGreen\\033[0m mark\\n{long}\\n'"),
+    )
+    .await
+    .unwrap();
+    muxa_tmux::send_keys(&client, pane, &["Enter".into()])
+        .await
+        .unwrap();
+    wait_for(|| {
+        server
+            .tmux(&["capture-pane", "-p", "-t", &pane.to_string()])
+            .contains("Green mark")
+    })
+    .await;
+
+    let shows = |text: &'static str| muxa_tmux::screen_shows(&client, pane, text);
+    assert!(shows("Green mark").await.unwrap());
+    assert!(shows("xxxwrapped-end").await.unwrap(), "-J joins the wrap");
+    assert!(!shows("not on the screen").await.unwrap());
+    assert!(matches!(
+        muxa_tmux::screen_shows(&client, PaneId::new(9999), "x").await,
+        Err(Error::NoPane(_))
+    ));
+}
+
 #[tokio::test]
 async fn never_changes_the_window_size() {
     let server = Server::start();
