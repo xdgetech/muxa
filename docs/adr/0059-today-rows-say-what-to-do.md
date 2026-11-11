@@ -99,3 +99,19 @@ The iOS and Android apps show the same layout in a follow-up:
   - The plan file carries a verb per row: the agent would name actions the client cannot do, and an old plan has none.
   - A new request `ask-secretary`: a second way into the root Ask session next to `start-session` with `root`.
   - Typing the Work item into the secretary's pane from muxa for tmux: it skips the host's checks for a menu or a person typing, and the apps could not do it.
+
+## Addendum (2026-11-11): a Work item's Enter is a menu
+
+The user: "for the work, it says there is no session and i cannot do anything". Enter on a Work row in muxa for tmux took the item path and said "This item has no session to open". §3 only moved the cursor from Today to the Work row, so Enter there had nothing to do. tmux could not start a Task for a Work item either, although `create-task` takes `work` (ADR 0048).
+
+This amends §3 for muxa for tmux:
+
+1. Enter on a Work row, in the Work section or on Today, opens a menu built from the item. Each line says what it does:
+   - Open its Task: one line per linked Task (`tasks[]`) with a live session, from `muxa-cli tasks --json`.
+   - Read the result: one line per open `result` item whose `result.work` is the item (ADR 0058). It moves to that item.
+   - `n` Start a Task from it: the New Task form with the item's workspace and title. It sends `muxa-cli task new --work WORK`, so the Task is linked to the item.
+   - `a` Ask the assistant, `s` Send to the secretary (level 17), `d` Done, `l` Later, `P` Pin or Unpin.
+2. The keys also work on the row without the menu. The row's preview leads with `Enter  Actions` and lists `n Start a Task`.
+3. `a` asks what to find out and the scope (research, compare or draft) after the staff member, and sends them as `--purpose -`. Before, it sent no purpose, and the host ran the request's last purpose again as a new version.
+
+The apps keep §3 until their follow-up (§7).

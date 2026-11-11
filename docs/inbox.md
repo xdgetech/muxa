@@ -114,7 +114,7 @@ Unsorted
 - **Result ready** replaces the delivery when the newest Result was not shown on this device yet, on a host below `work:16` only. The device keeps the ids and versions it showed, never the Result's text. Opening the Work item clears it. With `work:16` a new Result is an unread `result` item in Decisions instead (ADR 0058).
 - The Work detail shows the Captures' full texts, each request with its delivery and Results, Cancel, Ask Again, and Open Session while the run lives. Result files are paths; the Reader cannot open them yet.
 - `+` opens Capture: text, an optional workspace, **Save**, **Ask Assistant** and "Start a Task instead…". A host below `work:9` keeps New Task.
-- muxa for tmux: `prefix + T` lists Work rows with `l` Later, `d` complete and `a` ask.
+- muxa for tmux: `prefix + T` lists Work rows. `Enter` opens a menu: Open its Task (a linked Task with a live session), Read the result (an open `result` item of it), `n` Start a Task from it (the New Task form with its workspace and title, `muxa-cli task new --work WORK`), `a` ask, `s` Send to the secretary, `d` complete, `l` Later and `P` Pin. The same keys work on the row. `a` asks what to find out and the scope, and sends them as the request's purpose.
 
 ## Today, proposals and pins (ADR 0049)
 
@@ -158,7 +158,7 @@ also:  c Complete Task   d ✓ Done   l Later   o Go to the item
 plan:  K/J move   x not today   t Re-rank (2 of 3 runs left today)
 ```
 
-1. **Enter** is the main action. A Task's review or menu opens its session. Any other item, and a Work item, goes to its row in the list.
+1. **Enter** is the main action. A Task's review or menu opens its session. A Work item opens its menu (the Work section, above). Any other item goes to its row in the list.
 2. **s** sends text, and names who gets it: the Task's agent (`reply`; on a menu, it denies first), the staff member who wrote a result, the writer of a draft (Revise), the workspace's Ask session with a briefing (`ask-agent`), or, for a Work item with `work:17`, the secretary with the Work item (`muxa-cli ask --root --workspace <overall> --work WORK --text T`).
 3. **also** lists the target's other keys.
 4. **plan** changes the queue, not the target. **Re-rank** (`t`, `muxa-cli plan now`) ranks the queue again from what is open now. Each one is a run of the overall workspace's `max_runs_per_day`. With `work:17`, the host sends `assistant.overallRuns`, and the line says how many are left today.
@@ -188,7 +188,7 @@ With `work:12`, a workspace's assistant can be a staff of several members. Its W
 3. **Hand-off items** in Decisions have kind `handoff`, on a host below `work:16`. The title names both staff members; the summary is the hand-off's purpose. **Approve** starts the next step, once. **Reject** ends the chain with the Results it has. **Later** moves it down. A budget reached keeps the item open with the limit. With `work:16` the step's `result` item offers the hand-off instead (below).
 4. **Today**: a `delegate` row names the staff member when the plan picked one.
 
-A host below `work:12` shows a request's newest step as the request. muxa for tmux (`prefix + T`): `a` on a Work row asks for the staff member (`Enter` for the lead). `handoff` items take `a` Approve, `r` Reject and `l` Later.
+A host below `work:12` shows a request's newest step as the request. muxa for tmux (`prefix + T`): `a` on a Work row asks for the staff member (`Enter` for the lead), then for the question. `handoff` items take `a` Approve, `r` Reject and `l` Later.
 
 ## Write proposals (ADR 0052)
 

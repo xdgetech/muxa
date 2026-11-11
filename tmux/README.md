@@ -231,10 +231,17 @@ apps show, with a goal and a status.
     count. It deletes every item older than that, open or closed, except
     protected ones. A protected item still takes `l`, `d` and every answer.
   - With `work` level 9, the open Work items (`◆`) and the unsorted Captures
-    (`✎`) have their sections. On a Work item, `l` Later moves it below the others
-    and `d` completes it; its Tasks keep running. `a` asks its workspace's
-    assistant (`muxa-cli assist WORK`, scope research); asking again adds a
-    version and ends the older run. A Work row that was asked shows its newest
+    (`✎`) have their sections. `Enter` on a Work item opens its menu, each
+    line saying what it does: Open its Task (for each linked Task with a live
+    session), Read the result (for each open `📋` item of it), `n` Start a
+    Task from it, and the keys below. The keys also work on the row itself.
+    `n` opens the New Task form with the item's workspace and title, and the
+    Task is for the item (`muxa-cli task new --work WORK`). `l` Later moves
+    it below the others and `d` completes it; its Tasks keep running. `a`
+    asks its workspace's assistant: it asks what to find out and the scope
+    (`Enter` research, `c` compare, `d` draft), then sends both (`muxa-cli
+    assist WORK --scope S --purpose -`); an empty question asks nothing.
+    Asking again adds a version and ends the older run. A Work row that was asked shows its newest
     request's delivery, such as `asked: processing`. The item below the list
     shows the request and the newest Result's summary; `muxa-cli assist show
     WORK` prints all of it. A new result is a `📋` item in Decisions (with
@@ -256,8 +263,8 @@ apps show, with a goal and a status.
     deny`, `Read result`, `Check text to send`, `Decide`, `Fix`, `Start` (a
     Work item), or `Open`. Its preview starts with `Do:` (the plan's next
     step), then `Enter`, `s`, `also` and `plan`. `Enter` opens the session of
-    a Task's review or menu; on any other row it goes to the Work item or
-    Inbox item in the list, as `o` does. `s` sends text and names who gets
+    a Task's review or menu, and a Work item's menu (above); on any other row
+    it goes to the Inbox item in the list, as `o` does. `s` sends text and names who gets
     it: the Task's agent, the staff member who wrote a result, the writer of
     a draft (Revise), the workspace's Ask session with a briefing, or, with
     `work` level 17, the secretary with the Work item (`muxa-cli ask --root
@@ -292,7 +299,7 @@ apps show, with a goal and a status.
     members. `a` on a Work item whose workspace has more than one member asks
     which member takes it, numbered with the lead marked; a number or a name
     picks one (`muxa-cli assist WORK --worker NAME`), and `Enter` lets the lead
-    decide. The item below the list shows the request's steps, one row per
+    decide. Then it asks for the question, as above. The item below the list shows the request's steps, one row per
     member, with the member each step hands on to. `👥` items are hand-offs
     from a host before level 16: one member asks to pass the request to the
     next. `a` approves and starts the next step, `r` rejects and ends the
