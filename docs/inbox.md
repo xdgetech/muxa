@@ -163,7 +163,9 @@ plan:  K/J move   x not today   t Re-rank (2 of 3 runs left today)
 3. **also** lists the target's other keys.
 4. **plan** changes the queue, not the target. **Re-rank** (`t`, `muxa-cli plan now`) ranks the queue again from what is open now. Each one is a run of the overall workspace's `max_runs_per_day`. With `work:17`, the host sends `assistant.overallRuns`, and the line says how many are left today.
 
-Android (ADR 0059 §7): a row reads `<verb> · <title>`. A tap is the main action. **Details** opens Do, the main action's button, Send with its receiver ("Send to the secretary (secretary), with this Work item" at `work:17`), then Why, Time, Basis and Would help. A row whose target takes no text says so instead of Send. Work detail has **Send to the Secretary** at `work:17`. A Work row's tap opens Work detail; Android has no Work menu. The iOS app keeps the layout above until its follow-up.
+The iPad and iPhone app, with `work:17`: a row reads `Review changes · <title>`, then why, **Do:** and the minutes. Under it, the main button (Open Session for a Task's review or menu, else Open Result, Open Work Item…) and **Send…**, whose prompt names who gets the text. Tapping the row still opens its item. Work detail has **Send to the Secretary…**. Plan Now is **Re-rank**, with "2 of 3 runs left today".
+
+Android (ADR 0059 §7): a row reads `<verb> · <title>`. A tap is the main action. **Details** opens Do, the main action's button, Send with its receiver ("Send to the secretary (secretary), with this Work item" at `work:17`), then Why, Time, Basis and Would help. A row whose target takes no text says so instead of Send. Work detail has **Send to the Secretary** at `work:17`. A Work row's tap opens Work detail; Android has no Work menu.
 
 ## Policies, Today order and hypotheses (ADR 0050)
 

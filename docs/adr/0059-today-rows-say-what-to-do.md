@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-11-11. It amends the presentation of ADR 0049 §5 (a row shows its title, why, minutes and next step) and ADR 0057 §2 (the open rows, Next). It renames Plan Now to Re-rank in muxa for tmux and `muxa-cli`'s help. Hosts advertise `work:17`. muxa for tmux and the Android client are built; the iOS client is a follow-up (§7).
+Accepted on 2026-11-11. It amends the presentation of ADR 0049 §5 (a row shows its title, why, minutes and next step) and ADR 0057 §2 (the open rows, Next). It renames Plan Now to Re-rank in muxa for tmux and `muxa-cli`'s help. Hosts advertise `work:17`. muxa for tmux, the Android client and the iOS client are built.
 
 ## Context
 
