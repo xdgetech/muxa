@@ -37,13 +37,15 @@ today_inbox() {
   ' "$ROOT/../protocol/fixtures/items/messages.jsonl" "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }
 
-# A muxa-cli that prints $ITEMS for every call and logs one line per call.
+# A muxa-cli that logs one line per call, keeps a --purpose - on stdin in
+# bin/stdin, and prints bin/out-<command>, else $ITEMS.
 fake_cli() {
   mkdir -p "$TMPDIR/bin"
   cat >"$TMPDIR/bin/muxa-cli" <<FAKE
 #!/bin/sh
 (shift 2; echo "\$*") >>"$TMPDIR/bin/calls"
-cat "$ITEMS"
+case " \$* " in *" --purpose - "*) cat >"$TMPDIR/bin/stdin" ;; esac
+if [ -f "$TMPDIR/bin/out-\$3" ]; then cat "$TMPDIR/bin/out-\$3"; else cat "$ITEMS"; fi
 FAKE
   chmod +x "$TMPDIR/bin/muxa-cli"
   tx set-option -g @agents_muxa_cli "$TMPDIR/bin/muxa-cli"
@@ -85,7 +87,7 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$out" != *"Next:"* ]]
   out="$(plain_view today:2 "$ITEMS")"
   [[ "$out" == *$'Enter  Open the Task (allow or deny)\ns      Deny & send to the Task\'s agent…\nalso:  a Allow   r Deny   l Later   o Go to the item'* ]]
-  [[ "$(plain_view today:8 "$ITEMS")" == *$'Enter  Open the Work item\ns      Send to the secretary (secretary), with this Work item…\nalso:  d Complete   l Later   a Ask Assistant   P Pin'* ]]
+  [[ "$(plain_view today:8 "$ITEMS")" == *$'Enter  Actions: open its Task, start one, ask, send…\ns      Send to the secretary (secretary), with this Work item…\nalso:  n Start a Task   d Complete   l Later   a Ask Assistant   P Pin'* ]]
   [[ "$(plain_view today: "$ITEMS")" == *"t Re-rank: re-rank the queue from what is open now (2 of 3 runs left today)"* ]]
 }
 
@@ -103,16 +105,19 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   today_inbox 16 >"$TMPDIR/16.json"
   [ "$(inbox key w-7b8c9d0e s "$TMPDIR/16.json")" = "" ]
   [[ "$(plain_view today:8 "$TMPDIR/16.json")" == *"s      Send to the secretary needs muxa work level 17"* ]]
-  [[ "$(plain_view w-7b8c9d0e "$ITEMS")" == *"P Pin   s Send to the secretary"* ]]
+  [[ "$(plain_view w-7b8c9d0e "$ITEMS")" == *"Enter  Actions   n Start a Task   l Later   d Complete   a Ask Assistant   P Pin   s Send to the secretary"* ]]
   [[ "$(plain_view w-7b8c9d0e "$TMPDIR/16.json")" != *"s Send to the secretary"* ]]
 }
 
-@test "Enter on a Today row opens a Task's review or menu, else moves to the target" {
+@test "Enter on a Today row opens a Task's review or menu, a Work item's menu, else moves to the target" {
   [ "$(inbox enter today:1 "$ITEMS")" = $'session:$8\ti-2c3d4e5f' ]
   [ "$(inbox enter today:2 "$ITEMS")" = $'session:$7\ti-0a1b2c3d' ]
   [ "$(inbox enter today:3 "$ITEMS")" = focus:i-9c0d1e2f ]
   [ "$(inbox enter today:6 "$ITEMS")" = focus:i-3d4e5f6a ]
-  [ "$(inbox enter today:8 "$ITEMS")" = focus:w-7b8c9d0e ]
+  [ "$(inbox enter today:8 "$ITEMS")" = work:w-7b8c9d0e ]
+  # A Work item no longer listed: the row is all there is.
+  jq -c '.workItems |= map(select(.id != "w-7b8c9d0e"))' "$ITEMS" >"$TMPDIR/g.json"
+  [ "$(inbox enter today:8 "$TMPDIR/g.json")" = focus:w-7b8c9d0e ]
   [ "$(inbox enter today: "$ITEMS")" = "" ]
   # A closed target opens nothing.
   jq -c '.plans[0].top[0].targetState = "answered"' "$ITEMS" >"$TMPDIR/c.json"
@@ -125,12 +130,80 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [[ "$(plain_view today:1 "$TMPDIR/n.json")" == *$'plan:  K/J move   x not today   t Re-rank\n'* ]]
 }
 
-@test "prefix+T: Enter on a Work row moves to it; s sends it to the secretary" {
+# The Work item of row 8, with Tasks t-000001 (a live session) and t-000002
+# (none), and muxa-cli tasks --json for them.
+linked() {
+  jq -c '.workItems |= map(if .id == "w-7b8c9d0e" then .tasks = ["t-000001", "t-000002"] else . end)' "$ITEMS"
+}
+TASKS='{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[
+ {"group":"running","record":{"id":"t-000001","title":"Ask vendor B"},"session":{"id":"$7","name":"ask-b"}},
+ {"group":"no-agent","record":{"id":"t-000002","title":"Old try"}},
+ {"group":"running","record":{"id":"t-000009","title":"Other work"},"session":{"id":"$9","name":"other"}}]}'
+
+@test "a Work item's menu: no Task, a live Task, an open result" {
+  out="$(inbox actions w-7b8c9d0e "$ITEMS" | cut -f1)"
+  [ "$out" = "$(printf '%s\n' task:new assist secretary work:done work:later work:pin)" ]
+  [[ "$(inbox actions w-7b8c9d0e "$ITEMS" | cut -f2)" == "n  Start a Task from it: the New Task form, with its workspace and title"* ]]
+  linked >"$TMPDIR/l.json"
+  printf '%s' "$TASKS" >"$TMPDIR/tasks.json"
+  out="$(inbox actions w-7b8c9d0e "$TMPDIR/l.json" "$TMPDIR/tasks.json")"
+  [ "$(printf '%s\n' "$out" | head -n 1)" = $'goto:$7\t   Open its Task: Ask vendor B' ]
+  [ "$(printf '%s\n' "$out" | grep -c '^goto:')" = 1 ]
+  # An open result for the item: Read the result moves to it.
+  jq -c '.items[2].result.work = "w-7b8c9d0e"' "$ITEMS" >"$TMPDIR/r.json"
+  out="$(inbox actions w-7b8c9d0e "$TMPDIR/r.json")"
+  [ "$(printf '%s\n' "$out" | head -n 1 | cut -f1)" = focus:i-9c0d1e2f ]
+  [[ "$(printf '%s\n' "$out" | head -n 1)" == *"Read the result: lisk-strategist asks"* ]]
+  # Below level 17 there is no s; a pinned item offers Unpin.
+  today_inbox 16 | jq -c '.workItems |= map(.pinnedAt = 1)' >"$TMPDIR/16.json"
+  out="$(inbox actions w-7b8c9d0e "$TMPDIR/16.json" | cut -f1)"
+  [ "$out" = "$(printf '%s\n' task:new assist work:done work:later work:unpin)" ]
+  [ "$(inbox key w-7b8c9d0e n "$ITEMS")" = task:new ]
+}
+
+@test "prefix+T: Enter on a Today Work row opens its menu; n starts a Task for it" {
   fake_cli
+  new_sid="$(tx new-session -d -P -F '#{session_id}' -s started)"
+  printf '%s' "$TASKS" >"$TMPDIR/bin/out-tasks"
+  printf '{"record":{"id":"t-00000a"},"session":{"id":"%s","name":"started"}}\n' "$new_sid" >"$TMPDIR/bin/out-task"
   attach
   key C-b T
   sleep 1
   # The cursor starts on today:; the Work item's row, today:8, is 8 down.
+  key j j j j j j j j
+  key Enter
+  sleep 0.5
+  # The menu's first line: Start a Task from it.
+  key Enter
+  sleep 1.5
+  key -l 'no repo'
+  key Enter
+  key Enter              # title: the Work item's
+  key Enter              # goal: the title
+  wait_for 'grep -q "^task new --workspace work --title Compare vendor offers --goal Compare vendor offers --json --work w-7b8c9d0e$" "$TMPDIR/bin/calls"'
+  wait_for '[ "$(tx display-message -p -c "$C" "#{session_name}")" = started ]'
+}
+
+@test "prefix+T: Enter on a Work row opens its menu, and its Task's line goes there" {
+  fake_cli
+  sid="$(tx new-session -d -P -F '#{session_id}' -s ask-b)"
+  linked | jq -c '.plans = [] | .items = [] | .assistant.overall = null | .workItems |= map(select(.id == "w-7b8c9d0e"))' >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  printf '%s' "$TASKS" | jq -c --arg sid "$sid" '.tasks[0].session.id = $sid' >"$TMPDIR/bin/out-tasks"
+  attach
+  key C-b T
+  sleep 1
+  key Enter
+  sleep 1.5
+  key Enter
+  wait_for '[ "$(tx display-message -p -c "$C" "#{session_name}")" = ask-b ]'
+  ! grep -q "^inbox answer" "$TMPDIR/bin/calls"
+}
+
+@test "prefix+T: s sends a Work item to the secretary; d in its menu completes it" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
   key j j j j j j j j
   key s
   sleep 0.5
@@ -141,4 +214,32 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   key Enter
   key d
   wait_for 'grep -q "^work done w-7b8c9d0e --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: a asks for the question and the scope, and sends them" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key j j j j j j j j
+  key a
+  sleep 0.5
+  key -l 'Which offer has EU hosting?'
+  key Enter
+  key c
+  wait_for 'grep -q "^assist w-7b8c9d0e --scope compare --purpose - --json$" "$TMPDIR/bin/calls"'
+  [ "$(cat "$TMPDIR/bin/stdin")" = "Which offer has EU hosting?" ]
+}
+
+@test "prefix+T: a with an empty question asks nothing" {
+  fake_cli
+  attach
+  key C-b T
+  sleep 1
+  key j j j j j j j j
+  key a
+  sleep 0.5
+  key Enter
+  sleep 1
+  ! grep -q "^assist" "$TMPDIR/bin/calls"
 }

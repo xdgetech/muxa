@@ -31,6 +31,7 @@ fake_cli() {
   cat >"$TMPDIR/bin/muxa-cli" <<FAKE
 #!/bin/sh
 (shift 2; echo "\$*") >>"$TMPDIR/bin/calls"
+case " \$* " in *" --purpose - "*) cat >"$TMPDIR/bin/stdin" ;; esac
 cat "$ITEMS"
 FAKE
   chmod +x "$TMPDIR/bin/muxa-cli"
@@ -90,7 +91,7 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [ -z "$(printf '2\n' | inbox worker w-8b9c0d1e "$TMPDIR/one.json" 2>&1)" ]
 }
 
-@test "prefix+T: a on a Work item asks for the member and passes it" {
+@test "prefix+T: a on a Work item asks for the member and the question, and passes both" {
   fake_cli
   # The Work item is the first row: no Today, no items.
   jq -c '.items = [] | .plans = [] | .assistant.overall = null' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
@@ -100,5 +101,9 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   key a
   sleep 0.5
   key 2 Enter
-  wait_for 'grep -q "^assist w-8b9c0d1e --worker lisk-strategist --json$" "$TMPDIR/bin/calls"'
+  key -l 'Does option B fit the gateway?'
+  key Enter
+  key Enter              # scope: research
+  wait_for 'grep -q "^assist w-8b9c0d1e --worker lisk-strategist --scope research --purpose - --json$" "$TMPDIR/bin/calls"'
+  [ "$(cat "$TMPDIR/bin/stdin")" = "Does option B fit the gateway?" ]
 }

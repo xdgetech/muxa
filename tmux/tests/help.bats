@@ -37,7 +37,9 @@ teardown() { teardown_server; }
   run "$ROOT/scripts/help.sh"
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"A Today row names what to do: Review changes, Read result, Start..."* ]]
-  [[ "$out" == *"  Enter          on a Today row: open a Task's review or menu, else go to its item"* ]]
+  [[ "$out" == *"  Enter          on a Today row: open a Task's review or menu, a Work item's menu, else go to its item"* ]]
+  [[ "$out" == *"  Enter          on a Work item: its menu: open its Task, read its result, start a Task, ask..."* ]]
+  [[ "$out" == *"  n              on a Work item: New Task form with its workspace and title, for the item"* ]]
   [[ "$out" == *"  s              on a Today row: send to whoever it names"* ]]
 }
 

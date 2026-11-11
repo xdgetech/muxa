@@ -2,13 +2,14 @@
 # Tasks through muxa, when it is installed on this host: the Inbox popup, and
 # new tasks that are muxa task records, the same ones its iPad and phone apps
 # show. muxa owns the records and the Inbox rule; this only renders them.
-# Usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> [worker]
+# Usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> [worker] [work]
 #        muxa.sh close-task <task id> <done|dropped>
 #        muxa.sh repo-rows <workspace> <default repo> [none] | ask-rows <workspace> <default repo>
 #        muxa.sh worker-rows <workspace> | start-ask <workspace> <repo>
 #        muxa.sh inbox <client> [item] | new <client> <repo> | ask <client> <repo>  (open a popup)
 #        muxa.sh cli <muxa-cli args> | goto <client> <session id>
 #        muxa.sh inbox-ui <client> | form <client> <repo> | ask-ui <client> <json file> <repo>
+#        muxa.sh work-form <client> <work id> <workspace> <title>  (fails when no Task started)
 set -u
 . "$(dirname "$0")/lib.sh"
 
@@ -79,7 +80,7 @@ EOF
 # Task first, then waits until the agent got its start prompt; that wait goes
 # on in the background, immune to the popup closing.
 create() {
-  local ws="$1" repo="$2" branch="$3" title="$4" goal="${5:-}" worker="${6:-}" cli line err
+  local ws="$1" repo="$2" branch="$3" title="$4" goal="${5:-}" worker="${6:-}" work="${7:-}" cli line err
   cli="$(muxa_cli)" || { fail "muxa-cli is not installed"; return 1; }
   [ -n "$goal" ] || goal="$title"
   set -- task new --workspace "$ws" --title "$title" --goal "$goal" --json
@@ -87,6 +88,8 @@ create() {
   # Without a branch, a work:2 host names one after the title.
   [ -n "$repo" ] && [ -n "$branch" ] && set -- "$@" --branch "$branch"
   [ -n "$worker" ] && set -- "$@" --worker "$worker"
+  # The Task is for this Work item (ADR 0048).
+  [ -n "$work" ] && set -- "$@" --work "$work"
   err="$(agents_run_dir)/muxa-$$.err"
   exec 3< <(nohup "$cli" --bridge "$(bridge_cmd "$cli")" "$@" </dev/null 2>"$err" 3>&-)
   IFS= read -r line <&3 || line=""
@@ -281,21 +284,29 @@ save_capture() {
   fi
 }
 
+# The New Task form. With WORK set (work_form), it skips the text, starts
+# with WORK_WS and WORK_TITLE, and links the Task to the Work item.
 form() {
-  local client="$1" repo="$2" json spaces ws branch="" title goal sid w2="" workers worker=""
+  local client="$1" repo="$2" json spaces ws branch="" title goal sid w2="" workers worker="" def
   json="$(tasks 2>/dev/null)" || json=""
   spaces="$(printf '%s' "$json" | ws_names)"
   if [ -z "$spaces" ]; then
+    [ -z "${WORK:-}" ] || { echo "muxa lists no workspace, so it cannot start a Task for a Work item."; pause; return 1; }
     plain_form "$client" "$repo"
     return
   fi
   SEED=""
-  if printf '%s' "$json" | work_at 9; then
+  if [ -n "${WORK:-}" ]; then
+    SEED="$WORK_TITLE"
+    echo "A Task for the Work item $WORK: $WORK_TITLE"
+  elif printf '%s' "$json" | work_at 9; then
     capture_first "$json" "$spaces" "$repo" || return 0
   fi
   printf '%s' "$json" | work2 && w2=1
   echo "A muxa task: the same record on every device. Workspaces: $spaces"
-  ws="$(choose_ws "$spaces" "$(default_ws "$json" "$repo")")" || return 0
+  def="$(default_ws "$json" "$repo")"
+  case " $spaces " in *" ${WORK_WS:-} "*) [ -z "${WORK_WS:-}" ] || def="$WORK_WS" ;; esac
+  ws="$(choose_ws "$spaces" "$def")" || return 0
   repo="$(pick_repo "$(repo_rows "$json" "$ws" "$repo" none)" "Enter pick  - no repo, in the workspace  Esc cancel")" || return 0
   [ "$repo" = - ] && repo=""
   [ -n "$repo" ] && echo "repo: $repo"
@@ -316,12 +327,22 @@ form() {
     echo "agent: $worker"
   fi
   echo "Starting..."
-  if sid="$(create "$ws" "$repo" "$branch" "$title" "$goal" "$worker" 2>&1)" && [ -n "$sid" ]; then
+  if sid="$(create "$ws" "$repo" "$branch" "$title" "$goal" "$worker" "${WORK:-}" 2>&1)" && [ -n "$sid" ]; then
     go "$client" "$sid"
+    STARTED=1
   else
     printf '%s\nPress Enter.\n' "${sid:-muxa started the task, but it has no session}"
     read -r _
   fi
+}
+
+# n on a Work item in the Inbox (inbox.sh): the New Task form for it. Fails
+# when no Task started, so the Inbox stays open.
+work_form() {
+  STARTED=""
+  WORK="$2" WORK_WS="$3" WORK_TITLE="$4"
+  form "$1" ""
+  [ -n "$STARTED" ]
 }
 
 # Workspace names: plain strings from older muxa-cli, else {name, root?, repos?}.
@@ -500,7 +521,7 @@ case "${1:-}" in
   available) muxa_cli >/dev/null ;;
   tasks) tasks ;;
   rows) rows ;;
-  create) shift; create "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}" ;;
+  create) shift; create "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}" "${7:-}" ;;
   close-task) close_task "${2:?task id}" "${3:?done or dropped}" ;;
   inbox) inbox "${2:?client}" "${3:-}" ;;
   cli) shift; run_muxa "$@" ;;
@@ -508,6 +529,7 @@ case "${1:-}" in
   inbox-ui) inbox_ui "${2:?client}" ;;
   new) new "${2:?client}" "${3:-}" ;;
   form) tty_utf8; form "${2:?client}" "${3:-}" ;;
+  work-form) tty_utf8; work_form "${2:?client}" "${3:?work id}" "${4:-}" "${5:?title}" ;;
   repo-rows) repo_rows "$(cat)" "${2:?workspace}" "${3:-}" "${4:-}" ;;
   ask-rows) ask_rows "$(cat)" "${2:?workspace}" "${3:-}" ;;
   worker-rows) worker_rows "$(cat)" "${2:?workspace}" ;;

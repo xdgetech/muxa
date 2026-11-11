@@ -22,6 +22,7 @@ fake_cli() {
   cat >"$TMPDIR/bin/muxa-cli" <<FAKE
 #!/bin/sh
 (shift 2; echo "\$*") >>"$TMPDIR/bin/calls"
+case " \$* " in *" --purpose - "*) cat >"$TMPDIR/bin/stdin" ;; esac
 cat "$ITEMS"
 FAKE
   chmod +x "$TMPDIR/bin/muxa-cli"
@@ -324,7 +325,11 @@ work_inbox() {
   key C-b T
   sleep 1
   key a
-  wait_for 'grep -q "^assist w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
+  key -l 'Which steps can merge?'
+  key Enter
+  key d                  # scope: draft
+  wait_for 'grep -q "^assist w-6a7b8c9d --scope draft --purpose - --json$" "$TMPDIR/bin/calls"'
+  [ "$(cat "$TMPDIR/bin/stdin")" = "Which steps can merge?" ]
 }
 
 # The work:9 list with two Routine briefings: the proposal made one, and a
