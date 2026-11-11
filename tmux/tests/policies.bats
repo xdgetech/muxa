@@ -53,9 +53,9 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
 
 @test "Today follows the order the user chose, and a dismissed row is one line" {
   out="$(plain inbox list "$ITEMS")"
-  [[ "$out" == *$'today:1\t▶ 1. Compare vendor offers  30–60 min'* ]]
-  [[ "$out" == *$'today:2\t  2. Prepare the quarterly report  60–120 min'* ]]
-  [[ "$out" == *$'today:3\t  3. Try the tool for business B · not today'* ]]
+  [[ "$out" == *$'today:1\t▶ 1. Start · Compare vendor offers  30–60 min'* ]]
+  [[ "$out" == *$'today:2\t  2. Start · Prepare the quarterly report  60–120 min'* ]]
+  [[ "$out" == *$'today:3\t  3. Sort capture · Try the tool for business B · not today'* ]]
   [ "$(inbox target today:1 "$ITEMS")" = w-7b8c9d0e ]
   [ "$(inbox target today:3 "$ITEMS")" = i-1a2b3c4d ]
 }
@@ -64,13 +64,13 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   out="$(plain inbox view today:2 "$ITEMS")"
   [[ "$out" == *"policy: This week, recruiting comes before sales and support.  y-0a1b2c3d"* ]]
   [[ "$out" == *"correction: pinned w-0b1c2d3e  x-0a1b2c3d"* ]]
-  [[ "$out" == *"K/J Move   x Not today   o Open   t Plan Now"* ]]
+  [[ "$out" == *"plan:  K/J move   x not today   t Re-rank"* ]]
   jq -c '.hypotheses = []' "$ITEMS" >"$TMPDIR/gone.json"
   [[ "$(plain inbox view today:1 "$TMPDIR/gone.json")" == *"hypothesis: forgotten  h-4e5f6a7b"* ]]
   out="$(plain inbox view today:3 "$ITEMS")"
   [[ "$out" == *"i-1a2b3c4d · not today"* ]]
-  [[ "$out" == *"K/J Move   o Open   t Plan Now"* ]]
-  [[ "$(plain inbox view today: "$ITEMS")" == *"t Plan Now   y Policies"* ]]
+  [[ "$out" == *"plan:  K/J move   t Re-rank"* ]]
+  [[ "$(plain inbox view today: "$ITEMS")" == *$'t Re-rank: re-rank the queue from what is open now\ny Policies'* ]]
 }
 
 @test "K and J move a Today row, x takes it off Today, y opens the Policies list" {
@@ -97,13 +97,13 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [ "$(inbox neighbor today:1 down "$TMPDIR/closed.json")" = 3 ]
   [ "$(inbox order today:1 down "$TMPDIR/closed.json" | tr '\n' ' ')" = "i-1a2b3c4d w-0b1c2d3e w-7b8c9d0e " ]
   out="$(plain inbox list "$TMPDIR/closed.json")"
-  [[ "$out" == *$'today:1\t▶ 1. Compare vendor offers'* ]]
-  [[ "$out" == *$'today:3\t  2. Try the tool for business B · not today'* ]]
+  [[ "$out" == *$'today:1\t▶ 1. Start · Compare vendor offers'* ]]
+  [[ "$out" == *$'today:3\t  2. Sort capture · Try the tool for business B · not today'* ]]
   # With the first row not today, the next open row is Next.
   jq -c '.plans[0].dismissed = ["w-7b8c9d0e"]' "$ITEMS" >"$TMPDIR/skip.json"
   out="$(plain inbox list "$TMPDIR/skip.json")"
-  [[ "$out" == *$'today:1\t  1. Compare vendor offers · not today'* ]]
-  [[ "$out" == *$'today:2\t▶ 2. Prepare the quarterly report'* ]]
+  [[ "$out" == *$'today:1\t  1. Start · Compare vendor offers · not today'* ]]
+  [[ "$out" == *$'today:2\t▶ 2. Start · Prepare the quarterly report'* ]]
 }
 
 @test "below work:11 the Today keys and y do nothing" {

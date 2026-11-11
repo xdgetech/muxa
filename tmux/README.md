@@ -251,15 +251,26 @@ apps show, with a goal and a status.
     do it next. Then one line of the items you moved down with Later that are
     due soon. The heading
     says when the plan was made, or that the newest plan failed. The item below
-    the list shows a row's why, next step, time and basis. `o` or `Enter` on a
-    row goes to its Work item or Inbox item in the list. Every other key on a
-    row acts on that target, as on its own row: `d` completes a Work item, and
-    an item's answers (`d` ✓ Done, `c` Complete Task, `a`, `r`) answer it. A
-    row whose target is closed is hidden, and the numbers count the open rows.
-    When every row is closed or Not today, the host makes a new plan by
-    itself, within the overall assistant's budgets. `t` anywhere asks the
-    overall assistant for a plan now (`muxa-cli plan now`); it asks for the
-    minutes you have first, and `Enter` gives no limit. `P` on a Work item pins
+    the list shows a row's why, next step, time and basis. Each row names
+    what to do before its title (ADR 0059): `Review changes`, `Allow or
+    deny`, `Read result`, `Check text to send`, `Decide`, `Fix`, `Start` (a
+    Work item), or `Open`. Its preview starts with `Do:` (the plan's next
+    step), then `Enter`, `s`, `also` and `plan`. `Enter` opens the session of
+    a Task's review or menu; on any other row it goes to the Work item or
+    Inbox item in the list, as `o` does. `s` sends text and names who gets
+    it: the Task's agent, the staff member who wrote a result, the writer of
+    a draft (Revise), the workspace's Ask session with a briefing, or, with
+    `work` level 17, the secretary with the Work item (`muxa-cli ask --root
+    --work`). `s` on a Work item in the Work section does the same. Every
+    other key on a row acts on that target, as on its own row: `d` completes
+    a Work item, and an item's answers (`d` ✓ Done, `c` Complete Task, `a`,
+    `r`) answer it. A row whose target is closed is hidden, and the numbers
+    count the open rows. When every row is closed or Not today, the host
+    makes a new plan by itself, within the overall assistant's budgets. `t`
+    anywhere is Re-rank: it re-ranks the queue from what is open now
+    (`muxa-cli plan now`), after it asks for the minutes you have (`Enter`
+    gives no limit). With `work` level 17 it says how many runs the overall
+    workspace has left today. `P` on a Work item pins
     it, so it is listed first and fills the first plan rows, or unpins it. The
     overall assistant's proposals are items too: `🗂` sorts a Capture and `🤝`
     asks a workspace's assistant; `a` approves, `r` rejects, `l` is Later.

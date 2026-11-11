@@ -450,9 +450,9 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 8"
   [ "$output" = "$(printf '%s\n' today: today:1 today:2 today:3 today:due sec:decisions i-1a2b3c4d i-2b3c4d5e)" ]
   out="$(plain_list "$TMPDIR/p.json")"
-  [[ "$out" == *$'today:1\t▶ 1. Prepare the quarterly report  60–120 min · moved'* ]]
-  [[ "$out" == *$'today:2\t  2. Compare vendor offers'* ]]
-  [[ "$out" == *$'today:3\t  3. Try the tool for business B  1–5 min · new'* ]]
+  [[ "$out" == *$'today:1\t▶ 1. Start · Prepare the quarterly report  60–120 min · moved'* ]]
+  [[ "$out" == *$'today:2\t  2. Start · Compare vendor offers'* ]]
+  [[ "$out" == *$'today:3\t  3. Sort capture · Try the tool for business B  1–5 min · new'* ]]
   [[ "$out" == *"Due soon, moved down by you: Renew the passport"* ]]
   [[ "$out" == *"Prepare the quarterly report  open · "*" · pinned · due 2025-11-12 07:00Z · work"* ]]
 }
@@ -460,13 +460,13 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
 @test "a Today row shows why, next, time and basis, and opens its target" {
   plan_inbox >"$TMPDIR/p.json"
   out="$(plain_view today:2 "$TMPDIR/p.json")"
-  [[ "$out" == *"2. Compare vendor offers"* ]]
+  [[ "$out" == *"2. Start · Compare vendor offers"* ]]
   [[ "$out" == *"Why: The offers end Friday."* ]]
-  [[ "$out" == *"Next: Approve the request to work."* ]]
+  [[ "$out" == *"Do: Approve the request to work."* ]]
   [[ "$out" == *"Time: 5–15 min, about 10"* ]]
   [[ "$out" == *"due: The offer ends Friday  https://example.com/offer"* ]]
   [[ "$out" == *"Which region the contract covers"* ]]
-  [[ "$out" == *"o Open   t Plan Now"* ]]
+  [[ "$out" == *"plan:  t Re-rank"* ]]
   [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
   [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
   [ "$(inbox target today:due "$TMPDIR/p.json")" = w-8c9d0e1f ]
@@ -484,16 +484,16 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 3"
   [ "$output" = "$(printf '%s\n' today: today:3 today:due)" ]
   out="$(plain_list "$TMPDIR/p.json")"
-  [[ "$out" == *$'today:3\t▶ 1. Try the tool for business B  1–5 min'* ]]
+  [[ "$out" == *$'today:3\t▶ 1. Sort capture · Try the tool for business B  1–5 min'* ]]
   [[ "$out" != *"Prepare the quarterly report  60"* ]]
   [[ "$out" != *"· gone"* ]]
   out="$(plain_view today:3 "$TMPDIR/p.json")"
-  [[ "$out" == *"▶ 1. Try the tool for business B"* ]]
+  [[ "$out" == *"▶ 1. Sort capture · Try the tool for business B"* ]]
   [[ "$out" == *"i-1a2b3c4d · next"* ]]
   # A row picked before the list reloaded still says how it ended, and opens nothing.
   out="$(plain_view today:2 "$TMPDIR/p.json")"
   [[ "$out" == *"w-7b8c9d0e · gone"* ]]
-  [[ "$out" != *"o Open"* ]]
+  [[ "$out" != *"Enter "* ]]
   [ "$(inbox target today:2 "$TMPDIR/p.json")" = "" ]
   [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
 }
@@ -524,7 +524,7 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   plan_inbox | jq -c '.plans = [] | del(.assistant)' >"$TMPDIR/p.json"
   [[ "$(inbox list "$TMPDIR/p.json" | cut -f1)" != *today* ]]
   plan_inbox | jq -c '.plans = []' >"$TMPDIR/p.json"
-  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  no plan yet · t Plan Now"* ]]
+  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  no plan yet · t Re-rank"* ]]
 }
 
 @test "t plans now from any row, p still protects an item, P pins or unpins a Work item" {

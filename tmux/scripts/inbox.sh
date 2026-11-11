@@ -22,10 +22,15 @@
 # With level 16 (ADR 0058), every assistant Result is a result item: a Hand
 # off, s Send, d Done; on a write item, s is Revise. Its unread dot is what
 # marks a result as new.
+# ADR 0059: a Today row names its action (Review changes, Read result, Start…);
+# its preview leads with Do, Enter (the primary action), s (Send, naming who
+# gets it), the item's other keys, and the plan keys; t is Re-rank. With
+# level 17, s on a Work item sends it to the secretary with the text.
 # prefix + T lists sections under header rows (sec:<name>); Tab and Shift-Tab
 # move between headers, and Enter or space folds Routine.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens; none once closed)
+#        inbox.sh enter <today row> <json>  (what Enter does: session:<id> TAB <item> or focus:<id>)
 #        inbox.sh neighbor <today row> up|down <json>  (the open row a move swaps with)
 #        inbox.sh key <id> <key> <json>  (what a key does: an action, choose:<n> or open:<n>)
 #        inbox.sh order <today row> up|down <json>  (the row ids plan reorder sends)
@@ -191,9 +196,64 @@ JQ_DEFS='
   def target_word: {"answered": "✓ answered", "resolved": "resolved", "done": "✓ done",
     "withdrawn": "withdrawn", "gone": "gone"}[.targetState] // "closed";
   def mins: "\(.minutes.low)–\(.minutes.high) min";
+  # What a Today row asks the user to do (ADR 0059 §1): a verb from the
+  # kind of its target. A briefing on Today asks to act; one that asks nothing
+  # (no question mark) is to read.
+  def row_item($root): row_id as $id | [($root.items // [])[] | select(.id == $id)][0] // null;
+  def verb_of($item): if $item == null then "Open" else
+    ($item.kind) as $k |
+    if $k == "briefing" then (if ($item.question // "" | test("\\?\\s*$")) then "Decide" else "Read" end)
+    else {"review": "Review changes", "ask": "Allow or deny", "result": "Read result",
+      "write": "Check text to send", "failure": "Fix", "memory": "Check memory note",
+      "proposal": "Approve or reject", "sort": "Sort capture", "delegate": "Approve request",
+      "hypothesis": "Confirm or reject", "handoff": "Approve hand-off"}[$k] // "Open" end end;
+  def row_verb($root): if (row_id | startswith("w-")) then "Start" else verb_of(row_item($root)) end;
+  # Enter on a Today row (ADR 0059 §3): the review or menu of a Task opens its
+  # session; any other item, and a Work item, is where the cursor goes.
+  def opens_session: (.kind | IN("review", "ask")) and (.session != null);
+  def enter_label($item): if $item == null then
+      (if (row_id | startswith("w-")) then "Open the Work item" else "Open the item" end)
+    elif ($item | opens_session) then
+      "Open the Task (\({"review": "review", "ask": "allow or deny"}[$item.kind]))"
+    else "Open the \({"result": "result", "write": "text to send", "briefing": "briefing",
+      "failure": "failure"}[$item.kind] // "item")" end;
+  # s on an item names who gets the text (ADR 0059 §4), or null without one.
+  def send_label: (.answers // []) as $a |
+    if ($a | index("reply")) then
+      if .kind == "result" then "Send to \(.result.worker // "the assistant" | plain)…"
+      elif .kind == "write" then "Revise: send to \(.write.worker // "the assistant" | plain)…"
+      elif .kind == "ask" then "Deny & send to the Task'"'"'s agent…"
+      else "Send to the Task'"'"'s agent…" end
+    elif ($a | index("ask-agent")) then
+      "Send to the \(.workspace | plain) Ask session, with this \(if .kind == "briefing" then "briefing" else "item" end)…"
+    else null end;
+  # Who gets a Work item'"'"'s Send: the overall workspace, the secretary, at level 17.
+  def secretary: select((.work // 0) >= 17) | .assistant.overall // empty;
+  # "2 of 3 runs left today", for Re-rank, when the host says it.
+  def runs_left: (.assistant.overallRuns // null) as $r |
+    if $r then " (\($r.left) of \($r.max) runs left today)" else "" end;
+  # The Enter, s and also lines of an open Today row (ADR 0059 §2). Also
+  # lists the target'"'"'s other keys, answers first; x is Not today here.
+  def today_keys($root; $item; $target):
+    "Enter  \(enter_label($item))",
+    (if $item then "s      \(($item | send_label) // "nothing to send on this item; use its keys below")"
+     elif ($target | startswith("w-")) then
+       ([$root | secretary][0] // null) as $s |
+       if $s then "s      Send to the secretary (\($s | plain)), with this Work item…"
+       else "s      Send to the secretary needs muxa work level 17 and an overall assistant" end
+     else empty end),
+    ((if $item then
+        [$item | keymap[] | select(.key != "x" and .key != "s") | . as $k |
+          {o: (["a", "r", "c", "d", "l"] | index($k.key)), t: "\($k.key) \($item | answer_label($k.act))"}] |
+        sort_by(.o) | map(.t) + (if $item | opens_session then ["o Go to the item"] else [] end)
+      elif ($target | startswith("w-")) then
+        ["d Complete", "l Later", "a Ask Assistant"] +
+        (if ($root.work // 0) >= 10 then [[$root.workItems[]? | select(.id == $target)][0] |
+          select(. != null) | if .pinnedAt then "P Unpin" else "P Pin" end] else [] end)
+      else [] end) | select(length > 0) | "also:  \(join("   "))");
   def mark($p): (.work // .item) as $t |
     {"entered": " · new", "moved": " · moved"}[[($p.changed // [])[] | select(.id == $t) | .change][0] // ""] // "";
-  def plan_status: if ((.plans // []) | length) == 0 then "no plan yet · t Plan Now" else latest_plan |
+  def plan_status: if ((.plans // []) | length) == 0 then "no plan yet · t Re-rank" else latest_plan |
     if .delivery == "resulted" then "planned \(since(.at)) ago"
     elif (.delivery | IN("pending", "received", "processing")) then "planning…"
     else "last plan \(delivery_word)" end end;
@@ -250,10 +310,11 @@ list() {
       "today:\t☀ \u001b[1mToday\u001b[0m  \u001b[2m\(plan_status)\u001b[0m",
       (shown_plan | . as $p | next_key($p) as $next | shown_rows | to_entries[] |
         (.key + 1) as $n | .value.key as $i | .value.value as $r |
+        ($r | row_verb($root)) as $verb |
         if $r | not_today($p) then
-          "today:\($i + 1)\t  \u001b[2m\($n). \($r | row_title($root)) · not today\u001b[0m"
+          "today:\($i + 1)\t  \u001b[2m\($n). \($verb) · \($r | row_title($root)) · not today\u001b[0m"
         else
-          "today:\($i + 1)\t\(if $i == $next then "▶" else " " end) \($n). \($r | row_title($root))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
+          "today:\($i + 1)\t\(if $i == $next then "▶" else " " end) \($n). \($verb) · \($r | row_title($root))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
         end),
       (shown_plan | select((.dueSoon // []) | length > 0) |
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
@@ -327,7 +388,7 @@ toggle_fold() {
 # summary, and its keys.
 view_work() {
   iq -r --arg item "$1" "$JQ_DEFS"'
-    ((.work // 0) >= 10) as $pins | (.requests // []) as $reqs |
+    ((.work // 0) >= 10) as $pins | (.requests // []) as $reqs | ([secretary][0] // null) as $secretary |
     .workItems[]? | select(.id == $item) |
     (.requests // []) as $mine |
     ([$reqs[] | select(.id | IN($mine[])) | .results[0]? // empty] | max_by(.at)) as $result |
@@ -343,7 +404,7 @@ view_work() {
       ($result.summary | plain), "\u001b[2mAll of it: muxa-cli assist show \($item)\u001b[0m"
      else empty end),
     "",
-    "l Later   d Complete   a Ask Assistant\(if $pins then "   P \(if .pinnedAt then "Unpin" else "Pin" end)" else "" end)",
+    "l Later   d Complete   a Ask Assistant\(if $pins then "   P \(if .pinnedAt then "Unpin" else "Pin" end)" else "" end)\(if $secretary != null then "   s Send to the secretary" else "" end)",
     "\u001b[2mq close\u001b[0m"
   ' "$2"
 }
@@ -367,34 +428,30 @@ view_today() {
         (if (.top // []) | length == 0 then "Nothing to rank."
          elif (shown_rows | length) == 0 then "All done. A new plan follows when the budget allows."
          else empty end), ""),
-      "t Plan Now\(if $memory then "   y Policies" else "" end)"
+      "t Re-rank: re-rank the queue from what is open now\(runs_left)",
+      (if $memory then "y Policies" else empty end)
     elif $row == "due" then
       shown_plan |
       "⏰ \u001b[1mDue soon, moved down by you\u001b[0m", "",
       (.dueSoon[] as $d | ([($root.workItems // [])[] | select(.id == $d)][0] // {id: $d, title: $d}) |
         "◆ \(.title | plain)\(pin_due)"),
-      "", "o Open   t Plan Now"
+      "", "o Open   t Re-rank"
     else
       shown_plan | . as $p | ($row | tonumber - 1) as $i | shown_number($i) as $n |
       (next_key($p) == $i) as $first | today_rows[$i] // empty |
-      "\(if $first then "▶ " else "" end)\($n). \u001b[1m\(row_title($root))\u001b[0m",
-      "\u001b[2m\(row_id)\(if $first then " · next" else "" end)\(if closed_target then " · \(target_word)" else "" end)\(mark($p))\(if not_today($p) then " · not today" else "" end)\u001b[0m", "",
-      "Why: \(.why | plain)", "Next: \(.next | plain)",
+      row_id as $target | closed_target as $closed | row_item($root) as $item |
+      "\(if $first then "▶ " else "" end)\($n). \u001b[1m\(row_verb($root)) · \(row_title($root))\u001b[0m",
+      "\u001b[2m\(row_id)\(if $first then " · next" else "" end)\(if $closed then " · \(target_word)" else "" end)\(mark($p))\(if not_today($p) then " · not today" else "" end)\u001b[0m", "",
+      "Do: \(.next | plain)",
+      (if $closed then empty else today_keys($root; $item; $target) end),
+      "\u001b[2mplan:  \(if $memory then "K/J move   " + (if not_today($p) then "" else "x not today   " end) else "" end)t Re-rank\($root | runs_left)\u001b[0m",
+      "",
+      "Why: \(.why | plain)",
       "Time: \(mins), about \(.minutes.estimated)",
       (if (.basis // []) | length > 0 then "", "\u001b[1mBasis\u001b[0m",
         (.basis[] | "  \(.kind): \(cited($root) | plain)\(if .source then "  \(.source | plain)" else "" end)")
        else empty end),
       (if (.missing // []) | length > 0 then "", "\u001b[1mWould help\u001b[0m", (.missing[] | "  \(plain)")
-       else empty end),
-      row_id as $target | closed_target as $closed |
-      ([$root.items[]? | select(.id == $target)][0] // null) as $item |
-      "", (if $memory then "K/J Move   " + (if not_today($p) then "" else "x Not today   " end) else "" end) +
-        (if $closed then "" else "o Open   " end) + "t Plan Now",
-      (if $closed then empty
-       elif $item then
-        [$item | keymap[] | select(.key != "x") | . as $k | "\($k.key) \($item | answer_label($k.act))"] |
-        select(length > 0) | join("   ")
-       elif ($target | startswith("w-")) then "d Complete   l Later   a Ask Assistant"
        else empty end)
     end,
     "\u001b[2mq close\u001b[0m"
@@ -499,6 +556,10 @@ key_action() {
     w-*:l) echo work:later; return ;;
     w-*:d) echo work:done; return ;;
     w-*:a) echo assist; return ;;
+    w-*:s)
+      iq -r "$JQ_DEFS"'[secretary][0] // empty | "secretary"' "$3"
+      return
+      ;;
     c-*:w) echo sort:new; return ;;
     c-*:n) echo sort:note; return ;;
     [wc]-*:*) return ;;
@@ -619,9 +680,20 @@ answer() {
       [ -z "$text" ] || set -- "$@" --worker "$text"
       ;;
     sort:*) set -- work sort "$id" "${act#sort:}" ;;
+    secretary)
+      clear
+      row="$(jq -r '.assistant.overall // empty' "$json")"
+      [ -n "$row" ] || return 0
+      printf 'Message for the secretary (%s), with this Work item:\n\n' "$(printf '%s' "$row" | tr -d '\000-\037\177')"
+      IFS= read -r -e -p '> ' text || return 0
+      [ -n "$text" ] || return 0
+      set -- ask --root --workspace "$row" --work "$id" --text "$text"
+      ;;
     plan:now)
       clear
-      printf 'A plan now from the overall assistant.\n\n'
+      printf 'Re-rank: the overall assistant ranks the queue again from what is open now.\n'
+      iq -r "$JQ_DEFS"'runs_left | select(. != "") | "Each re-rank is one run\(.)."' "$json"
+      printf '\n'
       IFS= read -r -e -p 'Minutes you have (Enter: no limit) > ' text || return 0
       set -- plan now
       case "$text" in
@@ -755,6 +827,23 @@ today_target() {
     else today_rows[$row | tonumber - 1] // empty | select(closed_target | not) | row_id end' "$2"
 }
 
+# What Enter on a Today row does (ADR 0059 §3): session:<id> TAB <item> for
+# a Task's review or menu, else focus:<id>, the row to move to. Nothing once
+# the target closed.
+today_enter() {
+  case "${1#today:}" in
+    "" | due)
+      today_target "$@" | sed 's/^/focus:/'
+      return
+      ;;
+  esac
+  iq -r --arg row "${1#today:}" "$JQ_DEFS"'
+    . as $root | shown_plan | today_rows[$row | tonumber - 1] // empty |
+    select(closed_target | not) | row_item($root) as $item |
+    if $item != null and ($item | opens_session) then "session:\($item.session)\t\($item.id)"
+    else "focus:\(row_id)" end' "$2"
+}
+
 # The id a Today row names, also when its target is closed.
 today_row() {
   iq -r --arg row "${1#today:}" "$JQ_DEFS"'
@@ -858,8 +947,27 @@ ui() {
       enter | o)
         case "$id" in
           today:*)
+            # Enter: a Task's review or menu opens its session (ADR 0059 §3).
+            target=""
+            if [ "$key" = enter ]; then
+              act="$(today_enter "$id" "$json")"
+              case "$act" in
+                session:*)
+                  sid="${act#session:}"
+                  target="${sid#*$'\t'}"
+                  sid="${sid%%$'\t'*}"
+                  if t has-session -t "$sid" 2>/dev/null; then
+                    muxa inbox read "$target" </dev/null >/dev/null 2>&1
+                    "$S/muxa.sh" goto "$client" "$sid"
+                    break
+                  fi
+                  ;;
+                focus:*) target="${act#focus:}" ;;
+              esac
+            else
+              target="$(today_target "$id" "$json")"
+            fi
             # Moves to the row of the target; a target not listed stays put.
-            target="$(today_target "$id" "$json")"
             if [ -n "$target" ] && printf '%s\n' "$rows" | cut -f1 | grep -qxF -- "$target"; then
               focus="$target"
             fi
@@ -911,6 +1019,7 @@ case "${1:-}" in
   list) list "${2:?json}" ;;
   view) view "${2:?item id}" "${3:?json}" ;;
   target) today_target "${2:?today row}" "${3:?json}" ;;
+  enter) today_enter "${2:?today row}" "${3:?json}" ;;
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
   order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   neighbor) today_neighbor "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
@@ -918,5 +1027,5 @@ case "${1:-}" in
   jump) jump "${2:?next or prev}" "${3:?row}" "${4:-}" ;;
   space) space_action "${2:-}" ;;
   ui) tty_utf8; ui "${2:?client}" "${3:-}" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | jump next|prev <row> <header rows> | space <id> | ui <client> [item id]" >&2; exit 2 ;;
+  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | enter <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | jump next|prev <row> <header rows> | space <id> | ui <client> [item id]" >&2; exit 2 ;;
 esac

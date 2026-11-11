@@ -29,8 +29,16 @@ teardown() { teardown_server; }
   run "$ROOT/scripts/help.sh"
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"  P              on a Work item: pin it first, or unpin it"* ]]
-  [[ "$out" == *"  t              ask the overall assistant for a plan now"* ]]
+  [[ "$out" == *"  t              Re-rank: re-rank the queue from what's open now (one overall run)"* ]]
   [[ "$out" == *"  o              on a Today row: go to its Work item or Inbox item"* ]]
+}
+
+@test "help lists what Enter and s do on a Today row (ADR 0059)" {
+  run "$ROOT/scripts/help.sh"
+  out="$(printf '%s\n' "$output" | strip_ansi)"
+  [[ "$out" == *"A Today row names what to do: Review changes, Read result, Start..."* ]]
+  [[ "$out" == *"  Enter          on a Today row: open a Task's review or menu, else go to its item"* ]]
+  [[ "$out" == *"  s              on a Today row: send to whoever it names"* ]]
 }
 
 @test "help lists the Today and Policies keys of ADR 0050" {
