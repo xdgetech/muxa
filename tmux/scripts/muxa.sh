@@ -4,7 +4,8 @@
 # show. muxa owns the records and the Inbox rule; this only renders them.
 # Usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> [worker]
 #        muxa.sh close-task <task id> <done|dropped>
-#        muxa.sh repo-rows <workspace> <default repo> [none] | worker-rows <workspace> | start-ask <workspace> <repo>
+#        muxa.sh repo-rows <workspace> <default repo> [none] | ask-rows <workspace> <default repo>
+#        muxa.sh worker-rows <workspace> | start-ask <workspace> <repo>
 #        muxa.sh inbox <client> [item] | new <client> <repo> | ask <client> <repo>  (open a popup)
 #        muxa.sh cli <muxa-cli args> | goto <client> <session id>
 #        muxa.sh inbox-ui <client> | form <client> <repo> | ask-ui <client> <json file> <repo>
@@ -437,6 +438,27 @@ start_ask() {
   printf '%s' "$out" | jq -r '.session // empty'
 }
 
+# The picker row for the workspace's own Ask session at its root (muxa's
+# work:15, ADR 0054). The overall assistant's workspace has only this row.
+ROOT_ROW=":root"
+
+# The ask picker's rows: the workspace's repos, then its root Ask session
+# when the host opens it.
+ask_rows() {
+  repo_rows "$1" "$2" "$3"
+  if printf '%s' "$1" | work_at 15; then
+    printf '%s\t@ the Ask session at the workspace root (the overall assistant: its chat)\n' "$ROOT_ROW"
+  fi
+}
+
+# The workspace's Ask session at its root, open or new. Prints its session id.
+start_ask_root() {
+  local out
+  out="$(run_muxa ask --root --workspace "$1" --json </dev/null)" || return 1
+  notify_change
+  printf '%s' "$out" | jq -r '.session // empty'
+}
+
 # The checks run before the popup, so a host that cannot ask opens nothing.
 ask_key() {
   local client="$1" repo="$2" json f
@@ -450,17 +472,23 @@ ask_key() {
 }
 
 ask_ui() {
-  local client="$1" json spaces ws repo="$3" sid
+  local client="$1" json spaces ws repo="$3" sid failed=""
   json="$(cat "$2")" || return 1
   rm -f "$2"
   spaces="$(printf '%s' "$json" | ws_names)"
   echo "Ask about a repo: an agent in its main checkout, with no task and no worktree."
   echo "The agent can change files there. Workspaces: $spaces"
   ws="$(choose_ws "$spaces" "$(default_ws "$json" "$repo")")" || return 0
-  repo="$(pick_repo "$(repo_rows "$json" "$ws" "$repo")" "Enter ask in this repo  Esc cancel")" || return 0
+  repo="$(pick_repo "$(ask_rows "$json" "$ws" "$repo")" "Enter ask in this repo  Esc cancel")" || return 0
   [ -n "$repo" ] && [ "$repo" != - ] || return 0
-  echo "Starting an agent in $repo..."
-  if sid="$(start_ask "$ws" "$repo" 2>&1)" && [ -n "$sid" ]; then
+  if [ "$repo" = "$ROOT_ROW" ]; then
+    echo "Opening the Ask session of $ws..."
+    sid="$(start_ask_root "$ws" 2>&1)" || failed=1
+  else
+    echo "Starting an agent in $repo..."
+    sid="$(start_ask "$ws" "$repo" 2>&1)" || failed=1
+  fi
+  if [ -z "$failed" ] && [ -n "$sid" ]; then
     go "$client" "$sid"
   else
     printf '%s\nPress Enter.\n' "$(printf '%s' "${sid:-muxa started no session}" | sed 's/^muxa-cli: //')"
@@ -481,6 +509,7 @@ case "${1:-}" in
   new) new "${2:?client}" "${3:-}" ;;
   form) tty_utf8; form "${2:?client}" "${3:-}" ;;
   repo-rows) repo_rows "$(cat)" "${2:?workspace}" "${3:-}" "${4:-}" ;;
+  ask-rows) ask_rows "$(cat)" "${2:?workspace}" "${3:-}" ;;
   worker-rows) worker_rows "$(cat)" "${2:?workspace}" ;;
   start-ask) start_ask "${2:?workspace}" "${3:?repo}" ;;
   ask) ask_key "${2:?client}" "${3:-}" ;;

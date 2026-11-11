@@ -347,6 +347,35 @@ cli_tasks() {
   args_are ask "$REPO" --workspace work --json
 }
 
+# A work:15 host (ADR 0054): "secretary" is the overall assistant's workspace, with no repos.
+work15_tasks() {
+  printf '{"workspaces":["secretary","work"],"workspaceInfo":[{"name":"secretary","root":"%s/secretary"},{"name":"work","root":"%s/repos","repos":["%s"]}],"capabilities":["task-records","work:15"],"truncated":false,"tasks":[]}' \
+    "$TMPDIR" "$TMPDIR" "$REPO"
+}
+
+@test "the ask picker offers the root Ask session only on a work:15 host" {
+  run bash -c "printf '%s' '$(work15_tasks)' | '$ROOT/scripts/muxa.sh' ask-rows secretary ''"
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+  [[ "${lines[0]}" == ":root${TAB}@ the Ask session at the workspace root"* ]]
+  run bash -c "printf '%s' '$(cli_tasks)' | '$ROOT/scripts/muxa.sh' ask-rows work ''"
+  [[ "$output" != *":root"* ]]
+}
+
+@test "prefix+A opens the overall assistant's root Ask session and goes there" {
+  tx new-session -d -s ask-secretary
+  sid="$(tx display-message -p -t =ask-secretary: '#{session_id}')"
+  fake_cli "$(work15_tasks)"
+  printf '{"session":"%s","name":"ask-secretary","workspace":"secretary"}\n' "$sid" >"$TMPDIR/bin/out-ask"
+  attach
+  tx send-keys -K -c "$C" C-b A
+  sleep 1.5
+  answer secretary       # workspace
+  answer ""              # the picker: its only row, the root Ask session
+  wait_for '[ "$(tx display-message -p -c "$C" "#{session_name}")" = ask-secretary ]'
+  args_are ask --root --workspace secretary --json
+}
+
 @test "prefix+A opens nothing when muxa cannot start ask sessions" {
   fake_cli '{"workspaces":["work"],"truncated":false,"tasks":[]}'
   attach

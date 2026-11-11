@@ -91,7 +91,7 @@ Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
 | `prefix + j`, then `1`–`9` or `a`–`z` | the task with that label in the tree |
 | `prefix + a` | the task that needs you most: 🙋, then ❌, then 🏁 |
 | `prefix + T` | the muxa Inbox, in a popup (see [muxa](#muxa)) |
-| `prefix + A` | ask about a repo: an agent in its main checkout, with no task (needs muxa) |
+| `prefix + A` | ask about a repo: an agent in its main checkout, with no task; or a workspace's root Ask session, the overall assistant's chat (needs muxa) |
 
 In the tree: `j`/`k` move, `Enter` go to the task or fold a section, `space`
 fold a section, `1`–`9` go to that task (letters only through `prefix + j`),
@@ -178,6 +178,10 @@ apps show, with a goal and a status.
   as the form does, runs `muxa-cli ask REPO --workspace W --json`, and moves
   this client to the new session. Without muxa, or with a muxa too old to
   start ask sessions, it shows a message and does nothing.
+  With muxa's `work` level 15 (ADR 0054), the picker's last row is the
+  workspace's own Ask session at its root: `muxa-cli ask --root --workspace W
+  --json` opens it, or starts it. Pick the overall assistant's workspace to
+  talk to the assistant: that row is its only one.
 - `prefix + T` shows the Inbox (ADR 0033): one row per question an agent or a
   Routine has for you, with the selected item below the list: its question, the
   agent's last message, its numbered evidence and its keys.
