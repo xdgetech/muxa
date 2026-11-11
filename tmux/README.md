@@ -44,6 +44,10 @@ notify. Claude Code can also notify on its own: if you get two, set its
 `preferredNotifChannel` to `notifications_disabled`, or `@agents_notify` to `off`.
 Skipping the pane you look at needs `set -g focus-events on`.
 
+With muxa, you also get one notification per new assistant result:
+`Assistant result: <Work item title>`. The tree's Inbox poll sends it, through a
+tree pane, the first time it sees the result (see [muxa](#muxa)).
+
 ## Install
 
 Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
@@ -134,8 +138,8 @@ instead (OSC 52; your terminal must allow it).
 | `@agents_footer` | `n new c win o ide x close ? help` | last line of the tree's footer |
 | `@agents_key_next` / `_prev` / `_attention` / `_jump` | `)` / `(` / `a` / `j` | prefix keys to switch tasks |
 | `@agents_notify` | `on` | desktop notifications |
-| `@agents_notify_events` | `waiting done error` | which changes notify; `done` means a finished turn |
-| `@agents_notify_cmd` | | command that sends the notification instead, gets `<session> <message>` (e.g. `terminal-notifier`, ntfy) |
+| `@agents_notify_events` | `waiting done error result` | which changes notify; `done` means a finished turn, `result` a new assistant result |
+| `@agents_notify_cmd` | | command that sends the notification instead, gets `<session> <message>` (e.g. `terminal-notifier`, ntfy); for a result, `Inbox <message>` |
 | `@agents_key_focus` / `_toggle` / `_new` / `_ide` / `_inbox` / `_ask` | `Tab` / `b` / `N` / `O` / `T` / `A` | |
 | `@agents_muxa` | `auto` | `off`: never use muxa, even when it is installed |
 | `@agents_muxa_cli` | `muxa-cli` on `PATH` | muxa's CLI on this host |
@@ -206,7 +210,14 @@ apps show, with a goal and a status.
     version and ends the older run. A Work row that was asked shows its newest
     request's delivery, such as `asked: processing`. The item below the list
     shows the request and the newest Result's summary; `muxa-cli assist show
-    WORK` prints all of it. On a Capture, `w` makes a Work item from it and `n`
+    WORK` prints all of it. A Work item whose newest request has a result you
+    have not looked at shows `· new result` and comes first among the Work
+    items. A new version or a new delivery is a new result. Selecting the
+    Work item (its preview shows), `v`, `o` or `Enter` marks it looked at.
+    This machine keeps what it notified and what you looked at in
+    `$XDG_STATE_HOME/muxa/tmux-results.json` (else
+    `~/.local/state/muxa/tmux-results.json`), one entry per listed Work item.
+    The first poll takes the results already there as looked at. On a Capture, `w` makes a Work item from it and `n`
     keeps it as a note.
   - With `work` level 10 and an overall assistant (ADR 0049), a Today section
     (`☀`) comes first: up to 3 rows of the newest plan with a result, each with

@@ -134,11 +134,14 @@ git_where() {
 # muxa's list of the worktrees it created (ADR 0043). Only listed worktrees are
 # ever removed without the user closing their session. One file per worktree,
 # named after its resolved path with '/' as '%', holding that path.
-worktrees_dir() {
+muxa_state_dir() {
   local s="${XDG_STATE_HOME:-}"
   case "$s" in /*) ;; *) s="$HOME/.local/state" ;; esac
-  printf '%s/muxa/worktrees' "$s"
+  printf '%s/muxa' "$s"
 }
+worktrees_dir() { printf '%s/worktrees' "$(muxa_state_dir)"; }
+# Which assistant results this machine notified and the user looked at (results.sh).
+results_file() { printf '%s/tmux-results.json' "$(muxa_state_dir)"; }
 worktree_entry() { printf '%s/%s' "$(worktrees_dir)" "$(printf '%s' "$1" | tr '/' '%')"; }
 register_worktree() {
   local real

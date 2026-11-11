@@ -61,6 +61,7 @@ cache() {
       mv "$tmp" "$CACHE"
       changed=1
     fi
+    "$S/results.sh" track "$CACHE"
   else
     rm -f "$tmp"
     log "muxa could not list the Inbox; see muxa-cli inbox"
@@ -192,10 +193,11 @@ detail() {
   esac
 }
 
-# prefix + T: one row per open or later item, then the open Work items and
-# the unsorted Captures (ADR 0048): <id> TAB <display>.
+# prefix + T: one row per open or later item, then the open Work items, those
+# with a result not looked at first (results.sh), and the unsorted Captures
+# (ADR 0048): <id> TAB <display>.
 list() {
-  iq -r "$JQ_DEFS"'
+  iq -r --argjson fresh "$("$S/results.sh" new "$1")" "$JQ_DEFS"'
     . as $root | (.requests // []) as $reqs |
     (select(has_today) |
       "today:\t☀ \u001b[1mToday\u001b[0m  \u001b[2m\(plan_status)\u001b[0m",
@@ -209,8 +211,8 @@ list() {
         "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
     (.items[] | shown |
     "\(.id)\t\(dot) \(icon) \(.question)  \u001b[2m\(.title) · \(age)\(marks)\u001b[0m"),
-    (open_work |
-    "\(.id)\t  ◆ \(.title | plain)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
+    ([open_work] | map(select(.id | IN($fresh[]))) + map(select(.id | IN($fresh[]) | not)) | .[] |
+    "\(.id)\t  ◆ \(.title | plain)\(if .id | IN($fresh[]) then " \u001b[1m· new result\u001b[0m" else "" end)  \u001b[2m\(work_word)\([asked($reqs) | " · asked: \(delivery_word)"][0] // "") · \(age)\(if .laterAt then " · later" else "" end)\(pin_due)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m"),
     ((.captures // [])[] | "\(.id)\t  ✎ \(first_line)  \u001b[2munsorted · \(age)\u001b[0m")
   ' "$1"
 }
@@ -307,7 +309,7 @@ view_capture() {
 # keys: triage on one line, answers on the next.
 view() {
   case "$1" in
-    w-*) view_work "$@"; return ;;
+    w-*) "$S/results.sh" seen "$1" "$2"; view_work "$@"; return ;;
     c-*) view_capture "$@"; return ;;
     today:*) view_today "$@"; return ;;
   esac
@@ -704,6 +706,7 @@ ui() {
       D) delete_old "$json" ;;
       enter | o)
         case "$id" in
+          w-*) "$S/results.sh" seen "$id" "$json" ;;
           today:*)
             # Moves to the row of the target; a target not listed stays put.
             target="$(today_target "$id" "$json")"
