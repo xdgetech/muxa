@@ -200,6 +200,6 @@ case "${1:-}" in
   list) list "${2:?json}" ;;
   view) view "${2:?row id}" "${3:?json}" ;;
   key) key_action "${2:?row id}" "${3:?key}" "${4:?json}" ;;
-  ui) ui ;;
+  ui) tty_utf8; ui ;;
   *) echo "usage: policies.sh list <json> | view <id> <json> | key <id> <key> <json> | ui" >&2; exit 2 ;;
 esac

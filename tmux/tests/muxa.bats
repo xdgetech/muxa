@@ -488,6 +488,20 @@ work9_tasks() {
   [ "$output" = 0 ]
 }
 
+@test "the popup erases a whole Japanese character on Backspace" {
+  fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[]}'
+  printf '{"capture":{"id":"c-0000abcd"}}\n' >"$TMPDIR/bin/out-capture"
+  attach
+  tx send-keys -K -c "$C" C-b N
+  sleep 1.5
+  tx send-keys -K -c "$C" -l "あい"
+  tx send-keys -K -c "$C" BSpace
+  answer "う"
+  tx send-keys -K -c "$C" s
+  wait_for '[ -e "$TMPDIR/bin/stdin" ]'
+  [ "$(cat "$TMPDIR/bin/stdin")" = "あう" ]
+}
+
 @test "the form on work:9: a saves the text and asks the workspace's assistant" {
   fake_cli '{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncated":false,"tasks":[]}'
   printf '{"capture":{"id":"c-0000abcd"},"request":{"id":"q-0000abcd","delivery":"pending"}}\n' >"$TMPDIR/bin/out-capture"

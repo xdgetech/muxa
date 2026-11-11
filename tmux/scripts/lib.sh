@@ -9,6 +9,10 @@ TAB=$'\t'
 # shellcheck disable=SC2034
 AGENTS_LAUNCH_CMD="claude --name '#{@agent_name}'"
 
+# A popup's terminal erases one byte per Backspace unless told the input is
+# UTF-8, so deleting a Japanese character left invalid UTF-8 behind.
+tty_utf8() { stty iutf8 2>/dev/null || true; }
+
 # Agent states for awk. Higher rank wins when a session rolls up the state of its
 # panes. "done" is a finished turn nobody has looked at yet, so it beats idle.
 # sicon() needs the icon variables that awk_states passes.

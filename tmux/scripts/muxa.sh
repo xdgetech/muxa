@@ -479,11 +479,11 @@ case "${1:-}" in
   goto) go "${2:?client}" "${3:?session id}" ;;
   inbox-ui) inbox_ui "${2:?client}" ;;
   new) new "${2:?client}" "${3:-}" ;;
-  form) form "${2:?client}" "${3:-}" ;;
+  form) tty_utf8; form "${2:?client}" "${3:-}" ;;
   repo-rows) repo_rows "$(cat)" "${2:?workspace}" "${3:-}" "${4:-}" ;;
   worker-rows) worker_rows "$(cat)" "${2:?workspace}" ;;
   start-ask) start_ask "${2:?workspace}" "${3:?repo}" ;;
   ask) ask_key "${2:?client}" "${3:-}" ;;
-  ask-ui) ask_ui "${2:?client}" "${3:?json file}" "${4:-}" ;;
+  ask-ui) tty_utf8; ask_ui "${2:?client}" "${3:?json file}" "${4:-}" ;;
   *) echo "usage: muxa.sh available | tasks | rows | create <workspace> <repo> <branch> <title> <goal> | close-task <task id> <done|dropped> | repo-rows <workspace> <repo> [none] | start-ask <workspace> <repo> | inbox <client> [item] | cli <args> | goto <client> <session id> | new <client> <repo> | ask <client> <repo>" >&2; exit 2 ;;
 esac

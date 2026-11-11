@@ -739,6 +739,6 @@ case "${1:-}" in
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
   order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   worker) pick_worker "${2:?work id}" "${3:?json}" ;;
-  ui) ui "${2:?client}" "${3:-}" ;;
+  ui) tty_utf8; ui "${2:?client}" "${3:-}" ;;
   *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | ui <client> [item id]" >&2; exit 2 ;;
 esac
