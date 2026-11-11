@@ -10,7 +10,7 @@
 # Today is a queue (ADR 0057): rows whose target closed are hidden, and the
 # first open row that is not "not today" is Next (▶). A row id keeps its
 # place in the plan, so the numbers shown count the open rows only.
-# With level 11 (ADR 0050), K/J move a Today row, x takes it off Today, y
+# With level 11 (ADR 0050), K/J move a Today row, x takes it off Today, Y
 # opens the Policies list (policies.sh), and hypothesis items take Confirm.
 # With level 12 (ADR 0051), `a` on a Work item asks which staff member takes
 # it (Enter: the lead), a Work item shows its request's steps, and handoff
@@ -168,6 +168,13 @@ JQ_DEFS='
       "a starts it\(if $r.task then "; n starts the Task instead" else "" end); s sends \($who) what to do instead; d ends the request with what it has."
      elif $r.task and ((.answers // []) | index("approve")) then "", "a starts the Task; s sends \($who) what to change; d closes it."
      else "", "s sends \($who) what to do next; d closes it." end), "";
+  # The URLs of an item, its own links first, each once. A popup has no copy
+  # mode, so y copies one of these.
+  def urls: [((.attachments.links // [])[].url | plain),
+      (.. | strings | scan("https?://[^\\s<>\"'"'"'`\\p{Cc}]+") | sub("[.,;:!?)\\]]+$"; ""))] |
+    reduce .[] as $u ([]; if index([$u]) then . else . + [$u] end);
+  def find_item($id): [(.items // [])[], (.workItems // [])[], (.captures // [])[] | select(.id == $id)][0] // empty;
+  def copy_hint: if (urls | length) > 0 then "y copy link   " else "" end;
   def work_word: {"in-progress": "in progress", "waiting-decision": "waiting on decision",
     "done": "done", "withdrawn": "withdrawn"}[.state] // "open";
   def open_work: (.workItems // [])[] | select(.state != "done" and .state != "withdrawn");
@@ -430,7 +437,7 @@ view_work() {
      else empty end),
     "",
     "Enter  Actions   n Start a Task   l Later   d Complete   a Ask Assistant\(if $pins then "   P \(if .pinnedAt then "Unpin" else "Pin" end)" else "" end)\(if $secretary != null then "   s Send to the secretary" else "" end)",
-    "\u001b[2mq close\u001b[0m"
+    "\u001b[2m\(copy_hint)q close\u001b[0m"
   ' "$2"
 }
 
@@ -454,7 +461,7 @@ view_today() {
          elif (shown_rows | length) == 0 then "All done. A new plan follows when the budget allows."
          else empty end), ""),
       "t Re-rank: re-rank the queue from what is open now\(runs_left)",
-      (if $memory then "y Policies" else empty end)
+      (if $memory then "Y Policies" else empty end)
     elif $row == "due" then
       shown_plan |
       "⏰ \u001b[1mDue soon, moved down by you\u001b[0m", "",
@@ -493,7 +500,7 @@ view_capture() {
     (.text | plain),
     "",
     "w New Work item   n Keep as note",
-    "\u001b[2mspace/b scroll   q close\u001b[0m"
+    "\u001b[2mspace/b scroll   \(copy_hint)q close\u001b[0m"
   ' "$2"
 }
 
@@ -552,7 +559,7 @@ view() {
       (if .session then ["o Open Session"] elif .task and (.kind | IN("result", "new-task", "write")) then ["o Open its Task"] else [] end) | select(length > 0) | join("   ")),
     ([keymap[] | select(.group == "answer") | . as $k | "\($k.key) \($i | answer_label($k.act))"]
       | select(length > 0) | join("   ")),
-    "\u001b[2mspace/b scroll   v read all   \(if $w >= 8 then "D delete old   " else "" end)q close\u001b[0m"
+    "\u001b[2mspace/b scroll   \(copy_hint)v read all   \(if $w >= 8 then "D delete old   " else "" end)q close\u001b[0m"
   ' "$2"
 }
 
@@ -564,7 +571,7 @@ key_action() {
     echo plan:now
     return
   fi
-  if [ "$2" = y ] && [ "$level" -ge 11 ]; then
+  if [ "$2" = Y ] && [ "$level" -ge 11 ]; then
     echo policies
     return
   fi
@@ -584,6 +591,10 @@ key_action() {
       return
       ;;
     today:* | sec:*) return ;;
+    *:y)
+      iq -r --arg item "$1" "$JQ_DEFS"'find_item($item) | select((urls | length) > 0) | "urls"' "$3"
+      return
+      ;;
     w-*:l) echo work:later; return ;;
     w-*:d) echo work:done; return ;;
     w-*:a) echo assist; return ;;
@@ -854,6 +865,7 @@ run_act() {
   case "$act" in
     "") ;;
     open:*) open_evidence "$aid" "${act#open:}" "$json" ;;
+    urls) copy_url "$aid" "$json" ;;
     goto:*)
       sid="${act#goto:}"
       if t has-session -t "$sid" 2>/dev/null; then
@@ -1030,6 +1042,37 @@ read_item() {
   muxa inbox read "$1" </dev/null >/dev/null 2>&1 &
 }
 
+# The URLs of an item, one per line.
+urls() {
+  iq -r --arg item "$1" "$JQ_DEFS"'find_item($item) | urls[]' "$2"
+}
+
+# Copies a URL to the tmux buffer and the client's clipboard (OSC 52, also
+# over SSH), and opens it when the browser is on this machine.
+share_url() {
+  t set-buffer -w -- "$1" 2>/dev/null || t set-buffer -- "$1"
+  if command -v open >/dev/null && [ -z "${SSH_CONNECTION:-}" ]; then
+    open "$1"
+    return 0
+  fi
+  printf '%s\n(copied: paste it, or prefix + ] in tmux)\n' "$1"
+  pause
+}
+
+# y: copies one of an item's URLs, picked from a list when it has several.
+copy_url() {
+  local all url
+  all="$(urls "$1" "$2")"
+  [ -n "$all" ] || return 0
+  if [ "$(printf '%s\n' "$all" | wc -l)" -eq 1 ]; then
+    url="$all"
+  else
+    url="$(printf '%s\n' "$all" | fzf --no-input --layout reverse --info hidden --pointer '▌' \
+      --highlight-line --header 'Copy which link?  enter copy   q back' --bind 'j:down,k:up,q:abort')" || return 0
+  fi
+  share_url "$url"
+}
+
 # Opens evidence <n> of an item: the diff or a doc in the pager, an image or
 # a link with the system opener when there is one, else its path or URL.
 # shellcheck disable=SC2086  # $pager is a command with its flags
@@ -1042,9 +1085,7 @@ EOF
   [ -n "$kind" ] || return 0
   muxa inbox read "$id" </dev/null >/dev/null 2>&1 &
   if [ "$kind" = link ]; then
-    t set-buffer -- "$ref"
-    if command -v open >/dev/null && [ -z "${SSH_CONNECTION:-}" ]; then open "$ref"; else
-      printf '%s\n(copied to the tmux buffer)\n' "$ref"; pause; fi
+    share_url "$ref"
     return 0
   fi
   dir="$(item_dir "$id" "$json")" || { echo "The item's pane is gone."; pause; return 0; }
@@ -1102,7 +1143,7 @@ ui() {
       --bind "btab:transform:'$S/inbox.sh' jump prev {n} '$heads'" \
       --bind "space:transform:'$S/inbox.sh' space {1}" \
       --bind 'b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
-      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,t,K,J,y,D,1,2,3,4,5,6,7,8,9')" || break
+      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,t,K,J,y,Y,D,1,2,3,4,5,6,7,8,9')" || break
     key="$(printf '%s\n' "$picked" | sed -n '1p')"
     id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
     focus="$id"
@@ -1175,7 +1216,7 @@ ui() {
         esac
         ;;
       *)
-        # A Today row's own keys first (t, y, K, J, x), then its target's.
+        # A Today row's own keys first (t, Y, K, J, x), then its target's.
         aid="$id"
         act="$(key_action "$id" "$key" "$json")"
         case "$id" in
@@ -1206,6 +1247,7 @@ case "${1:-}" in
   target) today_target "${2:?today row}" "${3:?json}" ;;
   enter) today_enter "${2:?today row}" "${3:?json}" ;;
   key) key_action "${2:?item id}" "${3:?key}" "${4:?json}" ;;
+  urls) urls "${2:?item id}" "${3:?json}" ;;
   order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   neighbor) today_neighbor "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   worker) pick_worker "${2:?work id}" "${3:?json}" ;;
@@ -1213,5 +1255,5 @@ case "${1:-}" in
   jump) jump "${2:?next or prev}" "${3:?row}" "${4:-}" ;;
   space) space_action "${2:-}" ;;
   ui) tty_utf8; ui "${2:?client}" "${3:-}" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | enter <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | actions <work id> <json> [tasks json] | jump next|prev <row> <header rows> | space <id> | ui <client> [item id]" >&2; exit 2 ;;
+  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | enter <today row> <json> | key <id> <key> <json> | urls <id> <json> | order <today row> up|down <json> | worker <work id> <json> | actions <work id> <json> [tasks json] | jump next|prev <row> <header rows> | space <id> | ui <client> [item id]" >&2; exit 2 ;;
 esac

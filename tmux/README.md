@@ -221,8 +221,14 @@ apps show, with a goal and a status.
   - Labels are the apps' labels (ADR 0033 §4a): on an agent's permission `a`
     is Allow and `r` Deny; a Routine's proposal keeps Approve and Reject.
   - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with
-    the system opener (a link is also copied to the tmux buffer). For a question,
-    `1`–`9` choose its option instead.
+    the system opener. A link is also copied to the tmux buffer and, with
+    `set-clipboard` on or `external`, to your terminal's clipboard (OSC 52, also
+    over SSH). On SSH it is shown instead of opened. For a question, `1`–`9`
+    choose its option instead.
+  - `y` copies a link of the item in the same way: its links and the URLs in
+    its text, picked from a list when there are several. A popup has no copy
+    mode, so this is the way to copy a URL. The keys line shows `y copy link`
+    only when the item has one.
   - `space` and `b` scroll the item a page down and up, `Shift`+arrows a
     line. `v` shows the whole item in `$PAGER`.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
@@ -289,7 +295,7 @@ apps show, with a goal and a status.
     `forgotten` when that record is gone. `💡` items are the overall
     assistant's hypotheses: `a` Confirm keeps one as a policy in its words, `r`
     rejects it and asks for an optional reason, as `r` does on `🗂` and `🤝`.
-  - `y` opens the Policies list: what the overall assistant remembers. On it,
+  - `Y` opens the Policies list: what the overall assistant remembers. On it,
     `n` adds a policy in your words (scope `all` or a workspace; `w` ends it
     this Sunday), `e` edits and `d` deletes one. A hypothesis takes `a`
     Confirm and `r` Reject while its item is open, and `f` Forget; a

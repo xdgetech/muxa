@@ -58,7 +58,7 @@ shift_tab() { key Escape '[' Z; }
   [[ "$output" == *"2  docs/plan.md"* ]]
   [[ "$output" == *"3  docs/chart.png"* ]]
   [[ "$output" == *"4  PR #817  https://github.com/example/app/pull/817"* ]]
-  [[ "$output" == *$'l Later   d ✓ Done   c Complete Task   o Open Session\ns Send\nspace/b scroll   v read all   q close'* ]]
+  [[ "$output" == *$'l Later   d ✓ Done   c Complete Task   o Open Session\ns Send\nspace/b scroll   y copy link   v read all   q close'* ]]
 }
 
 @test "labels name what an answer does, as in the apps: triage first, then the answers" {
@@ -87,6 +87,16 @@ shift_tab() { key Escape '[' Z; }
   [ "$(inbox key i-3d4e5f6a p "$ITEMS")" = "" ]
   [ "$(inbox key i-3d4e5f6a n "$ITEMS")" = "" ]
   [ "$(inbox key e-1a2b3c4d r "$ITEMS")" = reject ]
+}
+
+@test "y takes the item's URLs: its links first, then those in its text, each once" {
+  jq -c '.items[1].summary = "Opened https://github.com/example/app/pull/817. CI: (https://ci.example/runs/9), see https://ci.example/runs/9"' \
+    "$ITEMS" >"$TMPDIR/u.json"
+  [ "$(inbox urls i-2c3d4e5f "$TMPDIR/u.json")" = "$(printf '%s\n' https://github.com/example/app/pull/817 https://ci.example/runs/9)" ]
+  [ "$(inbox key i-2c3d4e5f y "$TMPDIR/u.json")" = urls ]
+  [ "$(inbox key i-0a1b2c3d y "$ITEMS")" = "" ]
+  run bash -c "'$ROOT/scripts/inbox.sh' view i-0a1b2c3d '$ITEMS' | sed \$'s/\x1b\\\\[[0-9;]*m//g' | tail -n 1"
+  [ "$output" = "space/b scroll   v read all   q close" ]
 }
 
 @test "a question's numbers choose an option" {
@@ -217,6 +227,21 @@ shift_tab() { key Escape '[' Z; }
   key v
   wait_for 'grep -q "Moved the GA4 export to daily batches" "$TMPDIR/paged"'
   wait_for 'grep -q "^inbox read i-2c3d4e5f" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: y copies the item's link and opens it on this machine" {
+  fake_cli
+  printf '#!/bin/sh\necho "$1" >>"%s/opened"\n' "$TMPDIR" >"$TMPDIR/bin/open"
+  chmod +x "$TMPDIR/bin/open"
+  tx set-environment -g PATH "$TMPDIR/bin:$PATH"
+  tx set-environment -gu SSH_CONNECTION
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key y
+  wait_for 'grep -qx "https://github.com/example/app/pull/817" "$TMPDIR/opened"'
+  [ "$(tx show-buffer)" = "https://github.com/example/app/pull/817" ]
 }
 
 @test "prefix+T: Enter goes to the item's session" {

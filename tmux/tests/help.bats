@@ -48,5 +48,5 @@ teardown() { teardown_server; }
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"  K J            on a Today row: move it up or down"* ]]
   [[ "$out" == *"  x              on a Today row: Not today, with an optional reason"* ]]
-  [[ "$out" == *"  y              the Policies list: add, edit or delete a policy; forget what it learned"* ]]
+  [[ "$out" == *"  Y              the Policies list: add, edit or delete a policy; forget what it learned"* ]]
 }

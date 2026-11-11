@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # The Inbox at muxa's work level 11 (ADR 0050): Today in the order the user
-# chose, K/J/x on its rows, hypothesis items, and the Policies list (y). The
+# chose, K/J/x on its rows, hypothesis items, and the Policies list (Y). The
 # data is the contract's own fixture.
 load helper
 
@@ -70,10 +70,10 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   out="$(plain inbox view today:3 "$ITEMS")"
   [[ "$out" == *"i-1a2b3c4d · not today"* ]]
   [[ "$out" == *"plan:  K/J move   t Re-rank"* ]]
-  [[ "$(plain inbox view today: "$ITEMS")" == *$'t Re-rank: re-rank the queue from what is open now\ny Policies'* ]]
+  [[ "$(plain inbox view today: "$ITEMS")" == *$'t Re-rank: re-rank the queue from what is open now\nY Policies'* ]]
 }
 
-@test "K and J move a Today row, x takes it off Today, y opens the Policies list" {
+@test "K and J move a Today row, x takes it off Today, Y opens the Policies list" {
   [ "$(inbox key today:1 K "$ITEMS")" = "" ]
   [ "$(inbox key today:1 J "$ITEMS")" = plan:down ]
   [ "$(inbox key today:2 K "$ITEMS")" = plan:up ]
@@ -81,7 +81,7 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   [ "$(inbox key today:2 x "$ITEMS")" = plan:dismiss ]
   [ "$(inbox key today:3 x "$ITEMS")" = "" ]
   [ "$(inbox key today: x "$ITEMS")" = "" ]
-  [ "$(inbox key i-1a2b3c4d y "$ITEMS")" = policies ]
+  [ "$(inbox key i-1a2b3c4d Y "$ITEMS")" = policies ]
   [ "$(inbox order today:1 down "$ITEMS" | tr '\n' ' ')" = "w-0b1c2d3e w-7b8c9d0e i-1a2b3c4d " ]
   [ "$(inbox order today:3 up "$ITEMS" | tr '\n' ' ')" = "w-7b8c9d0e i-1a2b3c4d w-0b1c2d3e " ]
   [ "$(inbox order today:3 down "$ITEMS")" = "" ]
@@ -169,12 +169,12 @@ key() { tx send-keys -K -c "$C" "$@"; sleep 0.5; }
   wait_for 'grep -q "^plan dismiss w-0b1c2d3e --reason Waiting --json$" "$TMPDIR/bin/calls"'
 }
 
-@test "prefix+T: y opens the Policies list, n adds a policy that ends this week" {
+@test "prefix+T: Y opens the Policies list, n adds a policy that ends this week" {
   fake_cli
   attach
   key C-b T
   sleep 1
-  key y
+  key Y
   sleep 1
   key n
   key Recruiting Enter

@@ -80,7 +80,7 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 
 - The sidebar shows the Inbox section above the session tree: the count and the first open items. `Enter` on one opens it in `prefix + T`.
 - `prefix + T` shows the list with the selected item below it: its question, summary, numbered evidence and keys.
-- The keys follow the apps' item screen (ADR 0040), on two lines. Triage: `l` Later (moves the item down, with no time), `d` ✓ Done (only the item), `c` Complete Task, `x` Drop Task, `p` Protect or Unprotect (`work:8`), `o` Open Session. Answers: `a` the first decision (Allow, Approve or Retry; never Complete Task), `r` Deny or Reject, `1`–`9` a question's option, `s` the reply box (Send with a session, Deny & Send on a permission, Ask Agent without a session; it asks for the text). Otherwise `1`–`9` open evidence (the diff first). `Enter` also opens the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Only the keys the item takes are listed.
+- The keys follow the apps' item screen (ADR 0040), on two lines. Triage: `l` Later (moves the item down, with no time), `d` ✓ Done (only the item), `c` Complete Task, `x` Drop Task, `p` Protect or Unprotect (`work:8`), `o` Open Session. Answers: `a` the first decision (Allow, Approve or Retry; never Complete Task), `r` Deny or Reject, `1`–`9` a question's option, `s` the reply box (Send with a session, Deny & Send on a permission, Ask Agent without a session; it asks for the text). Otherwise `1`–`9` open evidence (the diff first). `y` copies one of the item's URLs, from its links or its text, to the clipboard and opens it on this machine. `Enter` also opens the session. `space` and `b` scroll the item by a page, `J` and `K` by a line, and `v` shows it whole in the pager. Only the keys the item takes are listed.
 - `D` is Delete Old (`work:8`): it asks for 1, 3 or 5 days, then confirms with the count, as the apps do. A row and an item show "protected".
 - Labels are the apps' labels (ADR 0033 §4a, ADR 0040): `accept` is "Complete Task", `drop` "Drop Task", `keep-open` and `dismiss` "✓ Done", `later` "Later", `ask-agent` "Ask Agent", `reply` is "Send" ("Deny & Send" on an `ask`), and on an `ask` `approve` is "Allow" and `reject` "Deny". A proposal keeps Approve and Reject.
 
@@ -177,7 +177,7 @@ With `work:11`, the user can correct the newest plan and tell the overall assist
 
 Forget removes a record from what the assistant reads next, with the hypotheses based on it. Plans made before keep their reasons. Later and Not Today never tell the assistant that an item is unimportant.
 
-muxa for tmux (`prefix + T`): `K` and `J` move a Today row up and down. `x` takes a row off Today and asks for a reason (`Enter` gives none). `💡` items are hypotheses: `a` Confirm, `r` Reject with an optional reason, `l` Later. `y` opens the Policies list: `n` adds a policy, `e` edits, `d` deletes, `f` forgets a hypothesis or a correction. Re-rank is `t`, because `p` is Protect.
+muxa for tmux (`prefix + T`): `K` and `J` move a Today row up and down. `x` takes a row off Today and asks for a reason (`Enter` gives none). `💡` items are hypotheses: `a` Confirm, `r` Reject with an optional reason, `l` Later. `Y` opens the Policies list: `n` adds a policy, `e` edits, `d` deletes, `f` forgets a hypothesis or a correction. Re-rank is `t`, because `p` is Protect.
 
 ## Staff and hand-offs (ADR 0051)
 

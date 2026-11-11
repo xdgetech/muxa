@@ -77,7 +77,7 @@ print() {
   row "t" "Re-rank: re-rank the queue from what's open now (one overall run)"
   row "K J" "on a Today row: move it up or down"
   row "x" "on a Today row: Not today, with an optional reason"
-  row "y" "the Policies list: add, edit or delete a policy; forget what it learned"
+  row "Y" "the Policies list: add, edit or delete a policy; forget what it learned"
   printf '  %sp protects an item, D deletes items older than 1, 3 or 5 days.%s\n' "$D" "$Z"
 }
 
