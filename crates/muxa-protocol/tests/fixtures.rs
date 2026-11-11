@@ -851,6 +851,23 @@ fn policy_fixtures_round_trip() {
     };
     assert_eq!(plan.user_order.len(), plan.top.len());
     assert_eq!(plan.dismissed, ["i-1a2b3c4d"]);
+    // The host names each row and says which target is no longer open.
+    let answered = plan
+        .top
+        .iter()
+        .find(|r| r.item.as_deref() == Some("i-1a2b3c4d"))
+        .unwrap();
+    assert_eq!(
+        answered.target_state,
+        Some(muxa_protocol::TargetState::Answered)
+    );
+    assert!(answered.title.is_some());
+    assert!(
+        plan.top
+            .iter()
+            .filter(|r| r.work.is_some())
+            .all(|r| r.title.is_some() && r.target_state.is_none())
+    );
     let kinds: Vec<BasisKind> = plan
         .top
         .iter()
@@ -897,7 +914,6 @@ fn policy_fixtures_round_trip() {
 
     let Message::InboxList {
         items,
-        plans,
         policies,
         hypotheses,
         corrections,
@@ -906,24 +922,6 @@ fn policy_fixtures_round_trip() {
     else {
         panic!()
     };
-    // The host names each row and says which target is no longer open.
-    let answered = plans[0]
-        .top
-        .iter()
-        .find(|r| r.item.as_deref() == Some("i-1a2b3c4d"))
-        .unwrap();
-    assert_eq!(
-        answered.target_state,
-        Some(muxa_protocol::TargetState::Answered)
-    );
-    assert!(answered.title.is_some());
-    assert!(
-        plans[0]
-            .top
-            .iter()
-            .filter(|r| r.work.is_some())
-            .all(|r| r.title.is_some() && r.target_state.is_none())
-    );
     assert_eq!(
         (items[0].kind, items[0].state),
         (ItemKind::Hypothesis, ItemState::Open)

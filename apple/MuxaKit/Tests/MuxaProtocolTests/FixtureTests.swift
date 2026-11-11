@@ -374,6 +374,10 @@ struct FixtureTests {
         #expect(conflict.code == .conflict)
         guard case .planSaved(_, let plan) = messages[29] else { Issue.record("expected plan-saved"); return }
         #expect(plan.userOrder.count == plan.top.count && plan.dismissed == ["i-1a2b3c4d"])
+        // The host names each row and says which target is no longer open.
+        let answered = plan.top.first { $0.item == "i-1a2b3c4d" }
+        #expect(answered?.targetState == .answered && answered?.title != nil)
+        #expect(plan.top.filter { $0.work != nil }.allSatisfy { $0.title != nil && $0.targetState == nil })
         let kinds = Set(plan.top.flatMap { $0.basis.map(\.kind) })
         #expect(kinds.isSuperset(of: [.policy, .hypothesis, .correction]))
         guard case .policySaved(_, let made) = messages[32], case .inboxSaved(_, _, let confirmed?) = messages[33] else {
@@ -383,12 +387,8 @@ struct FixtureTests {
         guard case .result(_, let forgot?, _) = messages[35] else { Issue.record("expected an error"); return }
         #expect(forgot.code == .badRequest)
 
-        guard case .inboxList(_, _, let items, _, _, _, let plans, _, let policies, let hypotheses, let corrections) = messages[36]
+        guard case .inboxList(_, _, let items, _, _, _, _, _, let policies, let hypotheses, let corrections) = messages[36]
         else { Issue.record("expected inbox-list"); return }
-        // The host names each row and says which target is no longer open.
-        let answered = plans[0].top.first { $0.item == "i-1a2b3c4d" }
-        #expect(answered?.targetState == .answered && answered?.title != nil)
-        #expect(plans[0].top.filter { $0.work != nil }.allSatisfy { $0.title != nil && $0.targetState == nil })
         #expect(items[0].kind == .hypothesis && items[0].answers == [.confirm, .reject, .later])
         #expect(items[0].hypothesis?.confidence == .low)
         #expect(policies.count == 3)

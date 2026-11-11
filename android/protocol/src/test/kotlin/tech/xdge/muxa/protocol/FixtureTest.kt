@@ -279,6 +279,11 @@ class FixtureTest {
         assertEquals(Message.Result(433), messages[28])
         val plan = (messages[29] as Message.PlanSaved).entry
         assertTrue(plan.userOrder.size == plan.top.size && plan.dismissed == listOf("i-1a2b3c4d"))
+        // The host names each row and says which target is no longer open.
+        val answered = plan.top.first { it.item == "i-1a2b3c4d" }
+        assertEquals(TargetState.ANSWERED, answered.targetState)
+        assertTrue(answered.title != null)
+        assertTrue(plan.top.filter { it.work != null }.all { it.title != null && it.targetState == null })
         val kinds = plan.top.flatMap { row -> row.basis.map { it.kind } }
         assertTrue(kinds.containsAll(listOf(BasisKind.POLICY, BasisKind.HYPOTHESIS, BasisKind.CORRECTION)))
         val made = (messages[32] as Message.PolicySaved).entry
@@ -290,11 +295,6 @@ class FixtureTest {
         assertEquals(ItemKind.HYPOTHESIS, list.items[0].kind)
         assertEquals(listOf(InboxAction.CONFIRM, InboxAction.REJECT, InboxAction.LATER), list.items[0].answers)
         assertEquals(Confidence.LOW, list.items[0].hypothesis?.confidence)
-        // The host names each row and says which target is no longer open.
-        val answered = list.plans[0].top.first { it.item == "i-1a2b3c4d" }
-        assertEquals(TargetState.ANSWERED, answered.targetState)
-        assertTrue(answered.title != null)
-        assertTrue(list.plans[0].top.filter { it.work != null }.all { it.title != null && it.targetState == null })
         assertEquals(3, list.policies.size)
         assertEquals(listOf(HypothesisState.PROPOSED, HypothesisState.REJECTED), list.hypotheses.map { it.state })
         assertEquals(
