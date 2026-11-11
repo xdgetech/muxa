@@ -1,5 +1,6 @@
 package tech.xdge.muxa.app
 
+import kotlinx.coroutines.launch
 import tech.xdge.muxa.protocol.AssistResult
 import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.Due
@@ -88,5 +89,25 @@ suspend fun AppModel.applyNotes(request: AssistantRequest, result: AssistResult)
         null
     } catch (e: PaneSession.Failure) {
         PaneSession.describe(e)
+    }
+}
+
+/** Talk to Assistant shows: the host opens the overall assistant's root Ask session (ADR 0054). */
+val AppModel.canTalkToAssistant: Boolean get() = isConnected && state.assistantWorkspace != null
+
+/**
+ * Talk to Assistant (ADR 0054): opens the overall assistant's root Ask session, or starts it, and
+ * shows its Chat, as Ask Agent does. The `+` sheet closes first; a failure lands in `inboxError`.
+ */
+fun AppModel.talkToAssistant() {
+    captureDraft = null
+    scope.launch {
+        try {
+            val started = session.talkToAssistant()
+            val s = state.sessions.firstOrNull { it.id == started.session } ?: return@launch
+            openPane(s, AppModel.PaneView.CHAT)
+        } catch (e: PaneSession.Failure) {
+            inboxError = PaneSession.describe(e)
+        }
     }
 }

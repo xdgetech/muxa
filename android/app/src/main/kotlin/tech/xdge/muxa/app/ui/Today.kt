@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.canKeepPolicies
+import tech.xdge.muxa.app.canTalkToAssistant
 import tech.xdge.muxa.app.hasToday
 import tech.xdge.muxa.app.item
 import tech.xdge.muxa.app.openPlanRow
@@ -40,6 +41,7 @@ import tech.xdge.muxa.app.planIsNew
 import tech.xdge.muxa.app.planNow
 import tech.xdge.muxa.app.planRowTitle
 import tech.xdge.muxa.app.shownPlan
+import tech.xdge.muxa.app.talkToAssistant
 import tech.xdge.muxa.app.workItem
 import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanRow
@@ -95,6 +97,9 @@ private fun TodayHeader(model: AppModel) {
                     color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.labelSmall,
                 )
+            }
+            if (model.canTalkToAssistant) {
+                TextButton({ model.talkToAssistant() }, Modifier.testTag("today-talk")) { Text("Talk") }
             }
             if (model.canKeepPolicies) {
                 TextButton({ model.policiesShown = true }, Modifier.testTag("today-policies")) { Text("Policies") }

@@ -35,9 +35,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.askFromCapture
+import tech.xdge.muxa.app.canTalkToAssistant
 import tech.xdge.muxa.app.captureToTask
 import tech.xdge.muxa.app.pickableWorkspaces
 import tech.xdge.muxa.app.saveCapture
+import tech.xdge.muxa.app.talkToAssistant
 import tech.xdge.muxa.protocol.AssistScope
 import tech.xdge.muxa.session.ASSIST_SCOPES
 import tech.xdge.muxa.session.CaptureDraft
@@ -100,6 +102,12 @@ fun CaptureSheet(model: AppModel, initial: CaptureDraft) {
                     { model.captureToTask(draft) }, Modifier.testTag("capture-start-task"),
                     enabled = !saving && draft.text.isNotBlank() && model.canCreateTasks,
                 ) { Text("Start a Task instead…") }
+                // Only on an empty sheet: the chat would leave a typed thought unsaved (ADR 0054).
+                if (model.canTalkToAssistant && draft.text.isBlank()) {
+                    TextButton(
+                        { model.talkToAssistant() }, Modifier.testTag("capture-talk"), enabled = !saving,
+                    ) { Text("Talk to Assistant") }
+                }
                 error?.let { Text(it, color = Theme.failure, modifier = Modifier.testTag("capture-error")) }
             }
         },

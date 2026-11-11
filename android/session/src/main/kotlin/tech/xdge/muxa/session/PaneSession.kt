@@ -49,6 +49,7 @@ import tech.xdge.muxa.protocol.SortAction
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_ASK
+import tech.xdge.muxa.protocol.WORK_ASK_ROOT
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_ITEMS
@@ -212,6 +213,12 @@ class PaneSession(
 
         /** Task ends propose to the workspace memory; Approve on a `memory` item sends the hash of the text shown (ADR 0053). */
         val canKeepMemory get() = workLevel >= WORK_MEMORY
+
+        /**
+         * The overall assistant's workspace when the host opens its root Ask session (ADR 0054):
+         * Talk to Assistant shows then.
+         */
+        val assistantWorkspace get() = if (workLevel >= WORK_ASK_ROOT) assistant?.overall else null
     }
 
     private val _state = MutableStateFlow(State())
@@ -1201,11 +1208,26 @@ class PaneSession(
      */
     suspend fun startSession(workspace: String, repo: String): Message.SessionStarted = withContext(dispatcher) {
         if (!_state.value.canAsk) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ASK_UNSUPPORTED))
+        start { id -> Request.StartSession(id, workspace, repo) }
+    }
+
+    /**
+     * Opens the overall assistant's root Ask session, or starts it (ADR 0054). Its Chat is the
+     * user's conversation with the assistant. Returns the session once the session list has it.
+     */
+    suspend fun talkToAssistant(): Message.SessionStarted = withContext(dispatcher) {
+        val workspace = _state.value.assistantWorkspace
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ASSISTANT_UNSUPPORTED))
+        start { id -> Request.StartSession(id, workspace, root = true) }
+    }
+
+    /** Sends [make]'s `start-session`, then lists sessions again, so the list has it. */
+    private suspend fun start(make: (Long) -> Request): Message.SessionStarted {
         var requestId = 0L
         try {
             request { id ->
                 requestId = id
-                Request.StartSession(id, workspace, repo)
+                make(id)
             }
         } catch (e: Exception) {
             startedSessions.remove(requestId)
@@ -1215,7 +1237,7 @@ class PaneSession(
         val started = startedSessions.remove(requestId)
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "The bridge did not name the session."))
         refresh()
-        started
+        return started
     }
 
     /**
@@ -1538,6 +1560,10 @@ class PaneSession(
 
         /** Shown when the host has no plans, pins or notes (ADR 0049). */
         const val PLANS_UNSUPPORTED = "This host has no overall assistant. Update muxa on the host."
+
+        /** Shown when the host has no overall assistant to talk to (ADR 0054). */
+        const val ASSISTANT_UNSUPPORTED =
+            "This host has no overall assistant to talk to. Set one up on the host, or update muxa there."
 
         /** Shown when the host keeps no policies (ADR 0050). */
         const val POLICIES_UNSUPPORTED = "This host keeps no policies. Update muxa on the host."

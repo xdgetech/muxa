@@ -10,7 +10,9 @@ import org.junit.Assert.fail
 import org.junit.Test
 import tech.xdge.muxa.protocol.CloseMode
 import tech.xdge.muxa.protocol.ErrorCode
+import tech.xdge.muxa.protocol.WORK_ASK_ROOT
 import tech.xdge.muxa.protocol.WORK_ITEMS
+import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.TaskRecordDraft
@@ -103,5 +105,16 @@ class DemoAskTest {
         } catch (e: PaneSession.Failure.Bridge) {
             assertEquals(ErrorCode.BAD_REQUEST, e.body.code)
         }
+    }
+
+    @Test
+    fun talkToAssistantOpensTheSecretarysOneSession() = runBlocking {
+        val session = connected(WORK_ASK_ROOT)
+        assertEquals("secretary", session.state.value.assistantWorkspace)
+        val first = session.talkToAssistant()
+        assertEquals("ask-secretary", first.name)
+        assertEquals("the same conversation", first.session, session.talkToAssistant().session)
+        assertEquals("secretary", session.state.value.sessions.single { it.id == first.session }.ask)
+        assertNull("a level 14 demo has no Talk", connected(WORK_MEMORY).state.value.assistantWorkspace)
     }
 }
