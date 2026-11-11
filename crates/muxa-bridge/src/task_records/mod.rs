@@ -487,7 +487,8 @@ pub async fn start_session(
             crate::tasks::ask::start(client, &tasks.command, &workspaces, workspace, repo).await
         }
         (None, true) => {
-            crate::tasks::ask::open_root(client, &tasks.command, &workspaces, workspace)
+            let state_dir = config.state_dir.as_deref();
+            crate::tasks::ask::open_root(client, &tasks.command, &workspaces, workspace, state_dir)
                 .await
                 .map(|(launched, _)| launched)
         }

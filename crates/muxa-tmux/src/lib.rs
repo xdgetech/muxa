@@ -30,8 +30,8 @@ pub use ids::{PaneId, SessionId, WindowId};
 pub use input::{paste, send_bytes, send_keys, send_text, valid_key};
 pub use lifecycle::{
     clients_of, global_option, kill_session, last_other_session, new_session, new_session_command,
-    pane_start_command, respawn_pane, respawn_pane_command, session_names, set_pane_option,
-    set_session_option, shell_after_exit, switch_client,
+    pane_start_command, remain_on_exit, respawn_pane, respawn_pane_command, session_names,
+    set_pane_option, set_session_option, shell_after_exit, switch_client,
 };
 pub use parser::{Notification, Reply};
 pub use screen_text::screen_shows;

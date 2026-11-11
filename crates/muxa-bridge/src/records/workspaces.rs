@@ -352,6 +352,13 @@ impl Workspaces {
         self.list.iter().find(|w| w.role == Role::Overall)
     }
 
+    /// The overall workspace when its root Ask session, the secretary's
+    /// chat, stays open (ADR 0056).
+    pub fn secretary(&self) -> Option<&Workspace> {
+        self.overall()
+            .filter(|w| w.assistant.as_ref().is_some_and(|d| d.resident))
+    }
+
     /// What `workspace` shares with the overall assistant; `none` for an
     /// unknown workspace and for the overall one.
     pub fn share(&self, workspace: &str) -> Share {

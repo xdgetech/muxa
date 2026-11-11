@@ -68,13 +68,18 @@ async fn root_session(env: &Env, workspace: &str) -> Result<(SessionId, String, 
     let workspaces = tokio::task::spawn_blocking(move || config.load_workspaces())
         .await
         .map_err(|e| error_body(ErrorCode::Internal, format!("workspace lookup failed: {e}")))??;
-    let (launched, fresh) =
-        crate::tasks::ask::open_root(&env.client, &env.tasks.command, &workspaces, workspace)
-            .await
-            .map_err(|e| {
-                tracing::warn!(workspace, error = %e, "workspace ask session did not start");
-                convert::task_error(&e)
-            })?;
+    let (launched, fresh) = crate::tasks::ask::open_root(
+        &env.client,
+        &env.tasks.command,
+        &workspaces,
+        workspace,
+        env.records.state_dir.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(workspace, error = %e, "workspace ask session did not start");
+        convert::task_error(&e)
+    })?;
     Ok((launched.id, launched.name, fresh))
 }
 

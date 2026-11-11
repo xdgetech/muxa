@@ -23,6 +23,9 @@ pub struct Builtin {
     command: String,
     /// One entry runs through the shell; more are executed directly.
     explicit: Option<Vec<String>>,
+    /// The pane stays dead after the agent exits, for its owner to respawn,
+    /// instead of getting a shell (ADR 0056).
+    stays_dead: bool,
 }
 
 impl Builtin {
@@ -30,6 +33,15 @@ impl Builtin {
         Self {
             command,
             explicit: None,
+            stays_dead: false,
+        }
+    }
+
+    /// The agent's pane stays dead when the agent exits; nothing replaces it.
+    pub fn stays_dead(self) -> Self {
+        Self {
+            stays_dead: true,
+            ..self
         }
     }
 
@@ -49,6 +61,7 @@ impl Builtin {
         Self {
             command: String::new(),
             explicit: Some(argv),
+            stays_dead: false,
         }
     }
 
@@ -79,7 +92,11 @@ impl Builtin {
             }
         };
         muxa_tmux::set_pane_option(client, pane, "@muxa_role", "agent").await?;
-        muxa_tmux::shell_after_exit(client, pane, &dir.to_string_lossy()).await?;
+        if self.stays_dead {
+            muxa_tmux::remain_on_exit(client, pane).await?;
+        } else {
+            muxa_tmux::shell_after_exit(client, pane, &dir.to_string_lossy()).await?;
+        }
         Ok(session)
     }
 

@@ -76,6 +76,8 @@ struct Daemon {
     items: tokio::sync::Mutex<items::Watch>,
     /// When the last worktree sweep started (ADR 0043 §6); None before the first.
     swept: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Keeps the secretary's chat open (ADR 0056).
+    secretary: tokio::sync::Mutex<crate::secretary::Resident>,
 }
 
 impl Daemon {
@@ -133,6 +135,7 @@ impl Daemon {
         self.park(idle).await;
         crate::routines::tick(&self.records).await;
         crate::assistant::tick(&self.records).await;
+        crate::secretary::tick(&self.records, &mut *self.secretary.lock().await).await;
         self.sweep();
     }
 
@@ -241,6 +244,7 @@ fn run(args: args::Args) -> ExitCode {
         loops: tokio::sync::Mutex::new(engine),
         items: tokio::sync::Mutex::new(items::Watch::default()),
         swept: std::sync::Mutex::new(None),
+        secretary: tokio::sync::Mutex::new(crate::secretary::Resident::default()),
         tmux,
     };
     match runtime.block_on(serve(Arc::new(daemon), &path)) {

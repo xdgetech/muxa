@@ -171,6 +171,27 @@ fn from_record(r: &Record) -> String {
     why.to_owned()
 }
 
+/// One `failure` item in item file `file`, unless `key` already made one.
+/// The secretary's give-up uses it (ADR 0056 §2).
+pub(crate) fn make_one(
+    store: &ItemStore,
+    file: &str,
+    key: &str,
+    workspace: &str,
+    title: &str,
+    reason: &str,
+    now: u64,
+) -> Result<Option<String>, StateError> {
+    let f = Failure {
+        task: file.to_owned(),
+        key: key.to_owned(),
+        workspace: workspace.to_owned(),
+        title: title.to_owned(),
+        reason: reason.to_owned(),
+    };
+    make(store, &f, now)
+}
+
 /// Under the file's lock. The new item's id, or None when the key made one.
 fn make(store: &ItemStore, f: &Failure, now: u64) -> Result<Option<String>, StateError> {
     store.update::<_, StateError>(&f.task, |items| {
