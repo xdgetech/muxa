@@ -113,8 +113,11 @@ where
         // 9 keeps Captures and Work items (ADR 0048), 10 adds delegate notes, plans, pins and
         // due dates (ADR 0049), 11 policies, corrections and hypotheses (ADR 0050), 12 staff
         // and hand-offs (ADR 0051), 13 write proposals (ADR 0052), 14 workspace memory (ADR 0053),
-        // 15 opens a workspace's root Ask session without an item (ADR 0054).
-        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_ASK_ROOT));
+        // 15 opens a workspace's root Ask session without an item (ADR 0054), 16 makes every
+        // request Result an item to review (ADR 0058).
+        capabilities.push(muxa_protocol::work_capability(
+            muxa_protocol::WORK_RESULT_REVIEW,
+        ));
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {

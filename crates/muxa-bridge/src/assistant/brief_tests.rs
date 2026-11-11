@@ -33,6 +33,7 @@ fn brief(scope: AssistScope) -> Brief {
         step: 1,
         staff: None,
         writes: false,
+        follow_up: None,
     }
 }
 

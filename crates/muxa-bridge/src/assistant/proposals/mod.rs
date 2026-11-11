@@ -11,6 +11,7 @@ pub mod approve;
 mod handoff;
 pub mod inbox;
 mod memory;
+mod send;
 mod write;
 
 use std::sync::Arc;
@@ -46,6 +47,31 @@ pub async fn answer(
         Ok(approved) => {
             let error = approved.error.clone();
             (messages(id, approved), error)
+        }
+        Err(e) => (Vec::new(), Some(e)),
+    })
+}
+
+/// `update-inbox reply` on a `result` item (Send) or a `write` item
+/// (Revise), ADR 0058: `work-saved` with the new version, then
+/// `inbox-saved`, and the error for `result`. None for any other item.
+pub async fn reply(
+    cx: &Context,
+    id: u64,
+    entry: &str,
+    text: Option<&str>,
+) -> Option<(Vec<Message>, Option<ErrorBody>)> {
+    let (config, item) = (Arc::clone(&cx.records), entry.to_owned());
+    let found = match super::blocking(move || approve::find(&config, &item)).await {
+        Ok(Some(found)) if send::target(&found.item, None).is_some() => found,
+        Ok(_) => return None,
+        Err(e) => return Some((Vec::new(), Some(e))),
+    };
+    let text = text.unwrap_or_default().to_owned();
+    Some(match send::send(cx, found, text).await {
+        Ok(sent) => {
+            let error = sent.error.clone();
+            (messages(id, sent), error)
         }
         Err(e) => (Vec::new(), Some(e)),
     })

@@ -189,6 +189,9 @@ impl Host {
     }
 }
 
+/// A result stored at 1; "now" within the day after it.
+const NOW: u64 = 1_000;
+
 #[test]
 fn the_tick_asks_starts_or_resolves_by_the_chain_and_the_mode() {
     let q = waiting_request();
@@ -197,15 +200,14 @@ fn the_tick_asks_starts_or_resolves_by_the_chain_and_the_mode() {
         pending(&q).map(|(s, h)| (s, h.worker.as_str())),
         Some((1, STRATEGIST))
     );
+    let ask = |handoff| Some(Todo::Ask { step: 1, handoff });
+    assert_eq!(todo(&q, &none, Some(Handoffs::Review), NOW), ask(true));
     assert_eq!(
-        todo(&q, &none, Some(Handoffs::Review)),
-        Some(Todo::Ask { step: 1 })
-    );
-    assert_eq!(
-        todo(&q, &none, Some(Handoffs::Auto)),
+        todo(&q, &none, Some(Handoffs::Auto), NOW),
         Some(Todo::Start { step: 1 })
     );
-    assert_eq!(todo(&q, &none, Some(Handoffs::None)), None);
+    // `none` refuses hand-offs: the Result is still reviewed.
+    assert_eq!(todo(&q, &none, Some(Handoffs::None), NOW), ask(false));
 
     // Asked once: nothing more until the chain moves.
     let mut asked = Extra::new();
@@ -216,20 +218,19 @@ fn the_tick_asks_starts_or_resolves_by_the_chain_and_the_mode() {
         ..Waiting::default()
     };
     set_waiting(&mut asked, &mark);
-    assert_eq!(todo(&q, &asked, Some(Handoffs::Review)), None);
+    assert_eq!(todo(&q, &asked, Some(Handoffs::Review), NOW), None);
 
-    // A new version, a cancel, or an ended chain resolves the waiting item once.
+    // A new version resolves the item; a cancel or an ended chain ends it, once.
     let v2 = AssistantRequest {
         version: 2,
         delivery: Delivery::Pending,
         steps: vec![steps::fresh(1, LEAD, StepBy::Lead, 2)],
         ..q.clone()
     };
-    let resolve = Some(Todo::Resolve {
-        task: RUN.into(),
-        why: "A new version of the request ended this chain.",
-    });
-    assert_eq!(todo(&v2, &asked, Some(Handoffs::Review)), resolve);
+    assert_eq!(
+        todo(&v2, &asked, Some(Handoffs::Review), NOW),
+        Some(Todo::Resolve { task: RUN.into() })
+    );
     let mut ended = Extra::new();
     set_waiting(
         &mut ended,
@@ -238,10 +239,10 @@ fn the_tick_asks_starts_or_resolves_by_the_chain_and_the_mode() {
             ..mark.clone()
         },
     );
-    assert!(matches!(
-        todo(&q, &ended, Some(Handoffs::Review)),
-        Some(Todo::Resolve { .. })
-    ));
+    assert_eq!(
+        todo(&q, &ended, Some(Handoffs::Review), NOW),
+        Some(Todo::End { task: RUN.into() })
+    );
     let mut resolved = Extra::new();
     set_waiting(
         &mut resolved,
@@ -251,43 +252,119 @@ fn the_tick_asks_starts_or_resolves_by_the_chain_and_the_mode() {
             ..mark
         },
     );
-    assert_eq!(todo(&q, &resolved, Some(Handoffs::Review)), None);
+    assert_eq!(todo(&q, &resolved, Some(Handoffs::Review), NOW), None);
 
-    // A running step, or one without a hand-off, waits on nothing.
+    // A running step waits on nothing.
     let running = AssistantRequest {
         delivery: Delivery::Processing,
         ..q.clone()
     };
     assert_eq!(pending(&running), None);
+    assert_eq!(todo(&running, &none, Some(Handoffs::Review), NOW), None);
+    // A Result without a hand-off is reviewed too, also under `auto` and
+    // without a staff (ADR 0058 §1).
     let mut answered = q.clone();
     answered.steps[0].handoff = None;
-    assert_eq!(todo(&answered, &none, Some(Handoffs::Auto)), None);
+    assert_eq!(
+        todo(&answered, &none, Some(Handoffs::Auto), NOW),
+        ask(false)
+    );
+    answered.steps.clear();
+    assert_eq!(todo(&answered, &none, None, NOW), ask(false));
+    // A Result older than a day makes no item.
+    assert_eq!(
+        todo(&answered, &none, None, 1 + RECENT + 1),
+        None,
+        "an old result"
+    );
 }
 
 #[test]
-fn one_item_per_step_names_both_workers_and_resolves_once() {
+fn one_result_item_per_step_offers_the_hand_off_and_resolves_once() {
     let h = host("", "");
-    let id = h.save(waiting_request());
+    let mut q = waiting_request();
+    q.results[0].findings = vec![
+        serde_json::from_value(json!({
+            "text": "Option B needs one hire fewer.\nDetails follow.",
+            "sources": [{"url": "https://example.com/plan", "title": "Plan"},
+                        {"path": "/root/plan.md"}],
+        }))
+        .unwrap(),
+    ];
+    q.results[0].next = vec!["Ask finance.".into()];
+    let id = h.save(q);
     let (q, _) = h.get(&id);
-    let made = items::make(&h.config, RUN, &q, 1, None).unwrap();
+    let made = items::make(&h.config, RUN, &q, 1, true, None).unwrap();
     assert!(made.is_some());
-    assert_eq!(items::make(&h.config, RUN, &q, 1, None).unwrap(), None);
-    let [item] = h.items().try_into().unwrap();
     assert_eq!(
-        (item.kind, item.state),
-        (ItemKind::Handoff, ItemState::Open)
+        items::make(&h.config, RUN, &q, 1, true, None).unwrap(),
+        None
     );
+    let [item] = h.items().try_into().unwrap();
+    assert_eq!((item.kind, item.state), (ItemKind::Result, ItemState::Open));
     assert_eq!(item.question, "lead asks strategist to: Compare them.");
     assert_eq!(
         (item.workspace.as_str(), item.title.as_str()),
         ("lisk", "Roadmap")
     );
-    let p = item.handoff.unwrap();
-    assert_eq!((p.request.as_str(), p.version, p.step), (id.as_str(), 1, 1));
-    assert_eq!((p.from.as_str(), p.worker.as_str()), (LEAD, STRATEGIST));
-    assert_eq!(items::resolve(&h.config, RUN, "gone").unwrap(), 1);
-    assert_eq!(items::resolve(&h.config, RUN, "gone").unwrap(), 0);
-    assert_eq!(h.items()[0].state, ItemState::Resolved);
+    assert_eq!(item.summary.as_deref(), Some("Two options."));
+    assert_eq!(item.attachments.links.len(), 1);
+    let r = item.result.clone().unwrap();
+    assert_eq!((r.request.as_str(), r.version, r.step), (id.as_str(), 1, 1));
+    assert_eq!(r.worker.as_deref(), Some(LEAD));
+    assert_eq!(r.findings, ["Option B needs one hire fewer."]);
+    assert_eq!(r.next, ["Ask finance."]);
+    assert_eq!(r.handoff.unwrap().worker, STRATEGIST);
+    use muxa_protocol::InboxAction::*;
+    assert_eq!(item.answers, [Approve, Reply, Dismiss, Later]);
+
+    // A cancel takes the hand-off off; the Result stays to review.
+    assert_eq!(items::end(&h.config, RUN, CANCELLED).unwrap(), 1);
+    let [ended] = h.items().try_into().unwrap();
+    assert_eq!(ended.state, ItemState::Open);
+    assert!(ended.result.unwrap().handoff.is_none());
+    assert_eq!(ended.answers, [Reply, Dismiss, Later]);
+    assert!(ended.summary.unwrap().starts_with(CANCELLED));
+
+    assert_eq!(items::resolve(&h.config, RUN, REPLACED).unwrap(), 1);
+    assert_eq!(items::resolve(&h.config, RUN, REPLACED).unwrap(), 0);
+    let [gone] = h.items().try_into().unwrap();
+    assert_eq!(gone.state, ItemState::Resolved);
+    assert!(gone.summary.unwrap().contains("Two options."));
+}
+
+#[test]
+fn a_result_without_a_staff_is_the_assistants() {
+    let h = host("", "");
+    let mut q = waiting_request();
+    q.steps.clear();
+    q.results[0].step = None;
+    let id = h.save(q);
+    let (q, _) = h.get(&id);
+    assert!(
+        items::make(&h.config, RUN, &q, 1, false, None)
+            .unwrap()
+            .is_some()
+    );
+    let [item] = h.items().try_into().unwrap();
+    assert_eq!(item.question, "The assistant finished: Two options.");
+    assert!(item.result.unwrap().worker.is_none());
+}
+
+#[test]
+fn done_ends_the_chain_of_its_version_only() {
+    let h = host("", "");
+    let id = h.save(waiting_request());
+    done(&h.config, &id, 1).unwrap();
+    let (q, extra) = h.get(&id);
+    assert!(ended(&extra, 1));
+    assert_eq!(todo(&q, &extra, Some(Handoffs::Review), NOW), None);
+    let e = h.claim(&id, Via::Approved, 10).unwrap_err();
+    assert!(e.message.contains("chain ended"), "{}", e.message);
+    // An older version's Done changes nothing.
+    let other = h.save(waiting_request());
+    done(&h.config, &other, 7).unwrap();
+    assert!(!ended(&h.get(&other).1, 1));
 }
 
 #[test]

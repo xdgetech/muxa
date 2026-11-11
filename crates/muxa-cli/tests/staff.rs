@@ -83,6 +83,15 @@ handoff = {'id':'i-7a8b9c0d','kind':'handoff','state':'open',
            'handoff':{'request':'q-2b3c4d5e','version':2,'step':2,'work':'w-8b9c0d1e',
                       'from':'lisk-strategist','worker':'lisk-architect','purpose':'Check the gateway.'},
            'answers':['approve','reject','later']}
+review = {'id':'i-9c0d1e2f','kind':'result','state':'open',
+          'question':'lisk-strategist asks lisk-architect to: Check the gateway.',
+          'workspace':'lisk','title':'Decide the Q1 roadmap','createdAt':1,
+          'summary':'Option B fits.',
+          'result':{'request':'q-2b3c4d5e','version':2,'step':2,'work':'w-8b9c0d1e',
+                    'worker':'lisk-strategist','findings':['Option B needs one hire fewer.'],
+                    'next':['Ask finance.'],'files':['/root/plans/options.md'],
+                    'handoff':{'worker':'lisk-architect','purpose':'Check the gateway.'}},
+          'answers':['approve','reply','dismiss','later']}
 staff = [{'worker':'lisk-chief','description':'Chief of staff.','lead':True,'notesAt':1},
          {'worker':'lisk-strategist','description':'Strategist.'}]
 assistant = {'delegates':[{'workspace':'lisk','share':'summaries','overallRequests':'review','staff':staff}]}
@@ -93,7 +102,7 @@ for line in sys.stdin:
     log.write(json.dumps(req) + '\n'); log.flush()
     kind, ident = req['type'], req['id']
     if kind == 'list-inbox':
-        send({'type':'inbox-list','inbox':ident,'entries':[],'items':[handoff],'work':[work],
+        send({'type':'inbox-list','inbox':ident,'entries':[],'items':[handoff, review],'work':[work],
               'requests':[request],'assistant':assistant})
     elif kind == 'list-routines':
         send({'type':'routine-list','routines':ident,'entries':[]})
@@ -211,4 +220,66 @@ fn a_handoff_item_is_listed_and_approved_through_inbox_answer() {
         (&answer["entry"], &answer["action"]),
         (&json!("i-7a8b9c0d"), &json!("approve"))
     );
+}
+
+/// ADR 0058: `handoff`, `send` and `done` on a `result` item send the wire's
+/// `approve`, `reply` and `dismiss`; `inbox show` prints the Result's lists.
+#[test]
+fn a_result_item_is_shown_and_answered_with_handoff_send_and_done() {
+    let bridge = Bridge::new(16);
+    let shown = ok(&bridge.run(&["inbox", "show", "i-9c0d1e2f"]));
+    for part in [
+        "i-9c0d1e2f  result  open unread",
+        "From    lisk-strategist · v2 step 2",
+        "Findings:\n- Option B needs one hire fewer.",
+        "Next steps:\n- Ask finance.",
+        "Files:\n- /root/plans/options.md",
+        "Hand off to lisk-architect: Check the gateway.",
+    ] {
+        assert!(shown.contains(part), "{part}:\n{shown}");
+    }
+    ok(&bridge.run(&["inbox", "answer", "i-9c0d1e2f", "handoff"]));
+    ok(&bridge.run(&[
+        "inbox",
+        "answer",
+        "i-9c0d1e2f",
+        "send",
+        "--text",
+        "Also check the budget.",
+    ]));
+    ok(&bridge.run(&["inbox", "answer", "i-9c0d1e2f", "done"]));
+    let answers: Vec<(Value, Value)> = sent(&bridge, "update-inbox")
+        .into_iter()
+        .map(|r| (r["action"].clone(), r["text"].clone()))
+        .collect();
+    assert_eq!(
+        answers,
+        [
+            (json!("approve"), Value::Null),
+            (json!("reply"), json!("Also check the budget.")),
+            (json!("dismiss"), Value::Null)
+        ]
+    );
+    // Send needs its text; revise is reply too.
+    assert!(
+        !bridge
+            .run(&["inbox", "answer", "i-9c0d1e2f", "send"])
+            .status
+            .success()
+    );
+    ok(&bridge.run(&[
+        "inbox",
+        "answer",
+        "i-9c0d1e2f",
+        "revise",
+        "--text",
+        "Shorter.",
+    ]));
+
+    // A level 15 host has no results to review: nothing is sent.
+    let old = Bridge::new(15);
+    let out = old.run(&["inbox", "answer", "i-9c0d1e2f", "send", "--text", "x"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("update muxa-bridge"));
+    assert!(sent(&old, "update-inbox").is_empty());
 }

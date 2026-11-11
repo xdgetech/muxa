@@ -173,12 +173,17 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  every answer; only inbox delete keeps it.
                  reply sends the text as it is; on an ask it denies the
                  permission first. ask-agent sends the item and the text to
-                 the workspace's Ask session and leaves the item open
+                 the workspace's Ask session and leaves the item open.
+                 On a result item (work level 16, ADR 0058): handoff starts
+                 the step it proposes, send (--text T) asks the member who
+                 wrote it to go on, done closes it and ends the chain. On a
+                 write item, revise (--text T) asks for a new draft
   inbox read ITEM
                  marks the item read, as inbox answer ITEM read
   inbox show ITEM
                  the item; a write item also prints its action, target and
-                 the content whole, as plain text
+                 the content whole, as plain text; a result item its
+                 findings, open questions, next steps, files and hand-off
   inbox delete --older-than DAYS
                  removes every Inbox item made more than DAYS days ago,
                  open or closed, except protected ones (work level 8)
@@ -777,6 +782,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 option,
                 worktree: Some(worktree),
                 hash,
+                review: items::is_review_word(name),
             }
             .checked()
             .map_err(|e| lexopt::Error::Custom(e.into()))?,
@@ -795,6 +801,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 option: None,
                 worktree: None,
                 hash: None,
+                review: false,
             },
             json,
         },

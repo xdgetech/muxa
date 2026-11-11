@@ -41,6 +41,8 @@ pub struct Brief {
     pub staff: Option<StaffBrief>,
     /// The workspace takes write proposals: it has an active writer (ADR 0052 §3).
     pub writes: bool,
+    /// The Result this version continues, for its first step (ADR 0058 §3).
+    pub follow_up: Option<super::follow_up::Brief>,
 }
 
 impl Brief {
@@ -76,6 +78,7 @@ impl Brief {
             step: steps::current(request),
             staff: None,
             writes: false,
+            follow_up: None,
         })
     }
 
@@ -118,11 +121,16 @@ impl Brief {
             .as_ref()
             .map(StaffBrief::section)
             .unwrap_or_default();
+        let continued = self
+            .follow_up
+            .as_ref()
+            .map(super::follow_up::Brief::section)
+            .unwrap_or_default();
         format!(
             "{intro}\n\n\
              ## Work item\n\n{title}\n\n\
              ## Scope: {scope}\n\n{rule}\n\n\
-             ## What the user asked\n\n{purpose}\n\n{staff}",
+             ## What the user asked\n\n{purpose}\n\n{continued}{staff}",
             scope = scope_name(self.scope),
             rule = scope_rule(self.scope),
         )

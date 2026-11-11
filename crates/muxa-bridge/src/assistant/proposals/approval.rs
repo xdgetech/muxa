@@ -86,6 +86,7 @@ pub fn hash(item: &InboxItem) -> Option<String> {
         ItemKind::Sort => ("sort", serde_json::to_vec(item.sort.as_ref()?)),
         ItemKind::Delegate => ("delegate", serde_json::to_vec(item.delegate.as_ref()?)),
         ItemKind::Handoff => ("handoff", serde_json::to_vec(item.handoff.as_ref()?)),
+        ItemKind::Result => ("result", serde_json::to_vec(item.result.as_ref()?)),
         _ => return None,
     };
     let body = body.ok()?;

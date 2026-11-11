@@ -89,6 +89,7 @@ pub async fn assist(cx: &Context, capture: Capture, spec: AssistSpec) -> Assiste
         purpose: spec.purpose,
         worker: spec.worker,
         asker: muxa_protocol::StepBy::User,
+        follows: None,
     };
     match ask::ask(cx, a).await {
         Ok((item, q, error)) => Assisted {

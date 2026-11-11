@@ -132,6 +132,7 @@ fn ask_for(work: &WorkItem, rev: u64) -> Ask {
         purpose: Some("Find a host".into()),
         worker: None,
         asker: muxa_protocol::StepBy::User,
+        follows: None,
     }
 }
 

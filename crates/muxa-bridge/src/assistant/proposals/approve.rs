@@ -109,7 +109,7 @@ pub async fn approve(cx: &Context, found: Found, by: By) -> Result<Approved, Err
     }
     match found.item.kind {
         ItemKind::Sort => blocking(move || sort(&config, found, by, now())).await,
-        ItemKind::Handoff => super::handoff::approve(cx, found).await,
+        ItemKind::Handoff | ItemKind::Result => super::handoff::approve(cx, found).await,
         ItemKind::Write => super::write::approve(cx, found).await,
         ItemKind::Memory => super::memory::approve(cx, found).await,
         _ => delegate(cx, found, by).await,
@@ -283,6 +283,7 @@ async fn delegate(cx: &Context, f: Found, by: By) -> Result<Approved, ErrorBody>
         purpose: Some(p.purpose.clone()),
         worker: p.worker.clone(),
         asker: muxa_protocol::StepBy::Overall,
+        follows: None,
     };
     let config = Arc::clone(&cx.records);
     match ask::ask(cx, a).await {
@@ -380,6 +381,18 @@ pub(super) fn finish(
     by: By,
     at: u64,
 ) -> Result<InboxItem, ErrorBody> {
+    finish_as(config, f, ids, by, at, InboxAction::Approve)
+}
+
+/// Blocking. As [`finish`], answering the item `answer`.
+pub(super) fn finish_as(
+    config: &Config,
+    f: &Found,
+    ids: Ids,
+    by: By,
+    at: u64,
+    answer: InboxAction,
+) -> Result<InboxItem, ErrorBody> {
     with_items(config, &f.task, |items| {
         let mut a =
             approval::get(items, &f.item.id, &f.hash).unwrap_or_else(|| Approval::new(&f.hash));
@@ -391,7 +404,7 @@ pub(super) fn finish(
         approval::put(items, &f.item.id, a);
         let item = stored(items, &f.item.id)?;
         item.state = ItemState::Answered;
-        item.answer = Some(InboxAction::Approve);
+        item.answer = Some(answer);
         item.answered_at = Some(at);
         item.until = None;
         if by == By::Host {

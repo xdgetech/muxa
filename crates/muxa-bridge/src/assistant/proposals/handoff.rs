@@ -1,10 +1,11 @@
-//! `update-inbox approve` on a `handoff` item (ADR 0051 §3): starts the next
-//! step once, keyed by the item's id and proposal hash as a delegate's
+//! `update-inbox approve` on a `result` item that offers a hand-off (ADR
+//! 0058 §2), or on a `handoff` item from before it (ADR 0051 §3): starts the
+//! next step once, keyed by the item's id and proposal hash as a delegate's
 //! approval is. A second approve returns the step the first made; a budget
 //! reached is `conflict` and leaves the item open.
 use std::sync::Arc;
 
-use muxa_protocol::{ErrorBody, ErrorCode};
+use muxa_protocol::{ErrorBody, ErrorCode, InboxItem};
 
 use super::approve::{Approved, By, Claim, Found, Ids, Made, again, bad, claim, finish, release};
 use crate::assistant::chain::next::{self, Via};
@@ -13,12 +14,34 @@ use crate::convert::error_body;
 use crate::records::now;
 use crate::task_records::Context;
 
+/// The step whose hand-off approve starts.
+struct Asked {
+    request: String,
+    version: u64,
+    step: u32,
+    worker: String,
+}
+
+fn asked(item: &InboxItem) -> Option<Asked> {
+    if let Some(h) = &item.handoff {
+        return Some(Asked {
+            request: h.request.clone(),
+            version: h.version,
+            step: h.step,
+            worker: h.worker.clone(),
+        });
+    }
+    let r = item.result.as_ref()?;
+    Some(Asked {
+        request: r.request.clone(),
+        version: r.version,
+        step: r.step,
+        worker: r.handoff.as_ref()?.worker.clone(),
+    })
+}
+
 pub(super) async fn approve(cx: &Context, f: Found) -> Result<Approved, ErrorBody> {
-    let p = f
-        .item
-        .handoff
-        .clone()
-        .ok_or_else(|| bad("the item has no hand-off"))?;
+    let p = asked(&f.item).ok_or_else(|| bad("the item offers no hand-off"))?;
     if !cx.daemon {
         return Err(error_body(ErrorCode::Unsupported, NO_DAEMON));
     }

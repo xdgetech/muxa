@@ -73,6 +73,10 @@ pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody
     // The item is written; the correction is a signal on top (ADR 0050 §2).
     let recorded = blocking(move || {
         corrections::after_answer(&config, &item, action, reason, now());
+        // Done on a Result ends its chain (ADR 0058 §2).
+        if let (InboxAction::Dismiss, Some(r)) = (action, &item.result) {
+            crate::assistant::chain::done(&config, &r.request, r.version)?;
+        }
         Ok(())
     })
     .await;
@@ -165,9 +169,16 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
                     | ItemKind::Handoff
                     | ItemKind::Write
                     | ItemKind::Memory
+                    | ItemKind::Result
             ) =>
         {
             return Err(bad("approve on a proposal item runs through the assistant"));
+        }
+        // Send and Revise ask a staff member again (ADR 0058 §3, §4).
+        Reply if matches!(item.kind, ItemKind::Result | ItemKind::Write) => {
+            return Err(bad(
+                "reply on a result or write item runs through the assistant",
+            ));
         }
         Approve | Reject | Choose => pick(item, answer.action, answer.option)?,
         Reply => {

@@ -110,8 +110,39 @@ fn item_text(i: &InboxItem, now: u64) -> String {
     if let Some(w) = &i.write {
         out.push_str(&write_text(w));
     }
+    if let Some(r) = &i.result {
+        out.push_str(&result_text(r));
+    }
     if let Some(t) = &i.task {
         out.push_str(&format!("Task {t}\n"));
+    }
+    out
+}
+
+/// A Result to review (ADR 0058): who wrote it, its lists, and the hand-off
+/// `handoff` starts.
+fn result_text(r: &muxa_protocol::ResultReview) -> String {
+    let who = r.worker.as_deref().map_or("the assistant".into(), plain);
+    let mut out = format!("From    {who} · v{} step {}\n", r.version, r.step);
+    for (title, list) in [
+        ("Findings", &r.findings),
+        ("Open questions", &r.open_questions),
+        ("Next steps", &r.next),
+        ("Files", &r.files),
+    ] {
+        if !list.is_empty() {
+            out.push_str(&format!("{title}:\n"));
+            for line in list {
+                out.push_str(&format!("- {}\n", plain(line)));
+            }
+        }
+    }
+    if let Some(h) = &r.handoff {
+        out.push_str(&format!(
+            "Hand off to {}: {}\n",
+            plain(&h.worker),
+            plain(&h.purpose)
+        ));
     }
     out
 }

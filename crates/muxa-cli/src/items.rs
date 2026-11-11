@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     InboxAction, InboxItem, ItemKind, ItemState, Message, Request, WORK_DELETE_INBOX, WORK_ITEMS,
-    WorktreeEnd,
+    WORK_RESULT_REVIEW, WorktreeEnd,
 };
 use serde_json::json;
 
@@ -29,14 +29,34 @@ pub struct Answer {
     pub worktree: Option<WorktreeEnd>,
     /// With `approve` on a `write` item: the hash of the write the user saw (ADR 0052 §2).
     pub hash: Option<String>,
+    /// Named by a word of ADR 0058 (`handoff`, `send`, `done`, `revise`):
+    /// meant for a `result` or `write` item, so the host needs level 16.
+    pub review: bool,
 }
 
-/// The kebab-case name on the wire.
+/// ADR 0058's words for answers on `result` and `write` items, and the
+/// action each sends.
+const REVIEW_WORDS: [(&str, InboxAction); 4] = [
+    ("handoff", InboxAction::Approve),
+    ("send", InboxAction::Reply),
+    ("done", InboxAction::Dismiss),
+    ("revise", InboxAction::Reply),
+];
+
+/// The kebab-case name on the wire, or a word of [`REVIEW_WORDS`].
 pub fn action(name: &str) -> Option<InboxAction> {
+    if let Some((_, a)) = REVIEW_WORDS.iter().find(|(w, _)| *w == name) {
+        return Some(*a);
+    }
     // A name this build does not know decodes as `Unknown`; the host refuses it.
     serde_json::from_value(json!(name))
         .ok()
         .filter(muxa_protocol::Known::is_known)
+}
+
+/// Whether `name` is one of ADR 0058's words.
+pub fn is_review_word(name: &str) -> bool {
+    REVIEW_WORDS.iter().any(|(w, _)| *w == name)
 }
 
 impl Answer {
@@ -52,7 +72,7 @@ impl Answer {
             "--text",
             self.text.is_some(),
             wants_text,
-            "reply and ask-agent",
+            "reply, send, revise and ask-agent",
         )?;
         // A reason is never required (ADR 0050 §2).
         if let Some(r) = &self.reason {
@@ -189,6 +209,12 @@ pub async fn answer(
     if answer.action == InboxAction::Confirm || answer.reason.is_some() {
         crate::policy::require(&conn)?;
     }
+    if answer.review && muxa_protocol::work_level(conn.capabilities()) < WORK_RESULT_REVIEW {
+        return Err(
+            "this host has no results to review (work level 16); update muxa-bridge on the host"
+                .into(),
+        );
+    }
     let protects = matches!(answer.action, InboxAction::Protect | InboxAction::Unprotect);
     if protects && !has_delete(&conn) {
         return Err(NEEDS_DELETE.into());
@@ -269,6 +295,7 @@ mod tests {
             option: None,
             worktree: None,
             hash: None,
+            review: false,
         }
     }
 

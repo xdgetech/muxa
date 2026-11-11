@@ -62,6 +62,15 @@ pub fn prepare(
         .assistant
         .as_ref()
         .is_some_and(|d| d.writer.active().is_some());
+    if step == 1 {
+        let extra = super::shelf::<AssistantRequest>(config)?
+            .get_with_extra(&q.id)
+            .map_err(|e| super::state_error(&e))?
+            .map(|(_, extra)| extra)
+            .unwrap_or_default();
+        brief.follow_up =
+            super::follow_up::of(q, &extra).map(|(f, r)| super::follow_up::Brief::new(&f, r));
+    }
     if brief.staff.is_some() {
         // This version's earlier steps are in the staff section, cut.
         brief.results.retain(|r| r.version != q.version);

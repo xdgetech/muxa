@@ -63,6 +63,21 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
     if let Request::UpdateInbox {
         id,
         entry,
+        action: muxa_protocol::InboxAction::Reply,
+        text,
+        ..
+    } = &req
+    {
+        if entry.starts_with("i-") {
+            let sent = crate::assistant::proposals::reply(cx, *id, entry, text.as_deref()).await;
+            if let Some(answer) = sent {
+                return answer;
+            }
+        }
+    }
+    if let Request::UpdateInbox {
+        id,
+        entry,
         action: action @ (muxa_protocol::InboxAction::Confirm | muxa_protocol::InboxAction::Reject),
         text,
         ..

@@ -15,6 +15,7 @@ pub mod delivery;
 mod derive;
 pub mod detail;
 pub mod failures;
+pub mod follow_up;
 pub mod forget;
 pub mod goal;
 pub mod handoff;
@@ -202,6 +203,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 purpose,
                 worker,
                 asker: muxa_protocol::StepBy::User,
+                follows: None,
             };
             match ask::ask(cx, a).await {
                 Ok((entry, request, error)) => (
