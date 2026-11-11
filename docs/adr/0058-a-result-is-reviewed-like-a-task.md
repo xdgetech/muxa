@@ -23,7 +23,8 @@ When a request version's newest step has its Result stored, the daemon's tick ma
 - `result {request, version, step, work, worker?, findings[], openQuestions[], next[], files[], handoff?}`: the findings' first lines (at most 200 characters each), the open questions, the next steps, the files the run wrote, and the hand-off `{worker, purpose}` the step proposes. The user reviews the Result without opening the Work item.
 - Only Results stored in the last 24 hours make an item, as failure items do (ADR 0048, addendum 2026-11-11). An upgraded host does not fill the Inbox with old Results.
 - Under `handoffs = "auto"`, a step whose hand-off the host started makes no item: the chain goes on, and the last step's Result makes the item. Past a limit, the item is made with the hand-off and the limit before the summary, as the `handoff` item had it (ADR 0051 §3).
-- A newer request version resolves an open `result` item of an older version: "A newer version of this request replaced this result." A cancel leaves it open: the Result is still there to review.
+- A newer request version resolves an open `result` item of an older version: "A newer version of this request replaced this result." A cancel leaves it open without its hand-off: the Result is still there to review, but the chain ended.
+- The tick's mark on the request (`handoffWaiting`, ADR 0051's) now tracks the newest step's `result` item, so one Result makes one item, also after Delete Old.
 
 An open `handoff` item made before this ADR keeps its answers until it is answered.
 

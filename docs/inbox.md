@@ -54,6 +54,7 @@ Inbox (3)
 | `failure` | Retry; reply box: Send. An assistant run's: reply box: Ask Agent | Drop Task, Protect, Open Session. An assistant run's: Protect |
 | `proposal` | Approve, Reject; reply box: Ask Agent | Protect |
 | `briefing` | reply box: Ask Agent | Protect |
+| `result` | Hand off to `<worker>` (with a hand-off); reply box: Send | Protect |
 
 The reply box sends **Send** on an item with a session: the text goes to its agent as it is. On one without a session it sends **Ask Agent**: the item and the text go to the workspace's Ask session, `ask-<workspace>`, which the host starts on the first request; the item stays open and the session's Chat opens (ADR 0041). The placeholder says where the text goes. Complete Task and Drop Task ask for no confirmation, because they only set the Task's status; Approve on a proposal still shows the action, target and content first. An answer returns to the list.
 
@@ -65,7 +66,7 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 - The item's session opens from its source line or Open Session. On a phone it pushes over the item; on a tablet the pane fills the detail and the sidebar collapses. An item never opens the Shell first.
 - The summary is Markdown (ADR 0033 §4a.5). Its `http` and `https` links open in the browser. A link or a file name that matches an attachment opens that attachment in the Reader.
 - The attachments are a list under the summary: Changes with the file and line counts, then each doc and image by file name and folder, then the links by title. Evidence opens in the Reader and returns to the item.
-- Labels name the result (ADR 0033 §4a.2, ADR 0040). `accept` is **Complete Task** and `drop` is **Drop Task**. `keep-open` and `dismiss` are **✓**, named "Done" for VoiceOver and TalkBack. `later` is the "Play Last" symbol, named "Later". `reply` is **Send**, or **Deny & Send** on an `ask`. On an `ask`, `approve` is **Allow** and `reject` is **Deny**. A proposal keeps **Approve** and **Reject**.
+- Labels name the result (ADR 0033 §4a.2, ADR 0040). `accept` is **Complete Task** and `drop` is **Drop Task**. `keep-open` and `dismiss` are **✓**, named "Done" for VoiceOver and TalkBack. `later` is the "Play Last" symbol, named "Later". `reply` is **Send**, or **Deny & Send** on an `ask`. On an `ask`, `approve` is **Allow** and `reject` is **Deny**. A proposal keeps **Approve** and **Reject**. On a `result`, `approve` is **Hand off to `<worker>`**; on a `write`, `reply` is **Revise** (ADR 0058).
 - At connect, Inbox and Tasks mode stay on their list, also when it is empty ("Nothing needs you"). Sessions mode opens the default pane.
 - A host below `work:3` gets "This host needs a newer muxa-bridge for the Inbox", with Tasks and Sessions.
 - The reply box shows only when the item takes a text answer: `reply` or `ask-agent`. The send arrow needs its text.
@@ -110,7 +111,7 @@ Unsorted
 - Swipe on an Unsorted row: right makes a **Work Item**, left keeps it as a **Note**. A "Not sent" row swipes left to **Delete**.
 - A Work row with an assistant request shows its newest delivery: `pending`, `received`, `processing`, `unconfirmed`, `failed`, `timed-out`, `cancel-requested` or `cancelled` (ADR 0048 §6). These are derived from the run on every list; `failed` and `timed-out` show as needing attention.
 - A `failed` request step, and a failed plan, also make one `failure` item in Decisions, with the reason as its question (ADR 0048, addendum 2026-11-11). For example: "Claude Code has not trusted `<workspace root>`. Open claude there once and accept." It has no Task and no session: its answers are ✓, Ask Agent and Later.
-- **Result ready** replaces the delivery when the newest Result was not shown on this device yet. The device keeps the ids and versions it showed, never the Result's text. Opening the Work item clears it.
+- **Result ready** replaces the delivery when the newest Result was not shown on this device yet, on a host below `work:16` only. The device keeps the ids and versions it showed, never the Result's text. Opening the Work item clears it. With `work:16` a new Result is an unread `result` item in Decisions instead (ADR 0058).
 - The Work detail shows the Captures' full texts, each request with its delivery and Results, Cancel, Ask Again, and Open Session while the run lives. Result files are paths; the Reader cannot open them yet.
 - `+` opens Capture: text, an optional workspace, **Save**, **Ask Assistant** and "Start a Task instead…". A host below `work:9` keeps New Task.
 - muxa for tmux: `prefix + T` lists Work rows with `l` Later, `d` complete and `a` ask.
@@ -163,7 +164,7 @@ With `work:12`, a workspace's assistant can be a staff of several members. Its W
 
 1. **Ask Assistant** has a staff picker when the workspace has more than one staff member. The default is "Let `<lead>` decide". Each member shows its description as its subtitle.
 2. **Work detail** shows a request's steps as a chain of rows, "`lisk-research` → `lisk-delivery` → `lisk-meetings`". Each row has its delivery, its Result and Update Notes. A hand-off that waits for approval is the next row, greyed, with Approve and Reject.
-3. **Hand-off items** in Decisions have kind `handoff`. The title names both staff members; the summary is the hand-off's purpose. **Approve** starts the next step, once. **Reject** ends the chain with the Results it has. **Later** moves it down. A budget reached keeps the item open with the limit.
+3. **Hand-off items** in Decisions have kind `handoff`, on a host below `work:16`. The title names both staff members; the summary is the hand-off's purpose. **Approve** starts the next step, once. **Reject** ends the chain with the Results it has. **Later** moves it down. A budget reached keeps the item open with the limit. With `work:16` the step's `result` item offers the hand-off instead (below).
 4. **Today**: a `delegate` row names the staff member when the plan picked one.
 
 A host below `work:12` shows a request's newest step as the request. muxa for tmux (`prefix + T`): `a` on a Work row asks for the staff member (`Enter` for the lead). `handoff` items take `a` Approve, `r` Reject and `l` Later.
@@ -176,12 +177,45 @@ With `work:13`, a Result may propose writes outside the host, such as a Slack po
 2. **The content** is shown whole, above Approve, Reject and Later: plain text in a fixed-width font, no rendered Markdown, no active links. A write from an older result version says "from an older result".
 3. **Approve** shows the target once more to confirm. It sends the write's hash, so the host performs only the text the user saw. It starts one Task of the writer; the item says "Task started", then the Task's own state. Approving twice starts one Task. A refusal (no writer, `max_writes_per_day` reached, the writer cannot start) keeps the item open with the reason.
 4. **Reject** takes an optional reason and starts nothing. **Later** moves the item down.
-5. **Work detail** lists each Result's writes with their state: proposed, rejected, or the Task with its state and Open Session.
-6. **Staff settings** list the writer under the staff, marked "writes", with its description.
+5. **Revise** (`work:16`, ADR 0058): a reply box, "Ask `<worker>` for a new draft…". The member writes a new draft as a new request version, and the item closes. Its new Result proposes the new text as a new item.
+6. **Work detail** lists each Result's writes with their state: proposed, rejected, or the Task with its state and Open Session.
+7. **Staff settings** list the writer under the staff, marked "writes", with its description.
 
 The writer's Task reports what it did in its own `review` item. muxa does not check the target system: the user sees the write there. A client below `work:13` shows a `write` item as an unknown kind, without Approve. It cannot approve a write: approve without the hash is refused.
 
-muxa for tmux (`prefix + T`): the preview shows a `write` item's target and content whole. `a` approves after the target is shown once more and confirmed with `y`. `r` rejects, `l` moves it down. `muxa-cli inbox show ITEM` prints the item with its content, and `muxa-cli assist writes WORKSPACE` lists a workspace's writes.
+muxa for tmux (`prefix + T`): the preview shows a `write` item's target and content whole. `a` approves after the target is shown once more and confirmed with `y`. `r` rejects, `l` moves it down, `s` revises (`work:16`). `muxa-cli inbox show ITEM` prints the item with its content, and `muxa-cli assist writes WORKSPACE` lists a workspace's writes.
+
+## Results to review (ADR 0058)
+
+With `work:16`, every Result of an assistant request makes one Decisions item of kind `result`, reviewed like a Task's `review` item.
+
+```
+┌← Inbox     Result     ⤓  ✓  … ┐
+│ lisk-strategist asks           │
+│ lisk-architect to: Check …     │
+│ Decide the Q1 roadmap · lisk   │
+│                                │
+│ Option B fits the hiring plan. │
+│ Findings                       │
+│ · Option B needs one hire fewer│
+│ Open Questions · Next Steps    │
+│ Files                          │
+│                                │
+│ [ Hand off to lisk-architect ] │
+│ ┌ Tell lisk-strategist what…(↑)┐│
+└────────────────────────────────┘
+```
+
+1. **The item.** The title is the Work item's. The question is "`<worker>` finished: `<summary's first line>`", or "`<worker>` asks `<next>` to: `<purpose>`" with a hand-off. The summary is the Result's summary, as Markdown. Under it: Findings (each finding's first line), Open Questions, Next Steps and Files (paths, as text), then the findings' links. The user reviews the Result without opening the Work item.
+2. **Hand off to `<worker>`** shows only when the step proposes a hand-off. It starts the next step, once, as Approve on a `handoff` item did.
+3. **Send**: the reply box, "Tell `<worker>` what to do next…". The same member goes on, continuing from this Result, as a new version of the request. The older Results become stale; the item closes.
+4. **Done** is ✓: the item closes, and the hand-off never starts. **Later** moves it down.
+5. Only Results of the last 24 hours make an item. A newer version of the request resolves the item; a cancel leaves it open without its hand-off.
+6. The item's unread dot is the "new result" mark. The Work row's **Result ready** shows only for a host below `work:16`, and muxa for tmux's Work rows carry no mark.
+
+A client below `work:16` shows a `result` item as an unknown kind. Its answers are actions it knows (`approve`, `reply`, `dismiss`, `later`), so its buttons still work.
+
+muxa for tmux (`prefix + T`): `📋` rows. The preview shows the Result's lists and the hand-off. `a` hands off, `s` asks for the text and sends it, `d` is ✓ Done, `l` is Later. CLI: `muxa-cli inbox answer ITEM handoff | send --text T | done`, `inbox answer ITEM revise --text T` on a `write` item, and `inbox show ITEM` prints the Result's lists.
 
 ## Workspace memory (ADR 0053)
 

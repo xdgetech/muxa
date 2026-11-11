@@ -109,6 +109,10 @@ A request gains `steps[]`; a Result `worker?` and `step?`; `inbox-list`'s `assis
   - A long-lived team session or chat: ADR 0049 rejected the single-delegate form of it for the same reasons.
   - The list in `<root>/.muxa/assistant/staff.toml`: agent-writable, and a member grants a worker (§1).
 
+## Addendum (2026-11-11): hand-offs are offered by `result` items
+
+[ADR 0058](0058-a-result-is-reviewed-like-a-task.md) changes §3 (Approval) and §7 (Inbox). Every stored Result makes one `result` item; with a hand-off under `review`, that item offers it as **Hand off to `<worker>`** (`approve`), beside Send, Done and Later. No new `handoff` item is made; an open one from before stays answerable. Done replaces Reject: it closes the item and ends the chain. Under `auto`, a step whose hand-off started makes no item; past a limit, its `result` item carries the limit. A cancel leaves the item open without the hand-off. Send asks the same member again as a new version, not as a step: a worker still appears once per chain.
+
 ## Implementation notes
 
 - `records::assistant::Role` (what a workspace is to the overall assistant) keeps its name; this ADR adds no type called role. `staff` is a list of worker names on the workspace's assistant config, checked against `Workspaces::worker` and `Worker::allows` at load.
