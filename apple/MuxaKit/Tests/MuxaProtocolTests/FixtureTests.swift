@@ -383,8 +383,12 @@ struct FixtureTests {
         guard case .result(_, let forgot?, _) = messages[35] else { Issue.record("expected an error"); return }
         #expect(forgot.code == .badRequest)
 
-        guard case .inboxList(_, _, let items, _, _, _, _, _, let policies, let hypotheses, let corrections) = messages[36]
+        guard case .inboxList(_, _, let items, _, _, _, let plans, _, let policies, let hypotheses, let corrections) = messages[36]
         else { Issue.record("expected inbox-list"); return }
+        // The host names each row and says which target is no longer open.
+        let answered = plans[0].top.first { $0.item == "i-1a2b3c4d" }
+        #expect(answered?.targetState == .answered && answered?.title != nil)
+        #expect(plans[0].top.filter { $0.work != nil }.allSatisfy { $0.title != nil && $0.targetState == nil })
         #expect(items[0].kind == .hypothesis && items[0].answers == [.confirm, .reject, .later])
         #expect(items[0].hypothesis?.confidence == .low)
         #expect(policies.count == 3)
@@ -622,6 +626,7 @@ struct FixtureTests {
         let decode = { (json: String) in Data(json.utf8) }
         #expect(try JSONDecoder().decode(BasisKind.self, from: decode(#""habit""#)) == .other("habit"))
         #expect(try JSONDecoder().decode(ChangeKind.self, from: decode(#""split""#)) == .other("split"))
+        #expect(try JSONDecoder().decode(TargetState.self, from: decode(#""archived""#)) == .other("archived"))
         #expect(try JSONDecoder().decode(Share.self, from: decode(#""full""#)) == .other("full"))
         #expect(try JSONDecoder().decode(OverallRequests.self, from: decode(#""ask""#)) == .other("ask"))
         #expect(try JSONDecoder().decode(ItemKind.self, from: decode(#""sort""#)) == .sort)

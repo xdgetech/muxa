@@ -70,6 +70,8 @@ fn row(id: &str) -> PlanRow {
         },
         basis: Vec::new(),
         missing: Vec::new(),
+        title: None,
+        target_state: None,
     }
 }
 
@@ -201,5 +203,36 @@ fn marks_go_on_resulted_plans_and_now_only_on_the_newest() {
     assert_eq!(
         plans[3].changed,
         [change("w-00000002", ChangeKind::Entered)]
+    );
+}
+
+#[test]
+fn targets_name_each_row_and_say_when_its_target_is_no_longer_open() {
+    let mut plans = vec![plan(
+        "p-00000001",
+        Delivery::Resulted,
+        &["w-open", "w-done", "i-answered", "i-later", "i-gone"],
+    )];
+    let mut done = work("w-done", 1);
+    done.title = "Send the report".into();
+    done.state = WorkState::Done;
+    let mut answered = crate::items::store::tests_item("i-answered", ItemState::Answered);
+    answered.question = "Approve the plan?".into();
+    let later = crate::items::store::tests_item("i-later", ItemState::Later);
+    targets(&mut plans, &[work("w-open", 1), done], &[answered, later]);
+    let got: Vec<(Option<&str>, Option<TargetState>)> = plans[0]
+        .top
+        .iter()
+        .map(|r| (r.title.as_deref(), r.target_state))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (Some("t"), None),
+            (Some("Send the report"), Some(TargetState::Done)),
+            (Some("Approve the plan?"), Some(TargetState::Answered)),
+            (Some("Ready for review: Fixture"), None),
+            (None, Some(TargetState::Gone)),
+        ]
     );
 }

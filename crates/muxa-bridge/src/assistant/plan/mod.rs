@@ -75,8 +75,9 @@ pub fn listed(config: &Config, plan: Plan) -> Plan {
         .unwrap_or(plan)
 }
 
-/// Blocking. The kept plans, newest first, with their delivery and marks
-/// derived. `work` and `requests` are what `inbox-list` lists.
+/// Blocking. The kept plans, newest first, with their delivery, marks and
+/// row targets derived. `work` and `requests` are what `inbox-list` lists;
+/// the row targets come from every Work item and Inbox item, closed ones too.
 pub fn list(
     config: &Config,
     work: &[WorkItem],
@@ -89,6 +90,14 @@ pub fn list(
     newest_first(&mut plans);
     refresh(config, &mut plans, crate::records::now());
     derive::marks(&mut plans, work, requests);
+    if plans.iter().any(|p| !p.top.is_empty()) {
+        let all_work = super::shelf::<WorkItem>(config)?
+            .all()
+            .map_err(|e| super::state_error(&e))?;
+        let entries = crate::routines::inbox::list(config)?;
+        let items = crate::items::all(config, &entries)?;
+        derive::targets(&mut plans, &all_work, &items);
+    }
     Ok(plans)
 }
 

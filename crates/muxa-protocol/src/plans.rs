@@ -79,6 +79,33 @@ pub struct PlanRow {
     /// What the agent would need to know to rank it better.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<String>,
+    /// Derived when listed: the Work item's title or the Inbox item's
+    /// question. Never stored with the plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Derived when listed: the target's state when it is no longer open.
+    /// Absent: open. Never stored with the plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_state: Option<TargetState>,
+}
+
+/// A row's target that is no longer open. The plan keeps the row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TargetState {
+    /// An Inbox item the user answered.
+    Answered,
+    /// An Inbox item whose need ended without an answer from the Inbox.
+    Resolved,
+    /// A Work item the user completed.
+    Done,
+    /// A Work item the user withdrew.
+    Withdrawn,
+    /// The Work item or Inbox item is no longer on the host.
+    Gone,
+    /// A value a newer host added; shown as unknown.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The agent's estimate of the time a row takes: `low <= estimated <= high`.

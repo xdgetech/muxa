@@ -129,10 +129,14 @@ public struct PlanRow: Equatable, Sendable {
     public var basis: [Basis]
     /// What the agent would need to know to rank it better.
     public var missing: [String]
+    /// Derived when listed: the Work item's title or the Inbox item's question.
+    public var title: String?
+    /// Derived when listed: the target's state when it is no longer open. `nil`: open.
+    public var targetState: TargetState?
 
     public init(
         work: String? = nil, item: String? = nil, why: String, next: String, minutes: Minutes, basis: [Basis] = [],
-        missing: [String] = []
+        missing: [String] = [], title: String? = nil, targetState: TargetState? = nil
     ) {
         self.work = work
         self.item = item
@@ -141,11 +145,13 @@ public struct PlanRow: Equatable, Sendable {
         self.minutes = minutes
         self.basis = basis
         self.missing = missing
+        self.title = title
+        self.targetState = targetState
     }
 }
 
 extension PlanRow: Codable {
-    private enum Key: String, CodingKey { case work, item, why, next, minutes, basis, missing }
+    private enum Key: String, CodingKey { case work, item, why, next, minutes, basis, missing, title, targetState }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -156,6 +162,8 @@ extension PlanRow: Codable {
         minutes = try c.decode(Minutes.self, forKey: .minutes)
         basis = try c.decodeIfPresent([Basis].self, forKey: .basis) ?? []
         missing = try c.decodeIfPresent([String].self, forKey: .missing) ?? []
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        targetState = try c.decodeIfPresent(TargetState.self, forKey: .targetState)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -167,6 +175,8 @@ extension PlanRow: Codable {
         try c.encode(minutes, forKey: .minutes)
         if !basis.isEmpty { try c.encode(basis, forKey: .basis) }
         if !missing.isEmpty { try c.encode(missing, forKey: .missing) }
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(targetState, forKey: .targetState)
     }
 }
 
@@ -242,6 +252,25 @@ public enum ChangeKind: Equatable, Hashable, Sendable {
     case other(String)
 
     private static let names: [(ChangeKind, String)] = [(.entered, "entered"), (.left, "left"), (.moved, "moved")]
+
+    public init(raw: String) {
+        self = Self.names.first { $0.1 == raw }?.0 ?? .other(raw)
+    }
+
+    public var raw: String {
+        if case .other(let raw) = self { return raw }
+        return Self.names.first { $0.0 == self }?.1 ?? ""
+    }
+}
+
+/// A row's target that is no longer open. An unknown value is a state a newer host added.
+public enum TargetState: Equatable, Hashable, Sendable {
+    case answered, resolved, done, withdrawn, gone
+    case other(String)
+
+    private static let names: [(TargetState, String)] = [
+        (.answered, "answered"), (.resolved, "resolved"), (.done, "done"), (.withdrawn, "withdrawn"), (.gone, "gone"),
+    ]
 
     public init(raw: String) {
         self = Self.names.first { $0.1 == raw }?.0 ?? .other(raw)
@@ -433,6 +462,17 @@ extension BasisKind: Codable {
 }
 
 extension ChangeKind: Codable {
+    public init(from decoder: any Decoder) throws {
+        self.init(raw: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(raw)
+    }
+}
+
+extension TargetState: Codable {
     public init(from decoder: any Decoder) throws {
         self.init(raw: try decoder.singleValueContainer().decode(String.self))
     }

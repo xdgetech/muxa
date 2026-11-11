@@ -22,7 +22,7 @@ pub use known::Known;
 pub use memory::{MemoryMode, MemoryProposal, WORK_MEMORY};
 pub use plans::{
     AssistantInfo, Basis, BasisKind, ChangeKind, DelegateInfo, DelegateProposal, Minutes,
-    OverallRequests, Plan, PlanChange, PlanRow, Share, SortProposal, WORK_PLANS,
+    OverallRequests, Plan, PlanChange, PlanRow, Share, SortProposal, TargetState, WORK_PLANS,
 };
 pub use policies::{
     Confidence, Correction, CorrectionKind, Hypothesis, HypothesisProposal, HypothesisState,

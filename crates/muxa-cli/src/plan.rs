@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     Basis, BasisKind, ChangeKind, Delivery, Message, Plan, PlanAction, PlanRow, Request,
-    WORK_PLANS, work_level,
+    TargetState, WORK_PLANS, work_level,
 };
 use serde_json::json;
 
@@ -294,7 +294,25 @@ fn title(row: &PlanRow, listing: &Listing) -> String {
             .map(|i| i.title.clone()),
         (None, None) => None,
     };
-    found.map_or_else(|| "(not listed)".into(), |t| plain(&t))
+    let shown = found
+        .or_else(|| row.title.clone())
+        .map_or_else(|| "(not listed)".into(), |t| plain(&t));
+    match row.target_state {
+        Some(state) => format!("{shown} ({})", state_word(state)),
+        None => shown,
+    }
+}
+
+/// What became of a row's target that is no longer open.
+fn state_word(state: TargetState) -> &'static str {
+    match state {
+        TargetState::Answered => "answered",
+        TargetState::Resolved => "resolved",
+        TargetState::Done => "done",
+        TargetState::Withdrawn => "withdrawn",
+        TargetState::Gone => "gone",
+        TargetState::Unknown => "closed",
+    }
 }
 
 /// A basis that cites what the user told the assistant: the record's id and
@@ -384,6 +402,8 @@ mod tests {
             },
             basis: Vec::new(),
             missing: Vec::new(),
+            title: None,
+            target_state: None,
         }
     }
 
@@ -436,6 +456,26 @@ mod tests {
              Why: Due [31mWednesday\n   Next: Fill in the table.\n\
              Due soon, moved down by you: w-8c9d0e1f Renew the passport\n\
              Left the plan: w-5f6a7b8c\nUnanswered requests: q-2c3d4e5f\n"
+        );
+    }
+
+    #[test]
+    fn a_row_whose_target_left_the_list_shows_the_hosts_title_and_state() {
+        let mut p = plan("p-0a1b2c3d", Delivery::Resulted);
+        let mut done = row("w-0b1c2d3e");
+        done.title = Some("Prepare the report".into());
+        done.target_state = Some(TargetState::Done);
+        let mut gone = row("w-0000ffff");
+        gone.target_state = Some(TargetState::Gone);
+        p.top = vec![done, gone];
+        let text = plan_text(&listing(vec![p], Vec::new()));
+        assert!(
+            text.contains("1. w-0b1c2d3e  Prepare the report (done)  60-120 min"),
+            "{text}"
+        );
+        assert!(
+            text.contains("2. w-0000ffff  (not listed) (gone)  60-120 min"),
+            "{text}"
         );
     }
 

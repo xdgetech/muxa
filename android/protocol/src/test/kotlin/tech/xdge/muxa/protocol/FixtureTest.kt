@@ -244,10 +244,12 @@ class FixtureTest {
         // Unknown plan values keep their names.
         val odd = """{"type":"plan-saved","plan":1,"entry":{"id":"p-00000001","rev":1,"at":1,"inputsAt":1,""" +
             """"delivery":"queued","deliveryAt":1,"top":[{"work":"w-1","why":"w","next":"n","minutes":{"low":1,""" +
-            """"high":2,"estimated":1},"basis":[{"kind":"habit","text":"t"}]}],"changed":[{"id":"w-1","change":"split"}]}}"""
+            """"high":2,"estimated":1},"basis":[{"kind":"habit","text":"t"}],"targetState":"archived"}],""" +
+            """"changed":[{"id":"w-1","change":"split"}]}}"""
         val saved = Wire.decodeMessage(odd) as Message.PlanSaved
         assertEquals(BasisKind("habit"), saved.entry.top[0].basis[0].kind)
         assertEquals(ChangeKind("split"), saved.entry.changed[0].change)
+        assertEquals(TargetState("archived"), saved.entry.top[0].targetState)
         assertEquals(tree(odd), tree(Wire.encode(saved)))
     }
 
@@ -288,6 +290,11 @@ class FixtureTest {
         assertEquals(ItemKind.HYPOTHESIS, list.items[0].kind)
         assertEquals(listOf(InboxAction.CONFIRM, InboxAction.REJECT, InboxAction.LATER), list.items[0].answers)
         assertEquals(Confidence.LOW, list.items[0].hypothesis?.confidence)
+        // The host names each row and says which target is no longer open.
+        val answered = list.plans[0].top.first { it.item == "i-1a2b3c4d" }
+        assertEquals(TargetState.ANSWERED, answered.targetState)
+        assertTrue(answered.title != null)
+        assertTrue(list.plans[0].top.filter { it.work != null }.all { it.title != null && it.targetState == null })
         assertEquals(3, list.policies.size)
         assertEquals(listOf(HypothesisState.PROPOSED, HypothesisState.REJECTED), list.hypotheses.map { it.state })
         assertEquals(

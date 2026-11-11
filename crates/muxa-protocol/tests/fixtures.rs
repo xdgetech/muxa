@@ -897,6 +897,7 @@ fn policy_fixtures_round_trip() {
 
     let Message::InboxList {
         items,
+        plans,
         policies,
         hypotheses,
         corrections,
@@ -905,6 +906,24 @@ fn policy_fixtures_round_trip() {
     else {
         panic!()
     };
+    // The host names each row and says which target is no longer open.
+    let answered = plans[0]
+        .top
+        .iter()
+        .find(|r| r.item.as_deref() == Some("i-1a2b3c4d"))
+        .unwrap();
+    assert_eq!(
+        answered.target_state,
+        Some(muxa_protocol::TargetState::Answered)
+    );
+    assert!(answered.title.is_some());
+    assert!(
+        plans[0]
+            .top
+            .iter()
+            .filter(|r| r.work.is_some())
+            .all(|r| r.title.is_some() && r.target_state.is_none())
+    );
     assert_eq!(
         (items[0].kind, items[0].state),
         (ItemKind::Hypothesis, ItemState::Open)
@@ -1566,6 +1585,7 @@ fn a_newer_hosts_values_decode_as_unknown() {
     plans["plans"][0]["delivery"] = json!("queued");
     plans["plans"][0]["top"][0]["basis"][0]["kind"] = json!("calendar");
     plans["plans"][0]["changed"][0]["change"] = json!("split");
+    plans["plans"][0]["top"][0]["targetState"] = json!("archived");
     plans["assistant"]["delegates"][0]["share"] = json!("everything");
     plans["assistant"]["delegates"][0]["overallRequests"] = json!("ask-first");
     let Message::InboxList {
@@ -1600,6 +1620,10 @@ fn a_newer_hosts_values_decode_as_unknown() {
     );
     assert_eq!(plans[0].delivery, Delivery::Unknown);
     assert_eq!(plans[0].top[0].basis[0].kind, BasisKind::Unknown);
+    assert_eq!(
+        plans[0].top[0].target_state,
+        Some(muxa_protocol::TargetState::Unknown)
+    );
     assert_eq!(plans[0].changed[0].change, ChangeKind::Unknown);
     assert_eq!(
         (

@@ -1,10 +1,12 @@
 //! What the host says about a plan, never the agent (ADR 0049 §5): the
-//! Later items due soon, stored with the plan; and `unanswered`, `stale`
-//! and `changed`, derived each time plans are listed.
+//! Later items due soon, stored with the plan; and `unanswered`, `stale`,
+//! `changed` and each row's `title` and `targetState`, derived each time
+//! plans are listed.
 use std::collections::HashMap;
 
 use muxa_protocol::{
-    AssistantRequest, ChangeKind, Delivery, Plan, PlanChange, PlanRow, WorkItem, WorkState,
+    AssistantRequest, ChangeKind, Delivery, InboxItem, ItemState, Plan, PlanChange, PlanRow,
+    TargetState, WorkItem, WorkState,
 };
 
 /// Seconds: "due soon" is within a day.
@@ -107,6 +109,44 @@ pub fn marks(plans: &mut [Plan], work: &[WorkItem], requests: &[AssistantRequest
         let (unanswered, stale) = unanswered_and_stale(work, requests);
         plans[newest].unanswered = unanswered;
         plans[newest].stale = stale;
+    }
+}
+
+/// Sets each row's `title` and, when its target is no longer open, its
+/// `targetState`, so a client can name a row whose item left its lists.
+/// `work` and `items` are every one on the host, open or closed.
+pub fn targets(plans: &mut [Plan], work: &[WorkItem], items: &[InboxItem]) {
+    let work: HashMap<&str, &WorkItem> = work.iter().map(|w| (w.id.as_str(), w)).collect();
+    let items: HashMap<&str, &InboxItem> = items.iter().map(|i| (i.id.as_str(), i)).collect();
+    for row in plans.iter_mut().flat_map(|p| p.top.iter_mut()) {
+        (row.title, row.target_state) = match (&row.work, &row.item) {
+            (Some(id), _) => match work.get(id.as_str()) {
+                Some(w) => (Some(w.title.clone()), work_state(w.state)),
+                None => (None, Some(TargetState::Gone)),
+            },
+            (None, Some(id)) => match items.get(id.as_str()) {
+                Some(i) => (Some(i.question.clone()), item_state(i.state)),
+                None => (None, Some(TargetState::Gone)),
+            },
+            (None, None) => (None, None),
+        };
+    }
+}
+
+fn work_state(state: WorkState) -> Option<TargetState> {
+    match state {
+        WorkState::Done => Some(TargetState::Done),
+        WorkState::Withdrawn => Some(TargetState::Withdrawn),
+        _ => None,
+    }
+}
+
+fn item_state(state: ItemState) -> Option<TargetState> {
+    match state {
+        ItemState::Open | ItemState::Later => None,
+        ItemState::Answered => Some(TargetState::Answered),
+        ItemState::Resolved => Some(TargetState::Resolved),
+        ItemState::Unknown => Some(TargetState::Unknown),
     }
 }
 

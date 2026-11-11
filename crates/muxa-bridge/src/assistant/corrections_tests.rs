@@ -67,6 +67,8 @@ pub(crate) fn row(id: &str) -> PlanRow {
         },
         basis: Vec::new(),
         missing: Vec::new(),
+        title: None,
+        target_state: None,
     }
 }
 

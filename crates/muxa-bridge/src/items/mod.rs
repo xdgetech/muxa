@@ -158,6 +158,11 @@ pub fn shown(item: &InboxItem) -> InboxItem {
 /// Blocking. Every item: open ones (`ask` first, then newest), then later
 /// ones, then the newest closed ones. `entries` are the Routines' (already shown).
 pub fn list(config: &Config, entries: &[InboxEntry]) -> Result<Vec<InboxItem>, ErrorBody> {
+    all(config, entries).map(order)
+}
+
+/// Blocking. Every item as `list` shows it, closed ones too, in no order.
+pub fn all(config: &Config, entries: &[InboxEntry]) -> Result<Vec<InboxItem>, ErrorBody> {
     let mut items: Vec<InboxItem> = entries.iter().map(from_entry).collect();
     if let Some(dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) {
         let files = ItemStore::open(dir).and_then(|s| s.all()).map_err(|e| {
@@ -170,7 +175,7 @@ pub fn list(config: &Config, entries: &[InboxEntry]) -> Result<Vec<InboxItem>, E
                 .flat_map(|t| t.items.iter().map(|s| shown(&s.item))),
         );
     }
-    Ok(order(items))
+    Ok(items)
 }
 
 /// Blocking. The docs and images the stored items of pane `pane` (`%n`)

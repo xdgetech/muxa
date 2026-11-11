@@ -56,7 +56,26 @@ data class PlanRow(
     val basis: List<Basis> = emptyList(),
     /** What the agent would need to know to rank it better. */
     val missing: List<String> = emptyList(),
+    /** Derived when listed: the Work item's title or the Inbox item's question. */
+    val title: String? = null,
+    /** Derived when listed: the target's state when it is no longer open. Null: open. */
+    val targetState: TargetState? = null,
 )
+
+/** A row's target that is no longer open. Unknown states stay as their name. */
+@Serializable
+@JvmInline
+value class TargetState(val raw: String) {
+    companion object {
+        val ANSWERED = TargetState("answered")
+        val RESOLVED = TargetState("resolved")
+        val DONE = TargetState("done")
+        val WITHDRAWN = TargetState("withdrawn")
+
+        /** The host no longer has the Work item or Inbox item. */
+        val GONE = TargetState("gone")
+    }
+}
 
 /** The agent's estimate of the time a row takes: `low <= estimated <= high`. */
 @Serializable

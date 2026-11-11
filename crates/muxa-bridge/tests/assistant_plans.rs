@@ -288,6 +288,8 @@ async fn scheduled_plans_run_once_conflict_while_open_and_stop_at_a_budget() {
     assert_eq!(done.id, first.id);
     assert_eq!(done.top.len(), 1);
     assert_eq!(done.top[0].work.as_deref(), Some(item.id.as_str()));
+    assert_eq!(done.top[0].title.as_deref(), Some(item.title.as_str()));
+    assert_eq!(done.top[0].target_state, None);
     assert_eq!(done.workspaces, ["w"]);
     assert_eq!(done.changed.len(), 1);
     assert_eq!(done.changed[0].change, ChangeKind::Entered);

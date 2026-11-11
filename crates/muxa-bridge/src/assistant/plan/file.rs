@@ -223,6 +223,8 @@ fn rows(raw: Vec<RawRow>, reasons: &mut Vec<String>) -> Vec<PlanRow> {
             },
             basis,
             missing: r.missing,
+            title: None,
+            target_state: None,
         });
     }
     out
