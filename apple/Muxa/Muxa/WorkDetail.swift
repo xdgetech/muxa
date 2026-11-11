@@ -10,6 +10,8 @@ struct WorkDetail: View {
     let id: String
     /// Why `get-work` failed: the texts this device has seen show instead.
     @State private var readError: String?
+    /// Send to the secretary, waiting on its text (ADR 0059 §4).
+    @State private var sending: SendTarget?
 
     var body: some View {
         if let item = model.workItem(id) ?? model.session.workDetails[id]?.entry {
@@ -47,6 +49,7 @@ struct WorkDetail: View {
                 actions(item)
             }
             .accessibilityIdentifier("work-detail")
+            .modifier(SendPrompt(target: $sending))
             .navigationTitle("Work")
             .navigationBarTitleDisplayMode(.inline)
             // A new request raises the rev: read the item again for its Captures and requests.
@@ -126,6 +129,11 @@ struct WorkDetail: View {
                 if model.canKeepTasks {
                     Button("Start a Task", systemImage: Icon.newTask) { Task { await model.startTask(for: item) } }
                         .accessibilityIdentifier("work-start-task")
+                }
+                // ADR 0059 §4: the secretary gets the Work item and the text.
+                if let target = model.secretaryTarget(for: item) {
+                    Button("Send to the Secretary…", systemImage: Icon.send) { sending = target }
+                        .accessibilityIdentifier("work-send-secretary")
                 }
                 Button("Complete", systemImage: Icon.done) { model.change(item, .complete) }
                     .accessibilityIdentifier("work-complete")

@@ -56,7 +56,12 @@ extension PaneSession {
         guard let workspace = assistantWorkspace else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.assistantUnsupported))
         }
-        return try await start { .startRootSession(id: $0, workspace: workspace) }
+        return try await startRoot(workspace: workspace)
+    }
+
+    /// `start-session` with `root`; `text` and `work` only at level 17, which the caller checks.
+    func startRoot(workspace: String, text: String? = nil, work: String? = nil) async throws -> StartedSession {
+        try await start { .startRootSession(id: $0, workspace: workspace, text: text, work: work) }
     }
 
     /// Shown when the host has no overall assistant to talk to.

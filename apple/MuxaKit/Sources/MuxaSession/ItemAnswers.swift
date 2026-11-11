@@ -37,11 +37,16 @@ public struct ItemAnswers: Equatable, Sendable {
         chooses = answers.contains(.choose)
         done = answers.first { $0 == .keepOpen || $0 == .dismiss }
         later = answers.contains(.later)
-        decisions = answers.filter { $0 == .approve || $0 == .confirm || $0 == .reject || $0 == .retry }
+        decisions = answers.filter {
+            $0 == .approve || $0 == .startTask || $0 == .confirm || $0 == .reject || $0 == .retry
+        }
         text = answers.first(where: \.needsText)
         menu = answers.filter { $0 == .accept || $0 == .drop }
         if replying, let text {
             main = text
+        } else if answers.contains(.startTask) {
+            // Beside a hand-off, Start Task is the main button (ADR 0060 §8).
+            main = .startTask
         } else {
             // Never past the first: a question's next answer may be its cancel.
             main = answers.first.flatMap { $0 == .choose || $0 == .later || $0.needsText ? nil : $0 }
@@ -56,10 +61,18 @@ extension InboxAction {
     /// The button's title. It names the result (ADR 0033 §4a.2, ADR 0040): on an
     /// `ask` Allow, Deny and Deny & Send; a proposal keeps Approve and Reject; an
     /// answer that changes the Task names it; ✓ is "Done" for VoiceOver. On a `result`
-    /// Approve hands off and on a `write` Send revises (ADR 0058 §2, §4).
+    /// Approve hands off and on a `write` Send revises (ADR 0058 §2, §4). A proposed Task's
+    /// answer is Start Task (ADR 0060 §8).
     public func title(for kind: ItemKind) -> String {
         switch self {
-        case .approve: kind == .ask ? "Allow" : kind == .result ? "Hand off" : "Approve"
+        case .approve:
+            switch kind {
+            case .ask: "Allow"
+            case .result: "Hand off"
+            case .newTask: "Start Task"
+            default: "Approve"
+            }
+        case .startTask: "Start Task"
         case .reject: kind == .ask ? "Deny" : "Reject"
         case .reply: kind == .ask ? "Deny & Send" : kind == .write ? "Revise" : "Send"
         case .choose: "Choose"
@@ -76,10 +89,21 @@ extension InboxAction {
         }
     }
 
-    /// `title(for:)` with the member it names: "Hand off to writer".
+    /// `title(for:)` with the member it names: "Hand off to writer". On a result that
+    /// proposes a Task and no hand-off, Approve is Start Task. On a plan, Approve leaves
+    /// plan mode and asks before each edit; Reject and Send keep planning (ADR 0060 §5).
     public func title(for item: InboxItem) -> String {
-        if self == .approve, item.kind == .result, let next = item.result?.handoff?.worker {
-            return "Hand off to \(next)"
+        if item.isPlan {
+            switch self {
+            case .approve: return "Approve plan"
+            case .reject: return "Keep planning"
+            case .reply: return "Keep planning & Send"
+            default: break
+            }
+        }
+        if self == .approve, item.kind == .result {
+            if let next = item.result?.handoff?.worker { return "Hand off to \(next)" }
+            if item.result?.task != nil { return "Start Task" }
         }
         return title(for: item.kind)
     }
@@ -88,6 +112,25 @@ extension InboxAction {
 extension InboxItem {
     public var isUnread: Bool { readAt == nil }
     public var isProtected: Bool { protectedAt != nil }
+
+    /// An `ask` on Claude Code's plan menu (ADR 0060 §5).
+    public var isPlan: Bool { kind == .ask && prompt?.kind == .plan }
+
+    /// The Task a `result` or `new-task` item proposes (ADR 0060 §8).
+    public var proposedTask: TaskProposal? {
+        switch kind {
+        case .result: result?.task
+        case .newTask: newTask
+        default: nil
+        }
+    }
+
+    /// The answer that starts the proposed Task: `start-task` beside a hand-off, else `approve`.
+    public var startsTask: InboxAction? {
+        guard proposedTask != nil else { return nil }
+        if answers.contains(.startTask) { return .startTask }
+        return kind == .newTask || result?.handoff == nil ? answers.first { $0 == .approve } : nil
+    }
 
     /// The staff member that a `result` item's Send or a `write` item's Revise asks again
     /// (ADR 0058 §3, §4). Nil: the workspace's assistant.

@@ -100,4 +100,6 @@ enum Icon {
     static let staff = "person.2"
     /// A write outside the host that a Result proposes (ADR 0052).
     static let write = "paperplane"
+    /// A Task the assistant proposes, which starts in plan mode (ADR 0060).
+    static let proposedTask = "hammer"
 }

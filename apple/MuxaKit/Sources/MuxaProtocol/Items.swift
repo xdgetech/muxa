@@ -55,6 +55,9 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     public var memory: MemoryProposal?
     /// With kind `result`: the Result to review (`work` level 16, ADR 0058).
     public var result: ResultReview?
+    /// With kind `new-task`: the Task the secretary proposes (`work` level 18, ADR 0060).
+    /// After Start Task, `task` is the new Task.
+    public var newTask: TaskProposal?
     /// The answers the host accepts now, in the order to show them. Unknown
     /// actions are left out: PROTOCOL.md says to show them as nothing.
     public var answers: [InboxAction]
@@ -67,7 +70,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         routine: String? = nil, proposal: Proposal? = nil, sort: SortProposal? = nil,
         delegate: DelegateProposal? = nil, hypothesis: HypothesisProposal? = nil, handoff: HandoffProposal? = nil,
         write: WriteProposal? = nil, memory: MemoryProposal? = nil, result: ResultReview? = nil,
-        answers: [InboxAction] = []
+        newTask: TaskProposal? = nil, answers: [InboxAction] = []
     ) {
         self.id = id
         self.kind = kind
@@ -97,6 +100,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         self.write = write
         self.memory = memory
         self.result = result
+        self.newTask = newTask
         self.answers = answers
     }
 }
@@ -104,7 +108,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 extension InboxItem: Codable {
     private enum Key: String, CodingKey {
         case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, protectedAt, answeredAt, answer
-        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, handoff, write, memory, result, answers
+        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, handoff, write, memory, result, newTask, answers
     }
 
     public init(from decoder: any Decoder) throws {
@@ -137,6 +141,7 @@ extension InboxItem: Codable {
         write = try c.decodeIfPresent(WriteProposal.self, forKey: .write)
         memory = try c.decodeIfPresent(MemoryProposal.self, forKey: .memory)
         result = try c.decodeIfPresent(ResultReview.self, forKey: .result)
+        newTask = try c.decodeIfPresent(TaskProposal.self, forKey: .newTask)
         answers = (try c.decodeIfPresent([String].self, forKey: .answers) ?? []).compactMap(InboxAction.init(rawValue:))
     }
 
@@ -170,6 +175,7 @@ extension InboxItem: Codable {
         try c.encodeIfPresent(write, forKey: .write)
         try c.encodeIfPresent(memory, forKey: .memory)
         try c.encodeIfPresent(result, forKey: .result)
+        try c.encodeIfPresent(newTask, forKey: .newTask)
         if !answers.isEmpty { try c.encode(answers, forKey: .answers) }
     }
 }
@@ -197,12 +203,15 @@ public enum ItemKind: Equatable, Hashable, Sendable {
     case memory
     /// Level 16: a request's Result to review (ADR 0058).
     case result
+    /// Level 18: the secretary proposes a Task to start (ADR 0060).
+    case newTask
     case other(String)
 
     private static let names: [(ItemKind, String)] = [
         (.ask, "ask"), (.review, "review"), (.failure, "failure"), (.proposal, "proposal"), (.briefing, "briefing"),
         (.sort, "sort"), (.delegate, "delegate"), (.hypothesis, "hypothesis"),
         (.handoff, "handoff"), (.write, "write"), (.memory, "memory"), (.result, "result"),
+        (.newTask, "new-task"),
     ]
 
     public init(raw: String) {

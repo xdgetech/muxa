@@ -50,7 +50,11 @@ extension DemoBridge {
         guard Self.workLevel >= workPlans else { return ([], nil) }
         return lock.withLock {
             _ = work.finishPlan()
-            return (work.listedPlans, work.listedAssistant)
+            var assistant = work.listedAssistant
+            if Self.workLevel >= workToday, assistant?.overall != nil {
+                assistant?.overallRuns = RunBudget(left: work.plans.runsLeft, max: DemoPlans.maxRuns)
+            }
+            return (work.listedPlans, assistant)
         }
     }
 

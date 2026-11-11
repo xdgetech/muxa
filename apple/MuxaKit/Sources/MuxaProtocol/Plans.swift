@@ -332,26 +332,32 @@ public struct AssistantInfo: Equatable, Sendable {
     /// The overall assistant's workspace. Leave it out of workspace pickers.
     public var overall: String?
     public var delegates: [DelegateInfo]
+    /// Level 17: what a Re-rank has left today (ADR 0059 §5). Nil: no overall workspace, or
+    /// an older host.
+    public var overallRuns: RunBudget?
 
-    public init(overall: String? = nil, delegates: [DelegateInfo] = []) {
+    public init(overall: String? = nil, delegates: [DelegateInfo] = [], overallRuns: RunBudget? = nil) {
         self.overall = overall
         self.delegates = delegates
+        self.overallRuns = overallRuns
     }
 }
 
 extension AssistantInfo: Codable {
-    private enum Key: String, CodingKey { case overall, delegates }
+    private enum Key: String, CodingKey { case overall, delegates, overallRuns }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
         overall = try c.decodeIfPresent(String.self, forKey: .overall)
         delegates = try c.decodeIfPresent([DelegateInfo].self, forKey: .delegates) ?? []
+        overallRuns = try c.decodeIfPresent(RunBudget.self, forKey: .overallRuns)
     }
 
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: Key.self)
         try c.encodeIfPresent(overall, forKey: .overall)
         if !delegates.isEmpty { try c.encode(delegates, forKey: .delegates) }
+        try c.encodeIfPresent(overallRuns, forKey: .overallRuns)
     }
 }
 

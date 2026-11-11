@@ -111,6 +111,9 @@ struct TodayRow: View {
     let isNext: Bool
     @State private var showsWhy = false
 
+    /// Level 17: the verb, Do, and the row's buttons (ADR 0059 §7).
+    private var actions: Bool { model.namesTodayActions }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button { model.open(row) } label: {
@@ -118,10 +121,18 @@ struct TodayRow: View {
                     if isNext {
                         Text("Next").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
                     }
-                    Text(model.title(of: row)).lineLimit(2)
-                    Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                    Text("\(row.minutes.shown) · Next: \(row.next)").font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(2)
+                    if actions {
+                        // The verb first: what to do before what it is about (ADR 0059 §1).
+                        Text("\(Text(model.verb(of: row)).fontWeight(.semibold)) · \(model.title(of: row))").lineLimit(2)
+                        Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        Text("Do: \(row.next)").font(.caption).lineLimit(3)
+                        Text(row.minutes.shown).font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text(model.title(of: row)).lineLimit(2)
+                        Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        Text("\(row.minutes.shown) · Next: \(row.next)").font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                     if let delegate = row.item.flatMap(model.item)?.delegate, delegate.worker != nil {
                         Label(delegate.shown, systemImage: Icon.staff).font(.caption).foregroundStyle(.secondary)
                     }
@@ -135,6 +146,9 @@ struct TodayRow: View {
             .buttonStyle(.borderless)
             .foregroundStyle(.primary)
             .accessibilityIdentifier("today-row-\(row.target)")
+            if actions {
+                TodayRowActions(row: row)
+            }
             if !row.basis.isEmpty || !row.missing.isEmpty {
                 Button(showsWhy ? "Hide Why" : "Why") { showsWhy.toggle() }
                     .font(.caption)
@@ -264,6 +278,7 @@ private struct PlanStatusRow: View {
 }
 
 /// Plan Now asks the overall assistant for a plan; a long press also says the time you have.
+/// At level 17 it is Re-rank, with the runs left today (ADR 0059 §5).
 private struct PlanNowRow: View {
     @Environment(AppModel.self) private var model
     @State private var asking = false
@@ -274,12 +289,23 @@ private struct PlanNowRow: View {
 
     var body: some View {
         // A plain button: a list row's Menu with a primary action opens the menu on a tap.
-        Button("Plan Now", systemImage: Icon.today) { plan(nil) }
-            .contextMenu {
-                ForEach(Self.choices, id: \.0) { minutes, label in
-                    Button("I Have \(label)") { plan(minutes) }
+        Button { plan(nil) } label: {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.rerankTitle)
+                    if let runs = model.session.overallRuns {
+                        Text(runs.shown).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
+            } icon: {
+                Image(systemName: Icon.today)
             }
+        }
+        .contextMenu {
+            ForEach(Self.choices, id: \.0) { minutes, label in
+                Button("I Have \(label)") { plan(minutes) }
+            }
+        }
         .disabled(asking || model.session.isPlanning || !model.isConnected)
         .accessibilityIdentifier("today-plan-now")
         if let error {

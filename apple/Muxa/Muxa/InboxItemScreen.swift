@@ -19,6 +19,8 @@ struct InboxItemScreen: View {
     @State private var confirmingMemory: InboxItem?
     @State private var sending = false
     @State private var failure: String?
+    /// A plan the host could not approve: the user approves it in the Task's terminal.
+    @State private var planInTerminal: InboxItem?
     @State private var lostWork: LostWork?
     @FocusState private var replying: Bool
 
@@ -42,7 +44,9 @@ struct InboxItemScreen: View {
                 }
                 // A write's reason and a memory item's summary are plain text in their block:
                 // nothing of either renders Markdown.
-                if let summary = item.summary, !summary.isEmpty, item.kind != .write, item.kind != .memory {
+                // A proposed Task's summary is its goal, which the card shows.
+                if let summary = item.summary, !summary.isEmpty, item.kind != .write, item.kind != .memory,
+                   item.kind != .newTask {
                     ItemSummaryText(item: item, summary: summary)
                 }
                 if let question = item.prompt?.question {
@@ -84,6 +88,13 @@ struct InboxItemScreen: View {
                 }
                 if item.kind == .result, let review = item.result {
                     ResultReviewView(review: review)
+                }
+                if let proposal = item.proposedTask {
+                    ProposedTaskView(proposal: proposal)
+                }
+                if let task = item.task, item.kind == .result || item.kind == .newTask {
+                    Button("Open its Task", systemImage: Icon.openSession) { model.openTask(task) }
+                        .accessibilityIdentifier("item-open-task")
                 }
                 ItemEvidence(item: item)
             }
@@ -127,6 +138,18 @@ struct InboxItemScreen: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(failure ?? "")
+        }
+        // The host approves a plan only with the expected option on screen (ADR 0060 §5).
+        .alert(
+            "Approve in the Terminal", isPresented: Binding(get: { planInTerminal != nil }, set: { if !$0 { planInTerminal = nil } }),
+            presenting: planInTerminal
+        ) { item in
+            if model.itemSession(item) != nil {
+                Button("Open Session") { model.open(item, as: .terminal) }.accessibilityIdentifier("plan-open-session")
+            }
+            Button("OK", role: .cancel) {}
+        } message: { _ in
+            Text(PaneSession.planInTerminal)
         }
         .background {
             let main = ItemAnswers(item, replying: hasReply, showsWhole: model.showsWhole(item)).main
@@ -333,6 +356,7 @@ struct InboxItemScreen: View {
         _ item: InboxItem, _ action: InboxAction, option: UInt32? = nil, worktree: WorktreeEnd = .remove, reason: String? = nil
     ) {
         let text = action.needsText ? reply.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        if action == item.startsTask { model.startedTaskItem = item.id }
         sending = true
         Task {
             defer { sending = false }
@@ -351,9 +375,15 @@ struct InboxItemScreen: View {
                 }
                 reply = ""
                 replying = false
+                // Start Task keeps the item on screen, so Open its Task is one tap away. Send on
+                // a proposed Task leaves it open: the secretary proposes again.
+                if action == item.startsTask, saved.task != nil { return }
+                if item.kind == .newTask, action == .reply { return }
                 answered(saved)
             } catch {
-                if let reason = PaneSession.lostWork(error) {
+                if item.isPlan, action == .approve, PaneSession.describe(error) == PaneSession.planInTerminal {
+                    planInTerminal = item
+                } else if let reason = PaneSession.lostWork(error) {
                     lostWork = LostWork(reason: reason) { send(item, action, option: option, worktree: .force) }
                 } else {
                     failure = PaneSession.describe(error)

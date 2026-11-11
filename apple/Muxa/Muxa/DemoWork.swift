@@ -29,6 +29,8 @@ struct DemoWork: Sendable {
     var reviewsResults = true
     /// `result` items made since launch, for their ids.
     var resultItemCount = 0
+    /// The Task each Start Task made, by proposal marker (ADR 0060 §2; `DemoProposals.swift`).
+    var startedTasks: [String: String] = [:]
 
     struct Refusal: Error {
         var body: ErrorBody

@@ -23,11 +23,13 @@ public struct ResultReview: Equatable, Sendable {
     public var files: [String]
     /// The hand-off the step proposes; `approve` starts it while it is offered.
     public var handoff: Handoff?
+    /// Level 18: the Task the version proposes (ADR 0060 §1); Start Task starts it.
+    public var task: TaskProposal?
 
     public init(
         request: String, version: UInt64, step: UInt32, work: String, worker: String? = nil,
         findings: [String] = [], openQuestions: [String] = [], next: [String] = [], files: [String] = [],
-        handoff: Handoff? = nil
+        handoff: Handoff? = nil, task: TaskProposal? = nil
     ) {
         self.request = request
         self.version = version
@@ -39,12 +41,13 @@ public struct ResultReview: Equatable, Sendable {
         self.next = next
         self.files = files
         self.handoff = handoff
+        self.task = task
     }
 }
 
 extension ResultReview: Codable {
     private enum Key: String, CodingKey {
-        case request, version, step, work, worker, findings, openQuestions, next, files, handoff
+        case request, version, step, work, worker, findings, openQuestions, next, files, handoff, task
     }
 
     public init(from decoder: any Decoder) throws {
@@ -59,6 +62,7 @@ extension ResultReview: Codable {
         next = try c.decodeIfPresent([String].self, forKey: .next) ?? []
         files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
         handoff = try c.decodeIfPresent(Handoff.self, forKey: .handoff)
+        task = try c.decodeIfPresent(TaskProposal.self, forKey: .task)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -73,5 +77,6 @@ extension ResultReview: Codable {
         if !next.isEmpty { try c.encode(next, forKey: .next) }
         if !files.isEmpty { try c.encode(files, forKey: .files) }
         try c.encodeIfPresent(handoff, forKey: .handoff)
+        try c.encodeIfPresent(task, forKey: .task)
     }
 }

@@ -16,6 +16,8 @@ struct DemoPlans: Sendable {
     var made: [String: Made] = [:]
     /// When the pending plan's run started.
     var started: Date?
+    /// Runs a plan may still start today: the first plan used one (ADR 0059 §5).
+    var runsLeft: UInt32 = DemoPlans.maxRuns - 1
 
     struct Made: Sendable {
         var capture: Capture?
@@ -26,6 +28,8 @@ struct DemoPlans: Sendable {
     /// Seconds a plan run takes before its plan is stored.
     static let planAfter: TimeInterval = 3
     static let kept = 7
+    /// The overall workspace's `max_runs_per_day`.
+    static let maxRuns: UInt32 = 3
 
     static func id(_ n: Int) -> String { String(format: "p-%08x", 0xe000 + n) }
 
@@ -140,6 +144,11 @@ extension DemoWork {
             throw Refusal(.conflict, "plan \(open.id) is being made")
         }
         if let minutes, !(1...1440).contains(minutes) { throw Refusal(.badRequest, "minutes must be 1 to 1440") }
+        guard plans.runsLeft > 0 else {
+            throw Refusal(.conflict, "workspace \"\(DemoPlans.overall)\" started \(DemoPlans.maxRuns) assistant runs today, "
+                + "its max_runs_per_day. The count resets at 00:00.")
+        }
+        plans.runsLeft -= 1
         let plan = Plan(id: DemoPlans.id(plans.plans.count + 1), rev: 1, at: Self.now, inputsAt: Self.now,
                         delivery: .pending, deliveryAt: Self.now, minutes: minutes, workspaces: ["work"])
         plans.plans = Array(([plan] + plans.plans).prefix(DemoPlans.kept))

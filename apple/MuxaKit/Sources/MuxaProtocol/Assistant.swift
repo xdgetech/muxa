@@ -451,12 +451,14 @@ public struct AssistResult: Equatable, Sendable {
     public var step: UInt32?
     /// Level 13: writes outside the host it proposes, at most 3 (ADR 0052).
     public var writes: [ResultWrite]
+    /// Level 18: the Task the step proposes to start (ADR 0060). Never logged.
+    public var task: TaskProposal?
 
     public init(
         version: UInt64, at: UInt64, summary: String, stale: Bool = false, findings: [Finding] = [],
         openQuestions: [String] = [], next: [String] = [], files: [String] = [],
         possibleDuplicates: [PossibleDuplicate] = [], notes: Notes? = nil, worker: String? = nil, step: UInt32? = nil,
-        writes: [ResultWrite] = []
+        writes: [ResultWrite] = [], task: TaskProposal? = nil
     ) {
         self.version = version
         self.at = at
@@ -471,13 +473,14 @@ public struct AssistResult: Equatable, Sendable {
         self.worker = worker
         self.step = step
         self.writes = writes
+        self.task = task
     }
 }
 
 extension AssistResult: Codable {
     private enum Key: String, CodingKey {
         case version, at, summary, stale, findings, openQuestions, next, files, possibleDuplicates, notes, worker, step
-        case writes
+        case writes, task
     }
 
     public init(from decoder: any Decoder) throws {
@@ -495,6 +498,7 @@ extension AssistResult: Codable {
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
         step = try c.decodeIfPresent(UInt32.self, forKey: .step)
         writes = try c.decodeIfPresent([ResultWrite].self, forKey: .writes) ?? []
+        task = try c.decodeIfPresent(TaskProposal.self, forKey: .task)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -512,6 +516,7 @@ extension AssistResult: Codable {
         try c.encodeIfPresent(worker, forKey: .worker)
         try c.encodeIfPresent(step, forKey: .step)
         if !writes.isEmpty { try c.encode(writes, forKey: .writes) }
+        try c.encodeIfPresent(task, forKey: .task)
     }
 }
 

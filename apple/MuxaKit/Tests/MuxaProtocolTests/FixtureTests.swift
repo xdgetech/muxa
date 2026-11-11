@@ -93,7 +93,7 @@ struct FixtureTests {
             Issue.record("expected session-started"); return
         }
         #expect(start == 41 && session == "$7" && name == "ask-cto-copilot-1")
-        guard case .startRootSession(43, "secretary") = try Wire.decodeRequest(requests[2]) else {
+        guard case .startRootSession(43, "secretary", nil, nil) = try Wire.decodeRequest(requests[2]) else {
             Issue.record("expected start-session with root"); return
         }
     }
@@ -776,6 +776,85 @@ struct FixtureTests {
         #expect(try decode(#"{"name":"w","checks":["make check"]}"#).checks == .list(["make check"]))
         #expect(try decode(#"{"name":"w"}"#).checks == nil)
         #expect(throws: DecodingError.self) { try decode(#"{"name":"w","checks":"all"}"#) }
+    }
+
+    /// ADR 0059: `start-session` with `root` takes `text` and `work`, and `inbox-list`'s
+    /// `assistant` says the runs a Re-rank has left today.
+    @Test func todayActionsContractRoundTrips() throws {
+        let requests = try Self.lines("today-actions/requests.jsonl")
+        #expect(requests.count == 2)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("today-actions/messages.jsonl")
+        #expect(messages.count == 4)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workToday)
+        guard case .inboxList(_, _, _, _, _, _, _, let assistant?, _, _, _) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected inbox-list with assistant"); return
+        }
+        #expect(assistant.overall == "secretary" && assistant.overallRuns == RunBudget(left: 2, max: 3))
+        guard case .startRootSession(61, "secretary", let text?, "w-7b8c9d0e") = try Wire.decodeRequest(requests[0]) else {
+            Issue.record("expected start-session with text and work"); return
+        }
+        #expect(!text.isEmpty)
+        guard case .startRootSession(62, "secretary", "What should I do next?", nil) = try Wire.decodeRequest(requests[1]) else {
+            Issue.record("expected start-session with text only"); return
+        }
+    }
+
+    /// ADR 0060: a `result` item offers a Task, Start Task is `approve` without a hand-off and
+    /// `start-task` beside one, and the secretary's `new-task` item carries `newTask`.
+    @Test func taskProposalsContractRoundTrips() throws {
+        let requests = try Self.lines("task-proposals/requests.jsonl")
+        #expect(requests.count == 5)
+        for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
+        let messages = try Self.lines("task-proposals/messages.jsonl")
+        #expect(messages.count == 7)
+        for line in messages {
+            let message = try Wire.decodeMessage(line)
+            if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
+            #expect(try canonical(Wire.encode(message)) == canonical(line))
+        }
+        guard case .hello(_, _, _, let capabilities) = try Wire.decodeMessage(messages[0]) else {
+            Issue.record("expected hello"); return
+        }
+        #expect(workLevel(capabilities) == workTaskProposals)
+        guard case .inboxList(_, _, let items, _, _, _, _, _, _, _, _) = try Wire.decodeMessage(messages[1]) else {
+            Issue.record("expected inbox-list"); return
+        }
+        let proposed = try #require(items[0].result?.task)
+        #expect(proposed.repo == "muxa" && proposed.step == 1 && proposed.worker == "muxa-research")
+        #expect(items[0].answers == [.approve, .reply, .dismiss, .later])
+        #expect(items[1].result?.handoff != nil && items[1].answers.contains(.startTask))
+        #expect(items[2].kind == .newTask && items[2].newTask?.work == "w-1a2b3c4d")
+        #expect(items[2].answers == [.approve, .reply, .dismiss, .later])
+        guard case .proposeTask(80, "muxa", "muxa", _, _, "w-1a2b3c4d") = try Wire.decodeRequest(requests[0]),
+              case .proposeTask(81, "home", nil, _, _, nil) = try Wire.decodeRequest(requests[1]),
+              case .updateInboxEntry(83, "i-5f6a7b8c", .startTask, _, _, _, _, _) = try Wire.decodeRequest(requests[3])
+        else { Issue.record("expected propose-task and start-task"); return }
+        // Start Task: `task-saved` first, then the item answered with its Task.
+        guard case .taskSaved(82, let record) = try Wire.decodeMessage(messages[4]),
+              case .inboxSaved(82, _, let started?) = try Wire.decodeMessage(messages[5])
+        else { Issue.record("expected task-saved, then inbox-saved"); return }
+        #expect(started.state == .answered && started.answer == .approve && started.task == record.id)
+        #expect(record.work == "w-1a2b3c4d")
+    }
+
+    /// A level 17 client knows no `new-task` kind and no `start-task`: it reads the list, shows
+    /// the item as unknown, and still has every answer it knows.
+    @Test func aLevel17ClientReadsANewTaskItemAsUnknown() throws {
+        struct OldItem: Decodable { var kind: String; var summary: String?; var answers: [String] }
+        struct OldList: Decodable { var items: [OldItem] }
+        let old = try JSONDecoder().decode(OldList.self, from: try Self.lines("task-proposals/messages.jsonl")[1])
+        #expect(old.items[2].kind == "new-task" && old.items[2].summary != nil)
+        #expect(old.items[2].answers.allSatisfy { InboxAction(rawValue: $0) != nil })
+        #expect(old.items[1].answers.contains("start-task"))
     }
 
     @Test func bytesAreBase64() throws {
