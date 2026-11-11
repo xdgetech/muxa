@@ -25,6 +25,10 @@ struct DemoWork: Sendable {
     var keepsMemory = false
     /// Policies, corrections and hypotheses (`DemoPolicies.swift`).
     var memory = DemoPolicies()
+    /// Every stored Result makes a `result` item (`work` level 16, ADR 0058; `DemoResults.swift`).
+    var reviewsResults = true
+    /// `result` items made since launch, for their ids.
+    var resultItemCount = 0
 
     struct Refusal: Error {
         var body: ErrorBody

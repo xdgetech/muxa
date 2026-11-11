@@ -228,7 +228,7 @@ extension DemoWork {
         guard taskItems[i].state == .open, taskItems[i].answers.contains(.approve) else {
             throw Refusal(.badRequest, "approve is not an answer of \(id)")
         }
-        if let h = taskItems[i].handoff {
+        if let h = taskItems[i].handoff ?? taskItems[i].result.flatMap(\.handoffProposal) {
             let (item, request, change) = try assistant.handOn(h)
             plans.made[id] = DemoPlans.Made(work: item, request: request)
             return .delegated(item, request, change, answered(i))

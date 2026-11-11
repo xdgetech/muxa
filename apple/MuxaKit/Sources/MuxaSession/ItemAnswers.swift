@@ -55,12 +55,13 @@ extension InboxAction {
 
     /// The button's title. It names the result (ADR 0033 §4a.2, ADR 0040): on an
     /// `ask` Allow, Deny and Deny & Send; a proposal keeps Approve and Reject; an
-    /// answer that changes the Task names it; ✓ is "Done" for VoiceOver.
+    /// answer that changes the Task names it; ✓ is "Done" for VoiceOver. On a `result`
+    /// Approve hands off and on a `write` Send revises (ADR 0058 §2, §4).
     public func title(for kind: ItemKind) -> String {
         switch self {
-        case .approve: kind == .ask ? "Allow" : "Approve"
+        case .approve: kind == .ask ? "Allow" : kind == .result ? "Hand off" : "Approve"
         case .reject: kind == .ask ? "Deny" : "Reject"
-        case .reply: kind == .ask ? "Deny & Send" : "Send"
+        case .reply: kind == .ask ? "Deny & Send" : kind == .write ? "Revise" : "Send"
         case .choose: "Choose"
         case .accept: "Complete Task"
         case .keepOpen, .dismiss: "Done"
@@ -74,11 +75,29 @@ extension InboxAction {
         case .unprotect: "Unprotect"
         }
     }
+
+    /// `title(for:)` with the member it names: "Hand off to writer".
+    public func title(for item: InboxItem) -> String {
+        if self == .approve, item.kind == .result, let next = item.result?.handoff?.worker {
+            return "Hand off to \(next)"
+        }
+        return title(for: item.kind)
+    }
 }
 
 extension InboxItem {
     public var isUnread: Bool { readAt == nil }
     public var isProtected: Bool { protectedAt != nil }
+
+    /// The staff member that a `result` item's Send or a `write` item's Revise asks again
+    /// (ADR 0058 §3, §4). Nil: the workspace's assistant.
+    public var askedAgain: String? {
+        switch kind {
+        case .result: result?.worker
+        case .write: write?.worker
+        default: nil
+        }
+    }
 
     /// Delete Old removes it: made more than `days` days before `now`, and not
     /// protected (ADR 0046). The host's cutoff is whole days before now.

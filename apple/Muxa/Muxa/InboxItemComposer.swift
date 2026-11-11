@@ -20,7 +20,7 @@ struct ItemComposer: View {
                 .textFieldStyle(.roundedBorder)
                 .focused(focused)
                 .accessibilityIdentifier("item-reply")
-            Button(action.title(for: item.kind), systemImage: "arrow.up.circle.fill", action: send)
+            Button(action.title(for: item), systemImage: "arrow.up.circle.fill", action: send)
                 .labelStyle(.iconOnly)
                 .font(.title2)
                 .disabled(isEmpty || sending)
@@ -34,6 +34,9 @@ struct ItemComposer: View {
         switch action {
         case .askAgent: "Ask the workspace's agent…"
         case _ where item.kind == .ask: "Deny, then tell the agent…"
+        // Send and Revise ask the member who wrote the Result again (ADR 0058 §3, §4).
+        case _ where item.kind == .result: "Tell \(item.askedAgain ?? "the assistant") what to do next…"
+        case _ where item.kind == .write: "Ask \(item.askedAgain ?? "the assistant") for a new draft…"
         default: "Reply to the agent…"
         }
     }

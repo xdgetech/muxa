@@ -44,10 +44,11 @@ final class AssistantTests: XCTestCase {
     }
 
     /// Ask Assistant in the Capture sheet makes a Work item whose row shows the
-    /// delivery, then that a Result is ready.
+    /// delivery, then that a Result is ready. "Result ready" is a level 15 host's marker
+    /// (ADR 0058 §5), so the demo plays one.
     @MainActor
     func testAskFromTheCaptureSheet() throws {
-        let app = launchWorkInbox()
+        let app = launchWorkInbox(["-work15"])
         askFromCapture(app, "Compare two hosting plans")
         XCTAssertTrue(element(app, "capture-text").waitForNonExistence(timeout: 5), "Ask closes the sheet")
         let row = workRow(app, "w-00000103")
@@ -57,6 +58,25 @@ final class AssistantTests: XCTestCase {
         let ready = expectation(for: NSPredicate(format: "label CONTAINS 'Result ready'"), evaluatedWith: row)
         wait(for: [ready], timeout: 20)
         save("assistant-row")
+    }
+
+    /// From level 16 a Result makes a `result` item, unread until opened, and the Work row
+    /// carries no marker of its own (ADR 0058 §5).
+    @MainActor
+    func testAResultMakesAnItemInsteadOfTheMarker() throws {
+        let app = launchWorkInbox()
+        let billing = workRow(app, "w-0000b001")
+        XCTAssertTrue(waitForSidebarRow(app, billing))
+        XCTAssertFalse(billing.label.contains("Result ready"), billing.label)
+        askFromCapture(app, "Compare two hosting plans")
+        XCTAssertTrue(element(app, "capture-text").waitForNonExistence(timeout: 5), "Ask closes the sheet")
+        let item = app.buttons["item-row-i-00000701"]
+        XCTAssertTrue(item.waitForExistence(timeout: 25), "the run's Result makes an item")
+        XCTAssertTrue(item.label.contains("The assistant finished: Two ways fit."), item.label)
+        XCTAssertEqual(item.value as? String, "Unread")
+        let row = workRow(app, "w-00000103")
+        XCTAssertTrue(waitForSidebarRow(app, row))
+        XCTAssertFalse(row.label.contains("Result ready"), row.label)
     }
 
     /// Without the daemon, the host refuses: its message shows, and the Capture is kept
@@ -76,10 +96,10 @@ final class AssistantTests: XCTestCase {
 
     /// A Result shows its summary, findings with their sources, open questions, files
     /// as paths, possible duplicates, and the older version under Earlier. Once read,
-    /// the row no longer says it is ready.
+    /// the row no longer says it is ready (on a level 15 host, which has the marker).
     @MainActor
     func testAResultIsShown() throws {
-        let app = launchWorkInbox()
+        let app = launchWorkInbox(["-work15"])
         let row = workRow(app, "w-0000b001")
         XCTAssertTrue(waitForSidebarRow(app, row))
         XCTAssertTrue(row.label.contains("Result ready"), row.label)

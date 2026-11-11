@@ -4,8 +4,9 @@ import XCTest
 /// `-demo-staff` fixtures: `-demo-policies` (see `PolicyTests`) with chief-of-staff (the
 /// lead), researcher and writer on "work" and one member on "personal". w-0000b005's
 /// request q-0000d002 ran chief-of-staff → researcher, both with proposed notes, and
-/// waits on i-0000f004 to hand it to the writer. The delegate i-0000f001 names the
-/// researcher and is Today's last row.
+/// waits on i-0000f004 to hand it to the writer: a `result` item, or a `handoff` item with
+/// `-work15`. i-0000f007 is q-0000d001's Result, which no member wrote. The delegate
+/// i-0000f001 names the researcher and is Today's last row.
 final class StaffTests: XCTestCase {
     override class func setUp() {
         super.setUp()
@@ -147,10 +148,11 @@ final class StaffTests: XCTestCase {
         XCTAssertFalse(waitForSidebarRow(app, app.buttons["item-row-i-0000f004"]), "the hand-off is answered")
     }
 
-    /// The Inbox item names both members; Reject ends the chain with the results it has.
+    /// A level 15 host's `handoff` item names both members; Reject ends the chain with the
+    /// results it has.
     @MainActor
     func testRejectingAHandoffEndsTheChain() throws {
-        let app = launchStaff()
+        let app = launchStaff(["-work15"])
         let row = app.buttons["item-row-i-0000f004"]
         XCTAssertTrue(waitForSidebarRow(app, row))
         XCTAssertTrue(row.label.contains("researcher → writer"), row.label)
@@ -172,6 +174,92 @@ final class StaffTests: XCTestCase {
         XCTAssertTrue(outcome.label.contains("Rejected"), outcome.label)
         XCTAssertFalse(app.buttons["work-handoff-approve"].exists)
         XCTAssertFalse(element(app, "work-step-3").exists)
+    }
+
+    /// At level 16 the hand-off waits in a `result` item (ADR 0058): the summary, Findings and
+    /// Next Steps, Hand off by the next member's name, the reply box and ✓ Done. Hand off
+    /// starts the writer's step.
+    @MainActor
+    func testAResultItemShowsTheResultAndHandsOff() throws {
+        let app = launchStaff()
+        let row = app.buttons["item-row-i-0000f004"]
+        XCTAssertTrue(waitForSidebarRow(app, row))
+        XCTAssertTrue(row.label.contains("researcher → writer"), row.label)
+        openItem(app, "i-0000f004")
+        let question = app.staticTexts["item-question"]
+        XCTAssertTrue(question.label.hasPrefix("researcher asks writer to: Draft"), question.label)
+        XCTAssertTrue(element(app, "item-summary").exists)
+        XCTAssertTrue(element(app, "item-result-finding-0").label.contains("all 27 EU formats"))
+        XCTAssertTrue(element(app, "item-result-next-0").label.contains("decision memo"))
+        let handOff = app.buttons["item-answer-approve"]
+        XCTAssertTrue(handOff.waitForExistence(timeout: 5))
+        XCTAssertEqual(handOff.label, "Hand off to writer")
+        XCTAssertEqual(app.buttons["item-send"].label, "Send")
+        XCTAssertTrue(app.buttons["item-answer-dismiss"].exists, "✓ is Done")
+        XCTAssertFalse(app.buttons["item-answer-reject"].exists)
+        save("item-result")
+        handOff.tap()
+        showInboxList(app)
+        XCTAssertTrue(row.waitForNonExistence(timeout: 5), "answered")
+
+        openWork(app, "w-0000b005")
+        let third = element(app, "work-step-3")
+        XCTAssertTrue(reveal(app, third))
+        XCTAssertTrue(third.label.contains("writer"), third.label)
+    }
+
+    /// Send asks the researcher again as version 2 of the request; the item is answered.
+    @MainActor
+    func testSendOnAResultAsksTheSameMemberAgain() throws {
+        let app = launchStaff()
+        openItem(app, "i-0000f004")
+        let reply = app.textFields["item-reply"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertEqual(reply.placeholderValue, "Tell researcher what to do next…")
+        tapWhenReady(reply)
+        reply.typeText("Also compare their prices for 2027.")
+        tapWhenReady(app.buttons["item-send"])
+        showInboxList(app)
+        XCTAssertTrue(app.buttons["item-row-i-0000f004"].waitForNonExistence(timeout: 5), "answered")
+
+        openWork(app, "w-0000b005")
+        let asked = element(app, "work-request-q-0000d002")
+        XCTAssertTrue(asked.waitForExistence(timeout: 5))
+        XCTAssertTrue(asked.label.contains("version 2"), asked.label)
+        let step = element(app, "work-step-1")
+        XCTAssertTrue(reveal(app, step))
+        XCTAssertTrue(step.label.contains("researcher"), step.label)
+        XCTAssertFalse(element(app, "work-step-next").exists, "the new version waits on no hand-off")
+    }
+
+    /// Done closes the item and ends the chain: the hand-off never starts.
+    @MainActor
+    func testDoneOnAResultEndsTheChain() throws {
+        let app = launchStaff()
+        openItem(app, "i-0000f004")
+        tapWhenReady(app.buttons["item-answer-dismiss"])
+        showInboxList(app)
+        XCTAssertTrue(app.buttons["item-row-i-0000f004"].waitForNonExistence(timeout: 5))
+
+        openWork(app, "w-0000b005")
+        let outcome = element(app, "work-handoff-outcome")
+        XCTAssertTrue(reveal(app, outcome))
+        XCTAssertTrue(outcome.label.contains("Done"), outcome.label)
+        XCTAssertFalse(element(app, "work-step-3").exists)
+    }
+
+    /// A Result no member wrote offers no hand-off; Send tells the assistant.
+    @MainActor
+    func testAResultWithoutAMemberOffersSendAndDone() throws {
+        let app = launchStaff()
+        openItem(app, "i-0000f007")
+        let question = app.staticTexts["item-question"]
+        XCTAssertTrue(question.label.hasPrefix("The assistant finished: Two ways fit."), question.label)
+        XCTAssertTrue(element(app, "item-result-question-0").label.contains("open invoices"))
+        XCTAssertTrue(element(app, "item-result-file-0").label.hasSuffix("plan-mapping.md"))
+        XCTAssertFalse(app.buttons["item-answer-approve"].exists)
+        XCTAssertTrue(app.buttons["item-answer-dismiss"].exists)
+        XCTAssertEqual(app.textFields["item-reply"].placeholderValue, "Tell the assistant what to do next…")
     }
 
     /// Each step proposes its own notes: updating the researcher's leaves the lead's.

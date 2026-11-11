@@ -96,6 +96,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         work = content.work
         work.offersAskAgent = Self.workLevel >= workAskAgent
         work.keepsMemory = Self.workLevel >= workPolicies
+        work.reviewsResults = Self.workLevel >= workResultReview
+        // Before forgetStaff, which drops the `handoff` items this makes.
+        if Self.workLevel < workResultReview { work.forgetResultReview() }
         if Self.workLevel < workStaff { work.forgetStaff() }
         if Self.workLevel < workWrites { work.forgetWrites() }
         if Self.workLevel < workMemory {
@@ -116,30 +119,33 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:15",
+            "task-loop", "tasks-changed", "viewport", "history", "work:16",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:15" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:16" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:15" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:16" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:15" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:16" ? "work:3" : $0 } }
         // A bridge from before Protect and Delete Old (ADR 0046) and Captures (ADR 0048): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:15" ? "work:7" : $0 } }
+        if arguments.contains("-work7") { return all.map { $0 == "work:16" ? "work:7" : $0 } }
         // A bridge from before the overall assistant (ADR 0049): no Today, pins or notes.
-        if arguments.contains("-work9") { return all.map { $0 == "work:15" ? "work:9" : $0 } }
+        if arguments.contains("-work9") { return all.map { $0 == "work:16" ? "work:9" : $0 } }
         // A bridge from before policies (ADR 0050): no Policies, Not today or hypotheses.
-        if arguments.contains("-work10") { return all.map { $0 == "work:15" ? "work:10" : $0 } }
+        if arguments.contains("-work10") { return all.map { $0 == "work:16" ? "work:10" : $0 } }
         // A bridge from before staff and hand-offs (ADR 0051): one assistant per workspace.
-        if arguments.contains("-work11") { return all.map { $0 == "work:15" ? "work:11" : $0 } }
+        if arguments.contains("-work11") { return all.map { $0 == "work:16" ? "work:11" : $0 } }
         // A bridge from before write proposals (ADR 0052): no writer and no write items.
-        if arguments.contains("-work12") { return all.map { $0 == "work:15" ? "work:12" : $0 } }
+        if arguments.contains("-work12") { return all.map { $0 == "work:16" ? "work:12" : $0 } }
         // A bridge from before workspace memory (ADR 0053): no memory items and no modes.
-        if arguments.contains("-work13") { return all.map { $0 == "work:15" ? "work:13" : $0 } }
+        if arguments.contains("-work13") { return all.map { $0 == "work:16" ? "work:13" : $0 } }
         // A bridge from before Talk to Assistant (ADR 0054): no root Ask session without an item.
-        if arguments.contains("-work14") { return all.map { $0 == "work:15" ? "work:14" : $0 } }
+        if arguments.contains("-work14") { return all.map { $0 == "work:16" ? "work:14" : $0 } }
+        // A bridge from before `result` items (ADR 0058): a hand-off is a `handoff` item, and
+        // the Work row says "Result ready".
+        if arguments.contains("-work15") { return all.map { $0 == "work:16" ? "work:15" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -446,6 +452,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
                 case .handoff: Self.workLevel >= workStaff
                 case .write: Self.workLevel >= workWrites
                 case .memory: Self.workLevel >= workMemory
+                case .result: Self.workLevel >= workResultReview
                 default: true
                 }
             }
@@ -475,6 +482,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             protect(id: id, item: entry, action == .protect)
         case .deleteInbox(let id, let days):
             deleteOld(id: id, days: days)
+        case .updateInboxEntry(let id, let entry, .reply, _, let text, _, _, _) where asksAgain(entry):
+            followUp(id: id, item: entry, text: text)
         case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, let hash) where isWriteItem(entry):
             approveWrite(id: id, item: entry, hash: hash)
         case .updateInboxEntry(let id, let entry, .approve, _, _, _, _, let hash) where isMemoryItem(entry):

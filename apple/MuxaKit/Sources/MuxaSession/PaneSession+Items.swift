@@ -4,6 +4,8 @@ import MuxaProtocol
 /// The Inbox as a list of questions (ADR 0033): items the host keeps at `work` level 3.
 extension PaneSession {
     public var canUseItems: Bool { workLevel >= workItems }
+    /// Every Result makes a `result` item, whose unread dot replaces "Result ready" (ADR 0058 §5).
+    public var reviewsResults: Bool { workLevel >= workResultReview }
 
     /// The items that wait on the user, in the host's order: `ask` first, then newest.
     public var openItems: [InboxItem] { inboxItems.filter { $0.state == .open } }
@@ -47,8 +49,9 @@ extension PaneSession {
         // delegate, and a `capture-saved` or `work-saved` comes before `inbox-saved`. Confirm
         // on a hypothesis sends `policy-saved` first (ADR 0050). Approve on a hand-off starts
         // the next step, with `work-saved` first (ADR 0051). Approve on a write starts the
-        // writer's Task, with `task-saved` first (ADR 0052).
-        let proposes = [.sort, .delegate, .hypothesis, .handoff, .write].contains(item.kind)
+        // writer's Task, with `task-saved` first (ADR 0052). Hand off and Send on a result,
+        // and Revise on a write, send `work-saved` first (ADR 0058).
+        let proposes = [.sort, .delegate, .hypothesis, .handoff, .write, .result].contains(item.kind)
         var requestId: UInt64 = 0
         defer {
             savedCaptures[requestId] = nil

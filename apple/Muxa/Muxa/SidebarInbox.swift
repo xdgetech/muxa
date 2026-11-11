@@ -100,6 +100,9 @@ struct InboxItemRow: View {
                 if let handoff = item.handoff {
                     Text(handoff.shown).font(.caption).foregroundStyle(.secondary)
                 }
+                if let review = item.result, let handoff = review.handoff {
+                    Text("\(review.worker ?? "Assistant") → \(handoff.worker)").font(.caption).foregroundStyle(.secondary)
+                }
                 HStack(spacing: 4) {
                     Text(item.source())
                     if item.isProtected {

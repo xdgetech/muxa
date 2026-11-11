@@ -227,10 +227,10 @@ struct FixtureTests {
 
     @Test func assistantContractRoundTrips() throws {
         let requests = try Self.lines("assistant/requests.jsonl")
-        #expect(requests.count == 49)
+        #expect(requests.count == 53)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("assistant/messages.jsonl")
-        #expect(messages.count == 58)
+        #expect(messages.count == 62)
         for line in messages {
             let message = try Wire.decodeMessage(line)
             if case .unknown(let type) = message { Issue.record("fixture type \(type) is unknown") }
@@ -614,6 +614,51 @@ struct FixtureTests {
         #expect(old.items.allSatisfy { !level13.contains($0.kind) && !$0.title.isEmpty })
         let workspaces = try JSONDecoder().decode(OldTaskList.self, from: lines[6]).workspaces
         #expect(workspaces.allSatisfy { !$0.name.isEmpty && $0.root != nil })
+    }
+
+    /// ADR 0058: a `result` item carries the Result to review, and its answers are existing
+    /// actions; Send and Revise are `reply` with the text.
+    @Test func aResultItemIsAnsweredWithExistingActions() throws {
+        let requests = try Self.lines("assistant/requests.jsonl").map(Wire.decodeRequest)
+        let messages = try Self.lines("assistant/messages.jsonl").map(Wire.decodeMessage)
+        guard case .inboxList(_, _, let items, _, _, _, _, _, _, _, _) = messages[58], let r = items[0].result else {
+            Issue.record("expected inbox-list with a result item"); return
+        }
+        #expect(items[0].kind == .result && r.step == 2)
+        #expect(r.handoff?.worker == "lisk-architect")
+        #expect(!r.findings.isEmpty && !r.files.isEmpty)
+        #expect(items[0].answers == [.approve, .reply, .dismiss, .later])
+        // Without a staff: no worker, no hand-off, no approve.
+        let plain = try #require(items[1].result)
+        #expect(plain.worker == nil && plain.handoff == nil)
+        #expect(!items[1].answers.contains(.approve))
+        // A write item takes reply: Revise.
+        #expect(items[2].kind == .write && items[2].answers.contains(.reply))
+        guard case .updateInboxEntry(_, _, .reply, _, let text?, _, _, _) = requests[50], !text.isEmpty else {
+            Issue.record("expected reply with text"); return
+        }
+        // Send: a new version whose first step is the same member, asked by the user.
+        guard case .workSaved(_, _, let q?) = messages[59] else { Issue.record("expected work-saved"); return }
+        #expect(q.version == 3 && q.steps[0].by == .user && q.steps[0].worker == "lisk-strategist")
+        #expect(q.results.allSatisfy { $0.stale })
+        guard case .inboxSaved(_, _, let sent?) = messages[60] else { Issue.record("expected inbox-saved"); return }
+        #expect(sent.state == .answered && sent.answer == .reply)
+    }
+
+    /// A level 15 client knows no `result` kind: it reads the list, shows the item as
+    /// unknown, and still has every answer the host lists.
+    @Test func aLevel15ClientReadsAResultItemAsUnknownWithItsAnswers() throws {
+        struct OldItem: Decodable { var kind: String; var summary: String?; var answers: [String] }
+        struct OldList: Decodable { var items: [OldItem] }
+        let line = try Self.lines("assistant/messages.jsonl")[58]
+        let old = try JSONDecoder().decode(OldList.self, from: line)
+        let level15: Set<String> = [
+            "ask", "review", "failure", "proposal", "briefing", "sort", "delegate", "hypothesis", "handoff", "write",
+            "memory",
+        ]
+        #expect(!level15.contains(old.items[0].kind) && old.items[0].summary != nil)
+        #expect(old.items[0].answers.allSatisfy { InboxAction(rawValue: $0) != nil })
+        #expect(old.items[2].kind == "write")
     }
 
     @Test func unknownPolicyValuesStillDecode() throws {

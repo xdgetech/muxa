@@ -131,27 +131,28 @@ enum DemoStaff {
             ])
     }
 
-    static func handoffItem(_ id: String, request: AssistantRequest, title: String) -> InboxItem {
-        InboxItem(
-            id: id, kind: .handoff, state: .open, question: "\(researcher) asks \(writer) to draft the decision memo for finance.",
-            workspace: "work", title: title, createdAt: request.updatedAt,
-            handoff: HandoffProposal(request: request.id, version: 1, step: 2, work: request.work, from: researcher,
-                                     worker: writer, purpose: "Draft the decision memo for finance."),
-            answers: [.approve, .reject, .later])
-    }
 }
 
 extension DemoWork {
     /// A staff of three in `work` and of one in `personal`; a Work item whose request ran
-    /// two steps and waits on a hand-off to the writer; and the plan's delegate, which
-    /// names the researcher and is Today's last row.
-    func staffed(work id: String, title: String, request: String, item: String, delegate: String) -> DemoWork {
+    /// two steps and waits on a hand-off to the writer, in the `result` item `item`
+    /// (a `handoff` item below level 16); the `result` item `plain` of the older request
+    /// `asked`, which no staff member wrote; and the plan's delegate, which names the
+    /// researcher and is Today's last row.
+    func staffed(
+        work id: String, title: String, request: String, item: String, plain: (item: String, asked: String),
+        delegate: String
+    ) -> DemoWork {
         var w = self
         let chain = DemoStaff.chainRequest(request, work: id, run: 0x9000, workspaceNotes: DemoPlans.notesNow)
         w.assistant.staff = ["work": DemoStaff.work, "personal": DemoStaff.personal]
         w.assistant.work.append(DemoAssistant.item(id, title, ago: 4000, workspace: "work", requests: [request]))
         w.assistant.requests.append(chain)
-        w.taskItems.insert(DemoStaff.handoffItem(item, request: chain, title: title), at: 0)
+        w.taskItems.insert(Self.resultItem(item, request: chain, result: chain.results[0], title: title), at: 0)
+        if let asked = w.assistant.requests.first(where: { $0.id == plain.asked }), let newest = asked.results.first,
+           let work = w.assistant.work.first(where: { $0.id == asked.work }) {
+            w.taskItems.insert(Self.resultItem(plain.item, request: asked, result: newest, title: work.title), at: 0)
+        }
         w.plans.liveNotes[DemoPlans.notesFile("work", member: DemoStaff.researcher)] = DemoPlans.hash("")
         w.plans.liveNotes[DemoPlans.notesFile("work", member: DemoStaff.writer)] = DemoPlans.hash("")
         if let i = w.taskItems.firstIndex(where: { $0.id == delegate }) {
@@ -173,14 +174,15 @@ extension DemoWork {
 
     /// The UI tests' `-demo-staff`: `-demo-policies` with staff. w-0000b005's request
     /// q-0000d002 ran chief-of-staff → researcher and waits on i-0000f004 for the writer;
-    /// the delegate i-0000f001 names the researcher.
+    /// i-0000f007 is the Result of q-0000d001 (w-0000b001) with no member; the delegate
+    /// i-0000f001 names the researcher.
     static var testsStaffed: DemoWork {
         testsRemembered.staffed(work: "w-0000b005", title: "Pick the EU invoicing provider", request: "q-0000d002",
-                                item: "i-0000f004", delegate: "i-0000f001")
+                                item: "i-0000f004", plain: ("i-0000f007", "q-0000d001"), delegate: "i-0000f001")
     }
 
     static var showcaseStaffed: DemoWork {
         showcaseRemembered.staffed(work: "w-5c00b005", title: "Pick the EU invoicing provider", request: "q-5c00d002",
-                                   item: "i-5c00f004", delegate: "i-5c00f001")
+                                   item: "i-5c00f004", plain: ("i-5c00f007", "q-5c00d001"), delegate: "i-5c00f001")
     }
 }

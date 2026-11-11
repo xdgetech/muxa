@@ -82,6 +82,9 @@ struct InboxItemScreen: View {
                         .padding(12)
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
+                if item.kind == .result, let review = item.result {
+                    ResultReviewView(review: review)
+                }
                 ItemEvidence(item: item)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -252,7 +255,7 @@ struct InboxItemScreen: View {
     @ViewBuilder
     private func answerButton(_ item: InboxItem, _ action: InboxAction, prominent: Bool) -> some View {
         let button = Button { perform(item, action) } label: {
-            Text(action.title(for: item.kind)).frame(maxWidth: .infinity)
+            Text(action.title(for: item)).frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("item-answer-\(action.rawValue)")
         if prominent {

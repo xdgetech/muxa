@@ -27,6 +27,8 @@ public let workWrites: UInt32 = 13
 public let workMemory: UInt32 = 14
 /// Level 15: `start-session` with `root` opens a workspace's root Ask session (ADR 0054).
 public let workAskRoot: UInt32 = 15
+/// Level 16: `result` Inbox items, and `reply` on `result` and `write` items (ADR 0058).
+public let workResultReview: UInt32 = 16
 /// Level 8: `protect`, `unprotect` and `delete-inbox` (ADR 0046).
 public let workDeleteInbox: UInt32 = 8
 
