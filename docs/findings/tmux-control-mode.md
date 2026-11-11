@@ -81,6 +81,15 @@ Before ADR 0020, `refresh-client -C` was rejected as a workaround for narrow-cli
 | A desktop client's key press updates its `#{client_activity}` (epoch seconds). `send-keys` from a control client does not update another client's `#{client_activity}`. `#{client_flags}` contains `control-mode` for a control client, and not for a desktop client. In `list-clients`, `#{session_id}` is the client's session id, so the daemon matches sessions by id. | `scripts/repro/client-activity.sh` |
 | When its session is destroyed, the daemon's client is detached like any control client; the daemon attaches again for its next work. | `crates/muxa-bridge/tests/daemon.rs` `the_daemon_attaches_one_no_output_client_and_reattaches` |
 
+## Control client lifetime (orphaned control client)
+
+| Fact | Script |
+|---|---|
+| tmux reads a control client's stdin in the server, through a copy of the fd, and keeps a copy of its stdout too. Each control client costs the server 3 fds: stdin, stdout and its socket. | `scripts/repro/control-client-orphan.sh` |
+| With an idle pane, a control client exits on stdin EOF when the process that holds its pipes dies. | `scripts/repro/control-client-orphan.sh` |
+| When that process stops reading while a pane prints, and then dies by SIGKILL, the client stays attached forever (tmux 3.7c). tmux lets a control client exit only after its output is written, and that output never drains. The client process stays with ppid 1, and the server keeps its pipes. tmux 3.7's `server_client_check_exit` has no timeout; tmux's master branch adds a 10 s exit timer. | `scripts/repro/control-client-orphan.sh` |
+| Killing the client process ends it at once: the server drops the client when its socket closes. So muxa-tmux runs tmux under a guard that kills it when the bridge's end of its input closes (`client.rs`, `GUARD`). | `scripts/repro/control-client-orphan.sh`, `crates/muxa-bridge/tests/bridge.rs` `a_killed_bridge_leaves_no_control_client` |
+
 ## Answered in Phase 3
 
 | Fact | Test |

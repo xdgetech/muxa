@@ -163,7 +163,7 @@ The decisions and their reasons are in `docs/adr/`. The tmux facts they rely on 
 Reading tmux:
 - Read output as bytes (`read_until(b'\n')`) with a line-length cap. `%output` carries raw non-UTF-8 bytes. Payloads stay bytes; only format fields go through `from_utf8_lossy`.
 - End a reply block only on the `%end`/`%error` whose number matches its `%begin`. After an error, mark the rest of the command line skipped.
-- The tmux process runs with `TMUX` removed and `kill_on_drop(true)`. The bridge exits on stdin EOF and on `BrokenPipe` from stdout (Rust ignores SIGPIPE).
+- The tmux process runs with `TMUX` removed and `kill_on_drop(true)`, under a guard in its own process group: when the bridge's end of its input closes, also on SIGKILL, tmux gets EOF and is killed 1 s later (ADR 0055). The bridge exits on stdin EOF and on `BrokenPipe` from stdout (Rust ignores SIGPIPE).
 
 The server:
 - One event loop owns the watch. Requests run in order.

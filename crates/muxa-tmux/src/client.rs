@@ -35,9 +35,19 @@ impl Default for Options {
     }
 }
 
+/// Runs tmux ("$@") so it ends with our end of its input, also after SIGKILL:
+/// stdin EOF alone can leave a control client attached for good (ADR 0055).
+/// `kill 0` needs the guard in its own process group.
+const GUARD: &str = "exec 3<&0 </dev/null
+{ cat <&3 3<&-; exec >&-; sleep 1; kill -KILL 0; } 2>/dev/null | \"$@\" 3<&- &
+exec >&- 2>&- 3<&-
+wait $!";
+
 impl Options {
-    pub(crate) fn command(&self) -> Command {
-        let mut cmd = Command::new(&self.tmux);
+    /// A control-mode tmux command under [`GUARD`]. Add the tmux arguments.
+    pub(crate) fn control_command(&self) -> Command {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", GUARD, "muxa-tmux"]).arg(&self.tmux);
         // -u: an SSH exec channel has no locale, and tmux would print "_" for
         // every multibyte character in formats.
         cmd.arg("-u");
@@ -45,7 +55,7 @@ impl Options {
             cmd.arg("-L").arg(socket);
         }
         // Inside tmux, TMUX is set and control mode refuses to nest.
-        cmd.env_remove("TMUX").kill_on_drop(true);
+        cmd.env_remove("TMUX").process_group(0).kill_on_drop(true);
         cmd
     }
 }
@@ -93,7 +103,7 @@ impl Client {
         session: Option<SessionId>,
         flags: Flags,
     ) -> Result<(Client, Notifications), Error> {
-        let mut cmd = opts.command();
+        let mut cmd = opts.control_command();
         cmd.args(["-C", "attach-session", "-f", flags.arg()]);
         if let Some(s) = session {
             cmd.arg("-t").arg(s.to_string());
