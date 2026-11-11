@@ -251,6 +251,9 @@ pub enum InboxAction {
     Protect,
     /// Any item: `delete-inbox` may remove it again.
     Unprotect,
+    /// A `result` item that offers a hand-off and a Task: starts the Task
+    /// (level 18, ADR 0060). Without a hand-off, `approve` starts it.
+    StartTask,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
     Unknown,

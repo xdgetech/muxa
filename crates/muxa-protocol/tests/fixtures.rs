@@ -220,6 +220,71 @@ fn today_action_fixtures_round_trip() {
 }
 
 #[test]
+fn task_proposal_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, ItemKind, WORK_TASK_PROPOSALS, work_level};
+    let read = |file: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/task-proposals/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    assert_eq!(round_trip::<Request>("task-proposals/requests.jsonl"), 5);
+    assert_eq!(round_trip::<Message>("task-proposals/messages.jsonl"), 7);
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[0],
+        Request::ProposeTask { repo: Some(r), work: Some(w), .. } if r == "muxa" && w == "w-1a2b3c4d"
+    ));
+    assert!(matches!(
+        &requests[1],
+        Request::ProposeTask {
+            repo: None,
+            work: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &requests[3],
+        Request::UpdateInbox {
+            action: InboxAction::StartTask,
+            ..
+        }
+    ));
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[0] else {
+        panic!("expected hello")
+    };
+    assert_eq!(work_level(capabilities), WORK_TASK_PROPOSALS);
+    let Message::InboxList { items, .. } = &messages[1] else {
+        panic!("expected inbox-list")
+    };
+    let proposed = items[0].result.as_ref().and_then(|r| r.task.as_ref());
+    assert_eq!(proposed.map(|t| t.step), Some(Some(1)));
+    assert!(items[1].answers.contains(&InboxAction::StartTask));
+    assert_eq!(items[2].kind, ItemKind::NewTask);
+    assert_eq!(
+        items[2].new_task.as_ref().and_then(|t| t.work.as_deref()),
+        Some("w-1a2b3c4d")
+    );
+    // A client before level 18 reads the kind and the answer as unknown.
+    let old: serde_json::Value = serde_json::from_str(r#""new-task""#).unwrap();
+    assert_eq!(
+        serde_json::from_value::<ItemKind>(old).unwrap(),
+        ItemKind::NewTask
+    );
+}
+
+#[test]
 fn workspace_fixtures_round_trip() {
     use muxa_protocol::{WORK_ASK, work_level};
     assert_eq!(round_trip::<Request>("workspaces/requests.jsonl"), 3);

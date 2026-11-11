@@ -37,7 +37,8 @@ pub struct Approval {
     pub work: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<String>,
-    /// The writer's Task an approved write made (ADR 0052 §3).
+    /// The writer's Task an approved write made (ADR 0052 §3), or the Task
+    /// a proposal started (ADR 0060).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
     /// Epoch seconds: a write's approval began. It counts against
@@ -87,6 +88,7 @@ pub fn hash(item: &InboxItem) -> Option<String> {
         ItemKind::Delegate => ("delegate", serde_json::to_vec(item.delegate.as_ref()?)),
         ItemKind::Handoff => ("handoff", serde_json::to_vec(item.handoff.as_ref()?)),
         ItemKind::Result => ("result", serde_json::to_vec(item.result.as_ref()?)),
+        ItemKind::NewTask => ("new-task", serde_json::to_vec(item.new_task.as_ref()?)),
         _ => return None,
     };
     let body = body.ok()?;

@@ -62,6 +62,14 @@ pub fn prepare(
         .assistant
         .as_ref()
         .is_some_and(|d| d.writer.active().is_some());
+    brief.repos = ws
+        .repo_list()
+        .iter()
+        .map(|r| match r.strip_prefix(&ws.root) {
+            Ok(rel) => rel.to_string_lossy().into_owned(),
+            Err(_) => r.to_string_lossy().into_owned(),
+        })
+        .collect();
     if step == 1 {
         let extra = super::shelf::<AssistantRequest>(config)?
             .get_with_extra(&q.id)

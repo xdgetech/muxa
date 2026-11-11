@@ -14,6 +14,7 @@ STEER_DIR/turns.log. Files in STEER_DIR steer it:
               until answered appears
   stall       present at the start prompt: the turn stays running until
               release appears, then writes first.json
+Each start appends its arguments to STEER_DIR/argv.log, one line per agent.
 A member NAME reads first.NAME.json and fixed.NAME.json before the shared
 files, stalls on stall.NAME as on stall, and logs its turns as "NAME: <line>". With CLAUDE_CONFIG_DIR set, it
 keeps a Claude Code session file there: a named worker's run is delivered
@@ -111,6 +112,8 @@ def write(name):
 
 def main():
     tmux("set-option", "-p", "-t", PANE, "@muxa_role", "agent")
+    with open(os.path.join(STEER, "argv.log"), "a") as f:
+        f.write(" ".join(ARGS) + "\n")
     if steer("trust"):
         # As Claude Code 2.1.322 draws it (docs/findings/claude-code-trust.md).
         print(" Quick safety check: Is this a project you created or one you trust?")

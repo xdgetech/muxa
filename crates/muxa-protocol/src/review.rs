@@ -3,7 +3,7 @@
 //! review: hand off, send the member what to do next, done, or later.
 use serde::{Deserialize, Serialize};
 
-use crate::Handoff;
+use crate::{Handoff, TaskProposal};
 
 /// Level 16: `result` Inbox items, and `reply` on `result` and `write` items.
 pub const WORK_RESULT_REVIEW: u32 = 16;
@@ -36,4 +36,8 @@ pub struct ResultReview {
     /// The hand-off the step proposes; `approve` starts it while it is offered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff: Option<Handoff>,
+    /// Level 18: the Task the request version proposes (ADR 0060); Start
+    /// Task starts it while the item is open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<TaskProposal>,
 }

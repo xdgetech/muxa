@@ -117,7 +117,7 @@ where
         // request Result an item to review (ADR 0058), 17 sends a message about a Work item
         // to the secretary and says what a Re-rank has left today (ADR 0059).
         capabilities.push(muxa_protocol::work_capability(
-            muxa_protocol::WORK_TODAY_ACTIONS,
+            muxa_protocol::WORK_TASK_PROPOSALS,
         ));
     }
     // Checked once per session (ADR 0019); each record request looks again.
@@ -761,7 +761,8 @@ impl Worker {
             | Request::AddPolicy { .. }
             | Request::UpdatePolicy { .. }
             | Request::UpdatePlan { .. }
-            | Request::Forget { .. }) => {
+            | Request::Forget { .. }
+            | Request::ProposeTask { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),

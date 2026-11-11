@@ -31,16 +31,20 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Ask => match &item.prompt {
             Some(p) => {
                 let mut a = Vec::new();
+                // A plan is approved with edits asked one by one, read off
+                // the screen at the time (ADR 0060 §5): it needs the pane.
+                let plan = p.kind == PromptKind::Plan && item.pane.is_some();
                 if p.kind == PromptKind::Question {
                     a.push(Choose);
-                } else if p.options.iter().any(|o| !o.cancel) {
+                } else if plan || p.options.iter().any(|o| !o.cancel) {
                     a.push(Approve);
                 }
                 if p.options.iter().any(|o| o.cancel) {
                     a.push(Reject);
-                    // Claude Code takes a denied permission's turn as ended,
-                    // so the text arrives as the next prompt (docs/agents.md).
-                    if p.kind == PromptKind::Permission {
+                    // Claude Code takes a denied permission's or a kept
+                    // plan's turn as ended, so the text arrives as the next
+                    // prompt (docs/agents.md).
+                    if matches!(p.kind, PromptKind::Permission | PromptKind::Plan) {
                         a.push(Reply);
                     }
                 }
@@ -67,12 +71,21 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         // A proposed write (ADR 0052 §2); `reply` asks for a new draft (ADR 0058 §4).
         ItemKind::Write => return vec![Approve, Reject, Reply, Later],
         // ADR 0058 §2: hand off while offered, send, done, later.
+        // ADR 0060 §2: Start Task is `approve` without a hand-off, else `start-task`.
         ItemKind::Result => {
             let handoff = item.result.as_ref().is_some_and(|r| r.handoff.is_some());
-            let mut a = if handoff { vec![Approve] } else { Vec::new() };
+            let task =
+                item.result.as_ref().is_some_and(|r| r.task.is_some()) && item.task.is_none();
+            let mut a = match (handoff, task) {
+                (true, true) => vec![Approve, StartTask],
+                (true, false) | (false, true) => vec![Approve],
+                (false, false) => Vec::new(),
+            };
             a.extend([Reply, Dismiss, Later]);
             return a;
         }
+        // ADR 0060 §3: the secretary's proposed Task; `reply` goes to the secretary.
+        ItemKind::NewTask => return vec![Approve, Reply, Dismiss, Later],
         // ADR 0050 §3: `assistant::hypotheses` answers confirm and reject.
         ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
         // ADR 0053 §3: a text over 4 KiB, or with control characters, is
@@ -108,6 +121,7 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         Disposition::Unknown => (ItemState::Resolved, None),
     };
     let mut item = InboxItem {
+        new_task: None,
         result: None,
         memory: None,
         write: None,
@@ -293,13 +307,22 @@ mod tests {
         });
         assert_eq!(answers(&ask), [Approve, Reject, Reply, AskAgent, Later]);
         if let Some(p) = ask.prompt.as_mut() {
-            p.kind = PromptKind::Plan;
+            p.kind = PromptKind::Question;
         }
         assert_eq!(
             answers(&ask),
-            [Approve, Reject, AskAgent, Later],
-            "only a permission"
+            [Choose, Reject, AskAgent, Later],
+            "a question takes no reply"
         );
+        // Claude Code's plan menu: only Keep planning is known; approve
+        // reads its option off the pane's screen (ADR 0060 §5).
+        if let Some(p) = ask.prompt.as_mut() {
+            p.kind = PromptKind::Plan;
+            p.options.remove(0);
+        }
+        assert_eq!(answers(&ask), [Reject, Reply, AskAgent, Later], "no pane");
+        ask.pane = Some("%4".into());
+        assert_eq!(answers(&ask), [Approve, Reject, Reply, AskAgent, Later]);
         assert_eq!(
             answers(&item(ItemKind::Review, ItemState::Open, 1)),
             [Accept, Reply, KeepOpen, AskAgent, Later]
@@ -314,6 +337,48 @@ mod tests {
         failure.task = None;
         assert_eq!(answers(&failure), [Dismiss, AskAgent, Later]);
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
+    }
+
+    #[test]
+    fn a_proposed_task_is_approve_alone_and_start_task_beside_a_hand_off() {
+        use InboxAction::*;
+        let proposal = muxa_protocol::TaskProposal {
+            workspace: "w".into(),
+            repo: None,
+            title: "Fix".into(),
+            goal: "Fix it.".into(),
+            work: None,
+            step: Some(1),
+            worker: None,
+        };
+        let mut r = item(ItemKind::Result, ItemState::Open, 1);
+        r.task = None;
+        r.result = Some(muxa_protocol::ResultReview {
+            request: "q-0000000a".into(),
+            version: 1,
+            step: 1,
+            work: "w-0000000b".into(),
+            worker: None,
+            findings: Vec::new(),
+            open_questions: Vec::new(),
+            next: Vec::new(),
+            files: Vec::new(),
+            handoff: None,
+            task: Some(proposal.clone()),
+        });
+        assert_eq!(answers(&r), [Approve, Reply, Dismiss, Later]);
+        if let Some(x) = r.result.as_mut() {
+            x.handoff = Some(muxa_protocol::Handoff {
+                worker: "b".into(),
+                purpose: "p".into(),
+            });
+        }
+        assert_eq!(answers(&r), [Approve, StartTask, Reply, Dismiss, Later]);
+        r.task = Some("t-000001".into());
+        assert_eq!(answers(&r), [Approve, Reply, Dismiss, Later], "started");
+        let mut n = item(ItemKind::NewTask, ItemState::Open, 1);
+        n.new_task = Some(proposal);
+        assert_eq!(answers(&n), [Approve, Reply, Dismiss, Later]);
     }
 
     #[test]

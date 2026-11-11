@@ -43,8 +43,15 @@ const REVIEW_WORDS: [(&str, InboxAction); 4] = [
     ("revise", InboxAction::Reply),
 ];
 
+/// Start Task (ADR 0060 §2): `start-task` on the wire, which a level 18
+/// host takes on every item that offers a Task.
+const START_WORD: &str = "start";
+
 /// The kebab-case name on the wire, or a word of [`REVIEW_WORDS`].
 pub fn action(name: &str) -> Option<InboxAction> {
+    if name == START_WORD {
+        return Some(InboxAction::StartTask);
+    }
     if let Some((_, a)) = REVIEW_WORDS.iter().find(|(w, _)| *w == name) {
         return Some(*a);
     }
@@ -173,6 +180,7 @@ pub fn line(item: &InboxItem, now: u64) -> String {
         ItemKind::Write => "write",
         ItemKind::Memory => "memory",
         ItemKind::Result => "result",
+        ItemKind::NewTask => "new-task",
         ItemKind::Unknown => "unknown",
     };
     let mut state = wire(json!(item.state));
@@ -215,6 +223,14 @@ pub async fn answer(
                 .into(),
         );
     }
+    if answer.action == InboxAction::StartTask
+        && muxa_protocol::work_level(conn.capabilities()) < muxa_protocol::WORK_TASK_PROPOSALS
+    {
+        return Err(
+            "this host starts no proposed Tasks (work level 18); update muxa-bridge on the host"
+                .into(),
+        );
+    }
     let protects = matches!(answer.action, InboxAction::Protect | InboxAction::Unprotect);
     if protects && !has_delete(&conn) {
         return Err(NEEDS_DELETE.into());
@@ -225,8 +241,8 @@ pub async fn answer(
     // Ask Agent may start the workspace's Ask session and wait for its agent.
     let launches = matches!(
         answer.action,
-        InboxAction::Approve | InboxAction::Retry | InboxAction::AskAgent
-    );
+        InboxAction::Approve | InboxAction::Retry | InboxAction::AskAgent | InboxAction::StartTask
+    ) || (answer.action == InboxAction::Reply && answer.review);
     let entry = item.to_owned();
     let Answer {
         action,

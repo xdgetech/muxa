@@ -97,6 +97,11 @@ pub fn find(config: &Config, id: &str) -> Result<Option<Found>, ErrorBody> {
 }
 
 pub async fn approve(cx: &Context, found: Found, by: By) -> Result<Approved, ErrorBody> {
+    // Start Task keeps its own claim: a `result` item's hand-off and Task
+    // share the item (ADR 0060 §2).
+    if super::task::approve_starts(&found.item) {
+        return super::task::start(cx, found, InboxAction::Approve).await;
+    }
     let config = Arc::clone(&cx.records);
     if found.approval.as_ref().is_some_and(Approval::done) {
         return blocking(move || again(&config, &found)).await;
@@ -131,13 +136,15 @@ pub(super) fn again(config: &Config, f: &Found) -> Result<Approved, ErrorBody> {
             .as_deref()
             .and_then(|c| shelf::<Capture>(config).ok()?.get(c).ok().flatten())
             .map(|c| Made::Sorted(c, a.work.as_deref().and_then(work_item))),
-        ItemKind::Write => a.task.as_deref().and_then(|t| {
-            config
-                .records_if_any()
-                .into_iter()
-                .find(|r| r.id == t)
-                .map(|r| Made::Task(Box::new(r)))
-        }),
+        ItemKind::Write | ItemKind::NewTask | ItemKind::Result if a.task.is_some() => {
+            a.task.as_deref().and_then(|t| {
+                config
+                    .records_if_any()
+                    .into_iter()
+                    .find(|r| r.id == t)
+                    .map(|r| Made::Task(Box::new(r)))
+            })
+        }
         _ => match (&a.work, &a.request) {
             (Some(w), Some(q)) => ask::reply(config, w, q)
                 .ok()

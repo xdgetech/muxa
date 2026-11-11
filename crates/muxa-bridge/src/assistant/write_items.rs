@@ -159,6 +159,7 @@ fn item_for(
     let who = r.worker.as_deref().unwrap_or("The assistant");
     let question = format!("{who} proposes to write to {}", w.target);
     let mut item = InboxItem {
+        new_task: None,
         result: None,
         id,
         kind: ItemKind::Write,

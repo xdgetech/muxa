@@ -191,6 +191,7 @@ mod tests {
     fn send_continues_the_items_result_and_revise_names_the_write() {
         let mut r = item(ItemKind::Result);
         r.result = Some(ResultReview {
+            task: None,
             request: "q-0000000a".into(),
             version: 2,
             step: 2,

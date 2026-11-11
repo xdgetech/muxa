@@ -83,6 +83,80 @@ pub async fn ask_root(
     }])
 }
 
+/// `update-inbox reply` on a `new-task` item (ADR 0060 §3): the proposal
+/// and the user's text, typed into the overall workspace's root Ask
+/// session, the secretary that proposed it. The item stays open:
+/// `session-started`, then `inbox-saved`.
+pub async fn to_secretary(
+    cx: &Context,
+    request: u64,
+    item: &InboxItem,
+    text: Option<&str>,
+) -> Result<Vec<Message>, ErrorBody> {
+    let text = text
+        .filter(|t| !t.trim().is_empty() && t.len() <= MAX_TEXT)
+        .ok_or_else(|| bad(format!("reply needs a text of 1 to {MAX_TEXT} bytes")))?;
+    if item.state != ItemState::Open {
+        return Err(bad(format!("Inbox item {} is already closed", item.id)));
+    }
+    let p = item
+        .new_task
+        .as_ref()
+        .ok_or_else(|| bad("the item proposes no Task"))?;
+    let config = Arc::clone(&cx.records);
+    let overall = tokio::task::spawn_blocking(move || config.load_workspaces())
+        .await
+        .map_err(|e| error_body(ErrorCode::Internal, format!("workspace lookup failed: {e}")))??
+        .overall()
+        .map(|w| w.name.clone())
+        .ok_or_else(|| {
+            error_body(
+                ErrorCode::Unsupported,
+                "this host has no overall workspace, so no secretary to send to",
+            )
+        })?;
+    let env = cx.env().await?;
+    let (session, name, fresh) = root_session(&env, &overall).await?;
+    deliver(&env, session, &proposal_prompt(&item.id, p, text), fresh).await?;
+    tracing::info!(item = %item.id, session = %session, fresh, "sent a proposal's answer to the secretary");
+    Ok(vec![
+        Message::SessionStarted {
+            start: request,
+            session: session.to_string(),
+            name,
+        },
+        Message::InboxSaved {
+            inbox: request,
+            entry: None,
+            item: Some(Box::new(item.clone())),
+        },
+    ])
+}
+
+/// Pure. The proposal as the secretary reads it, then the user's text.
+fn proposal_prompt(item: &str, p: &muxa_protocol::TaskProposal, text: &str) -> String {
+    let repo = p
+        .repo
+        .as_deref()
+        .map(|r| format!(", repo {r}"))
+        .unwrap_or_default();
+    let work = p
+        .work
+        .as_deref()
+        .map(|w| format!(", for Work item {w}"))
+        .unwrap_or_default();
+    format!(
+        "About the Task you proposed (Inbox item {item}, workspace {ws}{repo}{work}):\n\n\
+         Title: {title}\n\nGoal:\n{goal}\n\n\
+         The user has not started it yet. To change it, propose it again with \
+         muxa-cli task propose; the user then closes this item with Done.\n\n\
+         My answer: {text}",
+        ws = p.workspace,
+        title = p.title,
+        goal = p.goal.trim_end(),
+    )
+}
+
 /// Pure. The Work item as the agent reads it, then the user's text. Without
 /// a Work item, the text alone.
 fn work_prompt(about: Option<&crate::assistant::detail::Detail>, text: &str) -> String {
@@ -242,6 +316,7 @@ fn prompt(item: &InboxItem, text: &str) -> String {
         ItemKind::Write => "proposed write outside this host",
         ItemKind::Memory => "proposed addition to the workspace memory",
         ItemKind::Result => "result of a staff member to review",
+        ItemKind::NewTask => "proposed Task to start",
         ItemKind::Unknown => "item",
     };
     let source = match &item.routine {

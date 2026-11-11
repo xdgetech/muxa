@@ -26,6 +26,8 @@ pub struct Builtin {
     /// The pane stays dead after the agent exits, for its owner to respawn,
     /// instead of getting a shell (ADR 0056).
     stays_dead: bool,
+    /// Claude Code starts in plan mode (ADR 0060); other agents as always.
+    plan: bool,
 }
 
 impl Builtin {
@@ -34,6 +36,7 @@ impl Builtin {
             command,
             explicit: None,
             stays_dead: false,
+            plan: false,
         }
     }
 
@@ -43,6 +46,11 @@ impl Builtin {
             stays_dead: true,
             ..self
         }
+    }
+
+    /// A Claude Code agent starts with `--permission-mode plan` (ADR 0060).
+    pub fn in_plan_mode(self, plan: bool) -> Self {
+        Self { plan, ..self }
     }
 
     /// Native argv stays distinct until muxa-tmux quotes it for control mode.
@@ -62,6 +70,7 @@ impl Builtin {
             command: String::new(),
             explicit: Some(argv),
             stays_dead: false,
+            plan: false,
         }
     }
 
@@ -74,15 +83,39 @@ impl Builtin {
         dir: &Path,
         agent: Option<&AgentSettings>,
     ) -> Result<SessionId, TaskError> {
+        self.start_in(client, name, dir, agent, self.plan).await
+    }
+
+    async fn start_in(
+        &self,
+        client: &Client,
+        name: &str,
+        dir: &Path,
+        agent: Option<&AgentSettings>,
+        plan: bool,
+    ) -> Result<SessionId, TaskError> {
         let command = agent
             .and_then(|a| a.command.as_deref())
             .unwrap_or(&self.command);
+        let shell_line = if plan {
+            plan_line(command)
+        } else {
+            command.to_owned()
+        };
+        let command = shell_line.as_str();
+        let explicit = self
+            .explicit
+            .as_ref()
+            .map(|argv| if plan { plan_argv(argv) } else { argv.clone() });
+        if plan {
+            tracing::info!("agent asked to start in plan mode");
+        }
         let env = agent.map(|a| a.env.as_slice()).unwrap_or_default();
         if let Some(a) = agent {
             // Keys only: values may be tokens.
             tracing::info!(keys = ?a.keys(), custom_command = a.command.is_some(), "agent environment");
         }
-        let (session, pane) = match &self.explicit {
+        let (session, pane) = match &explicit {
             Some(argv) => {
                 muxa_tmux::new_session_command(client, name, &dir.to_string_lossy(), env, argv)
                     .await?
@@ -129,6 +162,36 @@ impl Builtin {
     }
 }
 
+/// Claude Code's flag for a session that plans before it edits (ADR 0060).
+pub const PLAN_ARGS: [&str; 2] = ["--permission-mode", "plan"];
+
+/// Pure. `line` with the plan flag when its program is Claude Code, the
+/// rule `reading::is_claude_code` uses; any other line as it is.
+pub fn plan_line(line: &str) -> String {
+    let shell = LaunchCommand::Shell(line.to_owned());
+    if crate::task_records::reading::is_claude_code(&shell) {
+        format!("{line} {}", PLAN_ARGS.join(" "))
+    } else {
+        line.to_owned()
+    }
+}
+
+/// Pure. An argv with the plan flag: one entry is a shell line; more are
+/// a program and its args, flagged when the program is Claude Code.
+pub fn plan_argv(argv: &[String]) -> Vec<String> {
+    match argv {
+        [line] => vec![plan_line(line)],
+        [program, ..]
+            if Path::new(program).file_name().and_then(|n| n.to_str()) == Some("claude") =>
+        {
+            let mut out = argv.to_vec();
+            out.extend(PLAN_ARGS.map(str::to_owned));
+            out
+        }
+        _ => argv.to_vec(),
+    }
+}
+
 impl TaskLauncher for Builtin {
     fn id(&self) -> &'static str {
         "builtin"
@@ -159,7 +222,13 @@ impl TaskLauncher for Builtin {
                 )));
             }
             let session = self
-                .start(client, &name, &work.path, req.agent.as_ref())
+                .start_in(
+                    client,
+                    &name,
+                    &work.path,
+                    req.agent.as_ref(),
+                    self.plan || req.plan,
+                )
                 .await?;
             let dir = work.path.to_string_lossy();
             // tmux-agents' session tags, so the task is grouped, and can be closed, like one of its own.

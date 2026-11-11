@@ -32,6 +32,8 @@ pub struct Chain {
     pub handoffs: Handoffs,
     /// The workspace takes write proposals: it has an active writer (ADR 0052 §3).
     pub writes: bool,
+    /// The request's workspace, which a proposed Task must be in (ADR 0060).
+    pub workspace: Option<crate::records::workspaces::Workspace>,
 }
 
 impl Chain {
@@ -39,14 +41,13 @@ impl Chain {
     /// workspace's configuration now. Without `staff` no hand-off passes;
     /// without a writer no write does.
     pub fn of(workspaces: &Workspaces, q: &AssistantRequest, run: &RequestRun) -> Self {
-        let Some(d) = workspaces
-            .get(&q.workspace)
-            .and_then(|w| w.assistant.as_ref())
-        else {
+        let ws = workspaces.get(&q.workspace);
+        let Some(d) = ws.and_then(|w| w.assistant.as_ref()) else {
             return Self::default();
         };
         let step = run.step();
         Self {
+            workspace: ws.cloned(),
             writes: d.writer.active().is_some(),
             staff: d.staff.members.clone(),
             workers: q

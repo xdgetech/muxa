@@ -87,6 +87,7 @@ fn step(n: u32, worker: &str, run: &str, handoff: Option<&str>) -> RequestStep {
 
 fn result(version: u64, step: u32) -> AssistResult {
     AssistResult {
+        task: None,
         writes: Vec::new(),
         version,
         at: 1,
@@ -439,4 +440,54 @@ fn auto_steps_stop_at_the_hosts_daily_limit() {
     );
     // The user's approval is not an auto step.
     assert!(h.claim(&second, Via::Approved, now).unwrap());
+}
+
+fn proposing(version: u64, step: u32, title: &str) -> AssistResult {
+    AssistResult {
+        task: Some(muxa_protocol::TaskProposal {
+            workspace: "lisk".into(),
+            repo: None,
+            title: title.into(),
+            goal: "Do it.".into(),
+            work: None,
+            step: None,
+            worker: None,
+        }),
+        ..result(version, step)
+    }
+}
+
+#[test]
+fn an_item_offers_the_leads_proposal_else_the_newest() {
+    let mut q = waiting_request();
+    q.steps
+        .push(step(2, STRATEGIST, "t-0000a2", Some(ARCHITECT)));
+    q.steps.push(step(3, ARCHITECT, "t-0000a3", None));
+    q.results = vec![result(1, 1), proposing(1, 2, "strategist's"), result(1, 3)];
+    let offered = |q: &AssistantRequest, s, lead| {
+        items::offered_task(q, s, lead).map(|t| (t.title, t.step, t.worker))
+    };
+    assert_eq!(offered(&q, 1, Some(LEAD)), None, "nothing proposed yet");
+    assert_eq!(
+        offered(&q, 3, Some(LEAD)),
+        Some(("strategist's".into(), Some(2), Some(STRATEGIST.into()))),
+        "no lead step proposed one: a member's carries on to the last item"
+    );
+    q.results[0] = proposing(1, 1, "lead's");
+    assert_eq!(
+        offered(&q, 3, Some(LEAD)).map(|t| t.0),
+        Some("lead's".into()),
+        "the lead's proposal wins over a newer member's"
+    );
+    assert_eq!(
+        offered(&q, 3, None).map(|t| t.0),
+        Some("strategist's".into()),
+        "without a lead, the newest"
+    );
+    q.version = 2;
+    assert_eq!(
+        offered(&q, 3, Some(LEAD)),
+        None,
+        "another version's proposals"
+    );
 }

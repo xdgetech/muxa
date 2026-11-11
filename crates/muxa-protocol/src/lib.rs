@@ -11,6 +11,7 @@ mod restart_recovery;
 mod review;
 mod routines;
 mod staff;
+mod task_proposals;
 mod today;
 mod workers;
 mod writes;
@@ -39,6 +40,7 @@ pub use routines::{
     WORK_END_REMOVES, WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
 pub use staff::{Handoff, HandoffProposal, RequestStep, StaffMember, StepBy, WORK_STAFF};
+pub use task_proposals::{TaskProposal, WORK_TASK_PROPOSALS};
 pub use today::{RunBudget, WORK_TODAY_ACTIONS};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 pub use writes::{ResultWrite, WORK_WRITES, WriteProposal, WriterInfo, Writes};
@@ -501,6 +503,23 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         minutes: Option<u32>,
     },
+    /// The secretary proposes a Task (`work` level 18, ADR 0060): one Inbox
+    /// item of kind `new-task`. The same proposal again returns the open
+    /// item. An `inbox-saved` comes before the `result`.
+    ProposeTask {
+        id: u64,
+        workspace: String,
+        /// A repo of the workspace, as `create-task`'s.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repo: Option<String>,
+        /// One line, at most 200 characters.
+        title: String,
+        /// At most 4096 bytes. Never logged.
+        goal: String,
+        /// The Work item the Task is for (`w-…`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work: Option<String>,
+    },
     /// Keep a policy in the user's words (`work` level 11, ADR 0050). A
     /// `policy-saved` comes before the `result`.
     AddPolicy {
@@ -615,6 +634,7 @@ impl Request {
             | Request::UpdatePolicy { id, .. }
             | Request::UpdatePlan { id, .. }
             | Request::Forget { id, .. }
+            | Request::ProposeTask { id, .. }
             | Request::Bye { id } => *id,
         }
     }

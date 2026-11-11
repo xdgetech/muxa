@@ -8,6 +8,7 @@ mod items;
 mod memory;
 mod plan;
 mod policy;
+mod propose;
 mod routines;
 mod staff;
 mod tasks;
@@ -28,6 +29,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
                 [--project P] [--repo REPO [--branch B] [--base REF]] [--worker NAME]
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--work WORK] [--json]
+       muxa-cli [--bridge CMD] task propose --workspace W --title T --goal (G | -)
+                [--repo REPO] [--work WORK] [--json]
        muxa-cli [--bridge CMD] task (done | drop) ID [--force] [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
        muxa-cli [--bridge CMD] ask --root --workspace W [--text T [--work WORK]] [--json]
@@ -108,6 +111,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   --json         one line of JSON for other tools: the Inbox for tasks, one
                  Inbox item for task new and task restart (docs/agents.md,
                  Desktop tools)
+  task propose   the secretary proposes a Task: one Inbox item. Start Task
+                 starts it in plan mode, linked to --work (work level 18,
+                 ADR 0060). --goal - reads the goal from stdin
   task done ID   marks a task record done
   task drop ID   marks a task record dropped: given up, not finished.
                  Both close the task's session and remove its worktree and
@@ -301,6 +307,10 @@ enum Cmd {
     },
     NewTask {
         new: tasks::NewTask,
+        json: bool,
+    },
+    ProposeTask {
+        proposal: propose::Proposal,
         json: bool,
     },
     Close {
@@ -554,6 +564,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     }
     let is_restart = matches!(words.as_slice(), [w, r, _] if w == "task" && r == "restart");
     let is_new = matches!(words.as_slice(), [w, n] if w == "task" && n == "new");
+    let is_propose = matches!(words.as_slice(), [w, n] if w == "task" && n == "propose");
     let is_recover = matches!(words.as_slice(), [w, r, _] if w == "task" && r == "recover");
     let has_recovery_flags = operation.is_some() || revision.is_some() || action.is_some();
     if has_recovery_flags && !is_recover {
@@ -684,9 +695,9 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "capture --assist needs --workspace: the workspace whose assistant to ask".into(),
         ));
     }
-    if new.work.is_some() && !is_new && !(is_ask_root && text.is_some()) {
+    if new.work.is_some() && !is_new && !is_propose && !(is_ask_root && text.is_some()) {
         return Err(lexopt::Error::Custom(
-            "--work requires task new, or ask --root with --text".into(),
+            "--work requires task new, task propose, or ask --root with --text".into(),
         ));
     }
     let is_delete = matches!(words.as_slice(), [w, d] if w == "inbox" && d == "delete");
@@ -729,6 +740,18 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         [w, repo] if w == "ask" => Cmd::Ask {
             repo: repo.clone(),
             workspace: Some(new.workspace).filter(|w| !w.trim().is_empty()),
+            json,
+        },
+        [w, n] if w == "task" && n == "propose" => Cmd::ProposeTask {
+            proposal: propose::Proposal {
+                goal: stdin_or(&new.goal)?,
+                workspace: new.workspace,
+                repo: new.repo,
+                title: new.title,
+                work: new.work,
+            }
+            .checked()
+            .map_err(|e| lexopt::Error::Custom(e.into()))?,
             json,
         },
         [w, n] if w == "task" && n == "new" => Cmd::NewTask {
@@ -1103,6 +1126,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
         } => ask::root(&mut conn, &workspace, send, json).await,
         Cmd::CloseAsk { session, json } => ask::close(&mut conn, &session, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
+        Cmd::ProposeTask { proposal, json } => propose::propose(conn, proposal, json).await,
         Cmd::Close {
             task,
             status,
@@ -1349,6 +1373,57 @@ mod tests {
                 .unwrap()
                 .action,
             InboxAction::Branch
+        );
+    }
+
+    #[test]
+    fn task_propose_takes_a_proposal_and_start_is_start_task() {
+        let parse = |args: &[&str]| parse_with(lexopt::Parser::from_args(args.iter().copied()));
+        let proposed = parse(&[
+            "task",
+            "propose",
+            "--workspace",
+            "muxa",
+            "--repo",
+            "muxa",
+            "--title",
+            "Fix it",
+            "--goal",
+            "Guard the summary.",
+            "--work",
+            "w-1",
+            "--json",
+        ]);
+        assert!(matches!(
+            proposed,
+            Ok(Some((_, Cmd::ProposeTask { proposal, json: true })))
+                if proposal.repo.as_deref() == Some("muxa") && proposal.work.as_deref() == Some("w-1")
+        ));
+        assert!(
+            parse(&[
+                "task",
+                "propose",
+                "--workspace",
+                "muxa",
+                "--title",
+                "a\nb",
+                "--goal",
+                "g"
+            ])
+            .is_err()
+        );
+        assert!(parse(&["task", "done", "t-1", "--work", "w-1"]).is_err());
+        let answer = |args: &[&str]| match parse(args) {
+            Ok(Some((_, Cmd::Answer { answer, .. }))) => answer.action,
+            _ => InboxAction::Unknown,
+        };
+        assert_eq!(
+            answer(&["inbox", "answer", "i-1", "start"]),
+            InboxAction::StartTask
+        );
+        assert_eq!(
+            answer(&["inbox", "answer", "i-1", "start-task"]),
+            InboxAction::StartTask
         );
     }
 

@@ -63,6 +63,19 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
     if let Request::UpdateInbox {
         id,
         entry,
+        action: muxa_protocol::InboxAction::StartTask,
+        ..
+    } = &req
+    {
+        if entry.starts_with("i-") {
+            if let Some(answer) = crate::assistant::proposals::start_task(cx, *id, entry).await {
+                return answer;
+            }
+        }
+    }
+    if let Request::UpdateInbox {
+        id,
+        entry,
         action: muxa_protocol::InboxAction::Reply,
         text,
         ..

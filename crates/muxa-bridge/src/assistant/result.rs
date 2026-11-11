@@ -59,6 +59,7 @@ struct RawResult {
     handoff: Option<RawHandoff>,
     #[serde(default)]
     writes: Vec<RawWrite>,
+    task: Option<super::task_proposal::RawTask>,
 }
 
 #[derive(Deserialize)]
@@ -220,10 +221,14 @@ pub fn check(bytes: &[u8], run: &RequestRun, chain: &Chain) -> Result<Checked, V
         .handoff
         .and_then(|h| super::handoff::check(h, chain, &mut reasons));
     let writes = super::writes::check(raw.writes, chain.writes, &mut reasons);
+    let task = raw
+        .task
+        .and_then(|t| super::task_proposal::from_result(t, chain.workspace.as_ref(), &mut reasons));
     if !reasons.is_empty() {
         return Err(reasons);
     }
     let result = AssistResult {
+        task,
         writes,
         version: run.version,
         at: 0,

@@ -368,6 +368,7 @@ fn a_hand_off_passes_only_within_its_chain() {
         max_steps: 3,
         handoffs: Handoffs::Review,
         writes: false,
+        workspace: None,
     };
     let mut v = good();
     v["handoff"] = json!({"worker": "strategist", "purpose": "Compare them."});
@@ -385,4 +386,48 @@ fn a_hand_off_passes_only_within_its_chain() {
         .unwrap_err()
         .join("\n");
     assert!(all.contains("does not match the schema") && !all.contains(SENTINEL));
+}
+
+/// ADR 0060 §1: a Task in the request's workspace; the text is never echoed.
+#[test]
+fn a_task_proposal_passes_in_the_request_workspace() {
+    let root = std::env::temp_dir().join(format!("muxa-result-task-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("app/.git")).unwrap();
+    let workspace: crate::records::workspaces::Workspace = crate::records::workspaces::Workspace {
+        name: "lisk".into(),
+        root: root.canonicalize().unwrap(),
+        repos: Vec::new(),
+        agent: None,
+        loop_checks: None,
+        park_after: None,
+        routines: None,
+        assistant: None,
+        role: Default::default(),
+        memory: muxa_protocol::MemoryMode::Review,
+    };
+    let chain = Chain {
+        workspace: Some(workspace),
+        ..Chain::default()
+    };
+    let mut v = good();
+    v["task"] = json!({"repo": "app", "title": "Fix the crash", "goal": "Guard it."});
+    let passed = super::check(&serde_json::to_vec(&v).unwrap(), &run(), &chain).unwrap();
+    let task = passed.result.task.unwrap();
+    assert_eq!(
+        (task.workspace.as_str(), task.repo.as_deref()),
+        ("lisk", Some("app"))
+    );
+    v["task"] = json!({"workspace": "other", "repo": SENTINEL, "title": "t", "goal": "g"});
+    let all = super::check(&serde_json::to_vec(&v).unwrap(), &run(), &chain)
+        .unwrap_err()
+        .join("\n");
+    assert!(
+        all.contains("task.workspace") && all.contains("task.repo"),
+        "{all}"
+    );
+    assert!(!all.contains(SENTINEL), "{all}");
+    let none =
+        super::check(&serde_json::to_vec(&v).unwrap(), &run(), &Chain::default()).unwrap_err();
+    assert!(none.join(" ").contains("no Task proposals"));
+    std::fs::remove_dir_all(&root).ok();
 }

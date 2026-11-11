@@ -5,7 +5,7 @@
 //! here too.
 use muxa_protocol::{
     AssistResult, AssistantRequest, ErrorBody, ErrorCode, InboxItem, ItemKind, ItemState,
-    ResultReview, SourceLink, WorkItem,
+    ResultReview, SourceLink, TaskProposal, WorkItem,
 };
 
 use crate::assistant::{shelf, state_error};
@@ -50,7 +50,15 @@ pub fn make(
         .map_err(|e| state_error(&e))?
         .map(|w| w.title)
         .unwrap_or_default();
-    let review = review(q, step, result, handoff);
+    let lead = config.load_workspaces().ok().and_then(|w| {
+        w.get(&q.workspace)?
+            .assistant
+            .as_ref()?
+            .lead()
+            .map(str::to_owned)
+    });
+    let mut review = review(q, step, result, handoff);
+    review.task = offered_task(q, step, lead.as_deref());
     let key = key(&q.id, q.version, step);
     let at = crate::records::now();
     store(config)?
@@ -73,6 +81,41 @@ pub fn make(
         .map_err(|e| state_error(&e))
 }
 
+/// Pure. The Task an item of step `step` offers (ADR 0060 §1): of the
+/// version's steps up to it, the newest proposal of the lead's step, else
+/// the newest proposal of any step. `lead` is the workspace's lead; without
+/// a staff every step is the delegate's.
+pub fn offered_task(q: &AssistantRequest, step: u32, lead: Option<&str>) -> Option<TaskProposal> {
+    let worker_of = |n: u32| {
+        q.steps
+            .iter()
+            .find(|s| s.step == n)
+            .map(|s| s.worker.clone())
+    };
+    let mut proposed: Vec<(u32, &TaskProposal, Option<String>)> = q
+        .results
+        .iter()
+        .filter(|r| r.version == q.version && r.step.unwrap_or(1) <= step)
+        .filter_map(|r| {
+            let n = r.step.unwrap_or(1);
+            let worker = worker_of(n).or_else(|| r.worker.clone());
+            r.task.as_ref().map(|t| (n, t, worker))
+        })
+        .collect();
+    proposed.sort_by_key(|(n, ..)| *n);
+    let by_lead = proposed
+        .iter()
+        .rev()
+        .find(|(_, _, w)| lead.is_some() && w.as_deref() == lead);
+    let (n, t, worker) = by_lead.or(proposed.last())?;
+    Some(TaskProposal {
+        work: None,
+        step: Some(*n),
+        worker: worker.clone(),
+        ..(*t).clone()
+    })
+}
+
 /// Pure. What the user reviews: the Result's lists, and the hand-off.
 pub fn review(
     q: &AssistantRequest,
@@ -82,6 +125,7 @@ pub fn review(
 ) -> ResultReview {
     let s = q.steps.iter().find(|s| s.step == step);
     ResultReview {
+        task: None,
         request: q.id.clone(),
         version: q.version,
         step,
@@ -148,6 +192,10 @@ impl Made<'_> {
         let who = self.review.worker.as_deref().unwrap_or("The assistant");
         match &self.review.handoff {
             Some(h) => format!("{who} asks {} to: {}", h.worker, h.purpose),
+            None if self.review.task.is_some() => {
+                let title = self.review.task.as_ref().map_or("", |t| t.title.as_str());
+                format!("{who} proposes a Task: {title}")
+            }
             None => {
                 let first = self
                     .summary
@@ -162,6 +210,7 @@ impl Made<'_> {
     fn item(self, id: String, at: u64) -> InboxItem {
         let question = one_line(&self.question(), MAX_QUESTION);
         let mut item = InboxItem {
+            new_task: None,
             result: Some(self.review),
             memory: None,
             write: None,

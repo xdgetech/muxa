@@ -213,6 +213,7 @@ fn item_for(f: &Failure, id: String, at: u64) -> InboxItem {
     let question = one_line(&f.reason, MAX_QUESTION);
     let summary = (question != f.reason).then(|| f.reason.clone());
     let mut item = InboxItem {
+        new_task: None,
         result: None,
         memory: None,
         write: None,

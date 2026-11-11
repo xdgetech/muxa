@@ -16,7 +16,7 @@ use super::{
     AgentAdapter, AgentDoc, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes,
 };
 
-mod prompt;
+pub(crate) mod prompt;
 pub mod trust;
 
 pub const ID: &str = "claude-code";

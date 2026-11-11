@@ -37,6 +37,7 @@ pub mod start;
 pub mod step_files;
 pub mod steps;
 pub mod store;
+pub mod task_proposal;
 mod tick;
 pub mod work;
 pub mod write_items;
@@ -376,6 +377,34 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     vec![Message::PlanSaved {
                         plan: id,
                         entry: Box::new(entry),
+                    }],
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
+        Request::ProposeTask {
+            id,
+            workspace,
+            repo,
+            title,
+            goal,
+            work,
+        } => {
+            let config = Arc::clone(&cx.records);
+            let p = task_proposal::Propose {
+                workspace,
+                repo,
+                title,
+                goal,
+                work,
+            };
+            match blocking(move || task_proposal::propose(&config, p)).await {
+                Ok(item) => (
+                    vec![Message::InboxSaved {
+                        inbox: id,
+                        entry: None,
+                        item: Some(Box::new(item)),
                     }],
                     None,
                 ),
