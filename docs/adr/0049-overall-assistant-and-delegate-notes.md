@@ -141,6 +141,10 @@ A plan never changes, so a Today row stays after the user closes its target. Cli
 
 `dueSoon[]` is not changed. It holds open Work items when the plan is stored; one the user closed later can still show its id. That is a follow-up.
 
+## Addendum (2026-11-11): Today is a ranked queue
+
+[ADR 0055](0055-today-is-a-ranked-queue.md) amends §5 and item 2 of the addendum above. `top[]` holds up to 10 rows, ranked most important first. Clients hide a row whose target closed and mark the first open row Next. When every row of the newest plan is closed or "not today", the host starts one plan within the budgets.
+
 ## Addendum (2026-11-11): a resident conversation
 
 ADR 0054 amends §2 and the alternative "a long-lived delegate session" for the overall workspace only. The user talks to the overall assistant in its root Ask session (ADR 0041), which may stay open. It may save Captures, make, sort, merge and move down Work items, and send requests to `auto` workspaces without approval. Clients still leave the overall workspace out of the New Task and Capture pickers. `share` (§3) binds that conversation only through its brief until the CLI filters reads. The `sort` items of §4 will be removed.
