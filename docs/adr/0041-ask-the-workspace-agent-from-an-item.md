@@ -29,3 +29,7 @@ Proposed. It adds to ADR 0031 §4 (ask sessions) and ADR 0033 §4a (an item's an
   - A new Task per request: a record and a row in Tasks for each small request.
   - A new ask session per request: many sessions, and no shared context.
   - Waiting until the agent is idle: a long wait in the request, or a queue in the host, for what Claude Code already does.
+
+## Addendum (2026-11-11): the root Ask session opens without an item
+
+ADR 0054 lets a client open a workspace's root Ask session directly: `start-session {workspace, root: true}` at `work` level 15. It is the same session `ask-agent` types into, found or started the same way. The overall assistant's workspace has one too: it is the secretary's chat.

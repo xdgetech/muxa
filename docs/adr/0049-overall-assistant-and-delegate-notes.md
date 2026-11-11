@@ -140,3 +140,7 @@ A plan never changes, so a Today row stays after the user closes its target. Cli
 3. **No new level.** Both fields are optional and only the host sends them, at `work:10`. An older host sends neither, and the row shows as before.
 
 `dueSoon[]` is not changed. It holds open Work items when the plan is stored; one the user closed later can still show its id. That is a follow-up.
+
+## Addendum (2026-11-11): a resident conversation
+
+ADR 0054 amends §2 and the alternative "a long-lived delegate session" for the overall workspace only. The user talks to the overall assistant in its root Ask session (ADR 0041), which may stay open. It may save Captures, make, sort, merge and move down Work items, and send requests to `auto` workspaces without approval. Clients still leave the overall workspace out of the New Task and Capture pickers. `share` (§3) binds that conversation only through its brief until the CLI filters reads. The `sort` items of §4 will be removed.
