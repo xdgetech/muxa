@@ -244,6 +244,34 @@ fn wrong_arguments_and_an_older_host_send_nothing() {
 }
 
 #[test]
+fn task_new_work_needs_level_9_and_a_listed_item() {
+    let new = |work: &'static str| {
+        [
+            "task",
+            "new",
+            "--workspace",
+            "work",
+            "--title",
+            "Compare vendor offers",
+            "--goal",
+            "Compare vendor offers",
+            "--work",
+            work,
+        ]
+    };
+    let old = Bridge::new(8);
+    let out = old.run(&new("w-0000abcd"), "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("update muxa-bridge"));
+    assert!(old.changes().is_empty(), "no create-task without level 9");
+    let bridge = Bridge::new(9);
+    let out = bridge.run(&new("w-0000ffff"), "");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no Work item w-0000ffff"));
+    assert!(bridge.changes().is_empty());
+}
+
+#[test]
 fn assist_sends_the_rev_it_read_with_the_scope_and_purpose() {
     let bridge = Bridge::new(9);
     let text = ok(&bridge.run(&["assist", "w-0000abcd"], ""));

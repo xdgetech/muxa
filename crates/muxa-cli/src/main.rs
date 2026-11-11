@@ -27,7 +27,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] tasks [--json]
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
                 [--project P] [--repo REPO [--branch B] [--base REF]] [--worker NAME]
-                [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
+                [--check CMD [--max-attempts N] [--check-timeout S]] [--work WORK] [--json]
        muxa-cli [--bridge CMD] task (done | drop) ID [--force] [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
        muxa-cli [--bridge CMD] ask --root --workspace W [--text T [--work WORK]] [--json]
@@ -216,8 +216,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  sets the item's deadline. TIME is RFC 3339
                  (2026-11-12T16:00:00+09:00) or YYYY-MM-DD HH:MM in
                  --timezone ZONE, an IANA name (default: this system's)
-  --work WORK    task new: the Task is for this Work item. Starting it again
-                 returns the same Task
+  --work WORK    task new: the Task is for this Work item (work level 9).
+                 Starting it again before the item changes returns the same Task
   assist WORK    asks a workspace's assistant to work on the item: its
                  workspace, or --workspace. Prints the request id, version
                  and delivery. Asking again adds a version and ends the run
