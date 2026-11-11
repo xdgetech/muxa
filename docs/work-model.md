@@ -33,7 +33,8 @@ This defines the product concepts used by the vision and milestone plan. Propose
 | Concept | Question it answers | Identity and lifetime |
 |---|---|---|
 | Delegate notes | What does a workspace's assistant remember between runs? | The workspace memory, `<root>/.muxa/WORKSPACE.md` (ADR 0053), one per workspace. A run reads a copy and may propose a new text; it is written only when the user applies it, or by the host with `notes = "auto"` |
-| Overall assistant | Who looks across workspaces? | One workspace with `overall = true`. It reads only what each workspace's `share` allows, and asks other workspaces only through proposals |
+| Overall assistant | Who looks across workspaces? | One workspace with `overall = true`. It reads only what each workspace's `share` allows. Its plan runs ask other workspaces only through proposals |
+| Conversation | Where do I talk to the overall assistant? | The overall workspace's root Ask session, `ask-<workspace>` (ADR 0054). It may stay open. It is the way in, not the record: what it decides goes to Captures, Work items and requests |
 | Plan | What should I do next? | `p-<8hex>`: one overall run's answer, at most 3 rows with reasons and minutes. Made on a schedule or by Plan Now. The host keeps 7 |
 | Proposal | What does the overall assistant want to do for me? | An Inbox item of kind `sort` or `delegate`, from the newest plan only |
 
@@ -41,6 +42,7 @@ This defines the product concepts used by the vision and milestone plan. Propose
 - A plan never changes a Work item, an Inbox item, their order or `laterAt`. An item moved down with Later is never a row; when it is due soon, it shows in one line under the rows.
 - A `sort` proposal, approved, does what `sort-capture` does to the Capture. A `delegate` proposal, approved, makes an assistant request on the Work item, as `request-assistant` does. Approving twice makes one request. Rejecting changes nothing else.
 - The overall assistant never sends a request without approval, unless the receiving workspace sets `overall_requests = "auto"`. Even then the Inbox item stays, answered, so every request it sent is visible.
+- In the conversation (ADR 0054), the secretary saves Captures, makes, sorts, merges and moves down Work items, and asks `auto` workspaces, without approval. Starting a Task, a request to a `review` workspace, an external write and a policy wait for the user's yes. Results still arrive in the Inbox.
 
 ## Policies, corrections and hypotheses (ADR 0050)
 

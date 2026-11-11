@@ -125,6 +125,7 @@ With `work:10` and an overall assistant, a **Today** section comes above Decisio
 3. **Due soon**: one line under the rows, "Due soon, moved down by you: …", for items you moved down with Later that are due within 24 hours. They are never rows.
 4. **New**: the header shows New when a plan arrived that this device has not shown yet. A new plan replaces the rows but never changes the selection or the scroll.
 5. **Plan Now** asks the overall assistant for a plan now. While it runs, the section says "Making a plan…". A failed or cancelled newest plan shows the host's `reason` as it is, above the last good rows. With no plan yet, or an empty one, the section says so.
+6. **Talk to Assistant** (`work:15`, ADR 0054) opens the overall assistant's Chat: its root Ask session, started on the first tap and the same one after. It is also in the `+` sheet while the sheet is empty. iOS shows it as a row above Plan Now; Android as **Talk** in the header. muxa for tmux: `prefix + A`, the overall workspace, then its only row.
 
 - iOS: a tap on Plan Now sets no time limit. A long press offers "I Have 30 minutes", "1 hour" or "2 hours".
 - Android: Plan now opens a dialog with an optional "Minutes you have" field (1 to 1440).
