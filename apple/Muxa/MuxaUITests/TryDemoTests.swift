@@ -17,13 +17,13 @@ final class TryDemoTests: XCTestCase {
 
         // The sidebar offers it on a phone, the empty detail on an iPad too.
         firstHittable(app.buttons.matching(identifier: "try-demo")).tap()
-        let ask = app.buttons["item-row-i-5c000001"]
-        XCTAssertTrue(ask.waitForExistence(timeout: 10), "the showcase's Inbox items")
+        XCTAssertTrue(waitForInbox(app, first: "i-5c000001"), "the showcase's Inbox items")
         XCTAssertFalse(app.descendants(matching: .any)["pane"].firstMatch.exists, "no pane at connect in Inbox mode")
         save("try-demo")
 
         tapWhenReady(app.buttons["leave-demo"])
-        XCTAssertTrue(ask.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(inboxSection(app, "today").waitForNonExistence(timeout: 5), "the showcase left")
+        XCTAssertFalse(app.buttons["item-row-i-5c000001"].exists)
         XCTAssertTrue(app.buttons.matching(identifier: "try-demo").firstMatch.waitForExistence(timeout: 5))
     }
 
@@ -35,7 +35,7 @@ final class TryDemoTests: XCTestCase {
         app.launch()
         tapWhenReady(app.buttons["open-settings"])
         tapWhenReady(app.buttons["settings-try-demo"])
-        XCTAssertTrue(app.buttons["item-row-i-5c000001"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForInbox(app, first: "i-5c000001"))
         tapWhenReady(app.buttons["status-row"])
         XCTAssertTrue(app.buttons["host-Demo"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["settings-disconnect"].exists)
