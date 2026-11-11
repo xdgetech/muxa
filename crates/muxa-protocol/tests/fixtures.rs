@@ -171,7 +171,21 @@ fn restart_recovery_fixtures_preserve_public_identity_and_unknown_values() {
 #[test]
 fn workspace_fixtures_round_trip() {
     use muxa_protocol::{WORK_ASK, work_level};
-    assert_eq!(round_trip::<Request>("workspaces/requests.jsonl"), 2);
+    assert_eq!(round_trip::<Request>("workspaces/requests.jsonl"), 3);
+    let requests = std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/workspaces/requests.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let root: Request = serde_json::from_str(requests.lines().nth(2).unwrap()).unwrap();
+    assert!(matches!(
+        root,
+        Request::StartSession {
+            repo: None,
+            root: true,
+            ..
+        }
+    ));
     assert_eq!(round_trip::<Message>("workspaces/messages.jsonl"), 3);
     let path = format!(
         "{}/../../protocol/fixtures/workspaces/messages.jsonl",

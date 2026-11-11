@@ -30,6 +30,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                 [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task (done | drop) ID [--force] [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
+       muxa-cli [--bridge CMD] ask --root --workspace W [--json]
        muxa-cli [--bridge CMD] ask close SESSION [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
        muxa-cli [--bridge CMD] task new --read --workspace W --title T --goal G
@@ -96,6 +97,8 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   ask REPO       starts the workspace's agent in the repo's main checkout, to
                  ask about its code: no task and no worktree. Prints the
                  session id. Without --workspace, the one that has REPO
+  ask --root     opens the workspace's Ask session at its root, or starts it:
+                 the one Ask Agent uses, also the overall assistant's (ADR 0054)
   ask close SESSION
                  closes an ask session, by id ($3) or name. Its agent stops;
                  the main checkout and its files stay as they are
@@ -274,6 +277,10 @@ enum Cmd {
     },
     CloseAsk {
         session: String,
+        json: bool,
+    },
+    AskRoot {
+        workspace: String,
         json: bool,
     },
     Ask {
@@ -459,6 +466,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let (mut from, mut until, mut reason) = (None, None, None);
     let mut hash: Option<String> = None;
     let mut older_than: Option<u32> = None;
+    let mut root = false;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -491,6 +499,7 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("check-timeout") => check.timeout = Some(p.value()?.parse()?),
             Long("reset") => reset = true,
             Long("all") => all = true,
+            Long("root") => root = true,
             Long("text") => text = Some(p.value()?.string()?),
             Long("option") => option = Some(p.value()?.parse()?),
             Long("work") => new.work = Some(p.value()?.string()?),
@@ -693,6 +702,10 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         [w] if w == "tasks" => Cmd::Tasks { json },
         [w, c, session] if w == "ask" && c == "close" => Cmd::CloseAsk {
             session: session.clone(),
+            json,
+        },
+        [w] if w == "ask" && root => Cmd::AskRoot {
+            workspace: new.workspace.clone(),
             json,
         },
         [w, repo] if w == "ask" => Cmd::Ask {
@@ -1063,6 +1076,7 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             workspace,
             json,
         } => ask::ask(&mut conn, &repo, workspace, json).await,
+        Cmd::AskRoot { workspace, json } => ask::root(&mut conn, &workspace, json).await,
         Cmd::CloseAsk { session, json } => ask::close(&mut conn, &session, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
         Cmd::Close {
@@ -1324,6 +1338,10 @@ mod tests {
         assert!(matches!(
             parse(&["ask", "close"]),
             Ok(Some((_, Cmd::Ask { repo, .. }))) if repo == "close"
+        ));
+        assert!(matches!(
+            parse(&["ask", "--root", "--workspace", "secretary", "--json"]),
+            Ok(Some((_, Cmd::AskRoot { workspace, json: true }))) if workspace == "secretary"
         ));
     }
 

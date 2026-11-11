@@ -112,8 +112,9 @@ where
         // 7 removes a Task's worktree at its end (ADR 0043), 8 protects and deletes items (ADR 0046),
         // 9 keeps Captures and Work items (ADR 0048), 10 adds delegate notes, plans, pins and
         // due dates (ADR 0049), 11 policies, corrections and hypotheses (ADR 0050), 12 staff
-        // and hand-offs (ADR 0051), 13 write proposals (ADR 0052), 14 workspace memory (ADR 0053).
-        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_MEMORY));
+        // and hand-offs (ADR 0051), 13 write proposals (ADR 0052), 14 workspace memory (ADR 0053),
+        // 15 opens a workspace's root Ask session without an item (ADR 0054).
+        capabilities.push(muxa_protocol::work_capability(muxa_protocol::WORK_ASK_ROOT));
     }
     // Checked once per session (ADR 0019); each record request looks again.
     if let Some(dir) = &config.daemon_dir {
@@ -600,15 +601,22 @@ impl Worker {
                 id,
                 workspace,
                 repo,
+                root,
             } => {
                 let client = Arc::clone(&self.client);
                 let config = Arc::clone(&self.tasks);
                 let records = Arc::clone(&self.records);
                 let out = self.out.clone();
                 self.pending.spawn(async move {
-                    let started =
-                        task_records::start_session(&client, &config, &records, &workspace, &repo)
-                            .await;
+                    let started = task_records::start_session(
+                        &client,
+                        &config,
+                        &records,
+                        &workspace,
+                        repo.as_deref(),
+                        root,
+                    )
+                    .await;
                     let error = match started {
                         Ok(launched) => {
                             let msg = Message::SessionStarted {

@@ -5,7 +5,8 @@
 use std::time::Duration;
 
 use muxa_protocol::{
-    CloseMode, Message, Request, Session, WORK_ASK, WORK_CLOSE_ASK, WorkspaceInfo, work_level,
+    CloseMode, Message, Request, Session, WORK_ASK, WORK_ASK_ROOT, WORK_CLOSE_ASK, WorkspaceInfo,
+    work_level,
 };
 use serde_json::json;
 
@@ -33,11 +34,43 @@ pub async fn ask(
             |id| Request::StartSession {
                 id,
                 workspace: workspace.clone(),
-                repo: repo.to_owned(),
+                repo: Some(repo.to_owned()),
+                root: false,
             },
             LAUNCH_WAIT,
         )
         .await?;
+    started(messages, &workspace, as_json)
+}
+
+/// Opens the workspace's Ask session at its root, or starts it (ADR 0054):
+/// the session Ask Agent types into, and the overall assistant's chat.
+pub async fn root(conn: &mut Conn, workspace: &str, as_json: bool) -> Result<String, String> {
+    if work_level(conn.capabilities()) < WORK_ASK_ROOT {
+        return Err(
+            "this host cannot open a workspace's Ask session; update muxa-bridge on the host"
+                .into(),
+        );
+    }
+    if workspace.trim().is_empty() {
+        return Err("ask --root needs --workspace".into());
+    }
+    let messages = conn
+        .call(
+            |id| Request::StartSession {
+                id,
+                workspace: workspace.to_owned(),
+                repo: None,
+                root: true,
+            },
+            LAUNCH_WAIT,
+        )
+        .await?;
+    started(messages, workspace, as_json)
+}
+
+/// Prints the `session-started` among `messages`.
+fn started(messages: Vec<Message>, workspace: &str, as_json: bool) -> Result<String, String> {
     let (session, name) = messages
         .into_iter()
         .find_map(|m| match m {

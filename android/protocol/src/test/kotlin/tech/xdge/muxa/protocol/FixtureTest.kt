@@ -507,7 +507,7 @@ class FixtureTest {
     @Test
     fun workspaceContractRoundTrips() {
         val requests = lines("workspaces/requests.jsonl")
-        assertEquals(2, requests.size)
+        assertEquals(3, requests.size)
         requests.forEach { assertEquals(it, tree(it), tree(Wire.encode(Wire.decodeRequest(it)))) }
         val messages = lines("workspaces/messages.jsonl")
         assertEquals(3, messages.size)
@@ -527,6 +527,10 @@ class FixtureTest {
         assertEquals(
             Request.StartSession(id = 41, workspace = "lisk", repo = "cto-copilot"),
             Wire.decodeRequest(requests[0]),
+        )
+        assertEquals(
+            Request.StartSession(id = 43, workspace = "secretary", root = true),
+            Wire.decodeRequest(requests[2]),
         )
     }
 

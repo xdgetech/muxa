@@ -1,2 +1,3 @@
 {"type":"start-session","id":41,"workspace":"lisk","repo":"cto-copilot"}
 {"type":"create-task","id":42,"workspace":"lisk","title":"Fix the login timeout","goal":"Find why login times out and fix it.","repo":"fairpull/fairpull-plan"}
+{"type":"start-session","id":43,"workspace":"secretary","root":true}

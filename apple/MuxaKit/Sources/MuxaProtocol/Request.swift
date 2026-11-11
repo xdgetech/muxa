@@ -96,6 +96,9 @@ public enum Request: Equatable, Sendable {
     /// Task, no worktree (capability `work` level 2, ADR 0031). `repo` is as
     /// `createTask`'s. A `session-started` comes first.
     case startSession(id: UInt64, workspace: String, repo: String)
+    /// `start-session` with `root`: the workspace's root Ask session, open or new
+    /// (`work` level 15, ADR 0054). A `session-started` comes first.
+    case startRootSession(id: UInt64, workspace: String)
     /// Save the user's input (`work` level 9, ADR 0048). The same `clientId` returns the
     /// stored Capture and writes nothing. `assist` also makes a Work item and asks the
     /// assistant; it needs `workspace`. A `capture-saved` comes first.
@@ -162,6 +165,7 @@ public enum Request: Equatable, Sendable {
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
             .updateInboxEntry(let id, _, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
+            .startRootSession(let id, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
             .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _, _),
             .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _, _), .planNow(let id, _),
@@ -181,7 +185,7 @@ extension Request: Codable {
         case clientId, source, assist, capture, work, workRev, into, request, version, purpose
         case due, minutes
         case policy, from, plan, order, row, record
-        case step
+        case step, root
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -266,6 +270,10 @@ extension Request: Codable {
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(repo, forKey: .repo)
+        case .startRootSession(let id, let workspace):
+            try c.head("start-session", id)
+            try c.encode(workspace, forKey: .workspace)
+            try c.encode(true, forKey: .root)
         case .updateInboxEntry(let id, let entry, let action, let until, let text, let option, let worktree, let hash):
             try c.head("update-inbox", id)
             try c.encode(entry, forKey: .entry)
@@ -466,9 +474,12 @@ extension Request: Codable {
                 routine: try c.decode(String.self, forKey: .routine))
         case "list-inbox": self = .listInbox(id: id)
         case "start-session":
-            self = .startSession(
-                id: id, workspace: try c.decode(String.self, forKey: .workspace),
-                repo: try c.decode(String.self, forKey: .repo))
+            let workspace = try c.decode(String.self, forKey: .workspace)
+            if try c.decodeIfPresent(Bool.self, forKey: .root) == true {
+                self = .startRootSession(id: id, workspace: workspace)
+            } else {
+                self = .startSession(id: id, workspace: workspace, repo: try c.decode(String.self, forKey: .repo))
+            }
         case "update-inbox":
             self = .updateInboxEntry(
                 id: id, entry: try c.decode(String.self, forKey: .entry),

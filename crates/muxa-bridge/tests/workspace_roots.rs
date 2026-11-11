@@ -573,3 +573,56 @@ async fn ask_agent_types_the_item_into_the_workspaces_one_ask_session() {
         assert!(after.lines().any(|l| l == line), "{line} changed:\n{after}");
     }
 }
+
+#[tokio::test]
+async fn start_session_with_root_opens_the_overall_assistants_ask_session() {
+    let server = Server::start();
+    let mut entity = Entity::new("ask-root");
+    let toml = entity.dir.join("workspaces.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(
+        &toml,
+        format!("{text}\n[workspace.assistant]\noverall = true\n"),
+    )
+    .unwrap();
+    let before = server.layout();
+    let mut bridge = entity.bridge(&server, false).await;
+
+    let root = json!({"type": "start-session", "workspace": "other", "root": true});
+    let started = |messages: &[Message]| {
+        messages.iter().find_map(|m| match m {
+            Message::SessionStarted { session, name, .. } => Some((session.clone(), name.clone())),
+            _ => None,
+        })
+    };
+    let (messages, result) = send(&mut bridge, root.clone()).await;
+    ok(&result);
+    let (session, name) = started(&messages).expect("session-started");
+    assert_eq!(name, "ask-other");
+    assert_eq!(option(&server, &session, "@muxa_ask"), "other");
+    assert_eq!(option(&server, &session, "@muxa_ask_root"), "1");
+    let pane = server.pane(&format!("{session}:"));
+    assert_eq!(
+        server.tmux(&["display-message", "-p", "-t", &pane, "#{pane_current_path}"]),
+        entity.dir.join("other").display().to_string()
+    );
+
+    // The open session is the answer the second time: one conversation.
+    let (messages, result) = send(&mut bridge, root).await;
+    ok(&result);
+    assert_eq!(started(&messages), Some((session.clone(), name)));
+
+    // A repo and root together, or neither, is refused.
+    for bad in [
+        json!({"type": "start-session", "workspace": "other", "repo": "app", "root": true}),
+        json!({"type": "start-session", "workspace": "other"}),
+    ] {
+        let (_, result) = send(&mut bridge, bad).await;
+        assert_eq!(error_code(&result), ErrorCode::BadRequest);
+    }
+
+    let after = server.layout();
+    for line in before.lines() {
+        assert!(after.lines().any(|l| l == line), "{line} changed:\n{after}");
+    }
+}

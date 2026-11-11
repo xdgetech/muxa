@@ -42,6 +42,9 @@ const val WORK_WRITES = 13
 /** Level 14: workspace memory, `memory` Inbox items and a workspace's `memory` mode (ADR 0053). */
 const val WORK_MEMORY = 14
 
+/** Level 15: `start-session` with `root` opens a workspace's root Ask session (ADR 0054). */
+const val WORK_ASK_ROOT = 15
+
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
     capabilities.mapNotNull { it.removePrefix("$WORK_CAPABILITY:").takeIf { rest -> rest != it }?.toIntOrNull() }

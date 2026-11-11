@@ -71,7 +71,7 @@ struct FixtureTests {
 
     @Test func workspaceContractRoundTrips() throws {
         let requests = try Self.lines("workspaces/requests.jsonl")
-        #expect(requests.count == 2)
+        #expect(requests.count == 3)
         for line in requests { #expect(try canonical(Wire.encode(Wire.decodeRequest(line))) == canonical(line)) }
         let messages = try Self.lines("workspaces/messages.jsonl")
         #expect(messages.count == 3)
@@ -93,6 +93,9 @@ struct FixtureTests {
             Issue.record("expected session-started"); return
         }
         #expect(start == 41 && session == "$7" && name == "ask-cto-copilot-1")
+        guard case .startRootSession(43, "secretary") = try Wire.decodeRequest(requests[2]) else {
+            Issue.record("expected start-session with root"); return
+        }
     }
 
     @Test func askCloseContractRoundTrips() throws {

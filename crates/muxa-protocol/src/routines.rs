@@ -23,6 +23,9 @@ pub const WORK_ASK_AGENT: u32 = 6;
 pub const WORK_END_REMOVES: u32 = 7;
 /// Level 8: `protect` and `unprotect` on an Inbox item, and `delete-inbox` (ADR 0046).
 pub const WORK_DELETE_INBOX: u32 = 8;
+/// Level 15: `start-session` with `root` opens the workspace's Ask session at
+/// its root, also the overall assistant's (ADR 0054).
+pub const WORK_ASK_ROOT: u32 = 15;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {

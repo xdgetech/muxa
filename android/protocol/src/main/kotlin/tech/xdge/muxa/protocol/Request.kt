@@ -157,9 +157,15 @@ sealed interface Request {
     /**
      * An agent session in a repo's main checkout, to ask about its code: no Task, no
      * worktree (capability `work` level 2, ADR 0031). [repo] is as `create-task`'s.
-     * A `session-started` comes first.
+     * With [root] and no [repo], the workspace's root Ask session, open or new (`work`
+     * level 15, ADR 0054). A `session-started` comes first.
      */
-    @Serializable data class StartSession(override val id: Long, val workspace: String, val repo: String) : Request
+    @Serializable data class StartSession(
+        override val id: Long,
+        val workspace: String,
+        val repo: String? = null,
+        val root: Boolean = false,
+    ) : Request
 
     /**
      * Save the user's input (`work` level 9, ADR 0048). The same [clientId] returns the stored Capture and

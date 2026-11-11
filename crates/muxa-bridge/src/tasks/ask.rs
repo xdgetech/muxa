@@ -93,6 +93,32 @@ pub fn root_session<'a>(
         .find(|s| s.ask_root && s.ask.as_deref() == Some(workspace) && is_ask(s))
 }
 
+/// The workspace's ask session at its root: the open one, or a new one
+/// (`true`). Any workspace has one, the overall assistant's too (ADR 0054).
+pub async fn open_root(
+    client: &Client,
+    command: &str,
+    workspaces: &Workspaces,
+    workspace: &str,
+) -> Result<(Launched, bool), TaskError> {
+    let ws = workspaces.get(workspace).ok_or_else(|| {
+        TaskError::Invalid(format!(
+            "no workspace named {workspace:?}; list-tasks shows the host's workspaces"
+        ))
+    })?;
+    let sessions = muxa_tmux::list_sessions(client).await?;
+    if let Some(s) = root_session(&sessions, workspace) {
+        let open = Launched {
+            id: s.id,
+            name: s.name.clone(),
+            dir: ws.root.clone(),
+        };
+        return Ok((open, false));
+    }
+    let launched = start_root(client, command, workspaces, workspace).await?;
+    Ok((launched, true))
+}
+
 /// Starts the workspace's ask session at its root: `ask-<workspace>`, or
 /// `ask-<workspace>-<n>` when that name is taken. As `start`, nothing else changes.
 pub async fn start_root(

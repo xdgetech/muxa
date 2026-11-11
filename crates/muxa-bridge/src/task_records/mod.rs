@@ -469,23 +469,39 @@ async fn repo_path(
     .await
 }
 
-/// `start-session`: an ask session in a repo's main checkout (ADR 0031).
-/// Not a record request: the bridge serves it with its own client.
+/// `start-session`: an ask session in a repo's main checkout (ADR 0031), or
+/// with `root` the workspace's Ask session at its root, open or new (ADR
+/// 0054). Not a record request: the bridge serves it with its own client.
 pub async fn start_session(
     client: &Client,
     tasks: &crate::tasks::Config,
     config: &Config,
     workspace: &str,
-    repo: &str,
+    repo: Option<&str>,
+    root: bool,
 ) -> Result<crate::tasks::Launched, ErrorBody> {
     let loaded = config.clone();
     let workspaces = blocking(move || loaded.load_workspaces()).await?;
-    crate::tasks::ask::start(client, &tasks.command, &workspaces, workspace, repo)
-        .await
-        .map_err(|e| {
-            tracing::warn!(error = %e, "ask session did not start");
-            convert::task_error(&e)
-        })
+    let started = match (repo, root) {
+        (Some(repo), false) => {
+            crate::tasks::ask::start(client, &tasks.command, &workspaces, workspace, repo).await
+        }
+        (None, true) => {
+            crate::tasks::ask::open_root(client, &tasks.command, &workspaces, workspace)
+                .await
+                .map(|(launched, _)| launched)
+        }
+        _ => {
+            return Err(error_body(
+                ErrorCode::BadRequest,
+                "start-session takes a repo, or root without a repo",
+            ));
+        }
+    };
+    started.map_err(|e| {
+        tracing::warn!(error = %e, "ask session did not start");
+        convert::task_error(&e)
+    })
 }
 
 fn task_saved(request: u64, record: Record) -> Message {

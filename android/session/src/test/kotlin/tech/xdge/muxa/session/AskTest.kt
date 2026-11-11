@@ -29,9 +29,10 @@ class AskTest {
             }
             if (req !is Request.StartSession) return super.answer(req)
             if (refusal != null) return emit(Message.Result(req.id, error = refusal))
-            val name = "ask-${req.repo.substringAfterLast('/')}-1"
+            val repo = req.repo.orEmpty()
+            val name = "ask-${repo.substringAfterLast('/')}-1"
             sessions = sessions + Session(
-                id = "$9", name = name, repo = req.repo.substringAfterLast('/'), repoDir = "/src/${req.repo}", ask = req.workspace,
+                id = "$9", name = name, repo = repo.substringAfterLast('/'), repoDir = "/src/$repo", ask = req.workspace,
                 panes = listOf(Pane("%9", "@9", 0, Role.AGENT, 80, 24, "claude", "/src/app", false, false)),
             )
             if (named) emit(Message.SessionStarted(req.id, "$9", name))

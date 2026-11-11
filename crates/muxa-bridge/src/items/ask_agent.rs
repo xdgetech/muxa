@@ -64,24 +64,18 @@ async fn open_item(cx: &Context, id: &str) -> Result<InboxItem, ErrorBody> {
 
 /// The workspace's Ask session: the open one, or a new one (`true`).
 async fn root_session(env: &Env, workspace: &str) -> Result<(SessionId, String, bool), ErrorBody> {
-    let sessions = muxa_tmux::list_sessions(&env.client)
-        .await
-        .map_err(|e| convert::error(&e))?;
-    if let Some(s) = crate::tasks::ask::root_session(&sessions, workspace) {
-        return Ok((s.id, s.name.clone(), false));
-    }
     let config = Arc::clone(&env.records);
     let workspaces = tokio::task::spawn_blocking(move || config.load_workspaces())
         .await
         .map_err(|e| error_body(ErrorCode::Internal, format!("workspace lookup failed: {e}")))??;
-    let launched =
-        crate::tasks::ask::start_root(&env.client, &env.tasks.command, &workspaces, workspace)
+    let (launched, fresh) =
+        crate::tasks::ask::open_root(&env.client, &env.tasks.command, &workspaces, workspace)
             .await
             .map_err(|e| {
                 tracing::warn!(workspace, error = %e, "workspace ask session did not start");
                 convert::task_error(&e)
             })?;
-    Ok((launched.id, launched.name, true))
+    Ok((launched.id, launched.name, fresh))
 }
 
 /// Pastes `prompt` into the session's agent pane. A new agent gets up to

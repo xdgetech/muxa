@@ -39,6 +39,7 @@ import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_ASK_AGENT
+import tech.xdge.muxa.protocol.WORK_ASK_ROOT
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_CAPABILITY
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
@@ -779,20 +780,38 @@ class DemoBridge(
             val item = items.list(work.shownEntries, work.laterAts, askAgent = true)
                 .firstOrNull { it.id == req.entry && it.state == ItemState.OPEN && InboxAction.ASK_AGENT in it.answers }
                 ?: return@synchronized null
-            val name = "ask-${item.workspace}"
-            val open = sessions.firstOrNull { it.name == name }
-            if (open != null) return@synchronized Triple(item, open, false)
-            val root = content.workspaces.firstOrNull { it.name == item.workspace }?.root ?: "/"
-            val n = 20 + sessions.size
-            val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", root, false, false, Agent(AgentState.RUNNING, now()))
-            followers += pane.id
-            val session = Session("$$n", name, ask = item.workspace, panes = listOf(pane))
-            sessions = sessions + session
-            Triple(item, session, true)
+            val (session, started) = rootSession(item.workspace)
+            Triple(item, session, started)
         } ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.entry} is not an open item that takes ask-agent")
         val (item, session, started) = found
         emit(Message.SessionStarted(req.id, session.id, session.name))
         emit(Message.InboxSaved(req.id, item = item))
+        ok(req.id)
+        if (started) emit(Message.SessionsChanged)
+    }
+
+    /** The workspace's one Ask session at its root: the open one, or a new one (`true`). Call it under [lock]. */
+    private fun rootSession(workspace: String): Pair<Session, Boolean> {
+        val name = "ask-$workspace"
+        sessions.firstOrNull { it.name == name }?.let { return it to false }
+        val root = content.workspaces.firstOrNull { it.name == workspace }?.root ?: "/"
+        val n = 20 + sessions.size
+        val pane = Pane("%$n", "@$n", 0, Role.AGENT, 80, 24, "claude", root, false, false, Agent(AgentState.RUNNING, now()))
+        followers += pane.id
+        val session = Session("$$n", name, ask = workspace, panes = listOf(pane))
+        sessions = sessions + session
+        return session to true
+    }
+
+    /** Talk to Assistant (ADR 0054): the workspace's root Ask session, open or new. Nothing is typed. */
+    private fun startRootSession(req: Request.StartSession) {
+        if (workLevel < WORK_ASK_ROOT) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        if (req.repo != null) return fail(req.id, ErrorCode.BAD_REQUEST, "start-session takes a repo, or root without a repo")
+        if (listedWorkspaces.none { it.name == req.workspace }) {
+            return fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
+        }
+        val (session, started) = synchronized(lock) { rootSession(req.workspace) }
+        emit(Message.SessionStarted(req.id, session.id, session.name))
         ok(req.id)
         if (started) emit(Message.SessionsChanged)
     }
@@ -1189,12 +1208,14 @@ class DemoBridge(
      * record (ADR 0031). Its name counts the ask sessions of that repo.
      */
     private fun startSession(req: Request.StartSession) {
+        if (req.root) return startRootSession(req)
         if (workLevel < WORK_ASK) return fail(req.id, ErrorCode.UNSUPPORTED, NO_REQUEST)
+        val repo = req.repo ?: return fail(req.id, ErrorCode.BAD_REQUEST, "start-session takes a repo, or root without a repo")
         val workspace = content.workspaces.firstOrNull { it.name == req.workspace }
             ?: return fail(req.id, ErrorCode.BAD_REQUEST, "${req.workspace} is not a workspace")
-        val dir = if (req.repo.startsWith("/")) req.repo else workspace.root?.let { "${it.trimEnd('/')}/${req.repo}" }
+        val dir = if (repo.startsWith("/")) repo else workspace.root?.let { "${it.trimEnd('/')}/$repo" }
         if (dir == null || dir !in workspace.repos) {
-            return fail(req.id, ErrorCode.BAD_REQUEST, "${req.repo} is not a repo of ${req.workspace}")
+            return fail(req.id, ErrorCode.BAD_REQUEST, "$repo is not a repo of ${req.workspace}")
         }
         val repoName = dir.substringAfterLast('/')
         val started = synchronized(lock) {

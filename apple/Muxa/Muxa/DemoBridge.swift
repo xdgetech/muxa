@@ -116,28 +116,30 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     private static var capabilities: [String] {
         let all = [
             "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
-            "task-loop", "tasks-changed", "viewport", "history", "work:14",
+            "task-loop", "tasks-changed", "viewport", "history", "work:15",
         ]
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         // A bridge from before ask sessions and branches named after the title (ADR 0031).
-        if arguments.contains("-work1") { return all.map { $0 == "work:14" ? "work:1" : $0 } }
+        if arguments.contains("-work1") { return all.map { $0 == "work:15" ? "work:1" : $0 } }
         // A bridge from before Inbox items (ADR 0033): the app has no Inbox for it.
-        if arguments.contains("-work2") { return all.map { $0 == "work:14" ? "work:2" : $0 } }
+        if arguments.contains("-work2") { return all.map { $0 == "work:15" ? "work:2" : $0 } }
         // A bridge from before closing ask sessions (ADR 0039).
-        if arguments.contains("-work3") { return all.map { $0 == "work:14" ? "work:3" : $0 } }
+        if arguments.contains("-work3") { return all.map { $0 == "work:15" ? "work:3" : $0 } }
         // A bridge from before Protect and Delete Old (ADR 0046) and Captures (ADR 0048): `+` is New Task.
-        if arguments.contains("-work7") { return all.map { $0 == "work:14" ? "work:7" : $0 } }
+        if arguments.contains("-work7") { return all.map { $0 == "work:15" ? "work:7" : $0 } }
         // A bridge from before the overall assistant (ADR 0049): no Today, pins or notes.
-        if arguments.contains("-work9") { return all.map { $0 == "work:14" ? "work:9" : $0 } }
+        if arguments.contains("-work9") { return all.map { $0 == "work:15" ? "work:9" : $0 } }
         // A bridge from before policies (ADR 0050): no Policies, Not today or hypotheses.
-        if arguments.contains("-work10") { return all.map { $0 == "work:14" ? "work:10" : $0 } }
+        if arguments.contains("-work10") { return all.map { $0 == "work:15" ? "work:10" : $0 } }
         // A bridge from before staff and hand-offs (ADR 0051): one assistant per workspace.
-        if arguments.contains("-work11") { return all.map { $0 == "work:14" ? "work:11" : $0 } }
+        if arguments.contains("-work11") { return all.map { $0 == "work:15" ? "work:11" : $0 } }
         // A bridge from before write proposals (ADR 0052): no writer and no write items.
-        if arguments.contains("-work12") { return all.map { $0 == "work:14" ? "work:12" : $0 } }
+        if arguments.contains("-work12") { return all.map { $0 == "work:15" ? "work:12" : $0 } }
         // A bridge from before workspace memory (ADR 0053): no memory items and no modes.
-        if arguments.contains("-work13") { return all.map { $0 == "work:14" ? "work:13" : $0 } }
+        if arguments.contains("-work13") { return all.map { $0 == "work:15" ? "work:13" : $0 } }
+        // A bridge from before Talk to Assistant (ADR 0054): no root Ask session without an item.
+        if arguments.contains("-work14") { return all.map { $0 == "work:15" ? "work:14" : $0 } }
         // A bridge from before task records, for the old New Task sheet's test.
         if arguments.contains("-no-task-records") { return all.filter { $0 != "task-records" } }
         #endif
@@ -321,6 +323,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             ok(id)
         case .startSession(let id, let workspace, let repo):
             startSession(id: id, workspace: workspace, repo: repo)
+        case .startRootSession(let id, let workspace):
+            startRootSession(id: id, workspace: workspace)
         case .bye:
             out.finish()
         }
@@ -372,17 +376,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         guard Self.workLevel >= workAskAgent else { return unsupported(id, Self.noRequest) }
         let found = lock.withLock { () -> (InboxItem, Session, Bool)? in
             guard let shown = work.shownItems.first(where: { $0.id == item && $0.state == .open }) else { return nil }
-            let name = "ask-\(shown.workspace)"
-            if let s = sessions.first(where: { $0.name == name }) { return (shown, s, false) }
-            let root = tasks.workspaces.first { $0.name == shown.workspace }?.root ?? "/"
-            let n = 20 + sessions.count
-            let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 80, rows: 24,
-                            command: "claude", path: root, dead: false, shellForeground: false,
-                            agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
-            followers.insert(pane.id)
-            let session = Session(id: "$\(n)", name: name, ask: shown.workspace, panes: [pane])
-            sessions.append(session)
-            return (shown, session, true)
+            let (session, started) = rootSession(of: shown.workspace)
+            return (shown, session, started)
         }
         guard let (shown, session, started) = found else {
             return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(item) is not an open item"), sessions: nil))
@@ -392,6 +387,37 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         }
         emit(.sessionStarted(start: id, session: session.id, name: session.name))
         emit(.inboxSaved(inbox: id, entry: nil, item: shown))
+        ok(id)
+        if started { emit(.sessionsChanged) }
+    }
+
+    /// The workspace's one Ask session at its root: the open one, or a new one (`true`).
+    /// Call it under `lock`.
+    private func rootSession(of workspace: String) -> (Session, Bool) {
+        let name = "ask-\(workspace)"
+        if let s = sessions.first(where: { $0.name == name }) { return (s, false) }
+        let root = tasks.workspaces.first { $0.name == workspace }?.root ?? "/"
+        let n = 20 + sessions.count
+        let pane = Pane(id: "%\(n)", window: "@\(n)", index: 0, role: .agent, cols: 80, rows: 24,
+                        command: "claude", path: root, dead: false, shellForeground: false,
+                        agent: Agent(state: .running, since: UInt64(Date().timeIntervalSince1970)))
+        followers.insert(pane.id)
+        let session = Session(id: "$\(n)", name: name, ask: workspace, panes: [pane])
+        sessions.append(session)
+        return (session, true)
+    }
+
+    /// Talk to Assistant (ADR 0054): the workspace's root Ask session, open or new. Nothing is typed.
+    private func startRootSession(id: UInt64, workspace: String) {
+        guard Self.workLevel >= workAskRoot else { return unsupported(id, Self.noRequest) }
+        let opened = lock.withLock { () -> (Session, Bool)? in
+            guard tasks.workspaces.contains(where: { $0.name == workspace }) else { return nil }
+            return rootSession(of: workspace)
+        }
+        guard let (session, started) = opened else {
+            return emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(workspace) is not a workspace"), sessions: nil))
+        }
+        emit(.sessionStarted(start: id, session: session.id, name: session.name))
         ok(id)
         if started { emit(.sessionsChanged) }
     }

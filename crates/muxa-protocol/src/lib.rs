@@ -32,8 +32,8 @@ pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
-    WORK_ASK_AGENT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_DELETE_INBOX, WORK_END_REMOVES,
-    WORK_READ, WORK_ROUTINES, work_capability, work_level,
+    WORK_ASK_AGENT, WORK_ASK_ROOT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_DELETE_INBOX,
+    WORK_END_REMOVES, WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
 pub use staff::{Handoff, HandoffProposal, RequestStep, StaffMember, StepBy, WORK_STAFF};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
@@ -366,13 +366,18 @@ pub enum Request {
         older_than_days: u32,
     },
     /// Start an agent session in a repo's main checkout, to ask about its
-    /// code: no Task, no worktree (capability `work` level 2, ADR 0031). A
-    /// `session-started` comes before the `result`.
+    /// code: no Task, no worktree (capability `work` level 2, ADR 0031).
+    /// With `root` and no `repo`, open the workspace's Ask session at its
+    /// root (level 15, ADR 0054). A `session-started` comes before the `result`.
     StartSession {
         id: u64,
         workspace: String,
         /// As `create-task`'s `repo`.
-        repo: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repo: Option<String>,
+        /// The open root Ask session, or a new one.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        root: bool,
     },
     /// Save the user's input (`work` level 9, ADR 0048). The same `clientId`
     /// returns the stored Capture and writes nothing. A `capture-saved` comes
