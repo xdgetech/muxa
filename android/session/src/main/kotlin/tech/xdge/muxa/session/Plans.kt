@@ -50,7 +50,7 @@ fun planIsNew(shown: Plan?, seen: String?): Boolean = shown != null && seen != n
 /** The row's Work item or Inbox item id. */
 val PlanRow.target: String? get() = work ?: item
 
-/** The host says the row's target is no longer open. Today keeps the row, dimmed, and it opens nothing. */
+/** The host says the row's target is no longer open. Today hides the row, and it opens nothing. */
 val PlanRow.isClosed: Boolean get() = targetState != null
 
 /** The title Today shows: the target as this device [listed] it, else the host's title, else the id. */

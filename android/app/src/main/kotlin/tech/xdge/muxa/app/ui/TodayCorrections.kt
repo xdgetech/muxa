@@ -113,7 +113,7 @@ private fun NotTodayDialog(model: AppModel, target: String, close: () -> Unit) {
 internal fun DismissedRow(model: AppModel, row: PlanRow) {
     val target = row.target ?: return
     DetailNote(
-        "Not today · ${model.planRowTitle(row)}${row.targetState?.let { " · ${it.label}" }.orEmpty()}",
+        "Not today · ${model.planRowTitle(row)}",
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("today-dismissed-$target"),
     )
 }

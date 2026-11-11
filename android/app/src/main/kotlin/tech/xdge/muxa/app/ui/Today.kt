@@ -47,9 +47,10 @@ import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanRow
 import tech.xdge.muxa.session.addressee
 import tech.xdge.muxa.session.dueSoonLine
-import tech.xdge.muxa.session.isClosed
+import tech.xdge.muxa.session.isDone
 import tech.xdge.muxa.session.isDismissed
-import tech.xdge.muxa.session.todayRows
+import tech.xdge.muxa.session.nextRow
+import tech.xdge.muxa.session.queue
 import tech.xdge.muxa.session.label
 import tech.xdge.muxa.session.marks
 import tech.xdge.muxa.session.planStatus
@@ -69,13 +70,16 @@ fun LazyListScope.todaySection(model: AppModel) {
     when {
         plan == null && status == null -> item(key = "today-empty") { TodayNote("No plan yet. Plan now asks the overall assistant.", "today-empty") }
         plan != null && plan.top.isEmpty() -> item(key = "today-empty") { TodayNote("Nothing to rank in the newest plan.", "today-empty") }
+        plan != null && plan.isDone -> item(key = "today-done") { TodayNote("All done. A new plan follows when the budget allows.", "today-done") }
     }
-    // The user's order when they set one (ADR 0050 §6); a row they removed stays as one line.
-    val rows = plan?.todayRows.orEmpty()
+    // The open rows in the user's order when they set one (ADR 0050 §6, ADR 0055); a row they
+    // removed stays as one line, and the first other one is Next.
+    val rows = plan?.queue.orEmpty()
+    val next = plan?.nextRow?.target
     rows.forEachIndexed { i, row ->
         item(key = "today-$i") {
             val shown = plan ?: return@item
-            if (shown.isDismissed(row)) DismissedRow(model, row) else TodayRow(model, shown, row, i, rows.size)
+            if (shown.isDismissed(row)) DismissedRow(model, row) else TodayRow(model, shown, row, i, rows.size, row.target == next)
             HorizontalDivider()
         }
     }
@@ -119,10 +123,11 @@ private fun TodayNote(text: String, tag: String) = Text(
 
 /**
  * The target's title, why, the minutes and the host's marks; Why opens the basis and what is missing.
- * At `work:11` the … menu moves the row and removes it for today. [index] of [count] rows.
+ * At `work:11` the … menu moves the row and removes it for today. [index] of [count] open rows;
+ * [isNext] marks the row to do next.
  */
 @Composable
-private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, count: Int) {
+private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, count: Int, isNext: Boolean) {
     val target = row.target ?: return
     var why by remember(plan.id, target) { mutableStateOf(false) }
     val work = row.work?.let(model::workItem)
@@ -133,18 +138,15 @@ private fun TodayRow(model: AppModel, plan: Plan, row: PlanRow, index: Int, coun
     Column(Modifier.fillMaxWidth().testTag("today-row-$target")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(
-                Modifier.weight(1f).clickable(enabled = !row.isClosed) { model.openPlanRow(row) }.padding(start = 16.dp, top = 10.dp, bottom = 10.dp).testTag("today-open-$target"),
+                Modifier.weight(1f).clickable { model.openPlanRow(row) }.padding(start = 16.dp, top = 10.dp, bottom = 10.dp).testTag("today-open-$target"),
             ) {
-                val state = row.targetState
-                if (state == null) {
-                    Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                } else {
-                    // The plan keeps a row whose target closed: dimmed, with how it ended.
+                if (isNext) {
                     Text(
-                        "$title · ${state.label}", Modifier.testTag("today-closed-$target"), maxLines = 2,
-                        overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "Next", Modifier.testTag("today-next-$target"),
+                        color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium,
                     )
                 }
+                Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 delegate?.let { Text("Asks ${it.addressee}", Modifier.testTag("today-staff-$target"), style = MaterialTheme.typography.labelMedium) }
                 Text(row.why, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(

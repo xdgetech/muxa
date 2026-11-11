@@ -153,6 +153,20 @@ struct PlanTests {
         #expect(!open.isClosed)
     }
 
+    @Test func todayIsTheQueueOfOpenRowsAndTheFirstOneNotDismissedIsNext() {
+        let minutes = Minutes(low: 1, high: 2, estimated: 1)
+        let done = PlanRow(work: "w-00000001", why: "w", next: "n", minutes: minutes, targetState: .done)
+        let skipped = PlanRow(work: "w-00000002", why: "w", next: "n", minutes: minutes)
+        let open = PlanRow(item: "i-00000003", why: "w", next: "n", minutes: minutes)
+        let plan = Plan(id: "p-00000001", rev: 1, at: 1, inputsAt: 1, delivery: .resulted, deliveryAt: 1,
+                        top: [done, skipped, open], dismissed: ["w-00000002"])
+        #expect(plan.queue(plan.top).map(\.rowId) == ["w-00000002", "i-00000003"])
+        #expect(plan.next(in: plan.top)?.rowId == "i-00000003")
+        #expect(!plan.isDone(plan.top))
+        #expect(plan.isDone([done]))
+        #expect(!plan.isDone([]))
+    }
+
     @Test func aLevel9HostShowsNoPlans() async throws {
         let bridge = PlanBridge()
         let session = try await connected(bridge, level: "work:9")

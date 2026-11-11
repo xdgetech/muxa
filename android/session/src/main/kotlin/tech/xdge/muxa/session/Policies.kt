@@ -36,13 +36,32 @@ val Plan.todayRows: List<PlanRow>
 /** The user removed the row from Today ("Not today"). */
 fun Plan.isDismissed(row: PlanRow): Boolean = row.target in dismissed
 
-/** The `order` that moves [target] by [offset] rows in [todayRows]; null when it cannot move. */
+/** Today as a queue (ADR 0055): [todayRows] whose target is open. Today hides the others. */
+val Plan.queue: List<PlanRow> get() = todayRows.filter { !it.isClosed }
+
+/** The row the user does next: the first open row not taken off Today. */
+val Plan.nextRow: PlanRow? get() = queue.firstOrNull { !isDismissed(it) }
+
+/** Every row closed, and there were rows: the host plans again (ADR 0055 §3). */
+val Plan.isDone: Boolean get() = top.isNotEmpty() && queue.isEmpty()
+
+/**
+ * The `order` that moves [target] by [offset] rows in [queue]; null when it cannot move. Hidden
+ * closed rows keep their places in the order.
+ */
 fun Plan.moving(target: String, offset: Int): List<String>? {
-    val order = todayRows.mapNotNull { it.target }
-    val from = order.indexOf(target)
+    val shown = queue.mapNotNull { it.target }
+    val from = shown.indexOf(target)
     val to = from + offset
-    if (from < 0 || to !in order.indices) return null
-    return order.toMutableList().apply { add(to, removeAt(from)) }
+    if (from < 0 || to !in shown.indices) return null
+    val moved = shown.toMutableList().apply { add(to, removeAt(from)) }.iterator()
+    return todayRows.mapNotNull { row ->
+        when {
+            row.target == null -> null
+            row.isClosed -> row.target
+            else -> moved.next()
+        }
+    }
 }
 
 /** The record a `policy`, `hypothesis` or `correction` basis cites; [Cited.Forgotten] when it is gone. */
