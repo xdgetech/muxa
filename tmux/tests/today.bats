@@ -222,6 +222,27 @@ TASKS='{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncate
   wait_for 'grep -q "^work done w-7b8c9d0e --json$" "$TMPDIR/bin/calls"'
 }
 
+@test "Due soon shows the open Work items by title, never a raw id" {
+  # Due soon kept three ids: one open, one the user completed since, and one
+  # the host no longer lists. Only the open one is still due.
+  jq -c '.plans[0].dueSoon = ["w-0000dead", "w-8c9d0e1f", "w-7b8c9d0e"] |
+    .workItems |= map(if .id == "w-7b8c9d0e" then .state = "done" else . end)' "$ITEMS" >"$TMPDIR/d.json"
+  out="$(inbox list "$TMPDIR/d.json" | strip_ansi)"
+  [[ "$out" == *$'today:due\t  ⏰ Due soon, moved down by you: Renew the passport'$'\n'* ]]
+  [[ "$out" != *"w-0000dead"* && "$out" != *"Compare vendor offers, "* ]]
+  out="$(plain_view today:due "$TMPDIR/d.json")"
+  [[ "$out" == *"◆ Renew the passport"* ]]
+  [[ "$out" != *"w-0000dead"* && "$out" != *"◆ Compare vendor offers"* ]]
+  [ "$(inbox target today:due "$TMPDIR/d.json")" = w-8c9d0e1f ]
+  # An open item without a title shows its id.
+  jq -c '.workItems |= map(if .id == "w-8c9d0e1f" then .title = "" else . end)' "$TMPDIR/d.json" >"$TMPDIR/e.json"
+  [[ "$(inbox list "$TMPDIR/e.json" | strip_ansi)" == *"moved down by you: w-8c9d0e1f"* ]]
+  # Nothing still due: no Due soon row.
+  jq -c '.plans[0].dueSoon = ["w-0000dead", "w-7b8c9d0e"]' "$TMPDIR/d.json" >"$TMPDIR/f.json"
+  ! inbox list "$TMPDIR/f.json" | cut -f1 | grep -qx 'today:due'
+  [ "$(inbox target today:due "$TMPDIR/f.json")" = "" ]
+}
+
 @test "prefix+T: a asks for the question and the scope, and sends them" {
   fake_cli
   attach

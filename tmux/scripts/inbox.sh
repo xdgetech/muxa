@@ -205,7 +205,12 @@ JQ_DEFS='
     elif .kind == "correction" then [($root.corrections // [])[] | select(.id == $s) |
       "\(.kind)\(if .row then " \(.row)" else "" end)"][0]
     else .text end // "forgotten";
-  def title_of($root; $id): ([($root.workItems // [])[], ($root.items // [])[] | select(.id == $id) | .title][0] // $id) | plain;
+  # The Work items of the plan dueSoon that are still open, as listed. One the
+  # user closed since, or the host no longer lists, is not due any more,
+  # as Today hides a closed row (ADR 0057).
+  def due_items($root): (.dueSoon // []) as $ids |
+    [$ids[] as $d | [$root | open_work | select(.id == $d)][0] // empty];
+  def due_title: (if (.title // "") == "" then .id else .title end) | plain;
   # A Today row: its target as listed, else the title the host sent (an item
   # no longer listed), else its id. A closed target says how it ended.
   def row_title($root): row_id as $id |
@@ -348,8 +353,8 @@ list() {
         else
           "today:\($i + 1)\t\(if $i == $next then "▶" else " " end) \($n). \($verb) · \($r | row_title($root))  \u001b[2m\($r | mins)\($r | mark($p))\u001b[0m"
         end),
-      (shown_plan | select((.dueSoon // []) | length > 0) |
-        "today:due\t  ⏰ Due soon, moved down by you: \([.dueSoon[] as $d | title_of($root; $d)] | join(", "))")),
+      (shown_plan | due_items($root) | select(length > 0) |
+        "today:due\t  ⏰ Due soon, moved down by you: \(map(due_title) | join(", "))")),
     ([.items[] | shown | select(.kind != "briefing")] | select(length > 0) |
       header("decisions"; "Decisions"; length; ""), (.[] | item_row)),
     ([open_work] | select(length > 0) |
@@ -465,8 +470,7 @@ view_today() {
     elif $row == "due" then
       shown_plan |
       "⏰ \u001b[1mDue soon, moved down by you\u001b[0m", "",
-      (.dueSoon[] as $d | ([($root.workItems // [])[] | select(.id == $d)][0] // {id: $d, title: $d}) |
-        "◆ \(.title | plain)\(pin_due)"),
+      (due_items($root)[] | "◆ \(due_title)\(pin_due)"),
       "", "o Open   t Re-rank"
     else
       shown_plan | . as $p | ($row | tonumber - 1) as $i | shown_number($i) as $n |
@@ -942,8 +946,8 @@ preview_wrap() {
 # The item a Today row opens and whose keys it takes: none once it is closed.
 today_target() {
   iq -r --arg row "${1#today:}" "$JQ_DEFS"'
-    shown_plan |
-    if $row == "due" then (.dueSoon // [])[0] // empty
+    . as $root | shown_plan |
+    if $row == "due" then due_items($root)[0].id // empty
     elif $row == "" then empty
     else today_rows[$row | tonumber - 1] // empty | select(closed_target | not) | row_id end' "$2"
 }

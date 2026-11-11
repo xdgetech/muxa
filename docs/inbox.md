@@ -125,7 +125,7 @@ With `work:10` and an overall assistant, a **Today** section comes above Decisio
    - A row whose item you closed (done, withdrawn, answered, resolved, or gone from the host) is hidden.
    - When every row is closed or Not today, the section says "All done", and the host makes a new plan by itself. It makes one such plan per emptied plan, within the overall assistant's budgets. A reached budget shows as a failed plan with its reason.
 2. **Why** opens the row's basis (due, dependency, goal, time or manual, with its source and time) and what is missing.
-3. **Due soon**: one line under the rows, "Due soon, moved down by you: …", for items you moved down with Later that are due within 24 hours. They are never rows.
+3. **Due soon**: one line under the rows, "Due soon, moved down by you: …", for items you moved down with Later that are due within 24 hours. They are never rows. The line names each by its title, and leaves out one you completed or withdrew since the plan.
 4. **New**: the header shows New when a plan arrived that this device has not shown yet. A new plan replaces the rows but never changes the selection or the scroll.
 5. **Plan Now** asks the overall assistant for a plan now. While it runs, the section says "Making a plan…". A failed or cancelled newest plan shows the host's `reason` as it is, above the last good rows. With no plan yet, or an empty one, the section says so.
 6. **Talk to Assistant** (`work:15`, ADR 0054) opens the overall assistant's Chat: its root Ask session, started on the first tap and the same one after. It is also in the `+` sheet while the sheet is empty. iOS shows it as a row above Plan Now; Android as **Talk** in the header. muxa for tmux: `prefix + A`, the overall workspace, then its only row.
