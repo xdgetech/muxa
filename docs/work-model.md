@@ -68,6 +68,7 @@ A Session is not inherently manual, and a Task is not a renamed tmux Session. A 
 | Step | Which member answered which part of a request? | One run of one member on one request version: `{step, worker, by, delivery}`, step 1 first, at most `max_steps`. Each step has its own Result |
 | Hand-off | Who should work on it next? | A step's `handoff {worker, purpose}`, to a member not yet in the chain. Under `review`, offered by the step's `result` item (ADR 0058) |
 | Result to review | What did a member find, and what next? | One Inbox item of kind `result` per stored Result of a version's newest step (ADR 0058): Hand off, Send, Done, Later. Its unread state is the "new result" mark |
+| Task proposal | Which Task would do it? | A Result's `task {repo?, title, goal}`, or the secretary's `new-task` item (ADR 0060). Start Task makes one Task, in plan mode, linked to the Work item; the proposal marks its goal's last line |
 | Writer | Who changes systems outside the host? | The one `[[worker]]` named `writer`, never a staff member or the delegate |
 | Write proposal | What does a Result want to send? | One entry of a Result's `writes[]`, `{action, target, content, hash}`, and one Inbox item of kind `write` |
 

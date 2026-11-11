@@ -76,6 +76,10 @@ muxa gives a remote device keyboard access to your terminal sessions. That is sh
   - Clients show the content whole, as plain text in a fixed-width font, without rendered Markdown or active links, so the text approved is the text seen.
   - The writer's Task holds the content unchanged and is told to do exactly that write and nothing else. The host cannot check that it did; the Task's review and the target system show it. `[assistant] max_writes_per_day` (default 10) caps approved writes.
   - Logs carry ids, hashes, counts, worker names and states. Never actions, targets, contents or reasons: a target can hold a token. The log line of a linked Task no longer carries its folder path.
+- **Task proposals** (ADR 0060).
+  - A staff member or the secretary only proposes a Task. The user's Start Task in the Inbox starts it; nothing starts one by itself. A Result's proposal may name its own workspace and that workspace's repos only.
+  - The proposed goal is agent text, maybe planted by a page the member read. The Task starts in plan mode (Claude Code), so its agent plans before any edit, and the user approves the plan. Approve plan picks the option that asks before each edit, never auto-accept or bypass, and only when the pane shows it.
+  - Logs carry item, Task and request ids. Never titles, goals, repo names or texts.
 - **Workspace memory** (ADR 0053).
   - `<root>/.muxa/WORKSPACE.md` reaches every later Task, staff and Routine run of the workspace as a copy. A Task's agent read the web, the repo and documents, so a planted line can land in its "For the workspace" section. The host checks size and control characters only, never meaning or truth.
   - The default `memory = "auto"` appends without a look (ADR 0053 Revision 1). The guard is on the way out: a planted line can change later runs, but every external write still needs the user's approve of its exact text (ADR 0052). Each append carries the Task's id and date, so one block can be found and deleted. `memory = "review"` makes the user read each proposal before it is appended.

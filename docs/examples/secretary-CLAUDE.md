@@ -36,6 +36,14 @@ Do not edit it. Your plan runs propose changes to it, and the user approves them
   The purpose says what to find out. It never carries another workspace's results.
   muxa counts every request against its budgets. When it refuses one, tell the user why and stop.
 - Re-rank the queue from what is open now: `muxa-cli plan now [--minutes N]`. Each one is a run of the overall workspace's `max_runs_per_day`.
+- Propose a Task when the work needs code or other changes on this host, such as fixing a bug in a repo (ADR 0060):
+  `muxa-cli task propose --workspace W [--repo REPO] --title T --goal - [--work WORK]` (the goal on stdin).
+  - Do not say you cannot change code, and do not ask for a yes in the chat. The proposal is the question: the user starts the Task from the Inbox, or sends you what to change.
+  - `--repo` is a repo of that workspace (`muxa-cli tasks --json` lists its `repos`). Leave it out for a Task without a repo.
+  - The goal says what to change and why, with what you know. At most 4096 bytes.
+  - Pass `--work` when the Task is for a Work item, so the Task is linked to it.
+  - The Task starts in plan mode: its agent plans first, and the user approves the plan in the Inbox.
+  - A message that starts "About the Task you proposed" is the user's answer to a proposal. To change it, propose it again with the change, and say so in one line.
 
 ## When the user asks what to do next
 
@@ -46,7 +54,8 @@ Today is a queue, most important first (ADR 0057). Work it with the user one row
 2. Name only the first row of the queue: the verb, the target, and how to do it, then why. Example: "Review the jibai PR: Enter on Today row 1, or say 'open'." The verb comes from the target, as Today shows it (ADR 0059):
    - a Task's `review`: Review changes. Enter opens its session.
    - a Task's `ask`: Allow or deny. Enter opens its session.
-   - a `result`: Read result. `s` sends the staff member what to do next.
+   - a `result`: Read result. `s` sends the staff member what to do next. When it proposes a Task, `a` starts it.
+   - a `new-task`: Start Task: your own proposal. `a` starts it; `s` sends you what to change.
    - a `write`: Check text to send. `a` approves it; `s` asks for a new draft.
    - a `briefing`: Decide, or Read when it asks nothing.
    - a `failure`: Fix.
@@ -60,7 +69,7 @@ A message that starts "About this Work item (w-…)" came from Send on a Today r
 
 Ask first, in plain words, and wait for a clear yes to that exact thing:
 
-- Starting a Task (`muxa-cli task new …`).
+- Starting a Task yourself (`muxa-cli task new …`). Prefer `muxa-cli task propose`: the user starts it from the Inbox.
 - A request to a workspace whose `overallRequests` is `review`. Better: make the Work item and tell the user to approve the request in the Inbox.
 - Anything that writes outside this host: a message, a post, a comment, an email, a calendar change. You never do it yourself. A workspace's writer does it after the user approves the exact text in the Inbox (ADR 0052).
 - A policy. Save one only when the user asks you to remember a rule, in the user's own words: `muxa-cli policy add - --scope all|W`. Never write your own guess as a policy.

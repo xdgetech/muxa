@@ -66,7 +66,7 @@ The reply box sends **Send** on an item with a session: the text goes to its age
 - The item's session opens from its source line or Open Session. On a phone it pushes over the item; on a tablet the pane fills the detail and the sidebar collapses. An item never opens the Shell first.
 - The summary is Markdown (ADR 0033 §4a.5). Its `http` and `https` links open in the browser. A link or a file name that matches an attachment opens that attachment in the Reader.
 - The attachments are a list under the summary: Changes with the file and line counts, then each doc and image by file name and folder, then the links by title. Evidence opens in the Reader and returns to the item.
-- Labels name the result (ADR 0033 §4a.2, ADR 0040). `accept` is **Complete Task** and `drop` is **Drop Task**. `keep-open` and `dismiss` are **✓**, named "Done" for VoiceOver and TalkBack. `later` is the "Play Last" symbol, named "Later". `reply` is **Send**, or **Deny & Send** on an `ask`. On an `ask`, `approve` is **Allow** and `reject` is **Deny**. A proposal keeps **Approve** and **Reject**. On a `result`, `approve` is **Hand off to `<worker>`**; on a `write`, `reply` is **Revise** (ADR 0058).
+- Labels name the result (ADR 0033 §4a.2, ADR 0040). `accept` is **Complete Task** and `drop` is **Drop Task**. `keep-open` and `dismiss` are **✓**, named "Done" for VoiceOver and TalkBack. `later` is the "Play Last" symbol, named "Later". `reply` is **Send**, or **Deny & Send** on an `ask`. On an `ask`, `approve` is **Allow** and `reject` is **Deny**. A proposal keeps **Approve** and **Reject**. On a `result`, `approve` is **Hand off to `<worker>`**; on a `write`, `reply` is **Revise** (ADR 0058). On a `result` that proposes a Task and on a `new-task` item, `approve` or `start-task` is **Start Task**; on a plan `ask`, `approve` is **Approve plan** and `reject` **Keep planning** (ADR 0060).
 - At connect, Inbox and Tasks mode stay on their list, also when it is empty ("Nothing needs you"). Sessions mode opens the default pane.
 - A host below `work:3` gets "This host needs a newer muxa-bridge for the Inbox", with Tasks and Sessions.
 - The reply box shows only when the item takes a text answer: `reply` or `ask-agent`. The send arrow needs its text.
@@ -237,6 +237,38 @@ With `work:16`, every Result of an assistant request makes one Decisions item of
 A client below `work:16` shows a `result` item as an unknown kind. Its answers are actions it knows (`approve`, `reply`, `dismiss`, `later`), so its buttons still work.
 
 muxa for tmux (`prefix + T`): `📋` rows. The preview shows the Result's lists and the hand-off. `a` hands off, `s` asks for the text and sends it, `d` is ✓ Done, `l` is Later. CLI: `muxa-cli inbox answer ITEM handoff | send --text T | done`, `inbox answer ITEM revise --text T` on a `write` item, and `inbox show ITEM` prints the Result's lists.
+
+## Proposed Tasks (ADR 0060)
+
+With `work:18`, the assistant proposes a Task when the work needs code or other changes on this host. The user starts it from the Inbox, then reviews its plan before any edit.
+
+```
+┌← Inbox     Result     ⤓  ✓  … ┐
+│ muxa-research proposes a Task: │
+│ Fix the Inbox crash            │
+│ Fix the Inbox crash · muxa     │
+│                                │
+│ The crash comes from an empty  │
+│ summary.                       │
+│ Proposed Task                  │
+│ muxa · repo muxa               │
+│ Guard the empty summary …      │
+│ Starts in plan mode            │
+│                                │
+│ [ Start Task ]                 │
+│ ┌ Tell muxa-research what… (↑)┐│
+└────────────────────────────────┘
+```
+
+1. **On a `result` item.** A Result may propose one Task: a title, a goal, and a repo of the workspace or none. The item shows the version's proposal: the lead's, else the newest one. **Start Task** is `approve` when the item offers no hand-off. Beside **Hand off**, it is its own answer, `start-task`.
+2. **The secretary's `new-task` item** (🛠). The secretary proposes with `muxa-cli task propose`. **Start Task** is `approve`. **Send** ("Tell the secretary what to change…") types the text into the secretary's conversation; the item stays open, and the secretary proposes again. **Done** closes it.
+3. **Start Task** starts one Task, also when pressed twice: the workspace's default Task worker, linked to the Work item, in plan mode. The item closes and says "Started Task `<id>`: `<title>`"; **Open its Task** opens it. On a `result` item with a hand-off, the chain ends there.
+4. **Plan mode.** Claude Code starts with `--permission-mode plan`, so it plans first. Its plan comes back as an `ask` item of the Task: **Approve plan** leaves plan mode with edits asked one by one. muxa presses that option only when the pane shows it; otherwise it says to approve in the terminal. **Keep planning** keeps it in plan mode, and **Keep planning & Send** also sends what to change. Codex has no plan mode in muxa: the goal asks it to plan first, and its plan arrives as a `review` item, answered with Send.
+5. **Talking to the Task.** A Task's items keep Send to the Task's agent. The Work item's menu lists Open its Task, and Send to its Task's agent when the Task has an open item.
+
+A client below `work:18` shows a `new-task` item as an unknown kind whose Approve, reply box, ✓ and Later work. It never sends `start-task`.
+
+muxa for tmux (`prefix + T`): `a` is Start Task, or `n` beside a hand-off; on a `🛠` item `s` goes to the secretary; on a plan item `a` approves the plan, `r` keeps planning, `s` keeps planning and sends; `o` or Enter on an item that started a Task opens it. CLI: `muxa-cli task propose`, `muxa-cli inbox answer ITEM start`.
 
 ## Workspace memory (ADR 0053)
 
