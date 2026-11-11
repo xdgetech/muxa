@@ -28,6 +28,11 @@
 # level 17, s on a Work item sends it to the secretary with the text.
 # Enter on a Work item, or on a Today row that starts one, opens its menu:
 # its live Tasks, its open results, n Start a Task (--work), and its keys.
+# With level 18 (ADR 0060), a result or new-task item that proposes a Task
+# starts it in plan mode: a (or n beside a hand-off). s on a new-task item
+# goes to the secretary. A plan item's a approves the plan with edits asked
+# one by one; r and s keep planning. Enter on an item with a started Task
+# opens that Task, and the Work menu sends to a Task's agent.
 # prefix + T lists sections under header rows (sec:<name>); Tab and Shift-Tab
 # move between headers, and Enter or space folds Routine.
 # Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
@@ -103,7 +108,7 @@ EOF
 JQ_DEFS='
   def icon: {"ask": $iw, "failure": $ie, "review": $id, "proposal": "📝", "briefing": "📰",
     "sort": "🗂", "delegate": "🤝", "hypothesis": "💡", "handoff": "👥",
-    "write": "📤", "memory": "🧠", "result": "📋"}[.kind] // "•";
+    "write": "📤", "memory": "🧠", "result": "📋", "new-task": "🛠"}[.kind] // "•";
   def since($t): ($now - $t) as $s |
     if $s < 60 then "\($s)s" elif $s < 3600 then "\($s / 60 | floor)m"
     elif $s < 86400 then "\($s / 3600 | floor)h" else "\($s / 86400 | floor)d" end;
@@ -117,12 +122,17 @@ JQ_DEFS='
   # Labels name the result as the apps do (ADR 0033 §4a, ADR 0040): ✓ closes only
   # the item, and an answer that changes the Task names it. A proposal keeps
   # Approve and Reject. A result hands off and sends; a write revises (ADR 0058).
+  # A plan item approves the plan, and a proposed Task is Start Task (ADR 0060).
   def answer_label($a):
     (.kind == "ask") as $ask | (.kind == "result") as $result |
-    {"approve": (if $ask then "Allow" elif $result then "Hand off to \(.result.handoff.worker // "" | gsub("[\\x00-\\x1f\\x7f]"; ""))"
-       else "Approve" end), "accept": "Complete Task",
-     "retry": "Retry", "reject": (if $ask then "Deny" else "Reject" end),
-     "reply": (if $ask then "Deny & Send" elif .kind == "write" then "Revise" else "Send" end),
+    ($ask and .prompt.kind == "plan") as $plan |
+    {"approve": (if $plan then "Approve plan (edits one by one)" elif $ask then "Allow"
+       elif $result and .result.handoff then "Hand off to \(.result.handoff.worker // "" | gsub("[\\x00-\\x1f\\x7f]"; ""))"
+       elif ($result and .result.task) or .kind == "new-task" then "Start Task"
+       else "Approve" end), "accept": "Complete Task", "start-task": "Start Task",
+     "retry": "Retry", "reject": (if $plan then "Keep planning" elif $ask then "Deny" else "Reject" end),
+     "reply": (if $plan then "Keep planning & Send" elif $ask then "Deny & Send" elif .kind == "write" then "Revise"
+       elif .kind == "new-task" then "Send to the secretary" else "Send" end),
      "keep-open": "✓ Done", "ask-agent": "Ask Agent",
      "drop": "Drop Task", "later": "Later", "dismiss": "✓ Done", "confirm": "Confirm"}[$a] // $a;
   # [{key, act, group}] as the apps place them (ADR 0040): triage is the top bar
@@ -138,17 +148,25 @@ JQ_DEFS='
      (pick(["drop"]) | bind("x"; .; "triage")),
      (pick(["approve", "retry", "confirm"]) | bind("a"; .; "answer")),
      (pick(["reject"]) | bind("r"; .; "answer")),
-     (pick(["reply", "ask-agent"]) | bind("s"; .; "answer"))];
+     (pick(["reply", "ask-agent"]) | bind("s"; .; "answer")),
+     (pick(["start-task"]) | bind("n"; .; "answer"))];
   # Text the user or an agent wrote, without terminal control characters.
   def plain: gsub("[\\x00-\\x08\\x0b-\\x1f\\x7f]"; "");
+  # A proposed Task (ADR 0060): where it runs and its goal. It starts in plan mode.
+  def task_lines: "\u001b[1mProposed Task: \(.title | plain)\u001b[0m",
+    "In: \(.workspace | plain) · \(if .repo then "repo \(.repo | plain)" else "its own folder" end)",
+    "", (.goal | plain), "",
+    "Start Task starts it in plan mode: its agent plans first, and you approve the plan in the Inbox.";
   # The Result of a result item: who wrote it, its lists, and the hand-off a starts.
   def review_lines: .result as $r | ($r.worker // "the assistant" | plain) as $who |
     "From: \($who) · v\($r.version) step \($r.step)",
     (["Findings", ($r.findings // [])], ["Open questions", ($r.openQuestions // [])],
      ["Next steps", ($r.next // [])], ["Files", ($r.files // [])] |
       select(.[1] | length > 0) | "", "\u001b[1m\(.[0])\u001b[0m", (.[1][] | "  - \(plain)")),
+    ($r.task // empty | "", task_lines),
     (if $r.handoff then "", "Hand off to \($r.handoff.worker | plain): \($r.handoff.purpose | plain)",
-      "a starts it; s sends \($who) what to do instead; d ends the request with what it has."
+      "a starts it\(if $r.task then "; n starts the Task instead" else "" end); s sends \($who) what to do instead; d ends the request with what it has."
+     elif $r.task and ((.answers // []) | index("approve")) then "", "a starts the Task; s sends \($who) what to change; d closes it."
      else "", "s sends \($who) what to do next; d closes it." end), "";
   def work_word: {"in-progress": "in progress", "waiting-decision": "waiting on decision",
     "done": "done", "withdrawn": "withdrawn"}[.state] // "open";
@@ -209,7 +227,8 @@ JQ_DEFS='
     else {"review": "Review changes", "ask": "Allow or deny", "result": "Read result",
       "write": "Check text to send", "failure": "Fix", "memory": "Check memory note",
       "proposal": "Approve or reject", "sort": "Sort capture", "delegate": "Approve request",
-      "hypothesis": "Confirm or reject", "handoff": "Approve hand-off"}[$k] // "Open" end end;
+      "hypothesis": "Confirm or reject", "handoff": "Approve hand-off",
+      "new-task": "Start Task"}[$k] // "Open" end end;
   def row_verb($root): if (row_id | startswith("w-")) then "Start" else verb_of(row_item($root)) end;
   # Enter on a Today row (ADR 0059 §3): the review or menu of a Task opens its
   # session; a Work item opens its menu, and any other item is where the
@@ -220,12 +239,14 @@ JQ_DEFS='
     elif ($item | opens_session) then
       "Open the Task (\({"review": "review", "ask": "allow or deny"}[$item.kind]))"
     else "Open the \({"result": "result", "write": "text to send", "briefing": "briefing",
-      "failure": "failure"}[$item.kind] // "item")" end;
+      "failure": "failure", "new-task": "proposed Task"}[$item.kind] // "item")" end;
   # s on an item names who gets the text (ADR 0059 §4), or null without one.
   def send_label: (.answers // []) as $a |
     if ($a | index("reply")) then
       if .kind == "result" then "Send to \(.result.worker // "the assistant" | plain)…"
       elif .kind == "write" then "Revise: send to \(.write.worker // "the assistant" | plain)…"
+      elif .kind == "new-task" then "Send to the secretary…"
+      elif .kind == "ask" and .prompt.kind == "plan" then "Keep planning & send to the Task'"'"'s agent…"
       elif .kind == "ask" then "Deny & send to the Task'"'"'s agent…"
       else "Send to the Task'"'"'s agent…" end
     elif ($a | index("ask-agent")) then
@@ -497,6 +518,12 @@ view() {
       "From: \(.from | plain) → \(.worker | plain) · step \(.step + 1)", "Ask: \(.purpose | plain)",
       "Approve starts the next step; Reject ends the request with what it has.", ""),
     (select(.result) | review_lines),
+    (.newTask // empty | task_lines,
+      (if ($i.answers // []) | index("approve") then "a starts it; s tells the secretary what to change; d closes it." else empty end), ""),
+    (if .prompt.kind == "plan" and ((.answers // []) | index("approve")) then
+      "a approves the plan: the agent leaves plan mode and asks before each edit.",
+      "r keeps planning; s keeps planning and tells the agent what to change.", ""
+     else empty end),
     (.write // empty | ([$reqs[] | select(.id == $i.write.request) | .version][0] // .version) as $current |
       "Action: \(.action | plain)", "To: \(.target | plain)",
       "From: \(.worker // "the assistant" | plain) · v\(.version)\(if .version < $current then " · from an older result" else "" end)",
@@ -522,7 +549,7 @@ view() {
      else empty end),
     ([keymap[] | select(.group == "triage") | . as $k | "\($k.key) \($i | answer_label($k.act))"] +
       [protect_act($w) | if . == "protect" then "p Protect" else "p Unprotect" end] +
-      (if .session then ["o Open Session"] else [] end) | select(length > 0) | join("   ")),
+      (if .session then ["o Open Session"] elif .task and (.kind | IN("result", "new-task", "write")) then ["o Open its Task"] else [] end) | select(length > 0) | join("   ")),
     ([keymap[] | select(.group == "answer") | . as $k | "\($k.key) \($i | answer_label($k.act))"]
       | select(length > 0) | join("   ")),
     "\u001b[2mspace/b scroll   v read all   \(if $w >= 8 then "D delete old   " else "" end)q close\u001b[0m"
@@ -663,6 +690,9 @@ text_prompt() {
     reply)
       case "$2" in
         ask) echo "Deny, then tell the agent instead:" ;;
+        plan) echo "Keep planning, and tell the agent what to change in the plan:" ;;
+        # ADR 0060: the secretary proposes again.
+        new-task) echo "What should the secretary change in this Task? It proposes it again:" ;;
         # ADR 0058: the member who wrote it goes on, as a new version.
         result) echo "What should ${3:-the assistant} do next? It continues from this result:" ;;
         write) echo "What should ${3:-the assistant} change in the draft? It writes a new one:" ;;
@@ -762,7 +792,8 @@ EOF
       ;;
     reply | ask-agent)
       clear
-      kind="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .kind' "$json")"
+      kind="$(jq -r --arg item "$id" '.items[] | select(.id == $item) |
+        if .prompt.kind == "plan" then "plan" else .kind end' "$json")"
       row="$(jq -r --arg item "$id" '.items[] | select(.id == $item) |
         (.result.worker // .write.worker // "") | gsub("[\\x00-\\x1f\\x7f]"; "")' "$json")"
       printf '%s\n\n' "$(text_prompt "$act" "$kind" "$row")"
@@ -833,6 +864,8 @@ run_act() {
       sleep 1.5
       ;;
     task:new) start_task "$client" "$aid" "$json" && return 1 ;;
+    # The Work menu's Send to a Task's agent: the reply of its open item.
+    reply:*) answer "${act#reply:}" reply "$json" ;;
     *) answer "$aid" "$act" "$json" ;;
   esac
   return 0
@@ -934,8 +967,10 @@ work_actions() {
     def row($act; $key; $text): "\($act)\t\($key)  \($text)";
     . as $root | ((.work // 0) >= 10) as $pins | ([secretary][0] // null) as $secretary |
     .workItems[]? | select(.id == $item) | . as $w |
-    ($live[] | select(.id | IN(($w.tasks // [])[])) |
-      row("goto:\(.session)"; " "; "Open its Task: \(.title | plain)")),
+    ($live[] | select(.id | IN(($w.tasks // [])[])) | . as $t |
+      row("goto:\(.session)"; " "; "Open its Task: \(.title | plain)"),
+      ($root.items[]? | shown | select(.task == $t.id and ((.answers // []) | index("reply"))) |
+        row("reply:\(.id)"; " "; "Send to its Task'"'"'s agent: \($t.title | plain)…"))),
     ($root.items[]? | shown | select(.kind == "result" and .result.work == $item) |
       row("focus:\(.id)"; " "; "Read the result: \(.question | plain)")),
     row("task:new"; "n"; "Start a Task from it: the New Task form, with its workspace and title"),
@@ -946,6 +981,16 @@ work_actions() {
     (select($pins) | if .pinnedAt then row("work:unpin"; "P"; "Unpin it")
      else row("work:pin"; "P"; "Pin it: first in the list, and in the first rows of a plan") end)
   ' "$2"
+}
+
+# The session of the Task an item started (ADR 0052, ADR 0060), from muxa's
+# Task list; nothing when the item started none or its session is gone.
+item_task_session() {
+  local task
+  task="$(jq -r --arg item "$1" '.items[] | select(.id == $item) | .task // empty' "$2")"
+  [ -n "$task" ] || return 0
+  "$S/muxa.sh" tasks 2>/dev/null </dev/null |
+    jq -r --arg task "$task" '.tasks[]? | select(.record.id == $task) | .session.id // empty' 2>/dev/null
 }
 
 # Shows the Work item's menu and prints the act picked, by Enter or by its key.
@@ -1109,6 +1154,12 @@ ui() {
           w-*) act="$(work_menu "$id" "$json")" ;;
           *)
             sid="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .session // empty' "$json")"
+            if [ -n "$sid" ] && t has-session -t "$sid" 2>/dev/null; then
+              muxa inbox read "$id" </dev/null >/dev/null 2>&1
+              "$S/muxa.sh" goto "$client" "$sid"
+              break
+            fi
+            sid="$(item_task_session "$id" "$json")"
             if [ -n "$sid" ] && t has-session -t "$sid" 2>/dev/null; then
               muxa inbox read "$id" </dev/null >/dev/null 2>&1
               "$S/muxa.sh" goto "$client" "$sid"

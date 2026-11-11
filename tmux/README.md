@@ -314,6 +314,21 @@ apps show, with a goal and a status.
     `📤` write item, `s` is Revise: the member writes a new draft, and the
     item closes. `muxa-cli inbox answer ITEM handoff | send --text T | done |
     revise --text T` does the same.
+  - With `work` level 18 (ADR 0060), the assistant proposes Tasks instead of
+    saying it cannot change code. A `📋` item whose Result proposes a Task
+    shows it (`Proposed Task`, its repo and goal): `a` is Start Task, or `n`
+    when the item also offers a hand-off. The Task starts once, linked to the
+    Work item, in plan mode (`--plan` on `new.sh` starts Claude Code with
+    `--permission-mode plan`; another agent starts as usual). A `🛠` item is
+    the secretary's proposal (`muxa-cli task propose`): `a` starts it, `s`
+    tells the secretary what to change. Once a Task started, `o` or `Enter`
+    on the item opens it. The Task's plan comes back as a `🙋` item: `a`
+    approves the plan, so its agent leaves plan mode and asks before each
+    edit (muxa presses that menu option only when the pane shows it); `r`
+    keeps planning, and `s` keeps planning and sends your text. The Work
+    item's menu lists `Send to its Task's agent` for a live Task with an
+    open item. `muxa-cli inbox answer ITEM start` does the same as Start
+    Task.
   - With `work` level 13 (ADR 0052), `📤` items are writes a staff member
     proposes outside the host: a post or a comment. The item shows the action,
     the target and the content whole, as plain text, and says when it comes
@@ -352,7 +367,10 @@ tasks through the names below. They stay stable; a change to one is a breaking c
 - `@agents_scripts`: global option, the directory of these scripts. Set on every load.
 - `@agents_features`: global option, a space-separated list of what the scripts
   accept beyond this list. `muxa-task`: `new.sh` takes `--muxa-task`.
-- `new.sh <repo dir> <branch> [--base REF] [--task ID] [--muxa-task ID] --no-switch` starts a task,
+  `plan-mode`: `new.sh` takes `--plan`, which starts a Claude Code agent with
+  `--permission-mode plan` (ADR 0060); without the feature muxa starts the
+  agent as usual.
+- `new.sh <repo dir> <branch> [--base REF] [--task ID] [--muxa-task ID] [--plan] --no-switch` starts a task,
   or finds the running one for the branch. It prints the session name on its last
   line. On failure it exits non-zero. A tool must pass `--no-switch`: without it,
   the attached client moves to the new session.

@@ -149,6 +149,12 @@ TASKS='{"workspaces":["work"],"capabilities":["task-records","work:9"],"truncate
   out="$(inbox actions w-7b8c9d0e "$TMPDIR/l.json" "$TMPDIR/tasks.json")"
   [ "$(printf '%s\n' "$out" | head -n 1)" = $'goto:$7\t   Open its Task: Ask vendor B' ]
   [ "$(printf '%s\n' "$out" | grep -c '^goto:')" = 1 ]
+  # A live Task with an open item that takes a reply: Send to its agent (ADR 0060 §6).
+  jq -c '.items += [{id: "i-0000c0de", kind: "review", state: "open", question: "Ready for review",
+      workspace: "work", title: "Ask vendor B", createdAt: 1, task: "t-000001", session: "$7",
+      answers: ["accept", "reply", "keep-open", "later"]}]' "$TMPDIR/l.json" >"$TMPDIR/s.json"
+  out="$(inbox actions w-7b8c9d0e "$TMPDIR/s.json" "$TMPDIR/tasks.json")"
+  [ "$(printf '%s\n' "$out" | sed -n 2p)" = $'reply:i-0000c0de\t   Send to its Task\'s agent: Ask vendor B…' ]
   # An open result for the item: Read the result moves to it.
   jq -c '.items[2].result.work = "w-7b8c9d0e"' "$ITEMS" >"$TMPDIR/r.json"
   out="$(inbox actions w-7b8c9d0e "$TMPDIR/r.json")"

@@ -9,7 +9,7 @@ default() { [ -n "$(t show-options -gqv "$1")" ] || t set-option -g "$1" "$2"; }
 # every load, so it follows the checkout when it moves.
 t set-option -g @agents_scripts "$S"
 # What the scripts accept beyond that first contract, for the same tools.
-t set-option -g @agents_features "muxa-task"
+t set-option -g @agents_features "muxa-task plan-mode"
 
 default @agents_sidebar on
 default @agents_sidebar_width 28
