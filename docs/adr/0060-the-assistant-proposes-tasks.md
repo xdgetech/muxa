@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-11-11. It amends ADR 0048 §4 (the result file gains `task`), ADR 0051 §3 (a chain's proposal is the lead's), ADR 0058 §2 (a `result` item's Start Task) and ADR 0054 (the secretary proposes instead of asking yes in chat). Hosts advertise `work:18`. The host, the protocol, `muxa-cli` and muxa for tmux are built; the iOS and Android clients are a follow-up (§8).
+Accepted on 2026-11-11. It amends ADR 0048 §4 (the result file gains `task`), ADR 0051 §3 (a chain's proposal is the lead's), ADR 0058 §2 (a `result` item's Start Task) and ADR 0054 (the secretary proposes instead of asking yes in chat). Hosts advertise `work:18`. The host, the protocol, `muxa-cli`, muxa for tmux and the Android client are built; the iOS client is a follow-up (§8).
 
 ## Context
 

@@ -131,7 +131,7 @@ With `work:10` and an overall assistant, a **Today** section comes above Decisio
 6. **Talk to Assistant** (`work:15`, ADR 0054) opens the overall assistant's Chat: its root Ask session, started on the first tap and the same one after. It is also in the `+` sheet while the sheet is empty. iOS shows it as a row above Plan Now; Android as **Talk** in the header. muxa for tmux: `prefix + A`, the overall workspace, then its only row.
 
 - iOS: a tap on Plan Now sets no time limit. A long press offers "I Have 30 minutes", "1 hour" or "2 hours".
-- Android: Plan now opens a dialog with an optional "Minutes you have" field (1 to 1440).
+- Android: **Re-rank** (ADR 0059 §5) opens a dialog with an optional "Minutes you have" field (1 to 1440). With `work:17`, a line under the header and the dialog say "2 of 3 runs left today".
 - The apps do not show `changed` (a row new or moved since the previous plan). muxa for tmux and `muxa-cli plan` do.
 
 The overall assistant's proposals are Decisions items of kind `sort` (sort an unsorted Capture) and `delegate` (ask a workspace's assistant to work on a Work item). Their answers are **Approve**, **Reject** and **Later**. Approve runs the action once; approving twice makes nothing new. A `delegate` the host sent itself (`overall_requests = "auto"`) is already answered, and its summary says so.
@@ -163,7 +163,7 @@ plan:  K/J move   x not today   t Re-rank (2 of 3 runs left today)
 3. **also** lists the target's other keys.
 4. **plan** changes the queue, not the target. **Re-rank** (`t`, `muxa-cli plan now`) ranks the queue again from what is open now. Each one is a run of the overall workspace's `max_runs_per_day`. With `work:17`, the host sends `assistant.overallRuns`, and the line says how many are left today.
 
-The iOS and Android apps keep the layout above until their follow-up (ADR 0059 §7).
+Android (ADR 0059 §7): a row reads `<verb> · <title>`. A tap is the main action. **Details** opens Do, the main action's button, Send with its receiver ("Send to the secretary (secretary), with this Work item" at `work:17`), then Why, Time, Basis and Would help. A row whose target takes no text says so instead of Send. Work detail has **Send to the Secretary** at `work:17`. A Work row's tap opens Work detail; Android has no Work menu. The iOS app keeps the layout above until its follow-up.
 
 ## Policies, Today order and hypotheses (ADR 0050)
 
@@ -267,6 +267,8 @@ With `work:18`, the assistant proposes a Task when the work needs code or other 
 5. **Talking to the Task.** A Task's items keep Send to the Task's agent. The Work item's menu lists Open its Task, and Send to its Task's agent when the Task has an open item.
 
 A client below `work:18` shows a `new-task` item as an unknown kind whose Approve, reply box, ✓ and Later work. It never sends `start-task`.
+
+Android: the item shows a **Proposed Task** card (title, workspace and repo, goal, "Starts in plan mode"). **Start Task** is the main button; beside a hand-off, **Hand off to `<member>`** stays next to it. After Start Task the item screen says "Task started" with **Open its Task**. A plan item is titled Plan, with **Approve plan**, **Keep planning** and the reply box "Keep planning & send…". When Approve plan finds no option to press, a dialog says to approve in the terminal and offers **Open Session**.
 
 muxa for tmux (`prefix + T`): `a` is Start Task, or `n` beside a hand-off; on a `🛠` item `s` goes to the secretary; on a plan item `a` approves the plan, `r` keeps planning, `s` keeps planning and sends; `o` or Enter on an item that started a Task opens it. CLI: `muxa-cli task propose`, `muxa-cli inbox answer ITEM start`.
 
