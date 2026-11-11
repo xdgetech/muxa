@@ -205,6 +205,7 @@ fn a_failed_request_makes_one_failure_item_with_the_trust_reason() {
     assert_eq!(
         item.answers,
         [
+            InboxAction::Retry,
             InboxAction::Dismiss,
             InboxAction::AskAgent,
             InboxAction::Later

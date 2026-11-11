@@ -72,6 +72,12 @@ impl Keeper {
         Act::Start
     }
 
+    /// Retry on the give-up item (ADR 0061): the cap starts over.
+    pub fn reset(&mut self) {
+        self.starts.clear();
+        self.gave_up = false;
+    }
+
     #[cfg(test)]
     fn gave_up(&self) -> bool {
         self.gave_up
@@ -139,5 +145,25 @@ mod tests {
         assert_eq!(k.decide(0, Seen::Stopped, &L), Act::Start);
         assert_eq!(k.decide(10, Seen::Running, &L), Act::Nothing);
         assert_eq!(k.decide(3600, Seen::Stopped, &L), Act::Start);
+    }
+
+    #[test]
+    fn retry_starts_at_once_with_a_fresh_cap() {
+        let mut k = Keeper::default();
+        for at in [0, 5, 35, 155] {
+            assert_eq!(k.decide(at, Seen::Stopped, &L), Act::Start);
+        }
+        assert_eq!(k.decide(400, Seen::Stopped, &L), Act::GiveUp);
+        k.reset();
+        assert!(!k.gave_up());
+        let mut acts = Vec::new();
+        for now in 401..1000 {
+            if let a @ (Act::Start | Act::GiveUp) = k.decide(now, Seen::Stopped, &L) {
+                acts.push((now, a));
+            }
+        }
+        assert_eq!(acts[0], (401, Act::Start), "{acts:?}");
+        assert_eq!(acts.last().map(|a| a.1), Some(Act::GiveUp), "{acts:?}");
+        assert_eq!(acts.len(), 5, "four starts, then the cap again: {acts:?}");
     }
 }

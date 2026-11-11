@@ -465,8 +465,30 @@ async fn a_plan_whose_agent_never_becomes_idle_makes_one_failure_item() {
         (found[0].title.as_str(), found[0].workspace.as_str()),
         ("Overall plan", "Overall")
     );
-    assert_eq!(found[0].answers[0], InboxAction::Dismiss);
+    assert_eq!(found[0].answers[0], InboxAction::Retry);
     assert!(h.turns().is_empty(), "{:?}", h.turns());
+
+    // Retry runs a new plan now (ADR 0061); a second press returns it.
+    let _ = std::fs::remove_file(h.base.join("steer/hold"));
+    let retry = json!({"type": "update-inbox", "entry": found[0].id, "action": "retry"});
+    let retried = conn.request(retry.clone()).await;
+    let new = match retried.as_slice() {
+        [
+            Message::PlanSaved { entry, .. },
+            Message::InboxSaved { item: Some(i), .. },
+            Message::Result { error: None, .. },
+        ] => {
+            assert_eq!(i.answer, Some(InboxAction::Retry));
+            entry.id.clone()
+        }
+        other => panic!("retry: {other:?}"),
+    };
+    assert_ne!(new, id);
+    let again = conn.request(retry).await;
+    assert!(
+        matches!(again.first(), Some(Message::PlanSaved { entry, .. }) if entry.id == new),
+        "{again:?}"
+    );
     daemon.shutdown().await;
 }
 

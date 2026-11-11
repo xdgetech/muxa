@@ -205,6 +205,20 @@ pub fn line(item: &InboxItem, now: u64) -> String {
     )
 }
 
+/// What Retry on an assistant run's failure started (ADR 0061).
+fn retried(messages: &[Message]) -> Option<String> {
+    messages.iter().find_map(|m| match m {
+        Message::WorkSaved {
+            request: Some(q), ..
+        } => Some(format!(
+            "Request {} asked again as version {}",
+            q.id, q.version
+        )),
+        Message::PlanSaved { entry, .. } => Some(format!("Plan {} started", entry.id)),
+        _ => None,
+    })
+}
+
 pub async fn answer(
     mut conn: Conn,
     item: &str,
@@ -277,6 +291,9 @@ pub async fn answer(
         Message::TaskSaved { record, .. } => Some(record.id.clone()),
         _ => None,
     });
+    let retried = (action == InboxAction::Retry)
+        .then(|| retried(&messages))
+        .flatten();
     let saved = messages
         .into_iter()
         .find_map(|m| match m {
@@ -290,6 +307,9 @@ pub async fn answer(
         println!("{}", line(&saved, crate::when::now()));
         if let Some(task) = started {
             println!("Task started: {task}");
+        }
+        if let Some(line) = retried {
+            println!("{line}");
         }
     }
     // A new or restarted agent gets its prompt after the answer.

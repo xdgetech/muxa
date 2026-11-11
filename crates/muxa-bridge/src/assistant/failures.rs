@@ -208,7 +208,8 @@ fn make(store: &ItemStore, f: &Failure, now: u64) -> Result<Option<String>, Stat
     })
 }
 
-/// No Task and no session: the run is not the user's to drop or retry.
+/// No Task and no session: the run is not the user's to drop. Retry runs
+/// it again through `proposals::retry` (ADR 0061).
 fn item_for(f: &Failure, id: String, at: u64) -> InboxItem {
     let question = one_line(&f.reason, MAX_QUESTION);
     let summary = (question != f.reason).then(|| f.reason.clone());

@@ -35,6 +35,8 @@ pub struct Resident {
     observed: Option<Instant>,
     /// No look before this: tmux was not reachable.
     quiet_until: Option<Instant>,
+    /// The last Retry the keeper took, from the state file's `retryAt`.
+    retry_seen: Option<u64>,
 }
 
 impl Default for Resident {
@@ -47,6 +49,7 @@ impl Default for Resident {
             checked: None,
             observed: None,
             quiet_until: None,
+            retry_seen: None,
         }
     }
 }
@@ -125,6 +128,7 @@ pub async fn tick(cx: &Context, r: &mut Resident) {
         return;
     }
     note_failed_resume(&state_dir, now).await;
+    take_retry(&state_dir, r).await;
     match r.keeper.decide(now, seen, &r.limits) {
         Act::Nothing => {}
         Act::Start => match agent.filter(|p| p.dead) {
@@ -172,6 +176,29 @@ async fn respawn(client: &Client, ws: &Workspace, default: &str, state_dir: &Pat
         Err(e) => {
             tracing::warn!(pane = %pane.id, error = %e, "cannot respawn the secretary's agent")
         }
+    }
+}
+
+/// A Retry the keeper has not taken resets the restart cap. A `retryAt`
+/// from before this daemon started resets a cap that is fresh anyway.
+async fn take_retry(state_dir: &Path, r: &mut Resident) {
+    let dir = state_dir.to_path_buf();
+    let read = tokio::task::spawn_blocking(move || file::read(&dir)).await;
+    let retry_at = match read {
+        Ok(Ok(s)) => s.retry_at,
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "cannot read the secretary's state");
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "the secretary's state read stopped");
+            return;
+        }
+    };
+    if retry_at.is_some() && retry_at != r.retry_seen {
+        r.retry_seen = retry_at;
+        r.keeper.reset();
+        tracing::info!("secretary restart cap reset by Retry");
     }
 }
 

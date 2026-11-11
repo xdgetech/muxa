@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 use common::daemon::{Conn, Daemon};
 use common::{Bridge, Server};
 use muxa_protocol::{
-    AssistantRequest, Delivery, ErrorCode, InboxAction, InboxItem, ItemKind, Message, WorkItem,
+    AssistantRequest, Delivery, ErrorCode, InboxAction, InboxItem, ItemKind, ItemState, Message,
+    WorkItem,
 };
 use serde_json::{Value, json};
 
@@ -490,6 +491,40 @@ async fn invalid_results_fail_the_request_after_three_checks() {
         failure.question,
         "The agent's result did not pass the check, also after the fail prompts."
     );
+    assert_eq!(failure.answers[0], InboxAction::Retry);
+
+    // Retry asks the same request again as a new version (ADR 0061).
+    h.steer("first.json", &good());
+    let retry = json!({"type": "update-inbox", "entry": failure.id, "action": "retry"});
+    let retried = conn.request(retry.clone()).await;
+    let v2 = match retried.as_slice() {
+        [
+            Message::WorkSaved {
+                request: Some(r), ..
+            },
+            Message::InboxSaved { item: Some(i), .. },
+            Message::Result { error: None, .. },
+        ] => {
+            assert_eq!(
+                (i.state, i.answer),
+                (ItemState::Answered, Some(InboxAction::Retry))
+            );
+            assert!(i.answers.is_empty(), "{i:?}");
+            (**r).clone()
+        }
+        other => panic!("retry: {other:?}"),
+    };
+    assert_eq!((v2.id.as_str(), v2.version), (q.id.as_str(), 2));
+    assert_eq!(v2.purpose, q.purpose);
+    // A second press returns the same version and starts nothing.
+    let again = conn.request(retry).await;
+    assert!(
+        matches!(again.first(), Some(Message::WorkSaved { request: Some(r), .. })
+        if r.version == 2 && r.run == v2.run),
+        "{again:?}"
+    );
+    until(&mut conn, &h, &q.id, Delivery::Resulted).await;
+    assert_eq!(h.runs(), 2);
     let log = daemon.log();
     for mark in MARKS {
         assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
@@ -789,6 +824,7 @@ async fn a_run_stuck_on_the_trust_dialog_fails_with_one_failure_item() {
     assert_eq!(
         failure.answers,
         [
+            InboxAction::Retry,
             InboxAction::Dismiss,
             InboxAction::AskAgent,
             InboxAction::Later

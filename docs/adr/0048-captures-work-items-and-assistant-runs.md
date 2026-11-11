@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stages PA0 and PA1 of ADR 0045 ([specification](../personal-assistant.md)). It changes ADR 0035 §5: `+` opens Capture on a host with `work:9`. It widens the Inbox screen of ADR 0033 without changing its items. Slices A0–A12 are implemented.
+Proposed on 2026-11-09. It implements stages PA0 and PA1 of ADR 0045 ([specification](../personal-assistant.md)). It changes ADR 0035 §5: `+` opens Capture on a host with `work:9`. It widens the Inbox screen of ADR 0033 without changing its items. Slices A0–A12 are implemented. Amended by ADR 0061: an assistant run's `failure` item also offers Retry.
 
 ## Context
 

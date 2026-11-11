@@ -27,6 +27,9 @@ pub struct State {
     /// When a resumed start exited at once and muxa dropped the id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_failed_at: Option<u64>,
+    /// When Retry on the give-up item asked for a fresh restart cap (ADR 0061).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +135,7 @@ mod tests {
                 resume: Some("abc".into()),
             }),
             resume_failed_at: None,
+            retry_at: None,
         };
         assert!(s.resume_failed(110, 30));
         assert!(!s.resume_failed(130, 30), "it ran for a while");

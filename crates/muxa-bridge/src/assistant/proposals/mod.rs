@@ -11,6 +11,7 @@ pub mod approve;
 mod handoff;
 pub mod inbox;
 mod memory;
+pub mod retry;
 mod send;
 pub mod task;
 mod write;

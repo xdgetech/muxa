@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-11-11. It amends ADR 0054 §1 and §7: "close after idle" is dropped, and resume is built. It amends ADR 0019 (the daemon's tmux client stays attached while the secretary is resident). No protocol change; hosts still advertise `work` level 15.
+Accepted on 2026-11-11. It amends ADR 0054 §1 and §7: "close after idle" is dropped, and resume is built. It amends ADR 0019 (the daemon's tmux client stays attached while the secretary is resident). No protocol change; hosts still advertise `work` level 15. Amended by ADR 0061: Retry on the give-up item resets the restart cap.
 
 ## Context
 

@@ -143,6 +143,12 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Later => Plan::Later,
         Accept => Plan::Status(TaskStatus::Done),
         Drop => Plan::Status(TaskStatus::Dropped),
+        // `routines::handle` sends an assistant run's failure to `assistant::proposals::retry`.
+        Retry if item.task.is_none() => {
+            return Err(bad(
+                "retry on an assistant failure runs through the assistant",
+            ));
+        }
         Retry => Plan::Restart,
         Branch => Plan::Branch,
         // `answers` never lists it, so the check above refused it already.

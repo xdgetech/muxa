@@ -219,6 +219,41 @@ fn today_action_fixtures_round_trip() {
     );
 }
 
+/// ADR 0061: Retry on an assistant run's failure item reuses `retry`.
+#[test]
+fn assistant_retry_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, ItemKind, ItemState};
+    assert_eq!(round_trip::<Request>("assistant-retry/requests.jsonl"), 4);
+    assert_eq!(round_trip::<Message>("assistant-retry/messages.jsonl"), 10);
+    let text = std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/assistant-retry/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let messages: Vec<Message> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::InboxList { items, .. } = &messages[1] else {
+        panic!("expected inbox-list")
+    };
+    for i in items {
+        assert_eq!((i.kind, i.task.as_deref()), (ItemKind::Failure, None));
+        assert_eq!(i.answers[0], InboxAction::Retry);
+    }
+    assert!(matches!(&messages[2], Message::WorkSaved { request: Some(q), .. } if q.version == 2));
+    assert!(matches!(&messages[5], Message::PlanSaved { .. }));
+    for m in [&messages[3], &messages[6], &messages[8]] {
+        let Message::InboxSaved { item: Some(i), .. } = m else {
+            panic!("expected inbox-saved: {m:?}")
+        };
+        assert_eq!(
+            (i.state, i.answer),
+            (ItemState::Answered, Some(InboxAction::Retry))
+        );
+    }
+}
+
 #[test]
 fn task_proposal_fixtures_round_trip() {
     use muxa_protocol::{InboxAction, ItemKind, WORK_TASK_PROPOSALS, work_level};

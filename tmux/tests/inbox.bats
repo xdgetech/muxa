@@ -99,6 +99,17 @@ shift_tab() { key Escape '[' Z; }
   [ "$output" = "space/b scroll   v read all   q close" ]
 }
 
+@test "an assistant run's failure offers a Retry (ADR 0061)" {
+  jq -c 'select(.type == "inbox-list") | {work: 18, items, entries: [], runs: []}' \
+    "$ROOT/../protocol/fixtures/assistant-retry/messages.jsonl" >"$TMPDIR/r.json"
+  keys() { inbox view "$1" "$TMPDIR/r.json" | sed $'s/\x1b\\[[0-9;]*m//g' | tail -n 3 | sed '$d'; }
+  for id in i-7b8c9d0e i-8c9d0e1f i-9d0e1f2a; do
+    [ "$(keys "$id")" = "$(printf 'l Later   d ✓ Done   p Protect\na Retry   s Ask Agent')" ]
+    [ "$(inbox key "$id" a "$TMPDIR/r.json")" = retry ]
+    [ "$(inbox key "$id" x "$TMPDIR/r.json")" = "" ]
+  done
+}
+
 @test "a question's numbers choose an option" {
   jq -c '.items[0].prompt = {entry: "toolu_02", kind: "question", question: "Which database?",
            options: [{label: "Postgres", keys: ["1"]}, {label: "SQLite", keys: ["2"]}]}

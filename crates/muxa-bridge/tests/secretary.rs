@@ -221,6 +221,26 @@ async fn a_crash_loop_stops_with_one_failure_item() {
     let text = std::fs::read_to_string(&items).unwrap();
     assert_eq!(text.matches("\"kind\": \"failure\"").count(), 1, "{text}");
     assert!(text.contains("\"workspace\": \"assistant\""), "{text}");
+
+    // Retry resets the cap: the daemon starts it again (ADR 0061).
+    let file: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let item = file["items"][0]["id"].as_str().unwrap().to_owned();
+    let mut conn = daemon.connect().await;
+    let retry = serde_json::json!({"type": "update-inbox", "entry": item, "action": "retry"});
+    for _ in 0..2 {
+        let answer = conn.request(retry.clone()).await;
+        match answer.as_slice() {
+            [
+                muxa_protocol::Message::InboxSaved { item: Some(i), .. },
+                muxa_protocol::Message::Result { error: None, .. },
+            ] => assert_eq!(i.answer, Some(muxa_protocol::InboxAction::Retry)),
+            other => panic!("retry: {other:?}"),
+        }
+    }
+    wait_for("no start after Retry", Duration::from_secs(20), || {
+        (host.lines("starts").len() > starts).then_some(())
+    })
+    .await;
     assert_eq!(desk(&server), before, "the desktop's session changed");
     drop(daemon);
 }

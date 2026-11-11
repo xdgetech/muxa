@@ -48,6 +48,12 @@ pub struct Approval {
     /// Epoch seconds: a `memory` item's text is in the workspace memory (ADR 0053 §3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_at: Option<u64>,
+    /// The plan a failed plan's Retry started (ADR 0061).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// Epoch seconds: Retry asked the daemon to start the secretary again (ADR 0061).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restarted_at: Option<u64>,
 }
 
 impl Approval {
@@ -64,6 +70,8 @@ impl Approval {
             || self.request.is_some()
             || self.task.is_some()
             || self.memory_at.is_some()
+            || self.plan.is_some()
+            || self.restarted_at.is_some()
     }
 
     /// Counts against `max_writes_per_day` from `day_start`: approved, or being approved.
