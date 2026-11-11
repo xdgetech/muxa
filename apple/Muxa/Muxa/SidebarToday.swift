@@ -29,6 +29,9 @@ struct SidebarTodaySection: View {
                 Text("No plan yet.").foregroundStyle(.secondary)
                     .accessibilityIdentifier("today-empty")
             }
+            if model.canTalkToAssistant {
+                TalkRow()
+            }
             if model.session.assistantInfo?.overall != nil {
                 PlanNowRow()
             }
@@ -291,6 +294,30 @@ private struct PlanNowRow: View {
         Task {
             defer { asking = false }
             error = await model.planNow(minutes: minutes)
+        }
+    }
+}
+
+/// Talk to Assistant (ADR 0054): the overall assistant's Chat, beside Plan Now.
+private struct TalkRow: View {
+    @Environment(AppModel.self) private var model
+    @State private var opening = false
+    @State private var error: String?
+
+    var body: some View {
+        Button("Talk to Assistant", systemImage: Icon.chat) {
+            opening = true
+            error = nil
+            Task {
+                defer { opening = false }
+                error = await model.talkToAssistant()
+            }
+        }
+        .disabled(opening)
+        .accessibilityIdentifier("today-talk")
+        if let error {
+            Label(error, systemImage: Icon.warning).font(.callout).foregroundStyle(Theme.failure)
+                .accessibilityIdentifier("today-talk-error")
         }
     }
 }

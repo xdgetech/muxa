@@ -41,11 +41,35 @@ extension PaneSession {
         guard canAsk else {
             throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.askUnsupported))
         }
+        return try await start { .startSession(id: $0, workspace: workspace, repo: repo) }
+    }
+
+    /// The overall assistant's workspace when the host opens its root Ask session:
+    /// `work` level 15 and an overall workspace (ADR 0054). Talk to Assistant shows then.
+    public var assistantWorkspace: String? {
+        workLevel >= workAskRoot ? assistantInfo?.overall : nil
+    }
+
+    /// Opens the overall assistant's root Ask session, or starts it, and lists sessions
+    /// again (ADR 0054). Its Chat is the user's conversation with the assistant.
+    public func talkToAssistant() async throws -> StartedSession {
+        guard let workspace = assistantWorkspace else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.assistantUnsupported))
+        }
+        return try await start { .startRootSession(id: $0, workspace: workspace) }
+    }
+
+    /// Shown when the host has no overall assistant to talk to.
+    public static let assistantUnsupported =
+        "This host has no overall assistant to talk to. Set one up on the host, or update muxa there."
+
+    /// Sends `make`'s `start-session`, then lists sessions again, so the list has it.
+    private func start(_ make: (UInt64) -> Request) async throws -> StartedSession {
         var requestId: UInt64 = 0
         do {
             try await request { id in
                 requestId = id
-                return .startSession(id: id, workspace: workspace, repo: repo)
+                return make(id)
             }
         } catch {
             startedSessions[requestId] = nil

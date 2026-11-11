@@ -56,6 +56,11 @@ extension AppModel {
     }
 
     func captureSheetClosed() {
+        if let s = chatAfterCapture {
+            chatAfterCapture = nil
+            Task { await open(s, as: .chat) }
+            return
+        }
         guard let draft = taskAfterCapture else { return refocusPane() }
         taskAfterCapture = nil
         newRecord = draft

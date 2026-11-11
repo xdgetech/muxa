@@ -91,6 +91,30 @@ extension AppModel {
         let listed = row.work.flatMap { workItem($0)?.title } ?? row.item.flatMap { item($0)?.question }
         return row.shownTitle(listed: listed)
     }
+
+    // MARK: Talk to Assistant (ADR 0054)
+
+    /// The host opens the overall assistant's root Ask session: `work` level 15 and an overall workspace.
+    var canTalkToAssistant: Bool { isConnected && session.assistantWorkspace != nil }
+
+    /// Opens the overall assistant's root Ask session, or starts it, and shows its Chat, as
+    /// Ask Agent does. From the Capture sheet, the Chat opens once the sheet closed.
+    /// Returns the host's message when it refused.
+    func talkToAssistant(fromCapture: Bool = false) async -> String? {
+        do {
+            let started = try await session.talkToAssistant()
+            guard let s = session.sessions.first(where: { $0.id == started.id }) else { return nil }
+            if fromCapture {
+                chatAfterCapture = s
+                capture = nil
+            } else {
+                await open(s, as: .chat)
+            }
+            return nil
+        } catch {
+            return PaneSession.describe(error)
+        }
+    }
 }
 
 extension Minutes {

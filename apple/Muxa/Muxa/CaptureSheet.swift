@@ -48,6 +48,14 @@ struct CaptureSheet: View {
                         .accessibilityIdentifier("capture-start-task")
                     }
                 }
+                // Only on an empty sheet: the chat would leave a typed thought unsaved.
+                if model.canTalkToAssistant && draft.trimmed.isEmpty && !kept {
+                    Section {
+                        Button("Talk to Assistant", systemImage: Icon.chat) { talk() }
+                            .disabled(saving)
+                            .accessibilityIdentifier("capture-talk")
+                    }
+                }
                 // Below "Start a Task instead…", so a phone's keyboard leaves both in view.
                 if model.isConnected && !kept {
                     assistant
@@ -130,6 +138,15 @@ struct CaptureSheet: View {
             Text(draft.workspace == nil
                  ? "Ask needs a workspace: its assistant works on it on the host."
                  : "Ask makes a Work item and asks the workspace's assistant. It runs on the host.")
+        }
+    }
+
+    /// Talk to Assistant (ADR 0054): the sheet closes, then the assistant's Chat opens.
+    private func talk() {
+        saving = true
+        Task {
+            defer { saving = false }
+            error = await model.talkToAssistant(fromCapture: true)
         }
     }
 

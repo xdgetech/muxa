@@ -65,6 +65,8 @@ final class AppModel {
     var capture: CaptureDraft?
     /// "Start a Task instead…": the New Task form shown once the Capture sheet closed.
     var taskAfterCapture: TaskRecordDraft?
+    /// Talk to Assistant from the Capture sheet: the session whose Chat opens once it closed (ADR 0054).
+    var chatAfterCapture: Session?
     /// Captures saved while the connection was down; the demo keeps its own in memory.
     private(set) var unsent: UnsentCaptures
     private let savedUnsent: UnsentCaptures
