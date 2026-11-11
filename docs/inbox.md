@@ -119,7 +119,7 @@ Unsorted
 
 With `work:10` and an overall assistant, a **Today** section comes above Decisions. It shows the newest plan with a result.
 
-1. **Rows**: a queue of up to 10, most important first (ADR 0055). Each row shows its Work item's or Inbox item's title, the why, the minutes and the next step. A row of a Work item whose request has no answer yet, or whose newest Result is older than the item, says so. Tapping a row opens its Work item or Inbox item.
+1. **Rows**: a queue of up to 10, most important first (ADR 0057). Each row shows its Work item's or Inbox item's title, the why, the minutes and the next step. A row of a Work item whose request has no answer yet, or whose newest Result is older than the item, says so. Tapping a row opens its Work item or Inbox item.
    - The first open row says **Next**. Work down the queue in that order.
    - A row whose item you closed (done, withdrawn, answered, resolved, or gone from the host) is hidden.
    - When every row is closed or Not today, the section says "All done", and the host makes a new plan by itself. It makes one such plan per emptied plan, within the overall assistant's budgets. A reached budget shows as a failed plan with its reason.

@@ -33,7 +33,7 @@ extension AppModel {
     }
 
     /// Moves Today's shown row at `source` to `destination`, as a list's move gives them.
-    /// Hidden closed rows keep their places (ADR 0055). A refusal shows once, as Later's does.
+    /// Hidden closed rows keep their places (ADR 0057). A refusal shows once, as Later's does.
     func moveToday(_ plan: Plan, from source: IndexSet, to destination: Int) {
         let all = session.todayRows(of: plan)
         var shown = plan.queue(all).compactMap(\.rowId)

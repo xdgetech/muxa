@@ -209,7 +209,7 @@ fn ordered(p: &Plan) -> Vec<&PlanRow> {
     rows
 }
 
-/// Today as a queue (ADR 0055): the rows whose target is open, numbered
+/// Today as a queue (ADR 0057): the rows whose target is open, numbered
 /// among themselves; the first one not dismissed is `next`.
 fn rows_text(p: &Plan, listing: &Listing) -> String {
     let work = &listing.work;

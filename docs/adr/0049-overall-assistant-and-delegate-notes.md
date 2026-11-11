@@ -143,7 +143,7 @@ A plan never changes, so a Today row stays after the user closes its target. Cli
 
 ## Addendum (2026-11-11): Today is a ranked queue
 
-[ADR 0055](0055-today-is-a-ranked-queue.md) amends §5 and item 2 of the addendum above. `top[]` holds up to 10 rows, ranked most important first. Clients hide a row whose target closed and mark the first open row Next. When every row of the newest plan is closed or "not today", the host starts one plan within the budgets.
+[ADR 0057](0057-today-is-a-ranked-queue.md) amends §5 and item 2 of the addendum above. `top[]` holds up to 10 rows, ranked most important first. Clients hide a row whose target closed and mark the first open row Next. When every row of the newest plan is closed or "not today", the host starts one plan within the budgets.
 
 ## Addendum (2026-11-11): a resident conversation
 

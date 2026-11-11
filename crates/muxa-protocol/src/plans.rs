@@ -9,7 +9,7 @@ use crate::{AssistScope, Delivery, Notes, SortAction, StaffMember, WriterInfo, W
 /// `assistant` in `inbox-list`.
 pub const WORK_PLANS: u32 = 10;
 
-/// One overall run's plan: at most 10 rows to do next, most important first (ADR 0055).
+/// One overall run's plan: at most 10 rows to do next, most important first (ADR 0057).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {

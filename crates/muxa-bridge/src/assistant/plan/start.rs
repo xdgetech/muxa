@@ -1,5 +1,5 @@
 //! Starting an overall run (ADR 0049 §5, §9): `plan-now`, a schedule's
-//! occurrence, or Today's refill (ADR 0055 §3). One plan is made at a time; a plan whose run timed out or
+//! occurrence, or Today's refill (ADR 0057 §3). One plan is made at a time; a plan whose run timed out or
 //! whose prompt was interrupted is `cancelled` by the next. Budgets are the
 //! overall workspace's and the host's. A scheduled or refill plan past a
 //! budget is kept as a `failed` plan with the reason, and the next occurrence runs.

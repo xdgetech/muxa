@@ -129,7 +129,7 @@ extension PaneSession {
 }
 
 extension Plan {
-    /// Today as a queue (ADR 0055): of `rows`, this plan's rows in the order shown, the ones
+    /// Today as a queue (ADR 0057): of `rows`, this plan's rows in the order shown, the ones
     /// whose target is open. Today hides the others.
     public func queue(_ rows: [PlanRow]) -> [PlanRow] { rows.filter { !$0.isClosed } }
 
@@ -138,7 +138,7 @@ extension Plan {
         queue(rows).first { row in !(row.rowId.map(dismissed.contains) ?? false) }
     }
 
-    /// Every row of `rows` closed, and there were rows: the host plans again (ADR 0055 §3).
+    /// Every row of `rows` closed, and there were rows: the host plans again (ADR 0057 §3).
     public func isDone(_ rows: [PlanRow]) -> Bool { !rows.isEmpty && queue(rows).isEmpty }
 }
 

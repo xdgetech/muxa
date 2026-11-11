@@ -35,7 +35,7 @@ This defines the product concepts used by the vision and milestone plan. Propose
 | Delegate notes | What does a workspace's assistant remember between runs? | The workspace memory, `<root>/.muxa/WORKSPACE.md` (ADR 0053), one per workspace. A run reads a copy and may propose a new text; it is written only when the user applies it, or by the host with `notes = "auto"` |
 | Overall assistant | Who looks across workspaces? | One workspace with `overall = true`. It reads only what each workspace's `share` allows. Its plan runs ask other workspaces only through proposals |
 | Conversation | Where do I talk to the overall assistant? | The overall workspace's root Ask session, `ask-<workspace>` (ADR 0054). It may stay open. It is the way in, not the record: what it decides goes to Captures, Work items and requests |
-| Plan | What should I do next? | `p-<8hex>`: one overall run's answer, a queue of up to 10 rows, most important first, with reasons and minutes. Made on a schedule, by Plan Now, or by the host when every row is closed (ADR 0055). The host keeps 7 |
+| Plan | What should I do next? | `p-<8hex>`: one overall run's answer, a queue of up to 10 rows, most important first, with reasons and minutes. Made on a schedule, by Plan Now, or by the host when every row is closed (ADR 0057). The host keeps 7 |
 | Proposal | What does the overall assistant want to do for me? | An Inbox item of kind `sort` or `delegate`, from the newest plan only |
 
 - A Work item's `pinnedAt` and `due` are the user's. A pinned item is listed first and fills the first plan rows. A plan's estimated deadline stays in its `basis`, never on the item.

@@ -72,7 +72,7 @@ fun LazyListScope.todaySection(model: AppModel) {
         plan != null && plan.top.isEmpty() -> item(key = "today-empty") { TodayNote("Nothing to rank in the newest plan.", "today-empty") }
         plan != null && plan.isDone -> item(key = "today-done") { TodayNote("All done. A new plan follows when the budget allows.", "today-done") }
     }
-    // The open rows in the user's order when they set one (ADR 0050 §6, ADR 0055); a row they
+    // The open rows in the user's order when they set one (ADR 0050 §6, ADR 0057); a row they
     // removed stays as one line, and the first other one is Next.
     val rows = plan?.queue.orEmpty()
     val next = plan?.nextRow?.target

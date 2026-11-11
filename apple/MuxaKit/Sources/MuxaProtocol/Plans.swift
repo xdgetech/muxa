@@ -3,7 +3,7 @@ import Foundation
 // Delegate notes, the overall assistant and its plans (ADR 0049), at `work` level 10.
 // A plan never changes a Work item, an Inbox item or their order.
 
-/// One overall run's plan, from `plan-saved` or `inbox-list`: at most 10 rows to do next, most important first (ADR 0055).
+/// One overall run's plan, from `plan-saved` or `inbox-list`: at most 10 rows to do next, most important first (ADR 0057).
 public struct Plan: Equatable, Sendable, Identifiable {
     /// `p-` and 8 hex digits.
     public var id: String

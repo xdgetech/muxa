@@ -7,7 +7,7 @@ import SwiftUI
 /// plan replaces the rows and shows New until a row is opened; it never changes the
 /// selection, which only a tap on a row does. At `work` level 11 the user drags rows
 /// into another order and removes one with Not today (ADR 0050 §7); a removed row
-/// collapses to one line. Today is a queue (ADR 0055): rows whose target closed are
+/// collapses to one line. Today is a queue (ADR 0057): rows whose target closed are
 /// hidden, and the first open row is Next.
 struct SidebarTodaySection: View {
     @Environment(AppModel.self) private var model
@@ -104,7 +104,7 @@ struct SidebarTodaySection: View {
 /// One row of the plan: the target's title, why, the minutes and what comes next. The
 /// title opens the Work item or the Inbox item; Why shows the basis and what is missing.
 /// A `delegate` row names the staff member the plan picked (ADR 0051 §7). The first open
-/// row says Next (ADR 0055).
+/// row says Next (ADR 0057).
 struct TodayRow: View {
     @Environment(AppModel.self) private var model
     let row: PlanRow

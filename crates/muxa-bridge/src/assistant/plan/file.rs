@@ -21,7 +21,7 @@ pub const PLAN: &str = ".muxa/assistant/plan.json";
 const NAME: &str = "plan.json";
 const SECTION: &str = "Plan file";
 pub const VERSION: u32 = 1;
-/// Rows of Today's queue (ADR 0055).
+/// Rows of Today's queue (ADR 0057).
 pub const MAX_TOP: usize = 10;
 const MAX_BASIS: usize = 5;
 const MAX_MISSING: usize = 5;

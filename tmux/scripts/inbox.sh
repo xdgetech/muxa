@@ -7,7 +7,7 @@
 # With level 9, Work items (w-) and unsorted Captures (c-) follow the items;
 # `a` on a Work item asks its workspace's assistant. With level 10, Today rows
 # (today:) of the newest plan come first (ADR 0049); `t` asks for a plan.
-# Today is a queue (ADR 0055): rows whose target closed are hidden, and the
+# Today is a queue (ADR 0057): rows whose target closed are hidden, and the
 # first open row that is not "not today" is Next (▶). A row id keeps its
 # place in the plan, so the numbers shown count the open rows only.
 # With level 11 (ADR 0050), K/J move a Today row, x takes it off Today, y
@@ -164,7 +164,7 @@ JQ_DEFS='
   def row_title($root): row_id as $id |
     ([($root.workItems // [])[], ($root.items // [])[] | select(.id == $id) | .title][0] // .title // $id) | plain;
   def closed_target: .targetState != null;
-  # Today as a queue (ADR 0055): {key, value} of today_rows whose target is
+  # Today as a queue (ADR 0057): {key, value} of today_rows whose target is
   # open; the key is its place in the plan.
   def shown_rows: [today_rows | to_entries[] | select(.value | closed_target | not)];
   def next_key($p): [shown_rows[] | select(.value | not_today($p) | not) | .key][0];

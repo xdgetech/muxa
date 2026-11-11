@@ -1,4 +1,4 @@
-//! Today refills itself (ADR 0055 §3): when every row of the newest
+//! Today refills itself (ADR 0057 §3): when every row of the newest
 //! `resulted` plan is closed or "not today", the daemon starts one plan, as
 //! `plan-now` does. One refill per emptied plan; the budgets still hold.
 use std::sync::Arc;

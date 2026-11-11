@@ -39,7 +39,7 @@ Do not edit it. Your plan runs propose changes to it, and the user approves them
 
 ## When the user asks what to do next
 
-Today is a queue, most important first (ADR 0055). Work it with the user one row at a time.
+Today is a queue, most important first (ADR 0057). Work it with the user one row at a time.
 
 1. Read `muxa-cli plan --json`. When its `delivery` is `resulted`, the queue is its `top`: in `userOrder` when that is set, without rows that have `targetState` (closed) or are in `dismissed` (not today).
    When the newest plan has no result yet or failed, `muxa-cli plan` prints the last plan with a result. Its row marked `next` is the first in the queue.

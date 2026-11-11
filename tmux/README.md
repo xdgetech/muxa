@@ -248,7 +248,7 @@ apps show, with a goal and a status.
     keeps it as a note.
   - With `work` level 10 and an overall assistant (ADR 0049), a Today section
     (`☀`) comes first: the queue of the newest plan with a result, up to 10
-    rows, most important first (ADR 0055). Each row has its time estimate and
+    rows, most important first (ADR 0057). Each row has its time estimate and
     `new` or `moved` since the plan before. The first open row is marked `▶`:
     do it next. Then one line of the items you moved down with Later that are
     due soon. The heading

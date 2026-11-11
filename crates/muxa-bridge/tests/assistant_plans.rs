@@ -7,7 +7,7 @@
 //! a delegate proposal to an `auto` workspace is sent once, without review.
 //! ADR 0050 slice C6: a forgotten correction and the hypothesis it grounds
 //! leave the next brief, a plan citing them is refused, and the log never
-//! held them. ADR 0055: an emptied Today plans again once, and a budget
+//! held them. ADR 0057: an emptied Today plans again once, and a budget
 //! stops the next refill with a reason.
 #![cfg(feature = "tmux-integration")]
 
@@ -631,7 +631,7 @@ async fn a_forgotten_correction_and_its_hypothesis_leave_the_next_plan() {
     let other = work_item(&mut conn, "c-other", "Read the notes.").await;
 
     // Plan 1, then the user dismisses its row with a reason. Its other row
-    // stays open, so Today does not refill (ADR 0055).
+    // stays open, so Today does not refill (ADR 0057).
     let mut plan1 = plan_json(&item.id);
     let mut row = plan1["top"][0].clone();
     row["work"] = json!(other.id);
@@ -751,7 +751,7 @@ async fn closed(h: &Host, task: &str) {
     }
 }
 
-/// ADR 0055 §3: when each row of Today is done or "not today", the host
+/// ADR 0057 §3: when each row of Today is done or "not today", the host
 /// plans once more. A reached budget keeps that refill as a failed plan,
 /// and the host does not try again.
 #[tokio::test(flavor = "multi_thread")]

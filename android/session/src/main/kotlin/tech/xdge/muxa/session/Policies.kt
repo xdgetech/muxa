@@ -36,13 +36,13 @@ val Plan.todayRows: List<PlanRow>
 /** The user removed the row from Today ("Not today"). */
 fun Plan.isDismissed(row: PlanRow): Boolean = row.target in dismissed
 
-/** Today as a queue (ADR 0055): [todayRows] whose target is open. Today hides the others. */
+/** Today as a queue (ADR 0057): [todayRows] whose target is open. Today hides the others. */
 val Plan.queue: List<PlanRow> get() = todayRows.filter { !it.isClosed }
 
 /** The row the user does next: the first open row not taken off Today. */
 val Plan.nextRow: PlanRow? get() = queue.firstOrNull { !isDismissed(it) }
 
-/** Every row closed, and there were rows: the host plans again (ADR 0055 §3). */
+/** Every row closed, and there were rows: the host plans again (ADR 0057 §3). */
 val Plan.isDone: Boolean get() = top.isNotEmpty() && queue.isEmpty()
 
 /**
