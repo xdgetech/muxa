@@ -5,11 +5,11 @@ import SwiftUI
 /// One Inbox item (docs/inbox.md, "The item screen"): the question and its source,
 /// the summary and the evidence; ✓, Later and the … menu in the top bar; the answers
 /// to the agent and the reply box at the bottom. Opening it marks it read; it never
-/// answers it. `answered` gets the item as the host saved it.
+/// answers it. `answered` gets the item as the host saved it, and the answer.
 struct InboxItemScreen: View {
     @Environment(AppModel.self) private var model
     let id: String
-    var answered: (InboxItem) -> Void
+    var answered: (InboxItem, InboxAction) -> Void
     @State private var reply = ""
     @State private var approving: InboxItem?
     @State private var rejecting: InboxItem?
@@ -291,7 +291,7 @@ struct InboxItemScreen: View {
         Task {
             defer { sending = false }
             do {
-                answered(try await model.session.approveWrite(item, shown: shown))
+                answered(try await model.session.approveWrite(item, shown: shown), .approve)
             } catch {
                 failure = PaneSession.describe(error)
             }
@@ -305,7 +305,7 @@ struct InboxItemScreen: View {
         Task {
             defer { sending = false }
             do {
-                answered(try await model.session.approveMemory(item, shown: shown))
+                answered(try await model.session.approveMemory(item, shown: shown), .approve)
             } catch {
                 failure = PaneSession.describe(error)
             }
@@ -348,7 +348,7 @@ struct InboxItemScreen: View {
                 }
                 reply = ""
                 replying = false
-                answered(saved)
+                answered(saved, action)
             } catch {
                 if let reason = PaneSession.lostWork(error) {
                     lostWork = LostWork(reason: reason) { send(item, action, option: option, worktree: .force) }

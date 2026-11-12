@@ -1,5 +1,6 @@
 package tech.xdge.muxa.app
 
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -255,6 +256,12 @@ class AppModel(
 
     /** The Inbox item the keys act on, by id. */
     var itemFocus by mutableStateOf<String?>(null)
+
+    /** The Inbox list's ids when the focus last followed it; kept while the list is not shown. */
+    internal var listedItems: List<String> = emptyList()
+
+    /** The Inbox list's scroll, here so it survives the list leaving the screen. */
+    val inboxListState = LazyListState()
 
     /** The reply box's text, per item, so a fold or the Reader keeps a draft. */
     var itemReplies by mutableStateOf<Map<String, String>>(emptyMap())

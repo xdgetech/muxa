@@ -50,7 +50,7 @@ tree pane, the first time it sees the result (see [muxa](#muxa)).
 
 ## Install
 
-Needs tmux ≥ 3.4, fzf ≥ 0.65 (tested with 0.74), jq, curl and git.
+Needs tmux ≥ 3.4, fzf ≥ 0.71 (tested with 0.74), jq, curl and git.
 
 1. Add to `~/.tmux.conf`, then reload it. `<muxa>` is your muxa checkout:
 
@@ -201,6 +201,9 @@ apps show, with a goal and a status.
     `Shift-Tab` to the previous one; both go around at the ends. A header is
     not an item: the item keys do nothing on it, and the item below the list
     says what the section holds. The cursor starts on the first item.
+  - After a key, the list updates in place and does not scroll. The cursor
+    stays on the item while it is listed. When the item closes, or Later
+    moves it down, the cursor goes to the item that took its place.
   - `j`/`k` move. The keys sit on two lines, as on the apps' item screen
     (ADR 0040). The first line is triage: `l` Later (the item moves below the
     others and stays there until you answer it), `d` ✓ Done (closes only the

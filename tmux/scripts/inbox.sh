@@ -25,6 +25,8 @@
 #        inbox.sh worker <work id> <json>  (asks on stdin which staff member; prints the name)
 #        inbox.sh jump next|prev <row> <header rows> | space <id>  (fzf actions)
 #        inbox.sh ui <client> [item id]
+#        inbox.sh act <id> <row> <key> <json> <state> <client> | relist <json>
+#        inbox.sh place <state> <json>  (fzf actions of the open list, see ui)
 set -u
 . "$(dirname "$0")/lib.sh"
 
@@ -278,10 +280,10 @@ jump() {
   [ -z "$pick" ] || echo "pos($pick)"
 }
 
-# The fzf action for space: accept on the Routine header (ui folds it), else
-# scroll the preview.
+# The fzf action for space on row <id>: on the Routine header, what Enter
+# does (<enter>: fold it in place), else scroll the preview.
 space_action() {
-  if [ "$1" = sec:routine ]; then echo accept; else echo preview-page-down; fi
+  if [ "$1" = sec:routine ]; then echo "${2:-accept}"; else echo preview-page-down; fi
 }
 
 # Folds or unfolds a section that starts folded, for this tmux server.
@@ -757,17 +759,140 @@ EOF
   esac
 }
 
+# The list again, fetched now: fzf's reload-sync after an action. The file is
+# replaced whole, so a preview never reads half of it.
+relist() {
+  local json="$1" tmp
+  tmp="$(mktemp "$json.XXXXXX")" || return 1
+  if muxa inbox --json </dev/null >"$tmp" 2>/dev/null; then mv "$tmp" "$json"; else rm -f "$tmp"; fi
+  list "$json"
+}
+
+# The header rows' 1-based numbers, for Tab and Shift-Tab after a reload.
+heads() {
+  list "$1" | awk -F'\t' '$1 == "today:" || $1 ~ /^sec:/ { printf "%s ", NR }'
+}
+
+# Where the cursor goes after a reload: the fzf action for the rows of <json>,
+# from <state> (id, 1-based row and keep|next|quit, split by US: a tab would
+# be read as whitespace, and an empty id would be lost). keep: the row of the
+# id, when it is still listed. next, or an id that left: the item now at the
+# old row, the next one in the old order, else the one before it. A header
+# never takes the cursor. quit, or nothing listed: abort.
+place() {
+  local state="$1" json="$2" id row mode
+  IFS=$'\037' read -r id row mode <"$state" 2>/dev/null || { id=""; row=1; mode=keep; }
+  [ "$mode" != quit ] || { echo abort; return 0; }
+  list "$json" | awk -F'\t' -v id="$id" -v row="${row:-1}" -v mode="${mode:-keep}" '
+    { ids[NR] = $1 }
+    mode != "next" && $1 == id { found = NR }
+    END {
+      if (NR == 0) { print "abort"; exit }
+      if (found) { print "pos(" found ")"; exit }
+      r = row > NR ? NR : (row < 1 ? 1 : row)
+      for (i = r; i <= NR; i++) if (ids[i] !~ /^sec:/ && ids[i] != id) { print "pos(" i ")"; exit }
+      for (i = r - 1; i >= 1; i--) if (ids[i] !~ /^sec:/ && ids[i] != id) { print "pos(" i ")"; exit }
+      for (i = 1; i <= NR; i++) if (ids[i] !~ /^sec:/) { print "pos(" i ")"; exit }
+      print "pos(1)"
+    }'
+}
+
+# Enter or o on row <id>: fold Routine, move from a Today row to its target,
+# or go to the item's session and leave the Inbox.
+open_row() {
+  local id="$1" json="$2" client="$3" target sid
+  case "$id" in
+    sec:routine) toggle_fold routine; return 0 ;;
+    sec:*) return 0 ;;
+    w-*) "$S/results.sh" seen "$id" "$json"; return 0 ;;
+    today:*)
+      # Moves to the row of the target; a target not listed stays put.
+      target="$(today_target "$id" "$json")"
+      if [ -n "$target" ] && list "$json" | cut -f1 | grep -qxF -- "$target"; then
+        FOCUS="$target"
+      fi
+      return 0
+      ;;
+  esac
+  sid="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .session // empty' "$json")"
+  if [ -n "$sid" ] && t has-session -t "$sid" 2>/dev/null; then
+    muxa inbox read "$id" </dev/null >/dev/null 2>&1
+    "$S/muxa.sh" goto "$client" "$sid"
+    MODE=quit
+    return 0
+  fi
+  echo "This item has no session to open."
+  sleep 1.5
+}
+
+# One key on row <id> (fzf's 0-based <n>), run from fzf's execute: the action,
+# then where the cursor goes after the reload, written to <state> for place.
+act() {
+  local id="$1" n="$2" key="$3" json="$4" state="$5" client="${6:-}"
+  FOCUS="$id" MODE=keep
+  run_key "$id" "$key" "$json" "$client"
+  printf '%s\037%s\037%s\n' "$FOCUS" "$((n + 1))" "$MODE" >"$state"
+}
+
+# What act runs for <key> on <id>. Sets FOCUS or MODE when the cursor moves.
+run_key() {
+  local id="$1" key="$2" json="$3" client="$4" aid act
+  case "$id:$key" in
+    *:enter | *:o) open_row "$id" "$json" "$client"; return 0 ;;
+    sec:*) return 0 ;;
+  esac
+  case "$key" in
+    ctrl-r) return 0 ;;
+    v) read_item "$id" "$json"; return 0 ;;
+    D) delete_old "$json"; return 0 ;;
+  esac
+  # A Today row's own keys first (t, y, K, J, x), then its target's.
+  aid="$id"
+  act="$(key_action "$id" "$key" "$json")"
+  case "$id" in
+    today:*)
+      if [ -z "$act" ]; then
+        aid="$(today_target "$id" "$json")"
+        [ -z "$aid" ] || act="$(key_action "$aid" "$key" "$json")"
+      fi
+      ;;
+  esac
+  case "$act" in
+    "") return 0 ;;
+    open:*) open_evidence "$aid" "${act#open:}" "$json"; return 0 ;;
+  esac
+  answer "$aid" "$act" "$json"
+  case "$act" in
+    # The moved row keeps the cursor.
+    plan:up) FOCUS="today:$((${id#today:} - 1))" ;;
+    plan:down) FOCUS="today:$((${id#today:} + 1))" ;;
+    # Later moves the item to the bottom (ADR 0040); the cursor takes the
+    # next item, as the apps do.
+    later | work:later) MODE=next ;;
+  esac
+}
+
+# The fzf binding of key <k> in ui: act, then the list again in place.
+key_bind() {
+  printf "execute(%s act {1} {n} %s '%s' '%s' '%s')+reload-sync(%s relist '%s')" \
+    "$self" "$1" "$json" "$state" "$client" "$self" "$json"
+}
+
+# prefix + T. fzf stays open: a key runs act, then reload-sync lists the Inbox
+# again in place, so the scroll stays, and place puts the cursor back.
 ui() {
-  local client="$1" focus="${2:-}" fetch=1 json rows heads pos picked key id act sid target
+  local client="$1" focus="${2:-}" json state self rows bind k keys
   json="$(agents_run_dir)/inbox-ui-$$.json"
-  trap 'rm -f "$json"' EXIT
+  state="$(agents_run_dir)/inbox-ui-$$.state"
+  trap 'rm -f "$json" "$state"' EXIT
+  self="'$S/inbox.sh'"
+  keys="enter o a c d s r x l n w v p P t K J y D 1 2 3 4 5 6 7 8 9"
   while :; do
-    if [ "$fetch" = 1 ] && ! muxa inbox --json </dev/null >"$json" 2>/dev/null; then
+    if ! muxa inbox --json </dev/null >"$json" 2>/dev/null; then
       echo "muxa could not list the Inbox; try muxa-cli inbox."
       pause
       return 1
     fi
-    fetch=1
     # An older muxa has no items: its Task list instead.
     if [ "$(jq -r '.work // 0' "$json")" -lt 3 ]; then
       exec "$S/muxa.sh" inbox-ui "$client"
@@ -778,82 +903,29 @@ ui() {
       sleep 1.5
       break
     fi
-    # The focused row, else the first row that is not a section header.
-    pos="$(printf '%s\n' "$rows" | awk -F'\t' -v f="$focus" '
-      $1 == f { print NR; found = 1; exit }
-      !first && $1 !~ /^sec:/ { first = NR }
-      END { if (!found) print (first ? first : 1) }')"
-    heads="$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "today:" || $1 ~ /^sec:/ { printf "%s ", NR }')"
-    # --sync so start:pos lands after the rows load, also after an answer.
-    picked="$(printf '%s\n' "$rows" | fzf --sync --ansi --no-input --delimiter '\t' --with-nth 2 --no-sort \
+    printf '%s\0371\037keep\n' "$focus" >"$state"
+    bind=""
+    for k in $keys; do
+      bind="$bind${bind:+,}$k:$(key_bind "$k")"
+    done
+    # --sync so the first load's place lands after the rows load.
+    printf '%s\n' "$rows" | fzf --sync --ansi --no-input --delimiter '\t' --with-nth 2 --no-sort \
       --layout reverse --info hidden --pointer '▌' --highlight-line \
-      --preview "'$S/inbox.sh' view {1} '$json'" --preview-window "down,70%,$(preview_wrap),border-top" \
-      --bind "start:pos($pos)" --bind 'j:down,k:up,q:abort' \
-      --bind "tab:transform:'$S/inbox.sh' jump next {n} '$heads'" \
-      --bind "btab:transform:'$S/inbox.sh' jump prev {n} '$heads'" \
-      --bind "space:transform:'$S/inbox.sh' space {1}" \
+      --preview "$self view {1} '$json'" --preview-window "down,70%,$(preview_wrap),border-top" \
+      --bind "load:transform($self place '$state' '$json')" \
+      --bind 'j:down,k:up,q:abort' \
+      --bind "ctrl-r:execute-silent($self act {1} {n} ctrl-r '$json' '$state')+reload-sync($self relist '$json')" \
+      --bind "tab:transform($self jump-in next {n} '$json')" \
+      --bind "btab:transform($self jump-in prev {n} '$json')" \
+      --bind "space:transform:$self space {1} \"$(key_bind enter)\"" \
       --bind 'b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
-      --expect 'enter,ctrl-r,a,c,d,s,r,x,l,n,w,o,v,p,P,t,K,J,y,D,1,2,3,4,5,6,7,8,9')" || break
-    key="$(printf '%s\n' "$picked" | sed -n '1p')"
-    id="$(printf '%s\n' "$picked" | sed -n '2p' | cut -f1)"
-    focus="$id"
-    [ -n "$id" ] || continue
-    case "$id:$key" in
-      # Space's accept leaves the key empty.
-      sec:routine:enter | sec:routine:) toggle_fold routine; fetch=0; continue ;;
-      sec:*:enter | sec:*:o | sec:*:v) fetch=0; continue ;;
-    esac
-    case "$key" in
-      ctrl-r) continue ;;
-      v) read_item "$id" "$json" ;;
-      D) delete_old "$json" ;;
-      enter | o)
-        case "$id" in
-          w-*) "$S/results.sh" seen "$id" "$json" ;;
-          today:*)
-            # Moves to the row of the target; a target not listed stays put.
-            target="$(today_target "$id" "$json")"
-            if [ -n "$target" ] && printf '%s\n' "$rows" | cut -f1 | grep -qxF -- "$target"; then
-              focus="$target"
-            fi
-            continue
-            ;;
-        esac
-        sid="$(jq -r --arg item "$id" '.items[] | select(.id == $item) | .session // empty' "$json")"
-        if [ -n "$sid" ] && t has-session -t "$sid" 2>/dev/null; then
-          muxa inbox read "$id" </dev/null >/dev/null 2>&1
-          "$S/muxa.sh" goto "$client" "$sid"
-          break
-        fi
-        echo "This item has no session to open."
-        sleep 1.5
-        ;;
-      *)
-        # A Today row's own keys first (t, y, K, J, x), then its target's.
-        aid="$id"
-        act="$(key_action "$id" "$key" "$json")"
-        case "$id" in
-          today:*)
-            if [ -z "$act" ]; then
-              aid="$(today_target "$id" "$json")"
-              [ -z "$aid" ] || act="$(key_action "$aid" "$key" "$json")"
-            fi
-            ;;
-        esac
-        case "$act" in
-          "") ;;
-          open:*) open_evidence "$aid" "${act#open:}" "$json" ;;
-          *)
-            answer "$aid" "$act" "$json"
-            # The moved row keeps the cursor.
-            case "$act" in
-              plan:up) focus="today:$((${id#today:} - 1))" ;;
-              plan:down) focus="today:$((${id#today:} + 1))" ;;
-            esac
-            ;;
-        esac
-        ;;
-    esac
+      --bind "$bind" >/dev/null
+    # place aborts when the list is empty: say so, as on the first listing.
+    if IFS=$'\037' read -r _ _ k <"$state" && [ "$k" != quit ] && [ -z "$(list "$json")" ]; then
+      focus=""
+      continue
+    fi
+    break
   done
   cache --force
 }
@@ -869,7 +941,11 @@ case "${1:-}" in
   order) today_order "${2:?today row}" "${3:?up or down}" "${4:?json}" ;;
   worker) pick_worker "${2:?work id}" "${3:?json}" ;;
   jump) jump "${2:?next or prev}" "${3:?row}" "${4:-}" ;;
-  space) space_action "${2:-}" ;;
+  space) space_action "${2:-}" "${3:-}" ;;
   ui) tty_utf8; ui "${2:?client}" "${3:-}" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | jump next|prev <row> <header rows> | space <id> | ui <client> [item id]" >&2; exit 2 ;;
+  act) act "${2:?id}" "${3:?row}" "${4:?key}" "${5:?json}" "${6:?state}" "${7:-}" ;;
+  relist) relist "${2:?json}" ;;
+  place) place "${2:?state}" "${3:?json}" ;;
+  jump-in) jump "${2:?next or prev}" "${3:?row}" "$(heads "${4:?json}")" ;;
+  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | jump next|prev <row> <header rows> | space <id> | ui <client> [item id] | act <id> <row> <key> <json> <state> <client> | relist <json> | place <state> <json> | jump-in next|prev <row> <json>" >&2; exit 2 ;;
 esac

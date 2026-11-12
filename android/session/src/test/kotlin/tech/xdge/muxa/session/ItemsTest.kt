@@ -339,4 +339,34 @@ class ItemsTest {
         assertEquals(true, later.isWaiting(now = 500))
         assertEquals(false, item("i-2", ItemKind.ASK, emptyList(), ItemState.RESOLVED).isWaiting(now = 0))
     }
+
+    @Test
+    fun theFocusStaysOnAnItemThatStays() {
+        assertEquals("b", nextFocus("b", listOf("a", "b", "c"), listOf("a", "b", "c")))
+        // New items above keep it.
+        assertEquals("b", nextFocus("b", listOf("a", "b", "c"), listOf("x", "y", "a", "b", "c")))
+    }
+
+    @Test
+    fun theFocusTakesTheNextItemWhenItsItemLeaves() {
+        assertEquals("c", nextFocus("b", listOf("a", "b", "c"), listOf("a", "c")))
+        // The next one left too: the one after it.
+        assertEquals("d", nextFocus("b", listOf("a", "b", "c", "d"), listOf("a", "d")))
+        // The last one left: the new last.
+        assertEquals("b", nextFocus("c", listOf("a", "b", "c"), listOf("a", "b")))
+    }
+
+    @Test
+    fun laterCountsAsLeaving() {
+        assertEquals("c", nextFocus("b", listOf("a", "b", "c"), listOf("a", "c", "b"), movedDown = true))
+        // Later on the last item: the one above it.
+        assertEquals("b", nextFocus("c", listOf("a", "b", "c"), listOf("a", "b", "c"), movedDown = true))
+        // Alone in the list, it keeps the focus.
+        assertEquals("a", nextFocus("a", listOf("a"), listOf("a"), movedDown = true))
+    }
+
+    @Test
+    fun anEmptyListHasNoFocus() {
+        assertNull(nextFocus("a", listOf("a"), emptyList()))
+    }
 }

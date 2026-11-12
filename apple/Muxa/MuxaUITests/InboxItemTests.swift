@@ -208,6 +208,23 @@ final class InboxItemTests: XCTestCase {
         XCTAssertTrue(app.buttons[id].exists, "Later hides nothing")
     }
 
+    /// Later on the item screen counts as leaving: a tablet shows the item that was below it,
+    /// though the item stays listed; a phone returns to the list.
+    @MainActor
+    func testLaterOnTheItemShowsTheNext() throws {
+        let app = launchOnInbox()
+        open(app, "i-0000a001", question: "Allow Bash: npm run deploy")
+        tapWhenReady(answer(app, "later"))
+        let moved = expectation(for: NSPredicate { _, _ in self.lastRowId(app) == "item-row-i-0000a001" }, evaluatedWith: nil)
+        wait(for: [moved], timeout: 5)
+        if isPhone {
+            XCTAssertTrue(app.staticTexts["item-question"].waitForNonExistence(timeout: 5), "a phone returns to the list")
+        } else {
+            waitForQuestion(app, "Which test runner should the suite use?")
+            XCTAssertTrue(row(app, "i-0000a004").isSelected)
+        }
+    }
+
     /// The lowest item row on screen. The query's order is not the list's.
     private func lastRowId(_ app: XCUIApplication) -> String? {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'item-row-'")).allElementsBoundByIndex

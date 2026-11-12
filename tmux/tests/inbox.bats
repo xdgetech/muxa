@@ -373,7 +373,110 @@ briefed_inbox() {
   [ "$(inbox jump prev 4 '1 5 10')" = "pos(1)" ]
   [ "$(inbox jump prev 0 '1 5 10')" = "pos(10)" ]
   [ "$(inbox space sec:routine)" = accept ]
+  [ "$(inbox space sec:routine 'execute(fold)')" = 'execute(fold)' ]
   [ "$(inbox space i-0a1b2c3d)" = preview-page-down ]
+}
+
+# place's state: the id, the 1-based row and keep|next|quit, split by US.
+at() { printf '%s\037%s\037%s\n' "$1" "$2" "${3:-keep}" >"$TMPDIR/cursor"; }
+place() { inbox place "$TMPDIR/cursor" "$1"; }
+
+@test "after a reload the cursor stays on an item that changed but is still listed" {
+  # Rows: 1 Decisions, 2 i-0a1b2c3d, 3 i-2c3d4e5f, 4 i-3d4e5f6a, 5 e-1a2b3c4d.
+  jq -c '.items[1].protectedAt = 1' "$ITEMS" >"$TMPDIR/p.json"
+  at i-2c3d4e5f 3
+  [ "$(place "$TMPDIR/p.json")" = "pos(3)" ]
+}
+
+@test "after a reload an item that left gives the cursor to the item now in its place" {
+  jq -c '.items[1].state = "answered"' "$ITEMS" >"$TMPDIR/a.json"
+  at i-2c3d4e5f 3
+  [ "$(place "$TMPDIR/a.json")" = "pos(3)" ]
+  [ "$(inbox list "$TMPDIR/a.json" | sed -n 3p | cut -f1)" = i-3d4e5f6a ]
+  # The last item left: the one before it.
+  jq -c '.items[3].state = "answered"' "$ITEMS" >"$TMPDIR/l.json"
+  at e-1a2b3c4d 5
+  [ "$(place "$TMPDIR/l.json")" = "pos(4)" ]
+  # A header now on the old row: the next item row.
+  at i-gone 1
+  [ "$(place "$ITEMS")" = "pos(2)" ]
+  # Nothing left to list, or the user went to a session: fzf closes.
+  jq -c '.items[].state = "answered"' "$ITEMS" >"$TMPDIR/e.json"
+  [ "$(place "$TMPDIR/e.json")" = abort ]
+  at i-0a1b2c3d 2 quit
+  [ "$(place "$ITEMS")" = abort ]
+}
+
+@test "after a reload new items above the cursor move it down with its item" {
+  jq -c '.items = [(.items[0] | .id = "i-new1"), (.items[0] | .id = "i-new2")] + .items' \
+    "$ITEMS" >"$TMPDIR/n.json"
+  at i-2c3d4e5f 3
+  [ "$(place "$TMPDIR/n.json")" = "pos(5)" ]
+}
+
+@test "after Later the cursor takes the next item, not the item moved to the bottom" {
+  jq -c '.items = [.items[0], .items[2], .items[3], .items[1]]' "$ITEMS" >"$TMPDIR/m.json"
+  at i-2c3d4e5f 3 next
+  [ "$(place "$TMPDIR/m.json")" = "pos(3)" ]
+  [ "$(inbox list "$TMPDIR/m.json" | sed -n 3p | cut -f1)" = i-3d4e5f6a ]
+}
+
+# A muxa-cli as fake_cli's, whose answers change $ITEMS: accept closes the
+# item, later moves it to the bottom.
+acting_cli() {
+  fake_cli
+  cat >"$TMPDIR/bin/muxa-cli" <<FAKE
+#!/bin/sh
+(shift 2; echo "\$*") >>"$TMPDIR/bin/calls"
+if [ "\$3" = inbox ] && [ "\$4" = answer ]; then
+  case "\$6" in
+    accept) jq -c --arg id "\$5" '(.items[] | select(.id == \$id)).state = "answered"' "$ITEMS" ;;
+    later) jq -c --arg id "\$5" '.items = [.items[] | select(.id != \$id)] + [.items[] | select(.id == \$id)]' "$ITEMS" ;;
+    *) cat "$ITEMS" ;;
+  esac >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+fi
+cat "$ITEMS"
+FAKE
+}
+
+@test "prefix+T: after an item closes, the next key answers the item that took its place" {
+  acting_cli
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key c
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f accept --json$" "$TMPDIR/bin/calls"'
+  sleep 1
+  key a
+  wait_for 'grep -q "^inbox answer i-3d4e5f6a retry --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: after Later, the next key answers the next item" {
+  acting_cli
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key l
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f later --json$" "$TMPDIR/bin/calls"'
+  sleep 1
+  key a
+  wait_for 'grep -q "^inbox answer i-3d4e5f6a retry --json$" "$TMPDIR/bin/calls"'
+}
+
+@test "prefix+T: an item that stays listed keeps the cursor" {
+  acting_cli
+  jq -c '.work = 8' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key p
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f protect --json$" "$TMPDIR/bin/calls"'
+  sleep 1
+  key c
+  wait_for 'grep -q "^inbox answer i-2c3d4e5f accept --json$" "$TMPDIR/bin/calls"'
 }
 
 @test "the sidebar shows other items before Routine briefings" {

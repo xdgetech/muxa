@@ -126,7 +126,7 @@ struct ItemDetail: View {
 
     var body: some View {
         let before = model.session.openItems
-        InboxItemScreen(id: id) { saved in model.itemAnswered(saved, before: before) }
+        InboxItemScreen(id: id) { saved, action in model.itemAnswered(saved, by: action, before: before) }
             .id(id)
             .background {
                 Group {

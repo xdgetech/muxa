@@ -8,6 +8,7 @@ import tech.xdge.muxa.session.PaneSession
 import tech.xdge.muxa.session.deletable
 import tech.xdge.muxa.session.mainAnswer
 import tech.xdge.muxa.session.needsText
+import tech.xdge.muxa.session.nextFocus
 
 // The Inbox as a list of questions (ADR 0033). Every answer is written on the host; a failure
 // lands in `inboxError` with the host's reason, and the list is read again.
@@ -63,7 +64,7 @@ internal fun AppModel.sendAnswer(item: InboxItem, action: InboxAction, text: Str
         try {
             session.answer(item, action, text, option, forceWorktree)
             itemReplies = itemReplies - item.id
-            afterAnswer(item.id, before)
+            afterAnswer(item.id, before, movedDown = action == InboxAction.LATER)
         } catch (e: PaneSession.Failure) {
             val reason = e.lostWork
             if (reason != null) losingWork = LosingWork.Answer(item, action, text, option, reason) else inboxError = PaneSession.describe(e)
@@ -73,19 +74,28 @@ internal fun AppModel.sendAnswer(item: InboxItem, action: InboxAction, text: Str
     }
 }
 
-/** The item that took the answered one's place, beside the list; the list on a phone. */
-internal fun AppModel.afterAnswer(answered: String, before: List<String>) {
-    if (selectedItem != answered || paneShown) return
-    // A moved-down item is still listed; the next one takes its place all the same.
-    val waiting = inboxItems.map { it.id }.toSet() - answered
-    val next = before.dropWhile { it != answered }.drop(1).firstOrNull { it in waiting }
-        ?: before.lastOrNull { it in waiting }
-    if (phoneLayout || next == null) {
-        selection = null
-        if (phoneLayout) listShown = true
-        itemFocus = next ?: inboxItems.firstOrNull()?.id
-    } else {
-        openItem(next)
+/**
+ * The item that took the answered one's place, beside the list; the list on a phone. An item
+ * that stays keeps its place; one Later [movedDown] counts as leaving (ADR 0040).
+ */
+internal fun AppModel.afterAnswer(answered: String, before: List<String>, movedDown: Boolean = false) {
+    val next = nextFocus(answered, before, inboxItems.map { it.id }, movedDown)
+    if (selectedItem != answered || paneShown) {
+        // Answered by a swipe, or over its pane: only the focus follows.
+        if (itemFocus == answered) itemFocus = next
+        return
+    }
+    when {
+        phoneLayout -> {
+            selection = null
+            listShown = true
+            itemFocus = next
+        }
+        next == null -> {
+            selection = null
+            itemFocus = null
+        }
+        next != answered -> openItem(next)
     }
 }
 

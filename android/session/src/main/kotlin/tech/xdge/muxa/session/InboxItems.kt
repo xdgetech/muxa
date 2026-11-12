@@ -22,6 +22,19 @@ fun InboxItem.isWaiting(now: Long): Boolean = when (state) {
 /** The items to show, in the host's order. */
 fun List<InboxItem>.waiting(now: Long = System.currentTimeMillis() / 1000): List<InboxItem> = filter { it.isWaiting(now) }
 
+/**
+ * The item the focus moves to when the list changes from [before] to [after]: [current] while it
+ * stays listed, else the next one below it that is still listed, else the new last one. An item
+ * Later [movedDown] counts as leaving (ADR 0040). The same rule as tmux's and iOS's Inbox.
+ */
+fun nextFocus(current: String, before: List<String>, after: List<String>, movedDown: Boolean = false): String? {
+    if (current in after && !movedDown) return current
+    val listed = after.toSet()
+    return before.dropWhile { it != current }.drop(1).firstOrNull { it in listed && it != current }
+        ?: after.lastOrNull { it != current }
+        ?: current.takeIf { it in listed }
+}
+
 val InboxItem.isUnread: Boolean get() = readAt == null
 
 /** Delete Old keeps it (ADR 0046). */

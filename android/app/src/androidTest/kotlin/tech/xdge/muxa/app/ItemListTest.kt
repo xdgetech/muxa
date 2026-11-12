@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performFirstLinkClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -230,6 +231,43 @@ class ItemListTest {
         click("item-later")
         compose.waitUntil(TIMEOUT) { model.inboxItems.last().id == BRIEFING }
         assertEquals(ItemState.OPEN, item(BRIEFING).state)
+    }
+
+    /**
+     * An answer keeps the list's scroll, also after the phone's item screen, and the focus goes
+     * to the item below the answered one. At `work` level 10, so Today makes the list scroll.
+     */
+    @Test
+    fun anAnswerKeepsTheScrollAndFocusesTheNextItem() {
+        scenario = ActivityScenario.launch(planDemoIntent())
+        waitForTag("inbox-list")
+        compose.waitUntil(TIMEOUT) { model.inboxItems.any { it.id == BRIEFING } }
+        val ids = model.inboxItems.map { it.id }
+        val next = ids[ids.indexOf(BRIEFING) + 1]
+        compose.onNodeWithTag("inbox-list").performScrollToIndex(1)
+        compose.waitForIdle()
+        val scrolled = model.inboxListState.firstVisibleItemIndex
+        if (model.phoneLayout) assertTrue("the list scrolled", scrolled > 0)
+        click(row(BRIEFING))
+        click("item-dismiss")
+        compose.waitUntil(TIMEOUT) { model.inboxItems.none { it.id == BRIEFING } }
+        waitForTag(row(next))
+        compose.waitUntil(TIMEOUT) { model.itemFocus == next }
+        if (!model.phoneLayout) assertEquals(next, model.selectedItem)
+        compose.waitForIdle()
+        assertEquals(scrolled, model.inboxListState.firstVisibleItemIndex)
+    }
+
+    /** Later moves the item down; the focus goes to the item that was below it (ADR 0040). */
+    @Test
+    fun laterFocusesTheNextItem() {
+        launchOnInbox()
+        val next = model.inboxItems.map { it.id }.let { it[it.indexOf(REVIEW) + 1] }
+        click(row(REVIEW))
+        click("item-later")
+        compose.waitUntil(TIMEOUT) { model.inboxItems.last().id == REVIEW }
+        compose.waitUntil(TIMEOUT) { model.itemFocus == next }
+        if (!model.phoneLayout) assertEquals(next, model.selectedItem)
     }
 
     /** Ask Agent sends a briefing and the text to the workspace's Ask session, and opens it; the item stays (ADR 0041). */

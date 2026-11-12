@@ -57,6 +57,7 @@ import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.session.buttons
 import tech.xdge.muxa.session.isProtected
 import tech.xdge.muxa.session.isUnread
+import tech.xdge.muxa.session.nextFocus
 
 /**
  * Inbox mode (ADR 0033, 0035), like a mail list: the question, then where it comes from and
@@ -70,10 +71,14 @@ fun ItemList(model: AppModel, modifier: Modifier) {
     val items = model.inboxItems
     val ids = items.map { it.id }
     val highlighted = model.selectedItem ?: model.paneItem?.id ?: model.itemFocus
-    // The focused item leaves the list when it is answered, here or on another device.
-    LaunchedEffect(ids) { if (model.itemFocus !in ids) model.itemFocus = ids.firstOrNull() }
+    // The focused item leaves the list when it is answered, here or on another device: the next one takes the focus.
+    LaunchedEffect(ids) {
+        val focus = model.itemFocus
+        model.itemFocus = if (focus == null) ids.firstOrNull() else nextFocus(focus, model.listedItems, ids)
+        model.listedItems = ids
+    }
     val sections = model.canCapture
-    LazyColumn(modifier.fillMaxWidth().testTag("inbox-list")) {
+    LazyColumn(modifier.fillMaxWidth().testTag("inbox-list"), state = model.inboxListState) {
         if (!model.usesItems) {
             item(key = "old-host") { InboxEmpty(model, OLDER_HOST, "inbox") }
         } else if (items.isEmpty() && !model.hasWorkRows && !model.hasToday) {

@@ -167,11 +167,15 @@ extension AppModel {
 
     func highlights(_ s: Session) -> Bool { detail == .pane && s.id == currentSession?.id }
 
-    /// After an answer: the next item on a tablet; a phone returns to the list.
-    func itemAnswered(_ saved: InboxItem, before: [InboxItem]) {
+    /// After an answer: an item still open stays shown. One that left, or went down by
+    /// Later, gives way to the next item on a tablet; a phone returns to the list.
+    func itemAnswered(_ saved: InboxItem, by action: InboxAction, before: [InboxItem]) {
         guard detail == .item(saved.id) else { return }
-        let remaining = session.openItems.map(\.id).filter { $0 != saved.id }
-        detail = InboxSelection.next(after: saved.id, in: before.map(\.id), remaining: remaining).map { .item($0) }
+        let next = InboxSelection.next(
+            current: saved.id, before: before.map(\.id), after: session.openItems.map(\.id),
+            movedDown: action == .later)
+        guard next != saved.id else { return }
+        detail = next.map { .item($0) }
         detailPath = []
         if phoneLayout { showSidebar() }
     }
@@ -189,7 +193,7 @@ extension AppModel {
         let before = session.openItems
         Task {
             do {
-                itemAnswered(try await session.answer(item, action), before: before)
+                itemAnswered(try await session.answer(item, action), by: action, before: before)
             } catch {
                 laterFailure = PaneSession.describe(error)
             }
@@ -207,7 +211,7 @@ extension AppModel {
     /// An item left the list while it was shown, answered elsewhere: a tablet shows the next.
     func itemsChanged(from old: [String], to new: [String]) {
         guard !phoneLayout, case .item(let id)? = detail, !new.contains(id) else { return }
-        detail = InboxSelection.next(after: id, in: old, remaining: new).map { .item($0) }
+        detail = InboxSelection.next(current: id, before: old, after: new, movedDown: false).map { .item($0) }
     }
 
     /// Cmd+Up/Down: the previous or next item, shown where the item was.
@@ -224,15 +228,5 @@ extension AppModel {
         guard session.canChat, let s = itemSession(item) else { return false }
         let agent = s.panes.first { $0.role == .agent } ?? s.panes.first { $0.isAgentSide }
         return agent.map { $0.isAgentSide && !session.unsupportedChats.contains($0.id) } ?? false
-    }
-}
-
-/// Which item takes an answered one's place.
-enum InboxSelection {
-    static func next(after id: String, in old: [String], remaining: [String]) -> String? {
-        guard !remaining.isEmpty else { return nil }
-        let index = old.firstIndex(of: id) ?? 0
-        let later = old.dropFirst(index + 1).first { remaining.contains($0) }
-        return later ?? remaining.last
     }
 }
