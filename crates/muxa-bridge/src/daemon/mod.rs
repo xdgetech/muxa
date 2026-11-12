@@ -16,7 +16,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use muxa_protocol::{ErrorCode, Message, Request};
 use tokio::io::BufReader;
@@ -36,6 +37,8 @@ use socket::Control;
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 const CONNECT_WAIT: Duration = Duration::from_millis(500);
 const TICK: Duration = Duration::from_secs(2);
+/// A tick step slower than this is logged with its name.
+const SLOW_STEP: Duration = Duration::from_secs(2);
 /// Between two worktree sweeps (ADR 0043 §6).
 const SWEEP_EVERY: Duration = Duration::from_secs(10 * 60);
 /// What `install` and `restart` wait for the new daemon to answer `hello`.
@@ -116,6 +119,11 @@ impl Daemon {
     /// Runs every [`TICK`]. The tmux client stays attached while a loop is
     /// active, or while an open Task has a session to make Inbox items for.
     async fn tick(&self) {
+        // A debug build's test makes every tick slow, to check the socket still answers.
+        if cfg!(debug_assertions) && std::env::var_os("MUXA_TEST_SLOW_TICK").is_some() {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+        let step = Instant::now();
         let mut items = self.items.lock().await;
         let watch = items.due(&self.records.records).await;
         let mut engine = self.loops.lock().await;
@@ -133,9 +141,13 @@ impl Daemon {
         };
         drop(items);
         self.park(idle).await;
+        let step = slow("tasks", step);
         crate::routines::tick(&self.records).await;
+        let step = slow("routines", step);
         crate::assistant::tick(&self.records).await;
+        let step = slow("assistant", step);
         crate::secretary::tick(&self.records, &mut *self.secretary.lock().await).await;
+        slow("secretary", step);
         self.sweep();
     }
 
@@ -256,6 +268,28 @@ fn run(args: args::Args) -> ExitCode {
     }
 }
 
+/// Clears the running flag when a tick ends, also by a panic.
+struct Ticking(Arc<AtomicBool>);
+
+impl Drop for Ticking {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// Logs a tick step that took longer than [`SLOW_STEP`], and starts the next.
+fn slow(step: &str, since: Instant) -> Instant {
+    let took = since.elapsed();
+    if took > SLOW_STEP {
+        tracing::warn!(
+            step,
+            ms = took.as_millis() as u64,
+            "a slow daemon tick step"
+        );
+    }
+    Instant::now()
+}
+
 /// Creates the daemon dir with mode 0700 and checks the socket path.
 fn prepare(dir: &Path) -> Result<PathBuf, String> {
     let path = socket::path(dir)?;
@@ -276,9 +310,20 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
     tokio::spawn(async move { task_records::resume_prompts(&resume.records).await });
     let mut tick = tokio::time::interval(TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // A tick runs beside the socket: a slow one never keeps a client waiting.
+    // At most one runs at a time.
+    let ticking = Arc::new(AtomicBool::new(false));
     loop {
         tokio::select! {
-            _ = tick.tick() => daemon.tick().await,
+            _ = tick.tick() => {
+                if !ticking.swap(true, Ordering::AcqRel) {
+                    let (daemon, ticking) = (Arc::clone(&daemon), Arc::clone(&ticking));
+                    tokio::spawn(async move {
+                        let _done = Ticking(ticking);
+                        daemon.tick().await;
+                    });
+                }
+            }
             accepted = listener.accept() => match accepted {
                 Ok((stream, _)) => {
                     tokio::spawn(connection(Arc::clone(&daemon), stream, stop_tx.clone()));
@@ -325,7 +370,6 @@ fn hello() -> Message {
 /// One client: `hello`, then requests until it closes.
 async fn connection(daemon: Arc<Daemon>, stream: UnixStream, stop: mpsc::Sender<()>) {
     if !socket::peer_allowed(&stream) {
-        tracing::warn!("refused a connection from another user");
         return;
     }
     let (read, mut write) = stream.into_split();

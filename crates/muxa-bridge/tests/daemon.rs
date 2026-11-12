@@ -144,6 +144,35 @@ async fn the_socket_is_private_and_one_daemon_runs() {
 }
 
 #[tokio::test]
+async fn a_slow_tick_never_keeps_a_client_waiting() {
+    let server = Server::start();
+    let host = Host::new("slow-tick");
+    let flags = host.flags("daemon-state");
+    let flags: Vec<&str> = flags.iter().map(String::as_str).collect();
+    let mut daemon = Daemon::start_with(
+        &server,
+        short_dir(),
+        &flags,
+        &[("MUXA_TEST_SLOW_TICK", "1")],
+    )
+    .await;
+    // The first tick started at once and sleeps for 10 s.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let answered = tokio::time::timeout(Duration::from_secs(3), async {
+        let mut conn = daemon.connect().await;
+        conn.request(json!({"type": "list-tasks"})).await
+    })
+    .await
+    .expect("the daemon did not answer during a tick");
+    assert!(
+        matches!(answered.last(), Some(Message::Result { error: None, .. })),
+        "{answered:?}"
+    );
+    let status = daemon.shutdown().await;
+    assert!(status.success(), "{status:?}");
+}
+
+#[tokio::test]
 async fn a_bridge_uses_the_daemon_while_it_runs_and_falls_back_after() {
     let server = Server::start();
     let host = Host::new("forward");
