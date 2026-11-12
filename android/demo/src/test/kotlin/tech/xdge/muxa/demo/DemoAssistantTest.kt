@@ -146,7 +146,7 @@ class DemoAssistantTest {
     fun theFixturesListARequestWithItsResultAndAnEarlierOne() = runBlocking {
         val session = connected()
         val q = session.request("q-0000a001")
-        assertEquals(RESULT_READY, assistNote(session.work("w-0000b003"), session.state.value.requests))
+        assertEquals(RESULT_READY, assistNote(session.work("w-0000b003"), session.state.value.requests, session.state.value.workLevel))
         assertEquals(listOf(2L), q.currentResults.map { it.version })
         assertEquals(listOf(1L), q.earlierResults.map { it.version })
     }

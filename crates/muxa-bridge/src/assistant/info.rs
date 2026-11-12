@@ -1,10 +1,11 @@
 //! `assistant` in `inbox-list` (ADR 0049 §7): who assists on this host.
 //! Clients leave `overall` out of their New Task and Capture pickers.
-use muxa_protocol::{AssistantInfo, DelegateInfo};
+use muxa_protocol::{AssistantInfo, DelegateInfo, RunBudget};
 
 use crate::records::Workspaces;
 use crate::records::assistant::Role;
 use crate::records::workspaces::Workspace;
+use crate::task_records::Config;
 
 /// Blocking: reads the time of each delegate's and member's notes, never their text.
 /// None while the host is off, or when no workspace has `[workspace.assistant]`.
@@ -31,7 +32,30 @@ pub fn info(workspaces: &Workspaces) -> Option<AssistantInfo> {
             staff: super::staff::listed(workspaces, w),
         })
         .collect();
-    (overall.is_some() || !delegates.is_empty()).then_some(AssistantInfo { overall, delegates })
+    (overall.is_some() || !delegates.is_empty()).then_some(AssistantInfo {
+        overall,
+        delegates,
+        overall_runs: None,
+    })
+}
+
+/// Blocking. What a Re-rank of the overall workspace has left today (ADR 0059):
+/// its runs and the plans being made count, as for a plan's budget.
+pub fn overall_runs(config: &Config, workspaces: &Workspaces, now: u64) -> Option<RunBudget> {
+    let w = workspaces.overall()?;
+    let delegate = w.assistant.as_ref()?;
+    let starting = super::plan::start::starting(config, now).unwrap_or_else(|e| {
+        tracing::warn!(error = %e.message, "cannot count the plans being made");
+        Vec::new()
+    });
+    let (day_start, _) = super::policy::day(now);
+    let records = config.records_if_any();
+    let used = super::policy::usage(&records, &starting, &w.name, &[], day_start);
+    Some(super::policy::runs_left(
+        used,
+        delegate.max_runs_per_day,
+        workspaces.assistant().max_runs_per_day,
+    ))
 }
 
 /// The worker that performs the workspace's approved writes, with its job.

@@ -5,17 +5,23 @@ import Testing
 @testable import MuxaSession
 
 /// A host that opens the overall assistant's root Ask session (`work` level 15, ADR 0054).
-final class AskRootBridge: PlanBridge, @unchecked Sendable {
+class AskRootBridge: PlanBridge, @unchecked Sendable {
     private let lock = NSLock()
     private var _roots: [String] = []
+    private var _typed: [String?] = []
     /// The workspaces `start-session` with `root` was sent for.
     var roots: [String] { lock.withLock { _roots } }
+    /// Each `start-session`'s `text`, after `work` and a space when it named one (level 17).
+    var typed: [String?] { lock.withLock { _typed } }
 
     override func send(_ line: Data) async throws {
-        guard case .startRootSession(let id, let workspace) = try Wire.decodeRequest(line) else {
+        guard case .startRootSession(let id, let workspace, let text, let work) = try Wire.decodeRequest(line) else {
             return try await super.send(line)
         }
-        lock.withLock { _roots.append(workspace) }
+        lock.withLock {
+            _roots.append(workspace)
+            _typed.append(text.map { t in work.map { "\($0) \(t)" } ?? t })
+        }
         if !sessions.contains(where: { $0.id == "$9" }) {
             sessions.append(Session(id: "$9", name: "ask-\(workspace)", ask: workspace, panes: [
                 Pane(id: "%9", window: "@9", index: 0, role: .agent, cols: 20, rows: 5,

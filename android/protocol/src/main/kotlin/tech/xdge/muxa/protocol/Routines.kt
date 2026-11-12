@@ -144,4 +144,7 @@ enum class InboxAction {
     /** Any item, open or closed: `delete-inbox` keeps it. Never in `answers` (ADR 0046). */
     @SerialName("protect") PROTECT,
     @SerialName("unprotect") UNPROTECT,
+
+    /** Level 18: starts the Task a `result` item offers beside a hand-off (ADR 0060 §2). */
+    @SerialName("start-task") START_TASK,
 }

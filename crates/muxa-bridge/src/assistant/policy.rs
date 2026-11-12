@@ -234,6 +234,15 @@ pub fn check(u: Usage, d: &Delegated, reset: &str) -> Result<(), ErrorBody> {
     Ok(())
 }
 
+/// Pure. What a run of a workspace with `max` runs a day has left today,
+/// within the host's `host_max` too (ADR 0059).
+pub fn runs_left(u: Usage, max: u32, host_max: u32) -> muxa_protocol::RunBudget {
+    let left = max
+        .saturating_sub(u.today)
+        .min(host_max.saturating_sub(u.today_host));
+    muxa_protocol::RunBudget { left, max }
+}
+
 /// The start of `at`'s day in the host's time zone, and its end as text.
 pub fn day(at: u64) -> (u64, String) {
     let zone = jiff::tz::TimeZone::system();

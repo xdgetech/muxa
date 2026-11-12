@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-11-11. It amends ADR 0041 (any workspace's root Ask session opens without an Inbox item) and ADR 0049 §2 and "Alternatives not taken" (the overall assistant gets a resident conversation). It amends the non-goal "無制限の常駐 agent" of the [specification](../personal-assistant.md) §12 for the overall workspace only. Milestone S0 is implemented; hosts advertise `work` level 15.
+Accepted on 2026-11-11. It amends ADR 0041 (any workspace's root Ask session opens without an Inbox item) and ADR 0049 §2 and "Alternatives not taken" (the overall assistant gets a resident conversation). It amends the non-goal "無制限の常駐 agent" of the [specification](../personal-assistant.md) §12 for the overall workspace only. Milestone S0 is implemented; hosts advertise `work` level 15. ADR 0056 amends §1 and §7: the secretary stays open, and it resumes its conversation (addendum below).
 
 ## Context
 
@@ -57,3 +57,11 @@ The secretary sorts Captures directly (§2). The `sort` items of ADR 0049 §4 wi
   - A new chat screen with its own message store: a second record of what the user said. The Ask session's Chat already shows the agent's transcript.
   - Opening the root session with `start-session {repo: ""}`: an empty string that means something else than the field says.
   - A resident agent per workspace: many sessions, and context nobody reviewed, as ADR 0049 said.
+
+## Addendum (2026-11-11): the secretary stays open
+
+The user asked for a resident secretary, in tmux too. [ADR 0056](0056-the-secretary-stays-open.md) replaces "Idle close" of §7 with the opposite: the daemon keeps the overall workspace's root Ask session open, and starts its agent again when it exits, at most 3 times in 10 minutes. "Resume" of §7 is built: muxa keeps the Claude Code session id it sees in the session's pane and starts the next agent with `--resume <id>`. "Who is asking" and removing `sort` items stay open.
+
+## Addendum (2026-11-11): the secretary proposes Tasks
+
+[ADR 0060](0060-the-assistant-proposes-tasks.md) §3 changes "What needs the user's yes" in the brief for work that needs code: the secretary runs `muxa-cli task propose`, which makes a `new-task` Inbox item, instead of asking for a yes in the chat. Start Task starts it in plan mode; Send types the user's answer into this conversation.

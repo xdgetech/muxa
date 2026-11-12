@@ -83,7 +83,7 @@ A request gains `steps[]`; a Result `worker?` and `step?`; `inbox-list`'s `assis
 - **Work detail:** the chain as rows "`lisk-research` → `lisk-delivery` → `lisk-meetings`", each with its delivery, Result and Update notes; a `handoff` waiting for approval shows as the next row, greyed, with Approve and Reject.
 - **Inbox:** `handoff` items with Approve, Reject, Later; the title names both workers.
 - **Today:** a `delegate` row names the worker when the plan picked one.
-- **muxa for tmux:** `a` on a Work row asks for the worker (`Enter` for the lead); the Inbox shows `handoff` rows with `a` approve, `r` reject and `l` later, as other items (`y` opens Policies, ADR 0050). CLI: `assist WORK --worker NAME`, `assist staff WORKSPACE`, `inbox answer ITEM approve`.
+- **muxa for tmux:** `a` on a Work row asks for the worker (`Enter` for the lead); the Inbox shows `handoff` rows with `a` approve, `r` reject and `l` later, as other items (`Y` opens Policies, ADR 0050). CLI: `assist WORK --worker NAME`, `assist staff WORKSPACE`, `inbox answer ITEM approve`.
 
 ## Not decided
 
@@ -108,6 +108,14 @@ A request gains `steps[]`; a Result `worker?` and `step?`; `inbox-list`'s `assis
   - Scope as the member: scopes say what is asked, workers say who answers; `lisk-research` may take both `research` and `compare`.
   - A long-lived team session or chat: ADR 0049 rejected the single-delegate form of it for the same reasons.
   - The list in `<root>/.muxa/assistant/staff.toml`: agent-writable, and a member grants a worker (§1).
+
+## Addendum (2026-11-11): hand-offs are offered by `result` items
+
+[ADR 0058](0058-a-result-is-reviewed-like-a-task.md) changes §3 (Approval) and §7 (Inbox). Every stored Result makes one `result` item; with a hand-off under `review`, that item offers it as **Hand off to `<worker>`** (`approve`), beside Send, Done and Later. No new `handoff` item is made; an open one from before stays answerable. Done replaces Reject: it closes the item and ends the chain. Under `auto`, a step whose hand-off started makes no item; past a limit, its `result` item carries the limit. A cancel leaves the item open without the hand-off. Send asks the same member again as a new version, not as a step: a worker still appears once per chain.
+
+## Addendum (2026-11-11): the lead's Task proposal wins
+
+[ADR 0060](0060-the-assistant-proposes-tasks.md) §1 adds to §3: a step's Result may propose one Task. The `result` item offers the newest proposal of a step the lead ran, else the newest of any step, up to the item's step. Starting the Task from an item that offers a hand-off ends the chain, as Done does.
 
 ## Implementation notes
 

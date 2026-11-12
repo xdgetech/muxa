@@ -110,6 +110,7 @@ object Wire {
         kind<Request.UpdatePolicy>("update-policy"),
         kind<Request.UpdatePlan>("update-plan"),
         kind<Request.Forget>("forget"),
+        kind<Request.ProposeTask>("propose-task"),
         kind<Request.Bye>("bye"),
     )
 

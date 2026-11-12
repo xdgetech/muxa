@@ -19,6 +19,8 @@ pub struct TmuxAgents {
     socket: Option<String>,
     /// `new.sh` takes `--muxa-task` (`@agents_features`, ADR 0017).
     muxa_task: bool,
+    /// `new.sh` takes `--plan` (`plan-mode`, ADR 0060).
+    plan: bool,
 }
 
 impl TmuxAgents {
@@ -28,7 +30,13 @@ impl TmuxAgents {
             tmux,
             socket,
             muxa_task,
+            plan: false,
         }
+    }
+
+    /// Whether `new.sh` takes `--plan`.
+    pub fn plans(self, plan: bool) -> Self {
+        Self { plan, ..self }
     }
 
     pub(crate) fn command(&self, req: &TaskRequest) -> Command {
@@ -39,6 +47,11 @@ impl TmuxAgents {
         }
         if let Some(record) = req.record.as_ref().filter(|_| self.muxa_task) {
             cmd.arg("--muxa-task").arg(record);
+        }
+        if req.plan && self.plan {
+            cmd.arg("--plan");
+        } else if req.plan {
+            tracing::info!("tmux-agents takes no --plan; the agent starts as usual");
         }
         // Without it, the desktop client would jump to the new session.
         cmd.arg("--no-switch");

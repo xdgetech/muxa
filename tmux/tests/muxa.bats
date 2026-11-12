@@ -67,7 +67,7 @@ INBOX='{"workspaces":["work"],"truncated":false,"tasks":[
 
 @test "the plugin says new.sh takes --muxa-task" {
   load_plugin
-  [ "$(tx show-options -gqv @agents_features)" = muxa-task ]
+  [ "$(tx show-options -gqv @agents_features)" = "muxa-task plan-mode" ]
 }
 
 @test "--muxa-task tags the session at creation and keeps the branch's name" {

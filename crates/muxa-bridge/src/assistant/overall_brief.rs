@@ -53,9 +53,12 @@ impl OverallBrief {
              Write .muxa/assistant/plan.json, then end your turn. muxa checks the file after \
              each of your turns. A file that fails the check gets a prompt with the reasons.\n\n\
              - \"version\": 1 and \"plan\": \"{plan}\", exactly.\n\
-             - \"top\": what to do next, 0 to 3 rows. Fewer is fine; none when nothing needs \
-             doing. Each row names exactly one \"work\" (a w-… id above) or one \"item\" (an \
-             i-… id above), and no id twice. \"why\" and \"next\": 1 to 500 bytes each. \
+             - \"top\": the user's queue for today, 0 to {max_top} rows, most important first. \
+             The user works down it in this order. Rank every open Inbox item that needs the \
+             user and every open Work item, up to {max_top}. A Routine \"briefing\" is a row \
+             only when it asks the user to act. None when nothing needs doing. Each row names \
+             exactly one \"work\" (a w-… id above) or one \"item\" (an i-… id above), and no \
+             id twice. \"why\" and \"next\": 1 to 500 bytes each. \
              \"minutes\": {{\"low\", \"estimated\", \"high\"}}, whole numbers, low <= estimated \
              <= high <= 1440. \"basis\": at most 5 reasons, each {{\"kind\", \"text\", \
              \"source\"?, \"at\"?}}: kind is \"due\", \"dependency\", \"goal\", \"time\" or \
@@ -112,6 +115,7 @@ impl OverallBrief {
              ```\n\n",
             plan = self.plan,
             slots = self.slots,
+            max_top = super::plan::file::MAX_TOP,
         )
     }
 }
@@ -161,7 +165,8 @@ mod tests {
         assert!(at("## Your notes") < at("## Plan file"));
         assert!(text.contains("about 45 minutes"));
         assert!(text.contains("\"plan\": \"p-0a1b2c3d\", exactly"));
-        assert!(text.contains("0 to 3 rows"));
+        assert!(text.contains("0 to 10 rows, most important first"));
+        assert!(text.contains("A Routine \"briefing\" is a row only when it asks"));
         assert!(text.contains("Pinned Work items"));
         assert!(text.contains("\"laterAt\""));
         assert!(text.contains("1 byte to 1 KiB"));

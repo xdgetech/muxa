@@ -9,7 +9,7 @@ use crate::{AssistScope, Delivery, Notes, SortAction, StaffMember, WriterInfo, W
 /// `assistant` in `inbox-list`.
 pub const WORK_PLANS: u32 = 10;
 
-/// One overall run's plan: at most 3 rows to do next.
+/// One overall run's plan: at most 10 rows to do next, most important first (ADR 0057).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
@@ -101,6 +101,8 @@ pub enum TargetState {
     Done,
     /// A Work item the user withdrew.
     Withdrawn,
+    /// A Work item with a Task started for it: the Task's own items follow.
+    Started,
     /// The Work item or Inbox item is no longer on the host.
     Gone,
     /// A value a newer host added; shown as unknown.
@@ -212,6 +214,10 @@ pub struct AssistantInfo {
     pub overall: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub delegates: Vec<DelegateInfo>,
+    /// Level 17: what a Re-rank has left today (ADR 0059). Absent: no
+    /// overall workspace, or an older host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overall_runs: Option<crate::RunBudget>,
 }
 
 /// A workspace with `[workspace.assistant]`.

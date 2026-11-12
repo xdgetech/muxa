@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 // Delegate notes, the overall assistant and its plans (ADR 0049), at `work` level 10.
 // A plan never changes a Work item, an Inbox item or their order.
 
-/** One overall run's plan, from `plan-saved` or `inbox-list`: at most 3 rows to do next. */
+/** One overall run's plan, from `plan-saved` or `inbox-list`: at most 10 rows to do next, most important first (ADR 0057). */
 @Serializable
 data class Plan(
     /** `p-` and 8 hex digits. */
@@ -71,6 +71,9 @@ value class TargetState(val raw: String) {
         val RESOLVED = TargetState("resolved")
         val DONE = TargetState("done")
         val WITHDRAWN = TargetState("withdrawn")
+
+        /** A Work item with a Task started for it. */
+        val STARTED = TargetState("started")
 
         /** The host no longer has the Work item or Inbox item. */
         val GONE = TargetState("gone")
@@ -154,6 +157,8 @@ data class AssistantInfo(
     /** The overall assistant's workspace. Leave it out of workspace pickers. */
     val overall: String? = null,
     val delegates: List<DelegateInfo> = emptyList(),
+    /** Level 17: the overall workspace's runs left today (ADR 0059 §5). Null: no overall workspace, or an older host. */
+    val overallRuns: RunBudget? = null,
 )
 
 /** A workspace with `[workspace.assistant]`. */

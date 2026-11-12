@@ -11,6 +11,9 @@ pub mod approve;
 mod handoff;
 pub mod inbox;
 mod memory;
+pub mod retry;
+mod send;
+pub mod task;
 mod write;
 
 use std::sync::Arc;
@@ -49,6 +52,82 @@ pub async fn answer(
         }
         Err(e) => (Vec::new(), Some(e)),
     })
+}
+
+/// `update-inbox start-task` on a `result` item that offers a Task beside
+/// a hand-off (ADR 0060 §2): `task-saved`, then `inbox-saved`. None for an
+/// item that is no proposal.
+pub async fn start_task(
+    cx: &Context,
+    id: u64,
+    entry: &str,
+) -> Option<(Vec<Message>, Option<ErrorBody>)> {
+    let (config, item) = (Arc::clone(&cx.records), entry.to_owned());
+    let found = match super::blocking(move || approve::find(&config, &item)).await {
+        Ok(Some(found)) => found,
+        Ok(None) => return None,
+        Err(e) => return Some((Vec::new(), Some(e))),
+    };
+    let started = found.approval.as_ref().is_some_and(|a| a.task.is_some());
+    let offered = task::offered(&found.item).is_some();
+    if !offered && !started {
+        let e = approve::bad(format!(
+            "Inbox item {} offers no Task to start; start-task answers a result that proposes one",
+            found.item.id
+        ));
+        return Some((Vec::new(), Some(e)));
+    }
+    // Once started, a second start-task returns the Task the first made.
+    let done = if offered {
+        task::start(cx, found, muxa_protocol::InboxAction::StartTask).await
+    } else {
+        approve::approve(cx, found, By::User).await
+    };
+    Some(match done {
+        Ok(approved) => {
+            let error = approved.error.clone();
+            (messages(id, approved), error)
+        }
+        Err(e) => (Vec::new(), Some(e)),
+    })
+}
+
+/// `update-inbox reply` on a `result` item (Send) or a `write` item
+/// (Revise), ADR 0058: `work-saved` with the new version, then
+/// `inbox-saved`, and the error for `result`. None for any other item.
+pub async fn reply(
+    cx: &Context,
+    id: u64,
+    entry: &str,
+    text: Option<&str>,
+) -> Option<(Vec<Message>, Option<ErrorBody>)> {
+    let (config, item) = (Arc::clone(&cx.records), entry.to_owned());
+    let found = match super::blocking(move || approve::find(&config, &item)).await {
+        Ok(Some(found)) if found.item.kind == muxa_protocol::ItemKind::NewTask => {
+            let item = crate::items::shown(&found.item);
+            let sent = crate::items::ask_agent::to_secretary(cx, id, &item, text).await;
+            return Some(match sent {
+                Ok(messages) => (messages, None),
+                Err(e) => (Vec::new(), Some(e)),
+            });
+        }
+        Ok(Some(found)) if send::target(&found.item, None).is_some() => found,
+        Ok(_) => return None,
+        Err(e) => return Some((Vec::new(), Some(e))),
+    };
+    let text = text.unwrap_or_default().to_owned();
+    Some(match send::send(cx, found, text).await {
+        Ok(sent) => {
+            let error = sent.error.clone();
+            (messages(id, sent), error)
+        }
+        Err(e) => (Vec::new(), Some(e)),
+    })
+}
+
+/// The hash an approval of `item` is keyed by.
+pub fn hash_of(item: &muxa_protocol::InboxItem) -> String {
+    approval::hash(item).unwrap_or_default()
 }
 
 fn messages(id: u64, approved: Approved) -> Vec<Message> {

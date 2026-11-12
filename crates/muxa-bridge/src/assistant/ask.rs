@@ -8,6 +8,7 @@ use muxa_protocol::{
     AssistScope, AssistantRequest, Delivery, ErrorBody, ErrorCode, StepBy, WorkItem,
 };
 
+use super::follow_up::{self, FollowUp};
 use super::policy::{self, Delegated, Starting};
 use super::record::RunFor;
 use super::steps;
@@ -41,6 +42,8 @@ pub struct Ask {
     pub worker: Option<String>,
     /// Who names `worker`: the user or the overall assistant.
     pub asker: StepBy,
+    /// The Result the new version continues (ADR 0058 §3).
+    pub follows: Option<FollowUp>,
 }
 
 impl Ask {
@@ -249,7 +252,9 @@ fn new_request(
             results: Vec::new(),
             steps: first_steps(d, a, at),
         };
-        Ok::<_, Fail>((q, claim(1, at, a.rev)))
+        let mut extra = claim(1, at, a.rev);
+        follow_up::set(&mut extra, a.follows.as_ref());
+        Ok::<_, Fail>((q, extra))
     })
 }
 
@@ -274,6 +279,7 @@ fn next_version(
         }
         q.steps = first_steps(d, a, at);
         extra.extend(claim(q.version, at, a.rev));
+        follow_up::set(extra, a.follows.as_ref());
         Ok(q.clone())
     })?;
     q.ok_or_else(|| bad(format!("no request {id}")).into())

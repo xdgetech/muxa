@@ -56,6 +56,22 @@ new() { "$ROOT/scripts/new.sh" "$REPO" "$@" --no-agent --no-switch; }
   [ -z "$(tx show-options -p -t "$ai" -qv remain-on-exit)" ]
 }
 
+@test "--plan starts Claude Code in plan mode, and leaves another agent as it is" {
+  mkdir -p "$TMPDIR/bin"
+  for prog in claude codex; do
+    printf '#!/bin/sh\necho "$*" > "%s/args-%s"\nexec sleep 7304\n' "$TMPDIR" "$prog" >"$TMPDIR/bin/$prog"
+    chmod +x "$TMPDIR/bin/$prog"
+  done
+  tx set-option -g @agents_launch_cmd "$TMPDIR/bin/claude --name '#{@agent_name}'"
+  "$ROOT/scripts/new.sh" "$REPO" feature/plan --no-switch --plan
+  wait_for "[ -s '$TMPDIR/args-claude' ]"
+  [ "$(cat "$TMPDIR/args-claude")" = "--name app-feature-plan --permission-mode plan" ]
+  tx set-option -g @agents_launch_cmd "CODEX_HOME=/x $TMPDIR/bin/codex --full-auto"
+  "$ROOT/scripts/new.sh" "$REPO" feature/plan-codex --no-switch --plan
+  wait_for "[ -s '$TMPDIR/args-codex' ]"
+  [ "$(cat "$TMPDIR/args-codex")" = "--full-auto" ]
+}
+
 @test "the launch command is a tmux format with the agent's name" {
   tx set-option -g @agents_launch_cmd "echo name=#{@agent_name} > '$TMPDIR/named'"
   "$ROOT/scripts/new.sh" "$REPO" feature/named --no-switch

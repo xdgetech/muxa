@@ -6,6 +6,7 @@ use std::time::Duration;
 use muxa_protocol::{AgentState, ChatPrompt, ErrorBody, ErrorCode};
 use muxa_tmux::PaneId;
 
+use crate::agents::claude::prompt::PLAN_MANUAL;
 use crate::agents::{PaneInfo, Registry};
 use crate::convert::{self, error_body};
 use crate::task_records::Context;
@@ -31,6 +32,59 @@ pub(super) async fn pick(
             convert::error(&e)
         })?;
     tracing::info!(%pane, option, "menu answered");
+    Ok(())
+}
+
+/// The most options a menu numbers: a digit picks one at once.
+const MAX_MENU: u32 = 9;
+
+/// Approves Claude Code's plan with edits asked one by one (ADR 0060 §5):
+/// while the adapter still reports the plan menu the item asked about, the
+/// screen must show exactly one numbered line with [`PLAN_MANUAL`]; its
+/// digit is pressed. Anything else is `conflict`, and nothing is sent.
+pub(super) async fn approve_plan(
+    cx: &Context,
+    pane: PaneId,
+    asked: &ChatPrompt,
+) -> Result<(), ErrorBody> {
+    let env = cx.env().await?;
+    let info = crate::chat::pane_info(&env.client, pane).await?;
+    let agents = Arc::clone(&cx.agents);
+    let (current, _) = tokio::task::spawn_blocking(move || current(&agents, &info))
+        .await
+        .map_err(|_| error_body(ErrorCode::Internal, "cannot read the agent's menu"))??;
+    if current.as_ref().is_none_or(|c| c.entry != asked.entry) {
+        return Err(error_body(
+            ErrorCode::Conflict,
+            "the agent's menu changed since the item was made; list the Inbox again",
+        ));
+    }
+    let mut shown = Vec::new();
+    for n in 1..=MAX_MENU {
+        let line = format!("{n}. {PLAN_MANUAL}");
+        if muxa_tmux::screen_shows(&env.client, pane, &line)
+            .await
+            .map_err(|e| convert::error(&e))?
+        {
+            shown.push(n);
+        }
+    }
+    let [n] = shown.as_slice() else {
+        tracing::info!(%pane, found = shown.len(), "plan approval left to the terminal");
+        return Err(error_body(
+            ErrorCode::Conflict,
+            format!(
+                "the plan menu does not show one \"{PLAN_MANUAL}\" option; approve the plan in the Task's terminal"
+            ),
+        ));
+    };
+    muxa_tmux::send_keys(&env.client, pane, &[n.to_string()])
+        .await
+        .map_err(|e| {
+            tracing::warn!(%pane, error = %e, "cannot approve the plan");
+            convert::error(&e)
+        })?;
+    tracing::info!(%pane, option = n, "plan approved with edits asked one by one");
     Ok(())
 }
 

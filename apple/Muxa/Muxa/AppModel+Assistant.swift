@@ -16,9 +16,10 @@ extension AppModel {
         return session.sessions.first { $0.taskId == run && $0.defaultPane != nil }
     }
 
-    /// The newest request has a Result this device has not shown.
+    /// The newest request has a Result this device has not shown. From level 16 the
+    /// `result` item's unread dot says it instead, on every device (ADR 0058 §5).
     func hasNewResult(_ item: WorkItem) -> Bool {
-        guard let request = latestRequest(of: item) else { return false }
+        guard !session.reviewsResults, let request = latestRequest(of: item) else { return false }
         return seenResults.isNew(request, on: currentHostID)
     }
 

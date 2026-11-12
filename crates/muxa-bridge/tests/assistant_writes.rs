@@ -346,6 +346,7 @@ async fn an_approved_write_is_one_task_of_the_writer() {
             [
                 InboxAction::Approve,
                 InboxAction::Reject,
+                InboxAction::Reply,
                 InboxAction::Later
             ]
         );
@@ -528,5 +529,89 @@ async fn none_refuses_writes_and_the_day_limit_holds_an_item_open() {
 
     assert_layout_kept(&before, &h);
     assert_no_marks(&daemon);
+    daemon.shutdown().await;
+}
+
+/// ADR 0058 §4: Revise asks the member who proposed a write for a new
+/// draft, as a new version. Only the revised item closes; the new Result
+/// proposes the new text as a new item. No writer Task starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn revise_asks_the_same_member_for_a_new_draft() {
+    let h = Host::new("revise", "", "");
+    h.steer(&format!("first.{DELIVERY}.json"), &proposing(2));
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let before = h.server.layout();
+    let work = work_item(&mut conn, "c-writes-revise").await;
+    let q = ask(&mut conn, &work).await;
+    until_resulted(&mut conn, &h, &q.id).await;
+    let (items, done) = until_items(&mut conn, &q.id, 2).await;
+    let revised = items
+        .iter()
+        .find(|i| i.write.as_ref().unwrap().hash == done.results[0].writes[1].hash)
+        .unwrap();
+
+    // A new text: the same one again would match the open item's hash.
+    let mut draft = proposing(1);
+    draft["writes"][0]["content"] = json!(format!("2.4 ships Friday. {}", MARKS[2]));
+    h.steer(&format!("first.{DELIVERY}.json"), &draft);
+    let text = "Shorter, and name the date. revise-mark-1c7e";
+    let sent = conn
+        .request(
+            json!({"type": "update-inbox", "entry": revised.id, "action": "reply", "text": text}),
+        )
+        .await;
+    let (v2, item) = match sent.as_slice() {
+        [
+            Message::WorkSaved {
+                request: Some(q), ..
+            },
+            Message::InboxSaved { item: Some(i), .. },
+            Message::Result { error: None, .. },
+        ] => ((**q).clone(), (**i).clone()),
+        other => panic!("revise: {other:?}"),
+    };
+    assert_eq!(
+        (item.state, item.answer),
+        (ItemState::Answered, Some(InboxAction::Reply))
+    );
+    assert_eq!(v2.version, 2);
+    assert_eq!(v2.steps[0].worker, DELIVERY);
+    let run = v2.run.clone().unwrap();
+    let dir = PathBuf::from(h.record(&run)["dir"].as_str().unwrap().to_owned());
+    let task_md = std::fs::read_to_string(dir.join(".muxa/TASK.md")).unwrap();
+    assert!(
+        task_md.contains("new draft of its proposed write 2"),
+        "{task_md}"
+    );
+    let file = std::fs::read_to_string(dir.join(".muxa/assistant/followup.json")).unwrap();
+    let continued: Value = serde_json::from_str(&file).unwrap();
+    assert_eq!(continued["write"], 1);
+
+    // The other write stays open; the new draft is a new item of version 2.
+    let deadline = Instant::now() + RUN_WAIT;
+    loop {
+        let (all, _) = listed(&mut conn).await;
+        let other = all
+            .iter()
+            .find(|i| i.id != revised.id && items.iter().any(|x| x.id == i.id));
+        assert_eq!(other.map(|i| i.state), Some(ItemState::Open));
+        let fresh = all.iter().any(|i| {
+            i.kind == ItemKind::Write
+                && i.write
+                    .as_ref()
+                    .is_some_and(|w| w.request == q.id && w.version == 2)
+        });
+        if fresh {
+            break;
+        }
+        assert!(Instant::now() < deadline, "no write item for version 2");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(h.writer_tasks().is_empty());
+
+    assert_layout_kept(&before, &h);
+    assert_no_marks(&daemon);
+    assert!(!daemon.log().contains("revise-mark-1c7e"));
     daemon.shutdown().await;
 }

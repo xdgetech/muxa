@@ -7,7 +7,8 @@
 //! a delegate proposal to an `auto` workspace is sent once, without review.
 //! ADR 0050 slice C6: a forgotten correction and the hypothesis it grounds
 //! leave the next brief, a plan citing them is refused, and the log never
-//! held them.
+//! held them. ADR 0057: an emptied Today plans again once, and a budget
+//! stops the next refill with a reason.
 #![cfg(feature = "tmux-integration")]
 
 mod common;
@@ -21,7 +22,7 @@ use common::daemon::{Conn, Daemon};
 use jiff::{Timestamp, ToSpan, tz::TimeZone};
 use muxa_protocol::{
     ChangeKind, Correction, Delivery, ErrorCode, Hypothesis, InboxAction, InboxItem, ItemKind,
-    ItemState, Message, Plan, WorkItem,
+    ItemState, Message, Plan, TargetState, WorkItem, WorkState,
 };
 use serde_json::{Value, json};
 
@@ -181,11 +182,21 @@ async fn until_plans(
 
 /// A Work item in `w`, pinned.
 async fn pinned_item(conn: &mut Conn) -> WorkItem {
+    let w = work_item(conn, "c-plan", "Pick a host.").await;
+    let pinned = conn
+        .request(json!({"type": "update-work", "work": w.id, "rev": w.rev, "action": "pin"}))
+        .await;
+    match pinned.first() {
+        Some(Message::WorkSaved { entry, .. }) => entry.clone(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A Work item in `w`, from a Capture with `client` as its client id.
+async fn work_item(conn: &mut Conn, client: &str, text: &str) -> WorkItem {
     let saved = conn
-        .request(
-            json!({"type": "capture", "clientId": "c-plan", "text": "Pick a host.",
-                        "workspace": "w"}),
-        )
+        .request(json!({"type": "capture", "clientId": client, "text": text,
+                        "workspace": "w"}))
         .await;
     let Some(Message::CaptureSaved { entry, .. }) = saved.first() else {
         panic!("{saved:?}")
@@ -196,14 +207,8 @@ async fn pinned_item(conn: &mut Conn) -> WorkItem {
                         "action": "work"}),
         )
         .await;
-    let Some(Message::CaptureSaved { work: Some(w), .. }) = sorted.first() else {
-        panic!("{sorted:?}")
-    };
-    let pinned = conn
-        .request(json!({"type": "update-work", "work": w.id, "rev": w.rev, "action": "pin"}))
-        .await;
-    match pinned.first() {
-        Some(Message::WorkSaved { entry, .. }) => entry.clone(),
+    match sorted.first() {
+        Some(Message::CaptureSaved { work: Some(w), .. }) => (**w).clone(),
         other => panic!("{other:?}"),
     }
 }
@@ -460,8 +465,30 @@ async fn a_plan_whose_agent_never_becomes_idle_makes_one_failure_item() {
         (found[0].title.as_str(), found[0].workspace.as_str()),
         ("Overall plan", "Overall")
     );
-    assert_eq!(found[0].answers[0], InboxAction::Dismiss);
+    assert_eq!(found[0].answers[0], InboxAction::Retry);
     assert!(h.turns().is_empty(), "{:?}", h.turns());
+
+    // Retry runs a new plan now (ADR 0061); a second press returns it.
+    let _ = std::fs::remove_file(h.base.join("steer/hold"));
+    let retry = json!({"type": "update-inbox", "entry": found[0].id, "action": "retry"});
+    let retried = conn.request(retry.clone()).await;
+    let new = match retried.as_slice() {
+        [
+            Message::PlanSaved { entry, .. },
+            Message::InboxSaved { item: Some(i), .. },
+            Message::Result { error: None, .. },
+        ] => {
+            assert_eq!(i.answer, Some(InboxAction::Retry));
+            entry.id.clone()
+        }
+        other => panic!("retry: {other:?}"),
+    };
+    assert_ne!(new, id);
+    let again = conn.request(retry).await;
+    assert!(
+        matches!(again.first(), Some(Message::PlanSaved { entry, .. }) if entry.id == new),
+        "{again:?}"
+    );
     daemon.shutdown().await;
 }
 
@@ -623,9 +650,15 @@ async fn a_forgotten_correction_and_its_hypothesis_leave_the_next_plan() {
     let mut daemon = h.daemon().await;
     let mut conn = daemon.connect().await;
     let item = pinned_item(&mut conn).await;
+    let other = work_item(&mut conn, "c-other", "Read the notes.").await;
 
-    // Plan 1, then the user dismisses its row with a reason.
-    h.steer("first.json", &plan_json(&item.id));
+    // Plan 1, then the user dismisses its row with a reason. Its other row
+    // stays open, so Today does not refill (ADR 0057).
+    let mut plan1 = plan_json(&item.id);
+    let mut row = plan1["top"][0].clone();
+    row["work"] = json!(other.id);
+    plan1["top"].as_array_mut().unwrap().push(row);
+    h.steer("first.json", &plan1);
     plan_now(&mut conn).await;
     let first = next_plan(&mut conn, &h, None).await;
     let dismissed = conn
@@ -718,5 +751,83 @@ async fn a_forgotten_correction_and_its_hypothesis_leave_the_next_plan() {
         assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
     }
     assert!(log.contains("correction forgotten"), "{log}");
+    daemon.shutdown().await;
+}
+
+/// A request to the daemon that must succeed; its first message.
+async fn ok(conn: &mut Conn, request: Value) -> Message {
+    let answer = conn.request(request).await;
+    assert!(
+        matches!(answer.last(), Some(Message::Result { error: None, .. })),
+        "{answer:?}"
+    );
+    answer.into_iter().next().unwrap()
+}
+
+/// Waits until no session runs `task`: the run's slot is free.
+async fn closed(h: &Host, task: &str) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while h.tagged(task) {
+        assert!(Instant::now() < deadline, "the run's session stays");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+/// ADR 0057 §3: when each row of Today is done or "not today", the host
+/// plans once more. A reached budget keeps that refill as a failed plan,
+/// and the host does not try again.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_emptied_today_plans_again_once_within_the_budget() {
+    let h = Host::new("refill", "overall = true\nplans = []\nmax_runs_per_day = 2");
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let a = pinned_item(&mut conn).await;
+    h.steer("first.json", &plan_json(&a.id));
+    plan_now(&mut conn).await;
+    let first = next_plan(&mut conn, &h, None).await;
+    closed(&h, first.run.as_deref().unwrap()).await;
+
+    // The user completes the only row: the host plans again by itself.
+    let b = work_item(&mut conn, "c-next", "Write the reply.").await;
+    h.steer("first.json", &plan_json(&b.id));
+    let request = json!({"type": "update-work", "work": a.id, "rev": a.rev, "action": "complete"});
+    let Message::WorkSaved { entry: a, .. } = ok(&mut conn, request).await else {
+        panic!("no work-saved")
+    };
+    assert_eq!(a.state, WorkState::Done);
+    let second = next_plan(&mut conn, &h, Some(&first.id)).await;
+    assert_eq!(second.top[0].work.as_deref(), Some(b.id.as_str()));
+    let listed = plans(&mut conn).await;
+    assert_eq!(listed.len(), 2, "one refill: {listed:?}");
+    let old = listed.iter().find(|p| p.id == first.id).unwrap();
+    assert_eq!(old.top[0].target_state, Some(TargetState::Done));
+    closed(&h, second.run.as_deref().unwrap()).await;
+
+    // "Not today" on the last row: the day's budget stops the refill.
+    let request = json!({"type": "update-plan", "plan": second.id, "rev": second.rev,
+                         "action": "dismiss", "row": b.id});
+    ok(&mut conn, request).await;
+    let listed = until_plans(
+        &mut conn,
+        &h,
+        "the stopped refill",
+        Duration::from_secs(30),
+        |p| p.len() == 3,
+    )
+    .await;
+    let stopped = &listed[0];
+    assert_eq!(
+        (stopped.delivery, stopped.run.as_deref()),
+        (Delivery::Failed, None)
+    );
+    let reason = stopped.reason.as_deref().unwrap_or_default();
+    assert!(reason.contains("max_runs_per_day"), "{reason}");
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    assert_eq!(plans(&mut conn).await.len(), 3, "never a loop");
+    let log = daemon.log();
+    assert!(log.contains("Today refill plan"), "{log}");
+    for mark in MARKS {
+        assert!(!log.contains(mark), "the daemon log holds {mark}:\n{log}");
+    }
     daemon.shutdown().await;
 }

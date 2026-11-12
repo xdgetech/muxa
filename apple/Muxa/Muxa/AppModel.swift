@@ -121,6 +121,10 @@ final class AppModel {
     var showPolicies = false
     /// The Today row whose Not today asks for an optional reason.
     var notTodayRow: PlanRow?
+    /// A Today row's Send, waiting on its text (ADR 0059 §4).
+    var todaySend: SendTarget?
+    /// The item whose Start Task this device sent: it stays shown with Open its Task (ADR 0060 §8).
+    var startedTaskItem: String?
     /// Bumped to show the sidebar: on a phone, the list.
     var sidebarRequest = 0
     /// Bumped by `⌘0`: shows or hides the sidebar.

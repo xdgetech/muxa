@@ -128,9 +128,23 @@ extension PaneSession {
     }
 }
 
+extension Plan {
+    /// Today as a queue (ADR 0057): of `rows`, this plan's rows in the order shown, the ones
+    /// whose target is open. Today hides the others.
+    public func queue(_ rows: [PlanRow]) -> [PlanRow] { rows.filter { !$0.isClosed } }
+
+    /// The row the user does next: the first open row not taken off Today.
+    public func next(in rows: [PlanRow]) -> PlanRow? {
+        queue(rows).first { row in !(row.rowId.map(dismissed.contains) ?? false) }
+    }
+
+    /// Every row of `rows` closed, and there were rows: the host plans again (ADR 0057 §3).
+    public func isDone(_ rows: [PlanRow]) -> Bool { !rows.isEmpty && queue(rows).isEmpty }
+}
+
 extension PlanRow {
-    /// The host says the row's target is no longer open. Today keeps the row, dimmed, and it
-    /// opens nothing.
+    /// The host says the row's target is no longer open. Today hides the row, and it opens
+    /// nothing.
     public var isClosed: Bool { targetState != nil }
 
     /// The title Today shows: the target as this device lists it, else the host's title for
@@ -146,6 +160,7 @@ extension TargetState {
         case .resolved: "resolved"
         case .done: "✓ done"
         case .withdrawn: "withdrawn"
+        case .started: "▶ Task started"
         case .gone: "gone"
         case .other: "closed"
         }

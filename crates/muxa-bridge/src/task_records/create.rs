@@ -48,6 +48,9 @@ pub struct NewTask {
     pub assistant: Option<crate::assistant::record::RunFor>,
     /// The Work item the Task is for, checked by `assistant::start` (ADR 0048).
     pub work: Option<String>,
+    /// Start the agent in plan mode: a Task from an approved proposal
+    /// (ADR 0060). Claude Code only; other agents start as always.
+    pub plan: bool,
 }
 
 /// Why a task did not start, and the session if one was made anyway.
@@ -108,6 +111,7 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
     if let Some(work) = &new.work {
         extra.insert(crate::records::WORK_FIELD.into(), work.clone().into());
     }
+    let plan = new.plan;
     let fields = NewRecord {
         workspace: new.workspace,
         worker: resolved.worker.clone(),
@@ -127,9 +131,9 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
         };
     tracing::info!(task = %record.id, "task recorded");
     if record.worker().is_some() || matches!(target, Target::Dir(_, Some(_))) {
-        return create_guarded(env, record, &target, &resolved).await;
+        return create_guarded(env, record, &target, &resolved, plan).await;
     }
-    match start(env, &record, &target, &resolved, None).await {
+    match start(env, &record, &target, &resolved, None, plan).await {
         Ok(started) => linked(env, record, started.launched).await,
         Err(failure) => failed(env, record, failure).await,
     }
@@ -333,6 +337,7 @@ async fn start(
     target: &Target,
     resolved: &ResolvedWorker,
     claim: Option<&mut Option<ClaimedTask>>,
+    plan: bool,
 ) -> Result<Started, Failure> {
     let client = &*env.client;
     let (config, saved) = (Arc::clone(&env.records), record.clone());
@@ -349,10 +354,11 @@ async fn start(
         Target::Repo(req) => {
             let req = TaskRequest {
                 record: Some(record.id.clone()),
+                plan,
                 ..req.clone()
             };
             let launcher: Box<dyn TaskLauncher> = if resolved.worker.is_some() {
-                Box::new(builtin::Builtin::with_worker(resolved))
+                Box::new(builtin::Builtin::with_worker(resolved).in_plan_mode(plan))
             } else {
                 tasks::pick_for(&env.tasks, client, &req).await
             };
@@ -425,9 +431,11 @@ async fn start(
                     .launch_in_dir(client, &dir, Some(&resolved.environment)).await
             } else if resolved.worker.is_some() {
                 builtin::Builtin::with_worker(resolved)
+                    .in_plan_mode(plan)
                     .launch_in_dir(client, &dir, Some(&resolved.environment)).await
             } else {
                 builtin::Builtin::new(env.tasks.command.clone())
+                    .in_plan_mode(plan)
                     .launch_in_dir(client, &dir, workspace.agent.as_ref()).await
             }
         }
@@ -598,6 +606,7 @@ async fn create_guarded(
     record: Record,
     target: &Target,
     resolved: &ResolvedWorker,
+    plan: bool,
 ) -> (Option<Record>, Option<ErrorBody>) {
     let config = Arc::clone(&env.records);
     let (id, rev) = (record.id.clone(), record.rev);
@@ -612,7 +621,7 @@ async fn create_guarded(
         Ok(claim) => Some(claim),
         Err(error) => return (Some(record), Some(error)),
     };
-    let started = start(env, &record, target, resolved, Some(&mut slot)).await;
+    let started = start(env, &record, target, resolved, Some(&mut slot), plan).await;
     let Some(claim) = slot else {
         tracing::warn!(task = %record.id, "the creation claim was lost");
         let error = error_body(ErrorCode::TaskFailed, "the creation claim was lost");

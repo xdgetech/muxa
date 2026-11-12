@@ -4,6 +4,8 @@ import MuxaProtocol
 /// The Inbox as a list of questions (ADR 0033): items the host keeps at `work` level 3.
 extension PaneSession {
     public var canUseItems: Bool { workLevel >= workItems }
+    /// Every Result makes a `result` item, whose unread dot replaces "Result ready" (ADR 0058 §5).
+    public var reviewsResults: Bool { workLevel >= workResultReview }
 
     /// The items that wait on the user, in the host's order: `ask` first, then newest.
     public var openItems: [InboxItem] { inboxItems.filter { $0.state == .open } }
@@ -14,6 +16,10 @@ extension PaneSession {
     /// Shown when the host cannot send an item to the workspace's agent.
     public static let askAgentUnsupported = "This host cannot send an item to the workspace's agent. Update muxa on the host."
     public static let itemConflict = "The agent now asks something else. The Inbox shows its latest question. Try again."
+    /// Shown when the host could not approve a plan: it presses only the option that asks
+    /// before each edit, and only when the pane shows it (ADR 0060 §5). Nothing was sent.
+    public static let planInTerminal =
+        "Approve the plan in the Task's terminal. The Inbox approves only with \"Yes, manually approve edits\" on screen."
 
     /// Answers `item` and returns it as the host saved it. A refusal lists the Inbox
     /// again, because another device or the terminal may have answered first.
@@ -47,8 +53,10 @@ extension PaneSession {
         // delegate, and a `capture-saved` or `work-saved` comes before `inbox-saved`. Confirm
         // on a hypothesis sends `policy-saved` first (ADR 0050). Approve on a hand-off starts
         // the next step, with `work-saved` first (ADR 0051). Approve on a write starts the
-        // writer's Task, with `task-saved` first (ADR 0052).
-        let proposes = [.sort, .delegate, .hypothesis, .handoff, .write].contains(item.kind)
+        // writer's Task, with `task-saved` first (ADR 0052). Hand off and Send on a result,
+        // and Revise on a write, send `work-saved` first (ADR 0058). Start Task sends
+        // `task-saved` first, and Send on a `new-task` item `session-started` (ADR 0060).
+        let proposes = [.sort, .delegate, .hypothesis, .handoff, .write, .result, .newTask].contains(item.kind)
         var requestId: UInt64 = 0
         defer {
             savedCaptures[requestId] = nil
@@ -56,6 +64,7 @@ extension PaneSession {
             savedRequests[requestId] = nil
             savedPolicies[requestId] = nil
             savedTasks[requestId] = nil
+            startedSessions[requestId] = nil
         }
         do {
             try await request { id in
@@ -64,6 +73,11 @@ extension PaneSession {
                     id: id, entry: item.id, action: action, until: nil, text: text, option: option, worktree: end,
                     hash: hash)
             }
+        } catch Failure.bridge(let body) where body.code == .conflict && item.isPlan && action == .approve {
+            // The host presses only "Yes, manually approve edits", and only when the pane shows it.
+            savedItems[requestId] = nil
+            await loadWork()
+            throw Failure.bridge(ErrorBody(code: .conflict, message: Self.planInTerminal))
         } catch Failure.bridge(let body) where body.code == .conflict && !proposes && item.kind != .memory {
             savedItems[requestId] = nil
             await loadWork()
@@ -83,7 +97,7 @@ extension PaneSession {
         // The host moved the item down (ADR 0040): its order is the list's.
         case .later: await loadWork()
         // The writer's Task is listed under its Work item and among the Tasks.
-        case .approve where item.kind == .write:
+        case .approve where item.kind == .write, _ where action == item.startsTask:
             await loadWork()
             await loadTasks()
         // An approved proposal sorted a Capture, made a request or started a step: the Work list changed.

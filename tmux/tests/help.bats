@@ -29,8 +29,18 @@ teardown() { teardown_server; }
   run "$ROOT/scripts/help.sh"
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"  P              on a Work item: pin it first, or unpin it"* ]]
-  [[ "$out" == *"  t              ask the overall assistant for a plan now"* ]]
+  [[ "$out" == *"  t              Re-rank: re-rank the queue from what's open now (one overall run)"* ]]
   [[ "$out" == *"  o              on a Today row: go to its Work item or Inbox item"* ]]
+}
+
+@test "help lists what Enter and s do on a Today row (ADR 0059)" {
+  run "$ROOT/scripts/help.sh"
+  out="$(printf '%s\n' "$output" | strip_ansi)"
+  [[ "$out" == *"A Today row names what to do: Review changes, Read result, Start..."* ]]
+  [[ "$out" == *"  Enter          on a Today row: open a Task's review or menu, a Work item's menu, else go to its item"* ]]
+  [[ "$out" == *"  Enter          on a Work item: its menu: open its Task, read its result, start a Task, ask..."* ]]
+  [[ "$out" == *"  n              on a Work item: New Task form with its workspace and title, for the item"* ]]
+  [[ "$out" == *"  s              on a Today row: send to whoever it names"* ]]
 }
 
 @test "help lists the Today and Policies keys of ADR 0050" {
@@ -38,5 +48,5 @@ teardown() { teardown_server; }
   out="$(printf '%s\n' "$output" | strip_ansi)"
   [[ "$out" == *"  K J            on a Today row: move it up or down"* ]]
   [[ "$out" == *"  x              on a Today row: Not today, with an optional reason"* ]]
-  [[ "$out" == *"  y              the Policies list: add, edit or delete a policy; forget what it learned"* ]]
+  [[ "$out" == *"  Y              the Policies list: add, edit or delete a policy; forget what it learned"* ]]
 }

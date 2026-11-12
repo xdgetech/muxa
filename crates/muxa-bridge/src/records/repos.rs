@@ -19,6 +19,11 @@ pub enum RepoError {
     Empty,
     #[error("no repo {name:?} under {root} or in the workspace's repos")]
     NotFound { name: String, root: PathBuf },
+    #[error(
+        "repo {name:?} is listed in workspaces.toml as {path}, which does not exist; \
+         fix or remove that entry"
+    )]
+    Missing { name: String, path: PathBuf },
     #[error("{name:?} leads outside the workspace root {root}")]
     Outside { name: String, root: PathBuf },
 }
@@ -50,6 +55,9 @@ impl Workspace {
         }
         let given = Path::new(raw);
         if given.is_absolute() {
+            if self.missing_repos.iter().any(|m| m == given) {
+                return Err(self.missing(raw, given));
+            }
             return Ok(given.to_owned());
         }
         match self.root.join(given).canonicalize() {
@@ -58,10 +66,26 @@ impl Workspace {
                 name: raw.to_owned(),
                 root: self.root.clone(),
             }),
-            Err(_) => self.listed_by_name(raw).ok_or_else(|| RepoError::NotFound {
-                name: raw.to_owned(),
-                root: self.root.clone(),
+            Err(_) => self.listed_by_name(raw).ok_or_else(|| {
+                let named = self
+                    .missing_repos
+                    .iter()
+                    .find(|m| m.file_name() == Some(OsStr::new(raw)));
+                match named {
+                    Some(path) => self.missing(raw, path),
+                    None => RepoError::NotFound {
+                        name: raw.to_owned(),
+                        root: self.root.clone(),
+                    },
+                }
             }),
+        }
+    }
+
+    fn missing(&self, raw: &str, path: &Path) -> RepoError {
+        RepoError::Missing {
+            name: raw.to_owned(),
+            path: path.to_owned(),
         }
     }
 

@@ -364,3 +364,40 @@ fn overall_counterexamples_are_refused_by_field() {
     .unwrap_err();
     assert!(err.contains("max_auto_requests_per_day"), "{err}");
 }
+
+#[test]
+fn the_overall_workspace_is_resident_unless_turned_off() {
+    let on = two(
+        "[workspace.assistant]\noverall = true",
+        "[workspace.assistant]\ndelegate = true",
+    )
+    .unwrap();
+    assert_eq!(on.secretary().map(|w| w.name.as_str()), Some("w"));
+    assert!(!on.delegate("w2").unwrap().resident);
+
+    let off = two(
+        "[workspace.assistant]\noverall = true\nresident = false",
+        "",
+    )
+    .unwrap();
+    assert!(off.overall().is_some());
+    assert_eq!(off.secretary(), None);
+
+    let host_off = Workspaces::parse(
+        &format!(
+            "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n[workspace.assistant]\noverall = true\n",
+            std::env::temp_dir().to_string_lossy()
+        ),
+        Path::new("w.toml"),
+        None,
+    )
+    .unwrap();
+    assert_eq!(host_off.secretary(), None, "[assistant] enabled gates it");
+
+    let err = two(
+        "",
+        "[workspace.assistant]\ndelegate = true\nresident = true",
+    )
+    .unwrap_err();
+    assert!(err.contains("resident applies only"), "{err}");
+}

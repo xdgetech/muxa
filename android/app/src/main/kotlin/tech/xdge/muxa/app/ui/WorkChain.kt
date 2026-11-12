@@ -103,7 +103,7 @@ private fun HandoffRow(model: AppModel, request: AssistantRequest, from: Request
                         { model.answerHandoff(item, action) },
                         Modifier.testTag("chain-${if (action == InboxAction.APPROVE) "approve" else "reject"}-${request.id}"),
                         enabled = model.answeringItem == null,
-                    ) { Text(if (action == InboxAction.APPROVE) "Approve" else "Reject") }
+                    ) { Text(action.title(item)) }
                 }
             }
         }

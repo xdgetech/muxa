@@ -364,6 +364,7 @@ mod tests {
 
     fn result(version: u64, summary: &str) -> AssistResult {
         AssistResult {
+            task: None,
             writes: Vec::new(),
             worker: None,
             step: None,

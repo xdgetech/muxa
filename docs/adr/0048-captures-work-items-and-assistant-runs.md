@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-11-09. It implements stages PA0 and PA1 of ADR 0045 ([specification](../personal-assistant.md)). It changes ADR 0035 §5: `+` opens Capture on a host with `work:9`. It widens the Inbox screen of ADR 0033 without changing its items. Slices A0–A12 are implemented.
+Proposed on 2026-11-09. It implements stages PA0 and PA1 of ADR 0045 ([specification](../personal-assistant.md)). It changes ADR 0035 §5: `+` opens Capture on a host with `work:9`. It widens the Inbox screen of ADR 0033 without changing its items. Slices A0–A12 are implemented. Amended by ADR 0061: an assistant run's `failure` item also offers Retry.
 
 ## Context
 
@@ -121,6 +121,14 @@ On a host, a request run and the scheduled plan failed with no trace: Claude Cod
 2. **The trust dialog is recognized, not predicted.** When the 30 s wait for an idle agent ends, the daemon asks muxa-tmux whether the agent pane shows "Yes, I trust this folder" (`capture-pane -p -J`, a fixed string; only a yes or no comes back, nothing is logged). On a yes, the record gets `agentAsksTrust`, and the reason becomes "Claude Code has not trusted `<workspace root>`. Open claude there once and accept." A Task's own failure item says to accept in its pane, then type the prompt. Facts and version: `docs/findings/claude-code-trust.md`.
    - Not taken: checking `projects[…].hasTrustDialogAccepted` in the agent's Claude config before the run, and refusing. It would be faster, but it copies a private rule (the walk stops at a git root, the home folder is never recorded, two environment variables change it), and the pane's shell can set another `CLAUDE_CONFIG_DIR` than the workspace env. A wrong copy refuses runs that would work. Recognizing the dialog can only miss: then the generic reason stays.
    - Not taken: skipping the dialog. Claude Code has no flag for it in an interactive session, and muxa never writes its config.
+
+## Addendum (2026-11-11): a Result is an Inbox item
+
+[ADR 0058](0058-a-result-is-reviewed-like-a-task.md) answers "Do a Result's open questions become Inbox items?" for the whole Result: at `work:16` each stored Result makes one `result` item, with its open questions in it, answered with Send, Done and Later. Its unread state replaces §10's device-local "Result ready", which clients keep only for a host below level 16. A Result still never changes the Work item.
+
+## Addendum (2026-11-11): a Result may propose a Task
+
+[ADR 0060](0060-the-assistant-proposes-tasks.md) adds `task {workspace?, repo?, title, goal}` to §4's result file. A run that finds the request needs code or other changes on this host proposes a Task instead of answering that it cannot. Its `result` item offers Start Task, which starts one Task linked to the Work item, in plan mode. The scope's rule "change nothing outside this folder" stays.
 
 ## Delivery slices
 

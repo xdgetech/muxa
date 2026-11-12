@@ -3,7 +3,7 @@ import Foundation
 // Delegate notes, the overall assistant and its plans (ADR 0049), at `work` level 10.
 // A plan never changes a Work item, an Inbox item or their order.
 
-/// One overall run's plan, from `plan-saved` or `inbox-list`: at most 3 rows to do next.
+/// One overall run's plan, from `plan-saved` or `inbox-list`: at most 10 rows to do next, most important first (ADR 0057).
 public struct Plan: Equatable, Sendable, Identifiable {
     /// `p-` and 8 hex digits.
     public var id: String
@@ -265,11 +265,11 @@ public enum ChangeKind: Equatable, Hashable, Sendable {
 
 /// A row's target that is no longer open. An unknown value is a state a newer host added.
 public enum TargetState: Equatable, Hashable, Sendable {
-    case answered, resolved, done, withdrawn, gone
+    case answered, resolved, done, withdrawn, started, gone
     case other(String)
 
     private static let names: [(TargetState, String)] = [
-        (.answered, "answered"), (.resolved, "resolved"), (.done, "done"), (.withdrawn, "withdrawn"), (.gone, "gone"),
+        (.answered, "answered"), (.resolved, "resolved"), (.done, "done"), (.withdrawn, "withdrawn"), (.started, "started"), (.gone, "gone"),
     ]
 
     public init(raw: String) {
@@ -332,26 +332,32 @@ public struct AssistantInfo: Equatable, Sendable {
     /// The overall assistant's workspace. Leave it out of workspace pickers.
     public var overall: String?
     public var delegates: [DelegateInfo]
+    /// Level 17: what a Re-rank has left today (ADR 0059 §5). Nil: no overall workspace, or
+    /// an older host.
+    public var overallRuns: RunBudget?
 
-    public init(overall: String? = nil, delegates: [DelegateInfo] = []) {
+    public init(overall: String? = nil, delegates: [DelegateInfo] = [], overallRuns: RunBudget? = nil) {
         self.overall = overall
         self.delegates = delegates
+        self.overallRuns = overallRuns
     }
 }
 
 extension AssistantInfo: Codable {
-    private enum Key: String, CodingKey { case overall, delegates }
+    private enum Key: String, CodingKey { case overall, delegates, overallRuns }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
         overall = try c.decodeIfPresent(String.self, forKey: .overall)
         delegates = try c.decodeIfPresent([DelegateInfo].self, forKey: .delegates) ?? []
+        overallRuns = try c.decodeIfPresent(RunBudget.self, forKey: .overallRuns)
     }
 
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: Key.self)
         try c.encodeIfPresent(overall, forKey: .overall)
         if !delegates.isEmpty { try c.encode(delegates, forKey: .delegates) }
+        try c.encodeIfPresent(overallRuns, forKey: .overallRuns)
     }
 }
 

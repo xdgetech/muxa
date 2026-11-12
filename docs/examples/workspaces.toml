@@ -107,6 +107,11 @@
 #                     on wake-up; a budget reached skips it with a reason.
 #   timezone          overall workspace only: the IANA zone of plans
 #                     (default the host's own zone)
+#   resident          overall workspace only: the daemon keeps its root Ask
+#                     session, the assistant's chat, open, and starts it
+#                     again with the same Claude Code conversation when it
+#                     closes (ADR 0056; default true). false: it opens only
+#                     when you open it
 #
 # [assistant]  optional, at the top level; the host's switch for all
 #   workspaces. Without it, or with enabled = false, no workspace takes

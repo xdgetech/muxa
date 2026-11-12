@@ -23,6 +23,7 @@ fn work(id: &str, updated: u64) -> WorkItem {
 
 fn result(version: u64, at: u64) -> AssistResult {
     AssistResult {
+        task: None,
         writes: Vec::new(),
         worker: None,
         step: None,
@@ -211,7 +212,14 @@ fn targets_name_each_row_and_say_when_its_target_is_no_longer_open() {
     let mut plans = vec![plan(
         "p-00000001",
         Delivery::Resulted,
-        &["w-open", "w-done", "i-answered", "i-later", "i-gone"],
+        &[
+            "w-open",
+            "w-done",
+            "w-task",
+            "i-answered",
+            "i-later",
+            "i-gone",
+        ],
     )];
     let mut done = work("w-done", 1);
     done.title = "Send the report".into();
@@ -219,7 +227,13 @@ fn targets_name_each_row_and_say_when_its_target_is_no_longer_open() {
     let mut answered = crate::items::store::tests_item("i-answered", ItemState::Answered);
     answered.question = "Approve the plan?".into();
     let later = crate::items::store::tests_item("i-later", ItemState::Later);
-    targets(&mut plans, &[work("w-open", 1), done], &[answered, later]);
+    let mut started = work("w-task", 1);
+    started.tasks = vec!["t-1".into()];
+    targets(
+        &mut plans,
+        &[work("w-open", 1), done, started],
+        &[answered, later],
+    );
     let got: Vec<(Option<&str>, Option<TargetState>)> = plans[0]
         .top
         .iter()
@@ -230,6 +244,7 @@ fn targets_name_each_row_and_say_when_its_target_is_no_longer_open() {
         vec![
             (Some("t"), None),
             (Some("Send the report"), Some(TargetState::Done)),
+            (Some("t"), Some(TargetState::Started)),
             (Some("Approve the plan?"), Some(TargetState::Answered)),
             (Some("Ready for review: Fixture"), None),
             (None, Some(TargetState::Gone)),

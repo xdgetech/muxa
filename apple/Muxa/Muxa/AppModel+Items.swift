@@ -38,6 +38,8 @@ extension ItemKind {
         case .handoff: "Hand-off"
         case .write: "Write"
         case .memory: "Memory"
+        case .result: "Result"
+        case .newTask: "Proposed Task"
         case .other(let raw): raw.capitalized
         }
     }
@@ -55,6 +57,8 @@ extension ItemKind {
         case .handoff: Icon.handoff
         case .write: Icon.write
         case .memory: Icon.note
+        case .result: Icon.result
+        case .newTask: Icon.proposedTask
         case .other: "tray"
         }
     }

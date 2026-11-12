@@ -53,10 +53,19 @@ pub fn bind(path: &Path) -> io::Result<UnixListener> {
     Ok(listener)
 }
 
-/// Only the daemon's own user may talk to it.
+/// Only the daemon's own user may talk to it. Each refusal is logged here.
 pub fn peer_allowed(stream: &UnixStream) -> bool {
     match stream.peer_cred() {
-        Ok(cred) => same_user(cred.uid(), rustix::process::getuid().as_raw()),
+        Ok(cred) if same_user(cred.uid(), rustix::process::getuid().as_raw()) => true,
+        Ok(cred) => {
+            tracing::warn!(uid = cred.uid(), "refused a connection from another user");
+            false
+        }
+        // macOS: a client that closed before the check has no credentials.
+        Err(e) if e.raw_os_error() == Some(rustix::io::Errno::NOTCONN.raw_os_error()) => {
+            tracing::debug!("a client left before it was checked");
+            false
+        }
         Err(e) => {
             tracing::warn!(error = %e, "cannot read a peer's credentials");
             false

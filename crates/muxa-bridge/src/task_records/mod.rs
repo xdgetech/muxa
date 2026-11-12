@@ -184,6 +184,7 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::UpdatePolicy { .. }
             | Request::UpdatePlan { .. }
             | Request::Forget { .. }
+            | Request::ProposeTask { .. }
             | Request::DeleteInbox { .. }
     )
 }
@@ -248,6 +249,7 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
                 routine: None,
                 assistant: None,
                 work: None,
+                plan: false,
             };
             let spec = r#loop.map(convert::loop_spec);
             let made = match (work, work_rev) {
@@ -344,7 +346,8 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         | Request::AddPolicy { .. }
         | Request::UpdatePolicy { .. }
         | Request::UpdatePlan { .. }
-        | Request::Forget { .. }) => crate::assistant::handle(cx, req).await,
+        | Request::Forget { .. }
+        | Request::ProposeTask { .. }) => crate::assistant::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(
@@ -487,7 +490,8 @@ pub async fn start_session(
             crate::tasks::ask::start(client, &tasks.command, &workspaces, workspace, repo).await
         }
         (None, true) => {
-            crate::tasks::ask::open_root(client, &tasks.command, &workspaces, workspace)
+            let state_dir = config.state_dir.as_deref();
+            crate::tasks::ask::open_root(client, &tasks.command, &workspaces, workspace, state_dir)
                 .await
                 .map(|(launched, _)| launched)
         }

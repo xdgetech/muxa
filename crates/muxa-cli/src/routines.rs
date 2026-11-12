@@ -85,7 +85,7 @@ pub async fn list(conn: &mut Conn, as_json: bool) -> Result<String, String> {
         return Ok(String::new());
     }
     for p in &problems {
-        println!("{}: no routines: {}", p.workspace, p.reason);
+        println!("{}: {}", p.workspace, p.reason);
     }
     if routines.is_empty() && problems.is_empty() {
         println!(

@@ -7,8 +7,9 @@ use std::path::Path;
 
 use muxa_tmux::Client;
 
-use crate::records::Workspaces;
 use crate::records::workspaces::slug;
+use crate::records::{AgentSettings, Workspaces};
+use crate::secretary;
 
 use super::builtin::{Builtin, main_checkout};
 use super::{Launched, TaskError, end_session, session_name};
@@ -95,11 +96,13 @@ pub fn root_session<'a>(
 
 /// The workspace's ask session at its root: the open one, or a new one
 /// (`true`). Any workspace has one, the overall assistant's too (ADR 0054).
+/// `state_dir` holds the secretary's conversation (ADR 0056).
 pub async fn open_root(
     client: &Client,
     command: &str,
     workspaces: &Workspaces,
     workspace: &str,
+    state_dir: Option<&Path>,
 ) -> Result<(Launched, bool), TaskError> {
     let ws = workspaces.get(workspace).ok_or_else(|| {
         TaskError::Invalid(format!(
@@ -115,17 +118,20 @@ pub async fn open_root(
         };
         return Ok((open, false));
     }
-    let launched = start_root(client, command, workspaces, workspace).await?;
+    let launched = start_root(client, command, workspaces, workspace, state_dir).await?;
     Ok((launched, true))
 }
 
 /// Starts the workspace's ask session at its root: `ask-<workspace>`, or
 /// `ask-<workspace>-<n>` when that name is taken. As `start`, nothing else changes.
+/// The secretary's (ADR 0056) resumes its conversation, and its pane stays
+/// dead when the agent exits, for the daemon to respawn.
 pub async fn start_root(
     client: &Client,
     command: &str,
     workspaces: &Workspaces,
     workspace: &str,
+    state_dir: Option<&Path>,
 ) -> Result<Launched, TaskError> {
     let ws = workspaces.get(workspace).ok_or_else(|| {
         TaskError::Invalid(format!(
@@ -148,11 +154,33 @@ pub async fn start_root(
                 "{MAX_NAMES} sessions named {base} are open; close one first"
             ))
         })?;
-    let session = Builtin::new(command.to_owned())
-        .start(client, &name, &ws.root, ws.agent.as_ref())
+    let resident = workspaces.secretary().is_some_and(|s| s.name == ws.name);
+    let (builtin, agent) = if resident {
+        let base = secretary::base_command(ws, command).to_owned();
+        let (dir, now) = (state_dir.map(Path::to_path_buf), crate::records::now());
+        let full =
+            tokio::task::spawn_blocking(move || secretary::prepare(dir.as_deref(), &base, now))
+                .await
+                .map_err(|e| {
+                    TaskError::Failed(format!("preparing the assistant's chat stopped: {e}"))
+                })?;
+        // The command is whole here; the workspace's own would replace it.
+        let agent = ws
+            .agent
+            .clone()
+            .map(|a| AgentSettings { command: None, ..a });
+        (Builtin::new(full).stays_dead(), agent)
+    } else {
+        (Builtin::new(command.to_owned()), ws.agent.clone())
+    };
+    let session = builtin
+        .start(client, &name, &ws.root, agent.as_ref())
         .await?;
     muxa_tmux::set_session_option(client, session, TAG, &ws.name).await?;
     muxa_tmux::set_session_option(client, session, ROOT_TAG, "1").await?;
+    if resident {
+        muxa_tmux::set_session_option(client, session, secretary::TAG, "1").await?;
+    }
     tracing::info!(session = %session, workspace = %ws.name, "workspace ask session started");
     Ok(Launched {
         id: session,

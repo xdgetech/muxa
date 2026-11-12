@@ -27,6 +27,13 @@ public let workWrites: UInt32 = 13
 public let workMemory: UInt32 = 14
 /// Level 15: `start-session` with `root` opens a workspace's root Ask session (ADR 0054).
 public let workAskRoot: UInt32 = 15
+/// Level 16: `result` Inbox items, and `reply` on `result` and `write` items (ADR 0058).
+public let workResultReview: UInt32 = 16
+/// Level 17: `start-session` with `root` takes `text` and `work`, and `assistant.overallRuns`
+/// says what a Re-rank has left today (ADR 0059).
+public let workToday: UInt32 = 17
+/// Level 18: Task proposals: `result.task`, `new-task` items, `start-task` and `propose-task` (ADR 0060).
+public let workTaskProposals: UInt32 = 18
 /// Level 8: `protect`, `unprotect` and `delete-inbox` (ADR 0046).
 public let workDeleteInbox: UInt32 = 8
 
@@ -226,4 +233,7 @@ public enum InboxAction: String, Codable, Sendable {
     case confirm
     /// Set or clear `protectedAt` on any item (level 8, ADR 0046). Like `read`, never in `answers`.
     case protect, unprotect
+    /// A `result` item that offers a hand-off and a Task: starts the Task (level 18, ADR 0060).
+    /// Without a hand-off, `approve` starts it.
+    case startTask = "start-task"
 }

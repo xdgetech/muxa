@@ -12,6 +12,10 @@ use crate::agents::log::{MAX_SUMMARY, MAX_TEXT, cap};
 const ALLOW: &str = "1";
 /// Denies a permission (and interrupts the turn), or keeps planning.
 const ESCAPE: &str = "Escape";
+/// The ExitPlanMode menu's option that leaves plan mode and asks before
+/// each edit (`docs/findings/claude-code-plan-menu.md`). Its number varies
+/// with settings, so the Inbox reads it from the screen before it presses it.
+pub const PLAN_MANUAL: &str = "Yes, manually approve edits";
 /// A question's options are numbered from 1, and a digit picks one at once.
 const MAX_OPTIONS: usize = 9;
 /// A subagent asks for its own calls, which are sidechain lines left out of the

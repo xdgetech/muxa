@@ -421,3 +421,50 @@ async fn exits_on_bye_idle_and_closed_input() {
         "the control client stayed attached"
     );
 }
+
+/// A bridge that stalls while a pane prints and is then SIGKILLed, as
+/// muxa-cli does when it drops its bridge, leaves no tmux control client
+/// behind (docs/findings/tmux-control-mode.md, orphaned control client).
+#[tokio::test]
+async fn a_killed_bridge_leaves_no_control_client() {
+    let server = Server::start();
+    server.tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        "busy",
+        "-x",
+        "200",
+        "-y",
+        "50",
+        "while :; do seq 1 200; done",
+    ]);
+    let (mut bridge, _) = Bridge::start(&server, &[]).await;
+    let client = server.tmux(&["list-clients", "-F", "#{client_pid}"]);
+    assert!(!client.is_empty(), "the bridge has no control client");
+    let pid = bridge.child.id().expect("bridge pid").to_string();
+
+    // Stopped, the bridge reads no more output, and tmux's queue for it fills.
+    signal("-STOP", &pid);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    signal("-KILL", &pid);
+    bridge.child.wait().await.expect("bridge exit");
+
+    wait_until(|| !signal_ok("-0", &client)).await;
+    assert!(
+        server.tmux(&["list-clients"]).is_empty(),
+        "the control client stayed attached"
+    );
+}
+
+fn signal_ok(sig: &str, pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args([sig, pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+fn signal(sig: &str, pid: &str) {
+    assert!(signal_ok(sig, pid), "kill {sig} {pid} failed");
+}

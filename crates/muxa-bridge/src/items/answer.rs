@@ -49,6 +49,12 @@ enum Plan {
         asked: ChatPrompt,
         option: usize,
     },
+    /// A plan's approval: the option that leaves plan mode and asks before
+    /// each edit, found on the screen (ADR 0060 §5).
+    ApproveMenu {
+        pane: PaneId,
+        asked: ChatPrompt,
+    },
     /// The next prompt for the agent. Never logged (invariant 5).
     Reply(String),
     /// An `ask`'s `reply`: the menu's cancel option at `option`, then `text`
@@ -73,6 +79,10 @@ pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody
     // The item is written; the correction is a signal on top (ADR 0050 §2).
     let recorded = blocking(move || {
         corrections::after_answer(&config, &item, action, reason, now());
+        // Done on a Result ends its chain (ADR 0058 §2).
+        if let (InboxAction::Dismiss, Some(r)) = (action, &item.result) {
+            crate::assistant::chain::done(&config, &r.request, r.version)?;
+        }
         Ok(())
     })
     .await;
@@ -133,6 +143,12 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Later => Plan::Later,
         Accept => Plan::Status(TaskStatus::Done),
         Drop => Plan::Status(TaskStatus::Dropped),
+        // `routines::handle` sends an assistant run's failure to `assistant::proposals::retry`.
+        Retry if item.task.is_none() => {
+            return Err(bad(
+                "retry on an assistant failure runs through the assistant",
+            ));
+        }
         Retry => Plan::Restart,
         Branch => Plan::Branch,
         // `answers` never lists it, so the check above refused it already.
@@ -165,10 +181,30 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
                     | ItemKind::Handoff
                     | ItemKind::Write
                     | ItemKind::Memory
+                    | ItemKind::Result
+                    | ItemKind::NewTask
             ) =>
         {
             return Err(bad("approve on a proposal item runs through the assistant"));
         }
+        // `assistant::proposals` starts the proposed Task (ADR 0060 §2).
+        StartTask => return Err(bad("start-task runs through the assistant")),
+        // Send and Revise ask a staff member again (ADR 0058 §3, §4); on a
+        // `new-task` item Send goes to the secretary (ADR 0060 §3).
+        Reply
+            if matches!(
+                item.kind,
+                ItemKind::Result | ItemKind::Write | ItemKind::NewTask
+            ) =>
+        {
+            return Err(bad(
+                "reply on a result or write item runs through the assistant",
+            ));
+        }
+        Approve if plan_prompt(item) => match pick(item, Reject, None)? {
+            Plan::Pick { pane, asked, .. } => Plan::ApproveMenu { pane, asked },
+            other => other,
+        },
         Approve | Reject | Choose => pick(item, answer.action, answer.option)?,
         Reply => {
             let text = reply_text(Reply, answer.text.as_deref())?;
@@ -209,6 +245,15 @@ fn not_allowed(item: &InboxItem, action: InboxAction, allowed: &[InboxAction]) -
         item.id,
         names.join(", ")
     ))
+}
+
+/// An `ask` about Claude Code's plan, which `approve` answers from the screen.
+fn plan_prompt(item: &InboxItem) -> bool {
+    item.kind == ItemKind::Ask
+        && item
+            .prompt
+            .as_ref()
+            .is_some_and(|p| p.kind == muxa_protocol::PromptKind::Plan)
 }
 
 /// The menu option an `ask`'s answer picks.
@@ -302,6 +347,7 @@ async fn act(
             asked,
             option,
         } => prompt::pick(cx, pane, &asked, option).await,
+        Plan::ApproveMenu { pane, asked } => prompt::approve_plan(cx, pane, &asked).await,
         Plan::Reply(text) => reply::send(&cx.env().await?, task, &text).await,
         Plan::DenyAndReply {
             pane,

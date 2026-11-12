@@ -37,12 +37,19 @@ pub fn short_dir() -> PathBuf {
 
 /// Runs `muxa-bridge daemon run` on `server`, with `extra` flags.
 pub fn spawn(server: &Server, dir: &Path, extra: &[&str]) -> Child {
+    spawn_with(server, dir, extra, &[])
+}
+
+/// As `spawn`, with `env` added to the daemon's environment.
+pub fn spawn_with(server: &Server, dir: &Path, extra: &[&str], env: &[(&str, &str)]) -> Child {
     tokio::process::Command::new(env!("CARGO_BIN_EXE_muxa-bridge"))
         .args(["daemon", "run", "--socket", &server.socket, "--daemon-dir"])
         .arg(dir)
         .args(extra)
+        .envs(env.iter().copied())
         .env_remove("TMUX")
         .env("XDG_STATE_HOME", server.xdg_state())
+        .env("XDG_CONFIG_HOME", server.xdg_config())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -54,7 +61,17 @@ pub fn spawn(server: &Server, dir: &Path, extra: &[&str]) -> Child {
 impl Daemon {
     /// Starts a daemon in `dir` and waits until it answers on its socket.
     pub async fn start_in(server: &Server, dir: PathBuf, extra: &[&str]) -> Daemon {
-        let child = spawn(server, &dir, extra);
+        Self::start_with(server, dir, extra, &[]).await
+    }
+
+    /// As `start_in`, with `env` added to the daemon's environment.
+    pub async fn start_with(
+        server: &Server,
+        dir: PathBuf,
+        extra: &[&str],
+        env: &[(&str, &str)],
+    ) -> Daemon {
+        let child = spawn_with(server, &dir, extra, env);
         let daemon = Daemon { child, dir };
         for _ in 0..100 {
             if UnixStream::connect(daemon.socket()).await.is_ok() {

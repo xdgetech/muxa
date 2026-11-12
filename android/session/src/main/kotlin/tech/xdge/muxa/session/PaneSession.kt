@@ -58,6 +58,9 @@ import tech.xdge.muxa.protocol.WORK_POLICIES
 import tech.xdge.muxa.protocol.WORK_STAFF
 import tech.xdge.muxa.protocol.WORK_MEMORY
 import tech.xdge.muxa.protocol.WORK_WRITES
+import tech.xdge.muxa.protocol.WORK_RESULT_REVIEW
+import tech.xdge.muxa.protocol.WORK_TODAY_ACTIONS
+import tech.xdge.muxa.protocol.RunBudget
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
 import tech.xdge.muxa.protocol.WorkAction
@@ -103,6 +106,9 @@ class PaneSession(
 
         /** The agent's menu changed since the item was made; nothing was sent to the pane. */
         class ItemChanged : Failure("the item changed")
+
+        /** Approve plan found no single "Yes, manually approve edits" on the screen; nothing was sent (ADR 0060 §5). */
+        class ApproveInTerminal(val body: ErrorBody) : Failure(body.message)
 
         /** The Capture or Work item changed on another device since it was listed; nothing was written. */
         class WorkChanged : Failure("the work item changed")
@@ -214,11 +220,20 @@ class PaneSession(
         /** Task ends propose to the workspace memory; Approve on a `memory` item sends the hash of the text shown (ADR 0053). */
         val canKeepMemory get() = workLevel >= WORK_MEMORY
 
+        /** Every Result is a `result` item, and a `write` item takes Revise (ADR 0058): Work rows drop "Result ready". */
+        val reviewsResults get() = workLevel >= WORK_RESULT_REVIEW
+
         /**
          * The overall assistant's workspace when the host opens its root Ask session (ADR 0054):
          * Talk to Assistant shows then.
          */
         val assistantWorkspace get() = if (workLevel >= WORK_ASK_ROOT) assistant?.overall else null
+
+        /** The secretary, the overall workspace, when the host types a Work item's Send into it (ADR 0059 §4). */
+        val secretary get() = if (workLevel >= WORK_TODAY_ACTIONS) assistant?.overall else null
+
+        /** The overall workspace's runs left today, for Re-rank (ADR 0059 §5). Null: an older host, or no overall workspace. */
+        val overallRuns: RunBudget? get() = assistant?.overallRuns
     }
 
     private val _state = MutableStateFlow(State())
@@ -612,7 +627,9 @@ class PaneSession(
      * since another device may have answered first; an `ask` whose menu changed is [Failure.ItemChanged].
      * Done and Drop end the Task with its worktree, as [updateTask] does with [forceWorktree].
      * Approve on a `write` item goes only through [approveWrite], and on a `memory` item through
-     * [approveMemory]: each needs the text the user saw.
+     * [approveMemory]: each needs the text the user saw. On a `result` item (ADR 0058), `approve` hands off
+     * and `reply` with [text] asks the member again as a new version; `reply` on a `write` item is Revise.
+     * A budget reached is [Failure.Refused], and the item stays open.
      */
     suspend fun answer(
         item: InboxItem,
@@ -674,6 +691,8 @@ class PaneSession(
             forgetAnswer(requestId)
             loadWork()
             if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) {
+                // Approve plan presses no key it cannot read off the screen: the user approves in the terminal.
+                if (item.isPlan && action == InboxAction.APPROVE) throw Failure.ApproveInTerminal(e.body)
                 // A proposal's conflict is the host's reason: a Capture sorted meanwhile, or a budget.
                 throw if (refusable) Failure.Refused(e.body) else Failure.ItemChanged()
             }
@@ -699,6 +718,8 @@ class PaneSession(
         savedWork.remove(requestId)
         savedPolicies.remove(requestId)
         savedTasks.remove(requestId)
+        // Send on a `new-task` item types into the secretary's session (ADR 0060 §3).
+        startedSessions.remove(requestId)
     }
 
     /**
@@ -1221,6 +1242,17 @@ class PaneSession(
         start { id -> Request.StartSession(id, workspace, root = true) }
     }
 
+    /**
+     * Send to the secretary (ADR 0059 §4): opens the overall workspace's root Ask session and types [text],
+     * after Work item [work]. A menu, an unknown state or a person typing is the host's `conflict`, and
+     * nothing is typed. Returns the session once the session list has it.
+     */
+    suspend fun sendToSecretary(work: String, text: String): Message.SessionStarted = withContext(dispatcher) {
+        val workspace = _state.value.secretary
+            ?: throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, SECRETARY_UNSUPPORTED))
+        start { id -> Request.StartSession(id, workspace, root = true, text = text, work = work) }
+    }
+
     /** Sends [make]'s `start-session`, then lists sessions again, so the list has it. */
     private suspend fun start(make: (Long) -> Request): Message.SessionStarted {
         var requestId = 0L
@@ -1534,11 +1566,15 @@ class PaneSession(
         private val VIEWPORT_SETTLE = 300.milliseconds
 
         /** The answers after which the Task list and the sessions are read again. */
-        private val TASK_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP, InboxAction.RETRY, InboxAction.APPROVE)
+        private val TASK_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP, InboxAction.RETRY, InboxAction.APPROVE, InboxAction.START_TASK)
 
         /** The statuses and the answers that end a Task, and so take `worktree` (ADR 0043). */
         private val ENDING_STATUSES = setOf(TaskStatus.DONE, TaskStatus.DROPPED)
         private val ENDING_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP)
+
+        /** Shown when Approve plan cannot pick the option off the Task's screen (ADR 0060 §5). */
+        const val APPROVE_IN_TERMINAL =
+            "muxa could not find \"Yes, manually approve edits\" in the plan menu, so it pressed nothing. Approve the plan in the Task's terminal."
 
         /** Shown when an `ask` item's menu changed since it was listed. */
         const val ITEM_CHANGED = "The agent now asks something else. The Inbox shows it as it is now; answer again."
@@ -1562,6 +1598,9 @@ class PaneSession(
         const val PLANS_UNSUPPORTED = "This host has no overall assistant. Update muxa on the host."
 
         /** Shown when the host has no overall assistant to talk to (ADR 0054). */
+        const val SECRETARY_UNSUPPORTED =
+            "This host can't send a Work item to the secretary. Update muxa on the host to work level 17, and set an overall assistant."
+
         const val ASSISTANT_UNSUPPORTED =
             "This host has no overall assistant to talk to. Set one up on the host, or update muxa there."
 
@@ -1587,7 +1626,9 @@ class PaneSession(
          * The assistants' items: answering one may write a Capture, a Work item, a request's step, a
          * policy, a correction or the writer's Task.
          */
-        private val OVERALL_KINDS = setOf(ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF, ItemKind.WRITE)
+        private val OVERALL_KINDS = setOf(
+            ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF, ItemKind.WRITE, ItemKind.RESULT, ItemKind.NEW_TASK,
+        )
 
         /** A plan's id starts with it; a request's with `q-`. */
         private const val PLAN_PREFIX = "p-"
@@ -1608,6 +1649,7 @@ class PaneSession(
                 }
             is Failure.LaunchFailed -> "The task was saved, but its agent did not start: ${error.body.message}"
             is Failure.ItemChanged -> ITEM_CHANGED
+            is Failure.ApproveInTerminal -> APPROVE_IN_TERMINAL
             is Failure.WorkChanged -> WORK_CHANGED
             is Failure.NotesChanged -> NOTES_CHANGED
             is Failure.Refused -> error.body.message

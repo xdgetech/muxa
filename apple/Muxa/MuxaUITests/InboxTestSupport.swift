@@ -8,8 +8,18 @@ extension XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-demo", "-mode", "inbox"] + arguments
         app.launch()
-        XCTAssertTrue(app.buttons["item-row-i-0000a001"].waitForExistence(timeout: 10))
+        XCTAssertTrue(waitForInbox(app, first: "i-0000a001"), "the Inbox")
         return app
+    }
+
+    /// The Inbox shows: its item `first`, or Today, whose rows can push the items below a
+    /// phone's screen.
+    @MainActor
+    func waitForInbox(_ app: XCUIApplication, first: String) -> Bool {
+        let row = app.buttons["item-row-\(first)"]
+        let today = inboxSection(app, "today")
+        let shown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in row.exists || today.exists }, object: nil)
+        return XCTWaiter.wait(for: [shown], timeout: 10) == .completed
     }
 
     @MainActor

@@ -168,6 +168,157 @@ fn restart_recovery_fixtures_preserve_public_identity_and_unknown_values() {
     assert_eq!(operation.actions, ["future-action"]);
 }
 
+/// ADR 0059: Send to the secretary with a Work item, and what a Re-rank has
+/// left today.
+#[test]
+fn today_action_fixtures_round_trip() {
+    use muxa_protocol::{RunBudget, WORK_TODAY_ACTIONS, work_level};
+    let read = |file: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/today-actions/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    assert_eq!(round_trip::<Request>("today-actions/requests.jsonl"), 2);
+    assert_eq!(round_trip::<Message>("today-actions/messages.jsonl"), 4);
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[0],
+        Request::StartSession { root: true, repo: None, text: Some(t), work: Some(w), .. }
+            if t.starts_with("Ask legal") && w == "w-7b8c9d0e"
+    ));
+    assert!(matches!(
+        &requests[1],
+        Request::StartSession {
+            text: Some(_),
+            work: None,
+            ..
+        }
+    ));
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[0] else {
+        panic!("expected hello")
+    };
+    assert_eq!(work_level(capabilities), WORK_TODAY_ACTIONS);
+    let Message::InboxList { assistant, .. } = &messages[1] else {
+        panic!("expected inbox-list")
+    };
+    assert_eq!(
+        assistant.as_ref().and_then(|a| a.overall_runs),
+        Some(RunBudget { left: 2, max: 3 })
+    );
+}
+
+/// ADR 0061: Retry on an assistant run's failure item reuses `retry`.
+#[test]
+fn assistant_retry_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, ItemKind, ItemState};
+    assert_eq!(round_trip::<Request>("assistant-retry/requests.jsonl"), 4);
+    assert_eq!(round_trip::<Message>("assistant-retry/messages.jsonl"), 10);
+    let text = std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/assistant-retry/messages.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let messages: Vec<Message> = text
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::InboxList { items, .. } = &messages[1] else {
+        panic!("expected inbox-list")
+    };
+    for i in items {
+        assert_eq!((i.kind, i.task.as_deref()), (ItemKind::Failure, None));
+        assert_eq!(i.answers[0], InboxAction::Retry);
+    }
+    assert!(matches!(&messages[2], Message::WorkSaved { request: Some(q), .. } if q.version == 2));
+    assert!(matches!(&messages[5], Message::PlanSaved { .. }));
+    for m in [&messages[3], &messages[6], &messages[8]] {
+        let Message::InboxSaved { item: Some(i), .. } = m else {
+            panic!("expected inbox-saved: {m:?}")
+        };
+        assert_eq!(
+            (i.state, i.answer),
+            (ItemState::Answered, Some(InboxAction::Retry))
+        );
+    }
+}
+
+#[test]
+fn task_proposal_fixtures_round_trip() {
+    use muxa_protocol::{InboxAction, ItemKind, WORK_TASK_PROPOSALS, work_level};
+    let read = |file: &str| -> Vec<String> {
+        std::fs::read_to_string(format!(
+            "{}/../../protocol/fixtures/task-proposals/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+    };
+    assert_eq!(round_trip::<Request>("task-proposals/requests.jsonl"), 5);
+    assert_eq!(round_trip::<Message>("task-proposals/messages.jsonl"), 7);
+    let requests: Vec<Request> = read("requests.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(matches!(
+        &requests[0],
+        Request::ProposeTask { repo: Some(r), work: Some(w), .. } if r == "muxa" && w == "w-1a2b3c4d"
+    ));
+    assert!(matches!(
+        &requests[1],
+        Request::ProposeTask {
+            repo: None,
+            work: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &requests[3],
+        Request::UpdateInbox {
+            action: InboxAction::StartTask,
+            ..
+        }
+    ));
+    let messages: Vec<Message> = read("messages.jsonl")
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let Message::Hello { capabilities, .. } = &messages[0] else {
+        panic!("expected hello")
+    };
+    assert_eq!(work_level(capabilities), WORK_TASK_PROPOSALS);
+    let Message::InboxList { items, .. } = &messages[1] else {
+        panic!("expected inbox-list")
+    };
+    let proposed = items[0].result.as_ref().and_then(|r| r.task.as_ref());
+    assert_eq!(proposed.map(|t| t.step), Some(Some(1)));
+    assert!(items[1].answers.contains(&InboxAction::StartTask));
+    assert_eq!(items[2].kind, ItemKind::NewTask);
+    assert_eq!(
+        items[2].new_task.as_ref().and_then(|t| t.work.as_deref()),
+        Some("w-1a2b3c4d")
+    );
+    // A client before level 18 reads the kind and the answer as unknown.
+    let old: serde_json::Value = serde_json::from_str(r#""new-task""#).unwrap();
+    assert_eq!(
+        serde_json::from_value::<ItemKind>(old).unwrap(),
+        ItemKind::NewTask
+    );
+}
+
 #[test]
 fn workspace_fixtures_round_trip() {
     use muxa_protocol::{WORK_ASK, work_level};
@@ -457,8 +608,8 @@ fn assistant_fixtures_round_trip() {
     use muxa_protocol::{
         CaptureState, Delivery, SortAction, WORK_ASSISTANT, WorkAction, WorkState, work_level,
     };
-    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 49);
-    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 58);
+    assert_eq!(round_trip::<Request>("assistant/requests.jsonl"), 53);
+    assert_eq!(round_trip::<Message>("assistant/messages.jsonl"), 62);
     let read = |name: &str| {
         std::fs::read_to_string(format!(
             "{}/../../protocol/fixtures/assistant/{name}",
@@ -678,7 +829,7 @@ fn plan_fixtures_round_trip() {
     assert!(work[0].pinned_at.is_some());
     let plan = &plans[0];
     assert!(plans[0].at > plans[1].at);
-    assert!(plan.top.len() <= 3);
+    assert!(plan.top.len() <= 10);
     assert_eq!(plan.top[0].work.as_deref(), Some(work[0].id.as_str()));
     let later: Vec<&str> = work
         .iter()
@@ -1730,4 +1881,107 @@ fn inbox_delete_fixtures_round_trip() {
             deleted: 12
         }
     ));
+}
+
+fn assistant_lines(name: &str) -> Vec<String> {
+    std::fs::read_to_string(format!(
+        "{}/../../protocol/fixtures/assistant/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+    .lines()
+    .map(str::to_owned)
+    .collect()
+}
+
+/// ADR 0058: a `result` item carries the Result to review, and its answers
+/// are existing actions; Send and Revise are `reply` with the text.
+#[test]
+fn a_result_item_is_answered_with_existing_actions() {
+    use muxa_protocol::{InboxAction, ItemKind, ItemState, StepBy, WORK_RESULT_REVIEW};
+    assert_eq!(
+        muxa_protocol::work_capability(WORK_RESULT_REVIEW),
+        "work:16"
+    );
+    let requests = assistant_lines("requests.jsonl");
+    let messages = assistant_lines("messages.jsonl");
+    let Message::InboxList { items, .. } = serde_json::from_str(&messages[58]).unwrap() else {
+        panic!()
+    };
+    let r = items[0].result.as_ref().unwrap();
+    assert_eq!((items[0].kind, r.step), (ItemKind::Result, 2));
+    assert_eq!(r.handoff.as_ref().unwrap().worker, "lisk-architect");
+    assert!(!r.findings.is_empty() && !r.files.is_empty());
+    assert_eq!(
+        items[0].answers,
+        [
+            InboxAction::Approve,
+            InboxAction::Reply,
+            InboxAction::Dismiss,
+            InboxAction::Later
+        ]
+    );
+    // Without a staff: no worker, no hand-off, no approve.
+    let plain = items[1].result.as_ref().unwrap();
+    assert!(plain.worker.is_none() && plain.handoff.is_none());
+    assert!(!items[1].answers.contains(&InboxAction::Approve));
+    // A write item takes reply: Revise.
+    assert!(items[2].answers.contains(&InboxAction::Reply));
+    let Request::UpdateInbox {
+        action: InboxAction::Reply,
+        text: Some(_),
+        ..
+    } = serde_json::from_str(&requests[50]).unwrap()
+    else {
+        panic!()
+    };
+    // Send: a new version whose first step is the same member, asked by the user.
+    let Message::WorkSaved {
+        request: Some(q), ..
+    } = serde_json::from_str(&messages[59]).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!((q.version, q.steps[0].by), (3, StepBy::User));
+    assert_eq!(q.steps[0].worker, "lisk-strategist");
+    assert!(q.results.iter().all(|r| r.stale));
+    let Message::InboxSaved {
+        item: Some(sent), ..
+    } = serde_json::from_str(&messages[60]).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        (sent.state, sent.answer),
+        (ItemState::Answered, Some(InboxAction::Reply))
+    );
+}
+
+/// A level 15 client knows no `result` kind: it reads the list, shows the
+/// item as unknown, and still has every answer the host lists.
+#[test]
+fn a_level_15_client_reads_a_result_item_as_unknown_with_its_answers() {
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    #[serde(rename_all = "lowercase")]
+    enum OldKind {
+        Write,
+        #[serde(other)]
+        Unknown,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldItem {
+        kind: OldKind,
+        summary: Option<String>,
+        answers: Vec<muxa_protocol::InboxAction>,
+    }
+    #[derive(serde::Deserialize)]
+    struct OldList {
+        items: Vec<OldItem>,
+    }
+    let old: OldList = serde_json::from_str(&assistant_lines("messages.jsonl")[58]).unwrap();
+    let first = &old.items[0];
+    assert_eq!(first.kind, OldKind::Unknown);
+    assert!(first.summary.is_some());
+    assert!(first.answers.iter().all(muxa_protocol::Known::is_known));
+    assert_eq!(old.items[2].kind, OldKind::Write);
 }

@@ -229,7 +229,7 @@ fn plan_reorder_and_dismiss_change_the_newest_plan_with_a_result() {
     let bridge = Bridge::new(11);
     let text = ok(&bridge.run(&["plan"]));
     for part in [
-        "1. w-7b8c9d0e  Compare vendor offers  60-120 min, about 90\n",
+        "1. w-7b8c9d0e  Compare vendor offers  60-120 min, about 90  next\n",
         "2. w-0b1c2d3e  Prepare the quarterly report  60-120 min, about 90\n",
         "   Based on: policy y-0a1b2c3d  This week, recruiting comes before sales.\n",
         "   Based on: correction x-0a1b2c3d  pinned w-0b1c2d3e\n",

@@ -33,6 +33,7 @@ import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.Plan
 import tech.xdge.muxa.protocol.PlanRow
 import tech.xdge.muxa.protocol.TargetState
+import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WorkAction
 import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorkState
@@ -161,7 +162,7 @@ class AssistantRequestTest {
     fun theInboxListKeepsTheRequestsAndTheRowSaysResultReady() = runBlocking {
         val s = connected(AssistBridge()).state.value
         assertEquals(listOf("q-00000001"), s.requests.map { it.id })
-        assertEquals(RESULT_READY, assistNote(s.work.single(), s.requests))
+        assertEquals(RESULT_READY, assistNote(s.work.single(), s.requests, s.workLevel))
     }
 
     @Test
@@ -278,7 +279,7 @@ class AssistantRequestTest {
         assertEquals(listOf(2L), q.copy(results = results).currentResults.map { it.version })
         assertEquals(listOf(1L), q.copy(results = results).earlierResults.map { it.version })
         val item = WorkItem("w-1", 1, "T", WorkState.OPEN, 1, 1, requests = listOf("q-1"))
-        assertEquals("assistant working", assistNote(item, listOf(q)))
+        assertEquals("assistant working", assistNote(item, listOf(q), WORK_ASSISTANT))
     }
 
     @Test

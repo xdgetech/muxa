@@ -22,6 +22,7 @@ fake_cli() {
   cat >"$TMPDIR/bin/muxa-cli" <<FAKE
 #!/bin/sh
 (shift 2; echo "\$*") >>"$TMPDIR/bin/calls"
+case " \$* " in *" --purpose - "*) cat >"$TMPDIR/bin/stdin" ;; esac
 cat "$ITEMS"
 FAKE
   chmod +x "$TMPDIR/bin/muxa-cli"
@@ -57,7 +58,7 @@ shift_tab() { key Escape '[' Z; }
   [[ "$output" == *"2  docs/plan.md"* ]]
   [[ "$output" == *"3  docs/chart.png"* ]]
   [[ "$output" == *"4  PR #817  https://github.com/example/app/pull/817"* ]]
-  [[ "$output" == *$'l Later   d ✓ Done   c Complete Task   o Open Session\ns Send\nspace/b scroll   v read all   q close'* ]]
+  [[ "$output" == *$'l Later   d ✓ Done   c Complete Task   o Open Session\ns Send\nspace/b scroll   y copy link   v read all   q close'* ]]
 }
 
 @test "labels name what an answer does, as in the apps: triage first, then the answers" {
@@ -86,6 +87,27 @@ shift_tab() { key Escape '[' Z; }
   [ "$(inbox key i-3d4e5f6a p "$ITEMS")" = "" ]
   [ "$(inbox key i-3d4e5f6a n "$ITEMS")" = "" ]
   [ "$(inbox key e-1a2b3c4d r "$ITEMS")" = reject ]
+}
+
+@test "y takes the item's URLs: its links first, then those in its text, each once" {
+  jq -c '.items[1].summary = "Opened https://github.com/example/app/pull/817. CI: (https://ci.example/runs/9), see https://ci.example/runs/9"' \
+    "$ITEMS" >"$TMPDIR/u.json"
+  [ "$(inbox urls i-2c3d4e5f "$TMPDIR/u.json")" = "$(printf '%s\n' https://github.com/example/app/pull/817 https://ci.example/runs/9)" ]
+  [ "$(inbox key i-2c3d4e5f y "$TMPDIR/u.json")" = urls ]
+  [ "$(inbox key i-0a1b2c3d y "$ITEMS")" = "" ]
+  run bash -c "'$ROOT/scripts/inbox.sh' view i-0a1b2c3d '$ITEMS' | sed \$'s/\x1b\\\\[[0-9;]*m//g' | tail -n 1"
+  [ "$output" = "space/b scroll   v read all   q close" ]
+}
+
+@test "an assistant run's failure offers a Retry (ADR 0061)" {
+  jq -c 'select(.type == "inbox-list") | {work: 18, items, entries: [], runs: []}' \
+    "$ROOT/../protocol/fixtures/assistant-retry/messages.jsonl" >"$TMPDIR/r.json"
+  keys() { inbox view "$1" "$TMPDIR/r.json" | sed $'s/\x1b\\[[0-9;]*m//g' | tail -n 3 | sed '$d'; }
+  for id in i-7b8c9d0e i-8c9d0e1f i-9d0e1f2a; do
+    [ "$(keys "$id")" = "$(printf 'l Later   d ✓ Done   p Protect\na Retry   s Ask Agent')" ]
+    [ "$(inbox key "$id" a "$TMPDIR/r.json")" = retry ]
+    [ "$(inbox key "$id" x "$TMPDIR/r.json")" = "" ]
+  done
 }
 
 @test "a question's numbers choose an option" {
@@ -218,6 +240,21 @@ shift_tab() { key Escape '[' Z; }
   wait_for 'grep -q "^inbox read i-2c3d4e5f" "$TMPDIR/bin/calls"'
 }
 
+@test "prefix+T: y copies the item's link and opens it on this machine" {
+  fake_cli
+  printf '#!/bin/sh\necho "$1" >>"%s/opened"\n' "$TMPDIR" >"$TMPDIR/bin/open"
+  chmod +x "$TMPDIR/bin/open"
+  tx set-environment -g PATH "$TMPDIR/bin:$PATH"
+  tx set-environment -gu SSH_CONNECTION
+  attach
+  key C-b T
+  sleep 1
+  key j
+  key y
+  wait_for 'grep -qx "https://github.com/example/app/pull/817" "$TMPDIR/opened"'
+  [ "$(tx show-buffer)" = "https://github.com/example/app/pull/817" ]
+}
+
 @test "prefix+T: Enter goes to the item's session" {
   tx new-session -d -s target
   sid="$(tx display-message -p -t =target: '#{session_id}')"
@@ -243,8 +280,9 @@ shift_tab() { key Escape '[' Z; }
 # items. The fixture's level 10 list (with plans) is plan_inbox's.
 work_inbox() {
   # The level 12 list of ADR 0051 has no plans either: staff.bats reads it.
+  # The level 16 list of result items (ADR 0058) is results.bats'.
   jq -c --slurpfile items "$ITEMS" 'select(.type == "inbox-list" and .plans == null and
-      ((.assistant.delegates // []) | any(.staff) | not)) |
+      ((.assistant.delegates // []) | any(.staff) | not) and all(.items[]; .kind != "result")) |
     {work: 9, items: $items[0].items, entries: [], runs: [], workItems: .work, captures, requests}' \
     "$ROOT/../protocol/fixtures/assistant/messages.jsonl"
 }
@@ -323,7 +361,11 @@ work_inbox() {
   key C-b T
   sleep 1
   key a
-  wait_for 'grep -q "^assist w-6a7b8c9d --json$" "$TMPDIR/bin/calls"'
+  key -l 'Which steps can merge?'
+  key Enter
+  key d                  # scope: draft
+  wait_for 'grep -q "^assist w-6a7b8c9d --scope draft --purpose - --json$" "$TMPDIR/bin/calls"'
+  [ "$(cat "$TMPDIR/bin/stdin")" = "Which steps can merge?" ]
 }
 
 # The work:9 list with two Routine briefings: the proposal made one, and a
@@ -552,8 +594,9 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 8"
   [ "$output" = "$(printf '%s\n' today: today:1 today:2 today:3 today:due sec:decisions i-1a2b3c4d i-2b3c4d5e)" ]
   out="$(plain_list "$TMPDIR/p.json")"
-  [[ "$out" == *$'today:1\t  1. Prepare the quarterly report  60–120 min · moved'* ]]
-  [[ "$out" == *$'today:3\t  3. Try the tool for business B  1–5 min · new'* ]]
+  [[ "$out" == *$'today:1\t▶ 1. Start · Prepare the quarterly report  60–120 min · moved'* ]]
+  [[ "$out" == *$'today:2\t  2. Start · Compare vendor offers'* ]]
+  [[ "$out" == *$'today:3\t  3. Sort capture · Try the tool for business B  1–5 min · new'* ]]
   [[ "$out" == *"Due soon, moved down by you: Renew the passport"* ]]
   [[ "$out" == *"Prepare the quarterly report  open · "*" · pinned · due 2025-11-12 07:00Z · work"* ]]
 }
@@ -561,13 +604,13 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
 @test "a Today row shows why, next, time and basis, and opens its target" {
   plan_inbox >"$TMPDIR/p.json"
   out="$(plain_view today:2 "$TMPDIR/p.json")"
-  [[ "$out" == *"2. Compare vendor offers"* ]]
+  [[ "$out" == *"2. Start · Compare vendor offers"* ]]
   [[ "$out" == *"Why: The offers end Friday."* ]]
-  [[ "$out" == *"Next: Approve the request to work."* ]]
+  [[ "$out" == *"Do: Approve the request to work."* ]]
   [[ "$out" == *"Time: 5–15 min, about 10"* ]]
   [[ "$out" == *"due: The offer ends Friday  https://example.com/offer"* ]]
   [[ "$out" == *"Which region the contract covers"* ]]
-  [[ "$out" == *"o Open   t Plan Now"* ]]
+  [[ "$out" == *"plan:  t Re-rank"* ]]
   [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
   [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
   [ "$(inbox target today:due "$TMPDIR/p.json")" = w-8c9d0e1f ]
@@ -577,23 +620,40 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   [[ "$out" == *"Left the plan: w-5f6a7b8c"* ]]
 }
 
-@test "a Today row whose target closed shows its title dimmed with the state, and takes no target keys" {
-  # The user answered the sort item and the host no longer has w-7b8c9d0e;
-  # neither is listed, so only the host's title and targetState name them.
-  plan_inbox | jq -c '.items |= map(select(.id != "i-1a2b3c4d")) |
-    .workItems |= map(select(.id != "w-7b8c9d0e")) |
-    .plans[0].top[2].targetState = "answered" |
+@test "Today hides a row whose target closed, numbers the open rows and marks the first Next" {
+  # The user completed the first row and the host no longer has w-7b8c9d0e.
+  plan_inbox | jq -c '.workItems |= map(select(.id != "w-7b8c9d0e")) |
+    .plans[0].top[0].targetState = "done" |
     .plans[0].top[1] |= (del(.title) | .targetState = "gone")' >"$TMPDIR/p.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 3"
+  [ "$output" = "$(printf '%s\n' today: today:3 today:due)" ]
   out="$(plain_list "$TMPDIR/p.json")"
-  [[ "$out" == *$'today:2\t  2. w-7b8c9d0e · gone'* ]]
-  [[ "$out" == *$'today:3\t  3. Make a Work item in work: Try the tool for business B · ✓ answered'* ]]
-  [[ "$(inbox list "$TMPDIR/p.json" | grep '^today:3')" == *$'\e[2m3. Make a Work item'* ]]
+  [[ "$out" == *$'today:3\t▶ 1. Sort capture · Try the tool for business B  1–5 min'* ]]
+  [[ "$out" != *"Prepare the quarterly report  60"* ]]
+  [[ "$out" != *"· gone"* ]]
   out="$(plain_view today:3 "$TMPDIR/p.json")"
-  [[ "$out" == *"i-1a2b3c4d · ✓ answered"* ]]
-  [[ "$out" != *"o Open"* ]]
-  [[ "$out" != *"a Approve"* ]]
-  [ "$(inbox target today:3 "$TMPDIR/p.json")" = "" ]
-  [ "$(inbox target today:1 "$TMPDIR/p.json")" = w-0b1c2d3e ]
+  [[ "$out" == *"▶ 1. Sort capture · Try the tool for business B"* ]]
+  [[ "$out" == *"i-1a2b3c4d · next"* ]]
+  # A row picked before the list reloaded still says how it ended, and opens nothing.
+  out="$(plain_view today:2 "$TMPDIR/p.json")"
+  [[ "$out" == *"w-7b8c9d0e · gone"* ]]
+  [[ "$out" != *"Enter "* ]]
+  [ "$(inbox target today:2 "$TMPDIR/p.json")" = "" ]
+  [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
+}
+
+@test "a Work row whose Task started leaves Today and says so when picked" {
+  plan_inbox | jq -c '.plans[0].top[0].targetState = "started"' >"$TMPDIR/p.json"
+  out="$(plain_list "$TMPDIR/p.json")"
+  [[ "$out" != *"Prepare the quarterly report  60"* ]]
+  [[ "$(plain_view today:1 "$TMPDIR/p.json")" == *"▶ Task started"* ]]
+}
+
+@test "when every row is closed Today says all done, and shows no row" {
+  plan_inbox | jq -c '.plans[0].top |= map(.targetState = "done")' >"$TMPDIR/p.json"
+  run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 2"
+  [ "$output" = "$(printf '%s\n' today: today:due)" ]
+  [[ "$(plain_view today: "$TMPDIR/p.json")" == *"All done. A new plan follows when the budget allows."* ]]
 }
 
 @test "a failed newest plan shows its reason, and the rows stay the last result's" {
@@ -615,7 +675,7 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   plan_inbox | jq -c '.plans = [] | del(.assistant)' >"$TMPDIR/p.json"
   [[ "$(inbox list "$TMPDIR/p.json" | cut -f1)" != *today* ]]
   plan_inbox | jq -c '.plans = []' >"$TMPDIR/p.json"
-  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  no plan yet · t Plan Now"* ]]
+  [[ "$(plain_list "$TMPDIR/p.json" | head -n 1)" == *"Today  no plan yet · t Re-rank"* ]]
 }
 
 @test "t plans now from any row, p still protects an item, P pins or unpins a Work item" {

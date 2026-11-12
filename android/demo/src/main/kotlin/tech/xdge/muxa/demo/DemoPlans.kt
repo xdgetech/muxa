@@ -2,6 +2,7 @@ package tech.xdge.muxa.demo
 
 import tech.xdge.muxa.protocol.AssistScope
 import tech.xdge.muxa.protocol.AssistantInfo
+import tech.xdge.muxa.protocol.RunBudget
 import tech.xdge.muxa.protocol.Basis
 import tech.xdge.muxa.protocol.BasisKind
 import tech.xdge.muxa.protocol.ChangeKind
@@ -57,7 +58,11 @@ internal class DemoPlans(
     /** Each workspace's live `NOTES.md`, as its hash; none is the hash of no bytes. */
     private val live = mutableMapOf<String, String>()
 
-    val info: AssistantInfo get() = AssistantInfo(overall, delegates)
+    /** Level 17: the overall workspace's `max_runs_per_day`; the fixtures' plan ran once today (ADR 0059 §5). */
+    var runsMax: Int? = null
+
+    val info: AssistantInfo
+        get() = AssistantInfo(overall, delegates, runsMax?.let { RunBudget((it - 1 - made).coerceAtLeast(0), it) })
 
     /** `plans` as `inbox-list` sends them: newest first, at most 7; the newest `resulted` one with what is derived now. */
     fun listed(unanswered: List<String>, stale: List<String>): List<Plan> {
@@ -139,6 +144,13 @@ internal class DemoPlans(
             changed = plan.changed.map { if (it.id == old) it.copy(id = id) else it },
         )
         plans = plans.map { if (it.id == plan.id) swapped else it }
+    }
+
+    /** [row] joins the current plan's rows: the `new-task` item's at level 18 (ADR 0060). */
+    fun addRow(row: PlanRow) {
+        val plan = current ?: return
+        val id = row.work ?: row.item ?: return
+        plans = plans.map { if (it.id == plan.id) plan.copy(top = plan.top + row, changed = plan.changed + PlanChange(id, ChangeKind.ENTERED)) else it }
     }
 
     /** `apply-notes` for a plan's notes: the overall workspace's. */

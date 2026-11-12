@@ -35,7 +35,7 @@ This defines the product concepts used by the vision and milestone plan. Propose
 | Delegate notes | What does a workspace's assistant remember between runs? | The workspace memory, `<root>/.muxa/WORKSPACE.md` (ADR 0053), one per workspace. A run reads a copy and may propose a new text; it is written only when the user applies it, or by the host with `notes = "auto"` |
 | Overall assistant | Who looks across workspaces? | One workspace with `overall = true`. It reads only what each workspace's `share` allows. Its plan runs ask other workspaces only through proposals |
 | Conversation | Where do I talk to the overall assistant? | The overall workspace's root Ask session, `ask-<workspace>` (ADR 0054). It may stay open. It is the way in, not the record: what it decides goes to Captures, Work items and requests |
-| Plan | What should I do next? | `p-<8hex>`: one overall run's answer, at most 3 rows with reasons and minutes. Made on a schedule or by Plan Now. The host keeps 7 |
+| Plan | What should I do next? | `p-<8hex>`: one overall run's answer, a queue of up to 10 rows, most important first, with reasons and minutes. Made on a schedule, by Plan Now, or by the host when every row is closed (ADR 0057). The host keeps 7 |
 | Proposal | What does the overall assistant want to do for me? | An Inbox item of kind `sort` or `delegate`, from the newest plan only |
 
 - A Work item's `pinnedAt` and `due` are the user's. A pinned item is listed first and fills the first plan rows. A plan's estimated deadline stays in its `basis`, never on the item.
@@ -66,7 +66,9 @@ A Session is not inherently manual, and a Task is not a renamed tmux Session. A 
 |---|---|---|
 | Staff member | Who in a workspace works on my requests? | A `[[worker]]` named in the workspace's `staff`, with its description as its job. One is the lead. A workspace without `staff` has one member, its delegate |
 | Step | Which member answered which part of a request? | One run of one member on one request version: `{step, worker, by, delivery}`, step 1 first, at most `max_steps`. Each step has its own Result |
-| Hand-off | Who should work on it next? | A step's `handoff {worker, purpose}`, to a member not yet in the chain. An Inbox item of kind `handoff` under `review` |
+| Hand-off | Who should work on it next? | A step's `handoff {worker, purpose}`, to a member not yet in the chain. Under `review`, offered by the step's `result` item (ADR 0058) |
+| Result to review | What did a member find, and what next? | One Inbox item of kind `result` per stored Result of a version's newest step (ADR 0058): Hand off, Send, Done, Later. Its unread state is the "new result" mark |
+| Task proposal | Which Task would do it? | A Result's `task {repo?, title, goal}`, or the secretary's `new-task` item (ADR 0060). Start Task makes one Task, in plan mode, linked to the Work item; the proposal marks its goal's last line |
 | Writer | Who changes systems outside the host? | The one `[[worker]]` named `writer`, never a staff member or the delegate |
 | Write proposal | What does a Result want to send? | One entry of a Result's `writes[]`, `{action, target, content, hash}`, and one Inbox item of kind `write` |
 
@@ -74,7 +76,8 @@ A Session is not inherently manual, and a Task is not a renamed tmux Session. A 
 - A chain stays inside one workspace. Another workspace is reached only through the overall assistant's `delegate`, approved by the user.
 - A staff member reads; it never writes outside the host. A write is a proposal until the user approves its exact text.
 - An approved write is a Task of the writer, linked to the Work item with `work`. The Work item lists it as any Task it started. The Task's `review` item is the writer's report; muxa never claims the write happened.
-- A newer request version leaves an open `write` item open: its text is fixed, and the user may still want it.
+- A newer request version leaves an open `write` item open: its text is fixed, and the user may still want it. Revise closes the one item it revises.
+- Send on a `result` item, and Revise on a `write` item, make a new version of the same request, asked of the member who wrote the Result. It continues that Result, which becomes `stale` as every older Result does. Done ends the chain. None of them changes the Work item.
 
 ## Workspace memory (ADR 0053)
 

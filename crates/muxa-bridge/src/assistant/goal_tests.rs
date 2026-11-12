@@ -19,6 +19,7 @@ fn config() -> Workspaces {
 
 fn result(version: u64, step: u32, worker: &str, summary: &str) -> AssistResult {
     AssistResult {
+        task: None,
         writes: Vec::new(),
         version,
         at: 1,

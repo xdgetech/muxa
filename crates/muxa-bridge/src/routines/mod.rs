@@ -63,6 +63,47 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
     if let Request::UpdateInbox {
         id,
         entry,
+        action: muxa_protocol::InboxAction::Retry,
+        ..
+    } = &req
+    {
+        if entry.starts_with("i-") {
+            if let Some(answer) = crate::assistant::proposals::retry::answer(cx, *id, entry).await {
+                return answer;
+            }
+        }
+    }
+    if let Request::UpdateInbox {
+        id,
+        entry,
+        action: muxa_protocol::InboxAction::StartTask,
+        ..
+    } = &req
+    {
+        if entry.starts_with("i-") {
+            if let Some(answer) = crate::assistant::proposals::start_task(cx, *id, entry).await {
+                return answer;
+            }
+        }
+    }
+    if let Request::UpdateInbox {
+        id,
+        entry,
+        action: muxa_protocol::InboxAction::Reply,
+        text,
+        ..
+    } = &req
+    {
+        if entry.starts_with("i-") {
+            let sent = crate::assistant::proposals::reply(cx, *id, entry, text.as_deref()).await;
+            if let Some(answer) = sent {
+                return answer;
+            }
+        }
+    }
+    if let Request::UpdateInbox {
+        id,
+        entry,
         action: action @ (muxa_protocol::InboxAction::Confirm | muxa_protocol::InboxAction::Reject),
         text,
         ..
@@ -102,11 +143,12 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 let plans =
                     crate::assistant::plan::list(&config, &assistant.work, &assistant.requests)?;
                 // A broken workspaces file is logged by the load; the list still answers.
-                let info = config
-                    .load_workspaces()
-                    .ok()
-                    .and_then(|w| crate::assistant::info::info(&w));
                 let now = crate::records::now();
+                let info = config.load_workspaces().ok().and_then(|w| {
+                    let mut info = crate::assistant::info::info(&w)?;
+                    info.overall_runs = crate::assistant::info::overall_runs(&config, &w, now);
+                    Some(info)
+                });
                 let policies = crate::assistant::policies::list(&config, now)?;
                 let corrections = crate::assistant::corrections::list(&config, now)?;
                 let hypotheses = crate::assistant::hypotheses::list(&config, now)?;
@@ -254,7 +296,27 @@ pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), 
         })
         .collect();
     problems.extend(old_notes(&workspaces));
+    problems.extend(missing_repos(&workspaces));
     Ok((entries, problems))
+}
+
+/// Listed repos that do not exist. The load skipped and logged them; the
+/// user fixes `workspaces.toml`.
+fn missing_repos(workspaces: &crate::records::Workspaces) -> Vec<RoutineProblem> {
+    workspaces
+        .all()
+        .iter()
+        .flat_map(|w| {
+            w.missing_repos.iter().map(|path| RoutineProblem {
+                workspace: w.name.clone(),
+                reason: format!(
+                    "repo {} in workspaces.toml does not exist; muxa skips it until you \
+                     fix or remove that entry",
+                    path.display()
+                ),
+            })
+        })
+        .collect()
 }
 
 /// Blocking. Workspaces that still have the lead's notes from before ADR

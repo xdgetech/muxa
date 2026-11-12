@@ -448,6 +448,7 @@ mod tests {
             name: "w".into(),
             root: root.clone(),
             repos: vec![repo.clone()],
+            missing_repos: Vec::new(),
             agent: None,
             loop_checks: Some(Checks::Any),
             park_after: None,

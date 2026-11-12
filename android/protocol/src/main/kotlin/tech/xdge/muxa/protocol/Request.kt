@@ -158,13 +158,16 @@ sealed interface Request {
      * An agent session in a repo's main checkout, to ask about its code: no Task, no
      * worktree (capability `work` level 2, ADR 0031). [repo] is as `create-task`'s.
      * With [root] and no [repo], the workspace's root Ask session, open or new (`work`
-     * level 15, ADR 0054). A `session-started` comes first.
+     * level 15, ADR 0054). A `session-started` comes first. With [root], [text] is typed into
+     * its agent, after the Work item [work] when given (level 17, ADR 0059 §4); never logged.
      */
     @Serializable data class StartSession(
         override val id: Long,
         val workspace: String,
         val repo: String? = null,
         val root: Boolean = false,
+        val text: String? = null,
+        val work: String? = null,
     ) : Request
 
     /**
@@ -252,6 +255,19 @@ sealed interface Request {
 
     /** Start an overall run now (`work` level 10); [minutes] is the time the user has. A `plan-saved` comes first. */
     @Serializable data class PlanNow(override val id: Long, val minutes: Int? = null) : Request
+
+    /**
+     * The secretary proposes a Task (`work` level 18, ADR 0060): one `new-task` Inbox item. The
+     * same proposal again returns the open item. An `inbox-saved` comes first. [goal] is never logged.
+     */
+    @Serializable data class ProposeTask(
+        override val id: Long,
+        val workspace: String,
+        val repo: String? = null,
+        val title: String,
+        val goal: String,
+        val work: String? = null,
+    ) : Request
 
     /**
      * Keep a policy in the user's words (`work` level 11, ADR 0050). [scope] is `all` or a workspace; [from]

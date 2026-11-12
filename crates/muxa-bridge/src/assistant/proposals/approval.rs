@@ -37,7 +37,8 @@ pub struct Approval {
     pub work: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<String>,
-    /// The writer's Task an approved write made (ADR 0052 §3).
+    /// The writer's Task an approved write made (ADR 0052 §3), or the Task
+    /// a proposal started (ADR 0060).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
     /// Epoch seconds: a write's approval began. It counts against
@@ -47,6 +48,12 @@ pub struct Approval {
     /// Epoch seconds: a `memory` item's text is in the workspace memory (ADR 0053 §3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_at: Option<u64>,
+    /// The plan a failed plan's Retry started (ADR 0061).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
+    /// Epoch seconds: Retry asked the daemon to start the secretary again (ADR 0061).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restarted_at: Option<u64>,
 }
 
 impl Approval {
@@ -63,6 +70,8 @@ impl Approval {
             || self.request.is_some()
             || self.task.is_some()
             || self.memory_at.is_some()
+            || self.plan.is_some()
+            || self.restarted_at.is_some()
     }
 
     /// Counts against `max_writes_per_day` from `day_start`: approved, or being approved.
@@ -86,6 +95,8 @@ pub fn hash(item: &InboxItem) -> Option<String> {
         ItemKind::Sort => ("sort", serde_json::to_vec(item.sort.as_ref()?)),
         ItemKind::Delegate => ("delegate", serde_json::to_vec(item.delegate.as_ref()?)),
         ItemKind::Handoff => ("handoff", serde_json::to_vec(item.handoff.as_ref()?)),
+        ItemKind::Result => ("result", serde_json::to_vec(item.result.as_ref()?)),
+        ItemKind::NewTask => ("new-task", serde_json::to_vec(item.new_task.as_ref()?)),
         _ => return None,
     };
     let body = body.ok()?;

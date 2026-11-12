@@ -279,6 +279,16 @@ pub async fn shell_after_exit(client: &Client, pane: PaneId, dir: &str) -> Resul
     Ok(())
 }
 
+/// Keeps `pane` dead in place after its process exits, so its session and
+/// the clients on it stay until the caller respawns it
+/// (`scripts/repro/dead-pane-respawn.sh`).
+pub async fn remain_on_exit(client: &Client, pane: PaneId) -> Result<(), Error> {
+    client
+        .command(&format!("set-option -p -t {pane} remain-on-exit on"))
+        .await
+        .map(drop)
+}
+
 const DEFAULT_SHELL: &str = "/bin/sh";
 
 /// The hook first: an exit after `remain-on-exit` but before it would leave a dead pane.

@@ -186,6 +186,8 @@ data class AssistResult(
     val step: Int? = null,
     /** Level 13: writes outside the host it proposes, at most 3 (ADR 0052). Never logged. */
     val writes: List<ResultWrite> = emptyList(),
+    /** Level 18: the Task the run proposes, at most one (ADR 0060 §1). Never logged. */
+    val task: TaskProposal? = null,
 )
 
 /** A deadline the user set on a Work item (ADR 0049 §6): epoch seconds, and the IANA zone it was set in. */

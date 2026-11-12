@@ -71,6 +71,7 @@ Before ADR 0020, `refresh-client -C` was rejected as a workaround for narrow-cli
 | Explicit-command `respawn-pane -k` sequences (default → A → B → edited-A → default), and no-command repeats after each, preserve argv bytes, workspace env, pane/layout and a real desktop client's view of another window. The public `respawn_pane_command` API covers a single shell-command string and multiple direct-exec argv entries; empty/NUL commands are rejected before dispatch. Old hook state/timestamp/session-id pane tags survive process replacement; they are not evidence of the new process. Local W0 result: tmux 3.7c; cross-version results still required. | `scripts/repro/worker-respawn.sh` (`crates/muxa-tmux/tests/tmux_smoke.rs` worker probes) |
 | A leading `~` in a double-quoted tmux argument expands to the home directory even for direct-exec argv. Encoding it as `\176` preserves the literal bytes. `quote` applies this encoding; the worker argv probe includes a literal `~` in shell and direct-argv replacements and their no-command repeats. Local result: tmux 3.7c; supported-version CI remains required. | `scripts/repro/worker-respawn.sh` |
 | A pane-option `pane-died` hook with `remain-on-exit on` gives the pane a login shell in place when its process exits: same pane id, alive, in the given directory. The hook unsets itself and `remain-on-exit`, so the shell's own exit closes the pane and the session. `respawn-pane -k` does not fire the hook, and the hook survives it. The built-in launcher and muxa for tmux's `layout.sh` use this so a session stays after its agent exits. Keys typed into a login shell that is still starting can be lost while a hook resizes the pane, so neither types the agent. | `scripts/repro/shell-after-exit.sh` |
+| With the pane option `remain-on-exit on` and no `pane-died` hook, a pane whose process exits stays in place, dead (`#{pane_dead}` 1). Its session stays, and a desktop client on it stays attached. `respawn-pane -k -t %n -c DIR -- CMD` on a control client then restarts it with the same pane id, size and layout, and `remain-on-exit` stays on. The secretary's session uses this (ADR 0056). | `scripts/repro/dead-pane-respawn.sh` |
 
 ## The host daemon's client (ADR 0019)
 
@@ -80,6 +81,15 @@ Before ADR 0020, `refresh-client -C` was rejected as a workaround for narrow-cli
 | An `ignore-size,no-output` client that stays attached next to a desktop client, and runs a command every 2 s, changes no layout. Detaching it changes none either. `make repro` keeps it attached 60 s; set `MUXA_REPRO_SECONDS` for longer. | `scripts/repro/daemon-client.sh` |
 | A desktop client's key press updates its `#{client_activity}` (epoch seconds). `send-keys` from a control client does not update another client's `#{client_activity}`. `#{client_flags}` contains `control-mode` for a control client, and not for a desktop client. In `list-clients`, `#{session_id}` is the client's session id, so the daemon matches sessions by id. | `scripts/repro/client-activity.sh` |
 | When its session is destroyed, the daemon's client is detached like any control client; the daemon attaches again for its next work. | `crates/muxa-bridge/tests/daemon.rs` `the_daemon_attaches_one_no_output_client_and_reattaches` |
+
+## Control client lifetime (orphaned control client)
+
+| Fact | Script |
+|---|---|
+| tmux reads a control client's stdin in the server, through a copy of the fd, and keeps a copy of its stdout too. Each control client costs the server 3 fds: stdin, stdout and its socket. | `scripts/repro/control-client-orphan.sh` |
+| With an idle pane, a control client exits on stdin EOF when the process that holds its pipes dies. | `scripts/repro/control-client-orphan.sh` |
+| When that process stops reading while a pane prints, and then dies by SIGKILL, the client stays attached forever (tmux 3.7c). tmux lets a control client exit only after its output is written, and that output never drains. The client process stays with ppid 1, and the server keeps its pipes. tmux 3.7's `server_client_check_exit` has no timeout; tmux's master branch adds a 10 s exit timer. | `scripts/repro/control-client-orphan.sh` |
+| Killing the client process ends it at once: the server drops the client when its socket closes. So muxa-tmux runs tmux under a guard that kills it when the bridge's end of its input closes (`client.rs`, `GUARD`). | `scripts/repro/control-client-orphan.sh`, `crates/muxa-bridge/tests/bridge.rs` `a_killed_bridge_leaves_no_control_client` |
 
 ## Answered in Phase 3
 

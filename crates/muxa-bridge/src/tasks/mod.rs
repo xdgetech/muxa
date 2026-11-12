@@ -36,6 +36,8 @@ pub struct TaskRequest {
     pub record: Option<String>,
     /// The workspace's agent command and environment (ADR 0016).
     pub agent: Option<AgentSettings>,
+    /// Start Claude Code in plan mode: a Task from a proposal (ADR 0060).
+    pub plan: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -207,23 +209,30 @@ pub async fn pick(config: &Config, client: &Client) -> Box<dyn TaskLauncher> {
     };
     match choice {
         Choice::Builtin => Box::new(builtin::Builtin::new(config.command.clone())),
-        Choice::TmuxAgents(script) => Box::new(tmux_agents::TmuxAgents::new(
-            script,
-            config.tmux.clone(),
-            config.socket.clone(),
-            tags_at_creation(client).await,
-        )),
+        Choice::TmuxAgents(script) => {
+            let features = features(client).await;
+            Box::new(
+                tmux_agents::TmuxAgents::new(
+                    script,
+                    config.tmux.clone(),
+                    config.socket.clone(),
+                    has_feature(&features, "muxa-task"),
+                )
+                .plans(has_feature(&features, "plan-mode")),
+            )
+        }
     }
 }
 
-/// Whether tmux-agents' `new.sh` takes `--muxa-task`. Older ones reject
-/// unknown flags, so they are only given it when they say so.
-async fn tags_at_creation(client: &Client) -> bool {
+/// What tmux-agents' `new.sh` takes beyond the first contract: `--muxa-task`,
+/// `--plan`. Older ones reject unknown flags, so they are only given what
+/// they name.
+async fn features(client: &Client) -> String {
     match muxa_tmux::global_option(client, AGENTS_FEATURES).await {
-        Ok(features) => features.is_some_and(|f| has_feature(&f, "muxa-task")),
+        Ok(features) => features.unwrap_or_default(),
         Err(e) => {
             tracing::warn!(error = %e, "cannot read {AGENTS_FEATURES}");
-            false
+            String::new()
         }
     }
 }
@@ -241,7 +250,7 @@ pub async fn pick_for(
     req: &TaskRequest,
 ) -> Box<dyn TaskLauncher> {
     if req.agent.is_some() {
-        return Box::new(builtin::Builtin::new(config.command.clone()));
+        return Box::new(builtin::Builtin::new(config.command.clone()).in_plan_mode(req.plan));
     }
     pick(config, client).await
 }
@@ -280,6 +289,7 @@ pub async fn validate(
         base: base.map(str::to_owned),
         record: None,
         agent: None,
+        plan: false,
     })
 }
 

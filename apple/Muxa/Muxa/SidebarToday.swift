@@ -7,7 +7,8 @@ import SwiftUI
 /// plan replaces the rows and shows New until a row is opened; it never changes the
 /// selection, which only a tap on a row does. At `work` level 11 the user drags rows
 /// into another order and removes one with Not today (ADR 0050 §7); a removed row
-/// collapses to one line.
+/// collapses to one line. Today is a queue (ADR 0057): rows whose target closed are
+/// hidden, and the first open row is Next.
 struct SidebarTodaySection: View {
     @Environment(AppModel.self) private var model
 
@@ -23,6 +24,9 @@ struct SidebarTodaySection: View {
                 if plan.top.isEmpty {
                     Text("Nothing to rank right now.").foregroundStyle(.secondary)
                         .accessibilityIdentifier("today-empty")
+                } else if plan.isDone(plan.top) {
+                    Text("All done. A new plan follows when the budget allows.").foregroundStyle(.secondary)
+                        .accessibilityIdentifier("today-done")
                 }
                 dueSoon(plan)
             } else if newest == nil {
@@ -53,16 +57,18 @@ struct SidebarTodaySection: View {
         .task(id: plan?.id) { model.notePlanShown() }
     }
 
-    /// The rows in the user's order, if any. Only a level 11 host takes a new order.
+    /// The open rows in the user's order, if any. Only a level 11 host takes a new order.
     @ViewBuilder
     private func rows(_ plan: Plan) -> some View {
         let edits = model.usesPolicies
-        let rows = edits ? model.session.todayRows(of: plan) : plan.top
+        let ordered = edits ? model.session.todayRows(of: plan) : plan.top
+        let rows = plan.queue(ordered)
+        let next = plan.next(in: ordered)?.rowId
         ForEach(Array(rows.enumerated()), id: \.element.target) { index, row in
             if edits, model.session.isDismissed(row, in: plan) {
                 DismissedTodayRow(row: row)
             } else if edits, let id = row.rowId {
-                TodayRow(row: row)
+                TodayRow(row: row, isNext: row.rowId == next)
                     .contextMenu {
                         if index > 0 {
                             Button("Move Up", systemImage: Icon.moveUp) { model.moveToday(plan, row: id, by: -1) }
@@ -76,7 +82,7 @@ struct SidebarTodaySection: View {
                         Button("Not Today", systemImage: Icon.notToday) { model.notTodayRow = row }.tint(.gray)
                     }
             } else {
-                TodayRow(row: row)
+                TodayRow(row: row, isNext: row.rowId == next)
             }
         }
         .onMove(perform: edits ? { model.moveToday(plan, from: $0, to: $1) } : nil)
@@ -97,26 +103,36 @@ struct SidebarTodaySection: View {
 
 /// One row of the plan: the target's title, why, the minutes and what comes next. The
 /// title opens the Work item or the Inbox item; Why shows the basis and what is missing.
-/// A `delegate` row names the staff member the plan picked (ADR 0051 §7).
+/// A `delegate` row names the staff member the plan picked (ADR 0051 §7). The first open
+/// row says Next (ADR 0057).
 struct TodayRow: View {
     @Environment(AppModel.self) private var model
     let row: PlanRow
+    let isNext: Bool
     @State private var showsWhy = false
+
+    /// Level 17: the verb, Do, and the row's buttons (ADR 0059 §7).
+    private var actions: Bool { model.namesTodayActions }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Button { model.open(row) } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    if let state = row.targetState {
-                        // The plan keeps a row whose target closed: dimmed, with how it ended.
-                        Text("\(model.title(of: row)) · \(state.shown)").lineLimit(2).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("today-closed-\(row.target)")
+                    if isNext {
+                        Text("Next").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                    }
+                    if actions {
+                        // The verb first: what to do before what it is about (ADR 0059 §1).
+                        Text("\(Text(model.verb(of: row)).fontWeight(.semibold)) · \(model.title(of: row))").lineLimit(2)
+                        Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        Text("Do: \(row.next)").font(.caption).lineLimit(3)
+                        Text(row.minutes.shown).font(.caption).foregroundStyle(.secondary)
                     } else {
                         Text(model.title(of: row)).lineLimit(2)
+                        Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                        Text("\(row.minutes.shown) · Next: \(row.next)").font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
-                    Text(row.why).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                    Text("\(row.minutes.shown) · Next: \(row.next)").font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(2)
                     if let delegate = row.item.flatMap(model.item)?.delegate, delegate.worker != nil {
                         Label(delegate.shown, systemImage: Icon.staff).font(.caption).foregroundStyle(.secondary)
                     }
@@ -129,8 +145,10 @@ struct TodayRow: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.primary)
-            .disabled(row.isClosed)
             .accessibilityIdentifier("today-row-\(row.target)")
+            if actions {
+                TodayRowActions(row: row)
+            }
             if !row.basis.isEmpty || !row.missing.isEmpty {
                 Button(showsWhy ? "Hide Why" : "Why") { showsWhy.toggle() }
                     .font(.caption)
@@ -218,25 +236,21 @@ private struct CitedRecordActions: View {
     }
 }
 
-/// A row the user removed from Today: one line, still opening its item while it is open.
+/// A row the user removed from Today: one line, still opening its item.
 private struct DismissedTodayRow: View {
     @Environment(AppModel.self) private var model
     let row: PlanRow
 
     var body: some View {
         Button { model.open(row) } label: {
-            Label(
-                "Not today: \(model.title(of: row))\(row.targetState.map { " · \($0.shown)" } ?? "")",
-                systemImage: Icon.notToday
-            )
-            .font(.caption)
-            .lineLimit(1)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            Label("Not today: \(model.title(of: row))", systemImage: Icon.notToday)
+                .font(.caption)
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .disabled(row.isClosed)
         .accessibilityIdentifier("today-dismissed-\(row.target)")
     }
 }
@@ -264,6 +278,7 @@ private struct PlanStatusRow: View {
 }
 
 /// Plan Now asks the overall assistant for a plan; a long press also says the time you have.
+/// At level 17 it is Re-rank, with the runs left today (ADR 0059 §5).
 private struct PlanNowRow: View {
     @Environment(AppModel.self) private var model
     @State private var asking = false
@@ -274,12 +289,23 @@ private struct PlanNowRow: View {
 
     var body: some View {
         // A plain button: a list row's Menu with a primary action opens the menu on a tap.
-        Button("Plan Now", systemImage: Icon.today) { plan(nil) }
-            .contextMenu {
-                ForEach(Self.choices, id: \.0) { minutes, label in
-                    Button("I Have \(label)") { plan(minutes) }
+        Button { plan(nil) } label: {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.rerankTitle)
+                    if let runs = model.session.overallRuns {
+                        Text(runs.shown).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
+            } icon: {
+                Image(systemName: Icon.today)
             }
+        }
+        .contextMenu {
+            ForEach(Self.choices, id: \.0) { minutes, label in
+                Button("I Have \(label)") { plan(minutes) }
+            }
+        }
         .disabled(asking || model.session.isPlanning || !model.isConnected)
         .accessibilityIdentifier("today-plan-now")
         if let error {

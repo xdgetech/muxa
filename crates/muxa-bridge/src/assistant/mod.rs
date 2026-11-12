@@ -14,7 +14,8 @@ pub mod corrections;
 pub mod delivery;
 mod derive;
 pub mod detail;
-mod failures;
+pub mod failures;
+pub mod follow_up;
 pub mod forget;
 pub mod goal;
 pub mod handoff;
@@ -36,6 +37,7 @@ pub mod start;
 pub mod step_files;
 pub mod steps;
 pub mod store;
+pub mod task_proposal;
 mod tick;
 pub mod work;
 pub mod write_items;
@@ -202,6 +204,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                 purpose,
                 worker,
                 asker: muxa_protocol::StepBy::User,
+                follows: None,
             };
             match ask::ask(cx, a).await {
                 Ok((entry, request, error)) => (
@@ -374,6 +377,34 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     vec![Message::PlanSaved {
                         plan: id,
                         entry: Box::new(entry),
+                    }],
+                    None,
+                ),
+                Err(e) => (Vec::new(), Some(e)),
+            }
+        }
+        Request::ProposeTask {
+            id,
+            workspace,
+            repo,
+            title,
+            goal,
+            work,
+        } => {
+            let config = Arc::clone(&cx.records);
+            let p = task_proposal::Propose {
+                workspace,
+                repo,
+                title,
+                goal,
+                work,
+            };
+            match blocking(move || task_proposal::propose(&config, p)).await {
+                Ok(item) => (
+                    vec![Message::InboxSaved {
+                        inbox: id,
+                        entry: None,
+                        item: Some(Box::new(item)),
                     }],
                     None,
                 ),

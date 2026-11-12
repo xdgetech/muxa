@@ -204,6 +204,9 @@ pub fn prepare_run(
             if steps > 0 {
                 tracing::info!(task = %record.id, request = %r.request, step = r.step(), steps, "earlier steps written");
             }
+            if super::follow_up::write(config, &r, dir)? {
+                tracing::info!(task = %record.id, request = %r.request, version = r.version, "continued result written");
+            }
             Ok(())
         }
         Some(RunFor::Plan(p)) => {

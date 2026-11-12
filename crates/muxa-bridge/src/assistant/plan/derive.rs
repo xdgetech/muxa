@@ -121,7 +121,7 @@ pub fn targets(plans: &mut [Plan], work: &[WorkItem], items: &[InboxItem]) {
     for row in plans.iter_mut().flat_map(|p| p.top.iter_mut()) {
         (row.title, row.target_state) = match (&row.work, &row.item) {
             (Some(id), _) => match work.get(id.as_str()) {
-                Some(w) => (Some(w.title.clone()), work_state(w.state)),
+                Some(w) => (Some(w.title.clone()), work_state(w)),
                 None => (None, Some(TargetState::Gone)),
             },
             (None, Some(id)) => match items.get(id.as_str()) {
@@ -133,10 +133,13 @@ pub fn targets(plans: &mut [Plan], work: &[WorkItem], items: &[InboxItem]) {
     }
 }
 
-fn work_state(state: WorkState) -> Option<TargetState> {
-    match state {
+/// A Work row asks to start the work. Once a Task is linked, the row's job is
+/// done: the Task's review and questions come as their own Inbox items.
+fn work_state(w: &WorkItem) -> Option<TargetState> {
+    match w.state {
         WorkState::Done => Some(TargetState::Done),
         WorkState::Withdrawn => Some(TargetState::Withdrawn),
+        _ if !w.tasks.is_empty() => Some(TargetState::Started),
         _ => None,
     }
 }

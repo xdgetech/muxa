@@ -171,6 +171,27 @@ fn from_record(r: &Record) -> String {
     why.to_owned()
 }
 
+/// One `failure` item in item file `file`, unless `key` already made one.
+/// The secretary's give-up uses it (ADR 0056 §2).
+pub(crate) fn make_one(
+    store: &ItemStore,
+    file: &str,
+    key: &str,
+    workspace: &str,
+    title: &str,
+    reason: &str,
+    now: u64,
+) -> Result<Option<String>, StateError> {
+    let f = Failure {
+        task: file.to_owned(),
+        key: key.to_owned(),
+        workspace: workspace.to_owned(),
+        title: title.to_owned(),
+        reason: reason.to_owned(),
+    };
+    make(store, &f, now)
+}
+
 /// Under the file's lock. The new item's id, or None when the key made one.
 fn make(store: &ItemStore, f: &Failure, now: u64) -> Result<Option<String>, StateError> {
     store.update::<_, StateError>(&f.task, |items| {
@@ -187,11 +208,14 @@ fn make(store: &ItemStore, f: &Failure, now: u64) -> Result<Option<String>, Stat
     })
 }
 
-/// No Task and no session: the run is not the user's to drop or retry.
+/// No Task and no session: the run is not the user's to drop. Retry runs
+/// it again through `proposals::retry` (ADR 0061).
 fn item_for(f: &Failure, id: String, at: u64) -> InboxItem {
     let question = one_line(&f.reason, MAX_QUESTION);
     let summary = (question != f.reason).then(|| f.reason.clone());
     let mut item = InboxItem {
+        new_task: None,
+        result: None,
         memory: None,
         write: None,
         handoff: None,

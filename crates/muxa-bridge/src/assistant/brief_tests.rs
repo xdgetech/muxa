@@ -4,6 +4,7 @@ use super::*;
 
 fn result(version: u64, stale: bool, summary: &str) -> AssistResult {
     AssistResult {
+        task: None,
         writes: Vec::new(),
         worker: None,
         step: None,
@@ -33,7 +34,29 @@ fn brief(scope: AssistScope) -> Brief {
         step: 1,
         staff: None,
         writes: false,
+        follow_up: None,
+        repos: vec!["app".into(), "tools/cli".into()],
     }
+}
+
+/// ADR 0060 §1: work that changes this host is a proposed Task, never a refusal.
+#[test]
+fn the_result_proposes_a_task_for_changes_on_this_host() {
+    let goal = brief(AssistScope::Research).goal();
+    assert!(
+        goal.contains("\"task\": optional, one Task to start"),
+        "{goal}"
+    );
+    assert!(goal.contains("do not answer that you cannot"));
+    assert!(goal.contains("repos (app, tools/cli)"), "{goal}");
+    assert!(goal.contains("starts in plan mode"));
+    let none = Brief {
+        repos: Vec::new(),
+        ..brief(AssistScope::Research)
+    }
+    .goal();
+    assert!(none.contains("none found; leave \"repo\" out"), "{none}");
+    assert!(none.len() <= crate::records::MAX_GOAL);
 }
 
 /// ADR 0052 §1, §3: with a writer, the result may propose writes the user

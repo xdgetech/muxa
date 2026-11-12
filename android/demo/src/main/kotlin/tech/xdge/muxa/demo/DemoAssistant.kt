@@ -1,6 +1,7 @@
 package tech.xdge.muxa.demo
 
 import tech.xdge.muxa.protocol.AssistSpec
+import tech.xdge.muxa.protocol.AssistResult
 import tech.xdge.muxa.protocol.AssistantRequest
 import tech.xdge.muxa.protocol.Capture
 import tech.xdge.muxa.protocol.CaptureSource
@@ -45,6 +46,9 @@ internal class DemoAssistant(
 
     /** Each workspace's staff (`work` level 12, ADR 0051); empty: a workspace without `staff`, whose requests have no steps. */
     var staff: (String) -> List<StaffMember> = { emptyList() }
+
+    /** Called under the bridge's lock with each Result a run stores: level 16 makes its `result` item (ADR 0058). */
+    var onResult: (AssistantRequest, AssistResult) -> Unit = { _, _ -> }
 
     /** What `request-assistant` did; [ended] is the older version's run, whose session closes. */
     class Asked(val work: WorkItem, val request: AssistantRequest, val run: String?, val ended: String?)
@@ -339,7 +343,7 @@ internal class DemoAssistant(
         val step = q.steps.lastOrNull()
         val result = DemoResults.canned(q, now, other).copy(worker = step?.worker, step = step?.step)
         val results = listOf(result) + q.results.map { if (it.version == q.version) it else it.copy(stale = true) }
-        return q.moved(Delivery.RESULTED, now).copy(results = results.take(MAX_RESULTS))
+        return q.moved(Delivery.RESULTED, now).copy(results = results.take(MAX_RESULTS)).also { onResult(it, result) }
     }
 
     /** [delivery] on the request and on its newest step, whose run it is. */

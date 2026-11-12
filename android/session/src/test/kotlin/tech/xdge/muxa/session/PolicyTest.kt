@@ -30,6 +30,7 @@ import tech.xdge.muxa.protocol.PlanRow
 import tech.xdge.muxa.protocol.Policy
 import tech.xdge.muxa.protocol.PolicyAction
 import tech.xdge.muxa.protocol.Request
+import tech.xdge.muxa.protocol.TargetState
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -198,6 +199,23 @@ class PolicyTest {
         assertNull(plan.moving("a", -1))
         assertNull(plan.moving("z", 1))
         assertEquals(listOf("b", "a", "c"), plan.moving("a", 1))
+    }
+
+    @Test
+    fun todayIsTheQueueOfOpenRowsAndAMoveKeepsHiddenRowsInPlace() {
+        val row = { id: String -> PlanRow(work = id, why = "", next = "", minutes = Minutes(1, 1, 1)) }
+        val rows = listOf(row("a"), row("b").copy(targetState = TargetState.DONE), row("c"), row("d"))
+        val plan = Plan("p-1", 1, 1, 1, Delivery.RESULTED, 1, top = rows, dismissed = listOf("a"))
+        assertEquals(listOf("a", "c", "d"), plan.queue.map { it.target })
+        assertEquals("c", plan.nextRow?.target)
+        assertFalse(plan.isDone)
+        // a moves past the hidden b to c's place; b keeps its place.
+        assertEquals(listOf("c", "b", "a", "d"), plan.moving("a", 1))
+        assertNull(plan.moving("b", 1))
+        val done = plan.copy(top = rows.map { it.copy(targetState = TargetState.ANSWERED) })
+        assertTrue(done.isDone)
+        assertNull(done.nextRow)
+        assertFalse(plan.copy(top = emptyList()).isDone)
     }
 
     @Test

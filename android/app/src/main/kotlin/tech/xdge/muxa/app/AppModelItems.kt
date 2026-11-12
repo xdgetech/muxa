@@ -9,6 +9,8 @@ import tech.xdge.muxa.session.deletable
 import tech.xdge.muxa.session.mainAnswer
 import tech.xdge.muxa.session.needsText
 import tech.xdge.muxa.session.nextFocus
+import tech.xdge.muxa.session.startTaskAction
+import tech.xdge.muxa.session.startedTask
 
 // The Inbox as a list of questions (ADR 0033). Every answer is written on the host; a failure
 // lands in `inboxError` with the host's reason, and the list is read again.
@@ -62,9 +64,14 @@ internal fun AppModel.sendAnswer(item: InboxItem, action: InboxAction, text: Str
     answeringItem = item.id
     scope.launch {
         try {
-            session.answer(item, action, text, option, forceWorktree)
+            val saved = session.answer(item, action, text, option, forceWorktree)
             itemReplies = itemReplies - item.id
-            afterAnswer(item.id, before, movedDown = action == InboxAction.LATER)
+            // Start Task stays on the item, which now opens its Task (ADR 0060 §6).
+            if (saved.startedTask == null || action != item.startTaskAction) {
+                afterAnswer(item.id, before, movedDown = action == InboxAction.LATER)
+            }
+        } catch (e: PaneSession.Failure.ApproveInTerminal) {
+            inboxPrompt = InboxPrompt.ApproveInTerminal(item)
         } catch (e: PaneSession.Failure) {
             val reason = e.lostWork
             if (reason != null) losingWork = LosingWork.Answer(item, action, text, option, reason) else inboxError = PaneSession.describe(e)

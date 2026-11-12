@@ -14,6 +14,7 @@ mod lines;
 mod loops;
 mod records;
 mod routines;
+mod secretary;
 mod server;
 mod sessions;
 mod sizer;

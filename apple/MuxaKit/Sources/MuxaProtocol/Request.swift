@@ -97,8 +97,9 @@ public enum Request: Equatable, Sendable {
     /// `createTask`'s. A `session-started` comes first.
     case startSession(id: UInt64, workspace: String, repo: String)
     /// `start-session` with `root`: the workspace's root Ask session, open or new
-    /// (`work` level 15, ADR 0054). A `session-started` comes first.
-    case startRootSession(id: UInt64, workspace: String)
+    /// (`work` level 15, ADR 0054). A `session-started` comes first. At level 17 `text` is
+    /// typed into its agent, after the Work item `work` when given (ADR 0059 §4).
+    case startRootSession(id: UInt64, workspace: String, text: String? = nil, work: String? = nil)
     /// Save the user's input (`work` level 9, ADR 0048). The same `clientId` returns the
     /// stored Capture and writes nothing. `assist` also makes a Work item and asks the
     /// assistant; it needs `workspace`. A `capture-saved` comes first.
@@ -151,6 +152,9 @@ public enum Request: Equatable, Sendable {
         text: String? = nil)
     /// Remove a correction `x-…` or a hypothesis `h-…`; `record` because `id` is the request's.
     case forget(id: UInt64, record: String)
+    /// The secretary proposes a Task (`work` level 18, ADR 0060): one Inbox item of kind
+    /// `new-task`. An `inbox-saved` comes first.
+    case proposeTask(id: UInt64, workspace: String, repo: String? = nil, title: String, goal: String, work: String? = nil)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -165,7 +169,7 @@ public enum Request: Equatable, Sendable {
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
             .updateInboxEntry(let id, _, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
-            .startRootSession(let id, _),
+            .startRootSession(let id, _, _, _), .proposeTask(let id, _, _, _, _, _),
             .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
             .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _, _),
             .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _, _), .planNow(let id, _),
@@ -270,10 +274,12 @@ extension Request: Codable {
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(repo, forKey: .repo)
-        case .startRootSession(let id, let workspace):
+        case .startRootSession(let id, let workspace, let text, let work):
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(true, forKey: .root)
+            try c.encodeIfPresent(text, forKey: .text)
+            try c.encodeIfPresent(work, forKey: .work)
         case .updateInboxEntry(let id, let entry, let action, let until, let text, let option, let worktree, let hash):
             try c.head("update-inbox", id)
             try c.encode(entry, forKey: .entry)
@@ -360,6 +366,13 @@ extension Request: Codable {
         case .forget(let id, let record):
             try c.head("forget", id)
             try c.encode(record, forKey: .record)
+        case .proposeTask(let id, let workspace, let repo, let title, let goal, let work):
+            try c.head("propose-task", id)
+            try c.encode(workspace, forKey: .workspace)
+            try c.encodeIfPresent(repo, forKey: .repo)
+            try c.encode(title, forKey: .title)
+            try c.encode(goal, forKey: .goal)
+            try c.encodeIfPresent(work, forKey: .work)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -476,7 +489,9 @@ extension Request: Codable {
         case "start-session":
             let workspace = try c.decode(String.self, forKey: .workspace)
             if try c.decodeIfPresent(Bool.self, forKey: .root) == true {
-                self = .startRootSession(id: id, workspace: workspace)
+                self = .startRootSession(
+                    id: id, workspace: workspace, text: try c.decodeIfPresent(String.self, forKey: .text),
+                    work: try c.decodeIfPresent(String.self, forKey: .work))
             } else {
                 self = .startSession(id: id, workspace: workspace, repo: try c.decode(String.self, forKey: .repo))
             }
@@ -559,6 +574,11 @@ extension Request: Codable {
                 text: try c.decodeIfPresent(String.self, forKey: .text))
         case "forget":
             self = .forget(id: id, record: try c.decode(String.self, forKey: .record))
+        case "propose-task":
+            self = .proposeTask(
+                id: id, workspace: try c.decode(String.self, forKey: .workspace),
+                repo: try c.decodeIfPresent(String.self, forKey: .repo), title: try c.decode(String.self, forKey: .title),
+                goal: try c.decode(String.self, forKey: .goal), work: try c.decodeIfPresent(String.self, forKey: .work))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

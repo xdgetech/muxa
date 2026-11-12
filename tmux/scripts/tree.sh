@@ -19,7 +19,7 @@ own=""
 "$AGENTS_SCRIPTS/inbox.sh" rows 2>/dev/null
 
 {
-  t list-sessions -f "$AGENTS_VISIBLE" -F "S${TAB}#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_pr}${TAB}#{@agent_pr_state}${TAB}#{session_windows}${TAB}#{@muxa_task}${TAB}#{@muxa_ask}${TAB}#{session_path}"
+  t list-sessions -f "$AGENTS_VISIBLE" -F "S${TAB}#{session_name}${TAB}#{@agent_repo}${TAB}#{@agent_pr}${TAB}#{@agent_pr_state}${TAB}#{session_windows}${TAB}#{@muxa_task}${TAB}#{@muxa_ask}${TAB}#{session_path}${TAB}#{@muxa_secretary}"
   t list-windows -a -f "$AGENTS_VISIBLE" -F "W${TAB}#{session_name}${TAB}#{window_index}${TAB}#{window_name}"
   t list-panes -a -f "$AGENTS_VISIBLE" -F "P${TAB}#{session_name}${TAB}#{window_index}${TAB}#{@agent_state}${TAB}#{@agents_sidebar_pane}"
 } 2>/dev/null | awk_states -F'\t' \
@@ -36,6 +36,8 @@ own=""
   $1 == "S" {
     sn[++ns] = $2; pr[$2] = $4; prs[$2] = $5; nw[$2] = $6
     sec[$2] = section($3, $7, $8, $9); rg[$2] = repogroup(sec[$2], $3)
+    # The assistant chat (ADR 0056) first in Ask: "!" sorts before "~".
+    if ($10 == "1" && sec[$2] == "ask") { rg[$2] = "!"; chat[$2] = 1 }
   }
   $1 == "W" { k = $2 SUBSEP $3; wname[k] = $4; wk[++nwk] = $2 SUBSEP sprintf("%06d", $3) }
   $1 == "P" && $5 != "1" { r = rank($4); k = $2 SUBSEP $3; if (r > wr[k]) wr[k] = r; if (r > sr[$2]) sr[$2] = r }
@@ -71,6 +73,7 @@ own=""
       mine = (s == own_s)
       num = (++nth <= length(keys) ? D substr(keys, nth, 1) Z : " ")
       extra = (prs[s] == "merged" ? " " icon_merged : pr[s] != "" ? " " D "#" pr[s] Z : "")
+      if (s in chat) extra = " " D "assistant" Z
       printf "s:%s\t%s%s %s %s%s\n", s, (mine ? bar : " "), num, slot(sr[s]), (mine ? BO s Z : s), extra
       if (!mine || nw[s] < 2) continue
       for (y = 1; y <= nwk; y++) {

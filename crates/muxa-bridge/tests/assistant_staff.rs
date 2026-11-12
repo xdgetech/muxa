@@ -431,35 +431,34 @@ fn resulted(step: u32) -> impl Fn(&AssistantRequest) -> bool {
     move |q| q.delivery == Delivery::Resulted && q.steps.last().is_some_and(|s| s.step == step)
 }
 
-async fn handoff_items(conn: &mut Conn, request: &str) -> Vec<InboxItem> {
+/// The request's `result` items (ADR 0058), which carry its hand-offs.
+async fn result_items(conn: &mut Conn, request: &str) -> Vec<InboxItem> {
     let listed = conn.request(json!({"type": "list-inbox"})).await;
     let Some(Message::InboxList { items, .. }) = listed.first() else {
         panic!("{listed:?}")
     };
+    assert!(items.iter().all(|i| i.kind != ItemKind::Handoff));
     items
         .iter()
-        .filter(|i| i.kind == ItemKind::Handoff)
-        .filter(|i| i.handoff.as_ref().is_some_and(|p| p.request == request))
+        .filter(|i| i.kind == ItemKind::Result)
+        .filter(|i| i.result.as_ref().is_some_and(|r| r.request == request))
         .cloned()
         .collect()
 }
 
-/// The `handoff` item of `request`'s `version` and `step`, once it exists.
+/// The `result` item of `request`'s `version` and `step`, once it exists.
 async fn until_item(conn: &mut Conn, request: &str, version: u64, step: u32) -> InboxItem {
     let deadline = Instant::now() + RUN_WAIT;
     loop {
-        let found = handoff_items(conn, request).await.into_iter().find(|i| {
-            i.handoff
+        let found = result_items(conn, request).await.into_iter().find(|i| {
+            i.result
                 .as_ref()
-                .is_some_and(|p| p.version == version && p.step == step)
+                .is_some_and(|r| r.version == version && r.step == step)
         });
         if let Some(item) = found {
             return item;
         }
-        assert!(
-            Instant::now() < deadline,
-            "no hand-off item for step {step}"
-        );
+        assert!(Instant::now() < deadline, "no result item for step {step}");
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }
@@ -512,17 +511,23 @@ async fn a_three_step_chain_under_review_makes_two_items_and_three_runs() {
     let q = ask(&mut conn, &work, None).await;
     until_q(&mut conn, &h, &q.id, "step 1 resulted", resulted(1)).await;
 
-    // Step 1's hand-off waits for review.
+    // Step 1's Result is reviewed, with its hand-off offered.
     let first = until_item(&mut conn, &q.id, 1, 1).await;
     assert_eq!(first.state, ItemState::Open);
     assert_eq!(
         first.answers,
         [
             InboxAction::Approve,
-            InboxAction::Reject,
+            InboxAction::Reply,
+            InboxAction::Dismiss,
             InboxAction::Later
         ]
     );
+    let review = first.result.clone().unwrap();
+    assert_eq!(review.worker.as_deref(), Some(LEAD));
+    assert_eq!(review.findings, ["Option B fits."]);
+    assert_eq!(first.summary.as_deref(), Some("Two options."));
+    assert_eq!(first.attachments.links[0].url, "https://example.com/b");
     assert!(
         first
             .question
@@ -568,7 +573,7 @@ async fn a_three_step_chain_under_review_makes_two_items_and_three_runs() {
     approved(&approve(&mut conn, &second.id).await);
     let done = until_q(&mut conn, &h, &q.id, "step 3 resulted", resulted(3)).await;
 
-    // Three runs, one result each, none stale, and no third item.
+    // Three runs, one result each, none stale; the last Result is reviewed too.
     let runs: std::collections::HashSet<_> =
         done.steps.iter().filter_map(|s| s.run.clone()).collect();
     assert_eq!(runs.len(), 3);
@@ -592,9 +597,20 @@ async fn a_three_step_chain_under_review_makes_two_items_and_three_runs() {
         let path = h.dir(&run3).join(format!(".muxa/assistant/steps/{k}.json"));
         assert!(path.is_file(), "step 3 reads step {k} in full");
     }
-    let items = handoff_items(&mut conn, &q.id).await;
-    assert_eq!(items.len(), 2, "{items:?}");
-    assert!(items.iter().all(|i| i.state == ItemState::Answered));
+    let last = until_item(&mut conn, &q.id, 1, 3).await;
+    assert_eq!(
+        last.answers,
+        [InboxAction::Reply, InboxAction::Dismiss, InboxAction::Later]
+    );
+    let items = result_items(&mut conn, &q.id).await;
+    assert_eq!(items.len(), 3, "{items:?}");
+    assert_eq!(
+        items
+            .iter()
+            .filter(|i| i.state == ItemState::Answered)
+            .count(),
+        2
+    );
 
     assert_layout_kept(&before, &h);
     assert_no_marks(&daemon);
@@ -631,8 +647,9 @@ async fn auto_runs_the_chain_within_budgets_and_holds_the_step_past_one() {
     let held = until_item(&mut conn, &q.id, 1, 2).await;
     let summary = held.summary.clone().unwrap_or_default();
     assert!(summary.contains("max_auto_handoffs_per_day"), "{summary}");
-    let items = handoff_items(&mut conn, &q.id).await;
+    let items = result_items(&mut conn, &q.id).await;
     assert_eq!(items.len(), 1, "no item for the auto step: {items:?}");
+    assert!(held.result.as_ref().unwrap().handoff.is_some());
     tokio::time::sleep(Duration::from_secs(5)).await;
     let waiting = request(&mut conn, &q.id).await;
     assert_eq!(waiting.steps.len(), 2, "the host does not try again");
@@ -694,7 +711,7 @@ async fn a_new_version_ends_the_open_step_and_a_cancel_closes_the_chain() {
     assert_eq!(v3.version, 3);
     let deadline = Instant::now() + RUN_WAIT;
     loop {
-        let items = handoff_items(&mut conn, &q.id).await;
+        let items = result_items(&mut conn, &q.id).await;
         let i = items.iter().find(|i| i.id == item2.id).unwrap();
         if i.state == ItemState::Resolved {
             break;
@@ -709,7 +726,8 @@ async fn a_new_version_ends_the_open_step_and_a_cancel_closes_the_chain() {
     let (code, _) = error_of(&approve(&mut conn, &item2.id).await);
     assert_eq!(code, ErrorCode::BadRequest);
 
-    // A cancel while v3 waits on its hand-off closes the chain; the result stays.
+    // A cancel while v3 waits on its hand-off closes the chain; the Result
+    // stays to review, without the hand-off (ADR 0058 §1).
     until_q(&mut conn, &h, &q.id, "v3 step 1 resulted", resulted(1)).await;
     let item3 = until_item(&mut conn, &q.id, 3, 1).await;
     let cancelled = conn
@@ -723,9 +741,21 @@ async fn a_new_version_ends_the_open_step_and_a_cancel_closes_the_chain() {
         panic!("{cancelled:?}")
     };
     assert_eq!((after.delivery, after.steps.len()), (Delivery::Resulted, 1));
-    let items = handoff_items(&mut conn, &q.id).await;
-    let closed = items.iter().find(|i| i.id == item3.id).unwrap();
-    assert_eq!(closed.state, ItemState::Resolved);
+    let deadline = Instant::now() + RUN_WAIT;
+    let ended = loop {
+        let items = result_items(&mut conn, &q.id).await;
+        let i = items.into_iter().find(|i| i.id == item3.id).unwrap();
+        if i.result.as_ref().is_some_and(|r| r.handoff.is_none()) {
+            break i;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "v3's item still offers its hand-off"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    };
+    assert_eq!(ended.state, ItemState::Open);
+    assert!(!ended.answers.contains(&InboxAction::Approve));
     let (code, _) = error_of(&approve(&mut conn, &item3.id).await);
     assert_eq!(code, ErrorCode::BadRequest);
     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -734,5 +764,110 @@ async fn a_new_version_ends_the_open_step_and_a_cancel_closes_the_chain() {
     h.steer("release", &json!(true));
     assert_layout_kept(&before, &h);
     assert_no_marks(&daemon);
+    daemon.shutdown().await;
+}
+
+async fn send(conn: &mut Conn, item: &str, text: &str) -> Vec<Message> {
+    conn.request(json!({"type": "update-inbox", "entry": item, "action": "reply", "text": text}))
+        .await
+}
+
+/// ADR 0058: Send asks the member who wrote the Result again, as a new
+/// version that continues it; Hand off starts the next member; Done closes
+/// the item and ends the chain.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_result_is_sent_back_handed_off_and_done() {
+    let h = Host::new("review-result", "");
+    h.steer(
+        &format!("first.{LEAD}.json"),
+        &handing("Two options.", STRATEGIST),
+    );
+    h.steer(
+        &format!("first.{STRATEGIST}.json"),
+        &result("B is cheaper."),
+    );
+    let mut daemon = h.daemon().await;
+    let mut conn = daemon.connect().await;
+    let before = h.server.layout();
+    let work = work_item(&mut conn, "c-review-result").await;
+    let q = ask(&mut conn, &work, None).await;
+    until_q(&mut conn, &h, &q.id, "v1 resulted", resulted(1)).await;
+    let first = until_item(&mut conn, &q.id, 1, 1).await;
+
+    // Send: version 2, step 1 the same member, asked by the user.
+    let text = "Also weigh the hiring plan. send-mark-90af";
+    h.steer(
+        &format!("first.{LEAD}.json"),
+        &handing("B, with the hiring plan.", STRATEGIST),
+    );
+    let sent = send(&mut conn, &first.id, text).await;
+    let (v2, answered) = approved(&sent);
+    assert_eq!(
+        (answered.state, answered.answer),
+        (ItemState::Answered, Some(InboxAction::Reply))
+    );
+    assert_eq!(v2.version, 2);
+    assert_eq!(v2.purpose.as_deref(), Some(text));
+    assert_eq!(
+        (v2.steps[0].worker.as_str(), v2.steps[0].by),
+        (LEAD, StepBy::User)
+    );
+    // A second Send makes nothing new.
+    let (again, _) = approved(&send(&mut conn, &first.id, "Other words.").await);
+    assert_eq!(again.version, 2);
+    let run = v2.run.clone().unwrap();
+
+    // The run continues the Result: whole in followup.json, named in the goal.
+    let done = until_q(&mut conn, &h, &q.id, "v2 resulted", resulted(1)).await;
+    assert_eq!(done.version, 2);
+    assert!(
+        done.results
+            .iter()
+            .filter(|r| r.version == 1)
+            .all(|r| r.stale)
+    );
+    let dir = h.dir(&run);
+    let task_md = std::fs::read_to_string(dir.join(".muxa/TASK.md")).unwrap();
+    assert!(task_md.contains("## The result you continue"), "{task_md}");
+    assert!(task_md.contains("version 1, step 1 by lisk-chief-of-staff"));
+    assert!(task_md.contains(text), "{task_md}");
+    let file = std::fs::read_to_string(dir.join(".muxa/assistant/followup.json")).unwrap();
+    let continued: Value = serde_json::from_str(&file).unwrap();
+    assert_eq!(continued["result"]["summary"], "Two options.");
+    assert_eq!(
+        (continued["version"].clone(), continued["step"].clone()),
+        (json!(1), json!(1))
+    );
+
+    // Hand off: the next member, once.
+    let second = until_item(&mut conn, &q.id, 2, 1).await;
+    let (started, answered) = approved(&approve(&mut conn, &second.id).await);
+    assert_eq!(answered.answer, Some(InboxAction::Approve));
+    assert_eq!(started.steps.last().unwrap().worker, STRATEGIST);
+    until_q(&mut conn, &h, &q.id, "v2 step 2 resulted", resulted(2)).await;
+
+    // Done on the last Result: the item closes and nothing more runs.
+    let last = until_item(&mut conn, &q.id, 2, 2).await;
+    assert!(!last.answers.contains(&InboxAction::Approve));
+    let closed = conn
+        .request(json!({"type": "update-inbox", "entry": last.id, "action": "dismiss"}))
+        .await;
+    let Some(Message::InboxSaved { item: Some(i), .. }) = closed.first() else {
+        panic!("{closed:?}")
+    };
+    assert_eq!(
+        (i.state, i.answer),
+        (ItemState::Answered, Some(InboxAction::Dismiss))
+    );
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let after = request(&mut conn, &q.id).await;
+    assert_eq!((after.version, after.steps.len()), (2, 2));
+    let items = result_items(&mut conn, &q.id).await;
+    assert_eq!(items.len(), 3, "{items:?}");
+    assert!(items.iter().all(|i| i.state == ItemState::Answered));
+
+    assert_layout_kept(&before, &h);
+    assert_no_marks(&daemon);
+    assert!(!daemon.log().contains("send-mark-90af"));
     daemon.shutdown().await;
 }

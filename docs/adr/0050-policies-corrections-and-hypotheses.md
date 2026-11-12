@@ -78,7 +78,7 @@ The brief gains a section "## What the user told you", before the notes, built o
 - **Policies:** one screen from the Today header and Settings: active policies with scope and end, Add (text, scope picker without the overall workspace, This week / Until / No end), Edit, Delete; Hypotheses with Confirm, Reject, Forget; Recent corrections with Forget. The one place that shows what the assistant remembers.
 - **Today:** drag to reorder; swipe or menu "Not today" with an optional reason; Why lists policies, hypotheses and corrections by text, with Forget. Dismissed rows collapse to one line.
 - **Inbox:** `hypothesis` items with Confirm, Reject, Later, and the evidence as "based on 3 corrections".
-- **muxa for tmux:** Today rows take `K` / `J` to move, `x` for Not today, `y` opens the Policies list. CLI: `policy add | list | edit | delete`, `plan reorder`, `plan dismiss ROW [--reason]`, `forget ID`, `inbox answer ITEM confirm`.
+- **muxa for tmux:** Today rows take `K` / `J` to move, `x` for Not today, `Y` opens the Policies list (`y` until 2026-11-12; `y` now copies an item's link). CLI: `policy add | list | edit | delete`, `plan reorder`, `plan dismiss ROW [--reason]`, `forget ID`, `inbox answer ITEM confirm`.
 
 ### 8. Logs and budgets
 

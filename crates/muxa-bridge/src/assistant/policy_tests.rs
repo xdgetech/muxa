@@ -252,3 +252,18 @@ fn the_day_starts_at_local_midnight_and_resets_at_the_next() {
     assert!(start <= now && now - start < 86_400 + 3600);
     assert!(reset.contains("00:00"), "{reset}");
 }
+
+#[test]
+fn runs_left_is_the_smaller_of_the_workspace_and_host_budgets() {
+    let used = |today, today_host| Usage {
+        open: 0,
+        today,
+        today_host,
+    };
+    let left = |u, max, host| runs_left(u, max, host).left;
+    assert_eq!(left(used(1, 1), 3, 20), 2);
+    assert_eq!(left(used(1, 19), 3, 20), 1);
+    assert_eq!(left(used(4, 4), 3, 20), 0);
+    assert_eq!(left(used(0, 25), 3, 20), 0);
+    assert_eq!(runs_left(used(1, 1), 3, 20).max, 3);
+}

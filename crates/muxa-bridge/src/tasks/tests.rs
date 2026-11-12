@@ -51,6 +51,7 @@ fn request(repo: &Path, branch: &str) -> TaskRequest {
         base: None,
         record: None,
         agent: None,
+        plan: false,
     }
 }
 
@@ -101,6 +102,62 @@ fn new_sh_gets_the_record_only_when_it_says_it_takes_it() {
     assert_eq!(
         new_sh_args(true, None),
         ["/src/app", "feat/x", "--no-switch"]
+    );
+}
+
+#[test]
+fn new_sh_gets_plan_only_for_a_plan_request_when_it_takes_it() {
+    let args = |takes: bool, plan: bool| -> Vec<String> {
+        let launcher =
+            tmux_agents::TmuxAgents::new("/p/new.sh".into(), "/bin/tmux".into(), None, false)
+                .plans(takes);
+        let req = TaskRequest {
+            plan,
+            ..request(Path::new("/src/app"), "feat/x")
+        };
+        launcher
+            .command(&req)
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    };
+    assert_eq!(
+        args(true, true),
+        ["/src/app", "feat/x", "--plan", "--no-switch"]
+    );
+    assert_eq!(args(false, true), ["/src/app", "feat/x", "--no-switch"]);
+    assert_eq!(args(true, false), ["/src/app", "feat/x", "--no-switch"]);
+}
+
+#[test]
+fn only_claude_code_gets_the_plan_flag() {
+    use super::builtin::{plan_argv, plan_line};
+    assert_eq!(plan_line("claude"), "claude --permission-mode plan");
+    assert_eq!(
+        plan_line("CLAUDE_CONFIG_DIR=/c claude --model opus"),
+        "CLAUDE_CONFIG_DIR=/c claude --model opus --permission-mode plan"
+    );
+    assert_eq!(plan_line("codex"), "codex");
+    assert_eq!(plan_line("my-wrapper"), "my-wrapper");
+    let argv = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        plan_argv(&argv(&["/usr/bin/claude", "--model", "opus"])),
+        argv(&[
+            "/usr/bin/claude",
+            "--model",
+            "opus",
+            "--permission-mode",
+            "plan"
+        ])
+    );
+    assert_eq!(
+        plan_argv(&argv(&["codex", "resume", "x"])),
+        argv(&["codex", "resume", "x"])
+    );
+    assert_eq!(
+        plan_argv(&argv(&["claude"])),
+        argv(&["claude --permission-mode plan"])
     );
 }
 

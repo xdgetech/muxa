@@ -39,6 +39,7 @@ import tech.xdge.muxa.session.label
 import tech.xdge.muxa.session.proposer
 import tech.xdge.muxa.session.state
 import tech.xdge.muxa.session.taskOf
+import tech.xdge.muxa.session.startedTask
 
 // Write proposals in the app (ADR 0052 §7). The content is plain text in a fixed-width font: no
 // Markdown and no active links, so the text the user approves is the text the user saw.
@@ -65,25 +66,30 @@ internal fun WriteView(model: AppModel, item: InboxItem) {
     DetailNote("Approve starts one Task of $writer that writes this content, unchanged. muxa does not check what it writes.")
 }
 
-/** An approved write: "Task started", then the Task's own state, and its session. */
+/**
+ * An item that started a Task: an approved write, or a proposed Task (ADR 0060 §6). "Task started",
+ * the Task's own state and title, and Open its Task while it has a session.
+ */
 @Composable
-internal fun WriteStarted(model: AppModel, item: InboxItem) {
-    val task = item.task ?: return
+internal fun TaskStarted(model: AppModel, item: InboxItem) {
+    val task = item.startedTask ?: return
+    val tag = if (item.kind == ItemKind.WRITE) "item-write-task" else "item-started-task"
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            TaskLine(model, task, "item-write-task")
+            model.taskRecord(task)?.let { Text(it.title, style = MaterialTheme.typography.titleMedium) }
+            TaskLine(model, task, tag, "Open its Task")
         }
     }
 }
 
-/** "Task started · Open" and Open Session while the Task has one. [tag] names the line and its button. */
+/** "Task started · Open" and [open] while the Task has a session. [tag] names the line and its button. */
 @Composable
-private fun TaskLine(model: AppModel, task: String, tag: String) {
+private fun TaskLine(model: AppModel, task: String, tag: String, open: String = "Open Session") {
     val record = model.taskRecord(task)
     val status = record?.let { " · ${statusTitle(it.status)}" }.orEmpty()
     Text("${WriteState.STARTED.label}$status", Modifier.testTag(tag), color = Theme.connected)
     val session = record?.let(model::sessionOf) ?: return
-    TextButton({ model.openRunSession(session) }, Modifier.testTag("$tag-session")) { Text("Open Session") }
+    TextButton({ model.openRunSession(session) }, Modifier.testTag("$tag-session")) { Text(open) }
 }
 
 /** Approve's confirmation: the target once more. Confirm sends the hash of [write], the write shown. */

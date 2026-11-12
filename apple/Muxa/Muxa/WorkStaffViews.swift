@@ -94,7 +94,8 @@ private struct StepSection: View {
 }
 
 /// The next step a hand-off asks for, before it starts. Approve and Reject answer its
-/// Inbox item; what the item says after that is shown instead.
+/// Inbox item, or Hand off and Done a `result` item; what the item says after that is
+/// shown instead.
 private struct WaitingHandoffSection: View {
     @Environment(AppModel.self) private var model
     let request: AssistantRequest
@@ -111,11 +112,13 @@ private struct WaitingHandoffSection: View {
             Text(handoff.purpose).textSelection(.enabled).foregroundStyle(.secondary)
                 .accessibilityIdentifier("work-handoff-purpose")
             if let waiting {
+                // A `result` item ends the chain with Done, a `handoff` item with Reject (ADR 0058 §2).
+                let ends: InboxAction = waiting.answers.contains(.reject) ? .reject : .dismiss
                 HStack(spacing: 10) {
-                    Button("Approve") { send(waiting, .approve) }
+                    Button(InboxAction.approve.title(for: waiting)) { send(waiting, .approve) }
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("work-handoff-approve")
-                    Button("Reject") { send(waiting, .reject) }
+                    Button(ends.title(for: waiting)) { send(waiting, ends) }
                         .buttonStyle(.bordered)
                         .accessibilityIdentifier("work-handoff-reject")
                 }
@@ -139,6 +142,7 @@ private struct WaitingHandoffSection: View {
     private func outcome(_ item: InboxItem?) -> String {
         switch (item?.state, item?.answer) {
         case (.answered, .reject): "Rejected. The chain ended with these results."
+        case (.answered, .dismiss): "Done. The chain ended with these results."
         case (.answered, .approve): "Approved. The next step starts."
         case (.resolved, _): "The chain ended here."
         default: "Not started."

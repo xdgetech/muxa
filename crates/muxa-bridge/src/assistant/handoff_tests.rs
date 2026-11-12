@@ -11,6 +11,7 @@ fn chain(step: u32) -> Chain {
         max_steps: 3,
         handoffs: Handoffs::Review,
         writes: false,
+        workspace: None,
     }
 }
 

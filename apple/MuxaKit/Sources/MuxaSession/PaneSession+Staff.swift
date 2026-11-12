@@ -22,16 +22,24 @@ extension PaneSession {
         return staff.first(where: \.lead) ?? staff.first
     }
 
-    /// The `handoff` Inbox item that waits on the step's hand-off, open or moved down.
+    /// The Inbox item that waits on the step's hand-off, open or moved down.
     public func handoffItem(for request: AssistantRequest, step: UInt32) -> InboxItem? {
         handoffItems(for: request, step: step).first { $0.state == .open || $0.state == .later }
     }
 
-    /// The `handoff` items of one step, whatever their state, newest first.
+    /// The items that offer one step's hand-off, whatever their state, newest first: a
+    /// `handoff` item, or at level 16 a `result` item with a hand-off (ADR 0058 §1).
     public func handoffItems(for request: AssistantRequest, step: UInt32) -> [InboxItem] {
-        inboxItems.filter {
-            $0.kind == .handoff && $0.handoff?.request == request.id && $0.handoff?.version == request.version
-                && $0.handoff?.step == step
+        inboxItems.filter { item in
+            switch item.kind {
+            case .handoff:
+                item.handoff?.request == request.id && item.handoff?.version == request.version
+                    && item.handoff?.step == step
+            case .result:
+                item.result?.handoff != nil && item.result?.request == request.id
+                    && item.result?.version == request.version && item.result?.step == step
+            default: false
+            }
         }
     }
 

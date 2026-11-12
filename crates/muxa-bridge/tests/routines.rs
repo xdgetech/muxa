@@ -476,6 +476,16 @@ async fn a_run_whose_start_prompt_was_not_typed_fails_without_a_fail_prompt() {
 async fn without_a_daemon_a_bridge_lists_routines_but_runs_none() {
     let server = Server::start();
     let h = Host::new("bridge");
+    // A renamed repo still listed: the rest keeps working, and the
+    // problems name it.
+    let gone = h.base.join("renamed-repo");
+    let file = h.base.join("workspaces.toml");
+    let text = std::fs::read_to_string(&file).unwrap().replacen(
+        "[workspace.routines]",
+        &format!("repos = [\"{}\"]\n[workspace.routines]", gone.display()),
+        1,
+    );
+    std::fs::write(&file, text).unwrap();
     let mut flags = h.flags();
     flags.extend([
         "--daemon-dir".into(),
@@ -488,19 +498,32 @@ async fn without_a_daemon_a_bridge_lists_routines_but_runs_none() {
     };
     // The bridge serves ask sessions (ADR 0031) too, so it advertises the
     // highest level, 15 (ADR 0054). Its daemon answers the item requests a bridge forwards.
-    assert_eq!(work_level(capabilities), muxa_protocol::WORK_ASK_ROOT);
+    assert_eq!(work_level(capabilities), muxa_protocol::WORK_TASK_PROPOSALS);
     assert!(matches!(
         bridge.request(json!({"type": "list-routines"})).await,
         Message::Result { error: None, .. }
     ));
     let mut listed = Vec::new();
+    let mut problems = Vec::new();
     while let Some(msg) = bridge.event(Duration::from_millis(300)).await {
-        if let Message::RoutineList { entries, .. } = msg {
+        if let Message::RoutineList {
+            entries,
+            problems: p,
+            ..
+        } = msg
+        {
             listed = entries;
+            problems = p;
         }
     }
     let names: Vec<_> = listed.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["Brief", "Off", "Codex"]);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(problems[0].workspace, "w");
+    assert!(
+        problems[0].reason.contains(&gone.display().to_string()),
+        "{problems:?}"
+    );
     let off = listed.iter().find(|r| r.name == "Off").unwrap();
     assert_eq!((off.enabled, off.next_due), (false, None));
     let refused = bridge

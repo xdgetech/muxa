@@ -134,7 +134,7 @@ internal fun ResultView(model: AppModel, request: AssistantRequest, result: Assi
 }
 
 @Composable
-private fun Bullets(header: String, lines: List<String>) {
+internal fun Bullets(header: String, lines: List<String>) {
     if (lines.isEmpty()) return
     DetailHeader(header)
     for (line in lines) Text("• $line")

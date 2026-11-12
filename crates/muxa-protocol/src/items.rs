@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ChatPrompt, DelegateProposal, HandoffProposal, HypothesisProposal, InboxAction, MemoryProposal,
-    Proposal, SortProposal, SourceLink, WriteProposal,
+    Proposal, ResultReview, SortProposal, SourceLink, TaskProposal, WriteProposal,
 };
 
 /// Level 3: Inbox items (`items` in `inbox-list`, the answers of ADR 0033).
@@ -86,6 +86,13 @@ pub struct InboxItem {
     /// `WORKSPACE.md` (`work` level 14, ADR 0053). `task` is the same Task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryProposal>,
+    /// With kind `result`: the Result to review (`work` level 16, ADR 0058).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<ResultReview>,
+    /// With kind `new-task`: the Task Start Task starts (`work` level 18,
+    /// ADR 0060). After it, `task` is that Task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_task: Option<TaskProposal>,
     /// The answers the host accepts now, in the order to show them. Empty
     /// once the item is answered or resolved.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -115,6 +122,11 @@ pub enum ItemKind {
     Write,
     /// Level 14: a Task's end proposes to add to the workspace memory.
     Memory,
+    /// Level 16: a request's Result to review (ADR 0058).
+    Result,
+    /// Level 18: the secretary proposes a Task to start (ADR 0060).
+    #[serde(rename = "new-task")]
+    NewTask,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
     Unknown,

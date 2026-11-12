@@ -44,6 +44,157 @@ pub async fn ask(
     ])
 }
 
+/// `start-session` with `root` and `text` (ADR 0059): the text, after the
+/// Work item `work` when given, typed into the workspace's root Ask session
+/// as [`ask`] types an item's request. On Today, the workspace of a Work
+/// item's Send is the overall one: the secretary.
+pub async fn ask_root(
+    cx: &Context,
+    request: u64,
+    workspace: &str,
+    work: Option<&str>,
+    text: &str,
+) -> Result<Vec<Message>, ErrorBody> {
+    if text.trim().is_empty() || text.len() > MAX_TEXT {
+        return Err(bad(format!(
+            "start-session text must be 1 to {MAX_TEXT} bytes"
+        )));
+    }
+    let about = match work {
+        Some(work) => {
+            let (config, work) = (Arc::clone(&cx.records), work.to_owned());
+            let detail = tokio::task::spawn_blocking(move || {
+                crate::assistant::detail::detail(&config, &work)
+            })
+            .await
+            .map_err(|e| error_body(ErrorCode::Internal, format!("work lookup failed: {e}")))??;
+            Some(detail)
+        }
+        None => None,
+    };
+    let env = cx.env().await?;
+    let (session, name, fresh) = root_session(&env, workspace).await?;
+    deliver(&env, session, &work_prompt(about.as_ref(), text), fresh).await?;
+    tracing::info!(work = ?work, session = %session, fresh, "sent to the workspace's root agent");
+    Ok(vec![Message::SessionStarted {
+        start: request,
+        session: session.to_string(),
+        name,
+    }])
+}
+
+/// `update-inbox reply` on a `new-task` item (ADR 0060 §3): the proposal
+/// and the user's text, typed into the overall workspace's root Ask
+/// session, the secretary that proposed it. The item stays open:
+/// `session-started`, then `inbox-saved`.
+pub async fn to_secretary(
+    cx: &Context,
+    request: u64,
+    item: &InboxItem,
+    text: Option<&str>,
+) -> Result<Vec<Message>, ErrorBody> {
+    let text = text
+        .filter(|t| !t.trim().is_empty() && t.len() <= MAX_TEXT)
+        .ok_or_else(|| bad(format!("reply needs a text of 1 to {MAX_TEXT} bytes")))?;
+    if item.state != ItemState::Open {
+        return Err(bad(format!("Inbox item {} is already closed", item.id)));
+    }
+    let p = item
+        .new_task
+        .as_ref()
+        .ok_or_else(|| bad("the item proposes no Task"))?;
+    let config = Arc::clone(&cx.records);
+    let overall = tokio::task::spawn_blocking(move || config.load_workspaces())
+        .await
+        .map_err(|e| error_body(ErrorCode::Internal, format!("workspace lookup failed: {e}")))??
+        .overall()
+        .map(|w| w.name.clone())
+        .ok_or_else(|| {
+            error_body(
+                ErrorCode::Unsupported,
+                "this host has no overall workspace, so no secretary to send to",
+            )
+        })?;
+    let env = cx.env().await?;
+    let (session, name, fresh) = root_session(&env, &overall).await?;
+    deliver(&env, session, &proposal_prompt(&item.id, p, text), fresh).await?;
+    tracing::info!(item = %item.id, session = %session, fresh, "sent a proposal's answer to the secretary");
+    Ok(vec![
+        Message::SessionStarted {
+            start: request,
+            session: session.to_string(),
+            name,
+        },
+        Message::InboxSaved {
+            inbox: request,
+            entry: None,
+            item: Some(Box::new(item.clone())),
+        },
+    ])
+}
+
+/// Pure. The proposal as the secretary reads it, then the user's text.
+fn proposal_prompt(item: &str, p: &muxa_protocol::TaskProposal, text: &str) -> String {
+    let repo = p
+        .repo
+        .as_deref()
+        .map(|r| format!(", repo {r}"))
+        .unwrap_or_default();
+    let work = p
+        .work
+        .as_deref()
+        .map(|w| format!(", for Work item {w}"))
+        .unwrap_or_default();
+    format!(
+        "About the Task you proposed (Inbox item {item}, workspace {ws}{repo}{work}):\n\n\
+         Title: {title}\n\nGoal:\n{goal}\n\n\
+         The user has not started it yet. To change it, propose it again with \
+         muxa-cli task propose; the user then closes this item with Done.\n\n\
+         My answer: {text}",
+        ws = p.workspace,
+        title = p.title,
+        goal = p.goal.trim_end(),
+    )
+}
+
+/// Pure. The Work item as the agent reads it, then the user's text. Without
+/// a Work item, the text alone.
+fn work_prompt(about: Option<&crate::assistant::detail::Detail>, text: &str) -> String {
+    let Some(d) = about else {
+        return text.to_owned();
+    };
+    let w = &d.entry;
+    let state = serde_json::to_value(w.state)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".into());
+    let place = w
+        .workspace
+        .as_deref()
+        .map(|ws| format!(", in workspace {ws}"))
+        .unwrap_or_default();
+    let mut out = format!(
+        "About this Work item ({}, {state}{place}):\n\n{}\n",
+        w.id, w.title
+    );
+    let newest = d
+        .requests
+        .iter()
+        .filter_map(|q| q.results.first())
+        .max_by_key(|r| r.at);
+    if let Some(r) = newest {
+        out.push_str(&format!(
+            "\nNewest result (v{}):\n{}\n",
+            r.version, r.summary
+        ));
+    }
+    out.push_str(&format!(
+        "\nThe whole item: muxa-cli work show {}\n\nMy request: {text}",
+        w.id
+    ));
+    out
+}
+
 /// The item as listed, if it is open: a Task's item or a Routine's entry.
 async fn open_item(cx: &Context, id: &str) -> Result<InboxItem, ErrorBody> {
     let (config, id) = (Arc::clone(&cx.records), id.to_owned());
@@ -68,13 +219,18 @@ async fn root_session(env: &Env, workspace: &str) -> Result<(SessionId, String, 
     let workspaces = tokio::task::spawn_blocking(move || config.load_workspaces())
         .await
         .map_err(|e| error_body(ErrorCode::Internal, format!("workspace lookup failed: {e}")))??;
-    let (launched, fresh) =
-        crate::tasks::ask::open_root(&env.client, &env.tasks.command, &workspaces, workspace)
-            .await
-            .map_err(|e| {
-                tracing::warn!(workspace, error = %e, "workspace ask session did not start");
-                convert::task_error(&e)
-            })?;
+    let (launched, fresh) = crate::tasks::ask::open_root(
+        &env.client,
+        &env.tasks.command,
+        &workspaces,
+        workspace,
+        env.records.state_dir.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::warn!(workspace, error = %e, "workspace ask session did not start");
+        convert::task_error(&e)
+    })?;
     Ok((launched.id, launched.name, fresh))
 }
 
@@ -159,6 +315,8 @@ fn prompt(item: &InboxItem, text: &str) -> String {
         ItemKind::Handoff => "hand-off between staff members",
         ItemKind::Write => "proposed write outside this host",
         ItemKind::Memory => "proposed addition to the workspace memory",
+        ItemKind::Result => "result of a staff member to review",
+        ItemKind::NewTask => "proposed Task to start",
         ItemKind::Unknown => "item",
     };
     let source = match &item.routine {
@@ -224,6 +382,36 @@ mod tests {
         assert!(p.contains("\n**10/14 projects done.**\n"));
         assert!(p.contains("\nLinks:\n- https://linear.app/x/ENA-257\n"));
         assert!(p.ends_with("\nMy request: Put this in Notion."));
+    }
+
+    #[test]
+    fn the_secretary_gets_the_work_item_then_the_request() {
+        use muxa_protocol::{AssistantRequest, WorkItem};
+        let entry: WorkItem = serde_json::from_value(serde_json::json!({
+            "id": "w-0a1b2c3d", "rev": 3, "title": "Compare vendor offers",
+            "state": "in-progress", "createdAt": 1, "updatedAt": 2, "workspace": "work"
+        }))
+        .unwrap();
+        let request: AssistantRequest = serde_json::from_value(serde_json::json!({
+            "id": "q-0a1b2c3d", "work": "w-0a1b2c3d", "version": 2, "workspace": "work",
+            "scope": "compare", "delivery": "resulted", "deliveryAt": 5, "createdAt": 1,
+            "updatedAt": 5,
+            "results": [{"version": 2, "at": 5, "summary": "Offer B is cheaper."}]
+        }))
+        .unwrap();
+        let detail = crate::assistant::detail::Detail {
+            entry,
+            captures: Vec::new(),
+            requests: vec![request],
+        };
+        let p = work_prompt(Some(&detail), "Ask legal about B.");
+        assert!(p.starts_with(
+            "About this Work item (w-0a1b2c3d, in-progress, in workspace work):\n\nCompare vendor offers\n"
+        ));
+        assert!(p.contains("\nNewest result (v2):\nOffer B is cheaper.\n"));
+        assert!(p.contains("muxa-cli work show w-0a1b2c3d"));
+        assert!(p.ends_with("\nMy request: Ask legal about B."));
+        assert_eq!(work_prompt(None, "Hello."), "Hello.");
     }
 
     #[test]

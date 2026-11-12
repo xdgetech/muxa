@@ -216,6 +216,9 @@ pub struct AssistResult {
     /// Never logged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub writes: Vec<ResultWrite>,
+    /// Level 18: the Task the step proposes to start (ADR 0060). Never logged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<crate::TaskProposal>,
 }
 
 /// A deadline the user set on a Work item (ADR 0049 §6).

@@ -136,7 +136,11 @@ extension DemoBridge {
         _ change: (inout DemoAssistant) throws(DemoWork.Refusal) -> (WorkItem, AssistantRequest, DemoAssistant.RunChange)
     ) {
         let outcome = lock.withLock { () -> Result<(WorkItem, AssistantRequest, DemoAssistant.RunChange), DemoWork.Refusal> in
-            do throws(DemoWork.Refusal) { return .success(try change(&work.assistant)) } catch { return .failure(error) }
+            do throws(DemoWork.Refusal) {
+                let made = try change(&work.assistant)
+                work.resolveReplacedResults()
+                return .success(made)
+            } catch { return .failure(error) }
         }
         switch outcome {
         case .success(let (item, request, runs)):
@@ -172,7 +176,7 @@ extension DemoBridge {
     @discardableResult
     private func advanceRuns() -> Bool {
         let ended = lock.withLock { () -> [DemoRun] in
-            let ended = work.assistant.advance()
+            let ended = work.advanceRuns()
             let tasks = Set(ended.map(\.task))
             sessions.removeAll { $0.taskId.map(tasks.contains) ?? false }
             return ended

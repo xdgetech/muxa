@@ -60,6 +60,8 @@ final class PlanTests: XCTestCase {
         XCTAssertTrue(pinned.label.contains("Ship passkey sign-in"), pinned.label)
         XCTAssertTrue(pinned.label.contains("Pinned by you."), pinned.label)
         XCTAssertTrue(pinned.label.contains("60–120 min"), pinned.label)
+        XCTAssertTrue(pinned.label.hasPrefix("Next, "), "the first row is Next: \(pinned.label)")
+        XCTAssertFalse(todayRow(app, "w-0000b001").label.hasPrefix("Next, "))
         XCTAssertLessThan(pinned.frame.minY, todayRow(app, "w-0000b001").frame.minY, "the pinned item is first")
         XCTAssertTrue(todayRow(app, "i-0000a001").exists, "a row can be an Inbox item")
         tapWhenReady(app.buttons["today-why-w-0000b002"])

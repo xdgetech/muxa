@@ -1,15 +1,16 @@
-//! What follows a step's hand-off (ADR 0051 §3). Under `handoffs = "review"`
-//! the daemon's tick makes one `handoff` Inbox item in the asking step's run
-//! file; under `auto` it starts the next step within every budget and
-//! `max_auto_handoffs_per_day`, else makes the item with the limit. A new
-//! version or a cancel ends a waiting chain and resolves its item. Logs
-//! carry ids, steps and worker names, never a purpose.
+//! What follows a step's Result (ADR 0051 §3, ADR 0058 §1). The daemon's
+//! tick makes one `result` Inbox item in the step's run file, which offers
+//! the step's hand-off; under `handoffs = "auto"` it starts the next step
+//! instead, within every budget and `max_auto_handoffs_per_day`, else makes
+//! the item with the limit. A new version resolves the item; a cancel ends
+//! the chain and takes the hand-off off it. Logs carry ids, steps and
+//! worker names, never a purpose or a Result.
 pub mod items;
 pub mod next;
 
 use std::sync::Arc;
 
-use muxa_protocol::{AssistantRequest, Delivery, Handoff};
+use muxa_protocol::{AssistResult, AssistantRequest, Delivery, Handoff};
 use serde::{Deserialize, Serialize};
 
 use super::store::{Extra, Shelf};
@@ -18,16 +19,20 @@ use crate::records::staff::Handoffs;
 use crate::routines::store::StateError;
 use crate::task_records::{Config, Context};
 
-/// The request file's mark of a chain that waits on a hand-off, or ended.
+/// The request file's mark of the newest step's item, or of an ended chain.
+/// Its name is from when only a hand-off made an item.
 pub const WAITING_FIELD: &str = "handoffWaiting";
+/// Seconds a Result stays new enough to make an item: an upgraded host does
+/// not ask about old ones (ADR 0058 §1).
+pub const RECENT: u64 = 86_400;
 
-/// A chain that waits on step `step`'s hand-off.
+/// The item made for step `step`'s Result, and whether its chain ended.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Waiting {
     pub version: u64,
     pub step: u32,
-    /// The run whose item file holds the `handoff` item. None: no item yet.
+    /// The run whose item file holds the item. None: no item yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<String>,
     /// A cancel ended the chain before its next step.
@@ -51,19 +56,31 @@ pub fn set_waiting(extra: &mut Extra, w: &Waiting) {
     }
 }
 
+/// The current version's newest step once its Result is stored: the step,
+/// the hand-off it proposes, and the Result. None while it runs, or when it
+/// failed or was cancelled. A request without staff is step 1.
+pub fn newest(q: &AssistantRequest) -> Option<(u32, Option<&Handoff>, &AssistResult)> {
+    let step = q.steps.last().map_or(1, |s| s.step);
+    let result = q
+        .results
+        .iter()
+        .find(|r| r.version == q.version && r.step.unwrap_or(1) == step)?;
+    if q.delivery != Delivery::Resulted {
+        return None;
+    }
+    Some((
+        step,
+        q.steps.last().and_then(|s| s.handoff.as_ref()),
+        result,
+    ))
+}
+
 /// The step whose stored result asks for a hand-off that has not started
 /// yet, with the hand-off. None for a request without staff, or a version
 /// whose newest step is running, failed or cancelled.
 pub fn pending(q: &AssistantRequest) -> Option<(u32, &Handoff)> {
-    let last = q.steps.last()?;
-    let answered = q
-        .results
-        .iter()
-        .any(|r| r.version == q.version && r.step.unwrap_or(1) == last.step);
-    if q.delivery != Delivery::Resulted || !answered {
-        return None;
-    }
-    Some((last.step, last.handoff.as_ref()?))
+    let (step, handoff, _) = newest(q)?;
+    Some((step, handoff?))
 }
 
 /// Whether the chain of `version` ended without its next step.
@@ -74,41 +91,55 @@ pub fn ended(extra: &Extra, version: u64) -> bool {
 /// What the tick does for one request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Todo {
-    /// `handoffs = "review"`: the item.
-    Ask { step: u32 },
+    /// The `result` item; `handoff` when it offers the step's hand-off.
+    Ask { step: u32, handoff: bool },
     /// `handoffs = "auto"`: the next step.
     Start { step: u32 },
-    /// The waiting item no longer applies.
-    Resolve { task: String, why: &'static str },
+    /// The item no longer applies: a newer version replaced its Result.
+    Resolve { task: String },
+    /// A cancel ended the chain: the item's hand-off can no longer start.
+    End { task: String },
 }
 
-/// Pure. What one request's chain needs now.
-pub(super) fn todo(q: &AssistantRequest, extra: &Extra, mode: Option<Handoffs>) -> Option<Todo> {
+/// Why [`Todo::Resolve`] closes an item.
+pub const REPLACED: &str = "A newer version of this request replaced this result.";
+/// Why [`Todo::End`] takes the hand-off off an item.
+pub const CANCELLED: &str = "The request was cancelled; its chain ended.";
+
+/// Pure. What one request's chain needs now, at `now`.
+pub(super) fn todo(
+    q: &AssistantRequest,
+    extra: &Extra,
+    mode: Option<Handoffs>,
+    now: u64,
+) -> Option<Todo> {
     let mark = waiting(extra);
     if let Some(w) = &mark {
-        let gone = if w.version != q.version {
-            Some("A new version of the request ended this chain.")
-        } else if matches!(q.delivery, Delivery::CancelRequested | Delivery::Cancelled) || w.ended {
-            Some("The request was cancelled; its chain ended.")
-        } else {
-            None
-        };
-        if let (Some(why), Some(task), false) = (gone, &w.task, w.resolved) {
-            return Some(Todo::Resolve {
-                task: task.clone(),
-                why,
-            });
+        if let (Some(task), false) = (&w.task, w.resolved) {
+            if w.version != q.version {
+                return Some(Todo::Resolve { task: task.clone() });
+            }
+            if matches!(q.delivery, Delivery::CancelRequested | Delivery::Cancelled) || w.ended {
+                return Some(Todo::End { task: task.clone() });
+            }
         }
     }
-    let (step, _) = pending(q)?;
+    let (step, handoff, result) = newest(q)?;
     if mark.is_some_and(|w| w.version == q.version && w.step == step) {
         return None;
     }
-    match mode? {
-        Handoffs::Review => Some(Todo::Ask { step }),
-        Handoffs::Auto => Some(Todo::Start { step }),
-        // The check refuses a hand-off then; configuration changed since.
-        Handoffs::None => None,
+    match (handoff, mode) {
+        (Some(_), Some(Handoffs::Auto)) => Some(Todo::Start { step }),
+        _ if now.saturating_sub(result.at) > RECENT => None,
+        // `none` refuses a hand-off in the check; configuration changed since.
+        (Some(_), Some(Handoffs::None)) => Some(Todo::Ask {
+            step,
+            handoff: false,
+        }),
+        (handoff, _) => Some(Todo::Ask {
+            step,
+            handoff: handoff.is_some(),
+        }),
     }
 }
 
@@ -141,15 +172,17 @@ fn scan(config: &Config) -> Vec<(String, u64, u32)> {
         }
     };
     let workspaces = config.load_workspaces().unwrap_or_default();
+    let now = crate::records::now();
     let mut starts = Vec::new();
-    for q in all.into_iter().filter(|q| !q.steps.is_empty()) {
+    for q in all {
         let Ok(Some((q, extra))) = shelf.get_with_extra(&q.id) else {
             continue;
         };
-        match todo(&q, &extra, mode(&workspaces, &q.workspace)) {
-            Some(Todo::Ask { step }) => ask(config, &shelf, &q, step, None),
+        match todo(&q, &extra, mode(&workspaces, &q.workspace), now) {
+            Some(Todo::Ask { step, handoff }) => ask(config, &shelf, &q, step, handoff, None),
             Some(Todo::Start { step }) => starts.push((q.id.clone(), q.version, step)),
-            Some(Todo::Resolve { task, why }) => resolve(config, &shelf, &q, &task, why),
+            Some(Todo::Resolve { task }) => resolve(config, &shelf, &q, &task, false),
+            Some(Todo::End { task }) => resolve(config, &shelf, &q, &task, true),
             None => {}
         }
     }
@@ -161,31 +194,32 @@ fn mode(workspaces: &Workspaces, workspace: &str) -> Option<Handoffs> {
     Some(d.staff.handoffs)
 }
 
-/// Blocking. The `handoff` item of `step`, once, then the mark that it waits.
-/// `summary` says why the host did not start the step itself.
+/// Blocking. The `result` item of `step`, once, then the mark that it is
+/// asked. `held` says why the host did not start the hand-off itself.
 pub(super) fn ask(
     config: &Config,
     shelf: &Shelf<AssistantRequest>,
     q: &AssistantRequest,
     step: u32,
-    summary: Option<String>,
+    handoff: bool,
+    held: Option<String>,
 ) {
-    let Some(task) = q
-        .steps
-        .iter()
-        .find(|s| s.step == step)
-        .and_then(|s| s.run.clone())
-    else {
-        tracing::warn!(request = %q.id, version = q.version, step, "a hand-off's step has no run");
+    let run = match q.steps.iter().find(|s| s.step == step) {
+        Some(s) => s.run.clone(),
+        None if q.steps.is_empty() => q.run.clone(),
+        None => None,
+    };
+    let Some(task) = run else {
+        tracing::warn!(request = %q.id, version = q.version, step, "a result's step has no run");
         return;
     };
-    match items::make(config, &task, q, step, summary) {
+    match items::make(config, &task, q, step, handoff, held) {
         Ok(Some(item)) => {
-            tracing::info!(request = %q.id, version = q.version, step, item, "hand-off item made")
+            tracing::info!(request = %q.id, version = q.version, step, item, handoff, "result item made")
         }
         Ok(None) => {}
         Err(e) => {
-            tracing::warn!(request = %q.id, step, error = %e.message, "cannot make a hand-off item");
+            tracing::warn!(request = %q.id, step, error = %e.message, "cannot make a result item");
             return;
         }
     }
@@ -202,19 +236,25 @@ pub(super) fn ask(
     });
 }
 
-/// Blocking. Closes the waiting item, then marks it closed.
+/// Blocking. Closes the item, or with `ended` takes its hand-off off it;
+/// then marks it done with.
 fn resolve(
     config: &Config,
     shelf: &Shelf<AssistantRequest>,
     q: &AssistantRequest,
     task: &str,
-    why: &str,
+    ended: bool,
 ) {
-    if let Err(e) = items::resolve(config, task, why) {
-        tracing::warn!(request = %q.id, task, error = %e.message, "cannot resolve a hand-off item");
+    let closed = if ended {
+        items::end(config, task, CANCELLED)
+    } else {
+        items::resolve(config, task, REPLACED)
+    };
+    if let Err(e) = closed {
+        tracing::warn!(request = %q.id, task, error = %e.message, "cannot close a result item");
         return;
     }
-    tracing::info!(request = %q.id, version = q.version, task, "hand-off item resolved");
+    tracing::info!(request = %q.id, version = q.version, task, ended, "result item closed");
     mark(shelf, &q.id, |extra| {
         if let Some(mut w) = waiting(extra) {
             w.resolved = true;
@@ -256,9 +296,9 @@ async fn auto(cx: &Context, request: String, version: u64, step: u32) {
         let Some(q) = shelf.get(&request).map_err(|e| super::state_error(&e))? else {
             return Ok(());
         };
-        let summary = format!("Not started automatically: {why} Approve to start it.");
+        let held = format!("Not started automatically: {why} Hand it off to start it.");
         if q.version == version && pending(&q).is_some_and(|(s, _)| s == step) {
-            ask(&config, &shelf, &q, step, Some(summary));
+            ask(&config, &shelf, &q, step, true, Some(held));
         }
         Ok::<_, muxa_protocol::ErrorBody>(())
     })
@@ -307,15 +347,34 @@ pub fn end(
         "chain ended by a cancel"
     );
     if let (Some(task), false) = (&w.task, w.resolved) {
-        resolve(
-            config,
-            &shelf,
-            &q,
-            task,
-            "The request was cancelled; its chain ended.",
-        );
+        resolve(config, &shelf, &q, task, true);
     }
     Ok(Some(q.work))
+}
+
+/// Blocking. Done on a `result` item (ADR 0058 §2): the chain of `version`
+/// ends there, and the tick leaves the answered item as it is.
+pub fn done(config: &Config, id: &str, version: u64) -> Result<(), muxa_protocol::ErrorBody> {
+    super::shelf::<AssistantRequest>(config)?
+        .update_with_extra::<_, StateError>(id, |q, extra| {
+            if q.version != version {
+                return Ok(());
+            }
+            let mut w = waiting(extra)
+                .filter(|w| w.version == version)
+                .unwrap_or(Waiting {
+                    version,
+                    step: super::steps::current(q),
+                    ..Waiting::default()
+                });
+            w.ended = true;
+            w.resolved = true;
+            set_waiting(extra, &w);
+            Ok(())
+        })
+        .map_err(|e| super::state_error(&e))?;
+    tracing::info!(request = id, version, "chain done");
+    Ok(())
 }
 
 #[cfg(test)]

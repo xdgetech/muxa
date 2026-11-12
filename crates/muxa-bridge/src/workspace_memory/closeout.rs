@@ -134,6 +134,8 @@ fn make(
     };
     let question = format!("{} proposes to add to the workspace memory", end.title);
     let mut item = InboxItem {
+        new_task: None,
+        result: None,
         id: new_id()?,
         kind: ItemKind::Memory,
         state: ItemState::Open,

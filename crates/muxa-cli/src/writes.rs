@@ -110,10 +110,67 @@ fn item_text(i: &InboxItem, now: u64) -> String {
     if let Some(w) = &i.write {
         out.push_str(&write_text(w));
     }
+    if let Some(r) = &i.result {
+        out.push_str(&result_text(r));
+    }
+    if let Some(t) = i
+        .result
+        .as_ref()
+        .and_then(|r| r.task.as_ref())
+        .or(i.new_task.as_ref())
+    {
+        out.push_str(&task_text(t));
+    }
     if let Some(t) = &i.task {
         out.push_str(&format!("Task {t}\n"));
     }
     out
+}
+
+/// A Result to review (ADR 0058): who wrote it, its lists, and the hand-off
+/// `handoff` starts.
+fn result_text(r: &muxa_protocol::ResultReview) -> String {
+    let who = r.worker.as_deref().map_or("the assistant".into(), plain);
+    let mut out = format!("From    {who} · v{} step {}\n", r.version, r.step);
+    for (title, list) in [
+        ("Findings", &r.findings),
+        ("Open questions", &r.open_questions),
+        ("Next steps", &r.next),
+        ("Files", &r.files),
+    ] {
+        if !list.is_empty() {
+            out.push_str(&format!("{title}:\n"));
+            for line in list {
+                out.push_str(&format!("- {}\n", plain(line)));
+            }
+        }
+    }
+    if let Some(h) = &r.handoff {
+        out.push_str(&format!(
+            "Hand off to {}: {}\n",
+            plain(&h.worker),
+            plain(&h.purpose)
+        ));
+    }
+    out
+}
+
+/// A proposed Task as Start Task starts it (ADR 0060).
+fn task_text(t: &muxa_protocol::TaskProposal) -> String {
+    let place = match &t.repo {
+        Some(r) => format!("{} · repo {}", plain(&t.workspace), plain(r)),
+        None => format!("{} · its own folder", plain(&t.workspace)),
+    };
+    let from = t
+        .worker
+        .as_deref()
+        .map(|w| format!(" · from {}", plain(w)))
+        .unwrap_or_default();
+    format!(
+        "Proposed Task, started in plan mode: {}\nIn      {place}{from}\nGoal:\n{}\n",
+        plain(&t.title),
+        plain(&t.goal)
+    )
 }
 
 /// A write as the user approves it: the target once more, then the content

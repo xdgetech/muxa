@@ -108,6 +108,10 @@ A write Task is a Task: it has no run budget today. `[assistant] max_writes_per_
   - The host writing to Slack or Linear itself: source-specific code, rejected in ADR 0026 §1.
   - A `writes = "auto"`: the only review of web-derived text would be gone (ADR 0049 §1's reasoning for `notes`).
 
+## Addendum (2026-11-11): Revise
+
+[ADR 0058](0058-a-result-is-reviewed-like-a-task.md) §4 adds **Revise** to a `write` item, at `work:16`: `reply {text}` asks the member that proposed the write for a new draft, as a new request version whose purpose is the text. The revised item is answered `reply`; the new Result proposes the new text as a new item. §2 otherwise stays: another new version leaves an open `write` item open. Approve still binds to the shown `hash`.
+
 ## Implementation notes
 
 - `update-inbox approve` on a `write` item carries the write's `hash`, which a client sends only after it showed the content whole. Without it, or with another hash, the bridge answers `bad-request`. Clients installed before level 13 show a `write` item generically with Approve and never send the hash, so they cannot approve a write.

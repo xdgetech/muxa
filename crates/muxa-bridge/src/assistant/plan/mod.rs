@@ -8,6 +8,7 @@ pub mod cite;
 mod derive;
 pub mod file;
 mod hypotheses;
+pub mod refill;
 pub mod schedule;
 pub mod start;
 pub(super) mod tick;

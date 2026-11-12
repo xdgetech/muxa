@@ -1,0 +1,5 @@
+{"type":"propose-task","id":80,"workspace":"muxa","repo":"muxa","title":"Fix the Inbox crash on an empty result","goal":"The Inbox crashes when a result has no summary. Find the cause in the result item code and fix it, with a test.","work":"w-1a2b3c4d"}
+{"type":"propose-task","id":81,"workspace":"home","title":"Collect the tax papers","goal":"List the tax papers still missing for 2026."}
+{"type":"update-inbox","id":82,"entry":"i-4e5f6a7b","action":"approve"}
+{"type":"update-inbox","id":83,"entry":"i-5f6a7b8c","action":"start-task"}
+{"type":"update-inbox","id":84,"entry":"i-6a7b8c9d","action":"reply","text":"Use the muxa-cli repo instead."}

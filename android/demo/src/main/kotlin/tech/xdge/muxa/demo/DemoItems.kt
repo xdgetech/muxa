@@ -10,6 +10,7 @@ import tech.xdge.muxa.protocol.InboxItem
 import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.protocol.ItemState
 import tech.xdge.muxa.protocol.SourceLink
+import tech.xdge.muxa.protocol.TaskProposal
 import tech.xdge.muxa.protocol.TaskStatus
 
 /**
@@ -43,6 +44,14 @@ internal class DemoItems(private var items: List<InboxItem>) {
     /** The open `handoff` items about [request] (ADR 0051). */
     fun waitingHandoffs(request: String): List<InboxItem> =
         items.filter { it.kind == ItemKind.HANDOFF && it.state == ItemState.OPEN && it.handoff?.request == request }
+
+    /** The open `result` items about [request] (ADR 0058). */
+    fun waitingResults(request: String): List<InboxItem> =
+        items.filter { it.kind == ItemKind.RESULT && it.state == ItemState.OPEN && it.result?.request == request }
+
+    /** The open `new-task` item that proposes [task], if any (ADR 0060 §3). */
+    fun openProposal(task: TaskProposal): InboxItem? =
+        items.firstOrNull { it.kind == ItemKind.NEW_TASK && it.state == ItemState.OPEN && it.newTask == task }
 
     /** The overall assistant's proposal items join the list (ADR 0049). */
     fun add(more: List<InboxItem>) {

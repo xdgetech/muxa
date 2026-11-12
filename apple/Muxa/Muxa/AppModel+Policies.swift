@@ -32,17 +32,20 @@ extension AppModel {
         await attempt { try await session.forget(record) }
     }
 
-    /// Moves Today's row at `source` to `destination`, as a list's move gives them. A
-    /// refusal shows once, as Later's does.
+    /// Moves Today's shown row at `source` to `destination`, as a list's move gives them.
+    /// Hidden closed rows keep their places (ADR 0057). A refusal shows once, as Later's does.
     func moveToday(_ plan: Plan, from source: IndexSet, to destination: Int) {
-        var order = session.todayRows(of: plan).compactMap(\.rowId)
-        order.move(fromOffsets: source, toOffset: destination)
+        let all = session.todayRows(of: plan)
+        var shown = plan.queue(all).compactMap(\.rowId)
+        shown.move(fromOffsets: source, toOffset: destination)
+        var moved = shown.makeIterator()
+        let order = all.compactMap { $0.isClosed ? $0.rowId : moved.next() }
         Task { laterFailure = await attempt { try await session.reorderToday(order) } }
     }
 
-    /// Moves a row one place up (`-1`) or down (`1`).
+    /// Moves a shown row one place up (`-1`) or down (`1`).
     func moveToday(_ plan: Plan, row: String, by step: Int) {
-        let order = session.todayRows(of: plan).compactMap(\.rowId)
+        let order = plan.queue(session.todayRows(of: plan)).compactMap(\.rowId)
         guard let i = order.firstIndex(of: row), order.indices.contains(i + step) else { return }
         moveToday(plan, from: IndexSet(integer: i), to: step > 0 ? i + step + 1 : i + step)
     }

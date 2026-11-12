@@ -75,6 +75,9 @@ pub struct Delegate {
     pub staff: Staff,
     /// Who performs its approved writes (ADR 0052 §3); none by default.
     pub writer: Writer,
+    /// The overall workspace's root Ask session stays open (ADR 0056); false
+    /// for a delegate.
+    pub resident: bool,
 }
 
 impl Delegate {
@@ -198,6 +201,7 @@ pub(super) struct RawDelegate {
     max_steps: Option<i64>,
     writer: Option<String>,
     writes: Option<String>,
+    resident: Option<bool>,
 }
 
 impl RawDelegate {
@@ -242,6 +246,7 @@ impl RawDelegate {
             plans: Vec::new(),
             staff,
             writer,
+            resident: false,
         };
         let share = self.share.as_deref().map(parse_share).transpose()?;
         let overall_requests = parse_overall_requests(self.overall_requests.as_deref())?;
@@ -259,10 +264,21 @@ impl RawDelegate {
                 );
             }
             let plans = plans(self.plans.as_deref(), self.timezone.as_deref())?;
-            return Ok((Some(Delegate { plans, ..settings }), Role::Overall));
+            let resident = self.resident.unwrap_or(true);
+            return Ok((
+                Some(Delegate {
+                    plans,
+                    resident,
+                    ..settings
+                }),
+                Role::Overall,
+            ));
         }
         if self.plans.is_some() || self.timezone.is_some() {
             return Err("plans and timezone apply only to the overall workspace".into());
+        }
+        if self.resident.is_some() {
+            return Err("resident applies only to the overall workspace".into());
         }
         let delegate = self.delegate.ok_or("delegate is required: true or false")?;
         let default_share = if delegate {

@@ -398,6 +398,33 @@ fn workspaces_load_and_validate() {
     assert!(config(&dir, "").unwrap().all().is_empty());
 }
 
+#[test]
+fn a_missing_listed_repo_is_skipped_and_the_rest_still_loads() {
+    let dir = temp("missing-repo");
+    std::fs::create_dir_all(dir.join("work/app")).unwrap();
+    std::fs::create_dir_all(dir.join("home")).unwrap();
+    let ws = config(
+        &dir,
+        &format!(
+            "[[workspace]]\nname = \"work\"\nroot = \"~/work\"\n\
+             repos = [\"{d}/work/app\", \"~/renamed\"]\n\n\
+             [[workspace]]\nname = \"home\"\nroot = \"~/home\"\n",
+            d = dir.display()
+        ),
+    )
+    .unwrap();
+    let work = ws.get("work").unwrap();
+    assert_eq!(work.repos, [dir.join("work/app")]);
+    assert_eq!(work.missing_repos, [dir.join("renamed")]);
+    assert!(ws.get("home").unwrap().missing_repos.is_empty());
+    // A repo that is not absolute is still a mistake in the file.
+    let relative = "[[workspace]]\nname = \"a\"\nroot = \"~/work\"\nrepos = [\"app\"]\n";
+    assert!(matches!(
+        config(&dir, relative),
+        Err(ConfigError::Invalid { .. })
+    ));
+}
+
 fn agent_config(dir: &Path, table: &str) -> Result<Workspaces, ConfigError> {
     std::fs::create_dir_all(dir.join("work")).unwrap();
     config(
@@ -511,6 +538,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         name: "work".into(),
         root: root.clone(),
         repos: Vec::new(),
+        missing_repos: Vec::new(),
         agent: None,
         loop_checks: None,
         park_after: None,

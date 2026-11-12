@@ -46,7 +46,8 @@ Skipping the pane you look at needs `set -g focus-events on`.
 
 With muxa, you also get one notification per new assistant result:
 `Assistant result: <Work item title>`. The tree's Inbox poll sends it, through a
-tree pane, the first time it sees the result (see [muxa](#muxa)).
+tree pane, the first time it sees the result (see [muxa](#muxa)). The result
+itself waits in the Inbox as an unread `📋` item.
 
 ## Install
 
@@ -182,6 +183,12 @@ apps show, with a goal and a status.
   workspace's own Ask session at its root: `muxa-cli ask --root --workspace W
   --json` opens it, or starts it. Pick the overall assistant's workspace to
   talk to the assistant: that row is its only one.
+- The assistant's chat stays open (ADR 0056): the muxa daemon keeps the overall
+  workspace's root Ask session running, and the tree lists it first under Ask,
+  marked `assistant`. Its jump key or `Enter` goes there. When you close it,
+  or its agent exits, the daemon opens it again within about 10 seconds, with
+  the same Claude Code conversation. `resident = false` in the overall
+  workspace's `[workspace.assistant]` turns this off.
 - `prefix + T` shows the Inbox (ADR 0033): one row per question an agent or a
   Routine has for you, with the selected item below the list: its question, the
   agent's last message, its numbered evidence and its keys.
@@ -189,8 +196,7 @@ apps show, with a goal and a status.
     in this order:
     1. Today (with `work` level 10, below).
     2. `Decisions N`: every item that is not a Routine's briefing, in muxa's order.
-    3. `Work N · K new`: the open Work items, the ones with a new result first.
-       `· K new` is left out when there is none.
+    3. `Work N`: the open Work items, in muxa's order.
     4. `▸ Routine N`: the Routine's briefings. The section starts folded, and
        only its header shows. `Enter` or `space` on the header unfolds it
        (`▾`) or folds it again. The global option `@agents_inbox_unfolded`
@@ -218,8 +224,14 @@ apps show, with a goal and a status.
   - Labels are the apps' labels (ADR 0033 §4a): on an agent's permission `a`
     is Allow and `r` Deny; a Routine's proposal keeps Approve and Reject.
   - `1`–`9` open evidence: the diff or a doc in `$PAGER`, an image or a link with
-    the system opener (a link is also copied to the tmux buffer). For a question,
-    `1`–`9` choose its option instead.
+    the system opener. A link is also copied to the tmux buffer and, with
+    `set-clipboard` on or `external`, to your terminal's clipboard (OSC 52, also
+    over SSH). On SSH it is shown instead of opened. For a question, `1`–`9`
+    choose its option instead.
+  - `y` copies a link of the item in the same way: its links and the URLs in
+    its text, picked from a list when there are several. A popup has no copy
+    mode, so this is the way to copy a URL. The keys line shows `y copy link`
+    only when the item has one.
   - `space` and `b` scroll the item a page down and up, `Shift`+arrows a
     line. `v` shows the whole item in `$PAGER`.
   - `Enter` or `o` goes to the item's session. `ctrl-r` reloads, `q` or `Esc` closes.
@@ -228,35 +240,53 @@ apps show, with a goal and a status.
     count. It deletes every item older than that, open or closed, except
     protected ones. A protected item still takes `l`, `d` and every answer.
   - With `work` level 9, the open Work items (`◆`) and the unsorted Captures
-    (`✎`) have their sections. On a Work item, `l` Later moves it below the others
-    and `d` completes it; its Tasks keep running. `a` asks its workspace's
-    assistant (`muxa-cli assist WORK`, scope research); asking again adds a
-    version and ends the older run. A Work row that was asked shows its newest
+    (`✎`) have their sections. `Enter` on a Work item opens its menu, each
+    line saying what it does: Open its Task (for each linked Task with a live
+    session), Read the result (for each open `📋` item of it), `n` Start a
+    Task from it, and the keys below. The keys also work on the row itself.
+    `n` opens the New Task form with the item's workspace and title, and the
+    Task is for the item (`muxa-cli task new --work WORK`). `l` Later moves
+    it below the others and `d` completes it; its Tasks keep running. `a`
+    asks its workspace's assistant: it asks what to find out and the scope
+    (`Enter` research, `c` compare, `d` draft), then sends both (`muxa-cli
+    assist WORK --scope S --purpose -`); an empty question asks nothing.
+    Asking again adds a version and ends the older run. A Work row that was asked shows its newest
     request's delivery, such as `asked: processing`. The item below the list
     shows the request and the newest Result's summary; `muxa-cli assist show
-    WORK` prints all of it. A Work item whose newest request has a result you
-    have not looked at shows `· new result` and comes first among the Work
-    items; the header counts them. A new version or a new delivery is a new result. Selecting the
-    Work item (its preview shows), `v`, `o` or `Enter` marks it looked at.
-    This machine keeps what it notified and what you looked at in
+    WORK` prints all of it. A new result is a `📋` item in Decisions (with
+    `work` level 16, below), unread until you look at it; Work rows carry no
+    mark of their own. This machine keeps which results it notified in
     `$XDG_STATE_HOME/muxa/tmux-results.json` (else
     `~/.local/state/muxa/tmux-results.json`), one entry per listed Work item.
-    The first poll takes the results already there as looked at. On a Capture, `w` makes a Work item from it and `n`
-    keeps it as a note.
+    The first poll takes the results already there as notified. On a Capture,
+    `w` makes a Work item from it and `n` keeps it as a note.
   - With `work` level 10 and an overall assistant (ADR 0049), a Today section
-    (`☀`) comes first: up to 3 rows of the newest plan with a result, each with
-    its time estimate and `new` or `moved` since the plan before, then one
-    line of the items you moved down with Later that are due soon. The heading
+    (`☀`) comes first: the queue of the newest plan with a result, up to 10
+    rows, most important first (ADR 0057). Each row has its time estimate and
+    `new` or `moved` since the plan before. The first open row is marked `▶`:
+    do it next. Then one line of the items you moved down with Later that are
+    due soon. The heading
     says when the plan was made, or that the newest plan failed. The item below
-    the list shows a row's why, next step, time and basis. `o` or `Enter` on a
-    row goes to its Work item or Inbox item in the list. Every other key on a
-    row acts on that target, as on its own row: `d` completes a Work item, and
-    an item's answers (`d` ✓ Done, `c` Complete Task, `a`, `r`) answer it. A
-    row whose target is closed stays in place as one dimmed line with its
-    title and how it ended (`✓ done`, `✓ answered`, `gone`); its target's keys
-    do nothing there. `t` anywhere asks the
-    overall assistant for a plan now (`muxa-cli plan now`); it asks for the
-    minutes you have first, and `Enter` gives no limit. `P` on a Work item pins
+    the list shows a row's why, next step, time and basis. Each row names
+    what to do before its title (ADR 0059): `Review changes`, `Allow or
+    deny`, `Read result`, `Check text to send`, `Decide`, `Fix`, `Start` (a
+    Work item), or `Open`. Its preview starts with `Do:` (the plan's next
+    step), then `Enter`, `s`, `also` and `plan`. `Enter` opens the session of
+    a Task's review or menu, and a Work item's menu (above); on any other row
+    it goes to the Inbox item in the list, as `o` does. `s` sends text and names who gets
+    it: the Task's agent, the staff member who wrote a result, the writer of
+    a draft (Revise), the workspace's Ask session with a briefing, or, with
+    `work` level 17, the secretary with the Work item (`muxa-cli ask --root
+    --work`). `s` on a Work item in the Work section does the same. Every
+    other key on a row acts on that target, as on its own row: `d` completes
+    a Work item, and an item's answers (`d` ✓ Done, `c` Complete Task, `a`,
+    `r`) answer it. A row whose target is closed is hidden, and the numbers
+    count the open rows. When every row is closed or Not today, the host
+    makes a new plan by itself, within the overall assistant's budgets. `t`
+    anywhere is Re-rank: it re-ranks the queue from what is open now
+    (`muxa-cli plan now`), after it asks for the minutes you have (`Enter`
+    gives no limit). With `work` level 17 it says how many runs the overall
+    workspace has left today. `P` on a Work item pins
     it, so it is listed first and fills the first plan rows, or unpins it. The
     overall assistant's proposals are items too: `🗂` sorts a Capture and `🤝`
     asks a workspace's assistant; `a` approves, `r` rejects, `l` is Later.
@@ -268,7 +298,7 @@ apps show, with a goal and a status.
     `forgotten` when that record is gone. `💡` items are the overall
     assistant's hypotheses: `a` Confirm keeps one as a policy in its words, `r`
     rejects it and asks for an optional reason, as `r` does on `🗂` and `🤝`.
-  - `y` opens the Policies list: what the overall assistant remembers. On it,
+  - `Y` opens the Policies list: what the overall assistant remembers. On it,
     `n` adds a policy in your words (scope `all` or a workspace; `w` ends it
     this Sunday), `e` edits and `d` deletes one. A hypothesis takes `a`
     Confirm and `r` Reject while its item is open, and `f` Forget; a
@@ -278,11 +308,36 @@ apps show, with a goal and a status.
     members. `a` on a Work item whose workspace has more than one member asks
     which member takes it, numbered with the lead marked; a number or a name
     picks one (`muxa-cli assist WORK --worker NAME`), and `Enter` lets the lead
-    decide. The item below the list shows the request's steps, one row per
-    member, with the member each step hands on to. `👥` items are hand-offs:
-    one member asks to pass the request to the next. `a` approves and starts
-    the next step, `r` rejects and ends the request with the results it has,
-    `l` is Later. A `🤝` item names the member the plan picked.
+    decide. Then it asks for the question, as above. The item below the list shows the request's steps, one row per
+    member, with the member each step hands on to. `👥` items are hand-offs
+    from a host before level 16: one member asks to pass the request to the
+    next. `a` approves and starts the next step, `r` rejects and ends the
+    request with the results it has, `l` is Later. A `🤝` item names the
+    member the plan picked.
+  - With `work` level 16 (ADR 0058), every Result of a staff member is a `📋`
+    item, reviewed like a Task: the summary, then its findings, open
+    questions, next steps and files, and the hand-off it proposes. `a` hands
+    off to the next member, `s` asks for the text and sends it to the member
+    who wrote the Result, who goes on from it as a new version of the
+    request, `d` is ✓ Done (closes it and ends the chain), `l` is Later. On a
+    `📤` write item, `s` is Revise: the member writes a new draft, and the
+    item closes. `muxa-cli inbox answer ITEM handoff | send --text T | done |
+    revise --text T` does the same.
+  - With `work` level 18 (ADR 0060), the assistant proposes Tasks instead of
+    saying it cannot change code. A `📋` item whose Result proposes a Task
+    shows it (`Proposed Task`, its repo and goal): `a` is Start Task, or `n`
+    when the item also offers a hand-off. The Task starts once, linked to the
+    Work item, in plan mode (`--plan` on `new.sh` starts Claude Code with
+    `--permission-mode plan`; another agent starts as usual). A `🛠` item is
+    the secretary's proposal (`muxa-cli task propose`): `a` starts it, `s`
+    tells the secretary what to change. Once a Task started, `o` or `Enter`
+    on the item opens it. The Task's plan comes back as a `🙋` item: `a`
+    approves the plan, so its agent leaves plan mode and asks before each
+    edit (muxa presses that menu option only when the pane shows it); `r`
+    keeps planning, and `s` keeps planning and sends your text. The Work
+    item's menu lists `Send to its Task's agent` for a live Task with an
+    open item. `muxa-cli inbox answer ITEM start` does the same as Start
+    Task.
   - With `work` level 13 (ADR 0052), `📤` items are writes a staff member
     proposes outside the host: a post or a comment. The item shows the action,
     the target and the content whole, as plain text, and says when it comes
@@ -321,7 +376,10 @@ tasks through the names below. They stay stable; a change to one is a breaking c
 - `@agents_scripts`: global option, the directory of these scripts. Set on every load.
 - `@agents_features`: global option, a space-separated list of what the scripts
   accept beyond this list. `muxa-task`: `new.sh` takes `--muxa-task`.
-- `new.sh <repo dir> <branch> [--base REF] [--task ID] [--muxa-task ID] --no-switch` starts a task,
+  `plan-mode`: `new.sh` takes `--plan`, which starts a Claude Code agent with
+  `--permission-mode plan` (ADR 0060); without the feature muxa starts the
+  agent as usual.
+- `new.sh <repo dir> <branch> [--base REF] [--task ID] [--muxa-task ID] [--plan] --no-switch` starts a task,
   or finds the running one for the branch. It prints the session name on its last
   line. On failure it exits non-zero. A tool must pass `--no-switch`: without it,
   the attached client moves to the new session.
@@ -344,6 +402,9 @@ tasks through the names below. They stay stable; a change to one is a breaking c
   holds one window of another session while a phone or tablet shows it. The
   tree, the status line, the keys and the sidebars skip it, and `close.sh`
   kills it with the session whose window it holds.
+- `@muxa_secretary`: `1` on the assistant's chat, the overall workspace's
+  root Ask session that the muxa daemon keeps open (ADR 0056). The tree
+  lists it first under Ask.
 
 ## Test
 

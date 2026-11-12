@@ -138,7 +138,7 @@ fn plan_shows_the_failed_newest_plan_then_the_last_rows() {
         "p-2c3d4e5f  failed  ",
         "  The run did not start: cannot reach tmux on the host\n",
         "\nLast plan with a result\np-0a1b2c3d  resulted  2025-11-09T11:30Z  [work]\n",
-        "1. w-0b1c2d3e  Prepare the quarterly report  60-120 min, about 90  new\n",
+        "1. w-0b1c2d3e  Prepare the quarterly report  60-120 min, about 90  new  next\n",
         "   Why: Pinned by you.\n   Next: Fill in the table.\n",
         "2. i-1a2b3c4d  Try the tool for business B  60-120 min, about 90\n",
         "Due soon, moved down by you: w-8c9d0e1f Renew the passport\n",

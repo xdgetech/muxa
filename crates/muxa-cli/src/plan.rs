@@ -209,15 +209,28 @@ fn ordered(p: &Plan) -> Vec<&PlanRow> {
     rows
 }
 
+/// Today as a queue (ADR 0057): the rows whose target is open, numbered
+/// among themselves; the first one not dismissed is `next`.
 fn rows_text(p: &Plan, listing: &Listing) -> String {
     let work = &listing.work;
     let mut out = format!("{}\n", header(p));
+    let open: Vec<&PlanRow> = ordered(p)
+        .into_iter()
+        .filter(|r| r.target_state.is_none())
+        .collect();
     if p.top.is_empty() {
         out.push_str("  nothing to rank\n");
+    } else if open.is_empty() {
+        out.push_str("  all done; muxa plans again when the budget allows\n");
     }
-    for (n, row) in ordered(p).into_iter().enumerate() {
+    let dismissed = |id: &str| p.dismissed.iter().any(|d| d == id);
+    let next = open
+        .iter()
+        .filter_map(|r| row_id(r))
+        .find(|id| !dismissed(id));
+    for (n, row) in open.into_iter().enumerate() {
         let id = row_id(row).unwrap_or("?");
-        if p.dismissed.iter().any(|d| d == id) {
+        if dismissed(id) {
             out.push_str(&format!(
                 "{}. {id}  {}  not today\n",
                 n + 1,
@@ -227,13 +240,14 @@ fn rows_text(p: &Plan, listing: &Listing) -> String {
         }
         let m = row.minutes;
         out.push_str(&format!(
-            "{}. {id}  {}  {}-{} min, about {}{}\n",
+            "{}. {id}  {}  {}-{} min, about {}{}{}\n",
             n + 1,
             title(row, listing),
             m.low,
             m.high,
             m.estimated,
-            mark(p, id)
+            mark(p, id),
+            if next == Some(id) { "  next" } else { "" }
         ));
         out.push_str(&format!("   Why: {}\n", plain(&row.why)));
         out.push_str(&format!("   Next: {}\n", plain(&row.next)));
@@ -310,6 +324,7 @@ fn state_word(state: TargetState) -> &'static str {
         TargetState::Resolved => "resolved",
         TargetState::Done => "done",
         TargetState::Withdrawn => "withdrawn",
+        TargetState::Started => "Task started",
         TargetState::Gone => "gone",
         TargetState::Unknown => "closed",
     }
@@ -450,7 +465,7 @@ mod tests {
         assert_eq!(
             plan_text(&listing(vec![p], work.to_vec())),
             "p-0a1b2c3d  resulted  2025-11-09T11:30Z  [work]\n\
-             1. w-0b1c2d3e  Prepare the report  60-120 min, about 90  moved\n   \
+             1. w-0b1c2d3e  Prepare the report  60-120 min, about 90  moved  next\n   \
              Why: Due [31mWednesday\n   Next: Fill in the table.\n\
              2. w-0000ffff  (not listed)  60-120 min, about 90\n   \
              Why: Due [31mWednesday\n   Next: Fill in the table.\n\
@@ -460,21 +475,27 @@ mod tests {
     }
 
     #[test]
-    fn a_row_whose_target_left_the_list_shows_the_hosts_title_and_state() {
+    fn a_row_whose_target_closed_is_hidden_and_the_next_open_row_is_next() {
         let mut p = plan("p-0a1b2c3d", Delivery::Resulted);
         let mut done = row("w-0b1c2d3e");
         done.title = Some("Prepare the report".into());
         done.target_state = Some(TargetState::Done);
         let mut gone = row("w-0000ffff");
         gone.target_state = Some(TargetState::Gone);
-        p.top = vec![done, gone];
-        let text = plan_text(&listing(vec![p], Vec::new()));
+        p.top = vec![done, gone, row("w-7b8c9d0e")];
+        let text = plan_text(&listing(vec![p.clone()], Vec::new()));
         assert!(
-            text.contains("1. w-0b1c2d3e  Prepare the report (done)  60-120 min"),
+            !text.contains("w-0b1c2d3e") && !text.contains("w-0000ffff"),
             "{text}"
         );
         assert!(
-            text.contains("2. w-0000ffff  (not listed) (gone)  60-120 min"),
+            text.contains("1. w-7b8c9d0e  (not listed)  60-120 min, about 90  next\n"),
+            "{text}"
+        );
+        p.top.pop();
+        let text = plan_text(&listing(vec![p], Vec::new()));
+        assert!(
+            text.ends_with("  all done; muxa plans again when the budget allows\n"),
             "{text}"
         );
     }
@@ -540,7 +561,9 @@ mod tests {
             updated_at: 0,
         }];
         let text = plan_text(&l);
-        let first = text.find("1. w-7b8c9d0e").expect(&text);
+        let first = text
+            .find("1. w-7b8c9d0e  (not listed)  60-120 min, about 90  next")
+            .expect(&text);
         let second = text.find("2. w-0b1c2d3e").expect(&text);
         assert!(first < second, "{text}");
         assert!(

@@ -37,6 +37,15 @@ fun writesDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActi
 /** The demo at `work` level 14 in [mode]: each workspace's memory mode and a done Task's `memory` item (ADR 0053). */
 fun memoryDemoIntent(mode: SidebarMode = SidebarMode.INBOX): Intent = demoIntent(mode).putExtra(MainActivity.EXTRA_WORK14, true)
 
+/** The demo in Inbox mode at `work` level 16: `result` items with and without a hand-off, and Revise on `write` items (ADR 0058). */
+fun reviewDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK16, true)
+
+/** The demo in Inbox mode at `work` level 17: the secretary takes a Work item's Send, and Re-rank says the runs left (ADR 0059). */
+fun todayDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK17, true)
+
+/** The demo in Inbox mode at `work` level 18: proposed Tasks, Start Task and plan items (ADR 0060). */
+fun proposalsDemoIntent(): Intent = demoIntent(SidebarMode.INBOX).putExtra(MainActivity.EXTRA_WORK18, true)
+
 /** Waits for the pane that Sessions mode shows at connect: Chat's composer, or the terminal. */
 @OptIn(ExperimentalTestApi::class)
 fun ComposeTestRule.waitForInitialPane() {

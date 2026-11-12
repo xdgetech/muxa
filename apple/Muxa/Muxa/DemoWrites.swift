@@ -107,7 +107,7 @@ extension DemoWork {
             workspace: assistant.requests[r].workspace, title: write.action, createdAt: at, summary: write.reason,
             write: WriteProposal(request: request, version: result.version, step: result.step, worker: worker,
                                  action: write.action, target: write.target, content: write.content, hash: write.hash),
-            answers: [.approve, .reject, .later]), at: 0)
+            answers: [.approve, .reject, .reply, .later]), at: 0)
     }
 }
 

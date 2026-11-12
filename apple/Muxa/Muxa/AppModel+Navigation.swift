@@ -210,7 +210,7 @@ extension AppModel {
 
     /// An item left the list while it was shown, answered elsewhere: a tablet shows the next.
     func itemsChanged(from old: [String], to new: [String]) {
-        guard !phoneLayout, case .item(let id)? = detail, !new.contains(id) else { return }
+        guard !phoneLayout, case .item(let id)? = detail, !new.contains(id), id != startedTaskItem else { return }
         detail = InboxSelection.next(current: id, before: old, after: new, movedDown: false).map { .item($0) }
     }
 

@@ -166,6 +166,38 @@ final class WriteTests: XCTestCase {
         XCTAssertTrue(element(app, "item-write-content").waitForExistence(timeout: 5))
     }
 
+    /// Revise (level 16, ADR 0058 §4) asks the researcher for a new draft as a new version of
+    /// the request. Only the revised item closes; the other write stays open.
+    @MainActor
+    func testReviseClosesTheWriteAndAsksAgain() throws {
+        let app = launchWrites()
+        openItem(app, "i-0000f005")
+        let reply = app.textFields["item-reply"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["item-send"].label, "Revise")
+        XCTAssertEqual(reply.placeholderValue, "Ask researcher for a new draft…")
+        tapWhenReady(reply)
+        reply.typeText("Shorter, and name the release date.")
+        tapWhenReady(app.buttons["item-send"])
+        showInboxList(app)
+        XCTAssertTrue(app.buttons["item-row-i-0000f005"].waitForNonExistence(timeout: 5), "revised")
+        XCTAssertTrue(waitForSidebarRow(app, app.buttons["item-row-i-0000f006"]), "the other write stays open")
+
+        openWork(app, "w-0000b005")
+        let asked = element(app, "work-request-q-0000d002")
+        XCTAssertTrue(asked.waitForExistence(timeout: 5))
+        XCTAssertTrue(asked.label.contains("version 2"), asked.label)
+    }
+
+    /// A level 15 host takes no Revise: the write has no reply box.
+    @MainActor
+    func testALevel15HostOffersNoRevise() throws {
+        let app = launchWrites(["-work15"])
+        openItem(app, "i-0000f005")
+        XCTAssertTrue(app.buttons["item-answer-reject"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["item-reply"].exists)
+    }
+
     /// A level 12 host shows none of it: no write items, no writes, no writer.
     @MainActor
     func testALevel12HostShowsNoWrites() throws {

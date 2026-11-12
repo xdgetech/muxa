@@ -8,8 +8,11 @@ mod memory;
 mod plans;
 mod policies;
 mod restart_recovery;
+mod review;
 mod routines;
 mod staff;
+mod task_proposals;
+mod today;
 mod workers;
 mod writes;
 pub use assistant::{
@@ -29,6 +32,7 @@ pub use policies::{
     PlanAction, Policy, PolicyAction, WORK_POLICIES,
 };
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
+pub use review::{ResultReview, WORK_RESULT_REVIEW};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
@@ -36,6 +40,8 @@ pub use routines::{
     WORK_END_REMOVES, WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
 pub use staff::{Handoff, HandoffProposal, RequestStep, StaffMember, StepBy, WORK_STAFF};
+pub use task_proposals::{TaskProposal, WORK_TASK_PROPOSALS};
+pub use today::{RunBudget, WORK_TODAY_ACTIONS};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
 pub use writes::{ResultWrite, WORK_WRITES, WriteProposal, WriterInfo, Writes};
 
@@ -378,6 +384,13 @@ pub enum Request {
         /// The open root Ask session, or a new one.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         root: bool,
+        /// Level 17, with `root`: typed into the session's agent as
+        /// `ask-agent` types an item's request (ADR 0059). Never logged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        /// Level 17, with `text`: the Work item the text is about (`w-…`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work: Option<String>,
     },
     /// Save the user's input (`work` level 9, ADR 0048). The same `clientId`
     /// returns the stored Capture and writes nothing. A `capture-saved` comes
@@ -489,6 +502,23 @@ pub enum Request {
         /// The time the user has.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         minutes: Option<u32>,
+    },
+    /// The secretary proposes a Task (`work` level 18, ADR 0060): one Inbox
+    /// item of kind `new-task`. The same proposal again returns the open
+    /// item. An `inbox-saved` comes before the `result`.
+    ProposeTask {
+        id: u64,
+        workspace: String,
+        /// A repo of the workspace, as `create-task`'s.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repo: Option<String>,
+        /// One line, at most 200 characters.
+        title: String,
+        /// At most 4096 bytes. Never logged.
+        goal: String,
+        /// The Work item the Task is for (`w-…`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        work: Option<String>,
     },
     /// Keep a policy in the user's words (`work` level 11, ADR 0050). A
     /// `policy-saved` comes before the `result`.
@@ -604,6 +634,7 @@ impl Request {
             | Request::UpdatePolicy { id, .. }
             | Request::UpdatePlan { id, .. }
             | Request::Forget { id, .. }
+            | Request::ProposeTask { id, .. }
             | Request::Bye { id } => *id,
         }
     }

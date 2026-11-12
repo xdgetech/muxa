@@ -50,14 +50,20 @@ extension DemoBridge {
         guard Self.workLevel >= workPlans else { return ([], nil) }
         return lock.withLock {
             _ = work.finishPlan()
-            return (work.listedPlans, work.listedAssistant)
+            var assistant = work.listedAssistant
+            if Self.workLevel >= workToday, assistant?.overall != nil {
+                assistant?.overallRuns = RunBudget(left: work.plans.runsLeft, max: DemoPlans.maxRuns)
+            }
+            return (work.listedPlans, assistant)
         }
     }
 
-    /// A `sort` or `delegate` item, or at level 12 a `handoff`: approve runs what it proposes.
+    /// A `sort` or `delegate` item, at level 12 a `handoff`, and at level 16 a `result`:
+    /// approve runs what it proposes.
     func isOverallProposal(_ id: String) -> Bool {
         guard Self.workLevel >= workPlans else { return false }
-        let kinds: [ItemKind] = Self.workLevel >= workStaff ? [.sort, .delegate, .handoff] : [.sort, .delegate]
+        var kinds: [ItemKind] = Self.workLevel >= workStaff ? [.sort, .delegate, .handoff] : [.sort, .delegate]
+        if Self.workLevel >= workResultReview { kinds.append(.result) }
         return lock.withLock {
             work.taskItems.contains { $0.id == id && kinds.contains($0.kind) }
         }

@@ -61,6 +61,9 @@ class TodayTest {
         waitForTag("inbox-section-today")
         waitForText("today-row-$PINNED", "Pinned by you")
         waitForText("today-minutes-$PINNED", "30–60 min")
+        // Today is a queue (ADR 0057): the first open row is Next.
+        waitForText("today-next-$PINNED", "Next")
+        assertFalse(compose.exists("today-next-$REVIEW"))
         waitForTag("today-row-$REVIEW")
         waitForText("today-due-soon", "Due soon, moved down by you: Renew the domain")
         assertFalse(compose.exists("today-new"))
