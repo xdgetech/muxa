@@ -227,7 +227,7 @@ JQ_DEFS='
     if $k == null then null elif $dir == "up" then (if $k > 0 then $vis[$k - 1] else null end)
     else $vis[$k + 1] end;
   def target_word: {"answered": "✓ answered", "resolved": "resolved", "done": "✓ done",
-    "withdrawn": "withdrawn", "gone": "gone"}[.targetState] // "closed";
+    "withdrawn": "withdrawn", "started": "▶ Task started", "gone": "gone"}[.targetState] // "closed";
   def mins: "\(.minutes.low)–\(.minutes.high) min";
   # What a Today row asks the user to do (ADR 0059 §1): a verb from the
   # kind of its target. A briefing on Today asks to act; one that asks nothing

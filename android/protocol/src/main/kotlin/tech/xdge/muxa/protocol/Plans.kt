@@ -72,6 +72,9 @@ value class TargetState(val raw: String) {
         val DONE = TargetState("done")
         val WITHDRAWN = TargetState("withdrawn")
 
+        /** A Work item with a Task started for it. */
+        val STARTED = TargetState("started")
+
         /** The host no longer has the Work item or Inbox item. */
         val GONE = TargetState("gone")
     }

@@ -101,6 +101,8 @@ pub enum TargetState {
     Done,
     /// A Work item the user withdrew.
     Withdrawn,
+    /// A Work item with a Task started for it: the Task's own items follow.
+    Started,
     /// The Work item or Inbox item is no longer on the host.
     Gone,
     /// A value a newer host added; shown as unknown.

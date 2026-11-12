@@ -160,6 +160,7 @@ extension TargetState {
         case .resolved: "resolved"
         case .done: "✓ done"
         case .withdrawn: "withdrawn"
+        case .started: "▶ Task started"
         case .gone: "gone"
         case .other: "closed"
         }

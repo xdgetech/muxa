@@ -324,6 +324,7 @@ fn state_word(state: TargetState) -> &'static str {
         TargetState::Resolved => "resolved",
         TargetState::Done => "done",
         TargetState::Withdrawn => "withdrawn",
+        TargetState::Started => "Task started",
         TargetState::Gone => "gone",
         TargetState::Unknown => "closed",
     }

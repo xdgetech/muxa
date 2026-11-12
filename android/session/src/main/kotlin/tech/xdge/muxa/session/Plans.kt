@@ -63,6 +63,7 @@ val TargetState.label: String
         TargetState.RESOLVED -> "resolved"
         TargetState.DONE -> "✓ done"
         TargetState.WITHDRAWN -> "withdrawn"
+        TargetState.STARTED -> "▶ Task started"
         TargetState.GONE -> "gone"
         else -> "closed"
     }

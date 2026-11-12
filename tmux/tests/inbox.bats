@@ -539,6 +539,13 @@ plain_view() { inbox view "$1" "$2" | sed $'s/\x1b\\[[0-9;]*m//g'; }
   [ "$(inbox target today:3 "$TMPDIR/p.json")" = i-1a2b3c4d ]
 }
 
+@test "a Work row whose Task started leaves Today and says so when picked" {
+  plan_inbox | jq -c '.plans[0].top[0].targetState = "started"' >"$TMPDIR/p.json"
+  out="$(plain_list "$TMPDIR/p.json")"
+  [[ "$out" != *"Prepare the quarterly report  60"* ]]
+  [[ "$(plain_view today:1 "$TMPDIR/p.json")" == *"▶ Task started"* ]]
+}
+
 @test "when every row is closed Today says all done, and shows no row" {
   plan_inbox | jq -c '.plans[0].top |= map(.targetState = "done")' >"$TMPDIR/p.json"
   run bash -c "'$ROOT/scripts/inbox.sh' list '$TMPDIR/p.json' | cut -f1 | head -n 2"

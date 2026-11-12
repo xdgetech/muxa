@@ -265,11 +265,11 @@ public enum ChangeKind: Equatable, Hashable, Sendable {
 
 /// A row's target that is no longer open. An unknown value is a state a newer host added.
 public enum TargetState: Equatable, Hashable, Sendable {
-    case answered, resolved, done, withdrawn, gone
+    case answered, resolved, done, withdrawn, started, gone
     case other(String)
 
     private static let names: [(TargetState, String)] = [
-        (.answered, "answered"), (.resolved, "resolved"), (.done, "done"), (.withdrawn, "withdrawn"), (.gone, "gone"),
+        (.answered, "answered"), (.resolved, "resolved"), (.done, "done"), (.withdrawn, "withdrawn"), (.started, "started"), (.gone, "gone"),
     ]
 
     public init(raw: String) {
