@@ -765,6 +765,7 @@ class AppModel(
     }
 
     private suspend fun watch(pane: String) {
+        history = null
         try {
             session.watch(pane)
         } catch (e: PaneSession.Failure) {
@@ -1180,12 +1181,12 @@ class AppModel(
     /** The bridge sends a pane's scrollback (capability `history`). */
     val canShowHistory: Boolean get() = isConnected && state.canShowHistory
 
-    /** Reads the shown pane's scrollback from the host and shows it over the pane. */
+    /** Reads the shown pane's scrollback from the host and shows it in the pane's place. */
     fun showHistory() = scope.launch {
         val pane = state.watchedPane ?: return@launch
         if (!canShowHistory || history != null) return@launch
         history = PaneHistory.Loading
-        history = try {
+        val next = try {
             val reply = session.history(pane)
             if (reply == null) {
                 PaneHistory.Failed("The host sent no scrollback. Try again.")
@@ -1196,6 +1197,15 @@ class AppModel(
         } catch (e: Exception) {
             PaneHistory.Failed(PaneSession.describe(e))
         }
+        // The user went back to the live pane, or to another pane, while it loaded.
+        if (history == PaneHistory.Loading && state.watchedPane == pane) history = next
+    }
+
+    /** Back to the live pane from its scrollback. */
+    fun closeHistory() {
+        if (history == null) return
+        history = null
+        refocusPane()
     }
 
     /** The bridge can restart a Task's agent with a handoff (ADR 0018). */

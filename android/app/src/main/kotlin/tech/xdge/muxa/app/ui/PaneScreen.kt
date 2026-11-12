@@ -57,6 +57,7 @@ import tech.xdge.muxa.app.openInNewWindow
 import tech.xdge.muxa.app.shortcut
 import tech.xdge.muxa.app.pane.TerminalPaneView
 import tech.xdge.muxa.session.KeyBar
+import tech.xdge.muxa.session.KeyMap
 import tech.xdge.muxa.session.PaneFit
 import tech.xdge.muxa.app.paneTaskRecord
 
@@ -118,7 +119,8 @@ fun PaneScreen(model: AppModel, onShowList: () -> Unit) = BoxWithConstraints {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // The terminal stays under the chat so switching back is instant.
             PaneHost(model, focusRequest = if (pretty) null else model.focusRequest)
-            if (pretty) ChatView(model, model.chat)
+            val history = model.history
+            if (history != null) ScrollbackLayer(model, history) else if (pretty) ChatView(model, model.chat)
             notice(model)?.let { text ->
                 Surface(
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
@@ -250,8 +252,16 @@ private fun PaneHost(model: AppModel, focusRequest: Int?) {
             factory = { context ->
                 TerminalPaneView(context).apply {
                     model.attach(screen)
-                    onOutput = model.session::send
-                    onPaste = model.session::paste
+                    onOutput = { output ->
+                        val leaving = model.history != null
+                        if (leaving) model.closeHistory()
+                        // Escape only leaves the scrollback: in an agent it would stop the turn.
+                        if (!leaving || output != ESCAPE) model.session.send(output)
+                    }
+                    onPaste = { text ->
+                        model.closeHistory()
+                        model.session.paste(text)
+                    }
                     onKeyBar = { bar = it }
                     onViewport = model.session::setViewport
                     onShortcut = { e -> model.shortcut(e) }
@@ -326,3 +336,5 @@ private fun face(key: KeyBar.Key): Pair<String, String> = when (key) {
     KeyBar.Key.RIGHT -> "→" to "Right"
     KeyBar.Key.INTERRUPT -> "^C" to "Control C"
 }
+
+private val ESCAPE = KeyMap.map(KeyMap.Special.Escape, "", KeyMap.Modifiers.NONE)

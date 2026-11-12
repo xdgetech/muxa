@@ -7,6 +7,8 @@ import UIKit
 /// Touch, trackpad and wheel scroll it; it takes no keys. It opens at the newest line.
 @MainActor
 public final class HistoryView: UIView {
+    /// The user pulled up past the newest line: back to the live pane.
+    public var onLive: () -> Void = {}
     private let history: PaneHistory
     private var terminal: ReadOnlyTerminal?
     private let replies = DropReplies()
@@ -49,6 +51,8 @@ public final class HistoryView: UIView {
             frame: frame, font: font,
             options: TerminalOptions(cols: cols, rows: rows, scrollback: history.lineCount + rows))
         next.terminalDelegate = replies
+        next.alwaysBounceVertical = true
+        next.onPulledPastEnd = { [weak self] in self?.onLive() }
         addSubview(next)
         if next.terminalDimensions.cols != cols || next.terminalDimensions.rows != rows {
             next.resize(cols: cols, rows: rows)
@@ -60,6 +64,24 @@ public final class HistoryView: UIView {
 
 /// The emulator for reading: it scrolls, but never takes the keyboard.
 private final class ReadOnlyTerminal: TerminalView {
+    var onPulledPastEnd: () -> Void = {}
+    private var pulled = false
+    /// The same distance as the pull down that opens the scrollback.
+    private static let pullDistance: CGFloat = 60
+
     override var canBecomeFirstResponder: Bool { false }
+
+    override var contentOffset: CGPoint {
+        didSet {
+            guard isDragging else {
+                pulled = false
+                return
+            }
+            let end = max(0, contentSize.height - bounds.height)
+            guard !pulled, contentOffset.y > end + Self.pullDistance else { return }
+            pulled = true
+            onPulledPastEnd()
+        }
+    }
 }
 #endif
