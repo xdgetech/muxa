@@ -3,31 +3,28 @@ package tech.xdge.muxa.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -36,8 +33,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.AppModel
 import tech.xdge.muxa.app.PaneHistory
 import tech.xdge.muxa.app.pane.Palette
@@ -49,25 +44,24 @@ private const val CELL_EMS = 0.6f
 private const val MIN_FONT_SP = 6f
 private const val MAX_FONT_SP = 16f
 
-/** The shown pane's scrollback over the pane, newest line at the bottom. Reading it changes nothing on the host. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
+/** A drag up past the newest line by this much returns to the live pane, as on iOS. */
+private val PULL_PAST_END = 60.dp
+
+/**
+ * The shown pane's scrollback in the pane's place, opened at the newest line, so a scroll
+ * up on the pane goes on into older lines. Reading it changes nothing on the host.
+ */
 @Composable
-fun HistoryScreen(model: AppModel, history: PaneHistory) {
-    val close = { model.history = null; model.refocusPane() }
-    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // A dialog is its own window: it needs the tag setting the main window has (Root).
-        Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = Color(Palette.BACKGROUND)) {
-            Column(Modifier.fillMaxSize().navigationBarsPadding().testTag("history")) {
-                TopAppBar(
-                    title = { Text("Scrollback") },
-                    navigationIcon = { IconButton(close, Modifier.testTag("history-done")) { Icon(Icons.close, "Done") } },
-                )
-                when (history) {
-                    PaneHistory.Loading -> Centered { CircularProgressIndicator() }
-                    is PaneHistory.Failed -> Centered { Text(history.reason, color = Color.White) }
-                    is PaneHistory.Loaded -> Lines(history)
-                }
-            }
+fun ScrollbackLayer(model: AppModel, history: PaneHistory) {
+    Box(Modifier.fillMaxSize().background(Color(Palette.BACKGROUND)).testTag("history")) {
+        when (history) {
+            PaneHistory.Loading -> Centered { CircularProgressIndicator() }
+            is PaneHistory.Failed -> Centered { Text(history.reason, color = Color.White) }
+            is PaneHistory.Loaded -> Lines(history, onLive = model::closeHistory)
+        }
+        Button(model::closeHistory, Modifier.align(Alignment.BottomEnd).padding(16.dp).testTag("history-live")) {
+            Icon(Icons.live, null)
+            Text("Live", Modifier.padding(start = 8.dp))
         }
     }
 }
@@ -78,9 +72,28 @@ private fun Centered(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Lines(history: PaneHistory.Loaded) {
+private fun Lines(history: PaneHistory.Loaded, onLive: () -> Unit) {
     val state = rememberLazyListState(initialFirstVisibleItemIndex = history.lines.lastIndex.coerceAtLeast(0))
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val pull = with(LocalDensity.current) { PULL_PAST_END.toPx() }
+    // A drag up that the list cannot take any more: it is at the newest line.
+    val pastEnd = remember(onLive) {
+        object : NestedScrollConnection {
+            var pulled = 0f
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y >= 0f) {
+                    pulled = 0f
+                    return Offset.Zero
+                }
+                pulled -= available.y
+                if (pulled > pull) {
+                    pulled = Float.NEGATIVE_INFINITY
+                    onLive()
+                }
+                return Offset.Zero
+            }
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize().nestedScroll(pastEnd)) {
         val density = LocalDensity.current
         val size = with(density) {
             val px = maxWidth.toPx() / (history.cols.coerceAtLeast(1) * CELL_EMS)

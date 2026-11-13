@@ -48,6 +48,7 @@ enum Icon {
     static let fit = "textformat.size"
     static let more = "ellipsis.circle"
     static let history = "arrow.up.to.line"
+    static let live = "arrow.down.to.line"
     static let disconnect = "xmark.circle"
     static let add = "plus"
     static let newTask = "plus.square.on.square"

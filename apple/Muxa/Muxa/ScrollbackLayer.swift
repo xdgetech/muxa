@@ -2,24 +2,20 @@ import MuxaSession
 import MuxaUI
 import SwiftUI
 
-/// The shown pane's scrollback over the pane, newest line at the bottom. Reading it
-/// changes nothing on the host: no copy mode, no scroll position (PROTOCOL.md "History").
-struct HistoryScreen: View {
+/// The shown pane's scrollback in the pane's place, opened at the newest line, so a
+/// scroll up on the pane goes on into older lines. Reading it changes nothing on the
+/// host: no copy mode, no scroll position (PROTOCOL.md "History").
+struct ScrollbackLayer: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        NavigationStack {
+        ZStack(alignment: .bottomTrailing) {
+            Theme.terminal
             content
-                .background(Theme.terminal)
-                .navigationTitle("Scrollback")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { model.history = nil }
-                            .keyboardShortcut(.cancelAction)
-                            .accessibilityIdentifier("history-done")
-                    }
-                }
+            Button("Live", systemImage: Icon.live) { model.closeHistory() }
+                .buttonStyle(.borderedProminent)
+                .padding(16)
+                .accessibilityIdentifier("history-live")
         }
     }
 
@@ -30,18 +26,19 @@ struct HistoryScreen: View {
                 if history.truncated {
                     Text("Older lines are not shown.").font(.caption).foregroundStyle(.secondary).padding(4)
                 }
-                HistoryHost(history: history)
+                HistoryHost(history: history) { model.closeHistory() }
             }
         case .failed(let reason):
             ContentUnavailableView("Can't Show the Scrollback", systemImage: Icon.warning, description: Text(reason))
         case .loading, nil:
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
 
 private struct HistoryHost: UIViewRepresentable {
     let history: PaneHistory
+    let onLive: () -> Void
 
     func makeUIView(context: Context) -> HistoryView {
         let view = HistoryView(history: history)
@@ -49,5 +46,7 @@ private struct HistoryHost: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: HistoryView, context: Context) {}
+    func updateUIView(_ view: HistoryView, context: Context) {
+        view.onLive = onLive
+    }
 }

@@ -14,8 +14,11 @@ struct PaneScreen: View {
             // under the Pretty view so switching back is instant.
             PaneHost(
                 session: model.session, fit: model.paneFit, focus: model.showsPretty ? nil : model.focusRequest,
-                onPinch: { model.paneFit = $0 }, onScrollBack: { model.showHistory() })
-            if model.showsPretty {
+                onPinch: { model.paneFit = $0 }, onScrollBack: { model.showHistory() },
+                showsScrollback: model.history != nil, onLive: { model.closeHistory() })
+            if model.history != nil {
+                ScrollbackLayer()
+            } else if model.showsPretty {
                 ChatView(log: model.chat)
             }
             if let notice {
@@ -214,27 +217,43 @@ struct PaneHost: UIViewRepresentable {
     var onPinch: (PaneFit) -> Void = { _ in }
     /// The user pulled down past the grid's top: show the scrollback.
     var onScrollBack: () -> Void = {}
+    /// The scrollback shows in the pane's place.
+    var showsScrollback = false
+    /// A key or a paste while the scrollback shows: back to the live pane.
+    var onLive: () -> Void = {}
 
     func makeUIView(context: Context) -> PaneContainer {
         let view = PaneContainer()
         session.renderer = view.terminal
         view.terminal.onScreenLost = { [session] in Task { await session.resync() } }
-        view.input.onOutput = { [session] output in
+        view.input.onOutput = { [session, weak view] output in
+            if let view, view.showsScrollback {
+                view.onLive()
+                // Escape only leaves the scrollback: in an agent it would stop the turn.
+                if output == Self.escape { return }
+            }
             switch output {
             case .keys(let keys): session.send(keys: keys)
             case .text(let text): session.send(text: text)
             case .none: break
             }
         }
-        view.input.onPaste = { [session] text in session.paste(text) }
+        view.input.onPaste = { [session, weak view] text in
+            if let view, view.showsScrollback { view.onLive() }
+            session.paste(text)
+        }
         view.onViewport = { [session] grid in session.setViewport(grid) }
         return view
     }
+
+    private static let escape = KeyMap.map(special: .escape, characters: "", modifiers: [])
 
     func updateUIView(_ view: PaneContainer, context: Context) {
         view.fitOverride = fit
         view.onPinch = onPinch
         view.onScrollBack = onScrollBack
+        view.showsScrollback = showsScrollback
+        view.onLive = onLive
         if let focus, view.focusRequest != focus {
             view.focusRequest = focus
             // After SwiftUI has removed whatever held the keyboard (a sheet, the composer).
@@ -246,7 +265,7 @@ struct PaneHost: UIViewRepresentable {
 /// Holds the pane in a scroll view. In `.width` mode the grid can be taller than
 /// the view, in `.readable` also wider; the scroll view follows the cursor unless
 /// the user is reading.
-final class PaneContainer: UIView, UIScrollViewDelegate {
+final class PaneContainer: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     let terminal = PaneTerminalView()
     let input = KeyInputView()
     private let scroll = UIScrollView()
@@ -254,9 +273,13 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
     var focusRequest = 0
     var onPinch: (PaneFit) -> Void = { _ in }
     var onScrollBack: () -> Void = {}
+    var showsScrollback = false
+    var onLive: () -> Void = {}
     private var pulledBack = false
     /// A pull down past the top by this many points opens the scrollback.
     private static let pullDistance: CGFloat = 60
+    /// A trackpad or wheel scroll up by this many points opens it.
+    private static let wheelDistance: CGFloat = 20
     /// The grid this view shows at the default font changed (ADR 0020).
     var onViewport: (PaneViewport) -> Void = { _ in }
     private var viewport: PaneViewport?
@@ -288,6 +311,13 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         input.caretFrame = { [terminal] in terminal.cursorFrame }
         input.addGestureRecognizer(UITapGestureRecognizer(target: input, action: #selector(UIResponder.becomeFirstResponder)))
         input.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched)))
+        // A trackpad or wheel scroll up at the top opens the scrollback: it does not
+        // bounce far enough for the pull that a finger makes.
+        let wheel = UIPanGestureRecognizer(target: self, action: #selector(wheeled))
+        wheel.allowedScrollTypesMask = .all
+        wheel.allowedTouchTypes = []
+        wheel.delegate = self
+        input.addGestureRecognizer(wheel)
         terminal.onUpdate = { [weak self] reset in self?.contentChanged(reset: reset) }
         terminal.onGridChange = { [weak self] in self?.layoutContent() }
     }
@@ -298,6 +328,15 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         if let fitOverride { return fitOverride }
         if let viewport, viewport.showsWhole(cols: terminal.cols, rows: terminal.rows) { return .whole }
         return terminal.automaticFit(in: bounds.size)
+    }
+
+    @objc private func wheeled(_ pan: UIPanGestureRecognizer) {
+        guard pan.state == .changed, scroll.contentOffset.y <= 0, pan.translation(in: self).y > Self.wheelDistance
+        else { return }
+        // Cancels the rest of this scroll: it must not reach the scrollback as it opens.
+        pan.isEnabled = false
+        pan.isEnabled = true
+        onScrollBack()
     }
 
     @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
@@ -370,6 +409,11 @@ final class PaneContainer: UIView, UIScrollViewDelegate {
         pulledBack = true
         onScrollBack()
     }
+
+    /// The wheel recognizer watches; the scroll view still scrolls a grid taller than the view.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool { true }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         pulledBack = false

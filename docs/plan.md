@@ -25,7 +25,7 @@ What works today:
   - the Task Loop: a check after each turn, a Loop section with its state, Start loop, Stop loop and the check log, when the host runs the daemon (ADR 0019);
   - a banner when an agent in another session waits, finishes or fails (ADR 0008);
   - Japanese input in the pane; Control+Space switches the keyboard language when there are two;
-  - the pane's scrollback, read once from the host (`history`): a pull down past the top, or More → Scrollback;
+  - the pane's scrollback, read once from the host (`history`), in the pane's place from its newest line: a scroll up at the top (finger, trackpad or wheel), or More → Scrollback. A drag past the newest line, a key or Live returns to the live pane;
   - a bar with Esc, Tab, Ctrl and the arrows above the on-screen keyboard.
 - **iPhone app** (the same app, ADR 0012): the layout follows the size classes, so a folded iPhone Duo gets the phone layout and an unfolded one the iPad layout, without losing the pane, its screen or the keyboard. On a phone, a pane whose font would go below 9 pt keeps 9 pt and scrolls on both axes.
 

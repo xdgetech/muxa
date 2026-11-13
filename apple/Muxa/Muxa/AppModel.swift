@@ -452,6 +452,7 @@ final class AppModel {
     }
 
     func watch(_ pane: String) async {
+        history = nil
         do {
             try await session.watch(pane: pane)
         } catch {
@@ -831,18 +832,29 @@ final class AppModel {
 
     var canShowHistory: Bool { isConnected && session.canShowHistory }
 
-    /// Reads the shown pane's scrollback from the host and shows it over the pane.
+    /// Reads the shown pane's scrollback from the host and shows it in the pane's place.
     func showHistory() {
         guard canShowHistory, history == nil, let pane = session.watchedPane else { return }
         history = .loading
         Task {
+            let next: HistoryState
             do {
                 let reply = try await session.history(pane: pane)
-                history = reply.map(HistoryState.loaded) ?? .failed("The host sent no scrollback. Try again.")
+                next = reply.map(HistoryState.loaded) ?? .failed("The host sent no scrollback. Try again.")
             } catch {
-                history = .failed(PaneSession.describe(error))
+                next = .failed(PaneSession.describe(error))
             }
+            // The user went back to the live pane, or to another pane, while it loaded.
+            guard history == .loading, session.watchedPane == pane else { return }
+            history = next
         }
+    }
+
+    /// Back to the live pane from its scrollback.
+    func closeHistory() {
+        guard history != nil else { return }
+        history = nil
+        refocusPane()
     }
 
     /// The Task the shown pane's session runs.

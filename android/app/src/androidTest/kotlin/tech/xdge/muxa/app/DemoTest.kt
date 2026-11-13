@@ -22,6 +22,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipeDown
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -121,7 +124,7 @@ class DemoTest {
     }
 
     /** The switcher lists every session, the Tasks' too. The session shortcuts follow the manual list. */
-    /** Scrollback in More shows the host's earlier lines over the pane, newest at the bottom. */
+    /** Scrollback in More shows the host's earlier lines in the pane's place, newest at the bottom. */
     @Test
     fun scrollbackShowsTheHostsEarlierLines() {
         launch()
@@ -133,7 +136,21 @@ class DemoTest {
         compose.waitUntil(TIMEOUT) { runCatching { compose.onNodeWithTag("menu-history").assertIsDisplayed() }.isSuccess }
         compose.onNodeWithTag("menu-history").performClick()
         compose.waitUntilAtLeastOneExists(hasText("Earlier output, line 60"), TIMEOUT)
-        compose.onNodeWithTag("history-done").performClick()
+        compose.onNodeWithTag("history-live").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("history"), TIMEOUT)
+        waitForPane("pane %1 100x30")
+    }
+
+    /** A drag down on a pane that fits opens the scrollback in its place; a drag up past its newest line returns. */
+    @Test
+    fun pullingThePaneDownOpensTheScrollback() {
+        launch()
+        waitForTag("composer")
+        shortcut(KeyEvent.KEYCODE_R)
+        waitForPane("pane %1 100x30")
+        compose.onNodeWithTag("pane").performTouchInput { swipeDown() }
+        compose.waitUntilAtLeastOneExists(hasText("Earlier output, line 60"), TIMEOUT)
+        compose.onNodeWithTag("history-lines").performTouchInput { swipeUp() }
         compose.waitUntilDoesNotExist(hasTestTag("history"), TIMEOUT)
         waitForPane("pane %1 100x30")
     }
