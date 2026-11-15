@@ -14,6 +14,8 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     let lock = NSLock()
     private var watch: UInt64 = 0
     private var watchedPane: String?
+    /// `-ticker` started its timer (DEBUG).
+    private var tickerStarted = false
     /// The app's grid at its default font, once it sent one.
     private var viewport: (cols: UInt16, rows: UInt16)?
     /// Panes whose window follows the device in use.
@@ -115,7 +117,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
     }
 
     /// Lines of earlier output a demo pane has.
-    private static let historyLines = 60
+    private static let historyLines = 200
 
     private static var capabilities: [String] {
         let all = [
@@ -167,6 +169,9 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let text = (1...Self.historyLines).map { "Earlier output, line \($0)\n" }.joined()
             emit(.history(history: id, pane: pane, cols: UInt16(sized(pane)?.cols ?? 80), data: Data(text.utf8), truncated: false))
             ok(id)
+            #if DEBUG
+            startTicker()
+            #endif
         case .watch(let id, let pane):
             // The alert comes a few seconds after the first pane shows, so a phone's
             // first Inbox does not hide it.
@@ -1085,6 +1090,24 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         ChatEntry(id: "t:2", kind: .tool, tool: ChatTool(name: "Edit", summary: "src/parser.rs", result: "Updated 1 line.")),
         ChatEntry(id: "n:1", kind: .notice, text: "/model opus"),
     ]
+
+    #if DEBUG
+    /// With `-ticker`, the watched pane prints a line every second from the first `history`
+    /// on, for the tests that check output does not move what the user reads back.
+    private func startTicker() {
+        guard ProcessInfo.processInfo.arguments.contains("-ticker"),
+              lock.withLock({ () -> Bool in defer { tickerStarted = true }; return !tickerStarted })
+        else { return }
+        DispatchQueue.main.async {
+            var n = 0
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                guard let self, let pane = self.lock.withLock({ self.watchedPane }) else { return }
+                n += 1
+                self.echo(pane, Data("\r\ntick \(n)".utf8))
+            }
+        }
+    }
+    #endif
 
     private func echo(_ pane: String, _ data: Data) {
         let w = lock.withLock { watch }

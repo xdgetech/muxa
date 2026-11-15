@@ -14,6 +14,8 @@ struct PaneScreen: View {
             // under the Pretty view so switching back is instant.
             PaneHost(
                 session: model.session, fit: model.paneFit, focus: model.showsPretty ? nil : model.focusRequest,
+                snapshot: model.paneSnapshot,
+                onNeedSnapshot: model.canShowHistory ? { model.refreshPaneSnapshot() } : nil,
                 onPinch: { model.paneFit = $0 }, onScrollBack: { model.showHistory() },
                 showsScrollback: model.history != nil, onLive: { model.closeHistory() })
             if model.history != nil {
@@ -213,13 +215,17 @@ struct PaneHost: UIViewRepresentable {
     /// when a hardware keyboard is connected.
     /// Nil while another view (Pretty) has the keyboard.
     var focus: Int?
+    /// The pane's latest scrollback, shown in place when the user reads back.
+    var snapshot: PaneHistory?
+    /// Asks for a newer snapshot; nil when the host cannot send one.
+    var onNeedSnapshot: (() -> Void)?
     /// The user pinched to another fit.
     var onPinch: (PaneFit) -> Void = { _ in }
-    /// The user pulled down past the grid's top: show the scrollback.
+    /// No snapshot to read in place: show the scrollback once it loads.
     var onScrollBack: () -> Void = {}
-    /// The scrollback shows in the pane's place.
+    /// The scrollback from More, or from `onScrollBack`, shows in the pane's place.
     var showsScrollback = false
-    /// A key or a paste while the scrollback shows: back to the live pane.
+    /// Leaves that scrollback.
     var onLive: () -> Void = {}
 
     func makeUIView(context: Context) -> PaneContainer {
@@ -227,8 +233,8 @@ struct PaneHost: UIViewRepresentable {
         session.renderer = view.terminal
         view.terminal.onScreenLost = { [session] in Task { await session.resync() } }
         view.input.onOutput = { [session, weak view] output in
-            if let view, view.showsScrollback {
-                view.onLive()
+            if let view, view.isReadingBack {
+                view.showLive()
                 // Escape only leaves the scrollback: in an agent it would stop the turn.
                 if output == Self.escape { return }
             }
@@ -239,7 +245,7 @@ struct PaneHost: UIViewRepresentable {
             }
         }
         view.input.onPaste = { [session, weak view] text in
-            if let view, view.showsScrollback { view.onLive() }
+            if let view, view.isReadingBack { view.showLive() }
             session.paste(text)
         }
         view.onViewport = { [session] grid in session.setViewport(grid) }
@@ -251,6 +257,8 @@ struct PaneHost: UIViewRepresentable {
     func updateUIView(_ view: PaneContainer, context: Context) {
         view.fitOverride = fit
         view.onPinch = onPinch
+        view.onNeedSnapshot = onNeedSnapshot
+        view.snapshot = snapshot?.pane == session.watchedPane ? snapshot : nil
         view.onScrollBack = onScrollBack
         view.showsScrollback = showsScrollback
         view.onLive = onLive
@@ -259,171 +267,5 @@ struct PaneHost: UIViewRepresentable {
             // After SwiftUI has removed whatever held the keyboard (a sheet, the composer).
             DispatchQueue.main.async { view.input.focusIfKeyboard() }
         }
-    }
-}
-
-/// Holds the pane in a scroll view. In `.width` mode the grid can be taller than
-/// the view, in `.readable` also wider; the scroll view follows the cursor unless
-/// the user is reading.
-final class PaneContainer: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
-    let terminal = PaneTerminalView()
-    let input = KeyInputView()
-    private let scroll = UIScrollView()
-    private var cursorWasVisible = true
-    var focusRequest = 0
-    var onPinch: (PaneFit) -> Void = { _ in }
-    var onScrollBack: () -> Void = {}
-    var showsScrollback = false
-    var onLive: () -> Void = {}
-    private var pulledBack = false
-    /// A pull down past the top by this many points opens the scrollback.
-    private static let pullDistance: CGFloat = 60
-    /// A trackpad or wheel scroll up by this many points opens it.
-    private static let wheelDistance: CGFloat = 20
-    /// The grid this view shows at the default font changed (ADR 0020).
-    var onViewport: (PaneViewport) -> Void = { _ in }
-    private var viewport: PaneViewport?
-
-    var fitOverride: PaneFit? {
-        didSet { if fitOverride != oldValue { setNeedsLayout() } }
-    }
-
-    init() {
-        super.init(frame: .zero)
-        backgroundColor = .black
-        scroll.backgroundColor = .black
-        // A pull down past the top asks for the scrollback, also when the grid fits.
-        scroll.alwaysBounceVertical = true
-        scroll.alwaysBounceHorizontal = false
-        scroll.isDirectionalLockEnabled = true
-        scroll.indicatorStyle = .white
-        scroll.contentInsetAdjustmentBehavior = .never
-        scroll.keyboardDismissMode = .none
-        scroll.delegate = self
-        addSubview(scroll)
-        // The input view lies over the grid inside the scroll view, so drags still scroll.
-        scroll.addSubview(terminal)
-        scroll.addSubview(input)
-        input.backgroundColor = .clear
-        input.accessibilityIdentifier = "pane"
-        input.screenText = { [terminal] in terminal.screenText }
-        // The input view has the grid's frame, so the terminal's coordinates are its own.
-        input.caretFrame = { [terminal] in terminal.cursorFrame }
-        input.addGestureRecognizer(UITapGestureRecognizer(target: input, action: #selector(UIResponder.becomeFirstResponder)))
-        input.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched)))
-        // A trackpad or wheel scroll up at the top opens the scrollback: it does not
-        // bounce far enough for the pull that a finger makes.
-        let wheel = UIPanGestureRecognizer(target: self, action: #selector(wheeled))
-        wheel.allowedScrollTypesMask = .all
-        wheel.allowedTouchTypes = []
-        wheel.delegate = self
-        input.addGestureRecognizer(wheel)
-        terminal.onUpdate = { [weak self] reset in self?.contentChanged(reset: reset) }
-        terminal.onGridChange = { [weak self] in self?.layoutContent() }
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    private var mode: PaneFit {
-        if let fitOverride { return fitOverride }
-        if let viewport, viewport.showsWhole(cols: terminal.cols, rows: terminal.rows) { return .whole }
-        return terminal.automaticFit(in: bounds.size)
-    }
-
-    @objc private func wheeled(_ pan: UIPanGestureRecognizer) {
-        guard pan.state == .changed, scroll.contentOffset.y <= 0, pan.translation(in: self).y > Self.wheelDistance
-        else { return }
-        // Cancels the rest of this scroll: it must not reach the scrollback as it opens.
-        pan.isEnabled = false
-        pan.isEnabled = true
-        onScrollBack()
-    }
-
-    @objc private func pinched(_ pinch: UIPinchGestureRecognizer) {
-        guard pinch.state == .ended, let fit = PaneFit.pinched(scale: pinch.scale) else { return }
-        onPinch(fit)
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        layoutContent()
-    }
-
-    /// Sizes the scroll content to the grid in the current mode.
-    private func layoutContent() {
-        scroll.frame = bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        // A phone-sized area: compact in either direction, as the layout decides (ADR 0012).
-        let compact = traitCollection.horizontalSizeClass == .compact || traitCollection.verticalSizeClass == .compact
-        viewport = terminal.viewportGrid(in: bounds.size, fontSize: PaneViewport.fontSize(compact: compact))
-        if let viewport { onViewport(viewport) }
-        terminal.fitMode = mode
-        terminal.viewport = bounds.size
-        let grid = terminal.gridSize(in: bounds.size)
-        let content = CGRect(
-            x: 0, y: 0, width: max(grid.width, bounds.width), height: max(grid.height, bounds.height))
-        if terminal.frame != content {
-            terminal.frame = content
-            input.frame = content
-            scroll.contentSize = content.size
-            terminal.layoutIfNeeded()
-            followCursor()
-        }
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window != nil { input.focusIfKeyboard() }
-    }
-
-    private func contentChanged(reset: Bool) {
-        // A new screen starts at its top; the last pane's scroll position means nothing here.
-        if reset { scroll.contentOffset = .zero }
-        let wasVisible = reset || cursorWasVisible
-        // SwiftTerm moves its caret after the feed is processed.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if wasVisible { self.followCursor() }
-            self.cursorWasVisible = self.cursorIsVisible
-        }
-    }
-
-    private var cursorIsVisible: Bool {
-        scroll.bounds.contains(terminal.cursorFrame)
-    }
-
-    /// Brings the cursor cell into view, with a few cells around it, but never
-    /// while the user is scrolling.
-    private func followCursor() {
-        guard !scroll.isDragging, !scroll.isDecelerating else { return }
-        let scrolls = scroll.contentSize.height > scroll.bounds.height || scroll.contentSize.width > scroll.bounds.width
-        let caret = terminal.cursorFrame
-        guard scrolls, caret.height > 0 else { return }
-        let around = scroll.contentSize.width > scroll.bounds.width ? caret.width * 4 : 0
-        scroll.scrollRectToVisible(caret.insetBy(dx: -around, dy: 0), animated: false)
-        cursorWasVisible = true
-    }
-
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView.isDragging, !pulledBack, scrollView.contentOffset.y < -Self.pullDistance else { return }
-        pulledBack = true
-        onScrollBack()
-    }
-
-    /// The wheel recognizer watches; the scroll view still scrolls a grid taller than the view.
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
-    ) -> Bool { true }
-
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        pulledBack = false
-    }
-
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate { cursorWasVisible = cursorIsVisible }
-    }
-
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        cursorWasVisible = cursorIsVisible
     }
 }

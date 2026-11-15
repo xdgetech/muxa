@@ -225,6 +225,7 @@ final class AppModel {
     private func resetHostState() {
         taskInfo = nil
         history = nil
+        paneSnapshot = nil
         currentHostID = nil
         captureHostID = nil
         connectError = nil
@@ -831,6 +832,29 @@ final class AppModel {
     }
 
     var canShowHistory: Bool { isConnected && session.canShowHistory }
+
+    /// The shown pane's latest scrollback, read before the user scrolls back, so the
+    /// earlier lines appear in place without waiting for the host.
+    var paneSnapshot: PaneHistory?
+    @ObservationIgnored private var fetchingSnapshot = false
+
+    /// Reads the shown pane's scrollback again; one read at a time.
+    func refreshPaneSnapshot() {
+        guard canShowHistory, !fetchingSnapshot, let pane = session.watchedPane else { return }
+        if paneSnapshot?.pane != pane { paneSnapshot = nil }
+        fetchingSnapshot = true
+        Task {
+            defer { fetchingSnapshot = false }
+            do {
+                guard let reply = try await session.history(pane: pane), reply.pane == session.watchedPane else { return }
+                paneSnapshot = reply
+            } catch {
+                // A prefetch the user did not ask for: a pull without a snapshot falls back
+                // to `showHistory`, which shows the error.
+                return
+            }
+        }
+    }
 
     /// Reads the shown pane's scrollback from the host and shows it in the pane's place.
     func showHistory() {

@@ -57,41 +57,11 @@ final class DemoTests: XCTestCase {
         tapWhenReady(app.buttons["menu-history"])
         let history = app.descendants(matching: .any)["history"].firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 10))
-        let lines = NSPredicate(format: "value CONTAINS %@", "Earlier output, line 60")
+        let lines = NSPredicate(format: "value CONTAINS %@", "Earlier output, line 200")
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: lines, object: history)], timeout: 5), .completed)
         tapWhenReady(app.buttons["history-live"])
         XCTAssertTrue(history.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["composer"].firstMatch.exists)
-    }
-
-    /// A drag down on a terminal that fits the screen opens the scrollback in its place,
-    /// at the newest line. A drag up past that line, or typing, returns to the live pane.
-    @MainActor
-    func testPullingThePaneDownOpensTheScrollback() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-demo", "-mode", "sessions"]
-        app.launch()
-        let composer = app.descendants(matching: .any)["composer"].firstMatch
-        XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        composer.typeKey("r", modifierFlags: .command)
-        let pane = app.descendants(matching: .any)["pane"].firstMatch
-        XCTAssertTrue(waitFor(pane, containing: "pane %1"))
-        let start = pane.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-        start.press(forDuration: 0.05, thenDragTo: pane.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)))
-        let history = app.descendants(matching: .any)["history"].firstMatch
-        XCTAssertTrue(history.waitForExistence(timeout: 10))
-        let lines = NSPredicate(format: "value CONTAINS %@", "Earlier output, line 60")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: lines, object: history)], timeout: 5), .completed)
-        let top = history.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-        top.press(forDuration: 0.05, thenDragTo: history.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
-        XCTAssertTrue(history.waitForNonExistence(timeout: 5))
-
-        // Typing in the scrollback returns to the live pane and reaches it.
-        start.press(forDuration: 0.05, thenDragTo: pane.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)))
-        XCTAssertTrue(history.waitForExistence(timeout: 10))
-        pane.typeText("hello")
-        XCTAssertTrue(history.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(waitFor(pane, containing: "$ hello"))
     }
 
     @MainActor
