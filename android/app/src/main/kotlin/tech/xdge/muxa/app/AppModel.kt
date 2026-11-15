@@ -29,6 +29,8 @@ import tech.xdge.muxa.session.ChatLog
 import tech.xdge.muxa.session.Host
 import tech.xdge.muxa.session.HostStore
 import tech.xdge.muxa.session.InboxSection
+import tech.xdge.muxa.session.WorkspaceTasks
+import tech.xdge.muxa.session.groupedByWorkspace
 import tech.xdge.muxa.session.LastPane
 import tech.xdge.muxa.session.LoopDraft
 import tech.xdge.muxa.session.PaneFit
@@ -149,6 +151,22 @@ class AppModel(
             modeState = value
             modes.mode = value
         }
+
+    private var foldState by mutableStateOf(modes.foldedTaskGroups)
+
+    /** The folded workspace and repo groups of Tasks mode (ADR 0055), remembered on this device. */
+    var foldedTaskGroups: Set<String>
+        get() = foldState
+        set(value) {
+            foldState = value
+            modes.foldedTaskGroups = value
+        }
+
+    fun isFolded(key: String): Boolean = key in foldState
+
+    fun toggleFold(key: String) {
+        foldedTaskGroups = if (key in foldState) foldState - key else foldState + key
+    }
 
     /** What the detail shows when no pane is shown over it. Kept through a fold or a resize. */
     var selection by mutableStateOf<Selection?>(null)
@@ -1101,6 +1119,10 @@ class AppModel(
     /** [inbox] as the Tasks list shows it: a Task closed more than a day ago is left out. */
     val listedTasks: List<InboxSection>
         get() = inbox(state.tasks?.records.orEmpty(), state.sessions, System.currentTimeMillis() / 1000)
+
+    /** Tasks mode's list: [listedTasks] by workspace, then repo (ADR 0055). */
+    val taskGroups: List<WorkspaceTasks>
+        get() = listedTasks.groupedByWorkspace(state.tasks?.workspaces.orEmpty())
 
     /**
      * Records the Task and shows it: its detail in Tasks mode, else its session. A failed

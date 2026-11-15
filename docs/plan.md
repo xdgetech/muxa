@@ -18,7 +18,7 @@ What works today:
   - the Reader, in tabs: the pane's plan and the repo's Markdown files, rendered offline (ADR 0006); its uncommitted changes and its branch's commits as diffs (ADR 0007, 0011); its images, ignored folders included (ADR 0010);
   - starting and closing tasks, with or without muxa for tmux (ADR 0007);
   - Inbox: a list of questions, one item per decision, answered once and shared by every device; Later moves an item to the bottom (ADR 0033, 0040); Approve on a proposal creates one Task and opens it. The sidebar shows Inbox, Tasks or Sessions (ADR 0035);
-  - All Tasks grouped by need, a Task detail, New Task with or without a repo, status changes, and per-workspace agent environments (ADR 0015, 0016);
+  - All Tasks grouped by workspace, then repo, with folds the device remembers (ADR 0055), a Task detail, New Task with or without a repo, status changes, and per-workspace agent environments (ADR 0015, 0016);
   - New Task picks from the workspace's repos, by their name under its root, and names an empty branch after the title; Ask about this repo starts the workspace's agent in the main checkout as a manual session (ADR 0031, both apps);
   - Routines: a list and a detail with the trigger, the last success and failure, the next run, Open Terminal for a running run, and Run now (ADR 0026);
   - Restart agent with a handoff in `.muxa/HANDOFF.md`, and the Task's runs (ADR 0018);

@@ -236,3 +236,28 @@ enum InboxSelection {
         return later ?? remaining.last
     }
 }
+
+/// Folded groups of Tasks mode (ADR 0055), remembered on this device.
+extension AppModel {
+    private static let foldsKey = "foldedTaskGroups"
+
+    /// The remembered folds. The demo starts with none, so no UI test depends on an
+    /// earlier one; `-keep-folds` keeps them to test that they last.
+    static func launchFolds() -> Set<String> {
+        let defaults = UserDefaults.standard
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-demo"), !arguments.contains("-keep-folds") {
+            defaults.removeObject(forKey: foldsKey)
+        }
+        #endif
+        return Set(defaults.stringArray(forKey: foldsKey) ?? [])
+    }
+
+    func isFolded(_ key: String) -> Bool { foldedTaskGroups.contains(key) }
+
+    func toggleFold(_ key: String) {
+        if foldedTaskGroups.contains(key) { foldedTaskGroups.remove(key) } else { foldedTaskGroups.insert(key) }
+        UserDefaults.standard.set(foldedTaskGroups.sorted(), forKey: Self.foldsKey)
+    }
+}

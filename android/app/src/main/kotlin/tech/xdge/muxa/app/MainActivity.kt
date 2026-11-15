@@ -48,6 +48,8 @@ class MainActivity : ComponentActivity() {
         // A debug launch starts in the mode it names, else in Inbox mode, whatever the device remembers.
         if (BuildConfig.DEBUG && (intent.hasExtra(EXTRA_DEMO) || intent.hasExtra(EXTRA_NO_SAVED_HOSTS))) {
             model.mode = SidebarMode.of(intent.getStringExtra(EXTRA_MODE)) ?: SidebarMode.INBOX
+            // No test depends on an earlier one's folds; `--ez keep-folds true` tests that they last.
+            if (!intent.getBooleanExtra(EXTRA_KEEP_FOLDS, false)) model.foldedTaskGroups = emptySet()
         }
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_DEMO, false)) {
             val set = if (intent.getBooleanExtra(EXTRA_SHOWCASE, false)) DemoBridge.Content.SHOWCASE else DemoBridge.Content.TESTS
@@ -182,5 +184,8 @@ class MainActivity : ComponentActivity() {
 
         /** The failure and the last proposal are four days old, for Delete Old (ADR 0046). */
         const val EXTRA_OLD_ITEMS = "old-items"
+
+        /** A debug launch keeps the Tasks list's folded groups (ADR 0055). */
+        const val EXTRA_KEEP_FOLDS = "keep-folds"
     }
 }

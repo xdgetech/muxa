@@ -76,7 +76,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Update muxa-bridge"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["item-row-i-0000a001"].exists, "no items on this host")
         tapWhenReady(app.buttons["sidebar-inbox-tasks"])
-        XCTAssertTrue(header(app, "Needs attention").waitForExistence(timeout: 5))
+        XCTAssertTrue(group(app, "work").waitForExistence(timeout: 5))
     }
 
     /// Opens the demo in Tasks mode: the sidebar lists the Tasks.
@@ -89,36 +89,70 @@ final class TasksTests: XCTestCase {
         return app
     }
 
+    /// A workspace's section header.
     @MainActor
-    private func header(_ app: XCUIApplication, _ title: String) -> XCUIElement {
-        app.descendants(matching: .any)["inbox-\(title)"].firstMatch
+    private func group(_ app: XCUIApplication, _ workspace: String) -> XCUIElement {
+        app.buttons["task-group-\(workspace)"]
     }
 
-    /// Every Inbox group shows its demo task; a failed launch shows its note.
     @MainActor
-    func testTheInboxGroupsTasksByWhatTheyNeed() throws {
-        let app = launchOnTasks()
-        let list = app.collectionViews["sidebar-list"]
-        // Routines sit above the groups, so the last group can start below the fold.
-        for title in ["Needs attention", "Ready for review", "Running", "No agent"] {
-            if !header(app, title).waitForExistence(timeout: 2) { list.swipeUp() }
-            XCTAssertTrue(header(app, title).waitForExistence(timeout: 5), title)
-        }
-        list.swipeDown()
-        XCTAssertTrue(app.buttons["task-t-auth01"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Fix the login redirect"].exists)
-        save("tasks-inbox")
-        if !header(app, "Closed").exists { list.swipeUp() }
-        XCTAssertTrue(header(app, "Closed").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Write the release notes"].exists)
-        if !app.buttons["task-t-price1"].isHittable { list.swipeDown() }
+    private func repo(_ app: XCUIApplication, _ workspace: String, _ label: String) -> XCUIElement {
+        app.buttons["task-repo-\(workspace)-\(label)"]
+    }
 
+    /// Tasks group by workspace, then repo, with "No repo" last (ADR 0055). A workspace
+    /// without repos has no repo heading. A failed launch shows its note.
+    @MainActor
+    func testTasksGroupByWorkspaceAndRepo() throws {
+        let app = launchOnTasks()
+        for workspace in ["notes", "personal", "work"] {
+            reveal(app, group(app, workspace), in: "sidebar-list")
+            XCTAssertTrue(group(app, workspace).waitForExistence(timeout: 5), workspace)
+        }
+        XCTAssertLessThan(group(app, "notes").frame.minY, group(app, "personal").frame.minY)
+        XCTAssertLessThan(group(app, "personal").frame.minY, group(app, "work").frame.minY)
+        XCTAssertFalse(repo(app, "personal", "No repo").exists, "no repo heading without a repo")
+        let headings = ["app", "docs", "No repo"].map { repo(app, "work", $0) }
+        for heading in headings {
+            reveal(app, heading, in: "sidebar-list")
+            XCTAssertTrue(heading.waitForExistence(timeout: 5), heading.identifier)
+        }
+        XCTAssertLessThan(headings[0].frame.minY, app.buttons["task-t-auth01"].frame.minY)
+        XCTAssertLessThan(app.buttons["task-t-auth01"].frame.minY, headings[1].frame.minY)
+        XCTAssertLessThan(headings[1].frame.minY, headings[2].frame.minY)
+        save("tasks-grouped")
+        reveal(app, app.buttons["task-t-relnot"], in: "sidebar-list")
+        XCTAssertTrue(app.staticTexts["Write the release notes"].exists, "a Task closed today stays listed")
+        reveal(app, app.buttons["task-t-price1"], up: true, in: "sidebar-list")
         tapWhenReady(app.buttons["task-t-price1"])
         let note = app.descendants(matching: .any)["task-note"].firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 5))
         XCTAssertTrue(note.label.contains("did not start"), note.label)
         XCTAssertFalse(app.buttons["task-open-terminal"].exists, "no session to open")
         save("task-detail-note")
+    }
+
+    /// A workspace and a repo fold, and stay folded after the app starts again.
+    @MainActor
+    func testTaskGroupsFoldAndStayFolded() throws {
+        let app = launchOnTasks()
+        reveal(app, repo(app, "work", "app"), in: "sidebar-list")
+        tapWhenReady(repo(app, "work", "app"))
+        XCTAssertTrue(app.buttons["task-t-auth01"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["task-t-docs01"].exists, "another repo stays open")
+        reveal(app, group(app, "personal"), up: true, in: "sidebar-list")
+        tapWhenReady(group(app, "personal"))
+        XCTAssertTrue(app.buttons["task-t-lint01"].waitForNonExistence(timeout: 5))
+
+        app.terminate()
+        app.launchArguments = ["-demo", "-mode", "tasks", "-keep-folds"]
+        app.launch()
+        XCTAssertTrue(group(app, "personal").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["task-t-lint01"].exists)
+        reveal(app, repo(app, "work", "app"), in: "sidebar-list")
+        XCTAssertFalse(app.buttons["task-t-auth01"].exists)
+        tapWhenReady(repo(app, "work", "app"))
+        XCTAssertTrue(app.buttons["task-t-auth01"].waitForExistence(timeout: 5))
     }
 
     /// A Task row opens its session's pane as a Sessions row does, and stays highlighted.
@@ -345,7 +379,7 @@ final class TasksTests: XCTestCase {
         XCTAssertTrue(run.waitForExistence(timeout: 5))
     }
 
-    /// Marking a task done moves it to Closed.
+    /// Marking a task done moves it to the end of its repo.
     @MainActor
     func testMarkingATaskDoneClosesIt() throws {
         let app = launchOnTasks()
@@ -359,11 +393,12 @@ final class TasksTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: saved, object: app.buttons["task-status"])],
                                       timeout: 5), .completed)
         closeTaskInfo(app)
-        // Running sits just below where Ready for review was.
-        XCTAssertTrue(header(app, "Running").waitForExistence(timeout: 5))
-        XCTAssertFalse(header(app, "Ready for review").exists, "its only task left the group")
-        reveal(app, header(app, "Closed"), in: "sidebar-list")
-        XCTAssertTrue(header(app, "Closed").waitForExistence(timeout: 5))
+        // A closed Task goes last in its repo, and says Done.
+        let login = app.buttons["task-t-login1"]
+        reveal(app, login, in: "sidebar-list")
+        let done = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Done'"), object: login)
+        XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 5), .completed, login.label)
+        XCTAssertLessThan(app.buttons["task-t-perf01"].frame.minY, login.frame.minY)
         save("record-done")
     }
 
@@ -466,8 +501,8 @@ final class TasksTests: XCTestCase {
         let lint = app.buttons["task-t-lint01"]
         XCTAssertTrue(lint.waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["task-t-lint01"].staticTexts["loop-badge-t-lint01"].label, "Loop stopped: limit")
-        XCTAssertLessThan(header(app, "Needs attention").frame.minY, lint.frame.minY)
-        XCTAssertLessThan(lint.frame.minY, header(app, "Ready for review").frame.minY)
+        // In its repo, what needs the user comes before what is ready for review.
+        XCTAssertLessThan(app.buttons["task-t-auth01"].frame.minY, app.buttons["task-t-login1"].frame.minY)
         save("loop-inbox")
 
         openTaskInfo(app, "t-auth01")

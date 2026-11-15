@@ -52,6 +52,10 @@ import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.session.InboxNeed
 import tech.xdge.muxa.session.need
 import tech.xdge.muxa.session.TaskItem
+import tech.xdge.muxa.session.RepoTasks
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.stateDescription
 import tech.xdge.muxa.session.hasHandoff
 import tech.xdge.muxa.session.taskItem
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -63,40 +67,82 @@ import androidx.compose.ui.window.Dialog
 import tech.xdge.muxa.app.openTaskRow
 
 /**
- * Tasks mode (ADR 0035): the Routines first, then every Task by group. The row of what the
- * detail shows is highlighted: the picked Task, or the Task whose pane is shown.
+ * Tasks mode (ADR 0035): the Routines first, then every Task by workspace, then repo (ADR 0055).
+ * Groups fold. The row of what the detail shows is highlighted: the picked Task, or the Task
+ * whose pane is shown.
  */
 @Composable
 fun TaskList(model: AppModel, modifier: Modifier) {
     val selected = model.selectedTask ?: model.paneTask
     Column(modifier) {
-        val sections = model.listedTasks
+        val groups = model.taskGroups
         Box(Modifier.fillMaxWidth().weight(1f)) {
             LazyColumn(Modifier.fillMaxSize().testTag("task-list")) {
                 if (model.canUseRoutines) item(key = "routines") { RoutinesRow(model) }
-                for (section in sections) {
-                    item(key = "g-${section.group}") {
-                        Text(
-                            section.group.title,
-                            Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp).testTag("inbox-${section.group.name}"),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                for (group in groups) {
+                    val workspaceFolded = model.isFolded(group.foldKey)
+                    item(key = group.foldKey) {
+                        FoldHeader(group.workspace, null, workspaceFolded, 0, "task-group-${group.workspace}") {
+                            model.toggleFold(group.foldKey)
+                        }
                     }
-                    items(section.items, key = { it.record.id }) { item ->
-                        TaskRow(item, item.record.id == selected) { model.openTaskRow(item) }
+                    if (workspaceFolded) continue
+                    for (repo in group.repos) {
+                        val folded = repo.heading && model.isFolded(repo.foldKey)
+                        if (repo.heading) {
+                            item(key = repo.foldKey) {
+                                FoldHeader(repo.label, repo, folded, repo.items.size, "task-repo-${repo.workspace}-${repo.label}") {
+                                    model.toggleFold(repo.foldKey)
+                                }
+                            }
+                        }
+                        if (!folded) {
+                            items(repo.items, key = { it.record.id }) { item ->
+                                TaskRow(item, item.record.id == selected) { model.openTaskRow(item) }
+                            }
+                        }
                     }
                 }
                 if (model.state.tasks?.truncated == true) {
                     item { Text("Only the newest Tasks are listed.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall) }
                 }
             }
-            if (sections.isEmpty()) {
+            if (groups.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(if (model.state.tasks == null) "Loading Tasks…" else "No Tasks on this host yet.")
                 }
             }
         }
+    }
+}
+
+/** A workspace's header ([repo] null) or a repo's, inside its workspace; a click folds it. */
+@Composable
+private fun FoldHeader(title: String, repo: RepoTasks?, folded: Boolean, count: Int, tag: String, toggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(onClick = toggle)
+            .padding(start = if (repo == null) 16.dp else 24.dp, end = 16.dp, top = if (repo == null) 16.dp else 8.dp, bottom = 4.dp)
+            .semantics { stateDescription = if (folded) "folded" else "open" }
+            .testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (repo != null) {
+            Icon(if (repo.repo == null) Icons.tasks else Icons.repo, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            title,
+            Modifier.weight(1f),
+            style = if (repo == null) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (folded && count > 0) {
+            Text("$count", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.chevron, null, Modifier.size(16.dp).rotate(if (folded) 0f else 90f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -121,12 +167,10 @@ private fun TaskRow(item: TaskItem, current: Boolean, open: () -> Unit) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(r.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(
-                listOfNotNull(r.workspace, r.project).joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+            // The workspace and repo are the list's headers (ADR 0055).
+            r.project?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
             AgentLine(item)

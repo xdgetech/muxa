@@ -46,8 +46,16 @@ class ModeStore(private val prefs: SharedPreferences?) {
             prefs?.edit()?.putString(KEY, value.tag)?.apply()
         }
 
+    /** The folded groups of Tasks mode, by fold key (ADR 0055). */
+    var foldedTaskGroups: Set<String>
+        get() = prefs?.getStringSet(FOLDS_KEY, null)?.toSet().orEmpty()
+        set(value) {
+            prefs?.edit()?.putStringSet(FOLDS_KEY, value)?.apply()
+        }
+
     private companion object {
         const val KEY = "sidebar-mode"
+        const val FOLDS_KEY = "folded-task-groups"
     }
 }
 

@@ -164,11 +164,6 @@ struct TaskDetail: View {
         }
     }
 
-    /// "work · Billing": the workspace, and the project when there is one.
-    static func place(_ r: TaskRecord) -> String {
-        [r.workspace, r.project].compactMap { $0 }.joined(separator: " · ")
-    }
-
     static func title(_ status: TaskStatus) -> String {
         switch status {
         case .open: "Open"
