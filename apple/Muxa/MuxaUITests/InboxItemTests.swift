@@ -112,9 +112,10 @@ final class InboxItemTests: XCTestCase {
             waitForQuestion(app, "Release moved to Thursday")
         }
         showMode(app, 1)
-        let closed = app.descendants(matching: .any)["inbox-Closed"].firstMatch
-        for _ in 0..<3 where !closed.exists { app.collectionViews["sidebar-list"].swipeUp() }
-        XCTAssertTrue(closed.waitForExistence(timeout: 5), "Accept marks the Task done")
+        let login = app.buttons["task-t-login1"]
+        for _ in 0..<3 where !login.exists { app.collectionViews["sidebar-list"].swipeUp() }
+        let done = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Done'"), object: login)
+        XCTAssertEqual(XCTWaiter.wait(for: [done], timeout: 5), .completed, "Accept marks the Task done")
     }
 
     /// Send needs a reply, and sends it as it is (ADR 0033 §4a.1).

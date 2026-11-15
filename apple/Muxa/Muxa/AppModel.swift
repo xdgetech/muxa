@@ -111,6 +111,9 @@ final class AppModel {
 
     /// What the sidebar shows, remembered on this device. Set it with `setMode`.
     var mode: SidebarMode
+    /// The folded workspace and repo groups of Tasks mode, by `foldKey` (ADR 0063).
+    /// Set them with `toggleFold`.
+    var foldedTaskGroups: Set<String>
     /// What the detail column shows: the sidebar's selection, or a pane.
     var detail: Detail?
     /// Pushed over `detail` in the detail column: a Routine, and on a phone the pane
@@ -147,6 +150,7 @@ final class AppModel {
 
     init() {
         mode = Self.launchMode()
+        foldedTaskGroups = Self.launchFolds()
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-demo") {
@@ -889,6 +893,9 @@ final class AppModel {
     var inbox: [InboxSection] {
         session.taskRecords.inbox(sessions: session.sessions, now: UInt64(Date().timeIntervalSince1970))
     }
+
+    /// Tasks mode's list: the Inbox's Tasks by workspace, then repo (ADR 0063).
+    var taskGroups: [WorkspaceTasks] { inbox.groupedByWorkspace(workspaces: session.workspaces) }
 
     /// Any Task, also one the list leaves out, so an item can still open it.
     func inboxItem(_ id: String) -> TaskItem? {

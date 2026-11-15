@@ -2,7 +2,8 @@ import MuxaProtocol
 import MuxaSession
 import SwiftUI
 
-/// A task's title, where it belongs, its agent's state with its age, and its loop.
+/// A task's title, its project, its agent's state with its age, and its loop. Its
+/// workspace and repo are the list's headings (ADR 0063).
 struct TaskRow: View {
     let item: TaskItem
 
@@ -10,7 +11,9 @@ struct TaskRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.record.title).font(.headline)
-                Text(TaskDetail.place(item.record)).font(.caption).foregroundStyle(.secondary)
+                if let project = item.record.project {
+                    Text(project).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {

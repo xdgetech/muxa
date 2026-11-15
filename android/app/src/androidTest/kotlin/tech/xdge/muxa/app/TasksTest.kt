@@ -117,9 +117,9 @@ class TasksTest {
         compose.waitUntilAtLeastOneExists(hasText("needs a newer muxa-bridge", substring = true), TIMEOUT)
         compose.onNodeWithTag("inbox-empty-tasks").performClick()
         waitForTag("task-list")
-        for (group in InboxGroup.entries) {
-            compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("inbox-${group.name}"))
-            waitForTag("inbox-${group.name}")
+        for (workspace in listOf("notes", "personal", "work")) {
+            compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-group-$workspace"))
+            waitForTag("task-group-$workspace")
         }
     }
 
@@ -204,17 +204,47 @@ class TasksTest {
     private fun waitForText(tag: String, text: String) =
         compose.waitUntilAtLeastOneExists(hasTestTag(tag) and hasText(text, substring = true), TIMEOUT)
 
+    /**
+     * Tasks group by workspace, then repo, with "No repo" last (ADR 0063). A workspace without
+     * repos has no repo header. A Task opens its pane.
+     */
     @Test
-    fun everyGroupShowsAndATaskOpensItsPane() {
+    fun tasksGroupByWorkspaceAndRepoAndATaskOpensItsPane() {
         openTasks()
+        val tags = listOf("task-group-notes", "task-group-personal", "task-group-work", "task-repo-work-app", "task-t-auth01",
+            "task-repo-work-docs", "task-repo-work-No repo")
         // The Routines sit above the groups, so the last group can start below the fold.
-        for (group in InboxGroup.entries) {
+        for (tag in tags) {
             waitForTag("task-list")
-            compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("inbox-${group.name}"))
-            waitForTag("inbox-${group.name}")
+            compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag(tag))
+            waitForTag(tag)
         }
+        compose.onNodeWithTag("task-repo-personal-No repo").assertDoesNotExist()
         openTask("t-login1")
         compose.waitUntilAtLeastOneExists(hasTestTag("pane") and paneShows("pane %5 100x30"), TIMEOUT)
+    }
+
+    /** A workspace and a repo fold, and stay folded in the next launch. */
+    @Test
+    fun taskGroupsFoldAndStayFolded() {
+        openTasks()
+        waitForTag("task-list")
+        compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-repo-work-app"))
+        compose.onNodeWithTag("task-repo-work-app").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("task-t-auth01"), TIMEOUT)
+        compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-group-personal"))
+        compose.onNodeWithTag("task-group-personal").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("task-t-lint01"), TIMEOUT)
+        compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-t-docs01"))
+
+        scenario?.close()
+        scenario = ActivityScenario.launch(demoIntent(SidebarMode.TASKS).putExtra(MainActivity.EXTRA_KEEP_FOLDS, true))
+        waitForTag("task-group-personal")
+        compose.onNodeWithTag("task-t-lint01").assertDoesNotExist()
+        compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-repo-work-app"))
+        compose.onNodeWithTag("task-t-auth01").assertDoesNotExist()
+        compose.onNodeWithTag("task-repo-work-app").performClick()
+        compose.onNodeWithTag("task-list").performScrollToNode(hasTestTag("task-t-auth01"))
     }
 
     @Test
