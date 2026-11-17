@@ -169,6 +169,13 @@ fn entry_line(e: &InboxEntry) -> String {
     out
 }
 
+/// Whether a Routine run has a Task, whose session `waiting` must look at.
+fn has_run_task(routines: &[RoutineInfo]) -> bool {
+    routines
+        .iter()
+        .any(|r| r.running.as_ref().is_some_and(|run| run.task.is_some()))
+}
+
 /// A Routine run whose agent waits on the user: its need shows in Inbox,
 /// though the run is not a Task (ADR 0026 section 3).
 fn waiting(routines: &[RoutineInfo], sessions: &[Session]) -> Vec<(String, String, String)> {
@@ -237,8 +244,12 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
         .filter(|i| crate::items::shown(i, all))
         .collect();
     let with_items = crate::items::has_items(conn);
-    let sessions = conn.list().await?;
-    let waits = waiting(&routines, &sessions);
+    // Listing sessions costs about 5 ms per session (docs/findings/inbox-performance.md).
+    let waits = if has_run_task(&routines) {
+        waiting(&routines, &conn.list().await?)
+    } else {
+        Vec::new()
+    };
     if as_json {
         let runs: Vec<_> = waits
             .iter()
@@ -329,11 +340,11 @@ pub async fn act(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use muxa_protocol::RoutineRun;
 
-    #[test]
-    fn a_name_in_two_workspaces_needs_its_workspace() {
-        let r = |w: &str| RoutineInfo {
-            workspace: w.into(),
+    fn routine(workspace: &str) -> RoutineInfo {
+        RoutineInfo {
+            workspace: workspace.into(),
             name: "Brief".into(),
             trigger: None,
             enabled: true,
@@ -343,7 +354,27 @@ mod tests {
             last_success: None,
             last_failure: None,
             running: None,
-        };
+        }
+    }
+
+    #[test]
+    fn only_a_run_with_a_task_needs_the_sessions() {
+        let idle = routine("a");
+        let mut starting = routine("a");
+        starting.running = Some(RoutineRun {
+            occurrence: "now-1".into(),
+            started_at: 1,
+            task: None,
+        });
+        let mut running = starting.clone();
+        running.running.as_mut().unwrap().task = Some("r-1".into());
+        assert!(!has_run_task(&[idle.clone(), starting]));
+        assert!(has_run_task(&[idle, running]));
+    }
+
+    #[test]
+    fn a_name_in_two_workspaces_needs_its_workspace() {
+        let r = routine;
         let one = [r("a")];
         assert_eq!(pick(&one, "Brief").unwrap().workspace, "a");
         let two = [r("a"), r("b")];
