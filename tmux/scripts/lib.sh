@@ -90,6 +90,21 @@ agents_run_dir() {
 }
 
 # The rows a sidebar's fzf shows, as last written by refresh.sh.
+# The pid file of this tmux server's Inbox poller (inbox.sh follow).
+inbox_follow_file() {
+  local pid
+  pid="$(t display-message -p '#{pid}' 2>/dev/null)" && [ -n "$pid" ] || return 1
+  printf '%s/inbox-follow-%s.pid' "$(agents_run_dir)" "$pid"
+}
+
+# Whether the poller of <pid file> runs. Builtins only: every sidebar asks
+# on each tick.
+inbox_follow_alive() {
+  local f="${1:-}" p
+  [ -n "$f" ] || f="$(inbox_follow_file)" || return 1
+  [ -s "$f" ] && IFS= read -r p <"$f" && [ -n "$p" ] && kill -0 "$p" 2>/dev/null
+}
+
 sidebar_rows_file() { printf '%s/sb-%s.rows' "$(agents_run_dir)" "${1#%}"; }
 
 agents_log_file() { printf '%s/agents.log' "$(agents_run_dir)"; }

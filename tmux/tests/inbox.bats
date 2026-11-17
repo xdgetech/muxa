@@ -154,6 +154,73 @@ shift_tab() { key Escape '[' Z; }
   [ "$(head -n 1 "$TMPDIR/bin/calls")" = "inbox --json" ]
 }
 
+@test "one Inbox poller runs per server, whatever the number of sidebars" {
+  fake_cli
+  tx set-option -g @agents_inbox_refresh 1
+  load_plugin
+  tx new-window -d -t base:
+  tx new-window -d -t base:
+  wait_for '[ "$(tx list-panes -a -F "#{@agents_sidebar_pane}" | grep -c "^1$")" -eq 3 ]'
+  pidfile="$(TMUX_AGENTS_SOCKET="$TMUX_AGENTS_SOCKET" bash -c ". '$ROOT/scripts/lib.sh'; inbox_follow_file")"
+  wait_for '[ -s "$pidfile" ]'
+  pid="$(cat "$pidfile")"
+  # A second poller sees the first and leaves at once.
+  run perl -e 'alarm 5; exec @ARGV' "$ROOT/scripts/inbox.sh" follow
+  [ "$status" -eq 0 ]
+  [ "$(cat "$pidfile")" = "$pid" ]
+  : >"$TMPDIR/bin/calls"
+  sleep 3.5
+  # About one fetch per second, not one per sidebar.
+  [ "$(wc -l <"$TMPDIR/bin/calls" | tr -d ' ')" -le 4 ]
+}
+
+@test "the Inbox poller stops when no sidebar is left" {
+  fake_cli
+  tx set-option -g @agents_inbox_refresh 1
+  load_plugin
+  wait_for '[ "$(tx list-panes -a -F "#{@agents_sidebar_pane}" | grep -c "^1$")" -eq 1 ]'
+  pidfile="$(TMUX_AGENTS_SOCKET="$TMUX_AGENTS_SOCKET" bash -c ". '$ROOT/scripts/lib.sh'; inbox_follow_file")"
+  wait_for '[ -s "$pidfile" ]'
+  pid="$(cat "$pidfile")"
+  "$ROOT/scripts/sidebar-toggle.sh" off
+  wait_for '! kill -0 "$pid" 2>/dev/null'
+  [ ! -e "$pidfile" ]
+}
+
+@test "the sidebar section is rendered once per Inbox list" {
+  fake_cli
+  inbox cache --force
+  first="$(inbox rows)"
+  mkdir -p "$TMPDIR/nojq"
+  printf '#!/bin/sh\necho jq >>"%s/jq-calls"\nexit 1\n' "$TMPDIR" >"$TMPDIR/nojq/jq"
+  chmod +x "$TMPDIR/nojq/jq"
+  [ "$(PATH="$TMPDIR/nojq:$PATH" "$ROOT/scripts/inbox.sh" rows)" = "$first" ]
+  [ ! -e "$TMPDIR/jq-calls" ]
+  # A new list is rendered again.
+  jq -c '.items |= .[1:]' "$ITEMS" >"$ITEMS.tmp" && mv "$ITEMS.tmp" "$ITEMS"
+  inbox cache --force
+  [ "$(inbox rows)" != "$first" ]
+}
+
+@test "the popup's previews are rendered once per list, as view shows them" {
+  inbox list "$ITEMS" >"$TMPDIR/rows"
+  inbox render "$ITEMS" "$TMPDIR/rows" "$TMPDIR/previews"
+  for id in $(cut -f1 "$TMPDIR/rows"); do
+    [ "$(cat "$TMPDIR/previews/$id")" = "$(inbox view "$id" "$ITEMS")" ]
+  done
+  [ "$(find "$TMPDIR/previews" -type f | wc -l | tr -d ' ')" = "$(wc -l <"$TMPDIR/rows" | tr -d ' ')" ]
+}
+
+@test "a rendered preview never names a file outside its folder" {
+  jq -c '.items[0].id = "../x" | .items[1].summary = "\u001e../y\nz"' "$ITEMS" >"$TMPDIR/bad.json"
+  inbox list "$TMPDIR/bad.json" >"$TMPDIR/rows"
+  mkdir "$TMPDIR/in"
+  inbox render "$TMPDIR/bad.json" "$TMPDIR/rows" "$TMPDIR/in/previews"
+  [ ! -e "$TMPDIR/x" ] && [ ! -e "$TMPDIR/in/x" ] && [ ! -e "$TMPDIR/in/y" ]
+  [ -z "$(find "$TMPDIR/in/previews" -name '*..*')" ]
+  [[ "$(cat "$TMPDIR/in/previews/$(sed -n 3p "$TMPDIR/rows" | cut -f1)")" == *"../y"* ]]
+}
+
 @test "prefix+T: a on an ask allows it" {
   fake_cli
   attach
