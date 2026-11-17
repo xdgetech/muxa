@@ -17,16 +17,22 @@ act="'$S/action.sh'"
 t set-option -p -t "$pane" @agents_sidebar_pane 1
 t set-option -p -t "$pane" @agents_sock "$sock"
 
+# The Inbox cache has one poller per tmux server, not one per sidebar: with a
+# sidebar in every window, per-sidebar polling grew with the windows
+# (docs/findings/inbox-performance.md). tmux runs it, so it outlives this pane.
+follow="$(inbox_follow_file)"
+follow_ensure() {
+  inbox_follow_alive "$follow" || t run-shell -b "'$S/inbox.sh' follow" 2>/dev/null
+}
+follow_ensure
 (
-  while sleep "$(opt @agents_refresh_fallback 10)"; do "$S/refresh.sh" "$pane"; done
+  while sleep "$(opt @agents_refresh_fallback 10)"; do
+    follow_ensure
+    "$S/refresh.sh" "$pane"
+  done
 ) &
 ticker=$!
-# The Inbox cache: every sidebar's loop asks, inbox.sh refreshes it once per interval.
-(
-  while :; do "$S/inbox.sh" cache; sleep "$(opt @agents_inbox_refresh 5)"; done
-) &
-inbox=$!
-trap 'kill "$ticker" "$inbox" 2>/dev/null; rm -f "$sock" "$rows"' EXIT
+trap 'kill "$ticker" 2>/dev/null; rm -f "$sock" "$rows"' EXIT
 
 # 1-9 go to the numbered task, like prefix + j then the number. Letters stay tree keys.
 jumps=""

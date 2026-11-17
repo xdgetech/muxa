@@ -360,8 +360,9 @@ apps show, with a goal and a status.
     task's session, `ctrl-d` marks it done and `ctrl-x` drops it.
 - The tree starts with the Inbox section: the count and the first open items
   (`@agents_inbox_rows`), with Routine briefings after every other item. `Enter` on a row opens that item in `prefix + T`.
-  The section reads a cache that one sidebar refreshes through `muxa-cli inbox
-  --json` every `@agents_inbox_refresh` seconds.
+  The section reads a cache that one poller per tmux server refreshes through
+  `muxa-cli inbox --json` every `@agents_inbox_refresh` seconds. The sidebars
+  start it, and it stops when no sidebar is left.
 - Without muxa-cli, or without a muxa workspace (`~/.config/muxa/workspaces.toml`),
   `prefix + N` makes a plain task as before.
 

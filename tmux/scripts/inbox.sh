@@ -35,7 +35,7 @@
 # opens that Task, and the Work menu sends to a Task's agent.
 # prefix + T lists sections under header rows (sec:<name>); Tab and Shift-Tab
 # move between headers, and Enter or space folds Routine.
-# Usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json>
+# Usage: inbox.sh cache [--force] | follow | rows | detail <target> | list <json> | view <id> <json>
 #        inbox.sh target <today row> <json>  (the item a Today row opens; none once closed)
 #        inbox.sh enter <today row> <json>  (what Enter does: session:<id> TAB <item> or focus:<id>)
 #        inbox.sh neighbor <today row> up|down <json>  (the open row a move swaps with)
@@ -62,12 +62,14 @@ INBOX_UNFOLDED_OPT=@agents_inbox_unfolded
 muxa() { "$S/muxa.sh" cli "$@"; }
 
 mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+inode() { stat -f %i "$1" 2>/dev/null || stat -c %i "$1" 2>/dev/null || echo 0; }
 
 # Refreshes the cache when it is older than @agents_inbox_refresh seconds, or
 # with --force. One refresh runs at a time. A changed Inbox reloads the sidebars.
 cache() {
   local every lock tmp changed=0
-  "$S/muxa.sh" available || return 0
+  # rows trusts the cache, so a muxa that went away takes it along.
+  "$S/muxa.sh" available || { rm -f "$CACHE"; return 0; }
   every="$(opt @agents_inbox_refresh 5)"
   if [ "${1:-}" != --force ] && [ -f "$CACHE" ] &&
     [ $(($(date +%s) - $(mtime "$CACHE"))) -lt "$every" ]; then
@@ -96,6 +98,25 @@ cache() {
   rmdir "$lock" 2>/dev/null
   [ "$changed" = 1 ] && "$S/refresh.sh" </dev/null >/dev/null 2>&1 &
   return 0
+}
+
+# One poller per tmux server keeps the cache fresh while a sidebar shows it.
+# Sidebars start it (sidebar.sh); a second one exits at once. It stops with
+# the server, or when no sidebar is left.
+follow() {
+  local pidfile
+  pidfile="$(inbox_follow_file)" || return 1
+  if ! mkdir "$pidfile.lock" 2>/dev/null; then return 0; fi
+  if inbox_follow_alive; then rmdir "$pidfile.lock"; return 0; fi
+  echo $$ >"$pidfile"
+  rmdir "$pidfile.lock"
+  # shellcheck disable=SC2064  # the path now: pidfile is local
+  trap "rm -f '$pidfile'" EXIT
+  while t list-panes -a -F '#{@agents_sidebar_pane}' 2>/dev/null | grep -qx 1; do
+    cache
+    touch "$pidfile"
+    sleep "$(opt @agents_inbox_refresh 5)"
+  done
 }
 
 # jq with the icons and what an item shows, shared by every view below.
@@ -307,11 +328,30 @@ JQ_DEFS='
 '
 
 # The sidebar's section: a heading row, then the first open items, Routine
-# briefings after every other item.
+# briefings after every other item. Every sidebar's tree asks for it on each
+# refresh, so it is rendered once per cache file and row count: its first line
+# is the cache's inode (a new cache is a new file) and @agents_inbox_rows.
 rows() {
+  local max key saved tmp line
   [ -s "$CACHE" ] || return 0
-  "$S/muxa.sh" available || return 0
-  iq -r --argjson max "$(opt @agents_inbox_rows 3)" "$JQ_DEFS"'
+  [ "$(opt @agents_muxa auto)" != off ] || return 0
+  max="$(opt @agents_inbox_rows 3)"
+  key="$(inode "$CACHE") $max"
+  saved="$CACHE.rows"
+  if [ -f "$saved" ] && IFS= read -r line <"$saved" && [ "$line" = "$key" ]; then
+    tail -n +2 "$saved"
+    return 0
+  fi
+  tmp="$(mktemp "$saved.XXXXXX")" || return 1
+  if ! { echo "$key"; render_rows "$max"; } >"$tmp" || ! mv "$tmp" "$saved"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  tail -n +2 "$saved"
+}
+
+render_rows() {
+  iq -r --argjson max "$1" "$JQ_DEFS"'
     select((.work // 0) >= 3) | [.items[] | select(.state == "open")] |
     (map(select(.kind != "briefing")) + map(select(.kind == "briefing"))) as $open |
     "I:\t\u001b[1mInbox\u001b[0m" + (if ($open | length) > 0 then " \($open | length)" else "\u001b[2m · nothing needs you\u001b[0m" end),
@@ -375,14 +415,13 @@ list() {
 }
 
 # A section header's preview: what the section holds.
-view_section() {
-  case "$1" in
-    sec:decisions) echo "Items that need your answer: reviews, failures, permissions and proposals." ;;
-    sec:work) echo "Open Work items. A new result is a result item in Decisions." ;;
-    sec:routine) echo "Routine reports. Enter or space unfolds or folds them." ;;
-    sec:unsorted) echo "Captures not sorted into a Work item yet." ;;
-  esac
-}
+JQ_VIEW_SECTION='
+  def view_section($id): {
+    "sec:decisions": "Items that need your answer: reviews, failures, permissions and proposals.",
+    "sec:work": "Open Work items. A new result is a result item in Decisions.",
+    "sec:routine": "Routine reports. Enter or space unfolds or folds them.",
+    "sec:unsorted": "Captures not sorted into a Work item yet."}[$id] // empty;'
+view_section() { jq -nr --arg id "$1" "$JQ_VIEW_SECTION"'view_section($id)'; }
 
 # The fzf action for Tab (next) or Shift-Tab (prev) on row <n>, fzf's 0-based
 # {n}: pos() of the next or previous of <headers>, the header rows' 1-based
@@ -425,8 +464,8 @@ toggle_fold() {
 
 # A Work item: its title, state, links, its newest request and Result
 # summary, and its keys.
-view_work() {
-  iq -r --arg item "$1" "$JQ_DEFS"'
+JQ_VIEW_WORK='
+  def view_work($item):
     ((.work // 0) >= 10) as $pins | (.requests // []) as $reqs | ([secretary][0] // null) as $secretary |
     .workItems[]? | select(.id == $item) |
     (.requests // []) as $mine |
@@ -444,14 +483,13 @@ view_work() {
      else empty end),
     "",
     "Enter  Actions   n Start a Task   l Later   d Complete   a Ask Assistant\(if $pins then "   P \(if .pinnedAt then "Unpin" else "Pin" end)" else "" end)\(if $secretary != null then "   s Send to the secretary" else "" end)",
-    "\u001b[2m\(copy_hint)q close\u001b[0m"
-  ' "$2"
-}
+    "\u001b[2m\(copy_hint)q close\u001b[0m";'
+view_work() { iq -r --arg item "$1" "$JQ_DEFS$JQ_VIEW_WORK"'view_work($item)' "$2"; }
 
 # A Today row: the plan's reason, next step, minutes and basis; the heading:
 # how planning went; the Due soon line: the items moved down that are due.
-view_today() {
-  iq -r --arg row "${1#today:}" "$JQ_DEFS"'
+JQ_VIEW_TODAY='
+  def view_today($row):
     . as $root | ((.work // 0) >= 11) as $memory |
     if $row == "" then
       "☀ \u001b[1mToday\u001b[0m", "\u001b[2m\(plan_status)\u001b[0m", "",
@@ -492,13 +530,12 @@ view_today() {
       (if (.missing // []) | length > 0 then "", "\u001b[1mWould help\u001b[0m", (.missing[] | "  \(plain)")
        else empty end)
     end,
-    "\u001b[2mq close\u001b[0m"
-  ' "$2"
-}
+    "\u001b[2mq close\u001b[0m";'
+view_today() { iq -r --arg row "${1#today:}" "$JQ_DEFS$JQ_VIEW_TODAY"'view_today($row)' "$2"; }
 
 # An unsorted Capture: the whole text, and what sorting it does.
-view_capture() {
-  iq -r --arg item "$1" "$JQ_DEFS"'
+JQ_VIEW_CAPTURE='
+  def view_capture($item):
     .captures[]? | select(.id == $item) |
     "✎ \u001b[1mUnsorted\u001b[0m",
     "\u001b[2m\(age)\(if .workspace then " · \(.workspace)" else "" end)\u001b[0m",
@@ -506,20 +543,13 @@ view_capture() {
     (.text | plain),
     "",
     "w New Work item   n Keep as note",
-    "\u001b[2mspace/b scroll   \(copy_hint)q close\u001b[0m"
-  ' "$2"
-}
+    "\u001b[2mspace/b scroll   \(copy_hint)q close\u001b[0m";'
+view_capture() { iq -r --arg item "$1" "$JQ_DEFS$JQ_VIEW_CAPTURE"'view_capture($item)' "$2"; }
 
 # The preview of one item: question, summary, evidence, options, then the
 # keys: triage on one line, answers on the next.
-view() {
-  case "$1" in
-    w-*) view_work "$@"; return ;;
-    c-*) view_capture "$@"; return ;;
-    today:*) view_today "$@"; return ;;
-    sec:*) view_section "$1"; return ;;
-  esac
-  iq -r --arg item "$1" "$JQ_DEFS"'
+JQ_VIEW_ITEM='
+  def view_item($item):
     (.work // 0) as $w | (.requests // []) as $reqs | .items[] | select(.id == $item) | . as $i |
     "\(icon) \u001b[1m\(.question)\u001b[0m",
     "\u001b[2m\(.title) · \(.workspace) · \(age)\(if .readAt then "" else " · unread" end)\(if .protectedAt then " · protected" else "" end)\u001b[0m",
@@ -565,8 +595,64 @@ view() {
       (if .session then ["o Open Session"] elif .task and (.kind | IN("result", "new-task", "write")) then ["o Open its Task"] else [] end) | select(length > 0) | join("   ")),
     ([keymap[] | select(.group == "answer") | . as $k | "\($k.key) \($i | answer_label($k.act))"]
       | select(length > 0) | join("   ")),
-    "\u001b[2mspace/b scroll   \(copy_hint)v read all   \(if $w >= 8 then "D delete old   " else "" end)q close\u001b[0m"
-  ' "$2"
+    "\u001b[2mspace/b scroll   \(copy_hint)v read all   \(if $w >= 8 then "D delete old   " else "" end)q close\u001b[0m";'
+view() {
+  case "$1" in
+    w-*) view_work "$@"; return ;;
+    c-*) view_capture "$@"; return ;;
+    today:*) view_today "$@"; return ;;
+    sec:*) view_section "$1"; return ;;
+  esac
+  iq -r --arg item "$1" "$JQ_DEFS$JQ_VIEW_ITEM"'view_item($item)' "$2"
+}
+
+# Every listed row's preview in one jq run, one file per row in <dir>, so
+# fzf's preview only reads a file: a bash and jq start per cursor move cost
+# about 50 ms (docs/findings/inbox-performance.md). Item text loses its RS
+# bytes, so only the row markers start with one; ids that are not plain
+# names get no file and fall back to view.
+render() {
+  local json="$1" rows="$2" dir="$3" tmp
+  tmp="$(mktemp -d "$dir.XXXXXX")" || return 1
+  iq -r --arg ids "$(cut -f1 "$rows")" \
+    "$JQ_DEFS$JQ_VIEW_WORK$JQ_VIEW_TODAY$JQ_VIEW_CAPTURE$JQ_VIEW_ITEM$JQ_VIEW_SECTION"'
+    def preview($id):
+      if $id | startswith("w-") then view_work($id)
+      elif $id | startswith("c-") then view_capture($id)
+      elif $id | startswith("today:") then view_today($id[6:])
+      elif $id | startswith("sec:") then view_section($id)
+      else view_item($id) end;
+    ($ids | split("\n")[] | select(test("^[A-Za-z0-9:_-]+$"))) as $id |
+    "\u001e\($id)", (preview($id) | gsub("\u001e"; ""))
+  ' "$json" | awk -v dir="$tmp" '
+    index($0, "\036") == 1 {
+      if (f != "") close(f)
+      f = dir "/" substr($0, 2)
+      printf "" >f
+      next
+    }
+    f != "" { print >f }' || { rm -rf "$tmp"; return 1; }
+  rm -rf "$dir.old"
+  if [ -d "$dir" ]; then mv "$dir" "$dir.old"; fi
+  mv "$tmp" "$dir"
+  rm -rf "$dir.old"
+}
+
+# The rows fzf shows for <json>: the saved ones of ui, else listed now.
+listed() {
+  if [ -f "$1.rows" ]; then cat "$1.rows"; else list "$1"; fi
+}
+
+# Lists <json> into its saved rows and previews, then prints the rows.
+relisted() {
+  local json="$1" tmp
+  tmp="$(mktemp "$json.rows.XXXXXX")" || return 1
+  if ! list "$json" >"$tmp" || ! mv "$tmp" "$json.rows"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  render "$json" "$json.rows" "$json.d" || log "the Inbox previews could not be rendered"
+  cat "$json.rows"
 }
 
 # What a key does for an item: an action, choose:<n>, open:<n>, or nothing.
@@ -1119,12 +1205,12 @@ relist() {
   local json="$1" tmp
   tmp="$(mktemp "$json.XXXXXX")" || return 1
   if muxa inbox --json </dev/null >"$tmp" 2>/dev/null; then mv "$tmp" "$json"; else rm -f "$tmp"; fi
-  list "$json"
+  relisted "$json"
 }
 
 # The header rows' 1-based numbers, for Tab and Shift-Tab after a reload.
 heads() {
-  list "$1" | awk -F'\t' '$1 == "today:" || $1 ~ /^sec:/ { printf "%s ", NR }'
+  listed "$1" | awk -F'\t' '$1 == "today:" || $1 ~ /^sec:/ { printf "%s ", NR }'
 }
 
 # Where the cursor goes after a reload: the fzf action for the rows of <json>,
@@ -1137,7 +1223,7 @@ place() {
   local state="$1" json="$2" id row mode
   IFS=$'\037' read -r id row mode <"$state" 2>/dev/null || { id=""; row=1; mode=keep; }
   [ "$mode" != quit ] || { echo abort; return 0; }
-  list "$json" | awk -F'\t' -v id="$id" -v row="${row:-1}" -v mode="${mode:-keep}" '
+  listed "$json" | awk -F'\t' -v id="$id" -v row="${row:-1}" -v mode="${mode:-keep}" '
     { ids[NR] = $1 }
     mode != "next" && $1 == id { found = NR }
     END {
@@ -1184,7 +1270,7 @@ open_row() {
         target="$(today_target "$id" "$json")"
       fi
       # Moves to the row of the target; a target not listed stays put.
-      if [ -n "$target" ] && list "$json" | cut -f1 | grep -qxF -- "$target"; then
+      if [ -n "$target" ] && listed "$json" | cut -f1 | grep -qxF -- "$target"; then
         FOCUS="$target"
       fi
       ;;
@@ -1264,7 +1350,7 @@ ui() {
   local client="$1" focus="${2:-}" json state self rows bind k keys
   json="$(agents_run_dir)/inbox-ui-$$.json"
   state="$(agents_run_dir)/inbox-ui-$$.state"
-  trap 'rm -f "$json" "$state"' EXIT
+  trap 'rm -rf "$json" "$json.rows" "$json.d" "$state"' EXIT
   self="'$S/inbox.sh'"
   keys="enter o a c d s r x l n w v p P t K J y Y D 1 2 3 4 5 6 7 8 9"
   while :; do
@@ -1277,7 +1363,7 @@ ui() {
     if [ "$(jq -r '.work // 0' "$json")" -lt 3 ]; then
       exec "$S/muxa.sh" inbox-ui "$client"
     fi
-    rows="$(list "$json")"
+    rows="$(relisted "$json")"
     if [ -z "$rows" ]; then
       echo "Nothing needs you."
       sleep 1.5
@@ -1291,7 +1377,7 @@ ui() {
     # --sync so the first load's place lands after the rows load.
     printf '%s\n' "$rows" | fzf --sync --ansi --no-input --delimiter '\t' --with-nth 2 --no-sort \
       --layout reverse --info hidden --pointer '▌' --highlight-line \
-      --preview "$self view {1} '$json'" --preview-window "down,70%,$(preview_wrap),border-top" \
+      --preview "cat '$json.d'/{1} 2>/dev/null || $self view {1} '$json'" --preview-window "down,70%,$(preview_wrap),border-top" \
       --bind "load:transform($self place '$state' '$json')" \
       --bind 'j:down,k:up,q:abort' \
       --bind "ctrl-r:execute-silent($self act {1} {n} ctrl-r '$json' '$state')+reload-sync($self relist '$json')" \
@@ -1301,7 +1387,7 @@ ui() {
       --bind 'b:preview-page-up,shift-down:preview-down,shift-up:preview-up' \
       --bind "$bind" >/dev/null
     # place aborts when the list is empty: say so, as on the first listing.
-    if IFS=$'\037' read -r _ _ k <"$state" && [ "$k" != quit ] && [ -z "$(list "$json")" ]; then
+    if IFS=$'\037' read -r _ _ k <"$state" && [ "$k" != quit ] && [ -z "$(listed "$json")" ]; then
       focus=""
       continue
     fi
@@ -1312,6 +1398,7 @@ ui() {
 
 case "${1:-}" in
   cache) cache "${2:-}" ;;
+  follow) follow ;;
   rows) rows ;;
   detail) detail "${2:?target}" ;;
   list) list "${2:?json}" ;;
@@ -1329,7 +1416,8 @@ case "${1:-}" in
   ui) tty_utf8; ui "${2:?client}" "${3:-}" ;;
   act) act "${2:?id}" "${3:?row}" "${4:?key}" "${5:?json}" "${6:?state}" "${7:-}" ;;
   relist) relist "${2:?json}" ;;
+  render) render "${2:?json}" "${3:?rows}" "${4:?dir}" ;;
   place) place "${2:?state}" "${3:?json}" ;;
   jump-in) jump "${2:?next or prev}" "${3:?row}" "$(heads "${4:?json}")" ;;
-  *) echo "usage: inbox.sh cache [--force] | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | jump next|prev <row> <header rows> | enter <today row> <json> | urls <id> <json> | actions <work id> <json> [tasks json] | space <id> | ui <client> [item id] | act <id> <row> <key> <json> <state> <client> | relist <json> | place <state> <json> | jump-in next|prev <row> <json>" >&2; exit 2 ;;
+  *) echo "usage: inbox.sh cache [--force] | follow | rows | detail <target> | list <json> | view <id> <json> | target <today row> <json> | key <id> <key> <json> | order <today row> up|down <json> | worker <work id> <json> | jump next|prev <row> <header rows> | enter <today row> <json> | urls <id> <json> | actions <work id> <json> [tasks json] | space <id> | ui <client> [item id] | act <id> <row> <key> <json> <state> <client> | relist <json> | render <json> <rows> <dir> | place <state> <json> | jump-in next|prev <row> <json>" >&2; exit 2 ;;
 esac
