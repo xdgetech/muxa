@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use muxa_tmux::{Client, Device, Grid, Options, PaneId, Screen, SessionId, WindowId};
 
+use crate::kept_history::KeptHistories;
 use crate::viewport::{Fit, Next, Seen};
 
 /// The layout counts as settled after this long without a new snapshot.
@@ -38,10 +39,12 @@ pub struct Sizer {
     /// (settled at, at the latest)
     settle: Option<(Instant, Instant)>,
     begin_on_land: bool,
+    /// Scrollback read before each resize: the resize may make an agent clear it.
+    kept: KeptHistories,
 }
 
 impl Sizer {
-    pub fn new(opts: Options) -> Self {
+    pub fn new(opts: Options, kept: KeptHistories) -> Self {
         Self {
             opts,
             owner: std::process::id(),
@@ -54,6 +57,7 @@ impl Sizer {
             fit: None,
             settle: None,
             begin_on_land: false,
+            kept,
         }
     }
 
@@ -171,6 +175,7 @@ impl Sizer {
         let Some(device) = self.device.take() else {
             return;
         };
+        self.kept.keep_window(client, device.window()).await;
         let (session, window) = (device.session(), device.window());
         match timed(device.close(client, held)).await {
             Ok(()) => tracing::info!(%session, %window, "device session closed"),
@@ -197,6 +202,7 @@ impl Sizer {
                 return;
             }
         }
+        self.kept.keep_window(client, target.window).await;
         let Some(device) = self.device_for(client, target).await else {
             return;
         };

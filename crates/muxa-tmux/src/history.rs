@@ -4,7 +4,7 @@
 use crate::client::Client;
 use crate::escape::quote;
 use crate::parser::Reply;
-use crate::{Error, PaneId};
+use crate::{Error, PaneId, WindowId};
 
 /// Lines `cols` wide, oldest first, each ending in `\n`, with their colors as
 /// escape sequences (`capture-pane -e`).
@@ -54,6 +54,21 @@ fn newest_lines(lines: &[Vec<u8>], max: usize) -> (Vec<u8>, bool) {
         data.push(b'\n');
     }
     (data, first > 0)
+}
+
+/// The panes of `window`, whose scrollback a resize may clear.
+pub async fn window_panes(client: &Client, window: WindowId) -> Result<Vec<PaneId>, Error> {
+    let reply = client
+        .command(&format!(
+            "list-panes -t {window} -F {}",
+            quote("#{pane_id}")
+        ))
+        .await?;
+    reply
+        .lines
+        .iter()
+        .map(|l| String::from_utf8_lossy(l).parse::<PaneId>())
+        .collect()
 }
 
 pub(crate) fn history_line(pane: PaneId, lines: u32) -> String {

@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-tmux-plugin test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-tmux-plugin test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
@@ -120,6 +120,11 @@ test-app:
 # The same UI test on an iPhone.
 test-app-iphone:
 	python3 scripts/ios-simulator.py run iphone -- bash scripts/test-app.sh
+
+# RealTmuxTests: the app against the real bridge on a throwaway tmux server.
+MUXA_QA_SIM ?= iphone
+test-app-tmux:
+	python3 scripts/ios-simulator.py run $(MUXA_QA_SIM) -- bash scripts/test-app-tmux.sh
 
 # Renders the icon from apple/Muxa/Art/app-icon.swift: iOS's light, dark and tinted images,
 # Android's adaptive icon layers, and Play's store icon and feature graphic.

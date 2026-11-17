@@ -31,6 +31,10 @@ final class AppModel {
     /// The in-app demo bridge instead of SSH: Try the Demo, or the UI tests' launch
     /// argument `-demo` (DEBUG only).
     private(set) var demo = false
+    #if DEBUG
+    /// A real bridge behind a local TCP relay instead of SSH: `-bridge-port` (`make test-app-tmux`).
+    private var bridgePort: UInt16?
+    #endif
     /// The user started the demo, so the sidebar offers to leave it. The UI tests' launch
     /// argument starts it for good.
     private(set) var canLeaveDemo = false
@@ -167,6 +171,18 @@ final class AppModel {
             seenResults = savedSeen
             return
         }
+        if let index = arguments.firstIndex(of: "-bridge-port"), index + 1 < arguments.count,
+            let port = UInt16(arguments[index + 1])
+        {
+            bridgePort = port
+            (hosts, _) = Self.demoHosts(Host(name: "tmux test", target: SSHTarget(host: "127.0.0.1", user: "test")))
+            savedHosts = HostStore(file: nil)
+            savedUnsent = UnsentCaptures(file: nil)
+            unsent = savedUnsent
+            savedSeen = SeenResults(file: nil)
+            seenResults = savedSeen
+            return
+        }
         // The Try the Demo test starts from no hosts, whatever the simulator saved.
         if arguments.contains("-no-saved-hosts") {
             savedHosts = HostStore(file: nil)
@@ -281,6 +297,9 @@ final class AppModel {
 
     private func open(_ host: Host) async throws -> any BridgeChannel {
         if demo, host.id == demoHostID { return DemoBridge(content: demoContent, alerts: demoAlerts) }
+        #if DEBUG
+        if let bridgePort { return try await TCPBridge(port: bridgePort) }
+        #endif
         return try await SSHBridge.connect(to: host.target, key: ClientKeyStore.loadOrCreate())
     }
 

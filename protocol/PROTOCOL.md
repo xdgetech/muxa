@@ -719,6 +719,7 @@ A bridge with `work` level 2 starts ask sessions: the workspace's agent in a rep
   1. `history.data` (base64) is lines `cols` wide, oldest first, each ending in `\n`, with colors as escape sequences. It is at most 8 MiB: the oldest lines go first. Feed it to a separate emulator `cols` wide with a scrollback, turning each `\n` into `\r\n`. It is not for the watch's emulator.
   2. `truncated: true` says the pane keeps older lines than were sent, also when the size limit left some out.
   3. Reading it changes nothing in the pane: no copy mode, no scroll position. While a program shows the alternate screen, the scrollback is the primary screen's.
+  4. Before the bridge resizes a window for the device, it reads the scrollback of the window's panes. A resize can make an agent clear tmux's history (CSI 3J). Then `history` sends those earlier lines first, then what tmux keeps now (ADR 0063).
 - Bytes the emulator would send back to the host must be dropped: replies to device-attribute or cursor-position queries. tmux answers those itself.
 
 ## Versioning

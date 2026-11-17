@@ -39,6 +39,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
 | `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the app, or run its UI tests on an iPad against the in-app demo bridge (`MUXA_SIM` picks the simulator). |
 | `make test-app-iphone` | the same UI tests on an iPhone (`MUXA_SIM_IPHONE`). |
+| `make test-app-tmux` | `RealTmuxTests`: the app (launch argument `-bridge-port`, DEBUG) against the real bridge on a throwaway tmux server, through a loopback relay. `MUXA_QA_SIM=ipad-mini` picks the iPad. |
 | `make test-android` | the Android client's JVM tests: protocol fixtures, scenario replay on JediTerm, the session, the layout. Uses Android Studio's JDK when `JAVA_HOME` is unset. |
 | `make test-android-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |
 | `make test-android-release` | the minified release build (full R8, ADR 0030) connects over SSH to a throwaway host on 127.0.0.1 and shows a pane. Boots a read-only `Pixel_10a` emulator (`MUXA_AVD`) unless `ANDROID_SERIAL` names one. |

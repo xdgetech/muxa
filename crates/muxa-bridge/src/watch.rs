@@ -101,6 +101,7 @@ impl Watcher {
         out: mpsc::Sender<Message>,
         notes: Notifications,
         commands: mpsc::Receiver<Command>,
+        kept: crate::kept_history::KeptHistories,
     ) -> Self {
         let (sync_tx, sync_rx) = mpsc::channel(4);
         Self {
@@ -115,7 +116,7 @@ impl Watcher {
             sync_rx,
             list_changed: false,
             check_device: false,
-            sizer: Sizer::new(opts),
+            sizer: Sizer::new(opts, kept),
         }
     }
 

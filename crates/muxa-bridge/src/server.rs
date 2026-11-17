@@ -14,6 +14,7 @@ use crate::changes::{self, ChangeTask};
 use crate::chat::{self, ChatTask};
 use crate::convert::{self, error_body};
 use crate::docs::{self, DocTask, ImageTask};
+use crate::kept_history::KeptHistories;
 use crate::lines::{self, Line};
 use crate::task_records;
 use crate::tasks::{self, TaskError};
@@ -147,6 +148,7 @@ where
 
     let (cmd_tx, cmd_rx) = mpsc::channel(8);
     let stop_watch = cmd_tx.clone();
+    let kept = KeptHistories::default();
     let mut watcher = tokio::spawn(
         Watcher::new(
             Arc::clone(&client),
@@ -154,6 +156,7 @@ where
             out.clone(),
             notes,
             cmd_rx,
+            kept.clone(),
         )
         .run(),
     );
@@ -219,6 +222,7 @@ where
         records: Arc::clone(&config.records),
         daemon_dir: config.daemon_dir.clone(),
         pending: pending.clone(),
+        kept,
     };
 
     let end = tokio::select! {
@@ -339,6 +343,7 @@ struct Worker {
     records: Arc<task_records::Config>,
     daemon_dir: Option<std::path::PathBuf>,
     pending: task_records::Pending,
+    kept: KeptHistories,
 }
 
 impl Worker {
@@ -834,12 +839,13 @@ impl Worker {
         let history = timed(muxa_tmux::history(&self.client, pane, lines))
             .await
             .map_err(|e| convert::error(&e))?;
+        let (data, cut) = self.kept.complete(pane, &history.data);
         let msg = Message::History {
             history: id,
             pane: pane.to_string(),
             cols: history.cols,
-            data: history.data,
-            truncated: history.truncated,
+            data,
+            truncated: history.truncated || cut,
         };
         self.out
             .send(msg)

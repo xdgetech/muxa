@@ -126,3 +126,67 @@ async fn lines_out_of_range_and_bad_panes_are_refused() {
         assert_eq!(e.code, code);
     }
 }
+
+/// The device's size redraws an agent that clears tmux's history (CSI 3J): the
+/// reply still holds the rows the agent printed before.
+#[tokio::test]
+async fn history_keeps_what_an_agent_cleared_when_the_device_resized_it() {
+    let server = Server::start();
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scripts/lib/clearing-agent.sh"
+    );
+    server.tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        "agent",
+        "-x",
+        "80",
+        "-y",
+        "24",
+        script,
+    ]);
+    let pane = server.pane("agent");
+    let history_size = || {
+        server
+            .tmux(&["display-message", "-p", "-t", &pane, "#{history_size}"])
+            .parse::<u32>()
+            .unwrap_or(0)
+    };
+    common::wait_until(|| history_size() >= 400).await;
+    let (mut bridge, _) = Bridge::start(&server, &[]).await;
+    let reply = bridge
+        .request(json!({"type": "viewport", "cols": 60, "rows": 20}))
+        .await;
+    assert!(
+        matches!(reply, Message::Result { error: None, .. }),
+        "{reply:?}"
+    );
+    bridge.request(json!({"type": "watch", "pane": pane})).await;
+    // The resize reached the agent, and its redraw cleared tmux's history.
+    common::wait_until(|| history_size() < 400).await;
+    while bridge.event(Duration::from_millis(300)).await.is_some() {}
+
+    let result = bridge
+        .request(json!({"type": "history", "pane": pane}))
+        .await;
+    assert!(
+        matches!(result, Message::Result { error: None, .. }),
+        "{result:?}"
+    );
+    let mut data = None;
+    while let Some(m) = bridge.event(Duration::from_millis(500)).await {
+        if let Message::History { data: d, .. } = m {
+            data = Some(String::from_utf8_lossy(&d).into_owned());
+            break;
+        }
+    }
+    let text = data.expect("no history message");
+    assert!(text.contains("agent 001\n"), "the cleared rows are gone");
+    assert!(text.contains("agent 500\n"));
+    assert!(
+        text.contains("agent redrawn"),
+        "and the screen after the redraw"
+    );
+}

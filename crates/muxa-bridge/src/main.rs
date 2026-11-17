@@ -10,6 +10,7 @@ mod convert;
 mod daemon;
 mod docs;
 mod items;
+mod kept_history;
 mod lines;
 mod loops;
 mod records;

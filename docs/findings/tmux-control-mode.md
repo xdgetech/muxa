@@ -57,6 +57,7 @@ Before ADR 0020, `refresh-client -C` was rejected as a workaround for narrow-cli
 | While a program uses the alternate screen, `capture-pane` shows the alternate screen and `capture-pane -a` shows the primary one. | `scripts/repro/alt-capture.sh` |
 | `capture-pane -p` without `-e` prints the screen as plain text, with no color escapes. `-J` joins a line the terminal wrapped. `screen_shows` relies on this to look for a fixed text, such as Claude Code's trust dialog. | `scripts/repro/screen-text.sh` |
 | On a control client, `capture-pane -p -e -S -<n>` sends the last `n` scrollback lines, then the screen, with raw escape bytes for colors. The pane stays out of copy mode. `history_size` counts the lines the pane keeps. The `history` request relies on this. | `scripts/repro/history-capture.sh` |
+| A program that prints CSI 3J makes tmux drop the pane's whole history (`history_size` falls to 0). Agent UIs print it when they redraw after a resize, so sizing a window for a device can clear its panes' scrollback. The bridge reads it first (ADR 0063). | `scripts/repro/clear-history.sh` |
 
 ## Commands
 
