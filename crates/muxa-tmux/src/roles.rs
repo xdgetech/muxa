@@ -56,6 +56,7 @@ pub(crate) fn assign(panes: &mut [Pane], tags: &[PaneTags]) {
     }
     for idx in windows.values() {
         infer_legacy_agent(panes, tags, idx);
+        untagged_neighbours_are_shells(panes, idx);
     }
     for (pane, t) in panes.iter_mut().zip(tags) {
         if pane.role == Role::Agent {
@@ -72,8 +73,7 @@ pub(crate) fn assign(panes: &mut [Pane], tags: &[PaneTags]) {
 }
 
 /// A window with no agent pane tagged: the pane where an agent hook ran is the
-/// agent (the newest, when hooks ran in several), and its untagged
-/// neighbours are shells.
+/// agent (the newest, when hooks ran in several).
 fn infer_legacy_agent(panes: &mut [Pane], tags: &[PaneTags], idx: &[usize]) {
     if idx.iter().any(|&i| panes[i].role == Role::Agent) {
         return;
@@ -84,8 +84,17 @@ fn infer_legacy_agent(panes: &mut [Pane], tags: &[PaneTags], idx: &[usize]) {
         .filter(|&i| panes[i].role == Role::Unknown)
         .filter(|&i| tags[i].agent_session_id.is_some() || tags[i].agent_state.is_some())
         .max_by_key(|&i| tags[i].agent_state_at.unwrap_or(0));
-    let Some(agent) = candidate else { return };
-    panes[agent].role = Role::Agent;
+    if let Some(agent) = candidate {
+        panes[agent].role = Role::Agent;
+    }
+}
+
+/// In a window with an agent, the untagged panes are its shells. The built-in
+/// launcher tags only the agent, and a pane split beside it has no tag.
+fn untagged_neighbours_are_shells(panes: &mut [Pane], idx: &[usize]) {
+    if !idx.iter().any(|&i| panes[i].role == Role::Agent) {
+        return;
+    }
     for &i in idx {
         if panes[i].role == Role::Unknown {
             panes[i].role = Role::Shell;
@@ -170,6 +179,33 @@ mod tests {
             })
         );
         assert_eq!(panes[2].agent, None);
+    }
+
+    #[test]
+    fn a_pane_beside_a_tagged_agent_is_its_shell() {
+        let mut panes = vec![
+            pane(1, 1, "bash"),
+            pane(2, 1, "2.1.0"),
+            pane(3, 1, "zsh"),
+            pane(4, 2, "zsh"),
+        ];
+        let tags = vec![
+            PaneTags {
+                sidebar: true,
+                ..Default::default()
+            },
+            PaneTags {
+                muxa_role: Some("agent".into()),
+                ..Default::default()
+            },
+            PaneTags::default(),
+            PaneTags::default(),
+        ];
+        assign(&mut panes, &tags);
+        assert_eq!(
+            roles(&panes),
+            vec![Role::Hidden, Role::Agent, Role::Shell, Role::Unknown]
+        );
     }
 
     #[test]
