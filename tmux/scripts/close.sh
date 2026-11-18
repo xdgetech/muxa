@@ -99,23 +99,31 @@ t list-windows -a -F "#{session_id}${TAB}#{window_id}${TAB}#{@muxa_device}" 2>/d
     t kill-session -t "$device"
   done
 
-t kill-session -t "=$s" || die "could not close $s"
+# After the worktree is gone: muxa checks a worktree it finds for lost work
+# again, and would refuse what this script or the user already decided.
 # The session is gone either way, so a muxa failure is reported, not fatal.
-if [ -n "$task_status" ] && [ -n "$task" ]; then
+mark_task() {
+  [ -n "$task_status" ] && [ -n "$task" ] || return 0
   "$AGENTS_SCRIPTS/muxa.sh" close-task "$task" "$task_status" 2>/dev/null \
     || say "closed $s, but muxa could not mark its Task $task_status. Details: $(agents_log_file)"
-fi
+}
+
+t kill-session -t "=$s" || die "could not close $s"
 [ -n "$wt" ] && [ -d "$wt" ] && "$AGENTS_SCRIPTS/stop-worktree.sh" "$wt"
 if [ "$remove_wt" = 1 ]; then
   # --force also removes changes and submodules; the user said yes to that.
   rm_flags=()
   [ "$force" = 1 ] && rm_flags=(--force)
-  git -C "${main:-$wt}" worktree remove ${rm_flags[@]+"${rm_flags[@]}"} "$wt" 2>>"$(agents_log_file)" \
-    || die "closed $s, but could not remove $wt. Details: $(agents_log_file)"
+  if ! git -C "${main:-$wt}" worktree remove ${rm_flags[@]+"${rm_flags[@]}"} "$wt" 2>>"$(agents_log_file)"; then
+    mark_task
+    die "closed $s, but could not remove $wt. Details: $(agents_log_file)"
+  fi
   unregister_worktree "$real"
   delete_branch
+  mark_task
   say "closed $s and removed its worktree"
 else
+  mark_task
   say "closed $s"
 fi
 notify_change
