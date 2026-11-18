@@ -145,6 +145,29 @@ final class CaptureTests: XCTestCase {
         wait(for: [progress], timeout: 5)
     }
 
+    /// A Task listed on a Work item opens its session, as a Tasks row does (ADR 0044).
+    @MainActor
+    func testAWorkItemsTaskOpensItsSession() throws {
+        let app = launchWorkInbox()
+        let row = workRow(app, "w-0000b001")
+        revealInSidebar(app, row)
+        tapWhenReady(row)
+        scrollWorkDetail(app, to: app.buttons["work-start-task"])
+        tapWhenReady(app.buttons["work-start-task"])
+        tapWhenReady(app.buttons["record-start"])
+        let pane = app.descendants(matching: .any)["pane"].firstMatch
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        showSidebar(app)
+        revealInSidebar(app, row)
+        tapWhenReady(row)
+        XCTAssertTrue(pane.waitForNonExistence(timeout: 5), "the Work item's detail")
+        let task = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'work-task-'")).firstMatch
+        scrollWorkDetail(app, to: task)
+        tapWhenReady(task)
+        XCTAssertTrue(pane.waitForExistence(timeout: 10), "its session, not the Task's detail")
+        XCTAssertFalse(app.descendants(matching: .any)["task-detail"].firstMatch.exists)
+    }
+
     /// A capture saved while the connection drops stays on the device as Not sent, and
     /// is sent when the app connects again.
     @MainActor
