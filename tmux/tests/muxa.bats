@@ -40,10 +40,15 @@ printf '%s\n' "$@" >"$(dirname "$0")/args"
 if [ -n "${FAKE_FAIL:-}" ]; then echo "muxa-cli: $FAKE_FAIL" >&2; exit 1; fi
 # A file, as the popup gets the server's environment: a Task end that would
 # lose work, unless --force (ADR 0043).
+# bin/worktree names a worktree that, as long as it exists, would lose work:
+# muxa's own check of a Task's worktree.
 lose="$(dirname "$0")/lose"
+wt="$(cat "$(dirname "$0")/worktree" 2>/dev/null)"
 case " $* " in
   *" --force "*) ;;
-  *" task done "* | *" task drop "*) [ -f "$lose" ] && { echo "muxa-cli: would-lose-work: $(cat "$lose")" >&2; exit 1; } ;;
+  *" task done "* | *" task drop "*)
+    [ -f "$lose" ] && { echo "muxa-cli: would-lose-work: $(cat "$lose")" >&2; exit 1; }
+    [ -n "$wt" ] && [ -d "$wt" ] && { echo "muxa-cli: would-lose-work: it has uncommitted changes" >&2; exit 1; } ;;
 esac
 # A capture's text comes on stdin.
 case " $* " in *" capture - "*) cat >"$(dirname "$0")/stdin" ;; esac
@@ -465,6 +470,19 @@ work15_tasks() {
   "$ROOT/scripts/close.sh" --keep --task dropped feature-closing
   ! tx has-session -t =feature-closing 2>/dev/null
   [ "$(cat "$TMPDIR/bin/calls")" = 'task drop t-0000e1 --json' ]
+}
+
+@test "close.sh --force --task marks the Task once its worktree is gone" {
+  new feature/forced --muxa-task t-0000e4 >/dev/null
+  wt="$(tx show-options -t =feature-forced: -qv @agent_worktree)"
+  touch "$wt/wip"
+  fake_cli '{}'
+  printf '%s\n' "$wt" >"$TMPDIR/bin/worktree"
+  run "$ROOT/scripts/close.sh" --force --task done feature-forced
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  [ "$(cat "$TMPDIR/bin/calls")" = 'task done t-0000e4 --json' ]
+  ! grep -q "could not mark" "$TMPDIR/tmux-agents-$(id -u)/agents.log"
 }
 
 @test "close.sh leaves the Task alone when the session cannot close" {

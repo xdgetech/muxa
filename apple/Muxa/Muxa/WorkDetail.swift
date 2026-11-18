@@ -108,7 +108,10 @@ struct WorkDetail: View {
             Section("Tasks") {
                 ForEach(item.tasks, id: \.self) { task in
                     let record = model.session.taskRecords.first { $0.id == task }
-                    Button(record?.title ?? task) { model.select(.task(task)) }
+                    // As a Tasks row opens it (ADR 0044), like Android's Work detail.
+                    Button(record?.title ?? task) {
+                        if let item = model.inboxItem(task) { model.openTaskRow(item) } else { model.select(.task(task)) }
+                    }
                         .accessibilityIdentifier("work-task-\(task)")
                 }
             }
