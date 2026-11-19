@@ -125,19 +125,16 @@ impl SessionFile {
         })
     }
 
-    /// Only interactive instances own a pane; `tmux` is "<session>:@<window>.%<pane>".
+    /// Only interactive instances own a pane. Some instances record no pane: then the
+    /// pane's directory must match, and the caller checks the process runs in the pane.
     fn belongs_to(v: &Value, pane: &PaneInfo) -> bool {
         if v.get("kind").and_then(Value::as_str) != Some("interactive") {
             return false;
         }
-        let Some(tmux) = v.get("tmux").and_then(Value::as_str) else {
-            return false;
-        };
-        // A session name can contain ':' and '.', so split from the right.
-        let Some((session, place)) = tmux.rsplit_once(':') else {
-            return false;
-        };
-        place.rsplit_once('.').is_some_and(|(_, p)| p == pane.pane) && session == pane.session
+        match recorded_pane(v) {
+            Some((session, p)) => p == pane.pane && session == pane.session,
+            None => v.get("cwd").and_then(Value::as_str) == Some(pane.path.as_str()),
+        }
     }
 
     fn agent(&self) -> Option<Agent> {
@@ -150,6 +147,16 @@ impl SessionFile {
                 .map(|d| d.as_secs()),
         })
     }
+}
+
+/// The session and pane id of `tmux`, "<session>:@<window>.%<pane>". None when the
+/// instance left it out or empty (":.").
+fn recorded_pane(v: &Value) -> Option<(&str, &str)> {
+    let tmux = v.get("tmux")?.as_str()?;
+    // A session name can contain ':' and '.', so split from the right.
+    let (session, place) = tmux.rsplit_once(':')?;
+    let (_, pane) = place.rsplit_once('.')?;
+    (!session.is_empty() && !pane.is_empty()).then_some((session, pane))
 }
 
 fn state(s: &str) -> Option<AgentState> {

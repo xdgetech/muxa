@@ -157,6 +157,45 @@ fn many_entries_keep_only_the_newest() {
     );
 }
 
+/// Some instances leave `tmux` out, or empty: the process tree and the directory decide.
+#[test]
+fn an_instance_without_its_pane_matches_by_process_and_directory() {
+    let f = Fixture::new("no-tmux");
+    let no_tmux = |v: &mut Value| {
+        v.as_object_mut().unwrap().remove("tmux");
+    };
+    // Running elsewhere.
+    f.session(
+        "1.json",
+        300,
+        "11111111-0000-0000-0000-000000000000",
+        "",
+        no_tmux,
+    );
+    // In the pane, but started in another directory.
+    f.session(
+        "2.json",
+        200,
+        "22222222-0000-0000-0000-000000000000",
+        "",
+        |v| {
+            no_tmux(v);
+            v["cwd"] = "/elsewhere".into();
+        },
+    );
+    assert!(f.open(&procs()).is_none());
+
+    f.session("3.json", 200, SESSION_ID, ":.", |_| {});
+    let (_, found) = find_session(std::slice::from_ref(&f.dir), &pane(), &procs())
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.session_id, SESSION_ID);
+
+    let g = Fixture::new("no-tmux-key");
+    g.session("1.json", 200, SESSION_ID, "", no_tmux);
+    assert!(g.open(&procs()).is_some());
+}
+
 #[test]
 fn finds_only_the_live_interactive_instance_of_this_pane() {
     let f = Fixture::new("locate");
