@@ -1,7 +1,8 @@
-//! Which Markdown files a pane may read, and reading them. A client names a
+//! Which Markdown (and, when asked, HTML) files a pane may read, and reading them. A client names a
 //! document only by a path from the list built here; nothing else is served.
 //! Everything here blocks (git, the file system); run it on the blocking pool.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
@@ -17,6 +18,8 @@ pub const MAX_DOCS: usize = 2000;
 /// A larger document is refused.
 pub const MAX_DOC: u64 = 2 << 20;
 const PLAN_PREFIX: &str = "plans/";
+/// Bytes read from the start of an HTML file to find its `<title>`.
+const TITLE_HEAD: u64 = 8 << 10;
 
 /// A listed document and where it really is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,11 +45,12 @@ pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
         workspaces: None,
         home: None,
     };
-    for_pane(pane, agents, &none)
+    for_pane(pane, agents, &none, false)
 }
 
 /// As `list`; outside a repo, also the folder's files `folder::served` allows.
-pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config) -> Listing {
+/// `html` also lists HTML files.
+pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config, html: bool) -> Listing {
     let mut listing = Listing::default();
     match agents.documents(pane) {
         Ok(docs) => listing.docs.extend(docs.into_iter().map(agent_doc)),
@@ -58,15 +62,15 @@ pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config) -> Listing
     let root = repo_root(Path::new(&pane.path));
     if let Some(root) = &root {
         listing.root = root.file_name().map(|n| n.to_string_lossy().into_owned());
-        let (files, truncated) = repo_files(root);
+        let (files, truncated) = repo_files(root, html);
         listing.truncated = truncated;
         listing.docs.extend(files.into_iter().map(|rel| {
             let file = root.join(&rel);
             Doc {
                 info: DocInfo {
+                    title: html_title(&rel, &file, root),
                     path: rel,
                     kind: DocKind::Repo,
-                    title: None,
                     mtime: mtime(&file),
                 },
                 file,
@@ -77,7 +81,8 @@ pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config) -> Listing
     let outside = root.is_none();
     let base = root.unwrap_or_else(|| PathBuf::from(&pane.path));
     if outside {
-        let mut found = super::folder::served(records, pane, is_doc);
+        let keep = if html { is_doc_or_html } else { is_doc };
+        let mut found = super::folder::served(records, pane, keep);
         found.sort_by(|a, b| a.path.cmp(&b.path));
         listing.truncated = found.len() > MAX_DOCS;
         found.truncate(MAX_DOCS);
@@ -85,9 +90,9 @@ pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config) -> Listing
             let file = base.join(&f.path);
             Doc {
                 info: DocInfo {
+                    title: html_title(&f.path, &file, &base),
                     path: f.path,
                     kind: DocKind::Repo,
-                    title: None,
                     mtime: f.mtime,
                 },
                 file,
@@ -154,17 +159,32 @@ pub(crate) fn repo_root(path: &Path) -> Option<PathBuf> {
 
 /// The Markdown files a pane lists, as git pathspecs.
 const DOC_PATTERNS: [&str; 2] = ["*.md", "*.markdown"];
+/// The HTML files a pane lists when the client asks, as git pathspecs.
+const HTML_PATTERNS: [&str; 2] = ["*.html", "*.htm"];
 
-/// A path the Markdown listing would take, by its name alone.
-pub(crate) fn is_doc(path: &str) -> bool {
-    DOC_PATTERNS
+fn matches(patterns: &[&str], path: &str) -> bool {
+    patterns
         .iter()
         .any(|p| p.strip_prefix('*').is_some_and(|ext| path.ends_with(ext)))
 }
 
+/// A path the Markdown listing would take, by its name alone.
+pub(crate) fn is_doc(path: &str) -> bool {
+    matches(&DOC_PATTERNS, path)
+}
+
+pub(crate) fn is_html(path: &str) -> bool {
+    matches(&HTML_PATTERNS, path)
+}
+
+pub(crate) fn is_doc_or_html(path: &str) -> bool {
+    is_doc(path) || is_html(path)
+}
+
 /// Tracked files, and untracked ones git does not ignore: a plan an agent just
 /// wrote shows up, a secret in an ignored file does not.
-fn repo_files(root: &Path) -> (Vec<String>, bool) {
+fn repo_files(root: &Path, html: bool) -> (Vec<String>, bool) {
+    let html_patterns: &[&str] = if html { &HTML_PATTERNS } else { &[] };
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
@@ -177,6 +197,7 @@ fn repo_files(root: &Path) -> (Vec<String>, bool) {
             "--",
         ])
         .args(DOC_PATTERNS)
+        .args(html_patterns)
         .output();
     let Ok(out) = out else {
         return (Vec::new(), false);
@@ -205,6 +226,37 @@ fn title(path: &Path) -> Option<String> {
         .find_map(|l| l.strip_prefix("# "))
         .map(|t| t.trim().to_owned())
         .filter(|t| !t.is_empty())
+}
+
+/// An HTML file's `<title>`; Markdown files are listed without a title.
+/// None for a file outside `root`, as `read_bytes` would refuse it.
+fn html_title(path: &str, file: &Path, root: &Path) -> Option<String> {
+    if !is_html(path) {
+        return None;
+    }
+    let real = file.canonicalize().ok()?;
+    if !real.starts_with(root.canonicalize().ok()?) {
+        return None;
+    }
+    // Only the head: a listing may hold many large reports.
+    let mut bytes = Vec::new();
+    std::fs::File::open(&real)
+        .ok()?
+        .take(TITLE_HEAD)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    let head = String::from_utf8_lossy(&bytes).into_owned();
+    let lower = head.to_ascii_lowercase();
+    let open = lower.find("<title")?;
+    let start = open + lower[open..].find('>')? + 1;
+    let end = start + lower[start..].find("</title")?;
+    Some(
+        head[start..end]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+    .filter(|t| !t.is_empty())
 }
 
 pub(crate) fn mtime(path: &Path) -> Option<u64> {

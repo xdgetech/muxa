@@ -297,6 +297,8 @@ public final class PaneSession {
     }
 
     public var canReadDocs: Bool { capabilities.contains("docs") }
+    /// The bridge lists and opens HTML documents when asked (ADR 0065).
+    public var canReadHtml: Bool { capabilities.contains("html-docs") }
     public var canShowHistory: Bool { capabilities.contains("history") }
 
     /// The pane's scrollback, then its screen, once (capability `history`). Nil when none came.
@@ -315,7 +317,7 @@ public final class PaneSession {
         var requestId: UInt64 = 0
         try await request { id in
             requestId = id
-            return .docs(id: id, pane: pane)
+            return .docs(id: id, pane: pane, html: self.canReadHtml)
         }
         // The list arrives just before the result.
         return listings.removeValue(forKey: requestId) ?? DocListing(docs: requestId, entries: [])
@@ -329,7 +331,7 @@ public final class PaneSession {
         do {
             try await request { id in
                 self.docId = id
-                return .doc(id: id, pane: pane, path: path)
+                return .doc(id: id, pane: pane, path: path, html: self.canReadHtml)
             }
         } catch {
             if doc?.path == path { doc?.ended = Self.describe(error) }

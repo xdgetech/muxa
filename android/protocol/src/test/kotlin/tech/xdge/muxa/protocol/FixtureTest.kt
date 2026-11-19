@@ -33,7 +33,7 @@ class FixtureTest {
     @Test
     fun requestsRoundTrip() {
         val lines = lines("requests.jsonl")
-        assertEquals(36, lines.size)
+        assertEquals(38, lines.size)
         for (line in lines) {
             assertEquals(line, tree(line), tree(Wire.encode(Wire.decodeRequest(line))))
         }

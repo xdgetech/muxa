@@ -170,6 +170,8 @@ class PaneSession(
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
+        /** The bridge lists and opens HTML documents when asked (ADR 0065). */
+        val canReadHtml get() = "html-docs" in capabilities
         val canShowHistory get() = "history" in capabilities
         val canShowChanges get() = "changes" in capabilities
         val canShowImages get() = "images" in capabilities
@@ -1093,7 +1095,7 @@ class PaneSession(
         var requestId = 0L
         request { id ->
             requestId = id
-            Request.Docs(id, pane)
+            Request.Docs(id, pane, html = _state.value.canReadHtml)
         }
         docListings.remove(requestId) ?: Message.DocList(docs = requestId, entries = emptyList())
     }
@@ -1107,7 +1109,7 @@ class PaneSession(
         try {
             request { id ->
                 docId = id
-                Request.Doc(id, pane, path)
+                Request.Doc(id, pane, path, html = s.canReadHtml)
             }
         } catch (e: Failure) {
             _state.update { st -> st.copy(doc = st.doc?.let { if (it.path == path) it.copy(ended = describe(e)) else it }) }

@@ -142,7 +142,7 @@ struct ReaderScreen: View {
         ForEach(folders, id: \.folder) { group in
             Section(group.folder.isEmpty ? (model.docListing?.root ?? "Repository") : group.folder) {
                 ForEach(group.docs) { doc in
-                    DocRow(title: Self.name(doc.path), detail: nil, icon: Icon.document).tag(ReaderItem.doc(doc.path))
+                    DocRow(title: Self.name(doc.path), detail: doc.title, icon: Icon.document).tag(ReaderItem.doc(doc.path))
                 }
             }
         }
@@ -194,7 +194,7 @@ struct ReaderScreen: View {
         switch model.readerTab {
         case .docs where model.docListing?.entries.isEmpty == true:
             ContentUnavailableView("No Documents", systemImage: Icon.document,
-                                   description: Text("This pane is not in a git repository with Markdown files."))
+                                   description: Text("This pane is not in a git repository with Markdown or HTML files."))
         case .changes where model.changeListing != nil && changes.isEmpty && branchChanges.isEmpty:
             ContentUnavailableView("No Changes", systemImage: Icon.document,
                                    description: Text("Nothing is uncommitted, and the branch has no commits of its own."))
@@ -252,6 +252,12 @@ struct ReaderScreen: View {
 
     static func name(_ path: String) -> String { path.split(separator: "/").last.map(String.init) ?? path }
 
+    /// The bridge lists HTML only to a client that asked; the path tells it apart (ADR 0065).
+    nonisolated static func isHtml(_ path: String) -> Bool {
+        let lower = path.lowercased()
+        return lower.hasSuffix(".html") || lower.hasSuffix(".htm")
+    }
+
     static func folder(_ path: String) -> String {
         let parts = path.split(separator: "/")
         return parts.dropLast().joined(separator: "/")
@@ -302,7 +308,13 @@ struct ReaderScreen: View {
     private func docDetail(_ selected: String) -> some View {
         if let doc = model.session.doc, doc.path == selected {
             if let text = doc.text {
-                ReaderWebView(text: text, path: doc.path) { href, from in follow(href, from: from) }
+                Group {
+                    if Self.isHtml(doc.path) {
+                        HtmlWebView(text: text, path: doc.path)
+                    } else {
+                        ReaderWebView(text: text, path: doc.path) { href, from in follow(href, from: from) }
+                    }
+                }
                     .ignoresSafeArea(edges: .bottom)
                     .navigationTitle(Self.name(doc.path))
                     .navigationBarTitleDisplayMode(.inline)

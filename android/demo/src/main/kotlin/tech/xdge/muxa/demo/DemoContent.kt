@@ -259,6 +259,7 @@ internal object TestContent : DemoContent {
             ```
             """.trimIndent(),
         ),
+        DemoDoc(DocInfo("docs/report.html", DocInfo.Kind.REPO, "Demo report", 1), HTML_REPORT),
     )
 
     override val diffUpdate: String? = "+    // checked by the agent\n"
@@ -458,3 +459,26 @@ internal object TestContent : DemoContent {
         return s.toString().toByteArray()
     }
 }
+
+/** An agent's HTML report. Its script writes what it could and could not do, for the UI tests. */
+internal val HTML_REPORT = """
+    <!doctype html>
+    <html><head><title>Demo report</title>
+    <style>body { font: 16px sans-serif; margin: 24px; } li { margin: 8px 0; }</style>
+    </head><body>
+    <h1>Demo report</h1>
+    <ul id="checks"></ul>
+    <script>
+    function note(text) {
+      var li = document.createElement("li");
+      li.textContent = text;
+      document.getElementById("checks").appendChild(li);
+    }
+    note("script ran");
+    if (!window.webkit && !window.muxaReader) note("no app bridge");
+    fetch("https://example.com/").then(
+      function () { note("network reached"); },
+      function () { note("network blocked"); });
+    </script>
+    </body></html>
+""".trimIndent()

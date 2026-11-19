@@ -121,7 +121,7 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     private static var capabilities: [String] {
         let all = [
-            "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
+            "chat", "docs", "html-docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
             "task-loop", "tasks-changed", "viewport", "history", "work:18",
         ]
         #if DEBUG
@@ -213,11 +213,11 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
         case .unchat(let id):
             lock.withLock { chat = nil }
             ok(id)
-        case .docs(let id, let pane):
-            emit(.docList(DocListing(docs: id, root: content.root, entries: docs(pane).map(\.info))))
+        case .docs(let id, let pane, let html):
+            emit(.docList(DocListing(docs: id, root: content.root, entries: docs(pane, html: html).map(\.info))))
             ok(id)
-        case .doc(let id, let pane, let path):
-            guard let doc = docs(pane).first(where: { $0.info.path == path }) else {
+        case .doc(let id, let pane, let path, let html):
+            guard let doc = docs(pane, html: html).first(where: { $0.info.path == path }) else {
                 emit(.result(id: id, error: ErrorBody(code: .badRequest, message: "\(path) is not listed"), sessions: nil))
                 return
             }
@@ -869,11 +869,13 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
 
     /// The repo's documents, and TASK.md, HANDOFF.md and, once a check ran, CHECK.md
     /// in a task's session, as the bridge lists them.
-    private func docs(_ pane: String) -> [(info: DocInfo, text: String)] {
+    /// As a real bridge: HTML only for a client that asks (ADR 0065).
+    private func docs(_ pane: String, html: Bool) -> [(info: DocInfo, text: String)] {
+        let listed = content.docs.filter { html || !ReaderScreen.isHtml($0.info.path) }
         let (session, tasks) = lock.withLock { (sessions.first { $0.panes.contains { $0.id == pane } }, tasks) }
         guard let text = tasks.taskFile(for: session?.taskId), let handoff = tasks.handoffFile(for: session?.taskId)
-        else { return content.docs }
-        var docs = content.docs + [
+        else { return listed }
+        var docs = listed + [
             (DocInfo(path: DemoTasks.taskFile, kind: .repo, mtime: 1), text),
             (DocInfo(path: DemoTasks.handoffFile, kind: .repo, mtime: 1), handoff),
         ]
@@ -1070,7 +1072,31 @@ final class DemoBridge: BridgeChannel, @unchecked Sendable {
             let answer = 42
             ```
             """),
+        (DocInfo(path: "docs/report.html", kind: .repo, title: "Demo report", mtime: 1), htmlReport),
     ]
+
+    /// An agent's HTML report. Its script writes what it could and could not do, for the UI tests.
+    static let htmlReport = """
+        <!doctype html>
+        <html><head><title>Demo report</title>
+        <style>body { font: 16px -apple-system, sans-serif; margin: 24px; } li { margin: 8px 0; }</style>
+        </head><body>
+        <h1>Demo report</h1>
+        <ul id="checks"></ul>
+        <script>
+        function note(text) {
+          var li = document.createElement("li");
+          li.textContent = text;
+          document.getElementById("checks").appendChild(li);
+        }
+        note("script ran");
+        if (!window.webkit && !window.muxaReader) note("no app bridge");
+        fetch("https://example.com/").then(
+          function () { note("network reached"); },
+          function () { note("network blocked"); });
+        </script>
+        </body></html>
+        """
 
     static let conversation: [ChatEntry] = [
         ChatEntry(id: "u:1", kind: .user, text: "Fix the failing test in the parser"),

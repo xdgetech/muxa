@@ -620,6 +620,35 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
     }
 
+    /// An agent's HTML report runs its script, but reaches neither the app nor the network (ADR 0065).
+    @MainActor
+    func testAnHtmlReportRunsItsScriptInASandbox() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "sessions"]
+        app.launch()
+
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.typeKey("d", modifierFlags: [.command, .shift])
+        showReaderList(app)
+        tapWhenReady(app.staticTexts["report.html"])
+
+        let web = app.webViews["reader-html"]
+        // A list item's text is not always its own static text.
+        func shown(_ text: String) -> XCUIElement {
+            web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+        }
+        XCTAssertTrue(web.staticTexts["Demo report"].waitForExistence(timeout: 10))
+        XCTAssertTrue(shown("script ran").waitForExistence(timeout: 5))
+        XCTAssertTrue(shown("no app bridge").exists)
+        XCTAssertTrue(shown("network blocked").waitForExistence(timeout: 10))
+        XCTAssertFalse(shown("network reached").exists)
+        save("reader-html")
+
+        app.buttons["Done"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+    }
+
     /// With a hardware keyboard, Space pages through the plan that Read Plan opened.
     @MainActor
     func testALongPlanScrollsWithTheKeyboard() throws {

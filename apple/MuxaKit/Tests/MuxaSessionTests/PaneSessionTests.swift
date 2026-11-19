@@ -60,7 +60,7 @@ class FakeBridge: BridgeChannel, @unchecked Sendable {
             let text = (1...(lines ?? 3)).map { "line \($0)\n" }.joined()
             emit(.history(history: id, pane: pane, cols: 20, data: Data(text.utf8), truncated: lines != nil))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .docs(let id, _):
+        case .docs(let id, _, _):
             emit(.docList(DocListing(docs: id, root: "app", entries: docs)))
             emit(.result(id: id, error: nil, sessions: nil))
         case .changes(let id, _):

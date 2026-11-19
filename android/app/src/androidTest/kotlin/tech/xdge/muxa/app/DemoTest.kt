@@ -34,8 +34,12 @@ import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import org.hamcrest.Matcher
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -376,6 +380,27 @@ class DemoTest {
         compose.onNodeWithTag("more").performClick()
         compose.waitUntilAtLeastOneExists(hasText("Close Task…"), TIMEOUT)
         compose.onNodeWithTag("menu-sessions").assertExists()
+    }
+
+    /** An agent's HTML report runs its script, but reaches neither the app nor the network (ADR 0065). */
+    @Test
+    fun anHtmlReportRunsItsScriptInASandbox() {
+        launch()
+        waitForTag("composer")
+        shortcut(KeyEvent.KEYCODE_D)
+        waitForTag("reader-tab-Docs")
+        compose.onNodeWithTag("reader-tab-Docs").performClick()
+        waitForTag("doc-docs/report.html")
+        compose.onNodeWithTag("doc-docs/report.html").performClick()
+        waitForTag("reader-html")
+
+        // The frame's text is only in the accessibility tree, out of Compose's reach.
+        val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        fun shown(text: String, timeout: Long = TIMEOUT) = device.wait(Until.hasObject(By.textContains(text)), timeout)
+        assertTrue(shown("script ran"))
+        assertTrue(shown("no app bridge"))
+        assertTrue(shown("network blocked"))
+        assertFalse(shown("network reached", 0))
     }
 
     /** With a hardware keyboard, Space pages through the plan that Read Plan opened. */

@@ -278,7 +278,7 @@ class DemoBridge(
                         it.loop?.lastCheck?.let { check -> DocInfo(CHECK_DOC, DocInfo.Kind.REPO, "CHECK.md", check.at) },
                     )
                 }
-                emit(Message.DocList(req.id, content.root, content.docs.map { it.info } + brief.orEmpty()))
+                emit(Message.DocList(req.id, content.root, listed(req.html).map { it.info } + brief.orEmpty()))
                 ok(req.id)
             }
             is Request.CreateTask -> scope.launch {
@@ -1211,6 +1211,9 @@ class DemoBridge(
         tasks.firstOrNull { it.id == session?.taskId }
     }
 
+    /** As a real bridge: HTML only for a client that asks (ADR 0065). */
+    private fun listed(html: Boolean) = content.docs.filter { html || !DocInfo.isHtml(it.info.path) }
+
     private fun doc(req: Request.Doc) {
         val task = taskOf(req.pane)
         if (req.path == TASK_DOC && task != null) {
@@ -1232,7 +1235,7 @@ class DemoBridge(
             emit(Message.DocContent(req.id, req.path, checkLog(check), check.at))
             return
         }
-        val doc = content.docs.firstOrNull { it.info.path == req.path }
+        val doc = listed(req.html).firstOrNull { it.info.path == req.path }
         if (doc == null) {
             fail(req.id, ErrorCode.BAD_REQUEST, "${req.path} is not listed")
             return
@@ -1657,7 +1660,7 @@ class DemoBridge(
 
         private val CAPABILITIES =
             listOf(
-                "chat", "docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
+                "chat", "docs", "html-docs", "tasks", "changes", "close-task", "images", "branch-changes", "task-records", "task-handoff",
                 "task-loop", "tasks-changed", "viewport", "history",
             )
 

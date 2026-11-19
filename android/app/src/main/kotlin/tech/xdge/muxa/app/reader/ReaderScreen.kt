@@ -251,7 +251,7 @@ private fun LazyListScope.docRows(model: AppModel, docs: List<DocInfo>, selectio
     for ((dir, list) in folders) {
         item(key = "dir-$dir") { Header(dir.ifEmpty { model.docListing?.root ?: "Repository" }) }
         items(list, key = { "doc-${it.path}" }) { doc ->
-            Row(name(doc.path), null, selection == ReaderItem.Doc(doc.path), "doc-${doc.path}") { select(ReaderItem.Doc(doc.path)) }
+            Row(name(doc.path), doc.title, selection == ReaderItem.Doc(doc.path), "doc-${doc.path}") { select(ReaderItem.Doc(doc.path)) }
         }
     }
     if (model.docListing?.truncated == true) item { Note("Only the first 2000 documents are listed.") }
@@ -382,7 +382,7 @@ private fun ChangeRow(change: ChangeInfo, scope: DiffScope, selection: ReaderIte
 private fun EmptyState(model: AppModel) {
     val (title, text) = when {
         model.readerTab == ReaderTab.DOCS && model.docListing?.entries?.isEmpty() == true ->
-            "No Documents" to "This pane is not in a git repository with Markdown files."
+            "No Documents" to "This pane is not in a git repository with Markdown or HTML files."
         model.readerTab == ReaderTab.CHANGES && model.changeListing?.let { it.entries.isEmpty() && it.branch?.entries.isNullOrEmpty() } == true ->
             "No Changes" to "Nothing is uncommitted, and the branch has no commits of its own."
         model.readerTab == ReaderTab.IMAGES && model.imageListing?.entries?.isEmpty() == true ->
@@ -447,7 +447,11 @@ private fun DocDetail(model: AppModel, path: String, follow: (String, String) ->
     when {
         doc == null -> Loading()
         text != null -> Box(Modifier.fillMaxSize()) {
-            ReaderWebView(text, doc.path, diff = false, onLink = follow, modifier = Modifier.fillMaxSize())
+            if (DocInfo.isHtml(doc.path)) {
+                HtmlWebView(text, Modifier.fillMaxSize())
+            } else {
+                ReaderWebView(text, doc.path, diff = false, onLink = follow, modifier = Modifier.fillMaxSize())
+            }
             doc.ended?.let { EndedNotice(it) }
         }
         doc.ended != null -> Unavailable("Can't Open ${name(path)}", doc.ended)

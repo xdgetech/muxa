@@ -376,7 +376,7 @@ class DemoBridgeTest {
     fun documentsListOpenAndUpdate() = runBlocking {
         val (session, _) = connected()
         val list = session.documents("%1")
-        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC, DemoBridge.CHECK_DOC), list.entries.map { it.path })
+        assertEquals(listOf("plans/demo-plan.md", "README.md", "docs/design.md", "docs/report.html", DemoBridge.TASK_DOC, DemoBridge.HANDOFF_DOC, DemoBridge.CHECK_DOC), list.entries.map { it.path })
         session.openDocument("%1", "README.md")
         waitUntil { session.state.value.doc?.text != null }
         assertTrue(session.state.value.doc!!.text!!.startsWith("# App\n"))

@@ -64,7 +64,7 @@ impl ImageTask {
 
     async fn command(&mut self, cmd: Command) {
         match cmd {
-            Command::List { id, pane, ack } => {
+            Command::List { id, pane, ack, .. } => {
                 let error = match self.listing(pane).await {
                     Ok(listing) => {
                         let msg = Message::ImageList {
@@ -85,6 +85,7 @@ impl ImageTask {
                 pane,
                 path,
                 ack,
+                ..
             } => {
                 self.open = None;
                 let error = match self.listing(pane).await {

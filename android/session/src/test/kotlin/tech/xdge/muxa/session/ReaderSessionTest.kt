@@ -35,6 +35,24 @@ class ReaderSessionTest {
     private fun diffIds(b: FakeBridge) = b.received.filterIsInstance<Request.Diff>().map { it.id }
 
     @Test
+    fun asksForHtmlOnlyWhenTheBridgeOffersIt() = runBlocking {
+        for ((capabilities, html) in listOf(listOf("docs") to false, listOf("docs", "html-docs") to true)) {
+            val bridge = FakeBridge().apply { this.capabilities = capabilities }
+            val session = connected(bridge)
+            session.documents("%1")
+            session.openDocument("%1", "report.html")
+            val asked = bridge.received.mapNotNull {
+                when (it) {
+                    is Request.Docs -> it.html
+                    is Request.Doc -> it.html
+                    else -> null
+                }
+            }
+            assertEquals(listOf(html, html), asked)
+        }
+    }
+
+    @Test
     fun listsThenOpensAndFollowsADocument() = runBlocking {
         val bridge = FakeBridge().apply {
             capabilities = listOf("docs")

@@ -36,11 +36,14 @@ sealed interface Request {
     @Serializable data class Chat(override val id: Long, val pane: String) : Request
     @Serializable data class Unchat(override val id: Long) : Request
 
-    /** This pane's Markdown documents (capability `docs`); a `doc-list` comes first. */
-    @Serializable data class Docs(override val id: Long, val pane: String) : Request
+    /**
+     * This pane's Markdown documents (capability `docs`); a `doc-list` comes first.
+     * [html] also lists HTML files (capability `html-docs`).
+     */
+    @Serializable data class Docs(override val id: Long, val pane: String, val html: Boolean = false) : Request
 
-    /** Open a listed document and follow its changes. */
-    @Serializable data class Doc(override val id: Long, val pane: String, val path: String) : Request
+    /** Open a listed document and follow its changes. An HTML path opens only with [html]. */
+    @Serializable data class Doc(override val id: Long, val pane: String, val path: String, val html: Boolean = false) : Request
     @Serializable data class Undoc(override val id: Long) : Request
 
     /** The files that differ from HEAD (capability `changes`); a `change-list` comes first. */

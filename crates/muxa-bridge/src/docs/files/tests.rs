@@ -87,6 +87,53 @@ fn lists_tracked_and_untracked_markdown_but_not_ignored_files() {
 }
 
 #[test]
+fn html_files_are_listed_and_opened_only_when_asked() {
+    let root = repo("html");
+    write(
+        &root.join("build/report.html"),
+        "<!doctype html><html><head><TITLE>\n  Weekly   report </title></head><body><script>1</script></body></html>",
+    );
+    write(&root.join("old.htm"), "<p>no title</p>");
+    let outside = root.parent().unwrap().join("outside.html");
+    write(&outside, "<title>Private</title>");
+    std::os::unix::fs::symlink(&outside, root.join("escape.html")).unwrap();
+    let none = Config {
+        state_dir: None,
+        workspaces: None,
+        home: None,
+    };
+    let agents = Registry::new(vec![]);
+
+    let plain = for_pane(&pane(&root), &agents, &none, false);
+    assert_eq!(
+        plain.find("build/report.html"),
+        Err(ReadError::NotListed("build/report.html".into()))
+    );
+
+    let asked = for_pane(&pane(&root), &agents, &none, true);
+    assert_eq!(
+        paths(&asked),
+        [
+            "README.md",
+            "build/report.html",
+            "docs/escape.md",
+            "docs/plan.md",
+            "escape.html",
+            "old.htm"
+        ]
+    );
+    // Listed like any file, but nothing of it leaves the repo.
+    let escape = asked.find("escape.html").unwrap();
+    assert_eq!(escape.info.title, None);
+    assert_eq!(read(escape), Err(ReadError::Outside("escape.html".into())));
+    let report = asked.find("build/report.html").unwrap();
+    assert_eq!(report.info.title.as_deref(), Some("Weekly report"));
+    assert_eq!(asked.find("old.htm").unwrap().info.title, None);
+    assert_eq!(asked.find("README.md").unwrap().info.title, None);
+    assert!(read(report).unwrap().0.contains("<script>1</script>"));
+}
+
+#[test]
 fn reads_only_listed_documents_inside_their_directory() {
     let root = repo("read");
     let listing = list(&pane(&root), &Registry::new(vec![]));

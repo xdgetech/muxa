@@ -130,6 +130,10 @@ pub enum Request {
     Docs {
         id: u64,
         pane: String,
+        /// Also list HTML files (capability `html-docs`). Older clients would
+        /// show them as Markdown, so they are listed only when asked.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        html: bool,
     },
     /// Open one of the documents `docs` listed, and follow its changes. Replaces
     /// the open document; `doc-content` for it carries this request's id as `doc`.
@@ -137,6 +141,9 @@ pub enum Request {
         id: u64,
         pane: String,
         path: String,
+        /// As in `docs`: an HTML path opens only with `html`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        html: bool,
     },
     Undoc {
         id: u64,

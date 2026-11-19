@@ -1,4 +1,4 @@
-//! `docs` and `doc`: lists a pane's Markdown documents, and follows the open one,
+//! `docs` and `doc`: lists a pane's Markdown (and, when asked, HTML) documents, and follows the open one,
 //! sending its whole text again whenever it changes. `image_task` does the same
 //! for images.
 
@@ -7,6 +7,8 @@ mod folder;
 mod image_task;
 mod images;
 
+#[cfg(test)]
+pub(crate) use files::is_doc_or_html;
 pub(crate) use files::{is_doc, repo_root};
 pub(crate) use folder::{inside, scan};
 pub use image_task::ImageTask;
@@ -28,15 +30,18 @@ use files::{Doc, Listing, ReadError};
 const TICK: Duration = Duration::from_secs(1);
 
 pub enum Command {
+    /// `html` also lists HTML files; images ignore it.
     List {
         id: u64,
         pane: PaneId,
+        html: bool,
         ack: oneshot::Sender<()>,
     },
     Open {
         id: u64,
         pane: PaneId,
         path: String,
+        html: bool,
         ack: oneshot::Sender<()>,
     },
     Close {
@@ -95,8 +100,13 @@ impl DocTask {
 
     async fn command(&mut self, cmd: Command) {
         match cmd {
-            Command::List { id, pane, ack } => {
-                let error = match self.listing(pane).await {
+            Command::List {
+                id,
+                pane,
+                html,
+                ack,
+            } => {
+                let error = match self.listing(pane, html).await {
                     Ok(listing) => {
                         let msg = Message::DocList {
                             docs: id,
@@ -115,10 +125,11 @@ impl DocTask {
                 id,
                 pane,
                 path,
+                html,
                 ack,
             } => {
                 self.open = None;
-                let error = match self.listing(pane).await {
+                let error = match self.listing(pane, html).await {
                     Ok(listing) => match listing.find(&path) {
                         Ok(doc) => {
                             self.open = Some(Open {
@@ -155,10 +166,10 @@ impl DocTask {
         let _ = ack.send(());
     }
 
-    async fn listing(&self, pane: PaneId) -> Result<Listing, ErrorBody> {
+    async fn listing(&self, pane: PaneId, html: bool) -> Result<Listing, ErrorBody> {
         let info = pane_info(&self.client, pane).await?;
         let (agents, records) = (Arc::clone(&self.agents), Arc::clone(&self.records));
-        tokio::task::spawn_blocking(move || files::for_pane(&info, &agents, &records))
+        tokio::task::spawn_blocking(move || files::for_pane(&info, &agents, &records, html))
             .await
             .map_err(|e| error_body(ErrorCode::Internal, e.to_string()))
     }

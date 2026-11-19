@@ -92,6 +92,7 @@ where
         "chat",
         "chat-prompt",
         "docs",
+        "html-docs",
         "tasks",
         "changes",
         "close-task",
@@ -455,12 +456,17 @@ impl Worker {
                 };
             }
             // Document results come from the docs task, after the list or ahead of the content.
-            Request::Docs { id, pane } => {
+            Request::Docs { id, pane, html } => {
                 return match pane.parse::<PaneId>() {
                     Ok(pane) => {
                         handoff(
                             &self.docs,
-                            |ack| docs::Command::List { id, pane, ack },
+                            |ack| docs::Command::List {
+                                id,
+                                pane,
+                                html,
+                                ack,
+                            },
                             "docs",
                         )
                         .await
@@ -468,7 +474,12 @@ impl Worker {
                     Err(e) => Some(Err(convert::error(&e))),
                 };
             }
-            Request::Doc { id, pane, path } => {
+            Request::Doc {
+                id,
+                pane,
+                path,
+                html,
+            } => {
                 return match pane.parse::<PaneId>() {
                     Ok(pane) => {
                         handoff(
@@ -477,6 +488,7 @@ impl Worker {
                                 id,
                                 pane,
                                 path,
+                                html,
                                 ack,
                             },
                             "docs",
@@ -536,7 +548,12 @@ impl Worker {
                     Ok(pane) => {
                         handoff(
                             &self.images,
-                            |ack| docs::Command::List { id, pane, ack },
+                            |ack| docs::Command::List {
+                                id,
+                                pane,
+                                html: false,
+                                ack,
+                            },
                             "images",
                         )
                         .await
@@ -553,6 +570,7 @@ impl Worker {
                                 id,
                                 pane,
                                 path,
+                                html: false,
                                 ack,
                             },
                             "images",

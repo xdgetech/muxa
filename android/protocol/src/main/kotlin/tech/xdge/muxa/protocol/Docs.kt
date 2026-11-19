@@ -19,4 +19,12 @@ data class DocInfo(
         /** Written by the pane's agent outside the repo, e.g. a plan. */
         @SerialName("plan") PLAN,
     }
+
+    companion object {
+        /** The bridge lists HTML only to a client that asked; the path tells it apart (ADR 0065). */
+        fun isHtml(path: String): Boolean {
+            val lower = path.lowercase()
+            return lower.endsWith(".html") || lower.endsWith(".htm")
+        }
+    }
 }

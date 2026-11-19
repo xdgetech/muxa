@@ -193,6 +193,9 @@ mod tests {
         let config = records(&state.0, Some(&folder));
         let found = served(&config, &pane(&folder), crate::docs::is_doc);
         assert_eq!(paths(&found), ["design.md", "notes/old.md"]);
+        write(&folder, "report.html");
+        let found = served(&config, &pane(&folder), crate::docs::is_doc_or_html);
+        assert_eq!(paths(&found), ["design.md", "notes/old.md", "report.html"]);
 
         // The same files in a folder no Task owns: only attached ones.
         let other = root.0.join("tasks/other");

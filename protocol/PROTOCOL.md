@@ -52,8 +52,8 @@ sequenceDiagram
 | `paste` | `id`, `pane`, `text` | pasted; bracketed when the program enabled bracketed paste |
 | `chat` | `id`, `pane` | follow the agent conversation in this pane (capability `chat`); replaces the previous chat |
 | `unchat` | `id` | stop `chat-entries` |
-| `docs` | `id`, `pane` | list the pane's Markdown documents (capability `docs`); a `doc-list` comes before the `result` |
-| `doc` | `id`, `pane`, `path` | open a listed document and follow it; replaces the open document |
+| `docs` | `id`, `pane`, optional `html` | list the pane's Markdown documents (capability `docs`), and HTML ones with `html: true` (capability `html-docs`); a `doc-list` comes before the `result` |
+| `doc` | `id`, `pane`, `path`, optional `html` | open a listed document and follow it; replaces the open document. An HTML path needs `html: true` |
 | `undoc` | `id` | stop `doc-content` |
 | `changes` | `id`, `pane` | list the files that differ from HEAD in the pane's repo (capability `changes`); a `change-list` comes before the `result` |
 | `diff` | `id`, `pane`, `path`, optional `scope` (`uncommitted`, `branch`) | show a listed file's diff and follow it; replaces the open diff |
@@ -162,6 +162,7 @@ A bridge with the `docs` capability serves the Markdown documents that belong to
    - Outside a repo, the list also has files of the pane's directory (`kind: repo`, path relative to that directory), by the rule in "Files outside a repo" below.
 3. `doc {pane, path}` opens one of them. `path` must be one the list for that pane contains now; anything else is `bad-request`. The bridge then sends `doc-content` with the whole text, and again whenever the file changes (checked every second). The client drops any whose `doc` is not its latest doc request.
 4. `doc-ended` says the document is no longer readable, for example removed, larger than 2 MiB, or a symlink to outside its directory.
+5. With the `html-docs` capability, `docs {pane, html: true}` also lists `*.html` and `*.htm` files, by the same rules, with the file's `<title>` as `title`. `doc` opens one only with `html: true` too. Without `html`, they are not listed, so a client that cannot run them never sees one. `kind` stays `repo`; the client tells HTML apart by the path. The client runs it with no network and no access to the app (ADR 0065).
 
 ## Changes
 

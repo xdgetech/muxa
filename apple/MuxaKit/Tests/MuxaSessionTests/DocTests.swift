@@ -17,7 +17,24 @@ struct DocSessionTests {
     }
 
     private func docIds(_ bridge: FakeBridge) -> [UInt64] {
-        bridge.received.compactMap { if case .doc(let id, _, _) = $0 { id } else { nil } }
+        bridge.received.compactMap { if case .doc(let id, _, _, _) = $0 { id } else { nil } }
+    }
+
+    @Test func asksForHtmlOnlyWhenTheBridgeOffersIt() async throws {
+        for (capabilities, html) in [(["docs"], false), (["docs", "html-docs"], true)] {
+            let bridge = FakeBridge()
+            bridge.capabilities = capabilities
+            let session = try await connected(bridge)
+            _ = try await session.documents(pane: "%1")
+            await session.openDocument(pane: "%1", path: "report.html")
+            let asked = bridge.received.compactMap { request -> Bool? in
+                switch request {
+                case .docs(_, _, let html), .doc(_, _, _, let html): html
+                default: nil
+                }
+            }
+            #expect(asked == [html, html])
+        }
     }
 
     @Test func listsThenOpensAndFollowsADocument() async throws {

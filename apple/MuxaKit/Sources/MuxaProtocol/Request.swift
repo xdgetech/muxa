@@ -25,9 +25,11 @@ public enum Request: Equatable, Sendable {
     case chat(id: UInt64, pane: String)
     case unchat(id: UInt64)
     /// This pane's Markdown documents (capability `docs`); a `doc-list` comes first.
-    case docs(id: UInt64, pane: String)
+    /// `html` also lists HTML files (capability `html-docs`).
+    case docs(id: UInt64, pane: String, html: Bool = false)
     /// Open a listed document and follow its changes; `doc-content` carries this id as `doc`.
-    case doc(id: UInt64, pane: String, path: String)
+    /// An HTML path opens only with `html`.
+    case doc(id: UInt64, pane: String, path: String, html: Bool = false)
     case undoc(id: UInt64)
     /// The files that differ from HEAD in the pane's repo (capability `changes`);
     /// a `change-list` comes first.
@@ -160,7 +162,7 @@ public enum Request: Equatable, Sendable {
 
     public var id: UInt64 {
         switch self {
-        case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _), .doc(let id, _, _),
+        case .ping(let id), .list(let id), .unwatch(let id), .unchat(let id), .undoc(let id), .bye(let id), .docs(let id, _, _), .doc(let id, _, _, _),
             .watch(let id, _), .history(let id, _, _), .chat(let id, _), .keys(let id, _, _), .text(let id, _, _),
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
@@ -187,7 +189,7 @@ extension Request: Codable {
         case cols, rows, operation, action, lines
         case routine, entry, until, option, worktree, olderThanDays, hash
         case clientId, source, assist, capture, work, workRev, into, request, version, purpose
-        case due, minutes
+        case due, minutes, html
         case policy, from, plan, order, row, record
         case step, root
     }
@@ -381,13 +383,15 @@ extension Request: Codable {
             try c.encode(pane, forKey: .pane)
             try c.encode(path, forKey: .path)
             try c.encodeIfPresent(scope, forKey: .scope)
-        case .docs(let id, let pane):
+        case .docs(let id, let pane, let html):
             try c.head("docs", id)
             try c.encode(pane, forKey: .pane)
-        case .doc(let id, let pane, let path):
+            if html { try c.encode(true, forKey: .html) }
+        case .doc(let id, let pane, let path, let html):
             try c.head("doc", id)
             try c.encode(pane, forKey: .pane)
             try c.encode(path, forKey: .path)
+            if html { try c.encode(true, forKey: .html) }
         case .newTask(let id, let repo, let branch, let base):
             try c.head("new-task", id)
             try c.encode(repo, forKey: .repo)
@@ -584,8 +588,11 @@ extension Request: Codable {
             self = .diff(
                 id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path),
                 scope: try c.decodeIfPresent(DiffScope.self, forKey: .scope))
-        case "docs": self = .docs(id: id, pane: try pane())
-        case "doc": self = .doc(id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path))
+        case "docs": self = .docs(id: id, pane: try pane(), html: try c.decodeIfPresent(Bool.self, forKey: .html) ?? false)
+        case "doc":
+            self = .doc(
+                id: id, pane: try pane(), path: try c.decode(String.self, forKey: .path),
+                html: try c.decodeIfPresent(Bool.self, forKey: .html) ?? false)
         case "new-task":
             self = .newTask(
                 id: id, repo: try c.decode(String.self, forKey: .repo),
