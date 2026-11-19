@@ -149,6 +149,9 @@ final class AppModel {
     private var lastPanes: [String: String] = [:]
     /// The document last read in each session, opened again next time.
     private var lastDocs: [String: String] = [:]
+    /// The Composer's unsent text per host and pane. Kept here, not in the view: leaving
+    /// the app disconnects, and the reconnect rebuilds the chat.
+    private var drafts: [String: String] = [:]
 
     func readerClosed() { refocusPane() }
 
@@ -574,6 +577,20 @@ final class AppModel {
     func sendPrompt(_ text: String) {
         session.paste(text)
         session.send(keys: ["Enter"])
+    }
+
+    /// The shown pane's unsent prompt. Empty, and not kept, while no pane is shown.
+    var draft: String {
+        get { draftKey.flatMap { drafts[$0] } ?? "" }
+        set {
+            guard let key = draftKey else { return }
+            drafts[key] = newValue.isEmpty ? nil : newValue
+        }
+    }
+
+    private var draftKey: String? {
+        guard let host = currentHostID, let pane = currentPane?.id else { return nil }
+        return "\(host.uuidString)/\(pane)"
     }
 
     // MARK: Reader

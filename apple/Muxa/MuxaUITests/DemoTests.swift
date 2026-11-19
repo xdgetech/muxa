@@ -220,6 +220,26 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(waitFor(pane, containing: "$ 日本語"))
     }
 
+    /// A half-typed prompt is still there after a switch to another app and back, though
+    /// leaving for the background disconnects.
+    @MainActor
+    func testComposerKeepsTheDraftThroughTheBackground() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "-mode", "sessions"]
+        app.launch()
+        let composer = app.descendants(matching: .any)["composer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.tap()
+        composer.typeText("half a prompt")
+        XCTAssertEqual(composer.value as? String, "half a prompt")
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10))
+        sleep(2)
+        app.activate()
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        XCTAssertEqual(composer.value as? String, "half a prompt")
+    }
+
     /// The bar above the on-screen keyboard sends the keys it lacks; Ctrl is one-shot.
     @MainActor
     func testKeyBarSendsKeysTheKeyboardLacks() throws {

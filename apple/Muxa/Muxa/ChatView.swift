@@ -266,20 +266,20 @@ struct QuickKey: View {
 struct Composer: View {
     @Environment(AppModel.self) private var model
     let waiting: Bool
-    @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
+        @Bindable var model = model
         // One rounded box: the text, then the keys and Send, as in the agents' own apps.
         VStack(alignment: .leading, spacing: 10) {
             // A TextEditor, not a vertical TextField: that one treats a hardware Return as
             // submit and ends editing, even after it inserts a new line.
-            TextEditor(text: $text)
+            TextEditor(text: $model.draft)
                 .frame(minHeight: Self.minHeight, maxHeight: Self.maxHeight)
                 .fixedSize(horizontal: false, vertical: true)
                 .scrollContentBackground(.hidden)
                 .overlay(alignment: .topLeading) {
-                    if text.isEmpty {
+                    if model.draft.isEmpty {
                         Text("Message the agent")
                             .foregroundStyle(.tertiary)
                             .padding(.top, 8)
@@ -340,12 +340,12 @@ struct Composer: View {
 
     /// While the agent waits on a prompt, Enter would answer it: send nothing then.
     private var canSend: Bool {
-        !waiting && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !waiting && !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func send() {
         guard canSend else { return }
-        model.sendPrompt(text)
-        text = ""
+        model.sendPrompt(model.draft)
+        model.draft = ""
     }
 }

@@ -123,6 +123,21 @@ class DemoTest {
         waitForPane("pane %3 132x43")
     }
 
+    /**
+     * A half-typed prompt outlives the Activity: the system recreates it in the background,
+     * and a long stay there disconnects and rebuilds the chat.
+     */
+    @Test
+    fun composerKeepsTheDraftWhenTheActivityIsRecreated() {
+        launch()
+        waitForTag("composer")
+        compose.onNodeWithTag("composer").performTextInput("half a prompt")
+        compose.onNodeWithTag("composer").assert(hasText("half a prompt"))
+        scenario?.recreate()
+        waitForTag("composer")
+        compose.onNodeWithTag("composer").assert(hasText("half a prompt"))
+    }
+
     /** The switcher lists every session, the Tasks' too. The session shortcuts follow the manual list. */
     /** Scrollback in More shows the host's earlier lines in the pane's place, newest at the bottom. */
     @Test

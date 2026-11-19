@@ -233,7 +233,7 @@ private fun QuickKey(model: AppModel, title: String, keys: List<String>) {
 /** Enter starts a new line; Ctrl+Enter or Send sends. */
 @Composable
 private fun Composer(model: AppModel, waiting: Boolean) {
-    var text by remember { mutableStateOf("") }
+    val text = model.draft
     val focus = remember { FocusRequester() }
     val hardware = LocalConfiguration.current.hardKeyboardHidden == android.content.res.Configuration.HARDKEYBOARDHIDDEN_NO
     // While the agent waits on a prompt, Enter would answer it: send nothing then.
@@ -241,7 +241,7 @@ private fun Composer(model: AppModel, waiting: Boolean) {
     fun send() {
         if (!canSend) return
         model.sendPrompt(text)
-        text = ""
+        model.draft = ""
     }
     LaunchedEffect(model.focusRequest) { if (hardware) runCatching { focus.requestFocus() } }
     Surface(
@@ -254,7 +254,7 @@ private fun Composer(model: AppModel, waiting: Boolean) {
         Column(Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
             TextField(
                 text,
-                { text = it },
+                { model.draft = it },
                 Modifier.fillMaxWidth().focusRequester(focus).testTag("composer").onPreviewKeyEvent { e ->
                     if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && e.isCtrlPressed) {
                         send()

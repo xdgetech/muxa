@@ -190,6 +190,12 @@ class AppModel(
     /** Agent panes the user switched to Raw. Every other agent pane shows Pretty when it can. */
     var rawPanes by mutableStateOf(emptySet<String>())
         private set
+
+    /**
+     * The composer's unsent text by host and pane. Kept here, not in the view: leaving
+     * the app disconnects, and the reconnect rebuilds the chat.
+     */
+    private var drafts by mutableStateOf(emptyMap<String, String>())
     var showReader by mutableStateOf(false)
 
     /** The Terminal Size the user picked, by menu or pinch. Null: the view picks. Kept through a fold. */
@@ -877,6 +883,21 @@ class AppModel(
         session.paste(text)
         session.send(listOf("Enter"))
     }
+
+    /** The shown pane's unsent prompt. Empty, and not kept, while no pane is shown. */
+    var draft: String
+        get() = draftKey?.let { drafts[it] }.orEmpty()
+        set(value) {
+            val key = draftKey ?: return
+            drafts = if (value.isEmpty()) drafts - key else drafts + (key to value)
+        }
+
+    private val draftKey: String?
+        get() {
+            val host = currentHostId ?: return null
+            val pane = currentPane?.id ?: return null
+            return "$host/$pane"
+        }
 
     fun retryChat() = scope.launch { currentPane?.let { session.follow(it.id) } }
 
