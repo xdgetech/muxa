@@ -16,3 +16,8 @@ lexopt = "0.3.2"
 muxa-protocol = { version = "0.1.0", path = "../muxa-protocol" }
 serde_json = "1.0.154"
 tokio = { version = "1.54.1", features = ["rt", "macros", "io-util", "io-std", "process", "time", "sync"] }
+
+[dev-dependencies]
+muxa-backend = { path = "../muxa-backend", features = ["fake"] }
+muxa-server = { path = "../muxa-server" }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

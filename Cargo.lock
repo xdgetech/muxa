@@ -475,7 +475,9 @@ dependencies = [
  "crossterm",
  "jiff",
  "lexopt",
+ "muxa-backend",
  "muxa-protocol",
+ "muxa-server",
  "serde_json",
  "tokio",
 ]

@@ -20,10 +20,10 @@ pub struct Options {
 }
 
 /// Restores the local terminal however the view ends.
-struct Raw;
+pub(crate) struct Raw;
 
 impl Raw {
-    fn enter() -> Result<Raw, String> {
+    pub(crate) fn enter() -> Result<Raw, String> {
         terminal::enable_raw_mode().map_err(|e| format!("cannot use this terminal: {e}"))?;
         print!("\x1b[?1049h");
         let _ = std::io::stdout().flush();

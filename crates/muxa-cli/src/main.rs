@@ -12,6 +12,7 @@ mod propose;
 mod routines;
 mod staff;
 mod tasks;
+mod v2;
 mod view;
 mod when;
 mod work;
@@ -24,6 +25,7 @@ use muxa_protocol::{
 };
 
 const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
+       muxa-cli v2 …     protocol v2 (see muxa-cli v2 --help)
        muxa-cli [--bridge CMD] watch TARGET [--read-only] [--seconds N]
        muxa-cli [--bridge CMD] tasks [--json]
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
@@ -1063,6 +1065,16 @@ fn change_args(
 }
 
 fn main() -> ExitCode {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|a| a == "v2") {
+        return match v2::main(args[1..].to_vec()) {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("muxa-cli: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let (bridge, cmd) = match parse() {
         Ok(Some(x)) => x,
         Ok(None) => return ExitCode::SUCCESS,
