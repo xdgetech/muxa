@@ -14,10 +14,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The minified release build connects over SSH, starts the bridge and shows a pane.
- * It drives the app as a user does, through the accessibility tree, so it relies on
- * no class or member name that R8 renames. Run it with `make test-android-release`:
- * that script starts the throwaway SSH host and tmux server, and passes their details.
+ * The minified release build connects over SSH to a muxa server on protocol v2 and
+ * shows a terminal in Focus. It drives the app as a user does, through the accessibility
+ * tree, so it relies on no class or member name that R8 renames. Run it with
+ * `make test-android-release`: that script starts the throwaway SSH host and the server
+ * on the fake backend, and passes their details.
  */
 @RunWith(AndroidJUnit4::class)
 class ReleaseSshTest {
@@ -25,7 +26,7 @@ class ReleaseSshTest {
     private val device = UiDevice.getInstance(instrumentation)
 
     @Test
-    fun connectsOverSshAndShowsThePane() {
+    fun connectsOverSshAndShowsATerminal() {
         val args = InstrumentationRegistry.getArguments()
         val port = requireNotNull(args.getString("muxaSshPort")) { "run it with make test-android-release" }
         val marker = requireNotNull(args.getString("muxaMarker")) { "run it with make test-android-release" }
@@ -35,7 +36,6 @@ class ReleaseSshTest {
         val launch = requireNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
         context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
 
-        // A phone shows the host list's icon, a tablet also the empty detail's button.
         await(By.desc("Add Host")).click()
         field("host-address", 1).text = HOST
         field("host-user", 2).text = USER
@@ -45,9 +45,12 @@ class ReleaseSshTest {
         // First use: the host key is new, so the app asks.
         await(By.text("Trust")).click()
 
-        // The bridge sends the pane's screen; the pane view reports it as its text.
+        // Home, then the server's one terminal in Focus.
+        await(By.res("mode.focus")).click()
+        await(By.text("demo")).click()
+        // The server sends the terminal's screen; the terminal view reports it as its text.
         val pane = device.wait(Until.findObject(By.textContains(marker)), CONNECT_TIMEOUT)
-        assertNotNull("the pane never showed \"$marker\"", pane)
+        assertNotNull("the terminal never showed \"$marker\"", pane)
     }
 
     /** The field tagged [tag], or the [index]th text field when the dialog has no tag ids. */

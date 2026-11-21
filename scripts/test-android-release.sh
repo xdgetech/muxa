@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # The minified release build connects over SSH (ReleaseSshTest, ADR 0029). Everything it
-# reaches is throwaway: a tmux server of its own, a bridge with its own state dirs, and an
-# SSH host on 127.0.0.1 that `adb reverse` forwards from the device.
+# reaches is throwaway: the v2 server on the fake backend (crates/muxa-server/examples/
+# fake_server.rs) and an SSH host on 127.0.0.1 that `adb reverse` forwards from the device.
 #
-# Usage: scripts/test-android-release.sh  (make test-android-release builds the bridge first)
+# Usage: scripts/test-android-release.sh  (make test-android-release builds the server first)
 # Env:   ANDROID_SERIAL  a running emulator or device to use; the debug build's data on it is kept
 #        MUXA_AVD        else boot this AVD read-only, beside any running copy (default Pixel_10a)
 #        MUXA_SSH_PORT   the throwaway host's port (default 22722)
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-MUXA_SOCKET="muxa-test-release-$$"
-. "$root/scripts/lib/tmux.bash"
+pass() { printf 'PASS  %s\n' "$*"; }
+fail() { printf 'FAIL  %s\n' "$*"; exit 1; }
 
 sdk="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 adb="$sdk/platform-tools/adb"
@@ -20,36 +20,40 @@ studio_jdk="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 if [ -z "${JAVA_HOME:-}" ] && [ -x "$studio_jdk/bin/java" ]; then
   export JAVA_HOME="$studio_jdk"
 fi
-bridge="$root/target/debug/muxa-bridge"
+server="$root/target/debug/examples/fake_server"
 port="${MUXA_SSH_PORT:-22722}"
 avd="${MUXA_AVD:-Pixel_10a}"
-marker="muxa-release-$$"
+# The fake server's one terminal shows this.
+marker="hello"
 work="$(mktemp -d "${TMPDIR:-/tmp}/muxa-release.XXXXXX")"
 host_pid=""
+server_pid=""
 booted=""
 
 cleanup() {
   [ -n "$host_pid" ] && kill "$host_pid" 2>/dev/null || true
+  [ -n "$server_pid" ] && kill "$server_pid" 2>/dev/null || true
   if [ -n "${ANDROID_SERIAL:-}" ]; then
     "$adb" reverse --remove "tcp:$port" >/dev/null 2>&1 || true
   fi
   [ -n "$booted" ] && "$adb" -s "$booted" emu kill >/dev/null 2>&1 || true
-  mt_down
   rm -rf "$work"
 }
 trap cleanup EXIT
 
-[ -x "$bridge" ] || { echo "build the bridge first: cargo build -p muxa-bridge" >&2; exit 1; }
+[ -x "$server" ] || { echo "build the server first: cargo build -p muxa-server --example fake_server" >&2; exit 1; }
 
-# The pane the app must show.
-mt new-session -d -s release -x 80 -y 24 "printf '%s\\n' '$marker'; exec cat"
+"$server" "$work/server.sock" >"$work/server.log" 2>&1 &
+server_pid=$!
+for _ in $(seq 100); do
+  grep -q '^ready' "$work/server.log" && break
+  sleep 0.1
+done
+grep -q '^ready' "$work/server.log" || { echo "the v2 server did not start" >&2; exit 1; }
 
 (cd "$root/android" && ./gradlew --console=plain -q :testhost:installDist)
-# The bridge's own state, daemon and agent dirs, so it never reads the developer's.
-mkdir -p "$work/state" "$work/daemon" "$work/agents"
-"$root/android/testhost/build/install/testhost/bin/testhost" "$port" "$bridge" \
-  --socket "$MUXA_SOCKET" --idle-timeout 300 --state-dir "$work/state" --daemon-dir "$work/daemon" \
-  --workspaces "$work/workspaces.toml" --agent-dir "claude-code=$work/agents" --agent-dir "codex=$work/agents" \
+# Every exec reaches the server's socket, as `muxa-bridge connect` does.
+"$root/android/testhost/build/install/testhost/bin/testhost" "$port" nc -U "$work/server.sock" \
   >"$work/testhost.log" 2>&1 &
 host_pid=$!
 for _ in $(seq 100); do
@@ -88,7 +92,7 @@ for report in "$results"/TEST-*.xml; do
     cat "$report" >&2
     fail "the release test failed (logcat has the crash)"
   fi
-  grep -q 'name="connectsOverSshAndShowsThePane"' "$report" && passed=1
+  grep -q 'name="connectsOverSshAndShowsATerminal"' "$report" && passed=1
 done
 [ -n "$passed" ] || fail "the release test did not run"
-pass "the release build connected over SSH and showed the pane"
+pass "the release build connected over SSH and showed a terminal"

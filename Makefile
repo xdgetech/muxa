@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
@@ -103,8 +103,8 @@ bundle-android:
 	cp android/app/build/outputs/bundle/release/app-release.aab build/release/muxa.aab
 	@echo "Upload: build/release/muxa.aab"
 
-# The app's UI tests against the in-app demo bridge, on the running emulator or device
-# (start one first, e.g. `emulator -avd Pixel_Tablet`). Includes the fold and resize tests.
+# The app's UI tests against the in-app v2 demo server, on the running emulator or device
+# (start one first, e.g. `emulator -avd Pixel_Tablet`).
 test-android-app:
 	cd android && $(GRADLEW) :app:connectedDebugAndroidTest
 
@@ -113,10 +113,10 @@ test-android-tmux:
 	cargo build -p muxa-bridge
 	cd android && MUXA_BRIDGE=$(CURDIR)/target/debug/muxa-bridge $(GRADLEW) :session:test --rerun-tasks
 
-# The minified release build connects over SSH to a throwaway host and shows a pane
-# (ADR 0029). Boots a read-only emulator unless ANDROID_SERIAL names a device.
+# The minified release build connects over SSH to a throwaway host, which runs the v2
+# server on the fake backend, and shows a terminal (ADR 0029). Boots a read-only emulator unless ANDROID_SERIAL names a device.
 test-android-release:
-	cargo build -p muxa-bridge
+	cargo build -p muxa-server --example fake_server
 	scripts/test-android-release.sh
 
 # The iPad and iPhone app. The Xcode project is generated from apple/Muxa/project.yml (XcodeGen).
@@ -174,10 +174,6 @@ install-ipad: app-project
 	xcrun devicectl device install app --device '$(MUXA_DEVICE)' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app
 	xcrun devicectl device process launch --terminate-existing --device '$(MUXA_DEVICE)' \
 		"$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app/Info.plist)"
-
-# Google Play screenshots into build/screenshots, from the showcase on a phone and a tablet emulator.
-screenshots-android:
-	scripts/screenshots-android.sh
 
 # Humans only: archives a signed release build and exports the .ipa for App Store Connect.
 # Upload it with Xcode's Organizer or Transporter (store/RELEASE.md).

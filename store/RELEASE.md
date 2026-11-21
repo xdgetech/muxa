@@ -7,7 +7,7 @@ Everything a human enters in App Store Connect and the Play Console, in order. T
 | App Store text | `store/apple/{en-US,ja}/*.txt`; review notes in `store/apple/review_information/notes.txt` |
 | Play text | `store/play/{en-US,ja-JP}/*.txt`; reviewer steps in `store/play/app_access.txt` |
 | Play icon and feature graphic | `store/play/{en-US,ja-JP}/images/` (`make app-icon`) |
-| Screenshots | `build/screenshots/` (`make screenshots`, `make screenshots-android`) |
+| Screenshots | none yet for the v2 apps: `make screenshots` and `make screenshots-android` went with the v1 screens (`docs/plan.md`, D4 and D5) |
 | Privacy policy | `docs/privacy.md`, URL `https://github.com/xdgetech/muxa/blob/main/docs/privacy.md` |
 
 `make lint-store` (part of `make check`) checks every length limit and that the listing never says "demo" or "trial". App Review guideline 2.2 rejects trial versions, so the store text calls the built-in demo a "sample workspace".
@@ -166,5 +166,5 @@ An organization account needs no closed test before production. A personal accou
    - iOS: `CURRENT_PROJECT_VERSION` in `apple/Muxa/project.yml`, and `MARKETING_VERSION` for a new version.
    - Android: `versionCode`, and `versionName`, in `android/app/build.gradle.kts`.
 2. Add `store/play/*/changelogs/<versionCode>.txt`, and update both `release_notes.txt`.
-3. `make screenshots` and `make screenshots-android` if the UI changed.
+3. New screenshots if the UI changed. The v2 apps have no screenshot target yet.
 4. Build and upload as above.

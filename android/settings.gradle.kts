@@ -19,4 +19,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "muxa"
-include(":protocol", ":terminal", ":transport", ":v2", ":session", ":demo", ":app", ":testhost")
+include(":protocol", ":terminal", ":transport", ":v2", ":session", ":app", ":testhost")

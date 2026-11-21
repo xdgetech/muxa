@@ -89,6 +89,7 @@ android {
 
 dependencies {
     implementation(project(":session"))
+    implementation(project(":v2"))
     implementation(libs.bcprov)
     implementation(libs.serialization.json)
     implementation(platform(libs.compose.bom))
@@ -118,8 +119,6 @@ dependencies {
     // The release test drives the app from outside, so R8's renaming cannot break it.
     androidTestImplementation(libs.uiautomator)
     debugImplementation(libs.compose.ui.test.manifest)
-    // The in-app demo bridge: Try the Demo, and the UI tests.
-    implementation(project(":demo"))
 }
 
 // An unsigned bundle cannot be uploaded; say what is missing before building one.

@@ -1,0 +1,148 @@
+package tech.xdge.muxa.app.next
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import tech.xdge.muxa.app.ui.Icons
+import tech.xdge.muxa.app.ui.Theme
+import tech.xdge.muxa.v2.Routine
+import tech.xdge.muxa.v2.Terminal
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+
+/** `09:00 Europe/Berlin`, `09:00 Europe/Berlin · 0 9 * * 1-5`, `On request` or `Off`. */
+val Routine.whenText: String
+    get() {
+        if (!enabled) return "Off"
+        val at = at ?: return "On request"
+        val base = "$at ${timezone.orEmpty()}".trim()
+        return schedule?.let { "$base · $it" } ?: base
+    }
+
+private enum class Health { RUNNING, FAILED, OK, NEVER }
+
+private val Routine.health: Health
+    get() = when {
+        runningSince != null -> Health.RUNNING
+        last == null -> Health.NEVER
+        last?.ok == true -> Health.OK
+        else -> Health.FAILED
+    }
+
+@Composable
+fun RoutineRow(routine: Routine, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).testTag("routine.${routine.name}"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(routine.name)
+            Text(
+                "${routine.workspace} · ${routine.whenText}",
+                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        when (routine.health) {
+            Health.RUNNING -> Text("Running", color = Theme.accent, style = MaterialTheme.typography.labelMedium)
+            Health.FAILED -> Text("Failed", color = Theme.failure, style = MaterialTheme.typography.labelMedium)
+            Health.OK -> Icon(Icons.done, "OK", tint = Theme.connected)
+            Health.NEVER -> {}
+        }
+    }
+}
+
+@Composable
+fun RoutinePane(model: NextModel, routine: Routine) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(routine.name, style = MaterialTheme.typography.titleLarge)
+        Fact("Workspace", routine.workspace)
+        Fact("Runs", routine.whenText)
+        routine.nextDue?.let { Fact("Next run", time(it)) }
+        routine.runningSince?.let { Fact("Running since", time(it)) }
+        routine.last?.let { last ->
+            HorizontalDivider()
+            Text("Last run", style = MaterialTheme.typography.titleSmall)
+            Fact("At", time(last.at))
+            Fact("Result", if (last.ok) "OK" else "Failed")
+            last.published?.let { Fact("Items", "$it") }
+            last.reason?.let { Text(it, color = Theme.failure) }
+        }
+        HorizontalDivider()
+        Button(
+            { model.runRoutine(routine) },
+            enabled = routine.enabled && routine.runningSince == null,
+            modifier = Modifier.testTag("routine.run"),
+        ) { Text("Run Now") }
+        model.requestError?.let { Text(it, color = Theme.failure) }
+    }
+}
+
+@Composable
+private fun Fact(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value)
+    }
+}
+
+private fun time(unix: Long): String =
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+        .format(Instant.ofEpochSecond(unix).atZone(ZoneId.systemDefault()))
+
+/** Agents waiting on the user: short-lived, never Inbox items (ADR 0066 decision 3). */
+@Composable
+fun NeedsYouStrip(model: NextModel, open: (Terminal) -> Unit) {
+    val waiting = model.needsYou
+    if (waiting.isEmpty()) return
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Needs you", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = Theme.attention)
+        for (t in waiting) {
+            Row(
+                Modifier
+                    .background(Theme.attention.copy(alpha = 0.15f), RoundedCornerShape(50))
+                    .clickable(role = Role.Button) { open(t) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .testTag("needsyou.${t.id}"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.waiting, null, tint = Theme.attention)
+                Spacer(Modifier.padding(2.dp))
+                Text(t.title)
+            }
+        }
+    }
+}
+
+/** What a terminal is called in lists: its branch, name or id. */
+val Terminal.title: String get() = branch ?: name ?: id
