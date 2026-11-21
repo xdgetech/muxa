@@ -4,6 +4,7 @@
 
 pub mod feed;
 mod places;
+pub mod reader;
 mod routines;
 pub mod runner;
 mod tasks;

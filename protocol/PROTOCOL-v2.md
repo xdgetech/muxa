@@ -91,6 +91,9 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"routines"}` | `{"routines":[Routine...],"problems":[{"workspace","reason"}...]}` |
 | `{"type":"run-routine","workspace","name"}` | `{}`. The run reports through the Inbox; `conflict` while it already runs |
 | `{"type":"task-review","terminal","note"?}` | `{"inbox":Inbox}`. One open Review item for the Task of this agent terminal; `bad-request` for a terminal that is not a Task's agent |
+| `{"type":"reader-list","terminal","kind","html"?}` | `{"list":ReaderList}`: the files of the terminal's folder. See Reader |
+| `{"type":"reader-open","terminal","kind","path","html"?,"scope"?}` | `{"reader","content":ReaderContent}`. `reader` and `reader-ended` notifications follow |
+| `{"type":"reader-close","reader"}` | `{}`. `not-found` after `reader-ended` |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
@@ -121,8 +124,28 @@ An unknown Workspace or connection, a missing title, a wrong repo or branch, or 
 | `{"type":"changed","terminal":Terminal}` | After `watch`: a terminal started, or its status, size or liveness changed. It carries the whole terminal as it is now |
 | `{"type":"removed","terminal":"<id>"}` | After `watch`: the terminal is gone |
 | `{"type":"resync"}` | After `watch`: changes were lost. The client sends `terminals` again |
+| `{"type":"reader","reader","content":ReaderContent}` | An open Reader file changed. It carries the whole file as it is now |
+| `{"type":"reader-ended","reader","reason"}` | An open Reader file is gone, no longer listed, or cannot be read. The reader is closed |
 
-A watch ends with the connection. After a resume the client sends `watch` and `inbox` again.
+A watch ends with the connection, and so do open Reader files. After a resume the client sends `watch` and `inbox` again, and opens its Reader files again.
+
+### Reader
+
+The Reader shows the files of a terminal's folder, its `muxa.dir` label (plan F2): a Task's working place or a Routine run's folder. Another terminal has none: `bad-request`. A client names a file only by a path from `reader-list`; the server lists again on each read, so a file that leaves the list ends.
+
+`kind` is one of:
+
+- `docs`: the repo's Markdown files, or outside a repo every Markdown file in the folder, then `.muxa/TASK.md`, `.muxa/HANDOFF.md` and `.muxa/CHECK.md` when present. `html: true` adds HTML files (ADR 0065). Names that start with a dot are never listed, except those three.
+- `changes`: the files that differ from HEAD (staged, unstaged and untracked), and in `branch` what the branch's commits changed since it left its base. Outside a repo: `bad-request`. `scope` in `reader-open` is `uncommitted` (the default) or `branch`.
+- `images`: the repo's PNG, JPEG, GIF, WebP and HEIC files, ignored ones too, newest first; outside a repo, the folder's. At most 11 MiB each, so one fits in a frame.
+
+`ReaderList`: `{"root"?,"entries":[ReaderEntry...],"truncated"?,"branch"?:{"base","commits","entries","truncated"?}}`. `root` is the repo's folder name.
+
+`ReaderEntry`: `{"path","title"?,"mtime"?,"size"?,"status"?,"old_path"?,"added"?,"removed"?}`. Documents have `title` for HTML; images `size`; changes `status` (`modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`), `old_path` for a rename and the line counts for a text file.
+
+`ReaderContent`: `{"path","text"?,"data"?,"binary"?,"mtime"?}`. A document or a diff is `text`; a diff of a binary file is `binary: true`; an image is `data`, its bytes in base64.
+
+The server reads each open file every 2 s and sends `reader` only when it changed. File content never reaches the server's log.
 
 ### Routines
 

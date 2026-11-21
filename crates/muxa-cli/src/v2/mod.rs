@@ -4,6 +4,7 @@
 
 pub mod client;
 mod inbox;
+mod reader;
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -32,12 +33,18 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] run-routine WORKSPACE NAME
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
+       muxa-cli v2 [--bridge CMD] reader TERMINAL docs|changes|images [--html] [--json]
+       muxa-cli v2 [--bridge CMD] read TERMINAL docs|changes|images PATH [--html] [--commits]
+                [--seconds N]
 
   --bridge CMD   runs through sh -c (default: muxa-bridge connect),
                  e.g. 'ssh host ~/.local/bin/muxa-bridge connect'
   attach         Ctrl-] leaves. A lost connection is resumed.
   review         the Task is ready for review; TERMINAL defaults to
-                 $HC_TERMINAL_ID, so its agent can say so itself";
+                 $HC_TERMINAL_ID, so its agent can say so itself
+  reader         the files of a Task's or a Routine run's folder; read prints
+                 one (an image as its bytes), and with --seconds each change;
+                 --commits: a change's diff over the branch's commits";
 
 const NAME: &str = concat!("muxa-cli ", env!("CARGO_PKG_VERSION"));
 const QUIT: u8 = 0x1d; // Ctrl-]
@@ -84,6 +91,13 @@ enum Cmd {
         terminal: String,
         seconds: Option<u64>,
     },
+    Reader {
+        terminal: String,
+        kind: String,
+        html: bool,
+        json: bool,
+    },
+    Read(reader::Read),
 }
 
 /// Runs `muxa-cli v2 <args>`; `Ok(None)` printed the usage.
@@ -107,6 +121,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut p = lexopt::Parser::from_args(args);
     let mut bridge = "muxa-bridge connect".to_owned();
     let (mut json, mut plan, mut seconds) = (false, false, None);
+    let (mut html, mut branch) = (false, false);
     let (mut workspace, mut title, mut goal) = (None, None, None);
     let mut places: Vec<PlaceSpec> = Vec::new();
     let mut connections: Vec<String> = Vec::new();
@@ -118,6 +133,8 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("bridge") => bridge = p.value()?.string()?,
             Long("json") => json = true,
             Long("plan") => plan = true,
+            Long("html") => html = true,
+            Long("commits") => branch = true,
             Long("seconds") => seconds = Some(p.value()?.parse()?),
             Long("workspace") => workspace = Some(p.value()?.string()?),
             Long("title") => title = Some(p.value()?.string()?),
@@ -188,6 +205,20 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             action: inbox_action(rest, minutes)?,
             json,
         },
+        ["reader", t, k] => Cmd::Reader {
+            terminal: (*t).to_owned(),
+            kind: reader::kind(k)?,
+            html,
+            json,
+        },
+        ["read", t, k, path] => Cmd::Read(reader::Read {
+            terminal: (*t).to_owned(),
+            kind: reader::kind(k)?,
+            path: (*path).to_owned(),
+            html,
+            branch,
+            seconds,
+        }),
         ["attach", t] => Cmd::Attach {
             terminal: (*t).to_owned(),
             seconds,
@@ -278,6 +309,13 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             Ok(())
         }
         Cmd::Watch { seconds } => watch(bridge, seconds).await,
+        Cmd::Reader {
+            terminal,
+            kind,
+            html,
+            json,
+        } => reader::list(bridge, &terminal, &kind, html, json).await,
+        Cmd::Read(r) => reader::read(bridge, &r).await,
         Cmd::Routines { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "routines"})).await?;

@@ -354,6 +354,118 @@ pub enum ClientMsg {
         #[serde(default)]
         note: Option<String>,
     },
+    /// The documents, changed files or images of the terminal's folder.
+    ReaderList {
+        id: u64,
+        terminal: String,
+        kind: ReaderKind,
+        /// Documents: HTML files too (ADR 0065).
+        #[serde(default)]
+        html: bool,
+    },
+    /// Opens a listed file and follows it until `reader-close`.
+    ReaderOpen {
+        id: u64,
+        terminal: String,
+        kind: ReaderKind,
+        path: String,
+        #[serde(default)]
+        html: bool,
+        /// Changes: which diff. Absent: uncommitted.
+        #[serde(default)]
+        scope: Option<DiffScope>,
+    },
+    ReaderClose {
+        id: u64,
+        reader: u32,
+    },
+}
+
+/// What the Reader lists and opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReaderKind {
+    Docs,
+    Changes,
+    Images,
+}
+
+/// Which diff of a changed file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiffScope {
+    /// Against HEAD: staged, unstaged and untracked.
+    Uncommitted,
+    /// The branch's commits since it left its base.
+    Branch,
+}
+
+/// A file the Reader may open. Which fields are set depends on the kind.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReaderEntry {
+    /// Relative to the folder's repo, or to the folder outside a repo.
+    pub path: String,
+    /// Documents: the first heading, or an HTML `<title>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Unix seconds of the last change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtime: Option<u64>,
+    /// Images: bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// Changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::ChangeStatus>,
+    /// Changes: the path before a rename.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
+    /// Changes: lines added and removed; absent for a binary file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReaderList {
+    /// The repo's folder name; absent outside a repo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+    pub entries: Vec<ReaderEntry>,
+    /// More files exist than were listed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    /// Changes: what the branch's commits changed since it left its base.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<ReaderBranch>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReaderBranch {
+    /// The ref compared with, e.g. `origin/main`.
+    pub base: String,
+    pub commits: u32,
+    pub entries: Vec<ReaderEntry>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+/// An open file as it is now.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReaderContent {
+    pub path: String,
+    /// Documents and diffs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Images: the bytes in base64.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    /// A diff of a binary file: no text.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub binary: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtime: Option<u64>,
 }
 
 /// What an Inbox item asks of the user (ADR 0066).
@@ -534,6 +646,16 @@ pub enum ServerMsg {
     Inbox {
         inbox: Inbox,
     },
+    /// An open Reader file changed.
+    Reader {
+        reader: u32,
+        content: ReaderContent,
+    },
+    /// An open Reader file is gone, or cannot be read any more.
+    ReaderEnded {
+        reader: u32,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -558,6 +680,13 @@ pub enum Reply {
     Routines {
         routines: Vec<Routine>,
         problems: Vec<RoutineProblem>,
+    },
+    Listed {
+        list: ReaderList,
+    },
+    Opened {
+        reader: u32,
+        content: ReaderContent,
     },
     Empty {},
 }
@@ -646,6 +775,55 @@ mod tests {
             serde_json::to_value(&reply).unwrap(),
             json!({"type": "reply", "id": 4, "channel": 1})
         );
+        let open: ClientMsg = serde_json::from_value(json!({"type": "reader-open", "id": 5,
+            "terminal": "t7", "kind": "changes", "path": "a.rs", "scope": "branch"}))
+        .unwrap();
+        assert!(matches!(
+            open,
+            ClientMsg::ReaderOpen {
+                kind: ReaderKind::Changes,
+                scope: Some(DiffScope::Branch),
+                html: false,
+                ..
+            }
+        ));
+        let opened = ServerMsg::Reply {
+            id: 5,
+            body: Reply::Opened {
+                reader: 2,
+                content: ReaderContent {
+                    path: "a.rs".into(),
+                    text: Some("diff".into()),
+                    ..ReaderContent::default()
+                },
+            },
+        };
+        let wire = serde_json::to_value(&opened).unwrap();
+        assert_eq!(
+            wire,
+            json!({"type": "reply", "id": 5, "reader": 2, "content": {"path": "a.rs", "text": "diff"}})
+        );
+        assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), opened);
+        let listed = ServerMsg::Reply {
+            id: 6,
+            body: Reply::Listed {
+                list: ReaderList {
+                    entries: vec![ReaderEntry {
+                        path: "a.rs".into(),
+                        status: Some(crate::ChangeStatus::Renamed),
+                        old_path: Some("b.rs".into()),
+                        ..ReaderEntry::default()
+                    }],
+                    ..ReaderList::default()
+                },
+            },
+        };
+        let wire = serde_json::to_value(&listed).unwrap();
+        assert_eq!(
+            wire["list"],
+            json!({"entries": [{"path": "a.rs", "status": "renamed", "old_path": "b.rs"}]})
+        );
+        assert_eq!(serde_json::from_value::<ServerMsg>(wire).unwrap(), listed);
         let err = ServerMsg::Error {
             id: Some(4),
             code: ErrorCode::NotFound,

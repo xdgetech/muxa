@@ -1,14 +1,17 @@
 //! A protocol v2 client against the server on the fake backend.
 
+use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Exit, Launch, SessionBackend, TerminalId};
-use muxa_protocol::v2::{Frame, INITIAL_CREDIT, Kind};
+use muxa_protocol::v2::{
+    Frame, INITIAL_CREDIT, Kind, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
+};
 use muxa_server::{
-    Config, Host, Inbox, Prepared, RoutineList, ServeError, Services, Sessions, TaskError,
-    TaskSpec, serve, watch_tasks,
+    Config, Host, Inbox, Prepared, ReaderOpen, RoutineList, ServeError, Services, Sessions,
+    TaskError, TaskSpec, serve, watch_tasks,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -71,6 +74,39 @@ impl Host for FakeTasks {
             "digest" => Err(TaskError::Busy("digest already runs".into())),
             _ => Ok(()),
         }
+    }
+
+    /// The Markdown files directly in `dir`.
+    async fn reader_list(
+        &self,
+        dir: &Path,
+        _kind: ReaderKind,
+        _html: bool,
+    ) -> Result<ReaderList, TaskError> {
+        let mut entries: Vec<ReaderEntry> = std::fs::read_dir(dir)
+            .map_err(|e| TaskError::Failed(e.to_string()))?
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.ends_with(".md"))
+            .map(|path| ReaderEntry {
+                path,
+                ..ReaderEntry::default()
+            })
+            .collect();
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(ReaderList {
+            entries,
+            ..ReaderList::default()
+        })
+    }
+
+    async fn reader_read(&self, dir: &Path, open: &ReaderOpen) -> Result<ReaderContent, TaskError> {
+        let text = std::fs::read_to_string(dir.join(&open.path))
+            .map_err(|_| TaskError::Invalid(format!("{} is gone", open.path)))?;
+        Ok(ReaderContent {
+            path: open.path.clone(),
+            text: Some(text),
+            ..ReaderContent::default()
+        })
     }
 }
 
@@ -150,19 +186,24 @@ impl Client {
     }
 
     async fn read(&mut self) -> Frame {
-        tokio::time::timeout(Duration::from_secs(2), async {
+        self.read_for(Duration::from_secs(2)).await
+    }
+
+    async fn read_for(&mut self, wait: Duration) -> Frame {
+        tokio::time::timeout(wait, async {
             loop {
                 if let Some(f) = Frame::decode(&mut self.buf).unwrap() {
                     return f;
                 }
-                let mut chunk = [0u8; 65536];
+                // On the heap: each future that holds it is on the test's stack.
+                let mut chunk = vec![0u8; 65536];
                 let n = self.io.read(&mut chunk).await.unwrap();
                 assert!(n > 0, "server closed the connection");
                 self.buf.extend_from_slice(&chunk[..n]);
             }
         })
         .await
-        .expect("a frame within 2 s")
+        .expect("a frame in time")
     }
 
     async fn read_control(&mut self) -> Value {
@@ -910,4 +951,82 @@ async fn routines_are_listed_and_run_now() {
     )
     .await;
     assert_eq!(busy["code"], "conflict");
+}
+
+/// Waits for the next `reader` or `reader-ended` notification; the server
+/// reads open files every 2 s.
+async fn reader_note(client: &mut Client) -> Value {
+    let until = Instant::now() + Duration::from_secs(8);
+    loop {
+        assert!(Instant::now() < until, "no reader notification");
+        let frame = client.read_for(Duration::from_secs(8)).await;
+        let f: Value = serde_json::from_slice(&frame.payload).unwrap();
+        if f["type"] == "reader" || f["type"] == "reader-ended" {
+            return f;
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_reader_follows_a_file_of_the_terminals_folder() {
+    let dir = std::env::temp_dir().join(format!("muxa-server-reader-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("PLAN.md"), "# one").unwrap();
+    std::fs::write(dir.join("notes.txt"), "no").unwrap();
+    let backend = FakeBackend::new();
+    let agent = backend
+        .run(&Launch {
+            labels: [("muxa.dir".to_owned(), dir.display().to_string())].into(),
+            ..Launch::default()
+        })
+        .await
+        .unwrap()
+        .id;
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let listed = request(
+        &mut client,
+        json!({"type": "reader-list", "id": 1, "terminal": agent.as_str(), "kind": "docs"}),
+    )
+    .await;
+    assert_eq!(listed["list"], json!({"entries": [{"path": "PLAN.md"}]}));
+    let opened = request(
+        &mut client,
+        json!({"type": "reader-open", "id": 2, "terminal": agent.as_str(), "kind": "docs", "path": "PLAN.md"}),
+    )
+    .await;
+    let reader = opened["reader"].clone();
+    assert_eq!(
+        opened["content"],
+        json!({"path": "PLAN.md", "text": "# one"})
+    );
+    std::fs::write(dir.join("PLAN.md"), "# two").unwrap();
+    let changed = reader_note(&mut client).await;
+    assert_eq!(
+        changed,
+        json!({"type": "reader", "reader": reader, "content": {"path": "PLAN.md", "text": "# two"}})
+    );
+    std::fs::remove_file(dir.join("PLAN.md")).unwrap();
+    let ended = reader_note(&mut client).await;
+    assert_eq!(
+        (&ended["type"], &ended["reader"]),
+        (&json!("reader-ended"), &reader)
+    );
+    let closed = request(
+        &mut client,
+        json!({"type": "reader-close", "id": 3, "reader": reader}),
+    )
+    .await;
+    assert_eq!(closed["code"], "not-found", "an ended reader is closed");
+
+    // A terminal muxa did not start has no folder.
+    let shell = terminal(&backend).await;
+    let refused = request(
+        &mut client,
+        json!({"type": "reader-list", "id": 4, "terminal": shell.as_str(), "kind": "docs"}),
+    )
+    .await;
+    assert_eq!(refused["code"], "bad-request");
+    let _ = std::fs::remove_dir_all(&dir);
 }

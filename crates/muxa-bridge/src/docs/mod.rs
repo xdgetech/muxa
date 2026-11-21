@@ -2,10 +2,10 @@
 //! sending its whole text again whenever it changes. `image_task` does the same
 //! for images.
 
-mod files;
+pub(crate) mod files;
 mod folder;
 mod image_task;
-mod images;
+pub(crate) mod images;
 
 #[cfg(test)]
 pub(crate) use files::is_doc_or_html;

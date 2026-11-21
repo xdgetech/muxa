@@ -59,7 +59,32 @@ pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config, html: bool
             tracing::warn!(pane = %pane.pane, error = %e, "cannot list the agent's documents")
         }
     }
-    let root = repo_root(Path::new(&pane.path));
+    let keep = if html { is_doc_or_html } else { is_doc };
+    build(listing, Path::new(&pane.path), html, || {
+        super::folder::served(records, pane, keep)
+    })
+}
+
+/// A Task's or a Routine run's folder (protocol v2): its repo's documents,
+/// or outside a repo every document in the folder. No agent plans: they
+/// are found by pane.
+pub fn for_folder(dir: &Path, html: bool) -> Listing {
+    let keep = if html { is_doc_or_html } else { is_doc };
+    let base = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    build(Listing::default(), &base, html, || {
+        super::folder::scan(&base, keep, None)
+    })
+}
+
+/// Adds the repo's documents of `path`, or `outside()` when it is in no
+/// repo, then the Task files.
+fn build(
+    mut listing: Listing,
+    path: &Path,
+    html: bool,
+    outside: impl FnOnce() -> Vec<super::folder::Found>,
+) -> Listing {
+    let root = repo_root(path);
     if let Some(root) = &root {
         listing.root = root.file_name().map(|n| n.to_string_lossy().into_owned());
         let (files, truncated) = repo_files(root, html);
@@ -78,11 +103,10 @@ pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config, html: bool
             }
         }));
     }
-    let outside = root.is_none();
-    let base = root.unwrap_or_else(|| PathBuf::from(&pane.path));
-    if outside {
-        let keep = if html { is_doc_or_html } else { is_doc };
-        let mut found = super::folder::served(records, pane, keep);
+    let in_repo = root.is_some();
+    let base = root.unwrap_or_else(|| path.to_path_buf());
+    if !in_repo {
+        let mut found = outside();
         found.sort_by(|a, b| a.path.cmp(&b.path));
         listing.truncated = found.len() > MAX_DOCS;
         found.truncate(MAX_DOCS);
@@ -266,7 +290,7 @@ pub(crate) fn mtime(path: &Path) -> Option<u64> {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ReadError {
-    #[error("{0} is not one of this pane's documents")]
+    #[error("{0} is not a listed file")]
     NotListed(String),
     #[error("{0} is outside its directory")]
     Outside(String),

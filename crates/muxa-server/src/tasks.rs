@@ -5,10 +5,14 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
-use muxa_protocol::v2::{Place, PlaceSpec, Routine, RoutineProblem};
+use muxa_protocol::v2::{
+    Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList, Routine, RoutineProblem,
+};
+
+use crate::reader::ReaderOpen;
 
 /// Labels on an agent terminal muxa started. herdr-core keeps them with the
 /// terminal, so a restarted server still finds the Task's agent.
@@ -101,6 +105,26 @@ pub trait Host: Send + Sync {
         _name: &str,
     ) -> impl Future<Output = Result<(), TaskError>> + Send {
         async { Err(TaskError::Invalid("this host runs no Routines".into())) }
+    }
+
+    /// The files of `kind` in `dir` the Reader may open. Nothing else is served.
+    fn reader_list(
+        &self,
+        _dir: &Path,
+        _kind: ReaderKind,
+        _html: bool,
+    ) -> impl Future<Output = Result<ReaderList, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no Reader".into())) }
+    }
+
+    /// A listed file of `dir` as it is now. Called again while it is open, so
+    /// it checks again that the file is listed.
+    fn reader_read(
+        &self,
+        _dir: &Path,
+        _open: &ReaderOpen,
+    ) -> impl Future<Output = Result<ReaderContent, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no Reader".into())) }
     }
 }
 

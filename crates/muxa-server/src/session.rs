@@ -10,12 +10,14 @@ use muxa_backend::{
 };
 use muxa_inbox::Inbox;
 use muxa_protocol::v2::{
-    self, ClientMsg, ErrorCode, Frame, Kind, Reply, Resume, ResumeChannel, Resumed, ServerMsg,
+    self, ClientMsg, DiffScope, ErrorCode, Frame, Kind, Reply, Resume, ResumeChannel, Resumed,
+    ServerMsg,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::attachment::{Attachment, Checked, Cmd, Link};
+use crate::reader::{self, ReaderOpen, Readers};
 use crate::sessions::{Handle, Sessions};
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::wire::{self, Incoming};
@@ -69,6 +71,7 @@ struct Session<'a, B: SessionBackend, H: Host> {
     attachments: HashMap<u32, Handle>,
     next_channel: u32,
     park_for: Duration,
+    readers: Readers,
 }
 
 /// What to start on a resumed channel once `welcome` is out.
@@ -122,7 +125,10 @@ where
         attachments: HashMap::new(),
         next_channel: 1,
         park_for: config.park,
+        readers: Readers::default(),
     };
+    let mut reader_tick = tokio::time::interval(reader::TICK);
+    reader_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let (token, resumed, starts) = match resume {
         Some(r) => session.resume(sessions, r).await?,
         None => (token().map_err(ServeError::Token)?, Vec::new(), Vec::new()),
@@ -151,6 +157,9 @@ where
                 session.attachments.remove(&channel);
             }
             change = next_change(&mut session.changes) => session.change(change).await,
+            _ = reader_tick.tick(), if !session.readers.open.is_empty() => {
+                session.refresh_readers().await;
+            }
             () = next_revision(&mut session.inbox_watch) => {
                 let inbox = session.inbox.view();
                 send(&session.out, &ServerMsg::Inbox { inbox });
@@ -358,11 +367,91 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     Err((code, message)) => self.error(Some(id), code, message),
                 }
             }
+            ClientMsg::ReaderList {
+                id,
+                terminal,
+                kind,
+                html,
+            } => {
+                let listed = match reader::folder(self.backend, &terminal).await {
+                    Ok(dir) => self
+                        .host
+                        .reader_list(&dir, kind, html)
+                        .await
+                        .map_err(|e| (task_code(&e), e.to_string())),
+                    Err(e) => Err(e),
+                };
+                match listed {
+                    Ok(list) => self.reply(id, Reply::Listed { list }),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
+            ClientMsg::ReaderOpen {
+                id,
+                terminal,
+                kind,
+                path,
+                html,
+                scope,
+            } => {
+                let open = ReaderOpen {
+                    kind,
+                    path,
+                    html,
+                    scope: scope.unwrap_or(DiffScope::Uncommitted),
+                };
+                self.open_reader(id, &terminal, open).await;
+            }
+            ClientMsg::ReaderClose { id, reader } => match self.readers.open.remove(&reader) {
+                Some(_) => self.reply(id, Reply::Empty {}),
+                None => self.error(Some(id), ErrorCode::NotFound, format!("no reader {reader}")),
+            },
             other => match inbox::handle(other, self.inbox, self.host).await {
                 Some((id, Ok(body))) => self.reply(id, body),
                 Some((id, Err((code, message)))) => self.error(Some(id), code, message),
                 None => self.error(None, ErrorCode::BadRequest, "unknown request".into()),
             },
+        }
+    }
+
+    async fn open_reader(&mut self, id: u64, terminal: &str, open: ReaderOpen) {
+        let dir = match reader::folder(self.backend, terminal).await {
+            Ok(dir) => dir,
+            Err((code, message)) => return self.error(Some(id), code, message),
+        };
+        match self.host.reader_read(&dir, &open).await {
+            Ok(content) => {
+                let reader = self.readers.add(dir, open, &content);
+                self.reply(id, Reply::Opened { reader, content });
+            }
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+        }
+    }
+
+    /// Sends each open file that changed, and ends the ones that cannot be
+    /// read any more.
+    async fn refresh_readers(&mut self) {
+        let numbers: Vec<u32> = self.readers.open.keys().copied().collect();
+        for reader in numbers {
+            let Some(o) = self.readers.open.get(&reader) else {
+                continue;
+            };
+            match self.host.reader_read(&o.dir, &o.open).await {
+                Ok(content) => {
+                    let stamp = reader::stamp(&content);
+                    if let Some(o) = self.readers.open.get_mut(&reader)
+                        && o.sent != stamp
+                    {
+                        o.sent = stamp;
+                        send(&self.out, &ServerMsg::Reader { reader, content });
+                    }
+                }
+                Err(e) => {
+                    self.readers.open.remove(&reader);
+                    let reason = e.to_string();
+                    send(&self.out, &ServerMsg::ReaderEnded { reader, reason });
+                }
+            }
         }
     }
 

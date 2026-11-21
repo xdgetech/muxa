@@ -101,9 +101,26 @@ fn in_repo(root: PathBuf) -> Listing {
     }
 }
 
+/// A Task's or a Routine run's folder (protocol v2): its repo's images, or
+/// outside a repo every image in the folder.
+pub fn for_folder(dir: &Path) -> Listing {
+    match files::repo_root(dir) {
+        Some(root) => in_repo(root),
+        None => {
+            let base = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+            let found = super::folder::scan(&base, is_image, None);
+            outside(base, found)
+        }
+    }
+}
+
 fn outside_repo(pane: &PaneInfo, records: &Config) -> Listing {
-    let base = PathBuf::from(&pane.path);
-    let mut images: Vec<Image> = super::folder::served(records, pane, is_image)
+    let found = super::folder::served(records, pane, is_image);
+    outside(PathBuf::from(&pane.path), found)
+}
+
+fn outside(base: PathBuf, found: Vec<super::folder::Found>) -> Listing {
+    let mut images: Vec<Image> = found
         .into_iter()
         .filter_map(|f| {
             let file = base.join(&f.path);

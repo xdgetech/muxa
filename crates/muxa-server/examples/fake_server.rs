@@ -1,16 +1,20 @@
 //! The v2 server on the fake backend at a Unix socket, for client tests in
 //! other languages (`make test-apple-v2`). One terminal, `demo`, shows
-//! `hello ` and echoes input as `echo:<bytes>`.
+//! `hello ` and echoes input as `echo:<bytes>`. Its folder's Reader has one
+//! document, one changed file and one image, all fixed.
 //!
 //! Usage: `fake_server SOCKET`. It runs until killed.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend};
+use muxa_protocol::ChangeStatus;
+use muxa_protocol::v2::{ReaderContent, ReaderEntry, ReaderKind, ReaderList};
 use muxa_server::{
-    Config, Host, Inbox, PARK, Prepared, RoutineList, Services, Sessions, TaskError, TaskSpec,
-    serve,
+    Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
+    TaskSpec, serve,
 };
 use tokio::net::UnixListener;
 
@@ -64,6 +68,61 @@ impl Host for FakeHost {
             _ => Ok(()),
         }
     }
+
+    async fn reader_list(
+        &self,
+        _dir: &Path,
+        kind: ReaderKind,
+        _html: bool,
+    ) -> Result<ReaderList, TaskError> {
+        let entry = match kind {
+            ReaderKind::Docs => ReaderEntry {
+                path: "PLAN.md".into(),
+                ..ReaderEntry::default()
+            },
+            ReaderKind::Changes => ReaderEntry {
+                path: "a.txt".into(),
+                status: Some(ChangeStatus::Modified),
+                added: Some(1),
+                removed: Some(1),
+                ..ReaderEntry::default()
+            },
+            ReaderKind::Images => ReaderEntry {
+                path: "shot.png".into(),
+                size: Some(4),
+                ..ReaderEntry::default()
+            },
+        };
+        Ok(ReaderList {
+            root: Some("demo".into()),
+            entries: vec![entry],
+            ..ReaderList::default()
+        })
+    }
+
+    async fn reader_read(
+        &self,
+        _dir: &Path,
+        open: &ReaderOpen,
+    ) -> Result<ReaderContent, TaskError> {
+        let (text, data) = match (open.kind, open.path.as_str()) {
+            (ReaderKind::Docs, "PLAN.md") => (Some("# Plan\n"), None),
+            (ReaderKind::Changes, "a.txt") => (Some("@@ -1 +1 @@\n-one\n+two\n"), None),
+            (ReaderKind::Images, "shot.png") => (None, Some("iVBORw==")),
+            _ => {
+                return Err(TaskError::Invalid(format!(
+                    "{} is not a listed file",
+                    open.path
+                )));
+            }
+        };
+        Ok(ReaderContent {
+            path: open.path.clone(),
+            text: text.map(str::to_owned),
+            data: data.map(str::to_owned),
+            ..ReaderContent::default()
+        })
+    }
 }
 
 #[tokio::main]
@@ -74,6 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = FakeBackend::new();
     let demo = Launch {
         name: Some("demo".into()),
+        labels: [("muxa.dir".to_owned(), "/work/demo".to_owned())].into(),
         ..Launch::default()
     };
     let id = backend.run(&demo).await?.id;

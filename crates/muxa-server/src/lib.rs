@@ -4,6 +4,7 @@
 
 mod attachment;
 mod inbox;
+pub mod reader;
 mod ring;
 mod session;
 mod sessions;
@@ -12,6 +13,7 @@ pub mod tasks;
 mod wire;
 
 pub use muxa_inbox::Inbox;
+pub use reader::ReaderOpen;
 pub use session::{Config, PARK, ServeError, Services, serve};
 pub use sessions::Sessions;
 pub use task_items::watch_tasks;

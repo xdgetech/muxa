@@ -1,15 +1,16 @@
 //! `muxa-cli v2` end to end: the binary, a relay like `muxa-bridge connect`,
 //! and the real server on the fake backend.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
+use muxa_protocol::v2::{ReaderContent, ReaderEntry, ReaderKind, ReaderList};
 use muxa_server::{
-    Config, Host, Inbox, PARK, Prepared, Services, Sessions, TaskError, TaskSpec, serve,
+    Config, Host, Inbox, PARK, Prepared, ReaderOpen, Services, Sessions, TaskError, TaskSpec, serve,
 };
 use serde_json::Value;
 use tokio::net::UnixListener;
@@ -50,6 +51,40 @@ impl Host for WorkTasks {
             argv: vec!["agent".into()],
             env: Default::default(),
             places: Vec::new(),
+        })
+    }
+
+    /// The Markdown files in `dir`, with a title.
+    async fn reader_list(
+        &self,
+        dir: &Path,
+        _kind: ReaderKind,
+        _html: bool,
+    ) -> Result<ReaderList, TaskError> {
+        let mut entries: Vec<ReaderEntry> = std::fs::read_dir(dir)
+            .map_err(|e| TaskError::Failed(e.to_string()))?
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.ends_with(".md"))
+            .map(|path| ReaderEntry {
+                title: Some(format!("About {path}")),
+                path,
+                ..ReaderEntry::default()
+            })
+            .collect();
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(ReaderList {
+            entries,
+            ..ReaderList::default()
+        })
+    }
+
+    async fn reader_read(&self, dir: &Path, open: &ReaderOpen) -> Result<ReaderContent, TaskError> {
+        let text = std::fs::read_to_string(dir.join(&open.path))
+            .map_err(|_| TaskError::Invalid(format!("{} is gone", open.path)))?;
+        Ok(ReaderContent {
+            path: open.path.clone(),
+            text: Some(text),
+            ..ReaderContent::default()
         })
     }
 }
@@ -253,4 +288,44 @@ async fn an_agent_says_its_task_is_ready_for_review() {
     let agent = started["terminal"]["id"].as_str().unwrap();
     let out = stdout(&host.cli(&["review", agent, "--note", "draft PR #7"]).await);
     assert!(out.ends_with("\treview\tReview fix\n"), "{out:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reader_lists_and_follows_a_tasks_file() {
+    let host = TestHost::start("reader").await;
+    let folder = host.dir.join("task");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("PLAN.md"), "# one\n").unwrap();
+    let agent = host
+        .backend
+        .run(&Launch {
+            labels: [("muxa.dir".to_owned(), folder.display().to_string())].into(),
+            ..Launch::default()
+        })
+        .await
+        .unwrap()
+        .id;
+    let listed = stdout(&host.cli(&["reader", agent.as_str(), "docs"]).await);
+    assert_eq!(listed, "PLAN.md  About PLAN.md\n");
+    let changer = {
+        let file = folder.join("PLAN.md");
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            std::fs::write(file, "# two\n").unwrap();
+        })
+    };
+    let read = stdout(
+        &host
+            .cli(&["read", agent.as_str(), "docs", "PLAN.md", "--seconds", "5"])
+            .await,
+    );
+    changer.await.unwrap();
+    assert_eq!(read, "# one\n# two\n");
+    let shell = host.terminal().await;
+    let refused = host.cli(&["reader", shell.as_str(), "docs"]).await;
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("no folder"),
+        "{refused:?}"
+    );
 }

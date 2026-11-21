@@ -145,6 +145,23 @@ impl Host for BridgeHost {
             })
     }
 
+    async fn reader_list(
+        &self,
+        dir: &std::path::Path,
+        kind: muxa_protocol::v2::ReaderKind,
+        html: bool,
+    ) -> Result<muxa_protocol::v2::ReaderList, TaskError> {
+        super::reader::list(dir, kind, html).await
+    }
+
+    async fn reader_read(
+        &self,
+        dir: &std::path::Path,
+        open: &muxa_server::ReaderOpen,
+    ) -> Result<muxa_protocol::v2::ReaderContent, TaskError> {
+        super::reader::read(dir, open).await
+    }
+
     async fn workspaces(&self) -> Vec<String> {
         let records = Arc::clone(&self.records);
         let loaded = tokio::task::spawn_blocking(move || records.load_workspaces()).await;

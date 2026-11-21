@@ -36,7 +36,8 @@ pub enum Event {
     /// The channel is over: the exit, or `None` when it was detached or not
     /// resumed.
     Closed { channel: u32, exit: Option<Value> },
-    /// `changed`, `removed` or `resync` after `watch`.
+    /// `changed`, `removed` or `resync` after `watch`, and `reader` or
+    /// `reader-ended` for an open Reader file.
     Notice(Value),
 }
 
@@ -250,7 +251,9 @@ where
                 }
                 Some(Event::Paint { channel })
             }
-            "changed" | "removed" | "resync" => Some(Event::Notice(msg)),
+            "changed" | "removed" | "resync" | "reader" | "reader-ended" => {
+                Some(Event::Notice(msg))
+            }
             _ => None,
         }
     }
