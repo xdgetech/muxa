@@ -302,6 +302,17 @@ fn prepare(dir: &Path) -> Result<PathBuf, String> {
 async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
     use tokio::signal::unix::{SignalKind, signal};
     let listener = socket::bind(path)?;
+    // Protocol v2 beside v1 until the switch (ADR 0067).
+    let v2_path = path.with_file_name(crate::v2::FILE);
+    match socket::bind(&v2_path) {
+        Ok(v2) => {
+            let program = std::env::var("MUXA_HC").unwrap_or_else(|_| "hc".to_owned());
+            let herdr = Arc::new(crate::v2::Herdr::new(program));
+            tokio::spawn(crate::v2::accept(v2, herdr));
+            tracing::info!(socket = %v2_path.display(), "protocol v2 listening");
+        }
+        Err(e) => tracing::warn!(error = %e, "protocol v2 is off: cannot bind its socket"),
+    }
     let mut term = signal(SignalKind::terminate())?;
     let mut int = signal(SignalKind::interrupt())?;
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
@@ -347,8 +358,12 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
     }
     // A check's process group does not outlive a clean exit (ADR 0019).
     daemon.loops.lock().await.stop_checks().await;
-    if let Err(e) = std::fs::remove_file(path) {
-        tracing::warn!(error = %e, "cannot remove the socket");
+    for socket in [path, v2_path.as_path()] {
+        if let Err(e) = std::fs::remove_file(socket)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(error = %e, socket = %socket.display(), "cannot remove a socket");
+        }
     }
     Ok(())
 }

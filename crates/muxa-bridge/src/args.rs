@@ -10,6 +10,7 @@ pub const USAGE: &str = "usage: muxa-bridge [--tmux PATH] [--socket NAME] [--idl
                    [--task-command COMMAND] [--state-dir DIR] [--workspaces FILE]
                    [--daemon-dir DIR] [--version]
        muxa-bridge daemon run|install|stop|restart|uninstall|status [flags] [--print]
+       muxa-bridge connect [--daemon-dir DIR]
 
 Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
   --tmux PATH             tmux binary (default: Homebrew, /usr/local/bin, then PATH)
@@ -27,6 +28,9 @@ Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
                           (default: $XDG_CONFIG_HOME/muxa/workspaces.toml, else ~/.config/...)
   --daemon-dir DIR        the daemon's socket, lock and log
                           (default: $XDG_STATE_HOME/muxa, else ~/.local/state/muxa)
+
+`connect` relays protocol v2 (ADR 0067) to the daemon's server.sock; v2 apps
+run it as their SSH exec command.
 
 The daemon runs the Task Loop on the host (ADR 0019). `daemon install` takes
 the flags above, writes a LaunchAgent (macOS) or a systemd user unit (Linux)
@@ -54,6 +58,8 @@ const DEFAULT_IDLE: Duration = Duration::from_secs(60);
 pub enum Action {
     Serve(Args),
     Daemon(Daemon),
+    /// `connect [--daemon-dir DIR]`: relay a protocol v2 client to the daemon.
+    Connect(Args),
     CodexRpc(CodexRpc),
     Version,
     /// The usage text to print.
@@ -176,6 +182,12 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
         })?;
         return Ok(match parsed {
             Action::Serve(args) => Action::Daemon(Daemon { op, args, print }),
+            other => other,
+        });
+    }
+    if args.first().is_some_and(|a| a == "connect") {
+        return Ok(match parse_flags(args.split_off(1), |_| false)? {
+            Action::Serve(args) => Action::Connect(args),
             other => other,
         });
     }
@@ -499,5 +511,17 @@ mod tests {
         // A Homebrew or /usr/local tmux on this machine comes first.
         assert!(found == bin || TMUX_CANDIDATES.iter().any(|c| found == Path::new(c)));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn connect_takes_the_daemon_dir() {
+        let Action::Connect(a) = parse_strs(&["connect", "--daemon-dir", "/d"]).unwrap() else {
+            panic!("not connect");
+        };
+        assert_eq!(a.daemon_dir, Some("/d".into()));
+        assert!(matches!(
+            parse_strs(&["connect"]).unwrap(),
+            Action::Connect(_)
+        ));
     }
 }

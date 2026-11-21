@@ -147,6 +147,11 @@ impl Client {
         Ok(Client { inner })
     }
 
+    /// True once the connection to herdr-core is gone.
+    pub fn is_closed(&self) -> bool {
+        self.state().closed
+    }
+
     pub fn version(&self) -> &str {
         &self.inner.version
     }

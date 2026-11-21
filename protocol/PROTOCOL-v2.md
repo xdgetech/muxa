@@ -5,7 +5,7 @@ Status: draft (2026-11-21), built in slices B1–B3 of `docs/plan.md`. ADR 0067.
 ## Transport
 
 - A client on another device runs `muxa-bridge connect` over SSH exec. The bridge relays stdin and stdout to the server's socket and adds nothing.
-- A client on the host connects to the server's Unix socket directly.
+- A client on the host connects to the server's Unix socket directly: `server.sock` in the daemon's directory (`$XDG_STATE_HOME/muxa`, else `~/.local/state/muxa`), beside v1's `daemon.sock`.
 - The socket is mode 0600 in a 0700 directory; the server checks the peer's uid.
 
 ## Frames

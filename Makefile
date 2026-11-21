@@ -37,6 +37,7 @@ test-tmux:
 test-herdr:
 	MUXA_TEST_HERDR=1 cargo test -p muxa-herdr --features herdr-integration
 	MUXA_TEST_HERDR=1 cargo test -p muxa-server --features herdr-integration --test herdr_live
+	MUXA_TEST_HERDR=1 cargo test -p muxa-bridge --features herdr-integration v2::
 
 test-harness:
 	bats tests/harness

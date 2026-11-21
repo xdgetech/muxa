@@ -24,6 +24,7 @@ mod task_records;
 mod task_watch;
 mod tasks;
 mod utc;
+mod v2;
 mod viewport;
 mod watch;
 mod workspace_memory;
@@ -44,6 +45,7 @@ fn main() -> ExitCode {
     let args = match args::parse(std::env::args_os().skip(1)) {
         Ok(Action::Serve(args)) => args,
         Ok(Action::Daemon(d)) => return daemon::main(d),
+        Ok(Action::Connect(a)) => return connect(a),
         Ok(Action::CodexRpc(c)) => return codex_rpc(c),
         Ok(Action::Version) => {
             println!("muxa-bridge {}", env!("CARGO_PKG_VERSION"));
@@ -271,6 +273,38 @@ impl Setup {
         muxa_tmux::Options {
             tmux: self.tmux.clone(),
             socket: self.socket.clone(),
+        }
+    }
+}
+
+/// `muxa-bridge connect`: the SSH exec command of protocol v2 clients.
+fn connect(args: args::Args) -> ExitCode {
+    let dir = args.daemon_dir.or_else(|| {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        daemon::default_dir(
+            std::env::var_os("XDG_STATE_HOME").as_deref(),
+            home.as_deref(),
+        )
+    });
+    let Some(dir) = dir else {
+        eprintln!("muxa-bridge connect: HOME is not set; pass --daemon-dir");
+        return ExitCode::from(2);
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("muxa-bridge connect: cannot start the runtime: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match runtime.block_on(v2::connect(&dir)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("muxa-bridge connect: {e}");
+            ExitCode::FAILURE
         }
     }
 }
