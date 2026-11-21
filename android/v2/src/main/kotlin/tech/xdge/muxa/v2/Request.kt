@@ -25,6 +25,8 @@ sealed interface V2Request {
     data class InboxReopen(val item: String) : V2Request
     data class InboxDelete(val item: String) : V2Request
     data class TaskReview(val terminal: String, val note: String? = null) : V2Request
+    data object Routines : V2Request
+    data class RunRoutine(val workspace: String, val name: String) : V2Request
 
     fun json(id: Long): JsonObject = buildJsonObject {
         put("id", id)
@@ -48,6 +50,8 @@ sealed interface V2Request {
             is InboxReopen -> { type("inbox-reopen"); put("item", r.item) }
             is InboxDelete -> { type("inbox-delete"); put("item", r.item) }
             is TaskReview -> { type("task-review"); put("terminal", r.terminal); opt("note", r.note) }
+            Routines -> type("routines")
+            is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
         }
     }
 }

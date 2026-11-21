@@ -48,6 +48,30 @@ data class Inbox(val revision: Long, val items: List<InboxItem>, val done: List<
 @Serializable
 data class Capture(val kind: ItemKind, val title: String, val workspace: String? = null, val due: String? = null)
 
+/** A Routine as the host defines it, with its last run. `workspace/name` is its id. */
+@Serializable
+data class Routine(
+    val workspace: String,
+    val name: String,
+    val enabled: Boolean,
+    /** `HH:MM` in [timezone]; null for a Routine that runs only on request. */
+    val at: String? = null,
+    val timezone: String? = null,
+    /** The five cron fields; null means every day. */
+    val schedule: String? = null,
+    @SerialName("next_due") val nextDue: Long? = null,
+    @SerialName("running_since") val runningSince: Long? = null,
+    val last: RoutineLast? = null,
+) {
+    val id: String get() = "$workspace/$name"
+}
+
+@Serializable
+data class RoutineLast(val at: Long, val ok: Boolean, val reason: String? = null, val published: Int? = null)
+
+@Serializable
+data class RoutineProblem(val workspace: String, val reason: String)
+
 @Serializable
 data class TerminalStatus(val state: String, val app: String? = null)
 

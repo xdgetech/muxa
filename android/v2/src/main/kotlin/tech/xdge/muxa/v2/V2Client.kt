@@ -156,6 +156,17 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** Any Inbox request; the reply is the whole Inbox. */
     suspend fun inbox(r: V2Request = V2Request.GetInbox): Inbox = field("inbox", request(r))
 
+    /** The Routines, and the Workspaces whose Routines could not be read. */
+    suspend fun routines(): Pair<List<Routine>, List<RoutineProblem>> {
+        val reply = request(V2Request.Routines)
+        return field<List<Routine>>("routines", reply) to field<List<RoutineProblem>>("problems", reply)
+    }
+
+    /** Runs a Routine now; [V2Error.Refused] with code `conflict` while it already runs. */
+    suspend fun runRoutine(workspace: String, name: String) {
+        request(V2Request.RunRoutine(workspace, name))
+    }
+
     // Terminal channels
 
     /** Sends input; it is kept until the server acknowledges it. */

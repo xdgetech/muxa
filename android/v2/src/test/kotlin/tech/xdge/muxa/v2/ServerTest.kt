@@ -103,4 +103,23 @@ class ServerTest {
             mac.close()
         }
     }
+
+    @Test
+    fun routinesListAndRunOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val (routines, problems) = c.routines()
+            assertEquals(listOf("digest", "audit"), routines.map { it.name })
+            assertEquals("09:00", routines[0].at)
+            assertTrue(problems.isEmpty())
+            c.runRoutine("Personal", "audit")
+            try {
+                c.runRoutine("Personal", "digest")
+                fail("digest already runs")
+            } catch (e: V2Error.Refused) {
+                assertEquals("conflict", e.code)
+            }
+            c.close()
+        }
+    }
 }

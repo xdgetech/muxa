@@ -50,11 +50,11 @@ public enum KeyBytes {
         case "PageDown": seq = tilde(6)
         case "IC": seq = tilde(2)
         case "DC": seq = tilde(3)
-        case "Enter": seq = mod & 2 != 0 ? "\(esc)\r" : "\r"
+        case "Enter": seq = (mod - 1) & 2 != 0 ? "\(esc)\r" : "\r"
         case "Escape": seq = esc
         case "Tab": seq = "\t"
         case "BTab": seq = "\(esc)[Z"
-        case "BSpace": seq = mod & 2 != 0 ? "\(esc)\u{7f}" : "\u{7f}"
+        case "BSpace": seq = (mod - 1) & 2 != 0 ? "\(esc)\u{7f}" : "\u{7f}"
         case "F1": seq = ss3("P")
         case "F2": seq = ss3("Q")
         case "F3": seq = ss3("R")

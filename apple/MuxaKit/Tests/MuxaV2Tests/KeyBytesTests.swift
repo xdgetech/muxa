@@ -24,6 +24,10 @@ struct KeyBytesTests {
         #expect(KeyBytes.bytes("C-[") == [0x1b])
         #expect(KeyBytes.bytes("M-x") == [0x1b, 0x78])
         #expect(KeyBytes.bytes("M-BSpace") == [0x1b, 0x7f])
+        #expect(KeyBytes.bytes("M-Enter") == [0x1b, 13])
+        // Shift is not Meta.
+        #expect(KeyBytes.bytes("S-Enter") == [13])
+        #expect(KeyBytes.bytes("S-BSpace") == [0x7f])
         #expect(KeyBytes.bytes("C-1") == nil)
         #expect(KeyBytes.bytes("Nonsense") == nil)
     }
