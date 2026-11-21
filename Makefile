@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
@@ -138,20 +138,11 @@ test-app:
 test-app-iphone:
 	python3 scripts/ios-simulator.py run iphone -- bash scripts/test-app.sh
 
-# RealTmuxTests: the app against the real bridge on a throwaway tmux server.
-MUXA_QA_SIM ?= iphone
-test-app-tmux:
-	python3 scripts/ios-simulator.py run $(MUXA_QA_SIM) -- bash scripts/test-app-tmux.sh
-
 # Renders the icon from apple/Muxa/Art/app-icon.swift: iOS's light, dark and tinted images,
 # Android's adaptive icon layers, and Play's store icon and feature graphic.
 app-icon:
 	swift apple/Muxa/Art/app-icon.swift apple/Muxa/Muxa/Assets.xcassets/AppIcon.appiconset \
 		android/app/src/main/res store/play
-
-# App Store screenshots into build/screenshots, README images into docs/images.
-screenshots:
-	scripts/screenshots.sh
 
 # Installs the bridge and muxa-cli on this host, then restarts a running daemon
 # so it runs the new version (ADR 0019). PREFIX picks another root.

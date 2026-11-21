@@ -3,6 +3,58 @@ import MuxaTransport
 import SwiftUI
 import UIKit
 
+/// The editable fields of a host, as text. A new host has no saved id yet.
+struct HostDraft: Identifiable {
+    let id: UUID
+    let isNew: Bool
+    var name = ""
+    var address = ""
+    var port = "22"
+    var user = ""
+    var command = SSHTarget.defaultCommand
+    var hostKey: HostKey?
+
+    init() {
+        id = UUID()
+        isNew = true
+    }
+
+    init(_ host: Host) {
+        id = host.id
+        isNew = false
+        name = host.name
+        address = host.target.host
+        port = String(host.target.port)
+        user = host.target.user
+        command = host.target.command
+        hostKey = host.target.hostKey
+    }
+
+    var trimmedAddress: String { address.trimmingCharacters(in: .whitespaces) }
+    var trimmedUser: String { user.trimmingCharacters(in: .whitespaces) }
+
+    var isValid: Bool {
+        guard let p = Int(port), (1...65535).contains(p) else { return false }
+        return !trimmedAddress.isEmpty && !trimmedUser.isEmpty && !command.isEmpty
+            && !command.contains(where: { $0 == "\"" || $0.isNewline })
+    }
+
+    /// The host to save. A changed address, port or user drops the trusted host key:
+    /// it belonged to the old server.
+    func host(replacing old: Host?) -> Host {
+        let target = SSHTarget(host: trimmedAddress, port: Int(port) ?? 22, user: trimmedUser, command: command)
+        var host = Host(id: id, name: name.trimmingCharacters(in: .whitespaces), target: target)
+        if let old, keepsHostKey(of: old) {
+            host.target.hostKey = hostKey
+        }
+        return host
+    }
+
+    func keepsHostKey(of old: Host) -> Bool {
+        old.target.host == trimmedAddress && old.target.port == Int(port) && old.target.user == trimmedUser
+    }
+}
+
 /// Adds or edits a host for the app on protocol v2.
 struct NextHostEditor: View {
     @Environment(NextModel.self) private var model

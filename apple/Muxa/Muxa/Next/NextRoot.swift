@@ -2,8 +2,7 @@ import MuxaSession
 import MuxaV2
 import SwiftUI
 
-/// The app on protocol v2, started with `-next` until it replaces the v1 screens.
-/// Step 1 of D4: connecting; Home and Focus follow.
+/// The app on protocol v2: the hosts until one is connected, then Home or Focus.
 struct NextRoot: View {
     @Environment(NextModel.self) private var model
     @State private var focus = false

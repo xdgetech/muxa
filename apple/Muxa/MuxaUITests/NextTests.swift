@@ -1,6 +1,6 @@
 import XCTest
 
-/// The app on protocol v2 (`-next`) against the in-app v2 demo server (`-demo`).
+/// The app against its in-app v2 demo server (`-demo`).
 final class NextTests: XCTestCase {
     override class func setUp() {
         super.setUp()
@@ -15,7 +15,7 @@ final class NextTests: XCTestCase {
     @MainActor
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-next", "-demo"]
+        app.launchArguments = ["-demo"]
         app.launch()
         XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 10))
         return app
