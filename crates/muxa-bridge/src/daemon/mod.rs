@@ -312,7 +312,9 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
                 Arc::clone(&daemon.records.records),
             );
             let inbox = crate::v2::inbox(daemon.records.records.state_dir.as_deref());
+            crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&daemon.records.records));
             let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
+            crate::v2::spawn_task_watch(Arc::clone(&herdr));
             tokio::spawn(crate::v2::accept(v2, herdr));
             tracing::info!(socket = %v2_path.display(), "protocol v2 listening");
         }

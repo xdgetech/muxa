@@ -2,10 +2,12 @@
 //! served by `muxa-server` on herdr-core, and `muxa-bridge connect`, which
 //! relays an SSH client's stdin and stdout to it.
 
+pub mod feed;
 mod tasks;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use muxa_backend::SessionBackend;
 use muxa_herdr::{Client, HerdrBackend};
@@ -84,6 +86,29 @@ pub fn inbox(state_dir: Option<&Path>) -> Arc<Inbox> {
     let inbox = Arc::new(opened);
     inbox.spawn_timer();
     inbox
+}
+
+/// Keeps a Failed item coming for each failing Task agent: watches
+/// herdr-core, and connects again when it is lost or not running yet.
+pub fn spawn_task_watch(herdr: Arc<Herdr>) {
+    const FIRST: Duration = Duration::from_secs(2);
+    const MOST: Duration = Duration::from_secs(60);
+    tokio::spawn(async move {
+        let mut wait = FIRST;
+        loop {
+            match herdr.backend().await {
+                Ok(backend) => {
+                    wait = FIRST;
+                    if let Err(e) = muxa_server::watch_tasks(&backend, &herdr.inbox).await {
+                        tracing::info!(error = %e, "the Task watch ended");
+                    }
+                }
+                Err(e) => tracing::info!(error = %e, "no herdr-core for the Task watch yet"),
+            }
+            tokio::time::sleep(wait).await;
+            wait = (wait * 2).min(MOST);
+        }
+    });
 }
 
 /// Accepts v2 clients until the listener fails.

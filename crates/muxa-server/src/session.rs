@@ -16,10 +16,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::attachment::{Attachment, Checked, Cmd, Link};
-use crate::inbox;
 use crate::sessions::{Handle, Sessions};
 use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::wire::{self, Incoming};
+use crate::{inbox, task_items};
 
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
@@ -325,6 +325,17 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.start_task(id, &spec).await;
             }
             ClientMsg::Watch { id } => self.watch(id).await,
+            ClientMsg::TaskReview { id, terminal, note } => {
+                match task_items::review(self.backend, self.inbox, &terminal, note).await {
+                    Ok(()) => self.reply(
+                        id,
+                        Reply::Inbox {
+                            inbox: self.inbox.view(),
+                        },
+                    ),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
             other => match inbox::handle(other, self.inbox, self.host).await {
                 Some((id, Ok(body))) => self.reply(id, body),
                 Some((id, Err((code, message)))) => self.error(Some(id), code, message),

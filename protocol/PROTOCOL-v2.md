@@ -87,6 +87,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"inbox-move","item","index"}` | `{"inbox":Inbox}`. An index past the end means last |
 | `{"type":"inbox-later","item","until"}` | `{"inbox":Inbox}`. `until` is Unix seconds, in the future |
 | `{"type":"inbox-done","item"}`, `inbox-reopen`, `inbox-delete` | `{"inbox":Inbox}` |
+| `{"type":"task-review","terminal","note"?}` | `{"inbox":Inbox}`. One open Review item for the Task of this agent terminal; `bad-request` for a terminal that is not a Task's agent |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
@@ -115,10 +116,15 @@ ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...]}`. `items` ar
 
 `parse-capture` reads a line by ADR 0066's rules: a first word `reply`, `read` or `decide` sets the kind (else `todo`); `#name` sets the Workspace only when one has that name; `due` takes `today`, `tomorrow`, a weekday (the next one, today included), `M/D` (the next one) or `YYYY-MM-DD`. The client shows the fields, lets the user change them, and sends `inbox-add`. A title is 1 to 300 characters; a note at most 4 KiB.
 
+Items the server makes:
+- **Review** (`source: task`): on `task-review`. An agent can send it for its own Task (`muxa-cli v2 review` uses `HC_TERMINAL_ID`). While one is open, another `task-review` for the Task makes none.
+- **Failed** (`source: task`): a Task's agent ended with a non-zero code, on a signal it did not get from a kill, or was lost. Once per terminal. A clean exit or a kill makes none.
+- **Read** and **Decide** (`source: routine`): a Routine's briefing and proposal entries; **Failed** for a Routine's failure. Once each. Entries from before the server first ran are not copied.
+
 ### Error codes
 
 `bad-request`, `version`, `not-found`, `backend`, `closed`.
 
 ## Not yet specified
 
-Items from Tasks and Routines (C2), closing a Task, Task places (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.
+Review from a check or a draft PR, closing a Task, Task places (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.

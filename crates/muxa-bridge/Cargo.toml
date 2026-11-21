@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 muxa-backend = { path = "../muxa-backend" }
 muxa-herdr = { path = "../muxa-herdr" }
+muxa-inbox = { path = "../muxa-inbox" }
 muxa-server = { path = "../muxa-server" }
 getrandom = "0.4.3"
 jiff = "0.2.38"

@@ -98,6 +98,26 @@ impl FakeBackend {
             .unwrap_or_default()
     }
 
+    /// The program ends with `exit`, as if it exited or crashed by itself.
+    pub fn end(&self, id: &TerminalId, exit: Exit) -> Result<()> {
+        let mut s = lock(&self.state);
+        let t = s.terms.get_mut(id).ok_or_else(|| not_found("end", id))?;
+        t.info.live = false;
+        t.info.exit = Some(exit.clone());
+        for tx in t.streams.drain(..) {
+            let _ = tx.send(StreamEvent::Closed(exit.clone()));
+        }
+        let labels = t.info.labels.clone();
+        s.notify(
+            &labels,
+            &Change::Ended {
+                id: id.clone(),
+                exit,
+            },
+        );
+        Ok(())
+    }
+
     /// Every `run`, in order.
     pub fn launches(&self) -> Vec<Launch> {
         lock(&self.state).launches.clone()
@@ -188,27 +208,12 @@ impl SessionBackend for FakeBackend {
     }
 
     async fn kill(&self, id: &TerminalId) -> Result<()> {
-        let mut s = lock(&self.state);
-        let t = s.terms.get_mut(id).ok_or_else(|| not_found("kill", id))?;
         let exit = Exit {
             reason: "killed".to_owned(),
             code: None,
             signal: Some(1),
         };
-        t.info.live = false;
-        t.info.exit = Some(exit.clone());
-        for tx in t.streams.drain(..) {
-            let _ = tx.send(StreamEvent::Closed(exit.clone()));
-        }
-        let labels = t.info.labels.clone();
-        s.notify(
-            &labels,
-            &Change::Ended {
-                id: id.clone(),
-                exit,
-            },
-        );
-        Ok(())
+        self.end(id, exit)
     }
 
     async fn remove(&self, id: &TerminalId) -> Result<()> {

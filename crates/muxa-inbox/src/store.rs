@@ -119,6 +119,7 @@ mod tests {
             due: None,
             source: "capture".into(),
             key: Some("k".into()),
+            once: false,
         };
         b.add(new, 7).unwrap();
         save(&path, &b).unwrap();

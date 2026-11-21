@@ -7,10 +7,12 @@ mod inbox;
 mod ring;
 mod session;
 mod sessions;
+mod task_items;
 pub mod tasks;
 mod wire;
 
 pub use muxa_inbox::Inbox;
 pub use session::{Config, PARK, ServeError, Services, serve};
 pub use sessions::Sessions;
+pub use task_items::watch_tasks;
 pub use tasks::{Host, Prepared, TaskError, TaskSpec};

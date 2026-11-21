@@ -210,3 +210,17 @@ async fn capture_lists_and_finishes_an_item() {
     let refused = host.cli(&["inbox", "later", &id]).await;
     assert!(!refused.status.success());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_says_its_task_is_ready_for_review() {
+    let host = TestHost::start("review").await;
+    let started: Value = serde_json::from_str(&stdout(
+        &host
+            .cli(&["start-task", "--repo", "/r", "--branch", "fix", "--json"])
+            .await,
+    ))
+    .unwrap();
+    let agent = started["terminal"]["id"].as_str().unwrap();
+    let out = stdout(&host.cli(&["review", agent, "--note", "draft PR #7"]).await);
+    assert!(out.ends_with("\treview\tReview fix\n"), "{out:?}");
+}

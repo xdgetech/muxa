@@ -25,11 +25,14 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] inbox done|reopen|delete ITEM
        muxa-cli v2 [--bridge CMD] inbox move ITEM INDEX
        muxa-cli v2 [--bridge CMD] inbox later ITEM --minutes N
+       muxa-cli v2 [--bridge CMD] review [TERMINAL] [--note TEXT]
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
 
   --bridge CMD   runs through sh -c (default: muxa-bridge connect),
                  e.g. 'ssh host ~/.local/bin/muxa-bridge connect'
-  attach         Ctrl-] leaves. A lost connection is resumed.";
+  attach         Ctrl-] leaves. A lost connection is resumed.
+  review         the Task is ready for review; TERMINAL defaults to
+                 $HC_TERMINAL_ID, so its agent can say so itself";
 
 const NAME: &str = concat!("muxa-cli ", env!("CARGO_PKG_VERSION"));
 const QUIT: u8 = 0x1d; // Ctrl-]
@@ -46,6 +49,10 @@ enum Cmd {
     Inbox {
         action: inbox::Action,
         json: bool,
+    },
+    Review {
+        terminal: String,
+        note: Option<String>,
     },
     StartTask {
         repo: String,
@@ -87,6 +94,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let (mut repo, mut branch, mut base) = (None, None, None);
     let mut words = Vec::new();
     let mut minutes: Option<u32> = None;
+    let mut note: Option<String> = None;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -97,6 +105,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("branch") => branch = Some(p.value()?.string()?),
             Long("base") => base = Some(p.value()?.string()?),
             Long("minutes") => minutes = Some(p.value()?.parse()?),
+            Long("note") => note = Some(p.value()?.string()?),
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
@@ -116,6 +125,15 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
         ["capture", text @ ..] if !text.is_empty() => Cmd::Inbox {
             action: inbox::Action::Capture(text.join(" ")),
             json,
+        },
+        ["review"] => Cmd::Review {
+            terminal: std::env::var("HC_TERMINAL_ID")
+                .map_err(|_| "review needs a TERMINAL outside a herdr-core terminal")?,
+            note,
+        },
+        ["review", t] => Cmd::Review {
+            terminal: (*t).to_owned(),
+            note,
         },
         ["inbox", rest @ ..] => Cmd::Inbox {
             action: inbox_action(rest, minutes)?,
@@ -208,6 +226,16 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             Ok(())
         }
         Cmd::Watch { seconds } => watch(bridge, seconds).await,
+        Cmd::Review { terminal, note } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let msg = json!({"type": "task-review", "terminal": terminal, "note": note});
+            let reply = c.request(msg).await?;
+            let now = jiff::Timestamp::now().as_second();
+            if let Some(row) = inbox::rows(&reply["inbox"], now).into_iter().next() {
+                println!("{row}");
+            }
+            Ok(())
+        }
         Cmd::Inbox { action, json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let now = jiff::Timestamp::now().as_second();

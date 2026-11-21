@@ -4,10 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use muxa_backend::fake::FakeBackend;
-use muxa_backend::{Launch, SessionBackend, TerminalId};
+use muxa_backend::{Exit, Launch, SessionBackend, TerminalId};
 use muxa_protocol::v2::{Frame, INITIAL_CREDIT, Kind};
 use muxa_server::{
     Config, Host, Inbox, Prepared, ServeError, Services, Sessions, TaskError, TaskSpec, serve,
+    watch_tasks,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -777,4 +778,74 @@ async fn a_watching_client_gets_each_inbox_change() {
     let note = phone.read_control().await;
     assert_eq!(note["type"], "inbox");
     assert_eq!(titles(&note["inbox"]), ["RFC 9000"]);
+}
+
+#[tokio::test]
+async fn a_task_ready_for_review_makes_one_review_item() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let started = request(
+        &mut client,
+        json!({"type": "start-task", "id": 1, "repo": "/r", "branch": "fix"}),
+    )
+    .await;
+    let agent = started["terminal"]["id"].clone();
+    for id in [2, 3] {
+        let reply = request(
+            &mut client,
+            json!({"type": "task-review", "id": id, "terminal": agent, "note": "PR #4"}),
+        )
+        .await;
+        assert_eq!(titles(&reply["inbox"]), ["Review fix"], "{reply}");
+        assert_eq!(reply["inbox"]["items"][0]["kind"], "review");
+    }
+    let shell = terminal(&backend).await;
+    let refused = request(
+        &mut client,
+        json!({"type": "task-review", "id": 4, "terminal": shell.as_str()}),
+    )
+    .await;
+    assert_eq!(refused["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn a_failed_agent_makes_one_failed_item_and_a_kill_none() {
+    let backend = FakeBackend::new();
+    let inbox = Arc::new(Inbox::memory());
+    let run = |branch: &str| Launch {
+        labels: [
+            ("muxa.kind".to_owned(), "task".to_owned()),
+            ("muxa.role".to_owned(), "agent".to_owned()),
+            ("muxa.branch".to_owned(), branch.to_owned()),
+        ]
+        .into(),
+        ..Launch::default()
+    };
+    // Failed before anyone watched.
+    let early = backend.run(&run("early")).await.unwrap().id;
+    let exit = |code| Exit {
+        reason: "exited".into(),
+        code: Some(code),
+        signal: None,
+    };
+    backend.end(&early, exit(2)).unwrap();
+    let (watched, inbox2) = (backend.clone(), Arc::clone(&inbox));
+    tokio::spawn(async move { watch_tasks(&watched, &inbox2).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let crash = backend.run(&run("crash")).await.unwrap().id;
+    let clean = backend.run(&run("clean")).await.unwrap().id;
+    let killed = backend.run(&run("killed")).await.unwrap().id;
+    backend.end(&crash, exit(1)).unwrap();
+    backend.end(&clean, exit(0)).unwrap();
+    backend.kill(&killed).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let view = serde_json::to_value(inbox.view()).unwrap();
+    assert_eq!(
+        titles(&view),
+        ["The agent of crash stopped", "The agent of early stopped"]
+    );
+    assert_eq!(view["items"][0]["note"], "It exited with code 1.");
+    assert_eq!(view["items"][0]["kind"], "failed");
 }

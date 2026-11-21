@@ -1,6 +1,8 @@
 //! The Inbox in memory: open items in manual order, Later, and recent done
 //! items. Pure: every change takes the time and bumps the revision.
 
+use std::collections::{BTreeMap, VecDeque};
+
 use muxa_protocol::v2::{self, InboxItem, ItemKind};
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +12,8 @@ const MAX_NOTE: usize = 4096;
 const MAX_WORKSPACE: usize = 100;
 /// Done items kept for Reopen.
 pub const KEEP_DONE: usize = 100;
+/// Keys remembered for [`NewItem::once`].
+const KEEP_SEEN: usize = 2000;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum InboxError {
@@ -33,6 +37,9 @@ pub struct NewItem {
     /// The need that made the item, e.g. `review:<task>`: while an item with
     /// this key is open, adding it again returns that item.
     pub key: Option<String>,
+    /// The key never makes a second item, also after this one is done or
+    /// deleted: a Routine entry or a crash is reported once.
+    pub once: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +57,12 @@ pub struct Book {
     next_id: u64,
     items: Vec<Stored>,
     done: Vec<Stored>,
+    /// Keys of `once` items, oldest first.
+    #[serde(default, skip_serializing_if = "VecDeque::is_empty")]
+    seen: VecDeque<String>,
+    /// How far each source has been read, e.g. `routines` (Unix seconds).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    cursors: BTreeMap<String, i64>,
 }
 
 impl Default for Book {
@@ -60,6 +73,8 @@ impl Default for Book {
             next_id: 1,
             items: Vec::new(),
             done: Vec::new(),
+            seen: VecDeque::new(),
+            cursors: BTreeMap::new(),
         }
     }
 }
@@ -82,13 +97,23 @@ impl Book {
         }
     }
 
-    /// Adds `new` on top and returns its id.
-    pub fn add(&mut self, new: NewItem, now: i64) -> Result<String, InboxError> {
+    /// Adds `new` on top and returns its id: the open item with its key, or
+    /// `None` when a `once` key already made one.
+    pub fn add(&mut self, new: NewItem, now: i64) -> Result<Option<String>, InboxError> {
         let new = checked(new)?;
-        if let Some(key) = &new.key
-            && let Some(open) = self.items.iter().find(|s| s.key.as_ref() == Some(key))
-        {
-            return Ok(open.item.id.clone());
+        if let Some(key) = &new.key {
+            if let Some(open) = self.items.iter().find(|s| s.key.as_ref() == Some(key)) {
+                return Ok(Some(open.item.id.clone()));
+            }
+            if new.once {
+                if self.seen.contains(key) {
+                    return Ok(None);
+                }
+                self.seen.push_back(key.clone());
+                while self.seen.len() > KEEP_SEEN {
+                    self.seen.pop_front();
+                }
+            }
         }
         let id = format!("i{}", self.next_id);
         self.next_id += 1;
@@ -105,7 +130,20 @@ impl Book {
         };
         self.items.insert(0, Stored { item, key: new.key });
         self.revision += 1;
-        Ok(id)
+        Ok(Some(id))
+    }
+
+    pub fn cursor(&self, source: &str) -> Option<i64> {
+        self.cursors.get(source).copied()
+    }
+
+    /// Moves a source's cursor forward; never back.
+    pub fn advance(&mut self, source: &str, to: i64) {
+        let at = self.cursors.entry(source.to_owned()).or_insert(i64::MIN);
+        if to > *at {
+            *at = to;
+            self.revision += 1;
+        }
     }
 
     /// Puts an open item at `index`; past the end means last.
@@ -243,7 +281,12 @@ mod tests {
             due: None,
             source: "capture".into(),
             key: None,
+            once: false,
         }
+    }
+
+    fn add(b: &mut Book, new: NewItem, now: i64) -> String {
+        b.add(new, now).unwrap().unwrap()
     }
 
     fn titles(b: &Book) -> Vec<String> {
@@ -253,7 +296,7 @@ mod tests {
     #[test]
     fn new_items_go_on_top_and_the_user_orders_them() {
         let mut b = Book::default();
-        let a = b.add(todo("a"), 1).unwrap();
+        let a = add(&mut b, todo("a"), 1);
         b.add(todo("b"), 2).unwrap();
         b.add(todo("c"), 3).unwrap();
         assert_eq!(titles(&b), ["c", "b", "a"]);
@@ -267,7 +310,7 @@ mod tests {
     #[test]
     fn later_hides_an_item_and_it_returns_on_top() {
         let mut b = Book::default();
-        let a = b.add(todo("a"), 1).unwrap();
+        let a = add(&mut b, todo("a"), 1);
         b.add(todo("b"), 2).unwrap();
         b.later(&a, 100, 10).unwrap();
         assert_eq!(b.next_wake(), Some(100));
@@ -287,7 +330,7 @@ mod tests {
     #[test]
     fn done_items_can_be_reopened_or_deleted() {
         let mut b = Book::default();
-        let a = b.add(todo("a"), 1).unwrap();
+        let a = add(&mut b, todo("a"), 1);
         b.add(todo("b"), 2).unwrap();
         b.done(&a).unwrap();
         assert_eq!(titles(&b), ["b"]);
@@ -305,10 +348,34 @@ mod tests {
             kind: ItemKind::Review,
             ..todo("review fix")
         };
-        let first = b.add(keyed(), 1).unwrap();
-        assert_eq!(b.add(keyed(), 2).unwrap(), first);
+        let first = add(&mut b, keyed(), 1);
+        assert_eq!(add(&mut b, keyed(), 2), first);
         b.done(&first).unwrap();
-        assert_ne!(b.add(keyed(), 3).unwrap(), first);
+        assert_ne!(add(&mut b, keyed(), 3), first);
+    }
+
+    #[test]
+    fn a_once_key_makes_one_item_ever() {
+        let mut b = Book::default();
+        let once = || NewItem {
+            key: Some("routine:e-1".into()),
+            once: true,
+            ..todo("digest")
+        };
+        let id = add(&mut b, once(), 1);
+        b.done(&id).unwrap();
+        b.delete(&id).unwrap();
+        assert_eq!(b.add(once(), 2), Ok(None));
+        assert_eq!(b.view().items.len(), 0);
+    }
+
+    #[test]
+    fn a_cursor_only_moves_forward() {
+        let mut b = Book::default();
+        assert_eq!(b.cursor("routines"), None);
+        b.advance("routines", 10);
+        b.advance("routines", 5);
+        assert_eq!((b.cursor("routines"), b.revision()), (Some(10), 1));
     }
 
     #[test]
@@ -320,10 +387,7 @@ mod tests {
             ..todo("x")
         };
         assert!(b.add(late, 1).is_err());
-        assert_eq!(
-            b.add(todo(" spaced   out "), 1)
-                .map(|_| titles(&b)[0].clone()),
-            Ok("spaced out".into())
-        );
+        add(&mut b, todo(" spaced   out "), 1);
+        assert_eq!(titles(&b)[0], "spaced out");
     }
 }

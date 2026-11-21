@@ -293,6 +293,14 @@ pub enum ClientMsg {
         id: u64,
         item: String,
     },
+    /// The Task of this agent terminal is ready for review: one Review item
+    /// while it is open.
+    TaskReview {
+        id: u64,
+        terminal: String,
+        #[serde(default)]
+        note: Option<String>,
+    },
 }
 
 /// What an Inbox item asks of the user (ADR 0066).

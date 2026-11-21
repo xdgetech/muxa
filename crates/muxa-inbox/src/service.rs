@@ -134,6 +134,7 @@ mod tests {
             due: None,
             source: "capture".into(),
             key: None,
+            once: false,
         }
     }
 
@@ -151,7 +152,10 @@ mod tests {
     #[tokio::test]
     async fn a_later_item_comes_back_on_time() {
         let inbox = Arc::new(Inbox::memory());
-        let id = inbox.change(|b, now| b.add(todo("a"), now)).unwrap();
+        let id = inbox
+            .change(|b, now| b.add(todo("a"), now))
+            .unwrap()
+            .unwrap();
         inbox.change(|b, now| b.later(&id, now + 1, now)).unwrap();
         let _timer = inbox.spawn_timer();
         let mut rx = inbox.subscribe();

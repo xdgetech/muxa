@@ -451,6 +451,7 @@ dependencies = [
  "lexopt",
  "muxa-backend",
  "muxa-herdr",
+ "muxa-inbox",
  "muxa-protocol",
  "muxa-server",
  "muxa-tmux",
