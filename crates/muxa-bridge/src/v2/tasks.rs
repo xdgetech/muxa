@@ -1,27 +1,27 @@
-//! The host's side of a v2 Task start: the branch worktree, as the built-in
-//! launcher makes it, and the Workspace's agent command and environment
-//! (ADR 0016). The server runs the agent on herdr-core.
+//! The host's side of the v2 server: a Task's branch worktree, as the
+//! built-in launcher makes it, the Workspace's agent command and environment
+//! (ADR 0016), and the Workspace names for Capture.
 
 use std::sync::Arc;
 
-use muxa_server::{Prepared, TaskError, TaskSpec, Tasks};
+use muxa_server::{Host, Prepared, TaskError, TaskSpec};
 
 use crate::task_records;
 use crate::tasks::{self, builtin};
 
-pub struct HostTasks {
+pub struct BridgeHost {
     /// `--task-command`: the agent when the Workspace names none.
     command: String,
     records: Arc<task_records::Config>,
 }
 
-impl HostTasks {
+impl BridgeHost {
     pub fn new(command: String, records: Arc<task_records::Config>) -> Self {
-        HostTasks { command, records }
+        BridgeHost { command, records }
     }
 }
 
-impl Tasks for HostTasks {
+impl Host for BridgeHost {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         let req = tasks::validate(&spec.repo, &spec.branch, spec.base.as_deref())
             .await
@@ -51,6 +51,15 @@ impl Tasks for HostTasks {
                 .unwrap_or_default(),
         })
     }
+
+    async fn workspaces(&self) -> Vec<String> {
+        let records = Arc::clone(&self.records);
+        let loaded = tokio::task::spawn_blocking(move || records.load_workspaces()).await;
+        match loaded {
+            Ok(Ok(w)) => w.all().iter().map(|w| w.name.clone()).collect(),
+            Ok(Err(_)) | Err(_) => Vec::new(),
+        }
+    }
 }
 
 /// The agent command is a shell line, as tmux ran it.
@@ -71,7 +80,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_repo_that_is_not_there_is_invalid() {
-        let host = HostTasks::new(
+        let host = BridgeHost::new(
             "claude".into(),
             Arc::new(task_records::Config {
                 state_dir: None,

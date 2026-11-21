@@ -6,7 +6,9 @@ use std::time::Duration;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
 use muxa_protocol::v2::{Frame, INITIAL_CREDIT, Kind};
-use muxa_server::{Config, Prepared, ServeError, Sessions, TaskError, TaskSpec, Tasks, serve};
+use muxa_server::{
+    Config, Host, Inbox, Prepared, ServeError, Services, Sessions, TaskError, TaskSpec, serve,
+};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
@@ -14,7 +16,7 @@ use tokio::task::JoinHandle;
 /// Worktrees under `/work`; a branch named `bad` is refused.
 struct FakeTasks;
 
-impl Tasks for FakeTasks {
+impl Host for FakeTasks {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         if spec.branch == "bad" {
             return Err(TaskError::Invalid("bad is not a branch".into()));
@@ -30,6 +32,10 @@ impl Tasks for FakeTasks {
             argv,
             env: [("K".to_owned(), "v".to_owned())].into(),
         })
+    }
+
+    async fn workspaces(&self) -> Vec<String> {
+        vec!["Personal".into()]
     }
 }
 
@@ -53,9 +59,20 @@ impl Client {
         park: Duration,
         hello: Value,
     ) -> Client {
+        Client::connect_with(backend, sessions, &Arc::new(Inbox::memory()), park, hello).await
+    }
+
+    async fn connect_with(
+        backend: &FakeBackend,
+        sessions: &Arc<Sessions>,
+        inbox: &Arc<Inbox>,
+        park: Duration,
+        hello: Value,
+    ) -> Client {
         let (client_end, server_end) = tokio::io::duplex(8 << 20);
         let backend = backend.clone();
         let sessions = Arc::clone(sessions);
+        let inbox = Arc::clone(inbox);
         let server = tokio::spawn(async move {
             let (r, w) = tokio::io::split(server_end);
             let config = Config {
@@ -63,7 +80,13 @@ impl Client {
                 backend: "fake".into(),
                 park,
             };
-            serve(&backend, &FakeTasks, &sessions, r, w, &config).await
+            let services = Services {
+                backend: &backend,
+                host: &FakeTasks,
+                sessions: &sessions,
+                inbox: &inbox,
+            };
+            serve(&services, r, w, &config).await
         });
         let mut client = Client {
             io: client_end,
@@ -625,4 +648,133 @@ async fn watch_sends_each_change_as_the_terminal_now_is() {
         client.read_control().await,
         json!({"type": "removed", "terminal": id.as_str()})
     );
+}
+
+async fn request(client: &mut Client, msg: Value) -> Value {
+    client.control(msg).await;
+    loop {
+        let reply = client.read_control().await;
+        if reply["type"] == "reply" || reply["type"] == "error" {
+            return reply;
+        }
+    }
+}
+
+fn titles(inbox: &Value) -> Vec<&str> {
+    inbox["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["title"].as_str().unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_capture_line_becomes_fields_then_an_item() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let parsed = request(
+        &mut client,
+        json!({"type": "parse-capture", "id": 1,
+        "text": "reply to the bank #personal due fri", "today": "2026-11-25"}),
+    )
+    .await;
+    assert_eq!(
+        parsed["capture"],
+        json!({"kind": "reply", "title": "to the bank", "workspace": "Personal", "due": "2026-11-27"})
+    );
+    let mut add = parsed["capture"].clone();
+    add["type"] = json!("inbox-add");
+    add["id"] = json!(2);
+    let added = request(&mut client, add).await;
+    let item = &added["inbox"]["items"][0];
+    assert_eq!(
+        (item["kind"].as_str(), item["source"].as_str()),
+        (Some("reply"), Some("capture"))
+    );
+    assert_eq!(added["inbox"]["revision"], 1);
+}
+
+#[tokio::test]
+async fn the_user_orders_hides_and_finishes_items() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    for (id, title) in [(1, "a"), (2, "b"), (3, "c")] {
+        request(
+            &mut client,
+            json!({"type": "inbox-add", "id": id, "kind": "todo", "title": title}),
+        )
+        .await;
+    }
+    let inbox = request(&mut client, json!({"type": "inbox", "id": 4})).await["inbox"].clone();
+    assert_eq!(titles(&inbox), ["c", "b", "a"]);
+    let a = inbox["items"][2]["id"].as_str().unwrap().to_owned();
+    let moved = request(
+        &mut client,
+        json!({"type": "inbox-move", "id": 5, "item": a, "index": 0}),
+    )
+    .await;
+    assert_eq!(titles(&moved["inbox"]), ["a", "c", "b"]);
+    let later = request(
+        &mut client,
+        json!({"type": "inbox-later", "id": 6, "item": a, "until": 4_000_000_000_i64}),
+    )
+    .await;
+    assert_eq!(later["inbox"]["items"][0]["later_until"], 4_000_000_000_i64);
+    let done = request(
+        &mut client,
+        json!({"type": "inbox-done", "id": 7, "item": a}),
+    )
+    .await;
+    assert_eq!(
+        (
+            titles(&done["inbox"]),
+            done["inbox"]["done"][0]["id"].as_str()
+        ),
+        (vec!["c", "b"], Some(a.as_str()))
+    );
+    let reopened = request(
+        &mut client,
+        json!({"type": "inbox-reopen", "id": 8, "item": a}),
+    )
+    .await;
+    assert_eq!(titles(&reopened["inbox"]), ["a", "c", "b"]);
+    request(
+        &mut client,
+        json!({"type": "inbox-delete", "id": 9, "item": a}),
+    )
+    .await;
+    let gone = request(
+        &mut client,
+        json!({"type": "inbox-done", "id": 10, "item": a}),
+    )
+    .await;
+    assert_eq!(gone["code"], "not-found");
+    let bad = request(
+        &mut client,
+        json!({"type": "inbox-add", "id": 11, "kind": "todo", "title": "x", "due": "fri"}),
+    )
+    .await;
+    assert_eq!(bad["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn a_watching_client_gets_each_inbox_change() {
+    let backend = FakeBackend::new();
+    let (sessions, inbox) = (Arc::new(Sessions::new()), Arc::new(Inbox::memory()));
+    let mut phone = Client::connect_with(&backend, &sessions, &inbox, PARK, hello(None)).await;
+    phone.welcome().await;
+    request(&mut phone, json!({"type": "watch", "id": 1})).await;
+    let mut mac = Client::connect_with(&backend, &sessions, &inbox, PARK, hello(None)).await;
+    mac.welcome().await;
+    request(
+        &mut mac,
+        json!({"type": "inbox-add", "id": 1, "kind": "read", "title": "RFC 9000"}),
+    )
+    .await;
+    let note = phone.read_control().await;
+    assert_eq!(note["type"], "inbox");
+    assert_eq!(titles(&note["inbox"]), ["RFC 9000"]);
 }

@@ -3,6 +3,7 @@
 //! connection the way the apps will.
 
 pub mod client;
+mod inbox;
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -19,6 +20,11 @@ use client::{Client, Event, State};
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] start-task --repo REPO --branch B [--base REF] [--plan] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
+       muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
+       muxa-cli v2 [--bridge CMD] inbox [--json]
+       muxa-cli v2 [--bridge CMD] inbox done|reopen|delete ITEM
+       muxa-cli v2 [--bridge CMD] inbox move ITEM INDEX
+       muxa-cli v2 [--bridge CMD] inbox later ITEM --minutes N
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
 
   --bridge CMD   runs through sh -c (default: muxa-bridge connect),
@@ -35,6 +41,10 @@ const SIZE_EVERY: Duration = Duration::from_millis(500);
 #[derive(Debug, PartialEq, Eq)]
 enum Cmd {
     Terminals {
+        json: bool,
+    },
+    Inbox {
+        action: inbox::Action,
         json: bool,
     },
     StartTask {
@@ -76,6 +86,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let (mut json, mut plan, mut seconds) = (false, false, None);
     let (mut repo, mut branch, mut base) = (None, None, None);
     let mut words = Vec::new();
+    let mut minutes: Option<u32> = None;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -85,6 +96,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("repo") => repo = Some(p.value()?.string()?),
             Long("branch") => branch = Some(p.value()?.string()?),
             Long("base") => base = Some(p.value()?.string()?),
+            Long("minutes") => minutes = Some(p.value()?.parse()?),
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
@@ -101,6 +113,14 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             json,
         },
         ["watch"] => Cmd::Watch { seconds },
+        ["capture", text @ ..] if !text.is_empty() => Cmd::Inbox {
+            action: inbox::Action::Capture(text.join(" ")),
+            json,
+        },
+        ["inbox", rest @ ..] => Cmd::Inbox {
+            action: inbox_action(rest, minutes)?,
+            json,
+        },
         ["attach", t] => Cmd::Attach {
             terminal: (*t).to_owned(),
             seconds,
@@ -108,6 +128,28 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
         _ => return Ok(None),
     };
     Ok(Some((bridge, cmd)))
+}
+
+fn inbox_action(words: &[&str], minutes: Option<u32>) -> Result<inbox::Action, lexopt::Error> {
+    use inbox::Action;
+    let item = |s: &&str| (*s).to_owned();
+    Ok(match words {
+        [] => Action::List,
+        ["done", i] => Action::Done(item(i)),
+        ["reopen", i] => Action::Reopen(item(i)),
+        ["delete", i] => Action::Delete(item(i)),
+        ["move", i, n] => Action::Move {
+            item: item(i),
+            index: n
+                .parse()
+                .map_err(|_| lexopt::Error::from(format!("{n:?} is not an index")))?,
+        },
+        ["later", i] => Action::Later {
+            item: item(i),
+            minutes: minutes.ok_or("inbox later needs --minutes")?,
+        },
+        _ => return Err("unknown inbox command; see muxa-cli v2 --help".into()),
+    })
 }
 
 type Conn = Client<ChildStdout, ChildStdin>;
@@ -166,6 +208,22 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             Ok(())
         }
         Cmd::Watch { seconds } => watch(bridge, seconds).await,
+        Cmd::Inbox { action, json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let now = jiff::Timestamp::now().as_second();
+            let mut reply = c.request(inbox::request(&action, now)).await?;
+            if matches!(action, inbox::Action::Capture(_)) {
+                reply = c.request(inbox::capture_add(&reply)).await?;
+            }
+            if json {
+                println!("{}", reply["inbox"]);
+            } else {
+                for row in inbox::rows(&reply["inbox"], now) {
+                    println!("{row}");
+                }
+            }
+            Ok(())
+        }
         Cmd::Attach { terminal, seconds } => attach(bridge, &terminal, seconds).await,
     }
 }

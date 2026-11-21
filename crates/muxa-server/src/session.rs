@@ -8,15 +8,17 @@ use std::time::Duration;
 use muxa_backend::{
     BackendError, Change, ChangeStream, Labels, SessionBackend, Size, TerminalId, TerminalInfo,
 };
+use muxa_inbox::Inbox;
 use muxa_protocol::v2::{
     self, ClientMsg, ErrorCode, Frame, Kind, Reply, Resume, ResumeChannel, Resumed, ServerMsg,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::attachment::{Attachment, Checked, Cmd, Link};
+use crate::inbox;
 use crate::sessions::{Handle, Sessions};
-use crate::tasks::{self, TaskError, TaskSpec, Tasks};
+use crate::tasks::{self, Host, TaskError, TaskSpec};
 use crate::wire::{self, Incoming};
 
 /// The most scrollback lines one attach may ask for.
@@ -46,9 +48,20 @@ pub enum ServeError {
     Token(std::io::Error),
 }
 
-struct Session<'a, B: SessionBackend, T: Tasks> {
+/// What every connection shares: one per server.
+pub struct Services<'a, B, H> {
+    pub backend: &'a B,
+    pub host: &'a H,
+    pub sessions: &'a Sessions,
+    pub inbox: &'a Inbox,
+}
+
+struct Session<'a, B: SessionBackend, H: Host> {
     backend: &'a B,
-    tasks: &'a T,
+    host: &'a H,
+    inbox: &'a Inbox,
+    /// The Inbox's revisions, after `watch`.
+    inbox_watch: Option<watch::Receiver<u64>>,
     /// The backend's changes, after `watch`.
     changes: Option<B::Changes>,
     out: mpsc::UnboundedSender<Frame>,
@@ -74,17 +87,15 @@ enum Start<S> {
 /// Serves one client until it leaves, the connection breaks or a resume
 /// with its token takes over. Its attachments are then parked for
 /// `config.park`; the programs keep running.
-pub async fn serve<B, T, R, W>(
-    backend: &B,
-    tasks: &T,
-    sessions: &Sessions,
+pub async fn serve<B, H, R, W>(
+    services: &Services<'_, B, H>,
     reader: R,
     writer: W,
     config: &Config,
 ) -> Result<(), ServeError>
 where
     B: SessionBackend,
-    T: Tasks,
+    H: Host,
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
@@ -94,9 +105,17 @@ where
     let resume = handshake(&mut incoming, &out).await?;
 
     let (ended, mut ended_rx) = mpsc::unbounded_channel();
+    let Services {
+        backend,
+        host,
+        sessions,
+        inbox,
+    } = *services;
     let mut session = Session {
         backend,
-        tasks,
+        host,
+        inbox,
+        inbox_watch: None,
         changes: None,
         out,
         ended,
@@ -132,6 +151,10 @@ where
                 session.attachments.remove(&channel);
             }
             change = next_change(&mut session.changes) => session.change(change).await,
+            () = next_revision(&mut session.inbox_watch) => {
+                let inbox = session.inbox.view();
+                send(&session.out, &ServerMsg::Inbox { inbox });
+            }
             _ = &mut kick => {
                 tracing::info!("a resume took over this session");
                 break Ok(());
@@ -214,7 +237,7 @@ fn code_of(e: &BackendError) -> ErrorCode {
     }
 }
 
-impl<B: SessionBackend, T: Tasks> Session<'_, B, T> {
+impl<B: SessionBackend, H: Host> Session<'_, B, H> {
     async fn frame(&mut self, frame: Frame) {
         if frame.channel == 0 {
             if frame.kind == Kind::Data {
@@ -302,11 +325,16 @@ impl<B: SessionBackend, T: Tasks> Session<'_, B, T> {
                 self.start_task(id, &spec).await;
             }
             ClientMsg::Watch { id } => self.watch(id).await,
+            other => match inbox::handle(other, self.inbox, self.host).await {
+                Some((id, Ok(body))) => self.reply(id, body),
+                Some((id, Err((code, message)))) => self.error(Some(id), code, message),
+                None => self.error(None, ErrorCode::BadRequest, "unknown request".into()),
+            },
         }
     }
 
     async fn start_task(&mut self, id: u64, spec: &TaskSpec) {
-        let prepared = match self.tasks.prepare(spec).await {
+        let prepared = match self.host.prepare(spec).await {
             Ok(p) => p,
             Err(e) => {
                 let code = match e {
@@ -337,6 +365,9 @@ impl<B: SessionBackend, T: Tasks> Session<'_, B, T> {
         match self.backend.subscribe(&Labels::new()).await {
             Ok((_, changes)) => {
                 self.changes = Some(changes);
+                let mut revisions = self.inbox.subscribe();
+                revisions.mark_unchanged();
+                self.inbox_watch = Some(revisions);
                 self.reply(id, Reply::Empty {});
             }
             Err(e) => self.error(Some(id), code_of(&e), e.to_string()),
@@ -562,5 +593,17 @@ async fn next_change<C: ChangeStream>(
     match changes {
         Some(c) => c.next().await,
         None => std::future::pending().await,
+    }
+}
+
+/// Waits for a new Inbox revision; forever when not watching or closed.
+async fn next_revision(revisions: &mut Option<watch::Receiver<u64>>) {
+    let changed = match revisions.as_mut() {
+        Some(r) => r.changed().await.is_ok(),
+        None => false,
+    };
+    if !changed {
+        *revisions = None;
+        std::future::pending::<()>().await;
     }
 }

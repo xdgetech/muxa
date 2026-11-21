@@ -244,10 +244,105 @@ pub enum ClientMsg {
         #[serde(default)]
         plan: bool,
     },
-    /// Asks for `changed`, `removed` and `resync` notifications.
+    /// Asks for `changed`, `removed`, `resync` and `inbox` notifications.
     Watch {
         id: u64,
     },
+    Inbox {
+        id: u64,
+    },
+    /// Reads a Capture line into fields, for the client to show as chips.
+    /// `today` is the device's local date, `YYYY-MM-DD`.
+    ParseCapture {
+        id: u64,
+        text: String,
+        today: String,
+    },
+    InboxAdd {
+        id: u64,
+        kind: ItemKind,
+        title: String,
+        #[serde(default)]
+        note: Option<String>,
+        #[serde(default)]
+        workspace: Option<String>,
+        #[serde(default)]
+        due: Option<String>,
+    },
+    /// Puts an open item at `index` in the manual order.
+    InboxMove {
+        id: u64,
+        item: String,
+        index: usize,
+    },
+    /// Hides an item until `until` (Unix seconds); it then returns on top.
+    InboxLater {
+        id: u64,
+        item: String,
+        until: i64,
+    },
+    InboxDone {
+        id: u64,
+        item: String,
+    },
+    InboxReopen {
+        id: u64,
+        item: String,
+    },
+    InboxDelete {
+        id: u64,
+        item: String,
+    },
+}
+
+/// What an Inbox item asks of the user (ADR 0066).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemKind {
+    Review,
+    Reply,
+    Decide,
+    Read,
+    Todo,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxItem {
+    pub id: String,
+    pub kind: ItemKind,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// `YYYY-MM-DD`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+    /// Hidden until then (Unix seconds).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub later_until: Option<i64>,
+    /// Unix seconds.
+    pub created: i64,
+    /// `capture`, `task`, or `routine`.
+    pub source: String,
+}
+
+/// The whole Inbox: open items in the user's order, then recent done ones.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Inbox {
+    pub revision: u64,
+    pub items: Vec<InboxItem>,
+    pub done: Vec<InboxItem>,
+}
+
+/// A Capture line read into fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Capture {
+    pub kind: ItemKind,
+    pub title: String,
+    pub workspace: Option<String>,
+    pub due: Option<String>,
 }
 
 /// `hello.resume`: the session to continue and where each channel stopped.
@@ -325,6 +420,10 @@ pub enum ServerMsg {
     },
     /// Changes were lost: the client lists the terminals again.
     Resync {},
+    /// After `watch`: the Inbox changed.
+    Inbox {
+        inbox: Inbox,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -333,6 +432,8 @@ pub enum Reply {
     Terminals { terminals: Vec<Terminal> },
     Attached { channel: u32 },
     Started { terminal: Terminal, existing: bool },
+    Inbox { inbox: Inbox },
+    Capture { capture: Capture },
     Empty {},
 }
 

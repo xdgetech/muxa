@@ -348,14 +348,16 @@ mod tests {
 
     use muxa_backend::fake::FakeBackend;
     use muxa_backend::{Launch, SessionBackend, TerminalId};
-    use muxa_server::{Config, PARK, Prepared, Sessions, TaskError, TaskSpec, Tasks, serve};
+    use muxa_server::{
+        Config, Host, Inbox, PARK, Prepared, Services, Sessions, TaskError, TaskSpec, serve,
+    };
     use tokio::io::{DuplexStream, ReadHalf, WriteHalf};
 
     use super::*;
 
     struct NoTasks;
 
-    impl Tasks for NoTasks {
+    impl Host for NoTasks {
         async fn prepare(&self, _: &TaskSpec) -> Result<Prepared, TaskError> {
             Err(TaskError::Invalid("no tasks here".into()))
         }
@@ -374,7 +376,14 @@ mod tests {
                 backend: "fake".into(),
                 park: PARK,
             };
-            let _ = serve(&backend, &NoTasks, &sessions, r, w, &config).await;
+            let inbox = Inbox::memory();
+            let services = Services {
+                backend: &backend,
+                host: &NoTasks,
+                sessions: &sessions,
+                inbox: &inbox,
+            };
+            let _ = serve(&services, r, w, &config).await;
         });
         let (r, w) = tokio::io::split(ours);
         Client::open(r, w, "test", state).await.unwrap()

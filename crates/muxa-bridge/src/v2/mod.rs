@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use muxa_backend::SessionBackend;
 use muxa_herdr::{Client, HerdrBackend};
-use muxa_server::{Config, PARK, Sessions, Tasks};
+use muxa_server::{Config, Host, Inbox, PARK, Services, Sessions};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
@@ -29,7 +29,7 @@ pub fn path(dir: &Path) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-pub use tasks::HostTasks;
+pub use tasks::BridgeHost;
 
 /// One herdr-core connection, made on first use and again after it is lost,
 /// the client sessions a resume returns to, and how Tasks start.
@@ -37,17 +37,19 @@ pub struct Herdr {
     program: String,
     current: Mutex<Option<HerdrBackend>>,
     sessions: Sessions,
-    tasks: HostTasks,
+    host: BridgeHost,
+    inbox: Arc<Inbox>,
 }
 
 impl Herdr {
     /// `program` runs as `<program> connect`: `hc`, or a path to it.
-    pub fn new(program: String, tasks: HostTasks) -> Self {
+    pub fn new(program: String, host: BridgeHost, inbox: Arc<Inbox>) -> Self {
         Herdr {
             program,
             current: Mutex::new(None),
             sessions: Sessions::new(),
-            tasks,
+            host,
+            inbox,
         }
     }
 
@@ -64,6 +66,24 @@ impl Herdr {
         *current = Some(backend.clone());
         Ok(backend)
     }
+}
+
+/// `<state dir>/inbox.json` (ADR 0066), with its Later timer running. A file
+/// that cannot be read leaves an Inbox in memory only, and says so in the log.
+pub fn inbox(state_dir: Option<&Path>) -> Arc<Inbox> {
+    let opened = match state_dir {
+        Some(dir) => Inbox::open(dir.join("inbox.json")).unwrap_or_else(|e| {
+            tracing::error!(error = %e, "the Inbox is in memory only: changes are not kept");
+            Inbox::memory()
+        }),
+        None => {
+            tracing::warn!("no state dir: the Inbox is in memory only");
+            Inbox::memory()
+        }
+    };
+    let inbox = Arc::new(opened);
+    inbox.spawn_timer();
+    inbox
 }
 
 /// Accepts v2 clients until the listener fails.
@@ -84,7 +104,13 @@ pub async fn accept(listener: UnixListener, herdr: Arc<Herdr>) {
                         }
                     };
                     let name = format!("herdr-core {}", backend.client().version());
-                    serve(stream, &backend, &herdr.tasks, &herdr.sessions, name).await;
+                    let services = Services {
+                        backend: &backend,
+                        host: &herdr.host,
+                        sessions: &herdr.sessions,
+                        inbox: &herdr.inbox,
+                    };
+                    serve(stream, &services, name).await;
                 });
             }
             Err(e) => {
@@ -96,11 +122,9 @@ pub async fn accept(listener: UnixListener, herdr: Arc<Herdr>) {
 }
 
 /// Serves one v2 client on `stream`.
-pub async fn serve<B: SessionBackend, T: Tasks>(
+pub async fn serve<B: SessionBackend, H: Host>(
     stream: UnixStream,
-    backend: &B,
-    tasks: &T,
-    sessions: &Sessions,
+    services: &Services<'_, B, H>,
     backend_name: String,
 ) {
     let (r, w) = stream.into_split();
@@ -109,7 +133,7 @@ pub async fn serve<B: SessionBackend, T: Tasks>(
         backend: backend_name,
         park: PARK,
     };
-    match muxa_server::serve(backend, tasks, sessions, r, w, &config).await {
+    match muxa_server::serve(services, r, w, &config).await {
         Ok(()) => tracing::info!("a v2 client left"),
         Err(e) => tracing::info!(error = %e, "a v2 client ended"),
     }
@@ -159,13 +183,13 @@ mod tests {
 
     use super::*;
 
-    fn no_tasks() -> HostTasks {
+    fn no_tasks() -> BridgeHost {
         let records = crate::task_records::Config {
             state_dir: None,
             workspaces: None,
             home: None,
         };
-        HostTasks::new("true".into(), Arc::new(records))
+        BridgeHost::new("true".into(), Arc::new(records))
     }
 
     fn short_dir(name: &str) -> PathBuf {
@@ -183,14 +207,14 @@ mod tests {
         let backend = FakeBackend::new();
         tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
-            serve(
-                stream,
-                &backend,
-                &no_tasks(),
-                &Sessions::new(),
-                "fake".into(),
-            )
-            .await;
+            let (host, sessions, inbox) = (no_tasks(), Sessions::new(), Inbox::memory());
+            let services = Services {
+                backend: &backend,
+                host: &host,
+                sessions: &sessions,
+                inbox: &inbox,
+            };
+            serve(stream, &services, "fake".into()).await;
         });
 
         // The client's side of SSH: what it writes, and what it reads back.
@@ -234,7 +258,11 @@ mod tests {
         let listener = UnixListener::bind(&sock).unwrap();
         tokio::spawn(accept(
             listener,
-            Arc::new(Herdr::new("hc".into(), no_tasks())),
+            Arc::new(Herdr::new(
+                "hc".into(),
+                no_tasks(),
+                Arc::new(Inbox::memory()),
+            )),
         ));
         let mut stream = UnixStream::connect(&sock).await.unwrap();
         for msg in [

@@ -495,6 +495,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "muxa-inbox"
+version = "0.1.0"
+dependencies = [
+ "jiff",
+ "muxa-protocol",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "muxa-protocol"
 version = "0.1.0"
 dependencies = [
@@ -509,6 +522,7 @@ version = "0.1.0"
 dependencies = [
  "muxa-backend",
  "muxa-herdr",
+ "muxa-inbox",
  "muxa-protocol",
  "serde_json",
  "thiserror",

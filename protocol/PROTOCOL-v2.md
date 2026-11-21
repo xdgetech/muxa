@@ -80,7 +80,13 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
 | `{"type":"start-task","repo","branch","base"?,"plan"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal |
-| `{"type":"watch"}` | `{}`. `changed`, `removed` and `resync` notifications follow |
+| `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
+| `{"type":"inbox"}` | `{"inbox":Inbox}` |
+| `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
+| `{"type":"inbox-add","kind","title","note"?,"workspace"?,"due"?}` | `{"inbox":Inbox}`. The item goes on top |
+| `{"type":"inbox-move","item","index"}` | `{"inbox":Inbox}`. An index past the end means last |
+| `{"type":"inbox-later","item","until"}` | `{"inbox":Inbox}`. `until` is Unix seconds, in the future |
+| `{"type":"inbox-done","item"}`, `inbox-reopen`, `inbox-delete` | `{"inbox":Inbox}` |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
@@ -95,7 +101,19 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"removed","terminal":"<id>"}` | After `watch`: the terminal is gone |
 | `{"type":"resync"}` | After `watch`: changes were lost. The client sends `terminals` again |
 
-A watch ends with the connection. After a resume the client sends `watch` again.
+A watch ends with the connection. After a resume the client sends `watch` and `inbox` again.
+
+### Inbox
+
+ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...]}`. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
+
+`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source"}`.
+- `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
+- `due`: `YYYY-MM-DD`. `created` and `later_until`: Unix seconds.
+- An item with `later_until` in the future stays in `items` and the client hides it. At that time the server puts it back on top, clears `later_until` and sends `inbox`.
+- `source`: `capture`, `task` or `routine`.
+
+`parse-capture` reads a line by ADR 0066's rules: a first word `reply`, `read` or `decide` sets the kind (else `todo`); `#name` sets the Workspace only when one has that name; `due` takes `today`, `tomorrow`, a weekday (the next one, today included), `M/D` (the next one) or `YYYY-MM-DD`. The client shows the fields, lets the user change them, and sends `inbox-add`. A title is 1 to 300 characters; a note at most 4 KiB.
 
 ### Error codes
 
@@ -103,4 +121,4 @@ A watch ends with the connection. After a resume the client sends `watch` again.
 
 ## Not yet specified
 
-Closing a Task, Task places (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.
+Items from Tasks and Routines (C2), closing a Task, Task places (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.

@@ -1,5 +1,5 @@
 //! Starting a Task's agent (muxa next B4). Making the place (a worktree) and
-//! choosing the agent belong to the host through [`Tasks`]; the server runs
+//! choosing the agent belong to the host through [`Host`]; the server runs
 //! the agent on the backend and finds it again by its labels.
 
 use std::collections::BTreeMap;
@@ -45,10 +45,15 @@ pub enum TaskError {
     Failed(String),
 }
 
-/// The host's side of a Task start.
-pub trait Tasks: Send + Sync {
+/// What the server asks of the host: Task places and Workspace names.
+pub trait Host: Send + Sync {
     /// Checks the request and makes the worktree, or finds the existing one.
     fn prepare(&self, spec: &TaskSpec) -> impl Future<Output = Result<Prepared, TaskError>> + Send;
+
+    /// The Workspace names, for Capture's `#name`.
+    fn workspaces(&self) -> impl Future<Output = Vec<String>> + Send {
+        async { Vec::new() }
+    }
 }
 
 /// The Task's live agent terminal, or a new one. `true` when it was running.

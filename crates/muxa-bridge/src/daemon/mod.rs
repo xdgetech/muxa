@@ -307,11 +307,12 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
     match socket::bind(&v2_path) {
         Ok(v2) => {
             let program = std::env::var("MUXA_HC").unwrap_or_else(|_| "hc".to_owned());
-            let tasks = crate::v2::HostTasks::new(
+            let host = crate::v2::BridgeHost::new(
                 daemon.records.tasks.command.clone(),
                 Arc::clone(&daemon.records.records),
             );
-            let herdr = Arc::new(crate::v2::Herdr::new(program, tasks));
+            let inbox = crate::v2::inbox(daemon.records.records.state_dir.as_deref());
+            let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
             tokio::spawn(crate::v2::accept(v2, herdr));
             tracing::info!(socket = %v2_path.display(), "protocol v2 listening");
         }

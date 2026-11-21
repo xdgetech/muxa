@@ -7,14 +7,16 @@ use std::time::Duration;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
 use muxa_herdr::{Client, HerdrBackend};
 use muxa_protocol::v2::{Frame, Kind};
-use muxa_server::{Config, PARK, Prepared, Sessions, TaskError, TaskSpec, Tasks, serve};
+use muxa_server::{
+    Config, Host, Inbox, PARK, Prepared, Services, Sessions, TaskError, TaskSpec, serve,
+};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// A "Task" in the temp dir whose agent reports `blocked` with OSC 7501.
 struct Script;
 
-impl Tasks for Script {
+impl Host for Script {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         let line = r"printf '\033]7501;state=blocked:app=muxa-test\033\\'; sleep 30";
         Ok(Prepared {
@@ -66,7 +68,14 @@ async fn a_started_task_reports_its_agent_state() {
     let server_backend = backend.clone();
     let server = tokio::spawn(async move {
         let (r, w) = tokio::io::split(server_end);
-        serve(&server_backend, &Script, &Sessions::new(), r, w, &config()).await
+        let (sessions, inbox) = (Sessions::new(), Inbox::memory());
+        let services = Services {
+            backend: &server_backend,
+            host: &Script,
+            sessions: &sessions,
+            inbox: &inbox,
+        };
+        serve(&services, r, w, &config()).await
     });
     let branch = format!("muxa-task-{}", std::process::id());
     let mut started: Option<String> = None;
@@ -134,7 +143,14 @@ async fn a_v2_client_types_into_a_herdr_terminal() {
     let server_backend = backend.clone();
     let server = tokio::spawn(async move {
         let (r, w) = tokio::io::split(server_end);
-        serve(&server_backend, &Script, &Sessions::new(), r, w, &config()).await
+        let (sessions, inbox) = (Sessions::new(), Inbox::memory());
+        let services = Services {
+            backend: &server_backend,
+            host: &Script,
+            sessions: &sessions,
+            inbox: &inbox,
+        };
+        serve(&services, r, w, &config()).await
     });
 
     let result = tokio::time::timeout(Duration::from_secs(10), async {

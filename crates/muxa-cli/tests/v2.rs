@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
-use muxa_server::{Config, PARK, Prepared, Sessions, TaskError, TaskSpec, Tasks, serve};
+use muxa_server::{
+    Config, Host, Inbox, PARK, Prepared, Services, Sessions, TaskError, TaskSpec, serve,
+};
 use serde_json::Value;
 use tokio::net::UnixListener;
 
@@ -36,7 +38,7 @@ while True:
 /// Agents in `/work/<branch>`.
 struct WorkTasks;
 
-impl Tasks for WorkTasks {
+impl Host for WorkTasks {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         Ok(Prepared {
             dir: format!("/work/{}", spec.branch).into(),
@@ -48,13 +50,13 @@ impl Tasks for WorkTasks {
     }
 }
 
-struct Host {
+struct TestHost {
     dir: PathBuf,
     backend: FakeBackend,
 }
 
-impl Host {
-    async fn start(name: &str) -> Host {
+impl TestHost {
+    async fn start(name: &str) -> TestHost {
         let dir = std::env::temp_dir().join(format!("muxa-cli-v2-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -63,9 +65,11 @@ impl Host {
         let backend = FakeBackend::new();
         let served = backend.clone();
         let sessions = Arc::new(Sessions::new());
+        let inbox = Arc::new(Inbox::memory());
         tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let (backend, sessions) = (served.clone(), Arc::clone(&sessions));
+                let inbox = Arc::clone(&inbox);
                 tokio::spawn(async move {
                     let (r, w) = stream.into_split();
                     let config = Config {
@@ -73,11 +77,17 @@ impl Host {
                         backend: "fake".into(),
                         park: PARK,
                     };
-                    let _ = serve(&backend, &WorkTasks, &sessions, r, w, &config).await;
+                    let services = Services {
+                        backend: &backend,
+                        host: &WorkTasks,
+                        sessions: &sessions,
+                        inbox: &inbox,
+                    };
+                    let _ = serve(&services, r, w, &config).await;
                 });
             }
         });
-        Host { dir, backend }
+        TestHost { dir, backend }
     }
 
     /// Runs `muxa-cli v2 <args>` without a terminal; it reads no keys.
@@ -101,7 +111,7 @@ impl Host {
     }
 }
 
-impl Drop for Host {
+impl Drop for TestHost {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.dir);
     }
@@ -118,7 +128,7 @@ fn stdout(out: &Output) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn terminals_and_start_task_through_the_relay() {
-    let host = Host::start("tasks").await;
+    let host = TestHost::start("tasks").await;
     let started = stdout(
         &host
             .cli(&["start-task", "--repo", "/r", "--branch", "fix", "--json"])
@@ -141,7 +151,7 @@ async fn terminals_and_start_task_through_the_relay() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn attach_prints_the_screen_and_new_output() {
-    let host = Host::start("attach").await;
+    let host = TestHost::start("attach").await;
     let id = host.terminal().await;
     host.backend.emit(&id, b"first ");
     let backend = host.backend.clone();
@@ -156,7 +166,7 @@ async fn attach_prints_the_screen_and_new_output() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn watch_prints_state_changes() {
-    let host = Host::start("watch").await;
+    let host = TestHost::start("watch").await;
     let id = host.terminal().await;
     let backend = host.backend.clone();
     let changed = id.clone();
@@ -174,4 +184,29 @@ async fn watch_prints_state_changes() {
         (&first["type"], &first["terminal"]["status"]["state"]),
         (&Value::from("changed"), &Value::from("blocked"))
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn capture_lists_and_finishes_an_item() {
+    let host = TestHost::start("inbox").await;
+    let added = stdout(
+        &host
+            .cli(&["capture", "read", "the", "RFC", "due", "2030-01-02"])
+            .await,
+    );
+    let row = added.lines().next().unwrap().to_owned();
+    assert!(row.ends_with("\tread\tthe RFC\tdue 2030-01-02"), "{row:?}");
+    let id = row.split('\t').next().unwrap().to_owned();
+    host.cli(&["capture", "buy", "milk"]).await;
+    let list = stdout(&host.cli(&["inbox"]).await);
+    let titles: Vec<&str> = list
+        .lines()
+        .map(|l| l.split('\t').nth(2).unwrap())
+        .collect();
+    assert_eq!(titles, ["buy milk", "the RFC"]);
+    let after: Value =
+        serde_json::from_str(&stdout(&host.cli(&["inbox", "done", &id, "--json"]).await)).unwrap();
+    assert_eq!(after["done"][0]["id"], id.as_str());
+    let refused = host.cli(&["inbox", "later", &id]).await;
+    assert!(!refused.status.success());
 }
