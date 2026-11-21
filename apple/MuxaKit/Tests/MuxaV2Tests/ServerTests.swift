@@ -1,0 +1,107 @@
+#if os(macOS)
+import Foundation
+import MuxaTransport
+import Testing
+
+@testable import MuxaV2
+
+/// Against the real server on the fake backend: `make test-apple-v2` sets
+/// MUXA_TEST_V2_SERVER to the built `fake_server` example.
+struct ServerTests {
+    static let program = ProcessInfo.processInfo.environment["MUXA_TEST_V2_SERVER"]
+
+    /// A fake server on its own socket, killed when the test ends.
+    final class Server: @unchecked Sendable {
+        let process = Process()
+        let socket: String
+
+        init() throws {
+            socket = NSTemporaryDirectory() + "muxa-v2-\(UUID().uuidString.prefix(8)).sock"
+            process.executableURL = URL(fileURLWithPath: try #require(ServerTests.program))
+            process.arguments = [socket]
+            process.standardOutput = FileHandle.nullDevice
+            try process.run()
+            for _ in 0..<100 where !FileManager.default.fileExists(atPath: socket) {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+
+        func connect(_ state: V2Client.State = .init()) async throws -> V2Client {
+            try await V2Client.open(try ProcessBytes(command: "nc -U \(socket)"), name: "test", state: state)
+        }
+
+        deinit {
+            process.terminate()
+            try? FileManager.default.removeItem(atPath: socket)
+        }
+    }
+
+    /// The next event that is not an Inbox or terminal notice.
+    static func next(_ it: inout AsyncStream<V2Event>.Iterator, skipping: (V2Event) -> Bool = { _ in false }) async -> V2Event? {
+        while let e = await it.next() {
+            if !skipping(e) { return e }
+        }
+        return nil
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func attachShowsTheScreenAndTypes() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let demo = try #require(try await c.terminals().first { $0.name == "demo" })
+        var events = c.events.makeAsyncIterator()
+        let ch = try await c.attach(demo.id, cols: 80, rows: 24)
+        #expect(await Self.next(&events) == .paint(channel: ch))
+        #expect(await Self.next(&events) == .output(channel: ch, bytes: Array("hello ".utf8)))
+        try await c.input(ch, Array("x".utf8))
+        #expect(await Self.next(&events) == .output(channel: ch, bytes: Array("echo:x".utf8)))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aResumeContinuesWithoutAPaint() async throws {
+        let server = try Server()
+        let first = try await server.connect()
+        let demo = try #require(try await first.terminals().first { $0.name == "demo" })
+        var events = first.events.makeAsyncIterator()
+        let ch = try await first.attach(demo.id, cols: 80, rows: 24)
+        _ = await Self.next(&events)
+        _ = await Self.next(&events)
+        let state = await first.resumeState
+        await first.close()
+        try await Task.sleep(for: .milliseconds(200))
+
+        let again = try await server.connect(state)
+        #expect(await again.resumed == [ch])
+        var more = again.events.makeAsyncIterator()
+        try await again.input(ch, Array("y".utf8))
+        // No paint and no `hello ` again: only the new output.
+        #expect(await Self.next(&more) == .output(channel: ch, bytes: Array("echo:y".utf8)))
+        await again.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aCaptureReachesAWatchingDevice() async throws {
+        let server = try Server()
+        let phone = try await server.connect()
+        try await phone.watch()
+        var events = phone.events.makeAsyncIterator()
+        let mac = try await server.connect()
+        let capture = try await mac.parseCapture("reply to the bank #personal due 12/1", today: "2026-11-25")
+        #expect(capture == Capture(kind: .reply, title: "to the bank", workspace: "Personal", due: "2026-12-01"))
+        let inbox = try await mac.inbox(.inboxAdd(capture))
+        #expect(inbox.items.map(\.title) == ["to the bank"])
+        let seen = await Self.next(&events) { if case .inbox = $0 { false } else { true } }
+        guard case .inbox(let pushed) = seen else { Issue.record("no inbox event"); return }
+        #expect(pushed == inbox)
+        do {
+            _ = try await mac.inbox(.inboxDone(item: "nope"))
+            Issue.record("done on a missing item")
+        } catch let V2Error.refused(code, _) {
+            #expect(code == "not-found")
+        }
+        await phone.close()
+        await mac.close()
+    }
+}
+#endif

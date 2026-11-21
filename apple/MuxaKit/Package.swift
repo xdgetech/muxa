@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "MuxaTransport", targets: ["MuxaTransport"]),
         .library(name: "MuxaSession", targets: ["MuxaSession"]),
         .library(name: "MuxaUI", targets: ["MuxaUI"]),
+        .library(name: "MuxaV2", targets: ["MuxaV2"]),
     ],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.99.1"),
@@ -37,6 +38,12 @@ let package = Package(
         .target(
             name: "MuxaUI",
             dependencies: ["MuxaSession", .product(name: "SwiftTerm", package: "SwiftTerm")]
+        ),
+        // Protocol v2 (ADR 0067): frames, messages and a client that resumes.
+        .target(name: "MuxaV2", dependencies: ["MuxaTransport"]),
+        .testTarget(
+            name: "MuxaV2Tests",
+            dependencies: ["MuxaV2", "MuxaTransport"]
         ),
         .testTarget(
             name: "MuxaProtocolTests",

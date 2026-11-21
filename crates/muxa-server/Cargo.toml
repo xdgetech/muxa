@@ -25,4 +25,4 @@ tracing = "0.1.44"
 [dev-dependencies]
 muxa-herdr = { path = "../muxa-herdr" }
 muxa-backend = { path = "../muxa-backend", features = ["fake"] }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time", "net"] }

@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
@@ -52,6 +52,11 @@ test-tmux-plugin:
 # MuxaKit on macOS. Needs Xcode's toolchain (swift-testing); see DEVELOPER_DIR above.
 test-apple:
 	swift test --package-path apple/MuxaKit
+
+# Also runs the protocol v2 client against the real server on the fake backend.
+test-apple-v2:
+	cargo build -p muxa-server --example fake_server
+	MUXA_TEST_V2_SERVER=$(CURDIR)/target/debug/examples/fake_server swift test --package-path apple/MuxaKit --filter MuxaV2Tests
 
 # Also runs PaneSession against the real bridge on a throwaway tmux server.
 test-apple-tmux:

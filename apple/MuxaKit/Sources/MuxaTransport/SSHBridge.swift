@@ -24,16 +24,17 @@ public struct SSHTarget: Codable, Hashable, Sendable {
     }
 }
 
-/// The bridge as an SSH exec channel. No PTY: bytes pass through unchanged.
-public final class SSHBridge: BridgeChannel {
-    public let lines: AsyncThrowingStream<Data, any Error>
+/// An SSH exec channel as raw bytes both ways. No PTY: bytes pass through
+/// unchanged. Protocol v2 uses it directly; `SSHBridge` splits it into lines.
+public final class SSHExec: ByteChannel {
+    public let bytes: AsyncThrowingStream<Data, any Error>
     private let writer: Writer
     private let task: Task<Void, Never>
 
-    /// Connects and starts the bridge. Fails with `hostKeyMismatch` when the host key
-    /// is not the pinned one, or when none is pinned yet: the caller shows its
-    /// fingerprint, and connects again with it pinned once the user accepts it.
-    public static func connect(to target: SSHTarget, key: ClientKey) async throws -> SSHBridge {
+    /// Connects and runs `command`. Fails with `hostKeyMismatch` when the host
+    /// key is not the pinned one, or when none is pinned yet: the caller shows
+    /// its fingerprint, and connects again with it pinned once the user accepts it.
+    public static func connect(to target: SSHTarget, key: ClientKey, command: String? = nil) async throws -> SSHExec {
         let check = HostKeyCheck(pinned: target.hostKey)
         let client: SSHClient
         do {
@@ -49,13 +50,13 @@ public final class SSHBridge: BridgeChannel {
             if case SSHClientError.allAuthenticationOptionsFailed = error { throw TransportError.notAuthorized }
             throw TransportError.failed("cannot connect to \(target.host): \(error)")
         }
-        return try await SSHBridge(client: client, command: target.command)
+        return try await SSHExec(client: client, command: command ?? target.command)
     }
 
     private init(client: SSHClient, command: String) async throws {
-        let (lines, linesOut) = AsyncThrowingStream<Data, any Error>.makeStream()
+        let (bytes, bytesOut) = AsyncThrowingStream<Data, any Error>.makeStream()
         let writer = Writer(client: client)
-        self.lines = lines
+        self.bytes = bytes
         self.writer = writer
         let (ready, readyOut) = AsyncStream<Void>.makeStream()
         task = Task {
@@ -63,18 +64,15 @@ public final class SSHBridge: BridgeChannel {
                 try await client.withExec(command) { inbound, outbound in
                     await writer.attach(outbound)
                     readyOut.yield()
-                    var framer = LineFramer()
                     for try await chunk in inbound {
                         // stderr carries the bridge's own log (no pane bytes); not protocol.
                         guard case .stdout(let buffer) = chunk else { continue }
-                        for line in try framer.push(Data(buffer.readableBytesView)) {
-                            linesOut.yield(line)
-                        }
+                        bytesOut.yield(Data(buffer.readableBytesView))
                     }
                 }
-                linesOut.finish()
+                bytesOut.finish()
             } catch {
-                linesOut.finish(throwing: error)
+                bytesOut.finish(throwing: error)
             }
             readyOut.finish()
             await writer.detach()
@@ -82,16 +80,56 @@ public final class SSHBridge: BridgeChannel {
         for await _ in ready { break }
     }
 
-    public func send(_ line: Data) async throws {
+    public func send(_ data: Data) async throws {
         var buffer = ByteBuffer()
-        buffer.writeBytes(line)
-        buffer.writeInteger(UInt8(ascii: "\n"))
+        buffer.writeBytes(data)
         try await writer.write(buffer)
     }
 
     public func close() async {
         task.cancel()
         await writer.close()
+    }
+}
+
+/// The v1 bridge over SSH: an `SSHExec` split into protocol lines.
+public final class SSHBridge: BridgeChannel {
+    public let lines: AsyncThrowingStream<Data, any Error>
+    private let exec: SSHExec
+
+    /// Connects and starts the bridge; see `SSHExec.connect` for host keys.
+    public static func connect(to target: SSHTarget, key: ClientKey) async throws -> SSHBridge {
+        SSHBridge(exec: try await SSHExec.connect(to: target, key: key))
+    }
+
+    private init(exec: SSHExec) {
+        self.exec = exec
+        lines = Self.split(exec.bytes)
+    }
+
+    static func split(_ bytes: AsyncThrowingStream<Data, any Error>) -> AsyncThrowingStream<Data, any Error> {
+        let (lines, out) = AsyncThrowingStream<Data, any Error>.makeStream()
+        let task = Task {
+            var framer = LineFramer()
+            do {
+                for try await chunk in bytes {
+                    for line in try framer.push(chunk) { out.yield(line) }
+                }
+                out.finish()
+            } catch {
+                out.finish(throwing: error)
+            }
+        }
+        out.onTermination = { _ in task.cancel() }
+        return lines
+    }
+
+    public func send(_ line: Data) async throws {
+        try await exec.send(line + Data([UInt8(ascii: "\n")]))
+    }
+
+    public func close() async {
+        await exec.close()
     }
 }
 
