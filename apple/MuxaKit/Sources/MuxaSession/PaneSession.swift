@@ -64,30 +64,6 @@ public final class PaneSession {
     public internal(set) var inboxItems: [InboxItem] = []
     /// Why the Routines or the stored entries could not be listed; the last lists stay.
     public internal(set) var workError: String?
-    /// The host's Work items in the host's order, as last listed (`work` level 9, ADR 0048).
-    public internal(set) var workList: [WorkItem] = []
-    /// The unsorted Captures, newest first, as last listed.
-    public internal(set) var captures: [Capture] = []
-    /// The requests of the listed Work items.
-    public internal(set) var assistantRequests: [AssistantRequest] = []
-    /// Every Capture seen since connecting, by id: a sorted one is no longer listed,
-    /// but its Work item still shows its text.
-    public internal(set) var knownCaptures: [String: Capture] = [:]
-    /// Work items as `get-work` last read them, by id: every Capture they link and their requests.
-    public internal(set) var workDetails: [String: LoadedWork] = [:]
-    /// The kept plans, newest first, as last listed (`work` level 10, ADR 0049).
-    public internal(set) var plans: [Plan] = []
-    /// The overall assistant and the delegates, as last listed. Nil below level 10.
-    public internal(set) var assistantInfo: AssistantInfo?
-    /// The user's policies, active then expired, as last listed (`work` level 11, ADR 0050).
-    public internal(set) var policies: [Policy] = []
-    /// The overall assistant's `proposed` and `rejected` hypotheses, newest first.
-    public internal(set) var hypotheses: [Hypothesis] = []
-    /// The host's newest corrections on plans, newest first, at most 50.
-    public internal(set) var corrections: [Correction] = []
-    /// Notes proposals applied from this device, by `source version`: the live file now
-    /// differs from their base, so applying again would only conflict.
-    public internal(set) var appliedNotes: Set<String> = []
 
     @ObservationIgnored public weak var renderer: (any PaneRenderer)?
 
@@ -119,17 +95,6 @@ public final class PaneSession {
     @ObservationIgnored var savedRoutines: [UInt64: RoutineInfo] = [:]
     @ObservationIgnored var savedEntries: [UInt64: InboxEntry] = [:]
     @ObservationIgnored var savedItems: [UInt64: InboxItem] = [:]
-    /// `capture-saved` and `work-saved`, by request id (`PaneSession+Captures.swift`).
-    @ObservationIgnored var savedCaptures: [UInt64: (capture: Capture, work: WorkItem?)] = [:]
-    @ObservationIgnored var savedWork: [UInt64: WorkItem] = [:]
-    /// The request a `work-saved` or `capture-saved` carried, and `work-detail`, by request
-    /// id (`PaneSession+Assistant.swift`).
-    @ObservationIgnored var savedRequests: [UInt64: AssistantRequest] = [:]
-    @ObservationIgnored var readWorks: [UInt64: LoadedWork] = [:]
-    /// `plan-saved`, by request id (`PaneSession+Plans.swift`).
-    @ObservationIgnored var savedPlans: [UInt64: Plan] = [:]
-    /// `policy-saved`, by request id (`PaneSession+Policies.swift`).
-    @ObservationIgnored var savedPolicies: [UInt64: Policy] = [:]
     /// `inbox-deleted` counts, by request id, until the result arrives (`PaneSession+Items.swift`).
     @ObservationIgnored var deletedCounts: [UInt64: UInt32] = [:]
     /// `session-started`, by request id, until the result arrives (`PaneSession+Ask.swift`).
@@ -171,17 +136,6 @@ public final class PaneSession {
             inboxEntries = []
             inboxItems = []
             workError = nil
-            workList = []
-            captures = []
-            assistantRequests = []
-            knownCaptures = [:]
-            workDetails = [:]
-            plans = []
-            assistantInfo = nil
-            policies = []
-            hypotheses = []
-            corrections = []
-            appliedNotes = []
         }
         phase = .connecting
         do {
@@ -487,9 +441,7 @@ public final class PaneSession {
                 requestId = id
                 return .createTask(
                     id: id, workspace: new.workspace, title: new.title, goal: new.goal, project: new.project,
-                    repo: new.repo, branch: new.branch, base: new.base, loop: new.loop, worker: new.worker,
-                    // An older host ignores them, but they are sent only at level 9 (ADR 0048).
-                    work: canCapture ? new.work : nil, workRev: canCapture ? new.workRev : nil)
+                    repo: new.repo, branch: new.branch, base: new.base, loop: new.loop, worker: new.worker)
             }
         } catch {
             failure = error
@@ -498,8 +450,6 @@ public final class PaneSession {
         let record = savedTasks.removeValue(forKey: requestId)
         try? await refresh()
         await loadTasks()
-        // The Work item now lists the Task, and may be in progress.
-        if new.work != nil, canCapture { await loadWork() }
         if let record { return record }
         throw failure ?? Failure.bridge(ErrorBody(code: .internal, message: "The bridge did not return the task."))
     }
@@ -833,12 +783,8 @@ public final class PaneSession {
         case .routineSaved(let id, let entry):
             savedRoutines[id] = entry
             keep(entry)
-        case .inboxList(
-            let id, let entries, let items, let work, let captures, let requests, let plans, let assistant, let policies,
-            let hypotheses, let corrections):
-            inboxListings[id] = InboxListing(
-                entries: entries, items: items, work: work, captures: captures, requests: requests, plans: plans,
-                assistant: assistant, policies: policies, hypotheses: hypotheses, corrections: corrections)
+        case .inboxList(let id, let entries, let items):
+            inboxListings[id] = InboxListing(entries: entries, items: items)
         case .inboxSaved(let id, let entry, let item):
             // A Routine's item comes with its entry; a Task's item has none.
             if let entry {
@@ -849,31 +795,6 @@ public final class PaneSession {
                 savedItems[id] = item
                 keep(item)
             }
-        case .captureSaved(let id, let entry, let work, let request):
-            savedCaptures[id] = (entry, work)
-            keep(entry)
-            if let work { keep(work) }
-            if let request {
-                savedRequests[id] = request
-                keep(request)
-            }
-        case .workSaved(let id, let entry, let request):
-            savedWork[id] = entry
-            keep(entry)
-            // A run that did not start comes as a `failed` request before the error.
-            if let request {
-                savedRequests[id] = request
-                keep(request)
-            }
-        case .workDetail(let id, let entry, let captures, let requests):
-            readWorks[id] = LoadedWork(entry: entry, captures: captures, requests: requests)
-        case .planSaved(let id, let entry):
-            // A run that did not start comes as a `failed` plan before the error.
-            savedPlans[id] = entry
-            keep(entry)
-        case .policySaved(let id, let entry):
-            savedPolicies[id] = entry
-            keep(entry)
         case .inboxDeleted(let id, let deleted):
             deletedCounts[id] = deleted
         case .sessionStarted(let start, let session, let name):
@@ -920,12 +841,6 @@ public final class PaneSession {
         savedRoutines = [:]
         savedEntries = [:]
         savedItems = [:]
-        savedCaptures = [:]
-        savedWork = [:]
-        savedRequests = [:]
-        readWorks = [:]
-        savedPlans = [:]
-        savedPolicies = [:]
         deletedCounts = [:]
         startedSessions = [:]
         inputs = []
@@ -953,7 +868,6 @@ public final class PaneSession {
     public nonisolated static func describe(_ error: any Error) -> String {
         switch error {
         case Failure.bridge(let body): body.message
-        case let e as AssistNotStarted: e.reason.message
         case Failure.protocolMismatch(let v): "The bridge speaks protocol \(v); this app speaks \(protocolVersion). Update one of them."
         case Failure.noHello: "The bridge did not start. Check that muxa-bridge is installed on the host and that the bridge command points to it."
         case Failure.notConnected: "Not connected."

@@ -73,12 +73,6 @@ private class ItemsBridge : FakeBridge() {
             return emit(Message.Result(req.id, ErrorBody(it, "refused by the host")))
         }
         val current = items.first { it.id == req.entry }
-        if (req.action == InboxAction.ASK_AGENT) {
-            if (req.text.isNullOrEmpty()) return emit(Message.Result(req.id, ErrorBody(ErrorCode.BAD_REQUEST, "a text is needed")))
-            emit(Message.SessionStarted(req.id, "$9", "ask-work"))
-            emit(Message.InboxSaved(req.id, item = current))
-            return emit(Message.Result(req.id))
-        }
         val saved = when (req.action) {
             InboxAction.READ -> current.copy(readAt = 200)
             InboxAction.LATER -> current.copy(laterAt = 60)
@@ -252,26 +246,6 @@ class ItemsTest {
         assertEquals(listOf("i-00000002", "i-00000001"), session.state.value.inboxItems.waiting(now = 300).map { it.id })
     }
 
-    /** ADR 0041: the reply names the workspace's Ask session, and the item stays open. */
-    @Test
-    fun askAgentNamesTheSessionAndLeavesTheItemOpen() = runBlocking {
-        val bridge = bridge().apply {
-            items = items.map {
-                if (it.id == "i-00000002") it.copy(answers = it.answers.dropLast(1) + InboxAction.ASK_AGENT + InboxAction.LATER) else it
-            }
-        }
-        val session = connected(bridge)
-        val started = session.askAgent(session.state.value.inboxItems[1], "Put this in Notion.")
-        assertEquals("$9" to "ask-work", started.session to started.name)
-        assertEquals(listOf("i-00000001", "i-00000002"), session.state.value.inboxItems.waiting(now = 300).map { it.id })
-        val sent = bridge.asked.filterIsInstance<Request.UpdateInbox>().last()
-        assertEquals(Request.UpdateInbox(sent.id, "i-00000002", InboxAction.ASK_AGENT, text = "Put this in Notion."), sent)
-        // An item without Ask Agent: nothing is sent.
-        val e = refusal { session.askAgent(session.state.value.inboxItems[0], "x") }
-        assertEquals(PaneSession.ASK_AGENT_UNSUPPORTED, PaneSession.describe(e))
-        assertEquals(1, bridge.asked.count { it is Request.UpdateInbox && it.action == InboxAction.ASK_AGENT })
-    }
-
     /** ADR 0040: triage in the top bar, decisions and one reply box at the bottom. */
     @Test
     fun theAnswersArePlacedByWhatTheyDo() {
@@ -287,11 +261,11 @@ class ItemsTest {
         val question = all(ItemKind.ASK, listOf(InboxAction.CHOOSE, InboxAction.REJECT, InboxAction.REPLY, InboxAction.LATER))
         assertTrue(question.chooses)
         assertEquals(listOf(InboxAction.REJECT), question.decisions)
-        // ADR 0041: an item without a session asks the workspace's agent from its reply box.
-        val proposal = all(ItemKind.PROPOSAL, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.ASK_AGENT, InboxAction.LATER))
-        assertEquals(ItemButtons(listOf(InboxAction.APPROVE, InboxAction.REJECT), InboxAction.ASK_AGENT, emptyList(), null, later = true, chooses = false), proposal)
-        val briefing = all(ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER))
-        assertEquals(ItemButtons(emptyList(), InboxAction.ASK_AGENT, emptyList(), InboxAction.DISMISS, later = true, chooses = false), briefing)
+        // A Routine's item has no session, so no reply box.
+        val proposal = all(ItemKind.PROPOSAL, listOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.LATER))
+        assertEquals(ItemButtons(listOf(InboxAction.APPROVE, InboxAction.REJECT), null, emptyList(), null, later = true, chooses = false), proposal)
+        val briefing = all(ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.LATER))
+        assertEquals(ItemButtons(emptyList(), null, emptyList(), InboxAction.DISMISS, later = true, chooses = false), briefing)
         // An unknown kind places what the host offers the same way.
         assertEquals(listOf(InboxAction.APPROVE), all(ItemKind("digest"), listOf(InboxAction.APPROVE, InboxAction.DISMISS, InboxAction.LATER)).decisions)
     }
@@ -314,10 +288,10 @@ class ItemsTest {
         assertNull(asked.mainAnswer())
         assertEquals(listOf("TOML", "JSON"), asked.choices.map { it.label })
         assertTrue(ask.choices.isEmpty())
-        // ADR 0041: with a text, Ask Agent.
-        val briefing = item("e-1", ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.ASK_AGENT, InboxAction.LATER))
+        // Without a reply box, a text changes nothing.
+        val briefing = item("e-1", ItemKind.BRIEFING, listOf(InboxAction.DISMISS, InboxAction.LATER))
         assertEquals(InboxAction.DISMISS, briefing.mainAnswer())
-        assertEquals(InboxAction.ASK_AGENT, briefing.mainAnswer("Put this in Notion."))
+        assertEquals(InboxAction.DISMISS, briefing.mainAnswer("Put this in Notion."))
     }
 
     @Test

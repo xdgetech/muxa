@@ -1,50 +1,22 @@
 //! The muxa client/bridge wire format: one JSON object per line. See
 //! `protocol/PROTOCOL.md`; the shared fixtures in `protocol/fixtures` are the contract.
 
-mod assistant;
 mod items;
 mod known;
-mod memory;
-mod plans;
-mod policies;
 mod restart_recovery;
-mod review;
 mod routines;
-mod staff;
-mod task_proposals;
-mod today;
 pub mod v2;
 mod workers;
-mod writes;
-pub use assistant::{
-    AssistResult, AssistScope, AssistSpec, AssistantRequest, Capture, CaptureSource, CaptureState,
-    Delivery, Due, Finding, Notes, PossibleDuplicate, ResultSource, SortAction, WORK_ASSISTANT,
-    WorkAction, WorkItem, WorkState,
-};
 pub use items::{Attachments, ChangeCount, InboxItem, ItemKind, ItemState, WORK_ITEMS};
 pub use known::Known;
-pub use memory::{MemoryMode, MemoryProposal, WORK_MEMORY};
-pub use plans::{
-    AssistantInfo, Basis, BasisKind, ChangeKind, DelegateInfo, DelegateProposal, Minutes,
-    OverallRequests, Plan, PlanChange, PlanRow, Share, SortProposal, TargetState, WORK_PLANS,
-};
-pub use policies::{
-    Confidence, Correction, CorrectionKind, Hypothesis, HypothesisProposal, HypothesisState,
-    PlanAction, Policy, PolicyAction, WORK_POLICIES,
-};
 pub use restart_recovery::{RestartOperation, RestartRecoveryAction};
-pub use review::{ResultReview, WORK_RESULT_REVIEW};
 pub use routines::{
     Disposition, InboxAction, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo,
     RoutineProblem, RoutineRun, RoutineSuccess, RoutineTrigger, SourceLink, WORK_ASK,
-    WORK_ASK_AGENT, WORK_ASK_ROOT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_DELETE_INBOX,
-    WORK_END_REMOVES, WORK_READ, WORK_ROUTINES, work_capability, work_level,
+    WORK_ASK_ROOT, WORK_CAPABILITY, WORK_CLOSE_ASK, WORK_DELETE_INBOX, WORK_END_REMOVES,
+    WORK_NO_ASSISTANT, WORK_READ, WORK_ROUTINES, work_capability, work_level,
 };
-pub use staff::{Handoff, HandoffProposal, RequestStep, StaffMember, StepBy, WORK_STAFF};
-pub use task_proposals::{TaskProposal, WORK_TASK_PROPOSALS};
-pub use today::{RunBudget, WORK_TODAY_ACTIONS};
 pub use workers::{DEFAULT_WORKER, WorkerInfo};
-pub use writes::{ResultWrite, WORK_WRITES, WriteProposal, WriterInfo, Writes};
 
 use serde::{Deserialize, Serialize};
 
@@ -243,14 +215,6 @@ pub enum Request {
         /// Task's own folder and reads the repo (`work` level 4, ADR 0034).
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         read: bool,
-        /// The Work item the Task is for (`work` level 9, ADR 0048). The host
-        /// links them, and a second request for the same item and `rev`
-        /// returns the Task it already made.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        work: Option<String>,
-        /// With `work`: the item's `rev` the client saw.
-        #[serde(default, rename = "workRev", skip_serializing_if = "Option::is_none")]
-        work_rev: Option<u64>,
     },
     /// Turn a reading Task into a repo Task: a worktree, then a restart of
     /// the agent there (`work` level 4, ADR 0034 §3). A `task-saved` comes
@@ -364,12 +328,6 @@ pub enum Request {
         /// With an answer that ends the Task, as in `update-task`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<WorktreeEnd>,
-        /// With `approve` on a `write` item (`work` level 13, ADR 0052) or a
-        /// `memory` item (level 14, ADR 0053): the hash of the content the
-        /// client showed whole. Without it, or with another, the host refuses
-        /// the approve.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        hash: Option<String>,
     },
     /// Remove every Inbox item made more than `older_than_days` days ago,
     /// except protected ones (capability `work` level 8, ADR 0046). An
@@ -392,196 +350,6 @@ pub enum Request {
         /// The open root Ask session, or a new one.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         root: bool,
-        /// Level 17, with `root`: typed into the session's agent as
-        /// `ask-agent` types an item's request (ADR 0059). Never logged.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        text: Option<String>,
-        /// Level 17, with `text`: the Work item the text is about (`w-…`).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        work: Option<String>,
-    },
-    /// Save the user's input (`work` level 9, ADR 0048). The same `clientId`
-    /// returns the stored Capture and writes nothing. A `capture-saved` comes
-    /// before the `result`.
-    Capture {
-        id: u64,
-        #[serde(rename = "clientId")]
-        client_id: String,
-        text: String,
-        #[serde(
-            default,
-            deserialize_with = "known::known_opt",
-            skip_serializing_if = "Option::is_none"
-        )]
-        source: Option<CaptureSource>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        workspace: Option<String>,
-        /// Also make a Work item and ask the assistant; needs `workspace`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        assist: Option<AssistSpec>,
-    },
-    /// Sort an unsorted Capture. A `capture-saved` comes before the `result`.
-    SortCapture {
-        id: u64,
-        capture: String,
-        rev: u64,
-        #[serde(deserialize_with = "known::known")]
-        action: SortAction,
-        /// With `link`: the Work item.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        work: Option<String>,
-        /// With `work`: the new item's title; absent takes the text's first line.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        title: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        workspace: Option<String>,
-    },
-    /// Change a Work item. A stale `rev` is `conflict`. A `work-saved` comes
-    /// before the `result`.
-    UpdateWork {
-        id: u64,
-        work: String,
-        rev: u64,
-        action: WorkAction,
-        /// With `edit`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        title: Option<String>,
-        /// With `edit`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        workspace: Option<String>,
-        /// With `merge`: the Work item to merge into.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        into: Option<String>,
-        /// With `edit`, at level 10: the user's deadline.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        due: Option<Due>,
-    },
-    /// Ask a workspace's agent to work on a Work item. Needs the muxa daemon.
-    /// The same `work` and `rev` return the request already made. A
-    /// `work-saved` comes before the `result`.
-    RequestAssistant {
-        id: u64,
-        work: String,
-        rev: u64,
-        #[serde(deserialize_with = "known::known")]
-        scope: AssistScope,
-        /// Absent: the Work item's workspace.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        workspace: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        purpose: Option<String>,
-        /// Level 12: a staff member of the workspace. Absent: its lead.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        worker: Option<String>,
-    },
-    /// Stop a request's `version`. A `work-saved` comes before the `result`.
-    CancelRequest {
-        id: u64,
-        request: String,
-        version: u64,
-    },
-    /// One Work item with all its Captures' texts and its requests. A
-    /// `work-detail` comes before the `result`.
-    GetWork {
-        id: u64,
-        work: String,
-    },
-    /// Write a result's or a plan's proposed notes to the live `NOTES.md`
-    /// (`work` level 10, ADR 0049). A live file that no longer hashes to
-    /// `base` is `conflict`. A `work-saved` or `plan-saved` comes before the
-    /// `result`.
-    ApplyNotes {
-        id: u64,
-        /// A request `q-…` or a plan `p-…`.
-        source: String,
-        /// The request's version, or the plan's `rev`.
-        version: u64,
-        /// The proposal's `base`.
-        base: String,
-        /// Level 12: the step of a request's `version` whose result proposed
-        /// the notes. Absent: the version's last step.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        step: Option<u32>,
-    },
-    /// Start an overall run now (`work` level 10). A `plan-saved` comes
-    /// before the `result`.
-    PlanNow {
-        id: u64,
-        /// The time the user has.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        minutes: Option<u32>,
-    },
-    /// The secretary proposes a Task (`work` level 18, ADR 0060): one Inbox
-    /// item of kind `new-task`. The same proposal again returns the open
-    /// item. An `inbox-saved` comes before the `result`.
-    ProposeTask {
-        id: u64,
-        workspace: String,
-        /// A repo of the workspace, as `create-task`'s.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        repo: Option<String>,
-        /// One line, at most 200 characters.
-        title: String,
-        /// At most 4096 bytes. Never logged.
-        goal: String,
-        /// The Work item the Task is for (`w-…`).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        work: Option<String>,
-    },
-    /// Keep a policy in the user's words (`work` level 11, ADR 0050). A
-    /// `policy-saved` comes before the `result`.
-    AddPolicy {
-        id: u64,
-        /// 1 to 500 bytes. Never logged.
-        text: String,
-        /// `all`, or one workspace's name.
-        scope: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        from: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        until: Option<u64>,
-    },
-    /// Edit or delete a policy. A stale `rev` is `conflict`. `edit` sends a
-    /// `policy-saved` before the `result`; `delete` only the `result`.
-    UpdatePolicy {
-        id: u64,
-        /// The `y-` id.
-        policy: String,
-        rev: u64,
-        action: PolicyAction,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        text: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        scope: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        from: Option<u64>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        until: Option<u64>,
-    },
-    /// Reorder Today's rows, or remove one, on the newest `resulted` plan.
-    /// A `plan-saved` comes before the `result`.
-    UpdatePlan {
-        id: u64,
-        /// The `p-` id.
-        plan: String,
-        rev: u64,
-        action: PlanAction,
-        /// With `reorder`: every row's Work item or Inbox item, in the new order.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        order: Vec<String>,
-        /// With `dismiss`: the row's Work item or Inbox item.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        row: Option<String>,
-        /// With `dismiss`: the user's reason, kept on the correction. Never logged.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        text: Option<String>,
-    },
-    /// Remove a correction `x-…` or a hypothesis `h-…`, and the proposed
-    /// hypotheses a forgotten correction is evidence of.
-    Forget {
-        id: u64,
-        /// The record's id. Not `id`, which is the request's.
-        record: String,
     },
     /// The client is leaving; the bridge exits.
     Bye {
@@ -630,19 +398,6 @@ impl Request {
             | Request::UpdateInbox { id, .. }
             | Request::DeleteInbox { id, .. }
             | Request::StartSession { id, .. }
-            | Request::Capture { id, .. }
-            | Request::SortCapture { id, .. }
-            | Request::UpdateWork { id, .. }
-            | Request::RequestAssistant { id, .. }
-            | Request::CancelRequest { id, .. }
-            | Request::GetWork { id, .. }
-            | Request::ApplyNotes { id, .. }
-            | Request::PlanNow { id, .. }
-            | Request::AddPolicy { id, .. }
-            | Request::UpdatePolicy { id, .. }
-            | Request::UpdatePlan { id, .. }
-            | Request::Forget { id, .. }
-            | Request::ProposeTask { id, .. }
             | Request::Bye { id } => *id,
         }
     }
@@ -836,31 +591,6 @@ pub enum Message {
         /// Level 3: every item, Routine entries included, open ones first (ADR 0033).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         items: Vec<InboxItem>,
-        /// Level 9: Work items, open ones first, then the ones moved down
-        /// with Later, then at most 100 done or withdrawn, newest first.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        work: Vec<WorkItem>,
-        /// Level 9: unsorted Captures, newest first.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        captures: Vec<Capture>,
-        /// Level 9: the requests of the listed Work items.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        requests: Vec<AssistantRequest>,
-        /// Level 10: the kept plans, newest first.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        plans: Vec<Plan>,
-        /// Level 10: the overall assistant and the delegates.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        assistant: Option<Box<AssistantInfo>>,
-        /// Level 11: active policies, then expired ones.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        policies: Vec<Policy>,
-        /// Level 11: `proposed` and `rejected` hypotheses, newest first.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        hypotheses: Vec<Hypothesis>,
-        /// Level 11: at most 50 corrections, newest first.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        corrections: Vec<Correction>,
     },
     /// What an `update-inbox` wrote, sent just before its `result`: the
     /// Routine entry, the item, or both for a Routine's item.
@@ -881,40 +611,6 @@ pub enum Message {
         session: String,
         name: String,
     },
-    /// What a `capture` or `sort-capture` wrote, sent just before its `result`.
-    CaptureSaved {
-        capture: u64,
-        entry: Capture,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        work: Option<Box<WorkItem>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        request: Option<Box<AssistantRequest>>,
-    },
-    /// What an `update-work`, `request-assistant` or `cancel-request` wrote,
-    /// sent just before its `result`.
-    WorkSaved {
-        work: u64,
-        entry: WorkItem,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        request: Option<Box<AssistantRequest>>,
-    },
-    /// The Work item a `get-work` asked for, sent just before its `result`.
-    WorkDetail {
-        work: u64,
-        /// With its derived state, as `inbox-list` lists it.
-        entry: WorkItem,
-        /// The Captures `entry.captures` names, in that order, sorted or not.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        captures: Vec<Capture>,
-        /// The item's requests, in `entry.requests` order.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        requests: Vec<AssistantRequest>,
-    },
-    /// What a `plan-now` or `apply-notes` wrote, sent just before its `result`.
-    PlanSaved { plan: u64, entry: Box<Plan> },
-    /// What an `add-policy`, an `update-policy edit` or a `confirm` wrote,
-    /// sent just before its `result` (`work` level 11).
-    PolicySaved { policy: u64, entry: Policy },
     /// The bridge is exiting.
     Bye { reason: String },
 }
@@ -969,9 +665,6 @@ pub struct TaskRecord {
     pub worker: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restart_operation: Option<Box<RestartOperation>>,
-    /// The Work item the Task was started for (ADR 0048).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub work: Option<String>,
 }
 
 /// What a client asks for when it starts a Task Loop. The host fills in the
@@ -1167,14 +860,6 @@ pub struct WorkspaceInfo {
     /// in one of them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<String>,
-    /// What a Task's end does with its "For the workspace" (`work` level 14,
-    /// ADR 0053). Absent from an older host.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub memory: Option<MemoryMode>,
-    /// Epoch seconds of the last change to `.muxa/WORKSPACE.md`; absent when
-    /// the file does not exist.
-    #[serde(default, rename = "memoryAt", skip_serializing_if = "Option::is_none")]
-    pub memory_at: Option<u64>,
 }
 
 /// `"any"` or a list of exact commands, from the host's `[workspace.loop]`.

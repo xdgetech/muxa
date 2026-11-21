@@ -44,29 +44,16 @@ extension PaneSession {
         return try await start { .startSession(id: $0, workspace: workspace, repo: repo) }
     }
 
-    /// The overall assistant's workspace when the host opens its root Ask session:
-    /// `work` level 15 and an overall workspace (ADR 0054). Talk to Assistant shows then.
-    public var assistantWorkspace: String? {
-        workLevel >= workAskRoot ? assistantInfo?.overall : nil
-    }
+    /// Whether the host opens a workspace's root Ask session (`work` level 15, ADR 0054).
+    public var canStartRootSession: Bool { workLevel >= workAskRoot }
 
-    /// Opens the overall assistant's root Ask session, or starts it, and lists sessions
-    /// again (ADR 0054). Its Chat is the user's conversation with the assistant.
-    public func talkToAssistant() async throws -> StartedSession {
-        guard let workspace = assistantWorkspace else {
-            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.assistantUnsupported))
+    /// Opens the workspace's root Ask session, or starts it, and lists sessions again.
+    public func startRootSession(workspace: String) async throws -> StartedSession {
+        guard canStartRootSession else {
+            throw Failure.bridge(ErrorBody(code: .unsupported, message: Self.askUnsupported))
         }
-        return try await startRoot(workspace: workspace)
+        return try await start { .startRootSession(id: $0, workspace: workspace) }
     }
-
-    /// `start-session` with `root`; `text` and `work` only at level 17, which the caller checks.
-    func startRoot(workspace: String, text: String? = nil, work: String? = nil) async throws -> StartedSession {
-        try await start { .startRootSession(id: $0, workspace: workspace, text: text, work: work) }
-    }
-
-    /// Shown when the host has no overall assistant to talk to.
-    public static let assistantUnsupported =
-        "This host has no overall assistant to talk to. Set one up on the host, or update muxa there."
 
     /// Sends `make`'s `start-session`, then lists sessions again, so the list has it.
     private func start(_ make: (UInt64) -> Request) async throws -> StartedSession {

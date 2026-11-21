@@ -34,15 +34,12 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
     public var pendingPrompt: PendingPrompt?
     public var worker: String?
     public var restartOperation: RestartOperation?
-    /// The Work item the Task was started for (ADR 0048).
-    public var work: String?
 
     public init(
         id: String, rev: UInt64, workspace: String, title: String, goal: String, status: TaskStatus,
         createdAt: UInt64, updatedAt: UInt64, project: String? = nil, repo: String? = nil,
         branch: String? = nil, dir: String? = nil, session: String? = nil, note: String? = nil,
-        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil, worker: String? = nil, restartOperation: RestartOperation? = nil,
-        work: String? = nil
+        runs: [AgentRun] = [], loop: TaskLoop? = nil, pendingPrompt: PendingPrompt? = nil, worker: String? = nil, restartOperation: RestartOperation? = nil
     ) {
         self.id = id
         self.rev = rev
@@ -63,12 +60,11 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         self.pendingPrompt = pendingPrompt
         self.worker = worker
         self.restartOperation = restartOperation
-        self.work = work
     }
 
     private enum Key: String, CodingKey {
         case id, rev, workspace, title, goal, status, createdAt, updatedAt
-        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt, worker, restartOperation, work
+        case project, repo, branch, dir, session, note, runs, loop, pendingPrompt, worker, restartOperation
     }
 
     public init(from decoder: any Decoder) throws {
@@ -92,7 +88,6 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         pendingPrompt = try c.decodeIfPresent(PendingPrompt.self, forKey: .pendingPrompt)
         worker = try c.decodeIfPresent(String.self, forKey: .worker)
         restartOperation = try c.decodeIfPresent(RestartOperation.self, forKey: .restartOperation)
-        work = try c.decodeIfPresent(String.self, forKey: .work)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -116,7 +111,6 @@ public struct TaskRecord: Codable, Equatable, Identifiable, Sendable {
         try c.encodeIfPresent(pendingPrompt, forKey: .pendingPrompt)
         try c.encodeIfPresent(worker, forKey: .worker)
         try c.encodeIfPresent(restartOperation, forKey: .restartOperation)
-        try c.encodeIfPresent(work, forKey: .work)
     }
 }
 
@@ -241,27 +235,17 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
     /// Its main checkouts, absolute and sorted: the repos under its root and
     /// those the config lists.
     public var repos: [String]
-    /// What a Task's end does with its "For the workspace" (`work` level 14, ADR 0053); nil
-    /// from older hosts.
-    public var memory: MemoryMode?
-    /// Epoch seconds of the last change to `.muxa/WORKSPACE.md`; nil when it does not exist.
-    public var memoryAt: UInt64?
 
     public var id: String { name }
 
-    public init(
-        name: String, root: String? = nil, checks: WorkspaceChecks? = nil, repos: [String] = [],
-        memory: MemoryMode? = nil, memoryAt: UInt64? = nil
-    ) {
+    public init(name: String, root: String? = nil, checks: WorkspaceChecks? = nil, repos: [String] = []) {
         self.name = name
         self.root = root
         self.checks = checks
         self.repos = repos
-        self.memory = memory
-        self.memoryAt = memoryAt
     }
 
-    private enum Key: String, CodingKey { case name, root, checks, repos, memory, memoryAt }
+    private enum Key: String, CodingKey { case name, root, checks, repos }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -269,8 +253,6 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
         root = try c.decodeIfPresent(String.self, forKey: .root)
         checks = try c.decodeIfPresent(WorkspaceChecks.self, forKey: .checks)
         repos = try c.decodeIfPresent([String].self, forKey: .repos) ?? []
-        memory = try c.decodeIfPresent(MemoryMode.self, forKey: .memory)
-        memoryAt = try c.decodeIfPresent(UInt64.self, forKey: .memoryAt)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -279,8 +261,6 @@ public struct WorkspaceInfo: Codable, Equatable, Hashable, Identifiable, Sendabl
         try c.encodeIfPresent(root, forKey: .root)
         try c.encodeIfPresent(checks, forKey: .checks)
         if !repos.isEmpty { try c.encode(repos, forKey: .repos) }
-        try c.encodeIfPresent(memory, forKey: .memory)
-        try c.encodeIfPresent(memoryAt, forKey: .memoryAt)
     }
 }
 

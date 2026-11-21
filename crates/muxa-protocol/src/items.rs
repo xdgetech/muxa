@@ -3,10 +3,7 @@
 //! `work` level 3 or higher.
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    ChatPrompt, DelegateProposal, HandoffProposal, HypothesisProposal, InboxAction, MemoryProposal,
-    Proposal, ResultReview, SortProposal, SourceLink, TaskProposal, WriteProposal,
-};
+use crate::{ChatPrompt, InboxAction, Proposal, SourceLink};
 
 /// Level 3: Inbox items (`items` in `inbox-list`, the answers of ADR 0033).
 pub const WORK_ITEMS: u32 = 3;
@@ -66,33 +63,6 @@ pub struct InboxItem {
     pub routine: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposal: Option<Proposal>,
-    /// With kind `sort`: what approve does (`work` level 10, ADR 0049).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sort: Option<SortProposal>,
-    /// With kind `delegate`: what approve does.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delegate: Option<DelegateProposal>,
-    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hypothesis: Option<HypothesisProposal>,
-    /// With kind `handoff`: the step approve starts (`work` level 12, ADR 0051).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub handoff: Option<HandoffProposal>,
-    /// With kind `write`: the exact write approve hands the writer (`work`
-    /// level 13, ADR 0052). After approve, `task` is the writer's Task.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub write: Option<WriteProposal>,
-    /// With kind `memory`: the text approve appends to the workspace's
-    /// `WORKSPACE.md` (`work` level 14, ADR 0053). `task` is the same Task.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub memory: Option<MemoryProposal>,
-    /// With kind `result`: the Result to review (`work` level 16, ADR 0058).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result: Option<ResultReview>,
-    /// With kind `new-task`: the Task Start Task starts (`work` level 18,
-    /// ADR 0060). After it, `task` is that Task.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub new_task: Option<TaskProposal>,
     /// The answers the host accepts now, in the order to show them. Empty
     /// once the item is answered or resolved.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -110,23 +80,6 @@ pub enum ItemKind {
     Failure,
     Proposal,
     Briefing,
-    /// Level 10: the overall assistant proposes to sort a Capture.
-    Sort,
-    /// Level 10: the overall assistant proposes to ask a workspace's delegate.
-    Delegate,
-    /// Level 11: the overall assistant proposes a hypothesis about the user.
-    Hypothesis,
-    /// Level 12: a staff member asks to pass a request on to another.
-    Handoff,
-    /// Level 13: a Result proposes a write outside the host.
-    Write,
-    /// Level 14: a Task's end proposes to add to the workspace memory.
-    Memory,
-    /// Level 16: a request's Result to review (ADR 0058).
-    Result,
-    /// Level 18: the secretary proposes a Task to start (ADR 0060).
-    #[serde(rename = "new-task")]
-    NewTask,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
     Unknown,

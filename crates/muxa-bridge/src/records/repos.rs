@@ -5,7 +5,10 @@ use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use super::workspaces::{ASSISTANT_DIR, ROUTINES_DIR, TASKS_DIR, Workspace};
+use super::workspaces::{ROUTINES_DIR, TASKS_DIR, Workspace};
+
+/// Runs of the removed assistant layer (ADR 0066) may still sit in a root.
+const OLD_ASSISTANT_DIR: &str = "assistant";
 
 /// Levels below the root: `app` and `group/app`.
 const MAX_DEPTH: usize = 2;
@@ -198,7 +201,7 @@ fn candidate(name: &OsStr, depth: usize) -> bool {
         return false;
     };
     !name.starts_with('.')
-        && !(depth == 1 && [TASKS_DIR, ROUTINES_DIR, ASSISTANT_DIR].contains(&name))
+        && !(depth == 1 && [TASKS_DIR, ROUTINES_DIR, OLD_ASSISTANT_DIR].contains(&name))
 }
 
 fn is_repo(dir: &Path) -> bool {

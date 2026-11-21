@@ -73,13 +73,12 @@ impl TaskItems {
         u32::try_from(gone.len()).unwrap_or(u32::MAX)
     }
 
-    /// The one item that is open or later, if any. ADR 0033 allows one; a
-    /// `memory` item (ADR 0053 §3) is beside it, never it.
+    /// The one item that is open or later, if any (ADR 0033 allows one).
     pub fn current_mut(&mut self) -> Option<&mut StoredItem> {
-        self.items.iter_mut().rev().find(|s| {
-            matches!(s.item.state, ItemState::Open | ItemState::Later)
-                && s.item.kind != muxa_protocol::ItemKind::Memory
-        })
+        self.items
+            .iter_mut()
+            .rev()
+            .find(|s| matches!(s.item.state, ItemState::Open | ItemState::Later))
     }
 
     /// Drops the oldest closed items, then the oldest of all, down to [`KEEP_ITEMS`].
@@ -219,11 +218,6 @@ pub fn new_id() -> Result<String, StateError> {
 #[cfg(test)]
 pub(crate) fn tests_item(id: &str, state: ItemState) -> InboxItem {
     InboxItem {
-        new_task: None,
-        result: None,
-        memory: None,
-        write: None,
-        handoff: None,
         id: id.into(),
         kind: muxa_protocol::ItemKind::Review,
         state,
@@ -245,9 +239,6 @@ pub(crate) fn tests_item(id: &str, state: ItemState) -> InboxItem {
         attachments: Default::default(),
         routine: None,
         proposal: None,
-        sort: None,
-        delegate: None,
-        hypothesis: None,
         answers: Vec::new(),
     }
 }

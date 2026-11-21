@@ -56,12 +56,9 @@ public enum Request: Equatable, Sendable {
     /// Record a new task and start an agent for it; a `task-saved` comes first.
     /// Without `repo` the task gets a directory in its workspace.
     /// With `loop`, the host also starts a Task Loop (capability `task-loop`).
-    /// `work` is the Work item the Task is for and `workRev` its `rev` the client saw
-    /// (`work` level 9, ADR 0048); the same pair returns the Task already made.
     case createTask(
         id: UInt64, workspace: String, title: String, goal: String, project: String?, repo: String?,
-        branch: String?, base: String?, loop: LoopSpec? = nil, worker: String? = nil, work: String? = nil,
-        workRev: UInt64? = nil)
+        branch: String?, base: String?, loop: LoopSpec? = nil, worker: String? = nil)
     /// Set a task record's status. `rev` is the one the client saw; a stale one
     /// fails with `conflict`. A `task-saved` comes first. `worktree` (`work` level 7)
     /// goes with `done` and `dropped`; nil keeps the worktree.
@@ -85,12 +82,10 @@ public enum Request: Equatable, Sendable {
     case listInbox(id: UInt64)
     /// Answer a stored entry or an Inbox item (its `i-` id). `until` goes with
     /// `later`, `text` with `redo`, `change-course` and `reply`, `option` with `choose`,
-    /// `worktree` with an answer that makes the Task done or dropped, `hash` with
-    /// `approve` on a `write` item (`work` level 13, ADR 0052) or a `memory` item
-    /// (level 14, ADR 0053): the hash of the content the client showed whole.
+    /// `worktree` with an answer that makes the Task done or dropped.
     case updateInboxEntry(
         id: UInt64, entry: String, action: InboxAction, until: UInt64?, text: String? = nil, option: UInt32? = nil,
-        worktree: WorktreeEnd? = nil, hash: String? = nil)
+        worktree: WorktreeEnd? = nil)
     /// Remove the Inbox items made more than `olderThanDays` days ago, except protected
     /// ones (capability `work` level 8, ADR 0046). An `inbox-deleted` comes first.
     case deleteInbox(id: UInt64, olderThanDays: UInt32)
@@ -99,64 +94,8 @@ public enum Request: Equatable, Sendable {
     /// `createTask`'s. A `session-started` comes first.
     case startSession(id: UInt64, workspace: String, repo: String)
     /// `start-session` with `root`: the workspace's root Ask session, open or new
-    /// (`work` level 15, ADR 0054). A `session-started` comes first. At level 17 `text` is
-    /// typed into its agent, after the Work item `work` when given (ADR 0059 §4).
-    case startRootSession(id: UInt64, workspace: String, text: String? = nil, work: String? = nil)
-    /// Save the user's input (`work` level 9, ADR 0048). The same `clientId` returns the
-    /// stored Capture and writes nothing. `assist` also makes a Work item and asks the
-    /// assistant; it needs `workspace`. A `capture-saved` comes first.
-    case capture(
-        id: UInt64, clientId: String, text: String, source: CaptureSource? = nil, workspace: String? = nil,
-        assist: AssistSpec? = nil)
-    /// Sort a `received` Capture. `work` goes with `link`; `title` (absent: the text's
-    /// first line) with `work`. A stale `rev` is `conflict`. A `capture-saved` comes first.
-    case sortCapture(
-        id: UInt64, capture: String, rev: UInt64, action: SortAction, work: String? = nil, title: String? = nil,
-        workspace: String? = nil)
-    /// Change a Work item. `title`, `workspace` and `due` (level 10) go with `edit`, `into`
-    /// with `merge`. A stale `rev` is `conflict`. A `work-saved` comes first.
-    case updateWork(
-        id: UInt64, work: String, rev: UInt64, action: WorkAction, title: String? = nil, workspace: String? = nil,
-        into: String? = nil, due: Due? = nil)
-    /// Ask a workspace's agent to work on a Work item; nil `workspace` takes the item's.
-    /// Needs the host daemon. The same `work` and `rev` return the request already made.
-    /// A `work-saved` comes first. `worker` (level 12) names a staff member of the
-    /// workspace; nil asks its lead.
-    case requestAssistant(
-        id: UInt64, work: String, rev: UInt64, scope: AssistScope, workspace: String? = nil, purpose: String? = nil,
-        worker: String? = nil)
-    /// Stop a request's `version`. A `work-saved` comes first.
-    case cancelRequest(id: UInt64, request: String, version: UInt64)
-    /// One Work item with every Capture it links, sorted or not, and its requests.
-    /// A `work-detail` comes first.
-    case getWork(id: UInt64, work: String)
-    /// Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 10,
-    /// ADR 0049). `source` is a request `q-…` or a plan `p-…`; `version` the request's
-    /// version or the plan's `rev`; `base` the proposal's. A changed live file is `conflict`.
-    /// A `work-saved` or `plan-saved` comes first. `step` (level 12) is the step of a
-    /// request's version whose result proposed the notes; nil is the version's last step.
-    case applyNotes(id: UInt64, source: String, version: UInt64, base: String, step: UInt32? = nil)
-    /// Start an overall run now (`work` level 10); `minutes` is the time the user has.
-    /// A `plan-saved` comes first.
-    case planNow(id: UInt64, minutes: UInt32? = nil)
-    /// Keep a policy in the user's words (`work` level 11, ADR 0050): `scope` is `all` or a
-    /// workspace; `from` and `until` are epoch seconds. A `policy-saved` comes first.
-    case addPolicy(id: UInt64, text: String, scope: String, from: UInt64? = nil, until: UInt64? = nil)
-    /// Edit or delete a policy. A stale `rev` is `conflict`. `edit` sends a `policy-saved`
-    /// first; `delete` only the `result`.
-    case updatePolicy(
-        id: UInt64, policy: String, rev: UInt64, action: PolicyAction, text: String? = nil, scope: String? = nil,
-        from: UInt64? = nil, until: UInt64? = nil)
-    /// Reorder Today's rows (`order`), or remove one (`row`, with the reason in `text`), on
-    /// the newest `resulted` plan. A `plan-saved` comes first.
-    case updatePlan(
-        id: UInt64, plan: String, rev: UInt64, action: PlanAction, order: [String] = [], row: String? = nil,
-        text: String? = nil)
-    /// Remove a correction `x-…` or a hypothesis `h-…`; `record` because `id` is the request's.
-    case forget(id: UInt64, record: String)
-    /// The secretary proposes a Task (`work` level 18, ADR 0060): one Inbox item of kind
-    /// `new-task`. An `inbox-saved` comes first.
-    case proposeTask(id: UInt64, workspace: String, repo: String? = nil, title: String, goal: String, work: String? = nil)
+    /// (`work` level 15, ADR 0054). A `session-started` comes first.
+    case startRootSession(id: UInt64, workspace: String)
     /// The client is leaving; the bridge exits.
     case bye(id: UInt64)
 
@@ -167,16 +106,11 @@ public enum Request: Equatable, Sendable {
             .bytes(let id, _, _), .paste(let id, _, _), .newTask(let id, _, _, _),
             .changes(let id, _), .diff(let id, _, _, _), .undiff(let id), .closeTask(let id, _, _),
             .images(let id, _), .image(let id, _, _), .unimage(let id), .listTasks(let id),
-            .createTask(let id, _, _, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _, _),
+            .createTask(let id, _, _, _, _, _, _, _, _, _), .updateTask(let id, _, _, _, _),
             .restartAgent(let id, _, _, _, _), .recoverRestart(let id, _, _, _, _), .startLoop(let id, _, _, _), .stopLoop(let id, _),
             .viewport(let id, _, _), .listRoutines(let id), .runRoutine(let id, _, _), .listInbox(let id),
-            .updateInboxEntry(let id, _, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
-            .startRootSession(let id, _, _, _), .proposeTask(let id, _, _, _, _, _),
-            .capture(let id, _, _, _, _, _), .sortCapture(let id, _, _, _, _, _, _),
-            .updateWork(let id, _, _, _, _, _, _, _), .requestAssistant(let id, _, _, _, _, _, _),
-            .cancelRequest(let id, _, _), .getWork(let id, _), .applyNotes(let id, _, _, _, _), .planNow(let id, _),
-            .addPolicy(let id, _, _, _, _), .updatePolicy(let id, _, _, _, _, _, _, _),
-            .updatePlan(let id, _, _, _, _, _, _), .forget(let id, _):
+            .updateInboxEntry(let id, _, _, _, _, _, _), .deleteInbox(let id, _), .startSession(let id, _, _),
+            .startRootSession(let id, _):
             id
         }
     }
@@ -187,11 +121,7 @@ extension Request: Codable {
         case type, id, pane, keys, text, data, path, repo, branch, base, session, mode, scope
         case workspace, title, goal, project, task, rev, status, force, loop, reset, worker
         case cols, rows, operation, action, lines
-        case routine, entry, until, option, worktree, olderThanDays, hash
-        case clientId, source, assist, capture, work, workRev, into, request, version, purpose
-        case due, minutes, html
-        case policy, from, plan, order, row, record
-        case step, root
+        case routine, entry, until, option, worktree, olderThanDays, html, root
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -226,8 +156,7 @@ extension Request: Codable {
             try c.encode(mode, forKey: .mode)
         case .listTasks(let id): try c.head("list-tasks", id)
         case .createTask(
-            let id, let workspace, let title, let goal, let project, let repo, let branch, let base, let loop, let worker,
-            let work, let workRev):
+            let id, let workspace, let title, let goal, let project, let repo, let branch, let base, let loop, let worker):
             try c.head("create-task", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(title, forKey: .title)
@@ -238,8 +167,6 @@ extension Request: Codable {
             try c.encodeIfPresent(base, forKey: .base)
             try c.encodeIfPresent(loop, forKey: .loop)
             try c.encodeIfPresent(worker, forKey: .worker)
-            try c.encodeIfPresent(work, forKey: .work)
-            try c.encodeIfPresent(workRev, forKey: .workRev)
         case .updateTask(let id, let task, let rev, let status, let worktree):
             try c.head("update-task", id)
             try c.encode(task, forKey: .task)
@@ -276,13 +203,11 @@ extension Request: Codable {
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(repo, forKey: .repo)
-        case .startRootSession(let id, let workspace, let text, let work):
+        case .startRootSession(let id, let workspace):
             try c.head("start-session", id)
             try c.encode(workspace, forKey: .workspace)
             try c.encode(true, forKey: .root)
-            try c.encodeIfPresent(text, forKey: .text)
-            try c.encodeIfPresent(work, forKey: .work)
-        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option, let worktree, let hash):
+        case .updateInboxEntry(let id, let entry, let action, let until, let text, let option, let worktree):
             try c.head("update-inbox", id)
             try c.encode(entry, forKey: .entry)
             try c.encode(action, forKey: .action)
@@ -290,91 +215,9 @@ extension Request: Codable {
             try c.encodeIfPresent(text, forKey: .text)
             try c.encodeIfPresent(option, forKey: .option)
             try c.encodeIfPresent(worktree, forKey: .worktree)
-            try c.encodeIfPresent(hash, forKey: .hash)
         case .deleteInbox(let id, let days):
             try c.head("delete-inbox", id)
             try c.encode(days, forKey: .olderThanDays)
-        case .capture(let id, let clientId, let text, let source, let workspace, let assist):
-            try c.head("capture", id)
-            try c.encode(clientId, forKey: .clientId)
-            try c.encode(text, forKey: .text)
-            try c.encodeIfPresent(source, forKey: .source)
-            try c.encodeIfPresent(workspace, forKey: .workspace)
-            try c.encodeIfPresent(assist, forKey: .assist)
-        case .sortCapture(let id, let capture, let rev, let action, let work, let title, let workspace):
-            try c.head("sort-capture", id)
-            try c.encode(capture, forKey: .capture)
-            try c.encode(rev, forKey: .rev)
-            try c.encode(action, forKey: .action)
-            try c.encodeIfPresent(work, forKey: .work)
-            try c.encodeIfPresent(title, forKey: .title)
-            try c.encodeIfPresent(workspace, forKey: .workspace)
-        case .updateWork(let id, let work, let rev, let action, let title, let workspace, let into, let due):
-            try c.head("update-work", id)
-            try c.encode(work, forKey: .work)
-            try c.encode(rev, forKey: .rev)
-            try c.encode(action, forKey: .action)
-            try c.encodeIfPresent(title, forKey: .title)
-            try c.encodeIfPresent(workspace, forKey: .workspace)
-            try c.encodeIfPresent(into, forKey: .into)
-            try c.encodeIfPresent(due, forKey: .due)
-        case .requestAssistant(let id, let work, let rev, let scope, let workspace, let purpose, let worker):
-            try c.head("request-assistant", id)
-            try c.encode(work, forKey: .work)
-            try c.encode(rev, forKey: .rev)
-            try c.encode(scope, forKey: .scope)
-            try c.encodeIfPresent(workspace, forKey: .workspace)
-            try c.encodeIfPresent(purpose, forKey: .purpose)
-            try c.encodeIfPresent(worker, forKey: .worker)
-        case .cancelRequest(let id, let request, let version):
-            try c.head("cancel-request", id)
-            try c.encode(request, forKey: .request)
-            try c.encode(version, forKey: .version)
-        case .getWork(let id, let work):
-            try c.head("get-work", id)
-            try c.encode(work, forKey: .work)
-        case .applyNotes(let id, let source, let version, let base, let step):
-            try c.head("apply-notes", id)
-            try c.encode(source, forKey: .source)
-            try c.encode(version, forKey: .version)
-            try c.encode(base, forKey: .base)
-            try c.encodeIfPresent(step, forKey: .step)
-        case .planNow(let id, let minutes):
-            try c.head("plan-now", id)
-            try c.encodeIfPresent(minutes, forKey: .minutes)
-        case .addPolicy(let id, let text, let scope, let from, let until):
-            try c.head("add-policy", id)
-            try c.encode(text, forKey: .text)
-            try c.encode(scope, forKey: .scope)
-            try c.encodeIfPresent(from, forKey: .from)
-            try c.encodeIfPresent(until, forKey: .until)
-        case .updatePolicy(let id, let policy, let rev, let action, let text, let scope, let from, let until):
-            try c.head("update-policy", id)
-            try c.encode(policy, forKey: .policy)
-            try c.encode(rev, forKey: .rev)
-            try c.encode(action, forKey: .action)
-            try c.encodeIfPresent(text, forKey: .text)
-            try c.encodeIfPresent(scope, forKey: .scope)
-            try c.encodeIfPresent(from, forKey: .from)
-            try c.encodeIfPresent(until, forKey: .until)
-        case .updatePlan(let id, let plan, let rev, let action, let order, let row, let text):
-            try c.head("update-plan", id)
-            try c.encode(plan, forKey: .plan)
-            try c.encode(rev, forKey: .rev)
-            try c.encode(action, forKey: .action)
-            if !order.isEmpty { try c.encode(order, forKey: .order) }
-            try c.encodeIfPresent(row, forKey: .row)
-            try c.encodeIfPresent(text, forKey: .text)
-        case .forget(let id, let record):
-            try c.head("forget", id)
-            try c.encode(record, forKey: .record)
-        case .proposeTask(let id, let workspace, let repo, let title, let goal, let work):
-            try c.head("propose-task", id)
-            try c.encode(workspace, forKey: .workspace)
-            try c.encodeIfPresent(repo, forKey: .repo)
-            try c.encode(title, forKey: .title)
-            try c.encode(goal, forKey: .goal)
-            try c.encodeIfPresent(work, forKey: .work)
         case .changes(let id, let pane):
             try c.head("changes", id)
             try c.encode(pane, forKey: .pane)
@@ -459,9 +302,7 @@ extension Request: Codable {
                 branch: try c.decodeIfPresent(String.self, forKey: .branch),
                 base: try c.decodeIfPresent(String.self, forKey: .base),
                 loop: try c.decodeIfPresent(LoopSpec.self, forKey: .loop),
-                worker: try c.decodeIfPresent(String.self, forKey: .worker),
-                work: try c.decodeIfPresent(String.self, forKey: .work),
-                workRev: try c.decodeIfPresent(UInt64.self, forKey: .workRev))
+                worker: try c.decodeIfPresent(String.self, forKey: .worker))
         case "update-task":
             self = .updateTask(
                 id: id, task: try c.decode(String.self, forKey: .task),
@@ -493,9 +334,7 @@ extension Request: Codable {
         case "start-session":
             let workspace = try c.decode(String.self, forKey: .workspace)
             if try c.decodeIfPresent(Bool.self, forKey: .root) == true {
-                self = .startRootSession(
-                    id: id, workspace: workspace, text: try c.decodeIfPresent(String.self, forKey: .text),
-                    work: try c.decodeIfPresent(String.self, forKey: .work))
+                self = .startRootSession(id: id, workspace: workspace)
             } else {
                 self = .startSession(id: id, workspace: workspace, repo: try c.decode(String.self, forKey: .repo))
             }
@@ -506,83 +345,9 @@ extension Request: Codable {
                 until: try c.decodeIfPresent(UInt64.self, forKey: .until),
                 text: try c.decodeIfPresent(String.self, forKey: .text),
                 option: try c.decodeIfPresent(UInt32.self, forKey: .option),
-                worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree),
-                hash: try c.decodeIfPresent(String.self, forKey: .hash))
+                worktree: try c.decodeIfPresent(WorktreeEnd.self, forKey: .worktree))
         case "delete-inbox":
             self = .deleteInbox(id: id, olderThanDays: try c.decode(UInt32.self, forKey: .olderThanDays))
-        case "capture":
-            self = .capture(
-                id: id, clientId: try c.decode(String.self, forKey: .clientId),
-                text: try c.decode(String.self, forKey: .text),
-                source: try c.decodeIfPresent(CaptureSource.self, forKey: .source),
-                workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
-                assist: try c.decodeIfPresent(AssistSpec.self, forKey: .assist))
-        case "sort-capture":
-            self = .sortCapture(
-                id: id, capture: try c.decode(String.self, forKey: .capture),
-                rev: try c.decode(UInt64.self, forKey: .rev),
-                action: try c.decode(SortAction.self, forKey: .action),
-                work: try c.decodeIfPresent(String.self, forKey: .work),
-                title: try c.decodeIfPresent(String.self, forKey: .title),
-                workspace: try c.decodeIfPresent(String.self, forKey: .workspace))
-        case "update-work":
-            self = .updateWork(
-                id: id, work: try c.decode(String.self, forKey: .work),
-                rev: try c.decode(UInt64.self, forKey: .rev),
-                action: try c.decode(WorkAction.self, forKey: .action),
-                title: try c.decodeIfPresent(String.self, forKey: .title),
-                workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
-                into: try c.decodeIfPresent(String.self, forKey: .into),
-                due: try c.decodeIfPresent(Due.self, forKey: .due))
-        case "request-assistant":
-            self = .requestAssistant(
-                id: id, work: try c.decode(String.self, forKey: .work),
-                rev: try c.decode(UInt64.self, forKey: .rev),
-                scope: try c.decode(AssistScope.self, forKey: .scope),
-                workspace: try c.decodeIfPresent(String.self, forKey: .workspace),
-                purpose: try c.decodeIfPresent(String.self, forKey: .purpose),
-                worker: try c.decodeIfPresent(String.self, forKey: .worker))
-        case "cancel-request":
-            self = .cancelRequest(
-                id: id, request: try c.decode(String.self, forKey: .request),
-                version: try c.decode(UInt64.self, forKey: .version))
-        case "get-work":
-            self = .getWork(id: id, work: try c.decode(String.self, forKey: .work))
-        case "apply-notes":
-            self = .applyNotes(
-                id: id, source: try c.decode(String.self, forKey: .source),
-                version: try c.decode(UInt64.self, forKey: .version),
-                base: try c.decode(String.self, forKey: .base),
-                step: try c.decodeIfPresent(UInt32.self, forKey: .step))
-        case "plan-now":
-            self = .planNow(id: id, minutes: try c.decodeIfPresent(UInt32.self, forKey: .minutes))
-        case "add-policy":
-            self = .addPolicy(
-                id: id, text: try c.decode(String.self, forKey: .text), scope: try c.decode(String.self, forKey: .scope),
-                from: try c.decodeIfPresent(UInt64.self, forKey: .from),
-                until: try c.decodeIfPresent(UInt64.self, forKey: .until))
-        case "update-policy":
-            self = .updatePolicy(
-                id: id, policy: try c.decode(String.self, forKey: .policy), rev: try c.decode(UInt64.self, forKey: .rev),
-                action: try c.decode(PolicyAction.self, forKey: .action),
-                text: try c.decodeIfPresent(String.self, forKey: .text),
-                scope: try c.decodeIfPresent(String.self, forKey: .scope),
-                from: try c.decodeIfPresent(UInt64.self, forKey: .from),
-                until: try c.decodeIfPresent(UInt64.self, forKey: .until))
-        case "update-plan":
-            self = .updatePlan(
-                id: id, plan: try c.decode(String.self, forKey: .plan), rev: try c.decode(UInt64.self, forKey: .rev),
-                action: try c.decode(PlanAction.self, forKey: .action),
-                order: try c.decodeIfPresent([String].self, forKey: .order) ?? [],
-                row: try c.decodeIfPresent(String.self, forKey: .row),
-                text: try c.decodeIfPresent(String.self, forKey: .text))
-        case "forget":
-            self = .forget(id: id, record: try c.decode(String.self, forKey: .record))
-        case "propose-task":
-            self = .proposeTask(
-                id: id, workspace: try c.decode(String.self, forKey: .workspace),
-                repo: try c.decodeIfPresent(String.self, forKey: .repo), title: try c.decode(String.self, forKey: .title),
-                goal: try c.decode(String.self, forKey: .goal), work: try c.decodeIfPresent(String.self, forKey: .work))
         case "changes": self = .changes(id: id, pane: try pane())
         case "diff":
             self = .diff(

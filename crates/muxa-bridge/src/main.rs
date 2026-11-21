@@ -3,7 +3,6 @@
 
 mod agents;
 mod args;
-mod assistant;
 mod changes;
 mod chat;
 mod convert;
@@ -15,7 +14,6 @@ mod lines;
 mod loops;
 mod records;
 mod routines;
-mod secretary;
 mod server;
 mod sessions;
 mod sizer;
@@ -27,7 +25,6 @@ mod utc;
 mod v2;
 mod viewport;
 mod watch;
-mod workspace_memory;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

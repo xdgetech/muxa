@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use muxa_protocol::{
-    CloseMode, Message, Request, Session, WORK_ASK, WORK_ASK_ROOT, WORK_CLOSE_ASK,
-    WORK_TODAY_ACTIONS, WorkspaceInfo, work_level,
+    CloseMode, Message, Request, Session, WORK_ASK, WORK_ASK_ROOT, WORK_CLOSE_ASK, WorkspaceInfo,
+    work_level,
 };
 use serde_json::json;
 
@@ -36,8 +36,6 @@ pub async fn ask(
                 workspace: workspace.clone(),
                 repo: Some(repo.to_owned()),
                 root: false,
-                text: None,
-                work: None,
             },
             LAUNCH_WAIT,
         )
@@ -45,40 +43,17 @@ pub async fn ask(
     started(messages, &workspace, as_json)
 }
 
-/// What `ask --root --text` types into the root session's agent (ADR 0059).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SendText {
-    pub text: String,
-    /// The Work item the text is about.
-    pub work: Option<String>,
-}
-
-/// Opens the workspace's Ask session at its root, or starts it (ADR 0054):
-/// the session Ask Agent types into, and the overall assistant's chat. With
-/// `send`, the host types it into the agent.
-pub async fn root(
-    conn: &mut Conn,
-    workspace: &str,
-    send: Option<SendText>,
-    as_json: bool,
-) -> Result<String, String> {
-    let level = work_level(conn.capabilities());
-    if level < WORK_ASK_ROOT {
+/// Opens the workspace's Ask session at its root, or starts it (ADR 0054).
+pub async fn root(conn: &mut Conn, workspace: &str, as_json: bool) -> Result<String, String> {
+    if work_level(conn.capabilities()) < WORK_ASK_ROOT {
         return Err(
             "this host cannot open a workspace's Ask session; update muxa-bridge on the host"
-                .into(),
-        );
-    }
-    if send.is_some() && level < WORK_TODAY_ACTIONS {
-        return Err(
-            "this host cannot send a message to the Ask session; update muxa-bridge on the host"
                 .into(),
         );
     }
     if workspace.trim().is_empty() {
         return Err("ask --root needs --workspace".into());
     }
-    let (text, work) = send.map_or((None, None), |s| (Some(s.text), s.work));
     let messages = conn
         .call(
             |id| Request::StartSession {
@@ -86,8 +61,6 @@ pub async fn root(
                 workspace: workspace.to_owned(),
                 repo: None,
                 root: true,
-                text: text.clone(),
-                work: work.clone(),
             },
             LAUNCH_WAIT,
         )
@@ -202,8 +175,6 @@ mod tests {
             root: Some(root.into()),
             checks: None,
             repos: repos.iter().map(|r| r.to_string()).collect(),
-            memory: None,
-            memory_at: None,
         }
     }
 

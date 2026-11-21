@@ -145,16 +145,9 @@ pub(super) async fn resume(env: &Env, record: Record) -> Result<Record, ErrorBod
     }
     let config = Arc::clone(&env.records);
     let workspace = record.workspace.clone();
-    let (saved, at) = (record.clone(), dir.clone());
     let agent = blocking(move || {
         let workspaces = config.load_workspaces()?;
-        let found = workspaces.get(&workspace);
-        if let Some(w) = found {
-            // Before the session: a file a run may not read stops the resume.
-            super::memory::give(&saved, &w.root, &at)
-                .map_err(|m| error_body(ErrorCode::BadRequest, m))?;
-        }
-        Ok(found.and_then(|w| w.agent.clone()))
+        Ok(workspaces.get(&workspace).and_then(|w| w.agent.clone()))
     })
     .await?;
     let config = Arc::clone(&env.records);
@@ -338,16 +331,11 @@ mod tests {
             extra.insert(crate::records::KIND_FIELD.into(), k.into());
             Some(extra)
         };
-        // ADR 0049 §5: an overall run is an assistant run that names a plan.
-        let plan = crate::assistant::record::RunFor::Plan(crate::assistant::record::PlanRun {
-            plan: "p-0000000a".into(),
-            notes_base: "e3b0".into(),
-        });
         for extra in [
             None,
             kind("routine-run"),
+            // A run of the removed assistant layer (ADR 0066), kept from before.
             kind("assistant-run"),
-            Some(plan.fields()),
             kind("future-run"),
         ] {
             let shown = extra.is_none();

@@ -60,7 +60,6 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
     let pending_prompt = r.pending_prompt().map(pending_prompt);
     let task_loop = loop_of(&r);
     let worker = r.worker().map(str::to_owned);
-    let work = r.work().map(str::to_owned);
     let read = r.is_read();
     let restart_operation = crate::task_records::restart::summary(&r).map(Box::new);
     wire::TaskRecord {
@@ -89,7 +88,6 @@ pub fn task_record(r: crate::records::Record) -> wire::TaskRecord {
         pending_prompt,
         worker,
         restart_operation,
-        work,
     }
 }
 
@@ -121,18 +119,7 @@ pub fn workspace(w: &crate::records::Workspace) -> wire::WorkspaceInfo {
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
-        memory: Some(w.memory),
-        memory_at: memory_at(w),
     }
-}
-
-/// When `.muxa/WORKSPACE.md` last changed. An unusable file shows as none;
-/// a run's start reports it in full.
-fn memory_at(w: &crate::records::Workspace) -> Option<u64> {
-    crate::assistant::notes::modified(&w.root).unwrap_or_else(|e| {
-        tracing::warn!(workspace = %w.name, error = %e, "cannot read the time of the workspace memory");
-        None
-    })
 }
 
 /// A worker's public metadata. Args, instructions and env stay on the host.

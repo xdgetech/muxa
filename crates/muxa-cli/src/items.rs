@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     InboxAction, InboxItem, ItemKind, ItemState, Message, Request, WORK_DELETE_INBOX, WORK_ITEMS,
-    WORK_RESULT_REVIEW, WorktreeEnd,
+    WorktreeEnd,
 };
 use serde_json::json;
 
@@ -22,75 +22,29 @@ const REPLY_WAIT: Duration = Duration::from_secs(30);
 pub struct Answer {
     pub action: InboxAction,
     pub text: Option<String>,
-    /// With `reject`, at level 11: the correction's reason (ADR 0050).
-    pub reason: Option<String>,
     pub option: Option<u32>,
     /// Used by the host only when the answer ends the Task (ADR 0043).
     pub worktree: Option<WorktreeEnd>,
-    /// With `approve` on a `write` item: the hash of the write the user saw (ADR 0052 §2).
-    pub hash: Option<String>,
-    /// Named by a word of ADR 0058 (`handoff`, `send`, `done`, `revise`):
-    /// meant for a `result` or `write` item, so the host needs level 16.
-    pub review: bool,
 }
 
-/// ADR 0058's words for answers on `result` and `write` items, and the
-/// action each sends.
-const REVIEW_WORDS: [(&str, InboxAction); 4] = [
-    ("handoff", InboxAction::Approve),
-    ("send", InboxAction::Reply),
-    ("done", InboxAction::Dismiss),
-    ("revise", InboxAction::Reply),
-];
-
-/// Start Task (ADR 0060 §2): `start-task` on the wire, which a level 18
-/// host takes on every item that offers a Task.
-const START_WORD: &str = "start";
-
-/// The kebab-case name on the wire, or a word of [`REVIEW_WORDS`].
+/// The kebab-case name on the wire.
 pub fn action(name: &str) -> Option<InboxAction> {
-    if name == START_WORD {
-        return Some(InboxAction::StartTask);
-    }
-    if let Some((_, a)) = REVIEW_WORDS.iter().find(|(w, _)| *w == name) {
-        return Some(*a);
-    }
     // A name this build does not know decodes as `Unknown`; the host refuses it.
     serde_json::from_value(json!(name))
         .ok()
         .filter(muxa_protocol::Known::is_known)
 }
 
-/// Whether `name` is one of ADR 0058's words.
-pub fn is_review_word(name: &str) -> bool {
-    REVIEW_WORDS.iter().any(|(w, _)| *w == name)
-}
-
 impl Answer {
     pub fn checked(self) -> Result<Self, String> {
         let a = self.action;
-        let wants_text = matches!(a, InboxAction::Reply | InboxAction::AskAgent);
+        let wants_text = a == InboxAction::Reply;
         let rule = |name: &str, given: bool, wanted: bool, needs: &str| match (given, wanted) {
             (false, true) => Err(format!("{needs} needs {name}")),
             (true, false) => Err(format!("{name} is only for {needs}")),
             _ => Ok(()),
         };
-        rule(
-            "--text",
-            self.text.is_some(),
-            wants_text,
-            "reply, send, revise and ask-agent",
-        )?;
-        // A reason is never required (ADR 0050 §2).
-        if let Some(r) = &self.reason {
-            if a != InboxAction::Reject {
-                return Err("--reason is only for reject".into());
-            }
-            crate::policy::reason(r)?;
-        }
-        if self.hash.is_some() && a != InboxAction::Approve {
-            return Err("--hash is only for approve".into());
-        }
+        rule("--text", self.text.is_some(), wants_text, "reply")?;
         rule(
             "--option",
             self.option.is_some(),
@@ -173,14 +127,6 @@ pub fn line(item: &InboxItem, now: u64) -> String {
         ItemKind::Failure => "failure",
         ItemKind::Proposal => "proposal",
         ItemKind::Briefing => "briefing",
-        ItemKind::Sort => "sort",
-        ItemKind::Delegate => "delegate",
-        ItemKind::Hypothesis => "hypothesis",
-        ItemKind::Handoff => "handoff",
-        ItemKind::Write => "write",
-        ItemKind::Memory => "memory",
-        ItemKind::Result => "result",
-        ItemKind::NewTask => "new-task",
         ItemKind::Unknown => "unknown",
     };
     let mut state = wire(json!(item.state));
@@ -205,20 +151,6 @@ pub fn line(item: &InboxItem, now: u64) -> String {
     )
 }
 
-/// What Retry on an assistant run's failure started (ADR 0061).
-fn retried(messages: &[Message]) -> Option<String> {
-    messages.iter().find_map(|m| match m {
-        Message::WorkSaved {
-            request: Some(q), ..
-        } => Some(format!(
-            "Request {} asked again as version {}",
-            q.id, q.version
-        )),
-        Message::PlanSaved { entry, .. } => Some(format!("Plan {} started", entry.id)),
-        _ => None,
-    })
-}
-
 pub async fn answer(
     mut conn: Conn,
     item: &str,
@@ -228,45 +160,18 @@ pub async fn answer(
     if !has_items(&conn) {
         return Err("this host has no Inbox items; update muxa-bridge on the host".into());
     }
-    if answer.action == InboxAction::Confirm || answer.reason.is_some() {
-        crate::policy::require(&conn)?;
-    }
-    if answer.review && muxa_protocol::work_level(conn.capabilities()) < WORK_RESULT_REVIEW {
-        return Err(
-            "this host has no results to review (work level 16); update muxa-bridge on the host"
-                .into(),
-        );
-    }
-    if answer.action == InboxAction::StartTask
-        && muxa_protocol::work_level(conn.capabilities()) < muxa_protocol::WORK_TASK_PROPOSALS
-    {
-        return Err(
-            "this host starts no proposed Tasks (work level 18); update muxa-bridge on the host"
-                .into(),
-        );
-    }
     let protects = matches!(answer.action, InboxAction::Protect | InboxAction::Unprotect);
     if protects && !has_delete(&conn) {
         return Err(NEEDS_DELETE.into());
     }
-    // A write or a memory item is approved only with the hash of the text the
-    // user saw (ADR 0052 §2, ADR 0053 §3).
-    let hash = crate::writes::approve_hash(&mut conn, item, &answer, as_json).await?;
-    // Ask Agent may start the workspace's Ask session and wait for its agent.
-    let launches = matches!(
-        answer.action,
-        InboxAction::Approve | InboxAction::Retry | InboxAction::AskAgent | InboxAction::StartTask
-    ) || (answer.action == InboxAction::Reply && answer.review);
+    let launches = matches!(answer.action, InboxAction::Approve | InboxAction::Retry);
     let entry = item.to_owned();
     let Answer {
         action,
         text,
-        reason,
         option,
         worktree,
-        ..
     } = answer;
-    let text = text.or(reason);
     let messages = conn
         .call(
             |id| Request::UpdateInbox {
@@ -277,7 +182,6 @@ pub async fn answer(
                 text,
                 option,
                 worktree,
-                hash,
             },
             match action {
                 _ if launches => LAUNCH_WAIT,
@@ -286,14 +190,11 @@ pub async fn answer(
             },
         )
         .await?;
-    // An approved write's Task (ADR 0052 §3). The host never says the write happened.
+    // An approved proposal's Task.
     let started = messages.iter().find_map(|m| match m {
         Message::TaskSaved { record, .. } => Some(record.id.clone()),
         _ => None,
     });
-    let retried = (action == InboxAction::Retry)
-        .then(|| retried(&messages))
-        .flatten();
     let saved = messages
         .into_iter()
         .find_map(|m| match m {
@@ -307,9 +208,6 @@ pub async fn answer(
         println!("{}", line(&saved, crate::when::now()));
         if let Some(task) = started {
             println!("Task started: {task}");
-        }
-        if let Some(line) = retried {
-            println!("{line}");
         }
     }
     // A new or restarted agent gets its prompt after the answer.
@@ -327,11 +225,8 @@ mod tests {
         Answer {
             action: super::action(action).unwrap(),
             text: None,
-            reason: None,
             option: None,
             worktree: None,
-            hash: None,
-            review: false,
         }
     }
 
@@ -345,7 +240,7 @@ mod tests {
             text: Some("again".into()),
             ..answer(a)
         };
-        assert!(text("ask-agent").checked().is_ok());
+        assert!(super::action("ask-agent").is_none(), "ADR 0066 removed it");
         assert!(text("reply").checked().is_ok());
         assert!(answer("reply").checked().is_err());
         assert!(text("accept").checked().is_err());
@@ -369,18 +264,5 @@ mod tests {
         assert!(answer("unprotect").checked().is_ok());
         assert!(super::action("keep-open").is_some());
         assert!(super::action("keep_open").is_none());
-        let reason = |a| Answer {
-            reason: Some("Sales still matters.".into()),
-            ..answer(a)
-        };
-        assert!(reason("reject").checked().is_ok());
-        assert!(reason("confirm").checked().is_err());
-        assert!(answer("confirm").checked().is_ok());
-        let hash = |a| Answer {
-            hash: Some("sha256:00".into()),
-            ..answer(a)
-        };
-        assert!(hash("approve").checked().is_ok());
-        assert!(hash("reject").checked().is_err());
     }
 }

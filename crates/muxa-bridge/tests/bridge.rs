@@ -74,10 +74,6 @@ async fn rejects_bad_requests_and_keeps_going() {
             72,
             r#"{"type":"update-task","id":72,"task":"t-000001","rev":1,"status":"unknown"}"#,
         ),
-        (
-            73,
-            r#"{"type":"sort-capture","id":73,"capture":"c-0a1b2c3d","rev":1,"action":"unknown"}"#,
-        ),
     ] {
         bridge.send_raw(line).await;
         // Refused when decoded, before any lookup of the entry or the task.

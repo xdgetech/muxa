@@ -17,57 +17,30 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import tech.xdge.muxa.protocol.Bytes
-import tech.xdge.muxa.protocol.AssistScope
-import tech.xdge.muxa.protocol.AssistSpec
-import tech.xdge.muxa.protocol.AssistantInfo
-import tech.xdge.muxa.protocol.AssistantRequest
-import tech.xdge.muxa.protocol.Capture
-import tech.xdge.muxa.protocol.CaptureSource
 import tech.xdge.muxa.protocol.CloseMode
-import tech.xdge.muxa.protocol.Due
 import tech.xdge.muxa.protocol.DiffScope
 import tech.xdge.muxa.protocol.ErrorBody
 import tech.xdge.muxa.protocol.ErrorCode
 import tech.xdge.muxa.protocol.InboxAction
 import tech.xdge.muxa.protocol.InboxItem
-import tech.xdge.muxa.protocol.ItemKind
 import tech.xdge.muxa.protocol.LoopSpec
 import tech.xdge.muxa.protocol.Message
-import tech.xdge.muxa.protocol.Notes
 import tech.xdge.muxa.protocol.PROTOCOL_VERSION
-import tech.xdge.muxa.protocol.Plan
-import tech.xdge.muxa.protocol.PlanAction
-import tech.xdge.muxa.protocol.Policy
-import tech.xdge.muxa.protocol.PolicyAction
 import tech.xdge.muxa.protocol.Request
 import tech.xdge.muxa.protocol.RoutineInfo
 import tech.xdge.muxa.protocol.Session
 import tech.xdge.muxa.protocol.TaskRecord
 import tech.xdge.muxa.protocol.TaskStatus
 import tech.xdge.muxa.protocol.RestartRecoveryAction
-import tech.xdge.muxa.protocol.SortAction
-import tech.xdge.muxa.protocol.WORK_ASSISTANT
 import tech.xdge.muxa.protocol.WORK_ROUTINES
 import tech.xdge.muxa.protocol.WORK_ASK
 import tech.xdge.muxa.protocol.WORK_ASK_ROOT
 import tech.xdge.muxa.protocol.WORK_CLOSE_ASK
 import tech.xdge.muxa.protocol.WORK_DELETE_INBOX
 import tech.xdge.muxa.protocol.WORK_ITEMS
-import tech.xdge.muxa.protocol.WORK_PLANS
-import tech.xdge.muxa.protocol.WORK_POLICIES
-import tech.xdge.muxa.protocol.WORK_STAFF
-import tech.xdge.muxa.protocol.WORK_MEMORY
-import tech.xdge.muxa.protocol.WORK_WRITES
-import tech.xdge.muxa.protocol.WORK_RESULT_REVIEW
-import tech.xdge.muxa.protocol.WORK_TODAY_ACTIONS
-import tech.xdge.muxa.protocol.RunBudget
 import tech.xdge.muxa.protocol.WORK_WORKTREE_END
 import tech.xdge.muxa.protocol.Wire
-import tech.xdge.muxa.protocol.WorkAction
-import tech.xdge.muxa.protocol.WorkItem
 import tech.xdge.muxa.protocol.WorktreeEnd
-import tech.xdge.muxa.protocol.WriteProposal
-import tech.xdge.muxa.protocol.MemoryProposal
 import tech.xdge.muxa.protocol.workLevel
 import tech.xdge.muxa.terminal.PaneRenderer
 import tech.xdge.muxa.transport.BridgeChannel
@@ -110,17 +83,6 @@ class PaneSession(
         /** Approve plan found no single "Yes, manually approve edits" on the screen; nothing was sent (ADR 0060 §5). */
         class ApproveInTerminal(val body: ErrorBody) : Failure(body.message)
 
-        /** The Capture or Work item changed on another device since it was listed; nothing was written. */
-        class WorkChanged : Failure("the work item changed")
-
-        /**
-         * The host refused an assistant request or cancel for a reason other than a stale `rev`: a limit with
-         * when it resets, a run already starting, or a newer version. [body]'s message says which.
-         */
-        class Refused(val body: ErrorBody) : Failure(body.message)
-
-        /** The live `NOTES.md` changed since the run read it; nothing was written (ADR 0049 §1). */
-        class NotesChanged : Failure("the notes changed")
     }
 
     data class State(
@@ -153,20 +115,6 @@ class PaneSession(
         val inboxItems: List<InboxItem> = emptyList(),
         /** Why the Routines or the Inbox could not be listed; the last lists stay. */
         val workError: String? = null,
-        /** The Work items in the host's order, as last listed (`work` level 9, ADR 0048). */
-        val work: List<WorkItem> = emptyList(),
-        /** The unsorted Captures, newest first, as last listed (`work` level 9). */
-        val captures: List<Capture> = emptyList(),
-        /** The assistant requests of the listed Work items, as last listed (`work` level 9). */
-        val requests: List<AssistantRequest> = emptyList(),
-        /** Work items read with `get-work`, by id: their Captures' texts for the detail. */
-        val workDetails: Map<String, WorkDetail> = emptyMap(),
-        /** The overall assistant's kept plans, newest first, as last listed (`work` level 10, ADR 0049). */
-        val plans: List<Plan> = emptyList(),
-        /** Who assists on the host, as last listed (`work` level 10); null when nobody does. */
-        val assistant: AssistantInfo? = null,
-        /** Policies, hypotheses and corrections, as last listed (`work` level 11, ADR 0050). Never logged. */
-        val memory: Memory = Memory(),
     ) {
         val canChat get() = "chat" in capabilities
         val canReadDocs get() = "docs" in capabilities
@@ -201,41 +149,11 @@ class PaneSession(
         /** Done and Drop also remove the Task's worktree and branch, and ask first when that could lose work (ADR 0043). */
         val endsWorktrees get() = workLevel >= WORK_WORKTREE_END
 
-        /** `+` saves a Capture, and the Inbox lists Work items and unsorted Captures (ADR 0048). */
-        val canCapture get() = workLevel >= WORK_ASSISTANT
-
-        /** The Inbox has Today, Work items take pins and deadlines, and Results propose notes (ADR 0049). */
-        val canPlan get() = workLevel >= WORK_PLANS
-
         /** The host protects items and deletes old ones (ADR 0046). */
         val canDeleteInbox get() = workLevel >= WORK_DELETE_INBOX
 
-        /** The host keeps policies, corrections and hypotheses; Today takes reorder and Not today (ADR 0050). */
-        val canKeepPolicies get() = workLevel >= WORK_POLICIES
-
-        /** The host asks a named staff member and runs a request as a chain of steps (ADR 0051). */
-        val canAskStaff get() = workLevel >= WORK_STAFF
-
-        /** Results propose writes; Approve on a `write` item sends the hash of the content shown (ADR 0052). */
-        val canWrite get() = workLevel >= WORK_WRITES
-
-        /** Task ends propose to the workspace memory; Approve on a `memory` item sends the hash of the text shown (ADR 0053). */
-        val canKeepMemory get() = workLevel >= WORK_MEMORY
-
-        /** Every Result is a `result` item, and a `write` item takes Revise (ADR 0058): Work rows drop "Result ready". */
-        val reviewsResults get() = workLevel >= WORK_RESULT_REVIEW
-
-        /**
-         * The overall assistant's workspace when the host opens its root Ask session (ADR 0054):
-         * Talk to Assistant shows then.
-         */
-        val assistantWorkspace get() = if (workLevel >= WORK_ASK_ROOT) assistant?.overall else null
-
-        /** The secretary, the overall workspace, when the host types a Work item's Send into it (ADR 0059 §4). */
-        val secretary get() = if (workLevel >= WORK_TODAY_ACTIONS) assistant?.overall else null
-
-        /** The overall workspace's runs left today, for Re-rank (ADR 0059 §5). Null: an older host, or no overall workspace. */
-        val overallRuns: RunBudget? get() = assistant?.overallRuns
+        /** The host opens a workspace's root Ask session (ADR 0054). */
+        val canAskAtRoot get() = workLevel >= WORK_ASK_ROOT
     }
 
     private val _state = MutableStateFlow(State())
@@ -268,11 +186,6 @@ class PaneSession(
     private val inboxListings = mutableMapOf<Long, Message.InboxList>()
     private val savedRoutines = mutableMapOf<Long, RoutineInfo>()
     private val savedItems = mutableMapOf<Long, InboxItem>()
-    private val savedCaptures = mutableMapOf<Long, Message.CaptureSaved>()
-    private val savedWork = mutableMapOf<Long, Message.WorkSaved>()
-    private val savedPlans = mutableMapOf<Long, Plan>()
-    private val savedPolicies = mutableMapOf<Long, Policy>()
-    private val workDetailListings = mutableMapOf<Long, Message.WorkDetail>()
     private val startedSessions = mutableMapOf<Long, Message.SessionStarted>()
     private val deletedCounts = mutableMapOf<Long, Int>()
     private val pending = mutableMapOf<Long, CompletableDeferred<Message>>()
@@ -299,8 +212,6 @@ class PaneSession(
                     watchedPane = null, paneGoneReason = null, sessions = emptyList(), chat = null,
                     unsupportedChats = emptySet(), doc = null, diff = null, image = null, tasks = null,
                     routines = emptyList(), inboxItems = emptyList(), workError = null,
-                    work = emptyList(), captures = emptyList(), requests = emptyList(), workDetails = emptyMap(),
-                    plans = emptyList(), assistant = null, memory = Memory(),
                 )
             }
         }
@@ -386,9 +297,6 @@ class PaneSession(
                 requestId = id
                 Request.CreateTask(
                     id, draft.workspace, draft.title, draft.goal, draft.project, draft.repo, draft.branch, draft.base, draft.loop, draft.worker,
-                    // An older host would ignore them; this app sends them only at level 9.
-                    work = draft.work.takeIf { _state.value.canCapture },
-                    workRev = draft.workRev.takeIf { draft.work != null && _state.value.canCapture },
                 )
             }
         } catch (e: Failure.Bridge) {
@@ -401,8 +309,6 @@ class PaneSession(
             ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the new task"))
         keep(saved)
         runCatching { refresh() }
-        // The Work item lists the new Task.
-        if (draft.work != null) loadWork()
         saved
     }
 
@@ -544,13 +450,6 @@ class PaneSession(
                     routines = routines ?: s.routines,
                     // A host below `work` level 3 has no Inbox for this app.
                     inboxItems = if (s.canAnswerItems) inbox?.items ?: s.inboxItems else emptyList(),
-                    work = if (s.canCapture) inbox?.work ?: s.work else emptyList(),
-                    captures = if (s.canCapture) inbox?.captures ?: s.captures else emptyList(),
-                    requests = if (s.canCapture) inbox?.requests ?: s.requests else emptyList(),
-                    plans = if (s.canPlan) inbox?.plans ?: s.plans else emptyList(),
-                    // An absent `assistant` means nobody assists now.
-                    assistant = if (!s.canPlan) null else if (inbox != null) inbox.assistant else s.assistant,
-                    memory = if (!s.canKeepPolicies) Memory() else inbox?.let { Memory(it.policies, it.hypotheses, it.corrections) } ?: s.memory,
                     workError = null,
                 )
             }
@@ -624,14 +523,10 @@ class PaneSession(
     // Inbox items (`work` level 3, ADR 0033)
 
     /**
-     * Answers [item] with [action]: [text] for `redo` and `change-course`, [option] for `choose`.
+     * Answers [item] with [action]: [text] for `reply`, [option] for `choose`.
      * `later` takes no time (ADR 0040). Returns the item as the host saved it. A refusal lists the Inbox again,
      * since another device may have answered first; an `ask` whose menu changed is [Failure.ItemChanged].
      * Done and Drop end the Task with its worktree, as [updateTask] does with [forceWorktree].
-     * Approve on a `write` item goes only through [approveWrite], and on a `memory` item through
-     * [approveMemory]: each needs the text the user saw. On a `result` item (ADR 0058), `approve` hands off
-     * and `reply` with [text] asks the member again as a new version; `reply` on a `write` item is Revise.
-     * A budget reached is [Failure.Refused], and the item stays open.
      */
     suspend fun answer(
         item: InboxItem,
@@ -639,55 +534,14 @@ class PaneSession(
         text: String? = null,
         option: Int? = null,
         forceWorktree: Boolean = false,
-    ): InboxItem {
-        if (item.kind == ItemKind.WRITE && action == InboxAction.APPROVE) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, WRITE_NOT_SHOWN))
-        if (item.kind == ItemKind.MEMORY && action == InboxAction.APPROVE) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, MEMORY_NOT_SHOWN))
-        return answering(item, action, text, option, forceWorktree, hash = null)
-    }
-
-    /**
-     * Approve on a `write` item (ADR 0052 §2): [shown] is the write whose content this client showed
-     * whole, and its `hash` binds the approve to that text. The host starts one Task of the writer;
-     * a budget or a missing writer is [Failure.Refused] with the host's reason, and the item stays open.
-     */
-    suspend fun approveWrite(item: InboxItem, shown: WriteProposal): InboxItem {
-        if (!_state.value.canWrite) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, WRITES_UNSUPPORTED))
-        if (item.kind != ItemKind.WRITE) throw Failure.Bridge(ErrorBody(ErrorCode.BAD_REQUEST, "${item.id} proposes no write"))
-        return answering(item, InboxAction.APPROVE, null, null, false, shown.hash)
-    }
-
-    /**
-     * Approve on a `memory` item (ADR 0053 §3): [shown] is the proposal whose text this client showed
-     * whole, and its `hash` binds the approve to that text. The host appends it to the workspace's
-     * WORKSPACE.md; a full file is [Failure.Refused] with the sizes, and the item stays open.
-     */
-    suspend fun approveMemory(item: InboxItem, shown: MemoryProposal): InboxItem {
-        if (!_state.value.canKeepMemory) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, MEMORY_UNSUPPORTED))
-        if (item.kind != ItemKind.MEMORY) throw Failure.Bridge(ErrorBody(ErrorCode.BAD_REQUEST, "${item.id} proposes no memory"))
-        return answering(item, InboxAction.APPROVE, null, null, false, shown.hash)
-    }
-
-    private suspend fun answering(
-        item: InboxItem,
-        action: InboxAction,
-        text: String?,
-        option: Int?,
-        forceWorktree: Boolean,
-        hash: String?,
     ): InboxItem = withContext(dispatcher) {
         if (!_state.value.canAnswerItems) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ITEMS_UNSUPPORTED))
         var requestId = 0L
         val worktree = worktreeEnd(action in ENDING_ACTIONS, forceWorktree)
-        // An approved `sort` or `delegate` also writes a Capture or a Work item (ADR 0049 §4); a
-        // confirmed `hypothesis` writes a policy, and a reject a correction (ADR 0050 §3); an
-        // approved `handoff` starts the next step (ADR 0051 §3), and an approved `write` the writer's Task (ADR 0052 §3).
-        val proposal = item.kind in OVERALL_KINDS
-        // A full WORKSPACE.md is the host's reason, with the sizes (ADR 0053 §3).
-        val refusable = proposal || item.kind == ItemKind.MEMORY
         try {
             request { id ->
                 requestId = id
-                Request.UpdateInbox(id, item.id, action, text = text, option = option, worktree = worktree, hash = hash)
+                Request.UpdateInbox(id, item.id, action, text = text, option = option, worktree = worktree)
             }
         } catch (e: Failure) {
             forgetAnswer(requestId)
@@ -695,17 +549,16 @@ class PaneSession(
             if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) {
                 // Approve plan presses no key it cannot read off the screen: the user approves in the terminal.
                 if (item.isPlan && action == InboxAction.APPROVE) throw Failure.ApproveInTerminal(e.body)
-                // A proposal's conflict is the host's reason: a Capture sorted meanwhile, or a budget.
-                throw if (refusable) Failure.Refused(e.body) else Failure.ItemChanged()
+                throw Failure.ItemChanged()
             }
             throw e
         }
         val saved = savedItems.remove(requestId)
         forgetAnswer(requestId)
         if (saved == null) throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Inbox item"))
-        // The host moved the item down (ADR 0040): its order is the list's. An approved proposal made a Work item or a request.
-        if (action == InboxAction.LATER || proposal) loadWork()
-        // Accept, Drop, Retry and an approved proposal change a Task or start one.
+        // The host moved the item down (ADR 0040): its order is the list's.
+        if (action == InboxAction.LATER) loadWork()
+        // Accept, Drop and Retry change a Task; an approved proposal may start one.
         if (action in TASK_ACTIONS) {
             runCatching { refresh() }
             runCatching { loadTasks() }
@@ -713,43 +566,10 @@ class PaneSession(
         saved
     }
 
-    /** What an answer's request left behind: the item, and what an approved proposal wrote. */
+    /** What an answer's request left behind: the item, and the Task it changed. */
     private fun forgetAnswer(requestId: Long) {
         savedItems.remove(requestId)
-        savedCaptures.remove(requestId)
-        savedWork.remove(requestId)
-        savedPolicies.remove(requestId)
         savedTasks.remove(requestId)
-        // Send on a `new-task` item types into the secretary's session (ADR 0060 §3).
-        startedSessions.remove(requestId)
-    }
-
-    /**
-     * Sends [item] and [text] to the workspace's Ask session (ADR 0041), which the host starts
-     * when none is open, and lists the sessions again so the list has it. The item stays open.
-     * Returns the session.
-     */
-    suspend fun askAgent(item: InboxItem, text: String): Message.SessionStarted = withContext(dispatcher) {
-        if (!_state.value.canAnswerItems || InboxAction.ASK_AGENT !in item.answers) {
-            throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ASK_AGENT_UNSUPPORTED))
-        }
-        var requestId = 0L
-        try {
-            request { id ->
-                requestId = id
-                Request.UpdateInbox(id, item.id, InboxAction.ASK_AGENT, text = text)
-            }
-        } catch (e: Exception) {
-            savedItems.remove(requestId)
-            startedSessions.remove(requestId)
-            throw e
-        }
-        savedItems.remove(requestId)
-        // `session-started` arrives before `inbox-saved` and the result.
-        val started = startedSessions.remove(requestId)
-            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "The bridge did not name the Ask session."))
-        refresh()
-        started
     }
 
     /** Sets or clears [item]'s `protectedAt` (ADR 0046). It takes every answer as before. */
@@ -781,257 +601,6 @@ class PaneSession(
         if (!_state.value.canAnswerItems || item.readAt != null) return@withContext
         // Read is a hint, not an answer: a failure leaves the dot, and the list is read again.
         runCatching { answer(item, InboxAction.READ) }
-    }
-
-    // Captures and Work items (`work` level 9, ADR 0048)
-
-    /**
-     * Saves the user's input with [clientId]; the host returns the stored Capture for a
-     * [clientId] it has seen, so a resend never makes two. The Inbox is listed again.
-     */
-    suspend fun capture(clientId: String, text: String, workspace: String?): Capture = withContext(dispatcher) {
-        requireCaptures()
-        val saved = written(savedCaptures, "the Capture") { id -> Request.Capture(id, clientId, text, CaptureSource.APP, workspace) }
-        loadWork()
-        saved.entry
-    }
-
-    /**
-     * Saves the input and asks [workspace]'s assistant about it: the host also makes a Work item and a
-     * request. When the assistant cannot start, the Capture is still saved and [Assisted.refusal] says
-     * why. Throws only when nothing was saved.
-     */
-    suspend fun captureAndAsk(clientId: String, text: String, workspace: String, assist: AssistSpec): Assisted = withContext(dispatcher) {
-        requireCaptures()
-        if (assist.worker != null) requireStaff()
-        var requestId = 0L
-        val refusal = try {
-            request { id ->
-                requestId = id
-                Request.Capture(id, clientId, text, CaptureSource.APP, workspace, assist)
-            }
-            null
-        } catch (e: Failure.Bridge) {
-            e
-        } catch (e: Failure) {
-            savedCaptures.remove(requestId)
-            throw e
-        }
-        val saved = savedCaptures.remove(requestId)
-        loadWork()
-        when {
-            saved != null -> Assisted(saved.entry, saved.work, saved.request, refusal?.let(::assistFailure))
-            refusal != null -> throw refusal
-            else -> throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Capture"))
-        }
-    }
-
-    /** Sorts an unsorted [capture]: a new Work item, a link to [work], or a note. */
-    suspend fun sortCapture(capture: Capture, action: SortAction, work: WorkItem? = null): Capture = withContext(dispatcher) {
-        requireCaptures()
-        changing(savedCaptures, "the Capture") { id -> Request.SortCapture(id, capture.id, capture.rev, action, work = work?.id) }.entry
-    }
-
-    /** Changes [item] at the `rev` this client saw. `pin` and `unpin` need `work` level 10. */
-    suspend fun updateWork(item: WorkItem, action: WorkAction): WorkItem = withContext(dispatcher) {
-        requireCaptures()
-        if (action == WorkAction.PIN || action == WorkAction.UNPIN) requirePlans()
-        changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, action) }.entry
-    }
-
-    /** Sets [item]'s deadline, as `edit` with `due` (`work` level 10). Only the user sets it. */
-    suspend fun setDue(item: WorkItem, due: Due): WorkItem = withContext(dispatcher) {
-        requirePlans()
-        changing(savedWork, "the Work item") { id -> Request.UpdateWork(id, item.id, item.rev, WorkAction.EDIT, due = due) }.entry
-    }
-
-    // Plans and notes (`work` level 10, ADR 0049)
-
-    /**
-     * Asks the overall assistant for a plan now; [minutes] is the time the user has. Returns the
-     * `pending` plan. An open plan run or a budget is [Failure.Refused] with the host's message; no
-     * overall workspace is `unsupported`. The Inbox is listed again either way.
-     */
-    suspend fun planNow(minutes: Int? = null): Plan = withContext(dispatcher) {
-        requirePlans()
-        changing(savedPlans, "the plan", conflict = { e -> Failure.Refused(e.body) }) { id -> Request.PlanNow(id, minutes) }
-    }
-
-    /**
-     * Writes [notes], proposed by [source]'s [version] (a request's version or a plan's `rev`), to the
-     * live `NOTES.md`. [step] (`work` level 12) is the step whose Result proposed them: the host writes
-     * that step's staff member's file. A live file that changed since the run read it is [Failure.NotesChanged].
-     */
-    suspend fun applyNotes(source: String, version: Long, notes: Notes, step: Int? = null) = withContext(dispatcher) {
-        requirePlans()
-        if (step != null) requireStaff()
-        val conflict = { _: Failure.Bridge -> Failure.NotesChanged() }
-        val make = { id: Long -> Request.ApplyNotes(id, source, version, notes.base, step) }
-        // A request's notes come back as `work-saved`, a plan's as `plan-saved`.
-        if (source.startsWith(PLAN_PREFIX)) changing(savedPlans, "the plan", conflict, make) else changing(savedWork, "the Work item", conflict, make)
-        Unit
-    }
-
-    private fun requirePlans() {
-        if (!_state.value.canPlan) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, PLANS_UNSUPPORTED))
-    }
-
-    // Policies, corrections and hypotheses (`work` level 11, ADR 0050). A conflict is the host's
-    // reason: the limit of 50, a stale `rev`, or a plan that is no longer the newest.
-
-    /** Keeps a policy in the user's words; [from] and [until] are epoch seconds. */
-    suspend fun addPolicy(text: String, scope: String, from: Long? = null, until: Long? = null): Policy = withContext(dispatcher) {
-        requirePolicies()
-        changing(savedPolicies, "the policy", ::refused) { id -> Request.AddPolicy(id, text, scope, from, until) }
-    }
-
-    /** Sets the fields given on [policy], at the `rev` this client saw. */
-    suspend fun editPolicy(policy: Policy, text: String? = null, scope: String? = null, from: Long? = null, until: Long? = null): Policy =
-        withContext(dispatcher) {
-            requirePolicies()
-            changing(savedPolicies, "the policy", ::refused) { id ->
-                Request.UpdatePolicy(id, policy.id, policy.rev, PolicyAction.EDIT, text, scope, from, until)
-            }
-        }
-
-    /** Deletes [policy]: the next brief no longer has it. */
-    suspend fun deletePolicy(policy: Policy) = withContext(dispatcher) {
-        requirePolicies()
-        answeredOnly { id -> Request.UpdatePolicy(id, policy.id, policy.rev, PolicyAction.DELETE) }
-    }
-
-    /** Sets Today's order on [plan]: [order] names every row of `top` once. */
-    suspend fun reorderPlan(plan: Plan, order: List<String>): Plan = withContext(dispatcher) {
-        requirePolicies()
-        changing(savedPlans, "the plan", ::refused) { id -> Request.UpdatePlan(id, plan.id, plan.rev, PlanAction.REORDER, order = order) }
-    }
-
-    /** Not today: removes [row] from Today on [plan], with the user's optional [reason]. */
-    suspend fun dismissRow(plan: Plan, row: String, reason: String? = null): Plan = withContext(dispatcher) {
-        requirePolicies()
-        changing(savedPlans, "the plan", ::refused) { id -> Request.UpdatePlan(id, plan.id, plan.rev, PlanAction.DISMISS, row = row, text = reason) }
-    }
-
-    /** Removes a correction `x-…` or a hypothesis `h-…`; forgetting a correction also removes the hypotheses it grounds. */
-    suspend fun forget(record: String) = withContext(dispatcher) {
-        requirePolicies()
-        answeredOnly { id -> Request.Forget(id, record) }
-    }
-
-    /** A request answered with `result` only; the Inbox is listed again either way. */
-    private suspend fun answeredOnly(make: (Long) -> Request) {
-        try {
-            request(make)
-        } catch (e: Failure) {
-            if (e is Failure.NotConnected) throw e
-            loadWork()
-            throw if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) refused(e) else e
-        }
-        loadWork()
-    }
-
-    private fun refused(e: Failure.Bridge): Failure = Failure.Refused(e.body)
-
-    private fun requirePolicies() {
-        if (!_state.value.canKeepPolicies) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, POLICIES_UNSUPPORTED))
-    }
-
-    /** A level 11 host answers `worker` and `step` with `bad-request`; nothing is sent to it (ADR 0051 §6). */
-    private fun requireStaff() {
-        if (!_state.value.canAskStaff) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, STAFF_UNSUPPORTED))
-    }
-
-    /**
-     * Reads [work] with every Capture it links, sorted or not, for its detail. The result is kept in
-     * `workDetails`. An unknown item is the host's `bad-request`.
-     */
-    suspend fun getWork(work: String): WorkDetail = withContext(dispatcher) {
-        requireCaptures()
-        val listed = listing({ Request.GetWork(it, work) }) { workDetailListings.remove(it) }
-            ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the Work item"))
-        val detail = WorkDetail(listed.entry, listed.captures, listed.requests)
-        _state.update { s -> s.copy(workDetails = s.workDetails + (work to detail)) }
-        detail
-    }
-
-    /**
-     * Asks [workspace]'s agent (null: the item's) to work on [item] at the `rev` this client saw.
-     * [worker] (`work` level 12) names a staff member; null lets the workspace's lead take it.
-     * Asking again at the item's new `rev` adds a version to that workspace's request. A stale `rev`
-     * is [Failure.WorkChanged]; a limit or a run already starting is [Failure.Refused] with the host's
-     * message; no daemon is `unsupported` with the host's message.
-     */
-    suspend fun requestAssistant(
-        item: WorkItem,
-        scope: AssistScope,
-        purpose: String? = null,
-        workspace: String? = null,
-        worker: String? = null,
-    ): AssistantRequest = withContext(dispatcher) {
-        requireCaptures()
-        if (worker != null) requireStaff()
-        val saved = changing(savedWork, "the request", conflict = { e -> if (changedSince(item)) Failure.WorkChanged() else Failure.Refused(e.body) }) { id ->
-            Request.RequestAssistant(id, item.id, item.rev, scope, workspace, purpose?.takeIf { it.isNotBlank() }, worker)
-        }
-        saved.request ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the request"))
-    }
-
-    /** Stops [request]'s current version. A newer version on the host is [Failure.Refused] with its message. */
-    suspend fun cancelRequest(request: AssistantRequest): AssistantRequest = withContext(dispatcher) {
-        requireCaptures()
-        val saved = changing(savedWork, "the request", conflict = { e -> Failure.Refused(e.body) }) { id ->
-            Request.CancelRequest(id, request.id, request.version)
-        }
-        saved.request ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send the request"))
-    }
-
-    /** The listed item has another `rev` than [seen]: someone changed it since. */
-    private fun changedSince(seen: WorkItem): Boolean = _state.value.work.firstOrNull { it.id == seen.id }?.let { it.rev != seen.rev } ?: false
-
-    /** A refused assist, as [requestAssistant] reports it. */
-    private fun assistFailure(e: Failure.Bridge): Failure =
-        if (e.body.code == ErrorCode.CONFLICT) Failure.Refused(e.body) else e
-
-    private fun requireCaptures() {
-        if (!_state.value.canCapture) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, CAPTURE_UNSUPPORTED))
-    }
-
-    /**
-     * A change at a `rev`: on success or refusal the Inbox is listed again, for the host's order
-     * and derived states. A `conflict` becomes [conflict]'s failure, read after the new list:
-     * by default [Failure.WorkChanged], a stale `rev`.
-     */
-    private suspend fun <T> changing(
-        saved: MutableMap<Long, T>,
-        what: String,
-        conflict: (Failure.Bridge) -> Failure = { Failure.WorkChanged() },
-        make: (Long) -> Request,
-    ): T {
-        val result = try {
-            written(saved, what, make)
-        } catch (e: Failure) {
-            if (e is Failure.NotConnected) throw e
-            loadWork()
-            if (e is Failure.Bridge && e.body.code == ErrorCode.CONFLICT) throw conflict(e)
-            throw e
-        }
-        loadWork()
-        return result
-    }
-
-    /** Sends a request whose written record arrives just before its `result`, into [saved]. */
-    private suspend fun <T> written(saved: MutableMap<Long, T>, what: String, make: (Long) -> Request): T {
-        var requestId = 0L
-        try {
-            request { id ->
-                requestId = id
-                make(id)
-            }
-        } catch (e: Failure) {
-            saved.remove(requestId)
-            throw e
-        }
-        return saved.remove(requestId) ?: throw Failure.Bridge(ErrorBody(ErrorCode.INTERNAL, "the bridge did not send $what"))
     }
 
     /** Shows this pane. Messages for any earlier watch are dropped from now on. */
@@ -1235,24 +804,12 @@ class PaneSession(
     }
 
     /**
-     * Opens the overall assistant's root Ask session, or starts it (ADR 0054). Its Chat is the
-     * user's conversation with the assistant. Returns the session once the session list has it.
+     * Opens [workspace]'s root Ask session, or starts it (ADR 0054). Returns the session once the
+     * session list has it.
      */
-    suspend fun talkToAssistant(): Message.SessionStarted = withContext(dispatcher) {
-        val workspace = _state.value.assistantWorkspace
-            ?: throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ASSISTANT_UNSUPPORTED))
+    suspend fun openRootSession(workspace: String): Message.SessionStarted = withContext(dispatcher) {
+        if (!_state.value.canAskAtRoot) throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, ROOT_ASK_UNSUPPORTED))
         start { id -> Request.StartSession(id, workspace, root = true) }
-    }
-
-    /**
-     * Send to the secretary (ADR 0059 §4): opens the overall workspace's root Ask session and types [text],
-     * after Work item [work]. A menu, an unknown state or a person typing is the host's `conflict`, and
-     * nothing is typed. Returns the session once the session list has it.
-     */
-    suspend fun sendToSecretary(work: String, text: String): Message.SessionStarted = withContext(dispatcher) {
-        val workspace = _state.value.secretary
-            ?: throw Failure.Bridge(ErrorBody(ErrorCode.UNSUPPORTED, SECRETARY_UNSUPPORTED))
-        start { id -> Request.StartSession(id, workspace, root = true, text = text, work = work) }
     }
 
     /** Sends [make]'s `start-session`, then lists sessions again, so the list has it. */
@@ -1476,11 +1033,6 @@ class PaneSession(
             }
             is Message.InboxDeleted -> deletedCounts[message.inbox] = message.deleted
             is Message.SessionStarted -> startedSessions[message.start] = message
-            is Message.CaptureSaved -> savedCaptures[message.capture] = message
-            is Message.WorkSaved -> savedWork[message.work] = message
-            is Message.WorkDetail -> workDetailListings[message.work] = message
-            is Message.PlanSaved -> savedPlans[message.plan] = message.entry
-            is Message.PolicySaved -> savedPolicies[message.policy] = message.entry
             is Message.Unknown -> {}
         }
     }
@@ -1534,11 +1086,6 @@ class PaneSession(
         inboxListings.clear()
         savedRoutines.clear()
         savedItems.clear()
-        savedCaptures.clear()
-        savedWork.clear()
-        savedPlans.clear()
-        savedPolicies.clear()
-        workDetailListings.clear()
         startedSessions.clear()
         deletedCounts.clear()
         inputs.clear()
@@ -1568,7 +1115,7 @@ class PaneSession(
         private val VIEWPORT_SETTLE = 300.milliseconds
 
         /** The answers after which the Task list and the sessions are read again. */
-        private val TASK_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP, InboxAction.RETRY, InboxAction.APPROVE, InboxAction.START_TASK)
+        private val TASK_ACTIONS = setOf(InboxAction.ACCEPT, InboxAction.DROP, InboxAction.RETRY, InboxAction.APPROVE)
 
         /** The statuses and the answers that end a Task, and so take `worktree` (ADR 0043). */
         private val ENDING_STATUSES = setOf(TaskStatus.DONE, TaskStatus.DROPPED)
@@ -1581,62 +1128,14 @@ class PaneSession(
         /** Shown when an `ask` item's menu changed since it was listed. */
         const val ITEM_CHANGED = "The agent now asks something else. The Inbox shows it as it is now; answer again."
 
-        /** Shown when the host cannot send an item to the workspace's agent (ADR 0041). */
-        const val ASK_AGENT_UNSUPPORTED = "This host cannot send an item to the workspace's agent. Update muxa on the host."
-
         /** Shown when the host cannot protect or delete Inbox items (ADR 0046). */
         const val DELETE_INBOX_UNSUPPORTED = "This host cannot delete Inbox items. Update muxa on the host."
 
         /** Shown when the host keeps no Inbox items. */
         const val ITEMS_UNSUPPORTED = "This host has no Inbox items. Update muxa on the host."
 
-        /** Shown when a Capture or Work item changed on another device since it was listed. */
-        const val WORK_CHANGED = "This changed on another device. The Inbox shows it as it is now."
-
-        /** Shown when the live notes changed since the run read them (ADR 0049 §1). */
-        const val NOTES_CHANGED = "The notes changed on the host. Ask the assistant again."
-
-        /** Shown when the host has no plans, pins or notes (ADR 0049). */
-        const val PLANS_UNSUPPORTED = "This host has no overall assistant. Update muxa on the host."
-
-        /** Shown when the host has no overall assistant to talk to (ADR 0054). */
-        const val SECRETARY_UNSUPPORTED =
-            "This host can't send a Work item to the secretary. Update muxa on the host to work level 17, and set an overall assistant."
-
-        const val ASSISTANT_UNSUPPORTED =
-            "This host has no overall assistant to talk to. Set one up on the host, or update muxa there."
-
-        /** Shown when the host keeps no policies (ADR 0050). */
-        const val POLICIES_UNSUPPORTED = "This host keeps no policies. Update muxa on the host."
-
-        /** Shown when the host has no staff (ADR 0051). */
-        const val STAFF_UNSUPPORTED = "This host does not ask staff members. Update muxa-bridge on the host."
-
-        /** Shown when the host takes no write proposals (ADR 0052). */
-        const val WRITES_UNSUPPORTED = "This host takes no write proposals. Update muxa-bridge on the host."
-
-        /** Approve on a `write` item without its content shown whole: nothing is sent (ADR 0052 §2). */
-        const val WRITE_NOT_SHOWN = "Open the write and read its whole content to approve it."
-
-        /** Shown when the host keeps no workspace memory (ADR 0053). */
-        const val MEMORY_UNSUPPORTED = "This host keeps no workspace memory. Update muxa-bridge on the host."
-
-        /** Approve on a `memory` item without its text shown whole: nothing is sent (ADR 0053 §2). */
-        const val MEMORY_NOT_SHOWN = "Open the item and read its whole text to add it to the workspace memory."
-
-        /**
-         * The assistants' items: answering one may write a Capture, a Work item, a request's step, a
-         * policy, a correction or the writer's Task.
-         */
-        private val OVERALL_KINDS = setOf(
-            ItemKind.SORT, ItemKind.DELEGATE, ItemKind.HYPOTHESIS, ItemKind.HANDOFF, ItemKind.WRITE, ItemKind.RESULT, ItemKind.NEW_TASK,
-        )
-
-        /** A plan's id starts with it; a request's with `q-`. */
-        private const val PLAN_PREFIX = "p-"
-
-        /** Shown when the host keeps no Captures or Work items. */
-        const val CAPTURE_UNSUPPORTED = "This host cannot save captures. Update muxa on the host."
+        /** Shown when the host cannot open a workspace's root Ask session (ADR 0054). */
+        const val ROOT_ASK_UNSUPPORTED = "This host cannot open a workspace's root Ask session. Update muxa on the host."
 
         /** Shown when the host has no Routines. */
         const val ROUTINES_UNSUPPORTED = "This host has no Routines. Update muxa on the host."
@@ -1652,9 +1151,6 @@ class PaneSession(
             is Failure.LaunchFailed -> "The task was saved, but its agent did not start: ${error.body.message}"
             is Failure.ItemChanged -> ITEM_CHANGED
             is Failure.ApproveInTerminal -> APPROVE_IN_TERMINAL
-            is Failure.WorkChanged -> WORK_CHANGED
-            is Failure.NotesChanged -> NOTES_CHANGED
-            is Failure.Refused -> error.body.message
             is Failure.ProtocolMismatch ->
                 "The bridge speaks protocol ${error.bridge}; this app speaks $PROTOCOL_VERSION. Update one of them."
             is Failure.NoHello ->

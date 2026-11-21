@@ -26,9 +26,6 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         loop_checks: None,
         park_after: None,
         routines: None,
-        assistant: None,
-        role: Default::default(),
-        memory: muxa_protocol::MemoryMode::Review,
     }
 }
 

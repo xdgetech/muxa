@@ -33,8 +33,6 @@ pub struct NewTask {
     pub r#loop: Option<LoopSpec>,
     /// `--read`: a reading Task (ADR 0034).
     pub read: bool,
-    /// `--work`: the Work item the Task is for (ADR 0048).
-    pub work: Option<String>,
 }
 
 pub struct Recovery {
@@ -239,10 +237,6 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
         return Err("this host needs --branch with --repo; update muxa-bridge on the host".into());
     }
     require_reading(&conn, new.read)?;
-    let work_rev = match &new.work {
-        Some(work) => Some(crate::work::rev_of(&mut conn, work).await?),
-        None => None,
-    };
     let messages = conn
         .call(
             |id| Request::CreateTask {
@@ -257,8 +251,6 @@ pub async fn create(mut conn: Conn, new: NewTask, as_json: bool) -> Result<Strin
                 branch: new.branch,
                 base: new.base,
                 r#loop: new.r#loop,
-                work: new.work,
-                work_rev,
             },
             LAUNCH_WAIT,
         )
@@ -664,7 +656,6 @@ mod tests {
     #[test]
     fn a_line_shows_status_session_and_note() {
         let r = TaskRecord {
-            work: None,
             restart_operation: None,
             worker: None,
             read: false,

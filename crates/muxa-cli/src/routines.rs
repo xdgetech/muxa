@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use muxa_protocol::{
     AgentState, Disposition, InboxAction, InboxEntry, InboxEntryKind, Message, Request,
-    RoutineInfo, RoutineProblem, Session, WORK_ROUTINES, WorkState, work_level,
+    RoutineInfo, RoutineProblem, Session, WORK_ROUTINES, work_level,
 };
 use serde_json::json;
 
@@ -206,35 +206,12 @@ fn waiting(routines: &[RoutineInfo], sessions: &[Session]) -> Vec<(String, Strin
 pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, String> {
     let (routines, _) = fetch(conn).await?;
     let messages = conn.call(|id| Request::ListInbox { id }, WAIT).await?;
-    let Some(Message::InboxList {
-        entries,
-        items,
-        work,
-        captures,
-        requests,
-        plans,
-        assistant,
-        policies,
-        hypotheses,
-        corrections,
-        ..
-    }) = messages
+    let Some(Message::InboxList { entries, items, .. }) = messages
         .into_iter()
         .find(|m| matches!(m, Message::InboxList { .. }))
     else {
         return Err("the bridge sent no inbox list".into());
     };
-    // Work items, Captures, requests, plans and what the user told the
-    // assistant are listed by `work`, `plan` and `policy`; the JSON carries
-    // them for tools.
-    let work: Vec<_> = work
-        .into_iter()
-        .filter(|w| all || !matches!(w.state, WorkState::Done | WorkState::Withdrawn))
-        .collect();
-    let requests: Vec<_> = requests
-        .into_iter()
-        .filter(|q| work.iter().any(|w| w.requests.contains(&q.id)))
-        .collect();
     let entries: Vec<InboxEntry> = entries
         .into_iter()
         .filter(|e| all || matches!(e.disposition, Disposition::Open | Disposition::Later))
@@ -259,10 +236,7 @@ pub async fn inbox(conn: &mut Conn, all: bool, as_json: bool) -> Result<String, 
             .collect();
         println!(
             "{}",
-            json!({"work": work_level(conn.capabilities()), "items": items, "entries": entries, "runs": runs,
-                "workItems": work, "captures": captures, "requests": requests,
-                "plans": plans, "assistant": assistant, "policies": policies,
-                "hypotheses": hypotheses, "corrections": corrections})
+            json!({"work": work_level(conn.capabilities()), "items": items, "entries": entries, "runs": runs})
         );
         return Ok(String::new());
     }
@@ -313,7 +287,6 @@ pub async fn act(
                 text: None,
                 option: None,
                 worktree: None,
-                hash: None,
             },
             wait,
         )

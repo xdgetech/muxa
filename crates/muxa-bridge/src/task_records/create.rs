@@ -44,10 +44,6 @@ pub struct NewTask {
     pub read: bool,
     /// Set when the daemon starts a Routine run (ADR 0026); never from a client.
     pub routine: Option<crate::routines::record::RunOf>,
-    /// Set when the daemon starts an assistant run (ADR 0048); never from a client.
-    pub assistant: Option<crate::assistant::record::RunFor>,
-    /// The Work item the Task is for, checked by `assistant::start` (ADR 0048).
-    pub work: Option<String>,
     /// Start the agent in plan mode: a Task from an approved proposal
     /// (ADR 0060). Claude Code only; other agents start as always.
     pub plan: bool,
@@ -100,16 +96,12 @@ pub async fn create(env: &Env, new: NewTask) -> (Option<Record>, Option<ErrorBod
         Target::Read(_, main) => (Some(main.clone()), None),
         Target::Dir(..) => (None, None),
     };
-    let mut extra = match (&new.routine, &new.assistant) {
-        (Some(r), _) => r.fields(),
-        (None, Some(a)) => a.fields(),
-        (None, None) => serde_json::Map::new(),
-    };
+    let mut extra = new
+        .routine
+        .as_ref()
+        .map_or_else(serde_json::Map::new, |r| r.fields());
     if new.read {
         extra.extend(crate::records::reading::new_fields());
-    }
-    if let Some(work) = &new.work {
-        extra.insert(crate::records::WORK_FIELD.into(), work.clone().into());
     }
     let plan = new.plan;
     let fields = NewRecord {
@@ -164,7 +156,7 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
             new.workspace
         ))
     })?;
-    let background = new.routine.is_some() || new.assistant.is_some();
+    let background = new.routine.is_some();
     if background && (new.repo.is_some() || new.branch.is_some() || new.base.is_some()) {
         return Err(bad("a background run has no repo".into()));
     }
@@ -340,16 +332,6 @@ async fn start(
     plan: bool,
 ) -> Result<Started, Failure> {
     let client = &*env.client;
-    let (config, saved) = (Arc::clone(&env.records), record.clone());
-    let memory_root = blocking(move || {
-        let root = super::memory::root_of(&config, &saved)?;
-        if let Some(root) = &root {
-            super::memory::check(root).map_err(|m| error_body(ErrorCode::BadRequest, m))?;
-        }
-        Ok(root)
-    })
-    .await
-    .map_err(|e| Failure::before(e.message))?;
     let launched = match target {
         Target::Repo(req) => {
             let req = TaskRequest {
@@ -400,20 +382,6 @@ async fn start(
                         (Arc::clone(&env.records), record.clone(), dir.clone());
                     blocking(move || {
                         crate::routines::prepare(&config, &saved, &at)
-                            .map_err(|m| error_body(ErrorCode::Internal, m))
-                    })
-                    .await
-                    .map_err(|e| Failure::before(e.message))?;
-                    dir
-                }
-                None if record.is_assistant_run() => {
-                    let dir = workspace
-                        .assistant_dir(&record.title, &record.id)
-                        .map_err(Failure::before)?;
-                    let (at, root, saved) = (dir.clone(), workspace.root.clone(), record.clone());
-                    let config = Arc::clone(&env.records);
-                    blocking(move || {
-                        crate::assistant::record::prepare_run(&config, &saved, &root, &at)
                             .map_err(|m| error_body(ErrorCode::Internal, m))
                     })
                     .await
@@ -475,17 +443,10 @@ async fn start(
         } else {
             brief::create(&dir, &saved, in_repo)
         };
-        result.map_err(|m| error_body(ErrorCode::Internal, m))?;
-        match &memory_root {
-            Some(root) => super::memory::give(&saved, root, &dir)
-                .map_err(|m| error_body(ErrorCode::Internal, m)),
-            None => Ok(()),
-        }
+        result.map_err(|m| error_body(ErrorCode::Internal, m))
     })
     .await
     .map_err(|e| Failure::after(&launched, e.message))?;
-    // The folder is named from the title, which can be an approved write's
-    // action (ADR 0052 §6): the record keeps it, the log does not.
     tracing::info!(task = %record.id, session = %launched.id, "task linked");
     Ok(Started { launched, initial })
 }
@@ -565,7 +526,6 @@ async fn linked(
                     current.set_worker(None);
                 }
                 crate::routines::record::arm(r, now);
-                crate::assistant::record::arm(r, now);
                 r.set_pending_prompt(Some(PendingPrompt {
                     kind: PromptKind::Start,
                     since: now,
@@ -683,7 +643,6 @@ async fn create_guarded(
                     run,
                 }));
                 crate::routines::record::arm(record, now);
-                crate::assistant::record::arm(record, now);
             })
             .map_err(|error| store_error(&error))?;
         Ok(claim.record().clone())

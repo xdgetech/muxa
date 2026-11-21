@@ -177,22 +177,6 @@ sealed interface Message {
         val inbox: Long,
         val entries: List<InboxEntry>,
         val items: List<InboxItem> = emptyList(),
-        /** Level 9: open Work items first, then the ones moved down with Later, then at most 100 done or withdrawn, newest first. */
-        val work: List<WorkItem> = emptyList(),
-        /** Level 9: unsorted Captures, newest first. */
-        val captures: List<Capture> = emptyList(),
-        /** Level 9: the requests of the listed Work items. */
-        val requests: List<AssistantRequest> = emptyList(),
-        /** Level 10: the kept plans, newest first (ADR 0049). */
-        val plans: List<Plan> = emptyList(),
-        /** Level 10: the overall assistant and the delegates. */
-        val assistant: AssistantInfo? = null,
-        /** Level 11: active policies, then expired ones (ADR 0050). */
-        val policies: List<Policy> = emptyList(),
-        /** Level 11: `proposed` and `rejected` hypotheses, newest first. */
-        val hypotheses: List<Hypothesis> = emptyList(),
-        /** Level 11: at most 50 corrections, newest first. */
-        val corrections: List<Correction> = emptyList(),
     ) : Message
 
     /** What an `update-inbox` wrote, just before its `result`: the Routine entry, the item, or both for a Routine's item. */
@@ -206,39 +190,6 @@ sealed interface Message {
     /** The session a `start-session` made, just before its `result`. [start] is the request id, [session] the `$n` id. */
     @Serializable
     data class SessionStarted(val start: Long, val session: String, val name: String) : Message
-
-    /** What a `capture` or `sort-capture` wrote, just before its `result`. */
-    @Serializable
-    data class CaptureSaved(
-        val capture: Long,
-        val entry: Capture,
-        val work: WorkItem? = null,
-        val request: AssistantRequest? = null,
-    ) : Message
-
-    /** What an `update-work`, `request-assistant` or `cancel-request` wrote, just before its `result`. */
-    @Serializable
-    data class WorkSaved(val work: Long, val entry: WorkItem, val request: AssistantRequest? = null) : Message
-
-    /**
-     * The Work item a `get-work` asked for, with its derived state, just before its `result`: the Captures
-     * [WorkItem.captures] names, sorted or not, in that order, and its requests.
-     */
-    @Serializable
-    data class WorkDetail(
-        val work: Long,
-        val entry: WorkItem,
-        val captures: List<Capture> = emptyList(),
-        val requests: List<AssistantRequest> = emptyList(),
-    ) : Message
-
-    /** What a `plan-now` or `apply-notes` wrote, just before its `result`. */
-    @Serializable
-    data class PlanSaved(val plan: Long, val entry: Plan) : Message
-
-    /** What an `add-policy`, an `update-policy edit` or a `confirm` wrote, just before its `result` (`work` level 11). */
-    @Serializable
-    data class PolicySaved(val policy: Long, val entry: Policy) : Message
 
     /** The bridge is exiting. */
     @Serializable

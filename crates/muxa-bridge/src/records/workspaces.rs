@@ -6,11 +6,9 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use muxa_protocol::{MemoryMode, OverallRequests, Share};
 use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
-use super::assistant::{self, AssistantHost, Delegate, RawDelegate, RawHost, Role};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
 use super::routines::{self, Routine, RoutineGate, RoutineProblem};
@@ -23,7 +21,6 @@ const MAX_SLUG: usize = 40;
 const SLUG_FALLBACK: &str = "task";
 pub(super) const TASKS_DIR: &str = "tasks";
 pub(super) const ROUTINES_DIR: &str = "routines";
-pub(super) const ASSISTANT_DIR: &str = "assistant";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -66,13 +63,6 @@ pub struct Workspace {
     pub park_after: Option<u64>,
     /// None: this workspace has no Routines (ADR 0036).
     pub routines: Option<RoutineGate>,
-    /// How its assistant runs start: a delegate's or the overall
-    /// assistant's. None: it runs none (ADR 0048, 0049).
-    pub assistant: Option<Delegate>,
-    /// What it is to the overall assistant (ADR 0049 §2–§4).
-    pub role: Role,
-    /// What a Task's close-out does with "For the workspace" (ADR 0053 §3).
-    pub memory: MemoryMode,
 }
 
 /// The configured workspaces, in file order.
@@ -82,7 +72,6 @@ pub struct Workspaces {
     workers: Vec<Worker>,
     routines: Vec<Routine>,
     problems: Vec<RoutineProblem>,
-    assistant: AssistantHost,
     /// `[codex] owned_threads` (ADR 0028); off without it.
     codex_threads: bool,
 }
@@ -97,7 +86,8 @@ struct RawConfig {
     /// Refused: Routines moved to each workspace (ADR 0036).
     #[serde(default)]
     routine: Vec<toml::Value>,
-    assistant: Option<RawHost>,
+    /// `[assistant]` of the removed assistant layer (ADR 0066): read, not used.
+    assistant: Option<toml::Value>,
     codex: Option<RawCodex>,
 }
 
@@ -121,18 +111,10 @@ struct RawWorkspace {
     loop_table: Option<RawLoop>,
     park_after: Option<String>,
     routines: Option<RawGate>,
-    assistant: Option<RawDelegate>,
-    memory: Option<String>,
-}
-
-/// `auto` (the default, ADR 0053 Revision 1), `review` or `off`.
-fn memory_mode(raw: Option<&str>) -> Result<MemoryMode, String> {
-    match raw {
-        Some("review") => Ok(MemoryMode::Review),
-        None | Some("auto") => Ok(MemoryMode::Auto),
-        Some("off") => Ok(MemoryMode::Off),
-        Some(_) => Err("memory must be \"review\", \"auto\" or \"off\"".into()),
-    }
+    /// `[workspace.assistant]` and `memory` of the removed assistant layer
+    /// (ADR 0066): read so an older file still loads, not used.
+    assistant: Option<toml::Value>,
+    memory: Option<toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -247,14 +229,9 @@ impl Workspaces {
             let routines = w.routines.filter(|g| g.enabled).map(|g| RoutineGate {
                 direct_writes: g.direct_writes,
             });
-            let (delegate, role) = w
-                .assistant
-                .map(RawDelegate::check)
-                .transpose()
-                .map_err(|r| invalid(format!("workspace {:?}: assistant {r}", w.name)))?
-                .unwrap_or_default();
-            let memory = memory_mode(w.memory.as_deref())
-                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
+            if w.assistant.is_some() || w.memory.is_some() {
+                tracing::warn!(workspace = %w.name, "[workspace.assistant] and memory are no longer used; remove them");
+            }
             list.push(Workspace {
                 name: w.name,
                 root,
@@ -264,18 +241,7 @@ impl Workspaces {
                 loop_checks,
                 park_after,
                 routines,
-                assistant: delegate,
-                role,
-                memory,
             });
-        }
-        let mut overall = list.iter().filter(|w| w.role == Role::Overall);
-        if let (Some(first), Some(second)) = (overall.next(), overall.next()) {
-            return Err(invalid(format!(
-                "workspaces {:?} and {:?} both set [workspace.assistant] overall = true; \
-                 at most one workspace may",
-                first.name, second.name
-            )));
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);
         let mut worker_names = HashSet::new();
@@ -287,18 +253,9 @@ impl Workspaces {
             }
             workers.push(worker);
         }
-        for w in &list {
-            if let Some(d) = &w.assistant {
-                assistant::check_worker(d, &w.name, &workers, codex_threads)
-                    .map_err(|r| invalid(format!("workspace {:?}: assistant {r}", w.name)))?;
-            }
+        if raw.assistant.is_some() {
+            tracing::warn!("[assistant] is no longer used; remove it");
         }
-        let host = raw
-            .assistant
-            .map(RawHost::check)
-            .transpose()
-            .map_err(invalid)?
-            .unwrap_or_default();
         let mut all_routines = Vec::new();
         let mut problems = Vec::new();
         for w in &list {
@@ -316,7 +273,6 @@ impl Workspaces {
             workers,
             routines: all_routines,
             problems,
-            assistant: host,
             codex_threads,
         })
     }
@@ -325,61 +281,6 @@ impl Workspaces {
     /// its turns to (ADR 0028). Off by default.
     pub fn codex_threads(&self) -> bool {
         self.codex_threads
-    }
-
-    /// The host's `[assistant]`; off without the table.
-    pub fn assistant(&self) -> AssistantHost {
-        self.assistant
-    }
-
-    /// The workspace's delegate, when the host and the workspace both allow requests.
-    pub fn delegate(&self, workspace: &str) -> Option<&Delegate> {
-        if !self.assistant.enabled {
-            return None;
-        }
-        let w = self.get(workspace)?;
-        if w.role == Role::Overall {
-            return None;
-        }
-        w.assistant.as_ref()
-    }
-
-    /// The overall assistant's workspace, when the host allows assistant runs.
-    pub fn overall(&self) -> Option<&Workspace> {
-        if !self.assistant.enabled {
-            return None;
-        }
-        self.list.iter().find(|w| w.role == Role::Overall)
-    }
-
-    /// The overall workspace when its root Ask session, the secretary's
-    /// chat, stays open (ADR 0056).
-    pub fn secretary(&self) -> Option<&Workspace> {
-        self.overall()
-            .filter(|w| w.assistant.as_ref().is_some_and(|d| d.resident))
-    }
-
-    /// What `workspace` shares with the overall assistant; `none` for an
-    /// unknown workspace and for the overall one.
-    pub fn share(&self, workspace: &str) -> Share {
-        match self.get(workspace).map(|w| w.role) {
-            Some(Role::Member { share, .. }) => share,
-            _ => Share::None,
-        }
-    }
-
-    /// Whether the overall assistant may ask `workspace`: `none` unless it
-    /// takes requests now.
-    pub fn overall_requests(&self, workspace: &str) -> OverallRequests {
-        if self.delegate(workspace).is_none() {
-            return OverallRequests::None;
-        }
-        match self.get(workspace).map(|w| w.role) {
-            Some(Role::Member {
-                overall_requests, ..
-            }) => overall_requests,
-            _ => OverallRequests::None,
-        }
     }
 
     pub fn routines(&self) -> &[Routine] {
@@ -457,19 +358,6 @@ impl Workspace {
             .root
             .join(ROUTINES_DIR)
             .join(format!("{}-{id}", slug(routine)));
-        self.inside(&dir)
-    }
-
-    /// `<root>/assistant/<slug>-<id>` for an assistant run (ADR 0048 §4),
-    /// checked to stay inside the root. It is not created.
-    pub fn assistant_dir(&self, title: &str, id: &str) -> Result<PathBuf, PathError> {
-        if !is_valid_id(id) {
-            return Err(PathError::InvalidId);
-        }
-        let dir = self
-            .root
-            .join(ASSISTANT_DIR)
-            .join(format!("{}-{id}", slug(title)));
         self.inside(&dir)
     }
 

@@ -32,92 +32,6 @@ pub use runs::tick;
 
 /// Answers a `work` level 1 request: its list or saved message, and its error.
 pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
-    if let Request::UpdateInbox {
-        id,
-        entry,
-        action: muxa_protocol::InboxAction::AskAgent,
-        text,
-        ..
-    } = &req
-    {
-        return match crate::items::ask_agent::ask(cx, *id, entry, text.as_deref()).await {
-            Ok(messages) => (messages, None),
-            Err(e) => (Vec::new(), Some(e)),
-        };
-    }
-    if let Request::UpdateInbox {
-        id,
-        entry,
-        action: muxa_protocol::InboxAction::Approve,
-        hash,
-        ..
-    } = &req
-    {
-        if entry.starts_with("i-") {
-            let shown = hash.as_deref();
-            if let Some(answer) = crate::assistant::proposals::answer(cx, *id, entry, shown).await {
-                return answer;
-            }
-        }
-    }
-    if let Request::UpdateInbox {
-        id,
-        entry,
-        action: muxa_protocol::InboxAction::Retry,
-        ..
-    } = &req
-    {
-        if entry.starts_with("i-") {
-            if let Some(answer) = crate::assistant::proposals::retry::answer(cx, *id, entry).await {
-                return answer;
-            }
-        }
-    }
-    if let Request::UpdateInbox {
-        id,
-        entry,
-        action: muxa_protocol::InboxAction::StartTask,
-        ..
-    } = &req
-    {
-        if entry.starts_with("i-") {
-            if let Some(answer) = crate::assistant::proposals::start_task(cx, *id, entry).await {
-                return answer;
-            }
-        }
-    }
-    if let Request::UpdateInbox {
-        id,
-        entry,
-        action: muxa_protocol::InboxAction::Reply,
-        text,
-        ..
-    } = &req
-    {
-        if entry.starts_with("i-") {
-            let sent = crate::assistant::proposals::reply(cx, *id, entry, text.as_deref()).await;
-            if let Some(answer) = sent {
-                return answer;
-            }
-        }
-    }
-    if let Request::UpdateInbox {
-        id,
-        entry,
-        action: action @ (muxa_protocol::InboxAction::Confirm | muxa_protocol::InboxAction::Reject),
-        text,
-        ..
-    } = &req
-    {
-        if entry.starts_with("i-") {
-            let answered =
-                crate::assistant::hypotheses::answer::answer(cx, *id, entry, *action, text.clone())
-                    .await;
-            if let Some(answer) = answered {
-                return answer;
-            }
-        }
-    }
     let result = match req {
         Request::ListRoutines { id } => {
             let config = Arc::clone(&cx.records);
@@ -139,40 +53,14 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
             blocking(move || {
                 let entries = inbox::list(&config)?;
                 let items = crate::items::list(&config, &entries)?;
-                let assistant = crate::assistant::list(&config)?;
-                let plans =
-                    crate::assistant::plan::list(&config, &assistant.work, &assistant.requests)?;
-                // A broken workspaces file is logged by the load; the list still answers.
-                let now = crate::records::now();
-                let info = config.load_workspaces().ok().and_then(|w| {
-                    let mut info = crate::assistant::info::info(&w)?;
-                    info.overall_runs = crate::assistant::info::overall_runs(&config, &w, now);
-                    Some(info)
-                });
-                let policies = crate::assistant::policies::list(&config, now)?;
-                let corrections = crate::assistant::corrections::list(&config, now)?;
-                let hypotheses = crate::assistant::hypotheses::list(&config, now)?;
-                let told = (policies, hypotheses, corrections);
-                Ok((entries, items, assistant, plans, info, told))
+                Ok((entries, items))
             })
             .await
-            .map(
-                |(entries, items, assistant, plans, info, (policies, hypotheses, corrections))| {
-                    Message::InboxList {
-                        inbox: id,
-                        entries,
-                        items,
-                        work: assistant.work,
-                        captures: assistant.captures,
-                        requests: assistant.requests,
-                        plans,
-                        assistant: info.map(Box::new),
-                        policies,
-                        hypotheses,
-                        corrections,
-                    }
-                },
-            )
+            .map(|(entries, items)| Message::InboxList {
+                inbox: id,
+                entries,
+                items,
+            })
         }
         Request::UpdateInbox {
             id,
@@ -295,7 +183,6 @@ pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), 
             }
         })
         .collect();
-    problems.extend(old_notes(&workspaces));
     problems.extend(missing_repos(&workspaces));
     Ok((entries, problems))
 }
@@ -315,26 +202,6 @@ fn missing_repos(workspaces: &crate::records::Workspaces) -> Vec<RoutineProblem>
                     path.display()
                 ),
             })
-        })
-        .collect()
-}
-
-/// Blocking. Workspaces that still have the lead's notes from before ADR
-/// 0053 §1: muxa no longer reads them, and the user moves them in git.
-fn old_notes(workspaces: &crate::records::Workspaces) -> Vec<RoutineProblem> {
-    use crate::assistant::notes::{NOTES, OLD_NOTES, old_notes_present};
-    workspaces
-        .all()
-        .iter()
-        .filter(|w| old_notes_present(&w.root))
-        .map(|w| {
-            tracing::warn!(workspace = %w.name, "old notes file is no longer read");
-            RoutineProblem {
-                workspace: w.name.clone(),
-                reason: format!(
-                    "move {OLD_NOTES} to {NOTES} (git mv); muxa no longer reads {OLD_NOTES}"
-                ),
-            }
         })
         .collect()
 }

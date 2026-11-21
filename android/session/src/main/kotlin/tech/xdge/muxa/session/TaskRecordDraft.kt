@@ -22,9 +22,6 @@ data class TaskRecordDraft(
     val worker: String? = null,
     /** The host names a repo Task's branch after its title when none is given (`work` level 2, ADR 0031). */
     val branchFromTitle: Boolean = false,
-    /** The Work item the Task is for, and its `rev` the client saw (`work` level 9, ADR 0048). */
-    val work: String? = null,
-    val workRev: Long? = null,
 ) {
     data class Create(
         val workspace: String,
@@ -36,8 +33,6 @@ data class TaskRecordDraft(
         val base: String?,
         val loop: LoopSpec? = null,
         val worker: String? = null,
-        val work: String? = null,
-        val workRev: Long? = null,
     )
 
     /** What to fix before the Task can be created; null when it can. */
@@ -78,8 +73,6 @@ data class TaskRecordDraft(
                 base = repo?.let { base.trim().ifEmpty { null } },
                 loop = loop?.spec,
                 worker = worker,
-                work = work,
-                workRev = workRev,
             )
         }
 

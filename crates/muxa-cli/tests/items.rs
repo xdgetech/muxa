@@ -80,9 +80,6 @@ for line in sys.stdin:
     elif kind == 'delete-inbox':
         send({'type':'inbox-deleted','inbox':ident,'deleted':2})
     elif kind == 'update-inbox':
-        if req['action'] == 'retry' and req['entry'] == 'i-0000000f':
-            send({'type':'plan-saved','plan':ident,'entry':{'id':'p-0000000a','rev':1,'at':1,
-                  'inputsAt':1,'delivery':'pending','deliveryAt':1}})
         send({'type':'inbox-saved','inbox':ident,
               'item':item(req['entry'],'answered',answer=req['action'],answers=[])})
     send({'type':'result','id':ident, **({'sessions':[]} if kind == 'list' else {})})
@@ -148,21 +145,6 @@ fn each_answer_sends_its_action_and_flags() {
             assert_eq!(req.get(key), want.get(key), "{args:?} {key}");
         }
     }
-}
-
-/// ADR 0061: Retry on an assistant run's failure says what it started.
-#[test]
-fn retry_says_what_it_started() {
-    let bridge = Bridge::new();
-    let out = bridge.run(&["inbox", "answer", "i-0000000f", "retry"]);
-    assert!(out.status.success(), "{out:?}");
-    let text = String::from_utf8(out.stdout).unwrap();
-    assert!(text.contains("Plan p-0000000a started"), "{text}");
-    let req = bridge.requests().pop().unwrap();
-    assert_eq!(
-        (req["entry"].as_str(), req["action"].as_str()),
-        (Some("i-0000000f"), Some("retry"))
-    );
 }
 
 #[test]

@@ -1,22 +1,14 @@
 //! `muxa-cli`: a terminal client for the muxa protocol, the reference client.
 
 mod ask;
-mod assist;
 mod conn;
 mod inbox;
 mod items;
-mod memory;
-mod plan;
-mod policy;
-mod propose;
 mod routines;
-mod staff;
 mod tasks;
 mod v2;
 mod view;
 mod when;
-mod work;
-mod writes;
 
 use std::process::ExitCode;
 
@@ -30,12 +22,10 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] tasks [--json]
        muxa-cli [--bridge CMD] task new --workspace W --title T --goal G
                 [--project P] [--repo REPO [--branch B] [--base REF]] [--worker NAME]
-                [--check CMD [--max-attempts N] [--check-timeout S]] [--work WORK] [--json]
-       muxa-cli [--bridge CMD] task propose --workspace W --title T --goal (G | -)
-                [--repo REPO] [--work WORK] [--json]
+                [--check CMD [--max-attempts N] [--check-timeout S]] [--json]
        muxa-cli [--bridge CMD] task (done | drop) ID [--force] [--json]
        muxa-cli [--bridge CMD] ask REPO [--workspace W] [--json]
-       muxa-cli [--bridge CMD] ask --root --workspace W [--text T [--work WORK]] [--json]
+       muxa-cli [--bridge CMD] ask --root --workspace W [--json]
        muxa-cli [--bridge CMD] ask close SESSION [--json]
        muxa-cli [--bridge CMD] task restart ID [--force] [--json] [--worker NAME]
        muxa-cli [--bridge CMD] task new --read --workspace W --title T --goal G
@@ -53,39 +43,9 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
        muxa-cli [--bridge CMD] inbox [--all] [--json]
        muxa-cli [--bridge CMD] inbox (approve | dismiss) ENTRY [--json]
        muxa-cli [--bridge CMD] inbox later ENTRY [--json]
-       muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N]
-                [--reason T] [--hash H] [--json]
+       muxa-cli [--bridge CMD] inbox answer ITEM ACTION [--text T] [--option N] [--json]
        muxa-cli [--bridge CMD] inbox read ITEM [--json]
-       muxa-cli [--bridge CMD] inbox show ITEM [--json]
        muxa-cli [--bridge CMD] inbox delete --older-than DAYS [--json]
-       muxa-cli [--bridge CMD] capture TEXT [--workspace W] [--source S]
-                [--client-id ID] [--assist [--scope S] [--purpose P]] [--json]
-       muxa-cli [--bridge CMD] work [--all] [--json]
-       muxa-cli [--bridge CMD] work sort CAPTURE (new [--title T] [--workspace W]
-                | link WORK | note) [--json]
-       muxa-cli [--bridge CMD] work (later | done | withdraw | reopen) WORK [--json]
-       muxa-cli [--bridge CMD] work edit WORK [--title T] [--workspace W] [--json]
-       muxa-cli [--bridge CMD] work merge WORK INTO [--json]
-       muxa-cli [--bridge CMD] work (pin | unpin) WORK [--json]
-       muxa-cli [--bridge CMD] work due WORK --at TIME [--timezone ZONE] [--json]
-       muxa-cli [--bridge CMD] assist WORK [--scope S] [--purpose P]
-                [--workspace W] [--worker NAME] [--json]
-       muxa-cli [--bridge CMD] assist staff WORKSPACE [--json]
-       muxa-cli [--bridge CMD] assist writes WORKSPACE [--json]
-       muxa-cli [--bridge CMD] assist cancel REQUEST [--json]
-       muxa-cli [--bridge CMD] assist show (WORK | REQUEST) [--json]
-       muxa-cli [--bridge CMD] assist notes (WORK | REQUEST | PLAN) [--apply] [--json]
-       muxa-cli [--bridge CMD] plan [--json]
-       muxa-cli [--bridge CMD] plan now [--minutes N] [--json]
-       muxa-cli [--bridge CMD] plan reorder ID... [--json]
-       muxa-cli [--bridge CMD] plan dismiss ROW [--reason T] [--json]
-       muxa-cli [--bridge CMD] policy [--json]
-       muxa-cli [--bridge CMD] policy add TEXT [--scope all|WORKSPACE]
-                [--from TIME] [--until TIME|week] [--timezone ZONE] [--json]
-       muxa-cli [--bridge CMD] policy edit ID [--text T] [--scope S]
-                [--from TIME] [--until TIME|week] [--timezone ZONE] [--json]
-       muxa-cli [--bridge CMD] policy delete ID [--json]
-       muxa-cli [--bridge CMD] forget ID [--json]
 
   --bridge CMD   how to start the bridge (default: muxa-bridge). Over SSH:
                  --bridge 'ssh host ~/.local/bin/muxa-bridge'
@@ -102,20 +62,14 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   ask REPO       starts the workspace's agent in the repo's main checkout, to
                  ask about its code: no task and no worktree. Prints the
                  session id. Without --workspace, the one that has REPO
-  ask --root     opens the workspace's Ask session at its root, or starts it:
-                 the one Ask Agent uses, also the overall assistant's (ADR 0054).
-                 --text T types T into its agent; --work WORK puts the Work
-                 item before it: Send to the secretary on Today (work level
-                 17, ADR 0059)
+  ask --root     opens the workspace's Ask session at its root, or starts it
+                 (ADR 0054)
   ask close SESSION
                  closes an ask session, by id ($3) or name. Its agent stops;
                  the main checkout and its files stay as they are
   --json         one line of JSON for other tools: the Inbox for tasks, one
                  Inbox item for task new and task restart (docs/agents.md,
                  Desktop tools)
-  task propose   the secretary proposes a Task: one Inbox item. Start Task
-                 starts it in plan mode, linked to --work (work level 18,
-                 ADR 0060). --goal - reads the goal from stdin
   task done ID   marks a task record done
   task drop ID   marks a task record dropped: given up, not finished.
                  Both close the task's session and remove its worktree and
@@ -134,8 +88,7 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
                  task, its TASK.md and its directory stay
   --worker NAME  selects a host-defined worker for new/restart, or `default`
                  for the workspace default agent; requires workers. Without
-                 it, restart keeps the current worker. With assist WORK: the
-                 staff member to ask (work level 12); without it, the lead
+                 it, restart keeps the current worker
   task recover ID
                  inspects an interrupted restart. To resolve it, supply its
                  displayed --operation and --rev, with --action cancel-prepared,
@@ -171,117 +124,15 @@ const USAGE: &str = "usage: muxa-cli [--bridge CMD] list
   inbox answer ITEM ACTION
                  answers an item. ACTION is approve, reject, choose
                  (--option N), accept, keep-open, reply (--text T),
-                 retry, drop, dismiss, later
-                 (moves it below the others), ask-agent (--text T), read,
-                 protect, unprotect, or confirm (a hypothesis becomes a
-                 policy). reject takes an optional --reason on sort,
-                 delegate, hypothesis and write items. approve on a write
-                 item starts one Task of the workspace's writer that writes
-                 the content exactly as inbox show prints it (work level
-                 13). It prints the write first and sends its hash; --hash H
-                 sends H, the hash of the write another view showed, instead.
-                 A host refuses an approve on a write without the hash A protected item takes
-                 every answer; only inbox delete keeps it.
-                 reply sends the text as it is; on an ask it denies the
-                 permission first. ask-agent sends the item and the text to
-                 the workspace's Ask session and leaves the item open.
-                 On a result item (work level 16, ADR 0058): handoff starts
-                 the step it proposes, send (--text T) asks the member who
-                 wrote it to go on, done closes it and ends the chain. On a
-                 write item, revise (--text T) asks for a new draft
+                 retry, drop, dismiss, later (moves it below the others),
+                 read, protect or unprotect. A protected item takes every
+                 answer; only inbox delete keeps it. reply sends the text
+                 as it is; on an ask it denies the permission first
   inbox read ITEM
                  marks the item read, as inbox answer ITEM read
-  inbox show ITEM
-                 the item; a write item also prints its action, target and
-                 the content whole, as plain text; a result item its
-                 findings, open questions, next steps, files and hand-off
   inbox delete --older-than DAYS
                  removes every Inbox item made more than DAYS days ago,
-                 open or closed, except protected ones (work level 8)
-  capture TEXT   saves TEXT on the host as an unsorted Capture; - reads it
-                 from stdin. Nothing starts. --source is cli (default), tmux
-                 or app. Sending the same --client-id again returns the
-                 Capture already saved (ADR 0048)
-  --assist       capture: also makes a Work item in --workspace (required)
-                 and asks that workspace's assistant, as assist does
-  work           open Work items, then unsorted Captures; --all also lists
-                 done and withdrawn items. An item that was asked shows its
-                 newest request's delivery, e.g. asked: processing
-  work show WORK
-                 the item, every Capture's full text, sorted or not, its
-                 Tasks and its newest request's delivery
-  work sort CAPTURE
-                 new makes a Work item (title: the first line, or --title),
-                 link adds the Capture to WORK, note keeps it with no item
-  work later WORK
-                 moves the item below the others; reopen brings it back.
-                 done and withdraw close it; its Tasks keep running
-  work merge WORK INTO
-                 withdraws WORK into INTO; INTO gets its Captures
-  work pin WORK  lists the item first, and in the first rows of a plan;
-                 unpin undoes it (ADR 0049)
-  work due WORK --at TIME
-                 sets the item's deadline. TIME is RFC 3339
-                 (2026-11-12T16:00:00+09:00) or YYYY-MM-DD HH:MM in
-                 --timezone ZONE, an IANA name (default: this system's)
-  --work WORK    task new: the Task is for this Work item (work level 9).
-                 Starting it again before the item changes returns the same Task
-  assist WORK    asks a workspace's assistant to work on the item: its
-                 workspace, or --workspace. Prints the request id, version
-                 and delivery. Asking again adds a version and ends the run
-                 of the older one. Needs the muxa daemon
-  --scope S      research (default), compare or draft
-  --purpose P    what to find out or make, at most 4096 bytes; - reads it
-                 from stdin
-  assist staff WORKSPACE
-                 the workspace's staff: each member's name, job description
-                 and notes time, the lead marked (work level 12)
-  assist writes WORKSPACE
-                 the workspace's writer, and each write its Results proposed:
-                 its item, action, target, and whether it is proposed,
-                 rejected or became a Task (work level 13)
-  memory WORKSPACE
-                 the workspace's memory mode, when .muxa/WORKSPACE.md
-                 changed, and the file itself, read on this machine: run it
-                 on the host (work level 14). Approve a Task's proposal with
-                 inbox answer ITEM approve, after its text is shown whole
-  assist cancel REQUEST
-                 cancels the request's current version and closes its run;
-                 on a chain that waits on a hand-off, it ends the chain
-  assist show (WORK | REQUEST)
-                 the newest Result: summary, findings with their sources,
-                 open questions, next steps, files and possible duplicates.
-                 A chain of staff members shows a row per step, then each
-                 step's Result, newest first
-  assist notes (WORK | REQUEST | PLAN)
-                 the newest proposed notes (WORKSPACE.md, or a member's
-                 NOTES.md) of the item's requests, the
-                 request or the plan; --apply writes it on the host, unless
-                 the file changed since the run read it
-  plan           the overall assistant's newest plan: up to 10 rows with why,
-                 next and minutes, Due soon, and the unanswered and stale
-                 requests. A plan without a result shows its reason
-  plan now       Re-rank: re-ranks the queue from what's open now. Asks the
-                 overall assistant for a plan now; --minutes N is the time
-                 you have. Each one is a run of the overall workspace's
-                 max_runs_per_day. Needs an overall workspace and the daemon
-  plan reorder ID...
-                 puts Today's rows in your order: each row of the newest
-                 plan with a result once, by Work item or Inbox item id
-  plan dismiss ROW
-                 removes a row from Today (Not today); --reason is optional
-  policy         what you told the overall assistant: the policies, active
-                 then expired, its hypotheses and the recent corrections
-                 (ADR 0050)
-  policy add TEXT
-                 keeps a policy in your words, one paragraph; - reads it from
-                 stdin. --scope is all (default) or a workspace. --from and
-                 --until take TIME as work due --at does; --until week ends
-                 this Sunday at 23:59
-  policy edit ID, policy delete ID
-                 changes or deletes a policy
-  forget ID      removes a correction (x-) or a hypothesis (h-); forgetting a
-                 correction also removes the hypotheses it grounds";
+                 open or closed, except protected ones (work level 8)";
 
 enum Cmd {
     List,
@@ -299,7 +150,6 @@ enum Cmd {
     },
     AskRoot {
         workspace: String,
-        send: Option<ask::SendText>,
         json: bool,
     },
     Ask {
@@ -309,10 +159,6 @@ enum Cmd {
     },
     NewTask {
         new: tasks::NewTask,
-        json: bool,
-    },
-    ProposeTask {
-        proposal: propose::Proposal,
         json: bool,
     },
     Close {
@@ -375,95 +221,6 @@ enum Cmd {
         action: InboxAction,
         json: bool,
     },
-    Capture {
-        new: work::NewCapture,
-        json: bool,
-    },
-    Work {
-        all: bool,
-        json: bool,
-    },
-    Sort {
-        sort: work::Sort,
-        json: bool,
-    },
-    ChangeWork {
-        change: work::Change,
-        json: bool,
-    },
-    ShowWork {
-        work: String,
-        json: bool,
-    },
-    Assist {
-        ask: assist::Ask,
-        json: bool,
-    },
-    CancelRequest {
-        request: String,
-        json: bool,
-    },
-    Staff {
-        workspace: String,
-        json: bool,
-    },
-    Writes {
-        workspace: String,
-        json: bool,
-    },
-    Memory {
-        workspace: String,
-        json: bool,
-    },
-    ShowItem {
-        item: String,
-        json: bool,
-    },
-    ShowResult {
-        target: String,
-        json: bool,
-    },
-    Notes {
-        target: String,
-        apply: bool,
-        json: bool,
-    },
-    Plan {
-        json: bool,
-    },
-    PlanNow {
-        minutes: Option<u32>,
-        json: bool,
-    },
-    Reorder {
-        order: Vec<String>,
-        json: bool,
-    },
-    Dismiss {
-        row: String,
-        reason: Option<String>,
-        json: bool,
-    },
-    Policies {
-        json: bool,
-    },
-    AddPolicy {
-        fields: policy::Fields,
-        json: bool,
-    },
-    EditPolicy {
-        policy: String,
-        fields: policy::Fields,
-        json: bool,
-    },
-    DeletePolicy {
-        policy: String,
-        json: bool,
-    },
-    Forget {
-        record: String,
-        json: bool,
-    },
     DeleteInbox {
         days: u32,
         json: bool,
@@ -483,11 +240,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     let mut new = tasks::NewTask::default();
     let mut check = tasks::LoopFlags::default();
     let (mut text, mut option) = (None, None);
-    let (mut source, mut client_id) = (None, None);
-    let (mut assist, mut scope, mut purpose) = (false, None, None);
-    let (mut minutes, mut at, mut timezone, mut apply) = (None, None, None, false);
-    let (mut from, mut until, mut reason) = (None, None, None);
-    let mut hash: Option<String> = None;
     let mut older_than: Option<u32> = None;
     let mut root = false;
     while let Some(arg) = p.next()? {
@@ -525,25 +277,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             Long("root") => root = true,
             Long("text") => text = Some(p.value()?.string()?),
             Long("option") => option = Some(p.value()?.parse()?),
-            Long("work") => new.work = Some(p.value()?.string()?),
-            Long("client-id") => client_id = Some(p.value()?.string()?),
-            Long("assist") => assist = true,
-            Long("minutes") => minutes = Some(p.value()?.parse()?),
-            Long("at") => at = Some(p.value()?.string()?),
-            Long("timezone") => timezone = Some(p.value()?.string()?),
-            Long("apply") => apply = true,
-            Long("from") => from = Some(p.value()?.string()?),
-            Long("until") => until = Some(p.value()?.string()?),
-            Long("reason") => reason = Some(p.value()?.string()?),
-            Long("hash") => hash = Some(p.value()?.string()?),
-            Long("purpose") => purpose = Some(p.value()?.string()?),
-            Long("scope") => scope = Some(p.value()?.string()?),
-            Long("source") => {
-                let value = p.value()?.string()?;
-                source = Some(work::source(&value).ok_or_else(|| {
-                    lexopt::Error::Custom("--source must be app, tmux or cli".into())
-                })?);
-            }
             Long("older-than") => older_than = Some(p.value()?.parse()?),
             Long("version") => {
                 println!("muxa-cli {}", env!("CARGO_PKG_VERSION"));
@@ -566,7 +299,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
     }
     let is_restart = matches!(words.as_slice(), [w, r, _] if w == "task" && r == "restart");
     let is_new = matches!(words.as_slice(), [w, n] if w == "task" && n == "new");
-    let is_propose = matches!(words.as_slice(), [w, n] if w == "task" && n == "propose");
     let is_recover = matches!(words.as_slice(), [w, r, _] if w == "task" && r == "recover");
     let has_recovery_flags = operation.is_some() || revision.is_some() || action.is_some();
     if has_recovery_flags && !is_recover {
@@ -589,118 +321,13 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         )),
     };
     let is_answer = matches!(words.as_slice(), [w, a, _, _] if w == "inbox" && a == "answer");
-    let is_ask_root = root && matches!(words.as_slice(), [w] if w == "ask");
-    let is_policy_add = matches!(words.as_slice(), [w, a, _] if w == "policy" && a == "add");
-    let is_policy_edit = matches!(words.as_slice(), [w, e, _] if w == "policy" && e == "edit");
-    let is_dismiss = matches!(words.as_slice(), [w, d, _] if w == "plan" && d == "dismiss");
     if option.is_some() && !is_answer {
         return Err(lexopt::Error::Custom(
             "--option requires inbox answer".into(),
         ));
     }
-    if text.is_some() && !is_answer && !is_policy_edit && !is_ask_root {
-        return Err(lexopt::Error::Custom(
-            "--text requires inbox answer, policy edit or ask --root".into(),
-        ));
-    }
-    if hash.is_some() && !is_answer {
-        return Err(lexopt::Error::Custom(
-            "--hash requires inbox answer ITEM approve".into(),
-        ));
-    }
-    if reason.is_some() && !is_answer && !is_dismiss {
-        return Err(lexopt::Error::Custom(
-            "--reason requires inbox answer ITEM reject or plan dismiss".into(),
-        ));
-    }
-    if let Some(r) = reason.as_deref().filter(|_| is_dismiss) {
-        policy::reason(r).map_err(|e| lexopt::Error::Custom(e.into()))?;
-    }
-    let is_policy_fields = is_policy_add || is_policy_edit;
-    if (from.is_some() || until.is_some()) && !is_policy_fields {
-        return Err(lexopt::Error::Custom(
-            "--from and --until require policy add or policy edit".into(),
-        ));
-    }
-    let policy_scope = scope.clone().filter(|_| is_policy_fields);
-    let scope = match scope.filter(|_| !is_policy_fields) {
-        Some(value) => Some(assist::scope(&value).ok_or_else(|| {
-            lexopt::Error::Custom("--scope must be research, compare or draft".into())
-        })?),
-        None => None,
-    };
-    let is_capture = matches!(words.as_slice(), [w, _] if w == "capture");
-    if (source.is_some() || client_id.is_some()) && !is_capture {
-        return Err(lexopt::Error::Custom(
-            "--source and --client-id require capture".into(),
-        ));
-    }
-    let is_assist = matches!(words.as_slice(),
-        [w, id] if w == "assist" && !["cancel", "show", "notes"].contains(&id.as_str()));
-    let is_staff = matches!(words.as_slice(), [w, s, _] if w == "assist" && s == "staff");
-    let is_writes = matches!(words.as_slice(), [w, s, _] if w == "assist" && s == "writes");
-    let is_plan_now = matches!(words.as_slice(), [w, n] if w == "plan" && n == "now");
-    if minutes.is_some() && !is_plan_now {
-        return Err(lexopt::Error::Custom("--minutes requires plan now".into()));
-    }
-    let is_due = matches!(words.as_slice(), [w, d, _] if w == "work" && d == "due");
-    if (at.is_some() || timezone.is_some()) && !is_due && !is_policy_fields {
-        return Err(lexopt::Error::Custom(
-            "--at and --timezone require work due, policy add or policy edit".into(),
-        ));
-    }
-    if at.is_some() && !is_due {
-        return Err(lexopt::Error::Custom("--at requires work due".into()));
-    }
-    let fields = if is_policy_fields {
-        let text = if is_policy_add {
-            words.get(2).map(|t| stdin_or(t)).transpose()?
-        } else {
-            text.clone()
-        };
-        Some(
-            policy::fields(
-                text,
-                policy_scope,
-                from.as_deref(),
-                until.as_deref(),
-                timezone.as_deref(),
-            )
-            .map_err(|e| lexopt::Error::Custom(e.into()))?,
-        )
-    } else {
-        None
-    };
-    let is_notes = matches!(words.as_slice(), [w, n, _] if w == "assist" && n == "notes");
-    if apply && !is_notes {
-        return Err(lexopt::Error::Custom(
-            "--apply requires assist notes".into(),
-        ));
-    }
-    let due = match (is_due, at) {
-        (true, Some(at)) => {
-            Some(work::due(&at, timezone.as_deref()).map_err(|e| lexopt::Error::Custom(e.into()))?)
-        }
-        (true, None) => return Err(lexopt::Error::Custom("work due needs --at".into())),
-        _ => None,
-    };
-    if assist && !is_capture {
-        return Err(lexopt::Error::Custom("--assist requires capture".into()));
-    }
-    if (scope.is_some() || purpose.is_some()) && !(is_assist || (is_capture && assist)) {
-        return Err(lexopt::Error::Custom(
-            "--scope and --purpose require assist WORK or capture --assist".into(),
-        ));
-    }
-    if assist && some(new.workspace.clone()).is_none() {
-        return Err(lexopt::Error::Custom(
-            "capture --assist needs --workspace: the workspace whose assistant to ask".into(),
-        ));
-    }
-    if new.work.is_some() && !is_new && !is_propose && !(is_ask_root && text.is_some()) {
-        return Err(lexopt::Error::Custom(
-            "--work requires task new, task propose, or ask --root with --text".into(),
-        ));
+    if text.is_some() && !is_answer {
+        return Err(lexopt::Error::Custom("--text requires inbox answer".into()));
     }
     let is_delete = matches!(words.as_slice(), [w, d] if w == "inbox" && d == "delete");
     if older_than.is_some() != is_delete {
@@ -708,9 +335,9 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             "inbox delete needs --older-than DAYS, and only it takes it".into(),
         ));
     }
-    if new.worker.is_some() && !is_new && !is_restart && !is_assist {
+    if new.worker.is_some() && !is_new && !is_restart {
         return Err(lexopt::Error::Custom(
-            "--worker requires task new, task restart or assist WORK".into(),
+            "--worker requires task new or task restart".into(),
         ));
     }
     // A Task's end removes its worktree; --force after the user said yes (ADR 0043).
@@ -733,27 +360,11 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         },
         [w] if w == "ask" && root => Cmd::AskRoot {
             workspace: new.workspace.clone(),
-            send: text.clone().map(|text| ask::SendText {
-                text,
-                work: new.work.clone(),
-            }),
             json,
         },
         [w, repo] if w == "ask" => Cmd::Ask {
             repo: repo.clone(),
             workspace: Some(new.workspace).filter(|w| !w.trim().is_empty()),
-            json,
-        },
-        [w, n] if w == "task" && n == "propose" => Cmd::ProposeTask {
-            proposal: propose::Proposal {
-                goal: stdin_or(&new.goal)?,
-                workspace: new.workspace,
-                repo: new.repo,
-                title: new.title,
-                work: new.work,
-            }
-            .checked()
-            .map_err(|e| lexopt::Error::Custom(e.into()))?,
             json,
         },
         [w, n] if w == "task" && n == "new" => Cmd::NewTask {
@@ -798,10 +409,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             target: name.clone(),
             json,
         },
-        [w, workspace] if w == "memory" => Cmd::Memory {
-            workspace: workspace.clone(),
-            json,
-        },
         [w] if w == "inbox" => Cmd::Inbox { all, json },
         [w, d] if w == "inbox" && d == "delete" => Cmd::DeleteInbox {
             days: older_than.filter(|d| *d >= 1).ok_or_else(|| {
@@ -816,18 +423,11 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                     lexopt::Error::Custom(format!("unknown answer {name:?}\n{USAGE}").into())
                 })?,
                 text,
-                reason,
                 option,
                 worktree: Some(worktree),
-                hash,
-                review: items::is_review_word(name),
             }
             .checked()
             .map_err(|e| lexopt::Error::Custom(e.into()))?,
-            json,
-        },
-        [w, s, item] if w == "inbox" && s == "show" => Cmd::ShowItem {
-            item: item.clone(),
             json,
         },
         [w, r, item] if w == "inbox" && r == "read" => Cmd::Answer {
@@ -835,11 +435,8 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
             answer: items::Answer {
                 action: InboxAction::Read,
                 text: None,
-                reason: None,
                 option: None,
                 worktree: None,
-                hash: None,
-                review: false,
             },
             json,
         },
@@ -856,109 +453,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
                 json,
             }
         }
-        [w, text] if w == "capture" => {
-            if text == "-" && purpose.as_deref() == Some("-") {
-                return Err(lexopt::Error::Custom(
-                    "only one of the text and --purpose can come from stdin".into(),
-                ));
-            }
-            let purpose = purpose.as_deref().map(stdin_or).transpose()?;
-            Cmd::Capture {
-                new: work::NewCapture {
-                    text: stdin_or(text)?,
-                    workspace: some(new.workspace),
-                    source: source.unwrap_or(muxa_protocol::CaptureSource::Cli),
-                    client_id: client_id.unwrap_or_else(work::client_id),
-                    assist: assist.then(|| muxa_protocol::AssistSpec {
-                        scope: scope.unwrap_or(muxa_protocol::AssistScope::Research),
-                        purpose,
-                        worker: None,
-                    }),
-                },
-                json,
-            }
-        }
-        [w, _, workspace] if is_staff && w == "assist" => Cmd::Staff {
-            workspace: workspace.clone(),
-            json,
-        },
-        [w, _, workspace] if is_writes && w == "assist" => Cmd::Writes {
-            workspace: workspace.clone(),
-            json,
-        },
-        [w, c, request] if w == "assist" && c == "cancel" => Cmd::CancelRequest {
-            request: request.clone(),
-            json,
-        },
-        [w, s, target] if w == "assist" && s == "show" => Cmd::ShowResult {
-            target: target.clone(),
-            json,
-        },
-        [w, n, target] if w == "assist" && n == "notes" => Cmd::Notes {
-            target: target.clone(),
-            apply,
-            json,
-        },
-        [w] if w == "plan" => Cmd::Plan { json },
-        [w, n] if w == "plan" && n == "now" => Cmd::PlanNow { minutes, json },
-        [w, r, order @ ..] if w == "plan" && r == "reorder" && !order.is_empty() => Cmd::Reorder {
-            order: order.to_vec(),
-            json,
-        },
-        [w, d, row] if w == "plan" && d == "dismiss" => Cmd::Dismiss {
-            row: row.clone(),
-            reason,
-            json,
-        },
-        [w] if w == "policy" => Cmd::Policies { json },
-        [w, a, _] if w == "policy" && a == "add" => Cmd::AddPolicy {
-            fields: fields.unwrap_or_default(),
-            json,
-        },
-        [w, e, id] if w == "policy" && e == "edit" => Cmd::EditPolicy {
-            policy: id.clone(),
-            fields: fields.unwrap_or_default(),
-            json,
-        },
-        [w, d, id] if w == "policy" && d == "delete" => Cmd::DeletePolicy {
-            policy: id.clone(),
-            json,
-        },
-        [w, id] if w == "forget" => {
-            if !(id.starts_with("x-") || id.starts_with("h-")) {
-                return Err(lexopt::Error::Custom(
-                    "forget takes a correction x-… or a hypothesis h-…; policy delete removes a policy"
-                        .into(),
-                ));
-            }
-            Cmd::Forget {
-                record: id.clone(),
-                json,
-            }
-        }
-        [w, id] if is_assist && w == "assist" => Cmd::Assist {
-            ask: assist::Ask {
-                work: id.clone(),
-                scope: scope.unwrap_or(muxa_protocol::AssistScope::Research),
-                workspace: some(new.workspace),
-                purpose: purpose.as_deref().map(stdin_or).transpose()?,
-                worker: new.worker,
-            },
-            json,
-        },
-        [w] if w == "work" => Cmd::Work { all, json },
-        [w, s, id] if w == "work" && s == "show" => Cmd::ShowWork {
-            work: id.clone(),
-            json,
-        },
-        [w, s, capture, rest @ ..] if w == "work" && s == "sort" => Cmd::Sort {
-            sort: sort_args(capture, rest, new.title, new.workspace)?,
-            json,
-        },
-        [w, a, id, rest @ ..] if w == "work" => Cmd::ChangeWork {
-            change: change_args(a, id, rest, new.title, new.workspace, due)?,
-            json,
-        },
         [w, r, id] if w == "task" && r == "recover" => Cmd::Recover {
             task: id.clone(),
             resolution,
@@ -982,86 +476,6 @@ fn parse_with(mut p: lexopt::Parser) -> Result<Option<(String, Cmd)>, lexopt::Er
         _ => return Err(lexopt::Error::Custom(USAGE.into())),
     };
     Ok(Some((bridge, cmd)))
-}
-
-fn some(s: String) -> Option<String> {
-    Some(s).filter(|s| !s.trim().is_empty())
-}
-
-/// `-` reads the text from stdin.
-fn stdin_or(arg: &str) -> Result<String, lexopt::Error> {
-    if arg != "-" {
-        return Ok(arg.to_owned());
-    }
-    let mut text = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut text)
-        .map_err(|e| lexopt::Error::Custom(format!("cannot read stdin: {e}").into()))?;
-    Ok(text)
-}
-
-fn sort_args(
-    capture: &str,
-    rest: &[String],
-    title: String,
-    workspace: String,
-) -> Result<work::Sort, lexopt::Error> {
-    let (title, workspace) = (some(title), some(workspace));
-    let (action, work) = match rest {
-        [a] if a == "new" => (muxa_protocol::SortAction::Work, None),
-        [a, id] if a == "link" => (muxa_protocol::SortAction::Link, Some(id.clone())),
-        [a] if a == "note" => (muxa_protocol::SortAction::Note, None),
-        _ => return Err(lexopt::Error::Custom(USAGE.into())),
-    };
-    if action != muxa_protocol::SortAction::Work && (title.is_some() || workspace.is_some()) {
-        return Err(lexopt::Error::Custom(
-            "--title and --workspace require work sort CAPTURE new".into(),
-        ));
-    }
-    Ok(work::Sort {
-        capture: capture.to_owned(),
-        action,
-        work,
-        title,
-        workspace,
-    })
-}
-
-fn change_args(
-    name: &str,
-    work: &str,
-    rest: &[String],
-    title: String,
-    workspace: String,
-    due: Option<muxa_protocol::Due>,
-) -> Result<work::Change, lexopt::Error> {
-    use muxa_protocol::WorkAction;
-    let action = work::action(name).ok_or_else(|| lexopt::Error::Custom(USAGE.into()))?;
-    let (title, workspace) = (some(title), some(workspace));
-    let into = match (action, rest) {
-        (WorkAction::Merge, [into]) => Some(into.clone()),
-        (WorkAction::Merge, _) => return Err(lexopt::Error::Custom("work merge WORK INTO".into())),
-        (_, []) => None,
-        _ => return Err(lexopt::Error::Custom(USAGE.into())),
-    };
-    let edits = title.is_some() || workspace.is_some() || due.is_some();
-    if name == "due" && (title.is_some() || workspace.is_some()) {
-        return Err(lexopt::Error::Custom(
-            "work due takes --at and --timezone only".into(),
-        ));
-    }
-    if (action == WorkAction::Edit) != edits {
-        return Err(lexopt::Error::Custom(
-            "work edit needs --title or --workspace, and only edit takes them".into(),
-        ));
-    }
-    Ok(work::Change {
-        work: work.to_owned(),
-        action,
-        title,
-        workspace,
-        into,
-        due,
-    })
 }
 
 fn main() -> ExitCode {
@@ -1131,14 +545,9 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             workspace,
             json,
         } => ask::ask(&mut conn, &repo, workspace, json).await,
-        Cmd::AskRoot {
-            workspace,
-            send,
-            json,
-        } => ask::root(&mut conn, &workspace, send, json).await,
+        Cmd::AskRoot { workspace, json } => ask::root(&mut conn, &workspace, json).await,
         Cmd::CloseAsk { session, json } => ask::close(&mut conn, &session, json).await,
         Cmd::NewTask { new, json } => tasks::create(conn, new, json).await,
-        Cmd::ProposeTask { proposal, json } => propose::propose(conn, proposal, json).await,
         Cmd::Close {
             task,
             status,
@@ -1175,36 +584,6 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<String, String> {
             action,
             json,
         } => routines::act(conn, &entry, action, json).await,
-        Cmd::Capture { new, json } => work::capture(&mut conn, new, json).await,
-        Cmd::Work { all, json } => work::list(&mut conn, all, json).await,
-        Cmd::Sort { sort, json } => work::sort(&mut conn, sort, json).await,
-        Cmd::ChangeWork { change, json } => work::change(&mut conn, change, json).await,
-        Cmd::ShowWork { work, json } => work::show(&mut conn, &work, json).await,
-        Cmd::Assist { ask, json } => assist::ask(&mut conn, ask, json).await,
-        Cmd::CancelRequest { request, json } => assist::cancel(&mut conn, &request, json).await,
-        Cmd::Staff { workspace, json } => staff::list(&mut conn, &workspace, json).await,
-        Cmd::Writes { workspace, json } => writes::list(&mut conn, &workspace, json).await,
-        Cmd::Memory { workspace, json } => memory::show(&mut conn, &workspace, json).await,
-        Cmd::ShowItem { item, json } => writes::show(conn, &item, json).await,
-        Cmd::ShowResult { target, json } => assist::show(&mut conn, &target, json).await,
-        Cmd::Notes {
-            target,
-            apply,
-            json,
-        } => assist::notes(&mut conn, &target, apply, json).await,
-        Cmd::Plan { json } => plan::show(&mut conn, json).await,
-        Cmd::PlanNow { minutes, json } => plan::now(&mut conn, minutes, json).await,
-        Cmd::Reorder { order, json } => plan::reorder(&mut conn, order, json).await,
-        Cmd::Dismiss { row, reason, json } => plan::dismiss(&mut conn, row, reason, json).await,
-        Cmd::Policies { json } => policy::list(&mut conn, json).await,
-        Cmd::AddPolicy { fields, json } => policy::add(&mut conn, fields, json).await,
-        Cmd::EditPolicy {
-            policy,
-            fields,
-            json,
-        } => policy::edit(&mut conn, &policy, fields, json).await,
-        Cmd::DeletePolicy { policy, json } => policy::delete(&mut conn, &policy, json).await,
-        Cmd::Forget { record, json } => policy::forget(&mut conn, &record, json).await,
         Cmd::DeleteInbox { days, json } => items::delete(conn, days, json).await,
     }
 }
@@ -1389,57 +768,6 @@ mod tests {
     }
 
     #[test]
-    fn task_propose_takes_a_proposal_and_start_is_start_task() {
-        let parse = |args: &[&str]| parse_with(lexopt::Parser::from_args(args.iter().copied()));
-        let proposed = parse(&[
-            "task",
-            "propose",
-            "--workspace",
-            "muxa",
-            "--repo",
-            "muxa",
-            "--title",
-            "Fix it",
-            "--goal",
-            "Guard the summary.",
-            "--work",
-            "w-1",
-            "--json",
-        ]);
-        assert!(matches!(
-            proposed,
-            Ok(Some((_, Cmd::ProposeTask { proposal, json: true })))
-                if proposal.repo.as_deref() == Some("muxa") && proposal.work.as_deref() == Some("w-1")
-        ));
-        assert!(
-            parse(&[
-                "task",
-                "propose",
-                "--workspace",
-                "muxa",
-                "--title",
-                "a\nb",
-                "--goal",
-                "g"
-            ])
-            .is_err()
-        );
-        assert!(parse(&["task", "done", "t-1", "--work", "w-1"]).is_err());
-        let answer = |args: &[&str]| match parse(args) {
-            Ok(Some((_, Cmd::Answer { answer, .. }))) => answer.action,
-            _ => InboxAction::Unknown,
-        };
-        assert_eq!(
-            answer(&["inbox", "answer", "i-1", "start"]),
-            InboxAction::StartTask
-        );
-        assert_eq!(
-            answer(&["inbox", "answer", "i-1", "start-task"]),
-            InboxAction::StartTask
-        );
-    }
-
-    #[test]
     fn ask_close_takes_a_session_and_ask_still_takes_a_repo() {
         let parse = |args: &[&str]| parse_with(lexopt::Parser::from_args(args.iter().copied()));
         assert!(matches!(
@@ -1451,15 +779,10 @@ mod tests {
             Ok(Some((_, Cmd::Ask { repo, .. }))) if repo == "close"
         ));
         assert!(matches!(
-            parse(&["ask", "--root", "--workspace", "secretary", "--json"]),
-            Ok(Some((_, Cmd::AskRoot { workspace, send: None, json: true }))) if workspace == "secretary"
+            parse(&["ask", "--root", "--workspace", "lisk", "--json"]),
+            Ok(Some((_, Cmd::AskRoot { workspace, json: true }))) if workspace == "lisk"
         ));
-        assert!(matches!(
-            parse(&["ask", "--root", "--workspace", "secretary", "--text", "Ask legal", "--work", "w-1"]),
-            Ok(Some((_, Cmd::AskRoot { send: Some(ask::SendText { text, work: Some(w) }), .. })))
-                if text == "Ask legal" && w == "w-1"
-        ));
-        assert!(parse(&["ask", "--root", "--workspace", "s", "--work", "w-1"]).is_err());
+        assert!(parse(&["ask", "--root", "--workspace", "lisk", "--text", "hi"]).is_err());
         assert!(parse(&["ask", "app", "--text", "hi"]).is_err());
     }
 

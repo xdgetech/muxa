@@ -16,8 +16,6 @@ pub const WORK_READ: u32 = 4;
 /// Level 5: `close-task` also closes an ask session, and a session carries
 /// `ask` (ADR 0039).
 pub const WORK_CLOSE_ASK: u32 = 5;
-/// Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041).
-pub const WORK_ASK_AGENT: u32 = 6;
 /// Level 7: `update-task` and `update-inbox` take `worktree`, and a Task's
 /// end removes its worktree (ADR 0043).
 pub const WORK_END_REMOVES: u32 = 7;
@@ -26,6 +24,9 @@ pub const WORK_DELETE_INBOX: u32 = 8;
 /// Level 15: `start-session` with `root` opens the workspace's Ask session at
 /// its root, also the overall assistant's (ADR 0054).
 pub const WORK_ASK_ROOT: u32 = 15;
+/// Level 19: the assistant layer is gone (ADR 0066): no Captures, Work items,
+/// plans, policies, staff, writes, workspace memory or the items they made.
+pub const WORK_NO_ASSISTANT: u32 = 19;
 
 /// `work:<level>` as `hello` carries it.
 pub fn work_capability(level: u32) -> String {
@@ -242,18 +243,10 @@ pub enum InboxAction {
     /// A `review` or `failure`: sends `text` to the agent as it is. An `ask`
     /// about a permission: picks the `cancel` option first (ADR 0033 §4a).
     Reply,
-    /// Any open item: sends `text` with the item to the workspace's Ask session,
-    /// and leaves the item open (ADR 0041, level 6).
-    AskAgent,
-    /// A `hypothesis`: makes a policy of it (level 11, ADR 0050).
-    Confirm,
     /// Any item: `delete-inbox` keeps it. It still takes every answer (ADR 0046, level 8).
     Protect,
     /// Any item: `delete-inbox` may remove it again.
     Unprotect,
-    /// A `result` item that offers a hand-off and a Task: starts the Task
-    /// (level 18, ADR 0060). Without a hand-off, `approve` starts it.
-    StartTask,
     /// A value a newer host added; shown as unknown.
     #[serde(other)]
     Unknown,

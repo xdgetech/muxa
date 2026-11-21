@@ -3,7 +3,6 @@
 //! out `update-inbox` on them, `delete` `delete-inbox`. A Routine's entries
 //! are listed as items too.
 pub mod answer;
-pub mod ask_agent;
 pub mod delete;
 pub mod produce;
 pub mod store;
@@ -54,9 +53,6 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
             None => vec![Dismiss],
         },
         ItemKind::Review => vec![Accept, Reply, KeepOpen],
-        // An assistant run's failure has no Task to drop (ADR 0048 addendum);
-        // Retry runs it again (ADR 0061).
-        ItemKind::Failure if item.task.is_none() => vec![Retry, Dismiss],
         // Retry and Reply reach the agent: they need its session.
         ItemKind::Failure if item.session.is_none() => vec![Drop, Dismiss],
         ItemKind::Failure => vec![Retry, Reply, Drop, Dismiss],
@@ -64,48 +60,9 @@ pub fn answers(item: &InboxItem) -> Vec<InboxAction> {
         ItemKind::Proposal if item.routine.is_none() && item.task.is_some() => vec![Branch, Keep],
         ItemKind::Proposal => vec![Approve, Reject],
         ItemKind::Briefing => vec![Dismiss],
-        // The overall assistant's proposals (ADR 0049 §4) and a staff
-        // member's hand-off from before ADR 0058: no agent to ask.
-        ItemKind::Sort | ItemKind::Delegate | ItemKind::Handoff => {
-            return vec![Approve, Reject, Later];
-        }
-        // A proposed write (ADR 0052 §2); `reply` asks for a new draft (ADR 0058 §4).
-        ItemKind::Write => return vec![Approve, Reject, Reply, Later],
-        // ADR 0058 §2: hand off while offered, send, done, later.
-        // ADR 0060 §2: Start Task is `approve` without a hand-off, else `start-task`.
-        ItemKind::Result => {
-            let handoff = item.result.as_ref().is_some_and(|r| r.handoff.is_some());
-            let task =
-                item.result.as_ref().is_some_and(|r| r.task.is_some()) && item.task.is_none();
-            let mut a = match (handoff, task) {
-                (true, true) => vec![Approve, StartTask],
-                (true, false) | (false, true) => vec![Approve],
-                (false, false) => Vec::new(),
-            };
-            a.extend([Reply, Dismiss, Later]);
-            return a;
-        }
-        // ADR 0060 §3: the secretary's proposed Task; `reply` goes to the secretary.
-        ItemKind::NewTask => return vec![Approve, Reply, Dismiss, Later],
-        // ADR 0050 §3: `assistant::hypotheses` answers confirm and reject.
-        ItemKind::Hypothesis => return vec![Confirm, Reject, Later],
-        // ADR 0053 §3: a text over 4 KiB, or with control characters, is
-        // copied by hand.
-        ItemKind::Memory => {
-            let text = item.memory.as_ref().map_or("", |m| m.text.as_str());
-            return if crate::workspace_memory::approvable(text) {
-                vec![Approve, Reject, Later]
-            } else {
-                vec![Reject, Later]
-            };
-        }
         // Stored by a newer host: no answer has a known meaning.
         ItemKind::Unknown => return Vec::new(),
     };
-    // An item with a session sends its text to its own agent (ADR 0040 §4).
-    if item.session.is_none() {
-        out.push(AskAgent);
-    }
     out.push(Later);
     out
 }
@@ -122,11 +79,6 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         Disposition::Unknown => (ItemState::Resolved, None),
     };
     let mut item = InboxItem {
-        new_task: None,
-        result: None,
-        memory: None,
-        write: None,
-        handoff: None,
         id: entry.id.clone(),
         kind: match entry.kind {
             InboxEntryKind::Briefing => ItemKind::Briefing,
@@ -157,9 +109,6 @@ pub fn from_entry(entry: &InboxEntry) -> InboxItem {
         },
         routine: Some(entry.routine.clone()),
         proposal: entry.proposal.clone(),
-        sort: None,
-        delegate: None,
-        hypothesis: None,
         answers: Vec::new(),
     };
     item.answers = answers(&item);
@@ -288,7 +237,7 @@ mod tests {
     fn answers_follow_the_kind_and_the_prompt() {
         use InboxAction::*;
         let mut ask = item(ItemKind::Ask, ItemState::Open, 1);
-        assert_eq!(answers(&ask), [Dismiss, AskAgent, Later]);
+        assert_eq!(answers(&ask), [Dismiss, Later]);
         ask.prompt = Some(ChatPrompt {
             entry: "toolu_1".into(),
             kind: PromptKind::Permission,
@@ -306,13 +255,13 @@ mod tests {
                 },
             ],
         });
-        assert_eq!(answers(&ask), [Approve, Reject, Reply, AskAgent, Later]);
+        assert_eq!(answers(&ask), [Approve, Reject, Reply, Later]);
         if let Some(p) = ask.prompt.as_mut() {
             p.kind = PromptKind::Question;
         }
         assert_eq!(
             answers(&ask),
-            [Choose, Reject, AskAgent, Later],
+            [Choose, Reject, Later],
             "a question takes no reply"
         );
         // Claude Code's plan menu: only Keep planning is known; approve
@@ -321,65 +270,19 @@ mod tests {
             p.kind = PromptKind::Plan;
             p.options.remove(0);
         }
-        assert_eq!(answers(&ask), [Reject, Reply, AskAgent, Later], "no pane");
+        assert_eq!(answers(&ask), [Reject, Reply, Later], "no pane");
         ask.pane = Some("%4".into());
-        assert_eq!(answers(&ask), [Approve, Reject, Reply, AskAgent, Later]);
+        assert_eq!(answers(&ask), [Approve, Reject, Reply, Later]);
         assert_eq!(
             answers(&item(ItemKind::Review, ItemState::Open, 1)),
-            [Accept, Reply, KeepOpen, AskAgent, Later]
+            [Accept, Reply, KeepOpen, Later]
         );
         // An agent's failure has its session; a failed start may not.
         let mut failure = item(ItemKind::Failure, ItemState::Open, 1);
-        assert_eq!(answers(&failure), [Drop, Dismiss, AskAgent, Later]);
+        assert_eq!(answers(&failure), [Drop, Dismiss, Later]);
         failure.session = Some("$1".into());
         assert_eq!(answers(&failure), [Retry, Reply, Drop, Dismiss, Later]);
-        // An assistant run's failure: no Task to drop; Retry runs it again.
-        failure.session = None;
-        failure.task = None;
-        assert_eq!(answers(&failure), [Retry, Dismiss, AskAgent, Later]);
         assert!(answers(&item(ItemKind::Review, ItemState::Resolved, 1)).is_empty());
-    }
-
-    #[test]
-    fn a_proposed_task_is_approve_alone_and_start_task_beside_a_hand_off() {
-        use InboxAction::*;
-        let proposal = muxa_protocol::TaskProposal {
-            workspace: "w".into(),
-            repo: None,
-            title: "Fix".into(),
-            goal: "Fix it.".into(),
-            work: None,
-            step: Some(1),
-            worker: None,
-        };
-        let mut r = item(ItemKind::Result, ItemState::Open, 1);
-        r.task = None;
-        r.result = Some(muxa_protocol::ResultReview {
-            request: "q-0000000a".into(),
-            version: 1,
-            step: 1,
-            work: "w-0000000b".into(),
-            worker: None,
-            findings: Vec::new(),
-            open_questions: Vec::new(),
-            next: Vec::new(),
-            files: Vec::new(),
-            handoff: None,
-            task: Some(proposal.clone()),
-        });
-        assert_eq!(answers(&r), [Approve, Reply, Dismiss, Later]);
-        if let Some(x) = r.result.as_mut() {
-            x.handoff = Some(muxa_protocol::Handoff {
-                worker: "b".into(),
-                purpose: "p".into(),
-            });
-        }
-        assert_eq!(answers(&r), [Approve, StartTask, Reply, Dismiss, Later]);
-        r.task = Some("t-000001".into());
-        assert_eq!(answers(&r), [Approve, Reply, Dismiss, Later], "started");
-        let mut n = item(ItemKind::NewTask, ItemState::Open, 1);
-        n.new_task = Some(proposal);
-        assert_eq!(answers(&n), [Approve, Reply, Dismiss, Later]);
     }
 
     #[test]
@@ -387,11 +290,11 @@ mod tests {
         use InboxAction::*;
         let mut changed = item(ItemKind::Proposal, ItemState::Open, 1);
         changed.task = Some("t-000001".into());
-        assert_eq!(answers(&changed), [Branch, Keep, AskAgent, Later]);
+        assert_eq!(answers(&changed), [Branch, Keep, Later]);
         changed.routine = Some("Morning".into());
         assert_eq!(
             answers(&changed),
-            [Approve, Reject, AskAgent, Later],
+            [Approve, Reject, Later],
             "a Routine's proposal"
         );
     }

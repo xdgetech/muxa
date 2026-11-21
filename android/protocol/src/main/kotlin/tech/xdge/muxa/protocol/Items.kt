@@ -50,22 +50,6 @@ data class InboxItem(
     val attachments: Attachments = Attachments(),
     val routine: String? = null,
     val proposal: Proposal? = null,
-    /** With kind `sort`: what approve does (`work` level 10, ADR 0049). */
-    val sort: SortProposal? = null,
-    /** With kind `delegate`: what approve does. */
-    val delegate: DelegateProposal? = null,
-    /** With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050). */
-    val hypothesis: HypothesisProposal? = null,
-    /** With kind `handoff`: the step approve starts (`work` level 12, ADR 0051). */
-    val handoff: HandoffProposal? = null,
-    /** With kind `write`: the exact write approve hands the writer (`work` level 13, ADR 0052). After approve, [task] is the writer's Task. */
-    val write: WriteProposal? = null,
-    /** With kind `memory`: the text approve appends to the workspace's WORKSPACE.md (`work` level 14, ADR 0053). [task] is the same Task. */
-    val memory: MemoryProposal? = null,
-    /** With kind `result`: the Result to review (`work` level 16, ADR 0058). */
-    val result: ResultReview? = null,
-    /** With kind `new-task`: the Task the secretary proposes (`work` level 18, ADR 0060). After Start Task, [task] is that Task. */
-    val newTask: TaskProposal? = null,
     /** The answers the host accepts now, in the order to show them. Unknown actions are left out: PROTOCOL.md says to show them as nothing. */
     @Serializable(with = KnownActionsSerializer::class)
     val answers: List<InboxAction> = emptyList(),
@@ -87,29 +71,6 @@ value class ItemKind(val raw: String) {
         val PROPOSAL = ItemKind("proposal")
         val BRIEFING = ItemKind("briefing")
 
-        /** Level 10: the overall assistant proposes to sort a Capture. */
-        val SORT = ItemKind("sort")
-
-        /** Level 10: the overall assistant proposes to ask a workspace's delegate. */
-        val DELEGATE = ItemKind("delegate")
-
-        /** Level 11: the overall assistant proposes a hypothesis about the user. */
-        val HYPOTHESIS = ItemKind("hypothesis")
-
-        /** Level 12: a staff member asks to pass a request on to another. */
-        val HANDOFF = ItemKind("handoff")
-
-        /** Level 13: a Result proposes a write outside the host. */
-        val WRITE = ItemKind("write")
-
-        /** Level 14: a Task's end proposes to add to the workspace memory. */
-        val MEMORY = ItemKind("memory")
-
-        /** Level 16: a request's Result to review (ADR 0058). */
-        val RESULT = ItemKind("result")
-
-        /** Level 18: the secretary proposes a Task to start (ADR 0060). */
-        val NEW_TASK = ItemKind("new-task")
     }
 }
 

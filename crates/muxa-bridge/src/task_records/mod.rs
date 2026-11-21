@@ -9,9 +9,7 @@ pub(crate) mod close;
 mod create;
 pub(crate) mod end;
 mod facts;
-pub(crate) mod for_workspace;
 pub(crate) mod handoff;
-mod memory;
 pub(crate) mod observation;
 pub(crate) mod owned;
 pub(crate) mod park;
@@ -130,8 +128,6 @@ pub struct Context {
     pub records: Arc<Config>,
     pub agents: Arc<Registry>,
     pub pending: Pending,
-    /// This process is the host daemon: only it runs assistant requests (ADR 0048 §8).
-    pub daemon: bool,
 }
 
 impl Context {
@@ -172,19 +168,6 @@ pub fn is_record_request(req: &Request) -> bool {
             | Request::RunRoutine { .. }
             | Request::ListInbox { .. }
             | Request::UpdateInbox { .. }
-            | Request::Capture { .. }
-            | Request::SortCapture { .. }
-            | Request::UpdateWork { .. }
-            | Request::RequestAssistant { .. }
-            | Request::CancelRequest { .. }
-            | Request::GetWork { .. }
-            | Request::ApplyNotes { .. }
-            | Request::PlanNow { .. }
-            | Request::AddPolicy { .. }
-            | Request::UpdatePolicy { .. }
-            | Request::UpdatePlan { .. }
-            | Request::Forget { .. }
-            | Request::ProposeTask { .. }
             | Request::DeleteInbox { .. }
     )
 }
@@ -233,8 +216,6 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
             r#loop,
             worker,
             read,
-            work,
-            work_rev,
         } if !(read && r#loop.is_some()) => {
             let new = NewTask {
                 worker,
@@ -247,21 +228,10 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
                 base,
                 read,
                 routine: None,
-                assistant: None,
-                work: None,
                 plan: false,
             };
             let spec = r#loop.map(convert::loop_spec);
-            let made = match (work, work_rev) {
-                (None, None) => create_with_loop(cx, new, spec).await,
-                (Some(work), Some(rev)) => {
-                    crate::assistant::start::create_task(cx, new, spec, work, rev).await
-                }
-                _ => Err(error_body(
-                    ErrorCode::BadRequest,
-                    "create-task: work and workRev come together",
-                )),
-            };
+            let made = create_with_loop(cx, new, spec).await;
             match made {
                 Ok((record, error)) => (saved(id, record).into_iter().collect(), error),
                 Err(e) => (Vec::new(), Some(e)),
@@ -335,19 +305,6 @@ pub async fn handle(cx: &Context, req: Request) -> Vec<Message> {
         | Request::ListInbox { .. }
         | Request::UpdateInbox { .. }
         | Request::DeleteInbox { .. }) => crate::routines::handle(cx, req).await,
-        req @ (Request::Capture { .. }
-        | Request::SortCapture { .. }
-        | Request::UpdateWork { .. }
-        | Request::RequestAssistant { .. }
-        | Request::CancelRequest { .. }
-        | Request::GetWork { .. }
-        | Request::ApplyNotes { .. }
-        | Request::PlanNow { .. }
-        | Request::AddPolicy { .. }
-        | Request::UpdatePolicy { .. }
-        | Request::UpdatePlan { .. }
-        | Request::Forget { .. }
-        | Request::ProposeTask { .. }) => crate::assistant::handle(cx, req).await,
         _ => (
             Vec::new(),
             Some(error_body(
@@ -490,8 +447,7 @@ pub async fn start_session(
             crate::tasks::ask::start(client, &tasks.command, &workspaces, workspace, repo).await
         }
         (None, true) => {
-            let state_dir = config.state_dir.as_deref();
-            crate::tasks::ask::open_root(client, &tasks.command, &workspaces, workspace, state_dir)
+            crate::tasks::ask::open_root(client, &tasks.command, &workspaces, workspace)
                 .await
                 .map(|(launched, _)| launched)
         }
@@ -664,24 +620,12 @@ fn write_status(
         None => store.get(task).map_err(|e| store_error(&e))?.rev,
     };
     let ends = matches!(status, TaskStatus::Done | TaskStatus::Dropped);
-    // A broken workspaces file is logged by the load; the end goes on without memory.
-    let workspaces = ends.then(|| config.load_workspaces().ok()).flatten();
-    let mut proposed = None;
     let record = store
-        .update(task, rev, |r| {
-            r.status = new;
-            // Under the Task's lock, before its session closes (ADR 0053 §3).
-            proposed = workspaces
-                .as_ref()
-                .and_then(|w| crate::workspace_memory::closeout::read(w, r));
-        })
+        .update(task, rev, |r| r.status = new)
         .map_err(|e| store_error(&e))?;
     tracing::info!(task = %record.id, rev = record.rev, "task status set");
     if ends {
         crate::items::produce::task_closed(config, task);
-    }
-    if let Some(end) = &proposed {
-        crate::workspace_memory::closeout::propose(config, end, crate::records::now());
     }
     Ok(record)
 }

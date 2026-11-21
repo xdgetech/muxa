@@ -1,7 +1,7 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
-SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
+SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
 
 # xcodebuild and the swift-testing macros need Xcode, not the Command Line Tools.
@@ -42,12 +42,6 @@ test-herdr:
 test-harness:
 	bats tests/harness
 	python3 -m unittest discover -s tests/harness -p 'test_ios_simulator.py'
-
-# muxa for tmux (tmux/; tmux >= 3.4, fzf, jq): its bats tests, each on its own
-# tmux server, and the contract test of new.sh against the built-in launcher.
-test-tmux-plugin:
-	bats tmux/tests
-	MUXA_TMUX_AGENTS=$(CURDIR)/tmux cargo test -p muxa-bridge --features tmux-integration --test tmux_agents
 
 # MuxaKit on macOS. Needs Xcode's toolchain (swift-testing); see DEVELOPER_DIR above.
 test-apple:

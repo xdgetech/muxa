@@ -53,11 +53,6 @@ object Wire {
         kind<Message.InboxSaved>("inbox-saved"),
         kind<Message.InboxDeleted>("inbox-deleted"),
         kind<Message.SessionStarted>("session-started"),
-        kind<Message.CaptureSaved>("capture-saved"),
-        kind<Message.WorkSaved>("work-saved"),
-        kind<Message.WorkDetail>("work-detail"),
-        kind<Message.PlanSaved>("plan-saved"),
-        kind<Message.PolicySaved>("policy-saved"),
         kind<Message.Bye>("bye"),
     )
 
@@ -98,19 +93,6 @@ object Wire {
         kind<Request.UpdateInbox>("update-inbox"),
         kind<Request.DeleteInbox>("delete-inbox"),
         kind<Request.StartSession>("start-session"),
-        kind<Request.Capture>("capture"),
-        kind<Request.SortCapture>("sort-capture"),
-        kind<Request.UpdateWork>("update-work"),
-        kind<Request.RequestAssistant>("request-assistant"),
-        kind<Request.CancelRequest>("cancel-request"),
-        kind<Request.GetWork>("get-work"),
-        kind<Request.ApplyNotes>("apply-notes"),
-        kind<Request.PlanNow>("plan-now"),
-        kind<Request.AddPolicy>("add-policy"),
-        kind<Request.UpdatePolicy>("update-policy"),
-        kind<Request.UpdatePlan>("update-plan"),
-        kind<Request.Forget>("forget"),
-        kind<Request.ProposeTask>("propose-task"),
         kind<Request.Bye>("bye"),
     )
 

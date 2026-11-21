@@ -7,8 +7,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::staff::MAX_DESCRIPTION;
 use super::{AgentSettings, LoopSpec, Workspace, Workspaces};
+
+/// Bytes: a worker's description.
+const MAX_DESCRIPTION: usize = 1024;
 
 pub const MAX_INSTRUCTIONS: usize = 16 * 1024;
 const MAX_ARGS: usize = 32;

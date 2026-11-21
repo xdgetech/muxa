@@ -3,7 +3,6 @@
 //! later daemon can link it.
 
 pub mod agent_env;
-pub mod assistant;
 pub mod cron;
 pub mod lifecycle;
 pub mod loops;
@@ -15,11 +14,9 @@ pub mod repos;
 pub mod restart_files;
 pub mod routines;
 pub mod runs;
-pub mod staff;
 pub mod store;
 pub mod workers;
 pub mod workspaces;
-pub mod writer;
 
 use std::path::PathBuf;
 
@@ -130,21 +127,13 @@ fn new_id() -> Result<String, getrandom::Error> {
 mod tests;
 
 /// The record field that names a background run's kind: `routine-run`
-/// (ADR 0026) or `assistant-run` (ADR 0048). A Task has none.
+/// (ADR 0026), or `assistant-run` from before ADR 0066. A Task has none.
 pub const KIND_FIELD: &str = "kind";
-/// The Work item a Task was started for (ADR 0048).
-pub const WORK_FIELD: &str = "work";
 
 impl Record {
     /// W1 reads the additive field without changing older-record rewrite behavior.
     pub fn worker(&self) -> Option<&str> {
         self.extra.get("worker").and_then(serde_json::Value::as_str)
-    }
-
-    pub fn work(&self) -> Option<&str> {
-        self.extra
-            .get(WORK_FIELD)
-            .and_then(serde_json::Value::as_str)
     }
 
     /// A run muxa started for itself, not a Task (ADR 0048 section 5). A

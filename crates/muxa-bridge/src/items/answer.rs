@@ -13,7 +13,6 @@ use muxa_tmux::PaneId;
 
 use super::store::{ItemStore, TaskItems};
 use super::{answers, shown};
-use crate::assistant::corrections;
 use crate::convert::error_body;
 use crate::records::now;
 use crate::routines::store::StateError;
@@ -71,39 +70,10 @@ enum Plan {
 pub async fn update(cx: &Context, answer: Answer) -> Result<InboxItem, ErrorBody> {
     let (task, item) = find(cx, &answer.item).await?;
     let plan = plan(&shown(&item), &answer)?;
-    let reason = reason(&item, &answer)?;
     act(cx, &task, plan.clone(), answer.worktree).await?;
     let saved = close(cx, &task, &answer.item, answer.action, plan).await?;
     tracing::info!(item = %answer.item, task, action = ?answer.action, "inbox item answered");
-    let (config, item, action) = (Arc::clone(&cx.records), saved.clone(), answer.action);
-    // The item is written; the correction is a signal on top (ADR 0050 §2).
-    let recorded = blocking(move || {
-        corrections::after_answer(&config, &item, action, reason, now());
-        // Done on a Result ends its chain (ADR 0058 §2).
-        if let (InboxAction::Dismiss, Some(r)) = (action, &item.result) {
-            crate::assistant::chain::done(&config, &r.request, r.version)?;
-        }
-        Ok(())
-    })
-    .await;
-    if let Err(e) = recorded {
-        tracing::warn!(item = %saved.id, error = %e.message, "cannot record a correction");
-    }
     Ok(saved)
-}
-
-/// A correction's reason: `text` with `later`, and with `reject` on a
-/// `sort` or `delegate` item (ADR 0050 §2).
-fn reason(item: &InboxItem, answer: &Answer) -> Result<Option<String>, ErrorBody> {
-    let proposal = matches!(
-        item.kind,
-        ItemKind::Sort | ItemKind::Delegate | ItemKind::Write
-    );
-    match answer.action {
-        InboxAction::Later => corrections::check_reason(answer.text.as_deref()),
-        InboxAction::Reject if proposal => corrections::check_reason(answer.text.as_deref()),
-        _ => Ok(None),
-    }
 }
 
 /// The Task that holds the item, and the item as stored.
@@ -143,64 +113,10 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Later => Plan::Later,
         Accept => Plan::Status(TaskStatus::Done),
         Drop => Plan::Status(TaskStatus::Dropped),
-        // `routines::handle` sends an assistant run's failure to `assistant::proposals::retry`.
-        Retry if item.task.is_none() => {
-            return Err(bad(
-                "retry on an assistant failure runs through the assistant",
-            ));
-        }
         Retry => Plan::Restart,
         Branch => Plan::Branch,
         // `answers` never lists it, so the check above refused it already.
         Unknown => return Err(not_allowed(item, answer.action, &allowed)),
-        // `routines::handle` sends them to `assistant::hypotheses` first.
-        Confirm => return Err(bad("confirm on a hypothesis runs through the assistant")),
-        Reject if item.kind == ItemKind::Hypothesis => {
-            return Err(bad("reject on a hypothesis runs through the assistant"));
-        }
-        // Approve runs in `assistant::proposals`, which `routines::handle` calls first.
-        // Reject on a hand-off ends the chain with the results it has (ADR 0051 §3);
-        // on a write it makes no Task (ADR 0052 §2); on a memory item it writes nothing.
-        Reject
-            if matches!(
-                item.kind,
-                ItemKind::Sort
-                    | ItemKind::Delegate
-                    | ItemKind::Handoff
-                    | ItemKind::Write
-                    | ItemKind::Memory
-            ) =>
-        {
-            Plan::Nothing
-        }
-        Approve
-            if matches!(
-                item.kind,
-                ItemKind::Sort
-                    | ItemKind::Delegate
-                    | ItemKind::Handoff
-                    | ItemKind::Write
-                    | ItemKind::Memory
-                    | ItemKind::Result
-                    | ItemKind::NewTask
-            ) =>
-        {
-            return Err(bad("approve on a proposal item runs through the assistant"));
-        }
-        // `assistant::proposals` starts the proposed Task (ADR 0060 §2).
-        StartTask => return Err(bad("start-task runs through the assistant")),
-        // Send and Revise ask a staff member again (ADR 0058 §3, §4); on a
-        // `new-task` item Send goes to the secretary (ADR 0060 §3).
-        Reply
-            if matches!(
-                item.kind,
-                ItemKind::Result | ItemKind::Write | ItemKind::NewTask
-            ) =>
-        {
-            return Err(bad(
-                "reply on a result or write item runs through the assistant",
-            ));
-        }
         Approve if plan_prompt(item) => match pick(item, Reject, None)? {
             Plan::Pick { pane, asked, .. } => Plan::ApproveMenu { pane, asked },
             other => other,
@@ -229,8 +145,6 @@ fn plan(item: &InboxItem, answer: &Answer) -> Result<Plan, ErrorBody> {
         Protect => Plan::Protect(true),
         Unprotect => Plan::Protect(false),
         KeepOpen | Keep | Dismiss => Plan::Nothing,
-        // `routines::handle` sends it to `items::ask_agent` first.
-        AskAgent => return Err(bad("ask-agent is not an answer to the Task")),
     })
 }
 

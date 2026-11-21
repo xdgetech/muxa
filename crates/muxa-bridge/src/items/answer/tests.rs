@@ -82,7 +82,6 @@ fn fixture(item: InboxItem) -> Fixture {
         }),
         agents: Arc::new(Registry::new(Vec::new())),
         pending: Pending::default(),
-        daemon: false,
     };
     Fixture { dir, cx, task }
 }
@@ -190,7 +189,7 @@ async fn an_unknown_item_or_an_answer_it_does_not_take_is_a_bad_request() {
     assert_eq!(e.code, ErrorCode::BadRequest);
     assert!(
         e.message
-            .contains("it takes accept, reply, keep-open, ask-agent, later, or read"),
+            .contains("it takes accept, reply, keep-open, later, or read"),
         "{}",
         e.message
     );

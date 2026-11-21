@@ -112,14 +112,10 @@ where
         // Levels add up: 4 has the Inbox items of 3 (ADR 0033) and reading Tasks (ADR 0034),
         // 5 closes ask sessions (ADR 0039), 6 asks the workspace's agent from an item (ADR 0041),
         // 7 removes a Task's worktree at its end (ADR 0043), 8 protects and deletes items (ADR 0046),
-        // 9 keeps Captures and Work items (ADR 0048), 10 adds delegate notes, plans, pins and
-        // due dates (ADR 0049), 11 policies, corrections and hypotheses (ADR 0050), 12 staff
-        // and hand-offs (ADR 0051), 13 write proposals (ADR 0052), 14 workspace memory (ADR 0053),
-        // 15 opens a workspace's root Ask session without an item (ADR 0054), 16 makes every
-        // request Result an item to review (ADR 0058), 17 sends a message about a Work item
-        // to the secretary and says what a Re-rank has left today (ADR 0059).
+        // 15 opens a workspace's root Ask session (ADR 0054), and 19 is the host
+        // without the assistant layer of levels 9 to 18 (ADR 0066).
         capabilities.push(muxa_protocol::work_capability(
-            muxa_protocol::WORK_TASK_PROPOSALS,
+            muxa_protocol::WORK_NO_ASSISTANT,
         ));
     }
     // Checked once per session (ADR 0019); each record request looks again.
@@ -627,54 +623,8 @@ impl Worker {
             Request::StartSession {
                 id,
                 workspace,
-                repo: None,
-                root: true,
-                text: Some(text),
-                work,
-            } => {
-                let (cx, out) = (self.records_context(), self.out.clone());
-                self.pending.spawn(async move {
-                    let sent = crate::items::ask_agent::ask_root(
-                        &cx,
-                        id,
-                        &workspace,
-                        work.as_deref(),
-                        &text,
-                    )
-                    .await;
-                    let error = match sent {
-                        Ok(messages) => {
-                            for msg in messages {
-                                let _ = out.send(msg).await;
-                            }
-                            None
-                        }
-                        Err(e) => Some(e),
-                    };
-                    let _ = out
-                        .send(Message::Result {
-                            id: Some(id),
-                            error,
-                            sessions: None,
-                        })
-                        .await;
-                });
-                return None;
-            }
-            Request::StartSession { text: Some(_), .. }
-            | Request::StartSession { work: Some(_), .. } => {
-                return Some(Err(error_body(
-                    ErrorCode::BadRequest,
-                    "start-session takes text only with root and without a repo, \
-                     and work only with text",
-                )));
-            }
-            Request::StartSession {
-                id,
-                workspace,
                 repo,
                 root,
-                ..
             } => {
                 let client = Arc::clone(&self.client);
                 let config = Arc::clone(&self.tasks);
@@ -751,17 +701,13 @@ impl Worker {
                 Ok(p) => timed(muxa_tmux::paste(client, p, &text)).await,
                 Err(e) => Err(e),
             },
-            // Only the daemon runs loops (ADR 0019) and assistant requests
-            // (ADR 0048 §8). A create takes seconds.
+            // Only the daemon runs loops (ADR 0019). A create takes seconds.
             req @ (Request::CreateTask {
                 r#loop: Some(_), ..
             }
             | Request::StartLoop { .. }
             | Request::StopLoop { .. }
-            | Request::RunRoutine { .. }
-            | Request::RequestAssistant { .. }
-            | Request::CancelRequest { .. }
-            | Request::PlanNow { .. }) => {
+            | Request::RunRoutine { .. }) => {
                 let (dir, out) = (self.daemon_dir.clone(), self.out.clone());
                 self.pending.spawn(async move {
                     for msg in task_records::remote::serve_loop(dir.as_deref(), req).await {
@@ -776,16 +722,7 @@ impl Worker {
             | Request::BranchTask { .. }
             | Request::ParkTask { .. }
             | Request::RecoverRestart { .. }
-            | Request::UpdateInbox { .. }
-            | Request::Capture { .. }
-            | Request::SortCapture { .. }
-            | Request::UpdateWork { .. }
-            | Request::ApplyNotes { .. }
-            | Request::AddPolicy { .. }
-            | Request::UpdatePolicy { .. }
-            | Request::UpdatePlan { .. }
-            | Request::Forget { .. }
-            | Request::ProposeTask { .. }) => {
+            | Request::UpdateInbox { .. }) => {
                 let (cx, dir, out) = (
                     self.records_context(),
                     self.daemon_dir.clone(),
@@ -802,7 +739,6 @@ impl Worker {
             | Request::UpdateTask { .. }
             | Request::ListRoutines { .. }
             | Request::ListInbox { .. }
-            | Request::GetWork { .. }
             | Request::DeleteInbox { .. }) => {
                 let answer = task_records::remote::serve(
                     &self.records_context(),
@@ -837,7 +773,6 @@ impl Worker {
             records: Arc::clone(&self.records),
             agents: Arc::clone(&self.agents),
             pending: self.pending.clone(),
-            daemon: false,
         }
     }
 

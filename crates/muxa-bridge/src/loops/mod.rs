@@ -345,8 +345,6 @@ impl Engine {
                     };
                     let prompt = if record.is_routine_run() {
                         crate::routines::record::fail_prompt(attempt)
-                    } else if record.is_assistant_run() {
-                        crate::assistant::record::fail_prompt(record, attempt)
                     } else {
                         typing::fail_prompt(attempt)
                     };
@@ -504,14 +502,9 @@ impl Engine {
         env: Vec<(String, String)>,
         claim: crate::records::store::ClaimedTask,
     ) {
-        // muxa's own checks run in process (ADR 0026 section 3, ADR 0048 §4).
+        // muxa's own checks run in process (ADR 0026 section 3).
         let in_process: Option<(InProcessCheck, &'static str)> = if record.is_routine_run() {
             Some((crate::routines::check::run, "check the routine output of"))
-        } else if record.is_assistant_run() {
-            Some((
-                crate::assistant::check::run,
-                "check the assistant result of",
-            ))
         } else {
             None
         };
@@ -597,9 +590,6 @@ fn write(dir: &Path, task: &str, old: &Loop, new: &Loop) -> Result<bool, StoreEr
         match result {
             Ok(r) => {
                 tracing::info!(task, rev = r.rev, state = %String::from(new.state.clone()), "loop saved");
-                if r.is_assistant_run() {
-                    crate::assistant::check::stopped(dir, &r, new);
-                }
                 return Ok(true);
             }
             Err(StoreError::Conflict { .. }) => continue,

@@ -39,25 +39,6 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
     public var attachments: Attachments
     public var routine: String?
     public var proposal: Proposal?
-    /// With kind `sort`: what approve does (`work` level 10, ADR 0049).
-    public var sort: SortProposal?
-    /// With kind `delegate`: what approve does.
-    public var delegate: DelegateProposal?
-    /// With kind `hypothesis`: what confirm makes a policy of (`work` level 11, ADR 0050).
-    public var hypothesis: HypothesisProposal?
-    /// With kind `handoff`: the step approve starts (`work` level 12, ADR 0051).
-    public var handoff: HandoffProposal?
-    /// With kind `write`: the exact write approve hands the writer (`work` level 13,
-    /// ADR 0052). After approve, `task` is the writer's Task.
-    public var write: WriteProposal?
-    /// With kind `memory`: the text approve appends to the workspace's WORKSPACE.md
-    /// (`work` level 14, ADR 0053). `task` is the same Task.
-    public var memory: MemoryProposal?
-    /// With kind `result`: the Result to review (`work` level 16, ADR 0058).
-    public var result: ResultReview?
-    /// With kind `new-task`: the Task the secretary proposes (`work` level 18, ADR 0060).
-    /// After Start Task, `task` is the new Task.
-    public var newTask: TaskProposal?
     /// The answers the host accepts now, in the order to show them. Unknown
     /// actions are left out: PROTOCOL.md says to show them as nothing.
     public var answers: [InboxAction]
@@ -67,10 +48,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         createdAt: UInt64, readAt: UInt64? = nil, laterAt: UInt64? = nil, until: UInt64? = nil,
         protectedAt: UInt64? = nil, answeredAt: UInt64? = nil, answer: InboxAction? = nil, summary: String? = nil, task: String? = nil, session: String? = nil,
         pane: String? = nil, prompt: ChatPrompt? = nil, attachments: Attachments = Attachments(),
-        routine: String? = nil, proposal: Proposal? = nil, sort: SortProposal? = nil,
-        delegate: DelegateProposal? = nil, hypothesis: HypothesisProposal? = nil, handoff: HandoffProposal? = nil,
-        write: WriteProposal? = nil, memory: MemoryProposal? = nil, result: ResultReview? = nil,
-        newTask: TaskProposal? = nil, answers: [InboxAction] = []
+        routine: String? = nil, proposal: Proposal? = nil, answers: [InboxAction] = []
     ) {
         self.id = id
         self.kind = kind
@@ -93,14 +71,6 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
         self.attachments = attachments
         self.routine = routine
         self.proposal = proposal
-        self.sort = sort
-        self.delegate = delegate
-        self.hypothesis = hypothesis
-        self.handoff = handoff
-        self.write = write
-        self.memory = memory
-        self.result = result
-        self.newTask = newTask
         self.answers = answers
     }
 }
@@ -108,7 +78,7 @@ public struct InboxItem: Equatable, Sendable, Identifiable {
 extension InboxItem: Codable {
     private enum Key: String, CodingKey {
         case id, kind, state, question, workspace, title, createdAt, readAt, laterAt, until, protectedAt, answeredAt, answer
-        case summary, task, session, pane, prompt, attachments, routine, proposal, sort, delegate, hypothesis, handoff, write, memory, result, newTask, answers
+        case summary, task, session, pane, prompt, attachments, routine, proposal, answers
     }
 
     public init(from decoder: any Decoder) throws {
@@ -134,14 +104,6 @@ extension InboxItem: Codable {
         attachments = try c.decodeIfPresent(Attachments.self, forKey: .attachments) ?? Attachments()
         routine = try c.decodeIfPresent(String.self, forKey: .routine)
         proposal = try c.decodeIfPresent(Proposal.self, forKey: .proposal)
-        sort = try c.decodeIfPresent(SortProposal.self, forKey: .sort)
-        delegate = try c.decodeIfPresent(DelegateProposal.self, forKey: .delegate)
-        hypothesis = try c.decodeIfPresent(HypothesisProposal.self, forKey: .hypothesis)
-        handoff = try c.decodeIfPresent(HandoffProposal.self, forKey: .handoff)
-        write = try c.decodeIfPresent(WriteProposal.self, forKey: .write)
-        memory = try c.decodeIfPresent(MemoryProposal.self, forKey: .memory)
-        result = try c.decodeIfPresent(ResultReview.self, forKey: .result)
-        newTask = try c.decodeIfPresent(TaskProposal.self, forKey: .newTask)
         answers = (try c.decodeIfPresent([String].self, forKey: .answers) ?? []).compactMap(InboxAction.init(rawValue:))
     }
 
@@ -168,14 +130,6 @@ extension InboxItem: Codable {
         if !attachments.isEmpty { try c.encode(attachments, forKey: .attachments) }
         try c.encodeIfPresent(routine, forKey: .routine)
         try c.encodeIfPresent(proposal, forKey: .proposal)
-        try c.encodeIfPresent(sort, forKey: .sort)
-        try c.encodeIfPresent(delegate, forKey: .delegate)
-        try c.encodeIfPresent(hypothesis, forKey: .hypothesis)
-        try c.encodeIfPresent(handoff, forKey: .handoff)
-        try c.encodeIfPresent(write, forKey: .write)
-        try c.encodeIfPresent(memory, forKey: .memory)
-        try c.encodeIfPresent(result, forKey: .result)
-        try c.encodeIfPresent(newTask, forKey: .newTask)
         if !answers.isEmpty { try c.encode(answers, forKey: .answers) }
     }
 }
@@ -189,29 +143,10 @@ public enum ItemKind: Equatable, Hashable, Sendable {
     /// The agent stopped with an error, or its loop stopped.
     case failure
     case proposal, briefing
-    /// Level 10: the overall assistant proposes to sort a Capture.
-    case sort
-    /// Level 10: the overall assistant proposes to ask a workspace's delegate.
-    case delegate
-    /// Level 11: the overall assistant proposes a hypothesis about the user.
-    case hypothesis
-    /// Level 12: a staff member asks to pass a request on to another.
-    case handoff
-    /// Level 13: a Result proposes a write outside the host.
-    case write
-    /// Level 14: a Task's end proposes to add to the workspace memory.
-    case memory
-    /// Level 16: a request's Result to review (ADR 0058).
-    case result
-    /// Level 18: the secretary proposes a Task to start (ADR 0060).
-    case newTask
     case other(String)
 
     private static let names: [(ItemKind, String)] = [
         (.ask, "ask"), (.review, "review"), (.failure, "failure"), (.proposal, "proposal"), (.briefing, "briefing"),
-        (.sort, "sort"), (.delegate, "delegate"), (.hypothesis, "hypothesis"),
-        (.handoff, "handoff"), (.write, "write"), (.memory, "memory"), (.result, "result"),
-        (.newTask, "new-task"),
     ]
 
     public init(raw: String) {

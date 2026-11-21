@@ -26,16 +26,9 @@ final class ItemBridge: FakeBridge, @unchecked Sendable {
         case .listRoutines(let id):
             emit(.routineList(routines: id, entries: []))
             emit(.result(id: id, error: nil, sessions: nil))
-        case .updateInboxEntry(let id, let entry, let action, _, let text, _, _, _):
+        case .updateInboxEntry(let id, let entry, let action, _, let text, _, _):
             record(req)
             guard let i = items.firstIndex(where: { $0.id == entry }) else { return refuse(id, .badRequest, "no such item") }
-            if action == .askAgent, items[i].answers.contains(.askAgent) {
-                guard !(text ?? "").isEmpty else { return refuse(id, .badRequest, "a text is needed") }
-                emit(.sessionStarted(start: id, session: "$9", name: "ask-w"))
-                emit(.inboxSaved(inbox: id, entry: nil, item: items[i]))
-                emit(.result(id: id, error: nil, sessions: nil))
-                return
-            }
             if action == .later, items[i].answers.contains(.later) {
                 var moved = items.remove(at: i)
                 moved.laterAt = 60
@@ -132,7 +125,7 @@ struct ItemTests {
         #expect(saved.answer == .reply)
         #expect(session.openItems.map(\.id) == ["i-00000001"])
         #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000002", .reply, nil, "Keep the old export.", nil, nil, _) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-00000002", .reply, nil, "Keep the old export.", nil, nil) = $0 { true } else { false }
         })
     }
 
@@ -143,7 +136,7 @@ struct ItemTests {
         let session = try await connected(bridge, level: "work:7")
         try await session.answer(session.openItems[0], .keepOpen)
         try await session.answer(session.openItems[0], .accept)
-        let sent = bridge.sent.compactMap { if case .updateInboxEntry(_, _, let a, _, _, _, let end, _) = $0 { (a, end) } else { nil } }
+        let sent = bridge.sent.compactMap { if case .updateInboxEntry(_, _, let a, _, _, _, let end) = $0 { (a, end) } else { nil } }
             .filter { $0.0 != .read }
         #expect(sent.map(\.0) == [.keepOpen, .accept])
         #expect(sent.map(\.1) == [nil, .remove])
@@ -179,7 +172,7 @@ struct ItemTests {
         #expect(session.openItems[0].readAt == 50)
         #expect(session.openItems[0].state == .open)
         await session.markRead(session.openItems[0])
-        let reads = bridge.sent.filter { if case .updateInboxEntry(_, _, .read, _, _, _, _, _) = $0 { true } else { false } }
+        let reads = bridge.sent.filter { if case .updateInboxEntry(_, _, .read, _, _, _, _) = $0 { true } else { false } }
         #expect(reads.count == 1)
     }
 
@@ -189,20 +182,6 @@ struct ItemTests {
         let saved = try await session.answer(session.openItems[0], .later)
         #expect(saved.laterAt == 60 && saved.state == .open)
         #expect(session.openItems.map(\.id) == ["i-00000002", "i-00000001"], "listed again, moved down, not hidden")
-    }
-
-    @Test func askAgentNamesTheSessionAndLeavesTheItemOpen() async throws {
-        let bridge = ItemBridge()
-        bridge.items[1].answers.insert(.askAgent, at: bridge.items[1].answers.count - 1)
-        let session = try await connected(bridge)
-        let started = try await session.askAgent(session.openItems[1], text: "Put this in Notion.")
-        #expect(started == StartedSession(id: "$9", name: "ask-w"))
-        #expect(session.openItems.map(\.id) == ["i-00000001", "i-00000002"], "the item stays open")
-        #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000002", .askAgent, nil, "Put this in Notion.", nil, nil, _) = $0 { true } else { false }
-        })
-        // A host without Ask Agent lists no such answer: nothing is sent.
-        await #expect(throws: PaneSession.Failure.self) { try await session.askAgent(session.openItems[0], text: "x") }
     }
 
     @Test func aRefusedReadIsNoErrorAndKeepsTheDot() async throws {
@@ -247,16 +226,13 @@ struct ItemTests {
         let cancellable = ItemAnswers(Self.item("i-9", .ask, answers: [.choose, .reject, .later]))
         #expect(cancellable.main == nil, "Command+Return never picks a question's cancel")
 
-        let proposal = ItemAnswers(Self.item("e-3", .proposal, answers: [.approve, .reject, .askAgent, .later]))
-        #expect(proposal.decisions == [.approve, .reject] && proposal.text == .askAgent)
+        let proposal = ItemAnswers(Self.item("e-3", .proposal, answers: [.approve, .reject, .later]))
+        #expect(proposal.decisions == [.approve, .reject] && proposal.text == nil)
 
-        // ADR 0041: a briefing's reply box asks the workspace's agent.
-        let briefingItem = Self.item("e-1", .briefing, answers: [.dismiss, .askAgent, .later])
-        let briefing = ItemAnswers(briefingItem)
-        #expect(briefing.decisions.isEmpty && briefing.menu.isEmpty && briefing.text == .askAgent)
+        let briefing = ItemAnswers(Self.item("e-1", .briefing, answers: [.dismiss, .later]))
+        #expect(briefing.decisions.isEmpty && briefing.menu.isEmpty && briefing.text == nil)
         #expect(briefing.done == .dismiss && briefing.main == .dismiss)
-        #expect(ItemAnswers(briefingItem, replying: true).main == .askAgent)
-        #expect(InboxAction.reply.needsText && InboxAction.askAgent.needsText && !InboxAction.accept.needsText)
+        #expect(InboxAction.reply.needsText && !InboxAction.accept.needsText)
     }
 
     /// ADR 0033 §4a.2, ADR 0040: the labels name the result.
@@ -274,13 +250,43 @@ struct ItemTests {
         #expect(InboxAction.reject.title(for: .proposal) == "Reject")
     }
 
+    nonisolated static let plan = InboxItem(
+        id: "i-0000000d", kind: .ask, state: .open, question: "Claude Code has a plan", workspace: "work",
+        title: "Fix the crash", createdAt: 8, task: "t-7f3a2c", session: "$1", pane: "%1",
+        prompt: ChatPrompt(entry: "e1", kind: .plan, options: [
+            ChatPrompt.Option(label: "Yes, manually approve edits", keys: ["2"]),
+            ChatPrompt.Option(label: "No, keep planning", keys: ["Escape"], cancel: true),
+        ]),
+        answers: [.approve, .reject, .reply])
+
+    @Test func aPlanItemApprovesThePlanOrKeepsPlanning() {
+        #expect(Self.plan.isPlan)
+        #expect(InboxAction.approve.title(for: Self.plan) == "Approve plan")
+        #expect(InboxAction.reject.title(for: Self.plan) == "Keep planning")
+        #expect(InboxAction.reply.title(for: Self.plan) == "Keep planning & Send")
+    }
+
+    /// The host presses the option only when the pane shows it (ADR 0060 §5); else the plan
+    /// is approved in the terminal, and nothing reached the pane.
+    @Test func aPlanApprovedWhereThePaneShowsNoOptionSaysToUseTheTerminal() async throws {
+        let bridge = ItemBridge()
+        bridge.items = [Self.plan]
+        bridge.promptChanged = true
+        let session = try await connected(bridge)
+        let conflict = PaneSession.Failure.bridge(ErrorBody(code: .conflict, message: PaneSession.planInTerminal))
+        await #expect(throws: conflict) { try await session.answer(Self.plan, .approve) }
+        #expect(session.inboxItems.first { $0.id == Self.plan.id }?.state == .open)
+        bridge.promptChanged = false
+        #expect(try await session.answer(Self.plan, .approve).answer == .approve)
+    }
+
     @Test func aReplySendsItsText() async throws {
         let bridge = ItemBridge()
         bridge.items[0].answers = [.approve, .reject, .reply, .later]
         let session = try await connected(bridge)
         try await session.answer(session.openItems[0], .reply, text: "Run terraform plan first.")
         #expect(bridge.sent.contains {
-            if case .updateInboxEntry(_, "i-00000001", .reply, nil, "Run terraform plan first.", nil, nil, _) = $0 { true } else { false }
+            if case .updateInboxEntry(_, "i-00000001", .reply, nil, "Run terraform plan first.", nil, nil) = $0 { true } else { false }
         })
     }
 

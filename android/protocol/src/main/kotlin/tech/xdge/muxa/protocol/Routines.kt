@@ -15,35 +15,17 @@ const val WORK_ASK = 2
 /** Level 5: `close-task` also closes an ask session, which carries `ask` (ADR 0039). */
 const val WORK_CLOSE_ASK = 5
 
-/** Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041). */
-const val WORK_ASK_AGENT = 6
-
 /** Level 7: `worktree` on `update-task` and `update-inbox`, and `would-lose-work` (ADR 0043). */
 const val WORK_WORKTREE_END = 7
 
 /** Level 8: `protect` and `unprotect` on an Inbox item, and `delete-inbox` (ADR 0046). */
 const val WORK_DELETE_INBOX = 8
 
-/** Level 9: Captures, Work items and assistant requests, and `work` on `create-task` (ADR 0048). */
-const val WORK_ASSISTANT = 9
-
-/** Level 10: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0049). */
-const val WORK_PLANS = 10
-
-/** Level 11: policies, corrections and hypotheses (ADR 0050). */
-const val WORK_POLICIES = 11
-
-/** Level 12: staff and hand-offs in a workspace (ADR 0051). */
-const val WORK_STAFF = 12
-
-/** Level 13: external writes only when asked (ADR 0052). */
-const val WORK_WRITES = 13
-
-/** Level 14: workspace memory, `memory` Inbox items and a workspace's `memory` mode (ADR 0053). */
-const val WORK_MEMORY = 14
-
 /** Level 15: `start-session` with `root` opens a workspace's root Ask session (ADR 0054). */
 const val WORK_ASK_ROOT = 15
+
+/** Level 19: the assistant layer is gone (ADR 0066): no Captures, Work items, plans, policies, staff, writes or workspace memory. */
+const val WORK_NO_ASSISTANT = 19
 
 /** The highest `work` level in [capabilities]; 0 when the host has none. */
 fun workLevel(capabilities: List<String>): Int =
@@ -136,15 +118,7 @@ enum class InboxAction {
     @SerialName("drop") DROP,
     @SerialName("read") READ,
 
-    /** Sends the item and its text to the workspace's Ask session; the item stays open (ADR 0041). */
-    @SerialName("ask-agent") ASK_AGENT,
-
-    /** A `hypothesis`: makes a policy of it (level 11, ADR 0050). */
-    @SerialName("confirm") CONFIRM,
     /** Any item, open or closed: `delete-inbox` keeps it. Never in `answers` (ADR 0046). */
     @SerialName("protect") PROTECT,
     @SerialName("unprotect") UNPROTECT,
-
-    /** Level 18: starts the Task a `result` item offers beside a hand-off (ADR 0060 §2). */
-    @SerialName("start-task") START_TASK,
 }

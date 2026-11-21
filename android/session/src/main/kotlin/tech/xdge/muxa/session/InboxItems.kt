@@ -55,8 +55,8 @@ fun List<InboxItem>.deletable(olderThanDays: Int, now: Long = System.currentTime
 /** An agent is blocked on it, or it stopped: what a phone opens on after connecting. */
 val InboxItem.isUrgent: Boolean get() = kind == ItemKind.ASK || kind == ItemKind.FAILURE
 
-/** Send and Ask Agent take the reply box's text, so they need one. */
-val InboxAction.needsText: Boolean get() = this == InboxAction.REPLY || this == InboxAction.ASK_AGENT
+/** Send takes the reply box's text, so it needs one. */
+val InboxAction.needsText: Boolean get() = this == InboxAction.REPLY
 
 /**
  * How the item screen offers the answers (docs/inbox.md, "The item screen"; ADR 0040). Triage
@@ -64,9 +64,9 @@ val InboxAction.needsText: Boolean get() = this == InboxAction.REPLY || this == 
  * its [decisions], then one reply box that sends [text].
  */
 data class ItemButtons(
-    /** Under the body, in the host's order: Allow, Deny, Approve, Confirm, Reject, Retry. */
+    /** Under the body, in the host's order: Allow, Deny, Approve, Reject, Retry. */
     val decisions: List<InboxAction>,
-    /** What the reply box's text does: Send to the item's agent, or Ask Agent where it has no session (ADR 0041). */
+    /** What the reply box's text does: Send to the item's agent. */
     val text: InboxAction?,
     /** In the top bar's … menu: Complete Task, Drop Task. */
     val menu: List<InboxAction>,
@@ -89,7 +89,7 @@ val InboxItem.buttons: ItemButtons
         chooses = InboxAction.CHOOSE in answers,
     )
 
-private val DECISIONS = setOf(InboxAction.APPROVE, InboxAction.START_TASK, InboxAction.CONFIRM, InboxAction.REJECT, InboxAction.RETRY)
+private val DECISIONS = setOf(InboxAction.APPROVE, InboxAction.REJECT, InboxAction.RETRY)
 
 /** The options a `choose` answers with, by index; empty when the item takes no `choose`. */
 val InboxItem.choices: List<ChatPrompt.Option>
@@ -97,12 +97,13 @@ val InboxItem.choices: List<ChatPrompt.Option>
 
 /**
  * What Ctrl+Shift+Enter sends (ADR 0033 §4a.3): the reply box's action while it has [text], else
- * Start Task where the item proposes one (ADR 0060 §8), else the host's first answer, unless that
- * is `choose`, `later` or a text answer.
+ * the host's first answer, unless that is `choose`, `later` or a text answer.
  */
 fun InboxItem.mainAnswer(text: String = ""): InboxAction? {
     if (text.isNotBlank()) buttons.text?.let { return it }
-    startTaskAction?.let { return it }
     return answers.firstOrNull { it != InboxAction.READ }
         ?.takeIf { it != InboxAction.CHOOSE && it != InboxAction.LATER && !it.needsText }
 }
+
+/** Claude Code's plan menu waits in the Task (ADR 0060 §5): approve leaves plan mode, asking before each edit. */
+val InboxItem.isPlan: Boolean get() = kind == ItemKind.ASK && prompt?.kind == ChatPrompt.Kind.PLAN

@@ -212,11 +212,6 @@ pub(crate) fn start_failed(
             _ => return Ok(None),
         };
         let mut item = InboxItem {
-            new_task: None,
-            result: None,
-            memory: None,
-            write: None,
-            handoff: None,
             id: new_id()?,
             kind: ItemKind::Failure,
             state: ItemState::Open,
@@ -238,9 +233,6 @@ pub(crate) fn start_failed(
             attachments: Attachments::default(),
             routine: None,
             proposal: None,
-            sort: None,
-            delegate: None,
-            hypothesis: None,
             answers: Vec::new(),
         };
         item.answers = super::answers(&item);
@@ -442,11 +434,6 @@ fn make(
     };
     let tool = chat.tool.as_ref().map(|(n, s)| (n.as_str(), s.as_str()));
     let mut item = InboxItem {
-        new_task: None,
-        result: None,
-        memory: None,
-        write: None,
-        handoff: None,
         id: new_id()?,
         kind,
         state: ItemState::Open,
@@ -468,9 +455,6 @@ fn make(
         attachments: Attachments::default(),
         routine: None,
         proposal: None,
-        sort: None,
-        delegate: None,
-        hypothesis: None,
         answers: Vec::new(),
     };
     let since = match need {

@@ -13,14 +13,10 @@ public struct NewTaskRecord: Equatable, Sendable {
     /// Also start a Task Loop (ADR 0019).
     public var loop: LoopSpec?
     public var worker: String?
-    /// The Work item the Task is for, and its `rev` the client saw (`work` level 9, ADR 0048).
-    public var work: String?
-    public var workRev: UInt64?
 
     public init(
         workspace: String, title: String, goal: String, project: String? = nil, repo: String? = nil,
-        branch: String? = nil, base: String? = nil, loop: LoopSpec? = nil, worker: String? = nil,
-        work: String? = nil, workRev: UInt64? = nil
+        branch: String? = nil, base: String? = nil, loop: LoopSpec? = nil, worker: String? = nil
     ) {
         self.workspace = workspace
         self.title = title
@@ -31,8 +27,6 @@ public struct NewTaskRecord: Equatable, Sendable {
         self.base = base
         self.loop = loop
         self.worker = worker
-        self.work = work
-        self.workRev = workRev
     }
 }
 
@@ -53,14 +47,11 @@ public struct TaskRecordDraft: Equatable, Sendable {
     public var worker: String?
     /// The host names an empty branch after the title (`work` level 2, ADR 0031).
     public var branchFromTitle: Bool
-    /// Started from a Work item: one Task per item `rev` (ADR 0048).
-    public var work: String?
-    public var workRev: UInt64?
 
     public init(
         workspace: String = "", title: String = "", goal: String = "", project: String = "", repo: String = "",
         branch: String = "", base: String = "", loop: LoopDraft? = nil, worker: String? = nil,
-        branchFromTitle: Bool = false, work: String? = nil, workRev: UInt64? = nil
+        branchFromTitle: Bool = false
     ) {
         self.workspace = workspace
         self.title = title
@@ -72,8 +63,6 @@ public struct TaskRecordDraft: Equatable, Sendable {
         self.loop = loop
         self.worker = worker
         self.branchFromTitle = branchFromTitle
-        self.work = work
-        self.workRev = workRev
     }
 
     /// A draft in `repo`, in the workspace it belongs to, else in the first
@@ -108,7 +97,7 @@ public struct TaskRecordDraft: Equatable, Sendable {
         return NewTaskRecord(
             workspace: workspace.trimmed, title: title.trimmed, goal: goal.trimmed, project: project.trimmed.nonEmpty,
             repo: repo, branch: repo == nil ? nil : branch.trimmed.nonEmpty, base: repo == nil ? nil : base.trimmed.nonEmpty,
-            loop: loop?.spec, worker: worker, work: work, workRev: work == nil ? nil : workRev)
+            loop: loop?.spec, worker: worker)
     }
 }
 

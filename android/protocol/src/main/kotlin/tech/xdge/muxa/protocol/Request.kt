@@ -85,10 +85,6 @@ sealed interface Request {
         /** Also start a Task Loop (capability `task-loop`, ADR 0019). */
         val loop: LoopSpec? = null,
         val worker: String? = null,
-        /** The Work item the Task is for (`work` level 9, ADR 0048). The same [work] and [workRev] return the Task already made. */
-        val work: String? = null,
-        /** With [work]: the item's `rev` the client saw. */
-        val workRev: Long? = null,
     ) : Request
 
     /**
@@ -144,11 +140,6 @@ sealed interface Request {
         val option: Int? = null,
         /** As `update-task`'s, for an answer that makes the Task done or dropped. */
         val worktree: WorktreeEnd? = null,
-        /**
-         * With `approve` on a `write` item (`work` level 13, ADR 0052) or a `memory` item (level 14, ADR 0053):
-         * the hash of the content the client showed whole. The host refuses such an approve without it.
-         */
-        val hash: String? = null,
     ) : Request
 
     /**
@@ -161,160 +152,14 @@ sealed interface Request {
      * An agent session in a repo's main checkout, to ask about its code: no Task, no
      * worktree (capability `work` level 2, ADR 0031). [repo] is as `create-task`'s.
      * With [root] and no [repo], the workspace's root Ask session, open or new (`work`
-     * level 15, ADR 0054). A `session-started` comes first. With [root], [text] is typed into
-     * its agent, after the Work item [work] when given (level 17, ADR 0059 §4); never logged.
+     * level 15, ADR 0054). A `session-started` comes first.
      */
     @Serializable data class StartSession(
         override val id: Long,
         val workspace: String,
         val repo: String? = null,
         val root: Boolean = false,
-        val text: String? = null,
-        val work: String? = null,
     ) : Request
-
-    /**
-     * Save the user's input (`work` level 9, ADR 0048). The same [clientId] returns the stored Capture and
-     * writes nothing. [assist] also makes a Work item and asks the assistant; it needs [workspace].
-     * A `capture-saved` comes first.
-     */
-    @Serializable
-    data class Capture(
-        override val id: Long,
-        val clientId: String,
-        val text: String,
-        val source: CaptureSource? = null,
-        val workspace: String? = null,
-        val assist: AssistSpec? = null,
-    ) : Request
-
-    /**
-     * Sort an unsorted Capture. [work] goes with `link`; [title] with `work`, where null takes the text's
-     * first line. A stale [rev] is `conflict`. A `capture-saved` comes first.
-     */
-    @Serializable
-    data class SortCapture(
-        override val id: Long,
-        val capture: String,
-        val rev: Long,
-        val action: SortAction,
-        val work: String? = null,
-        val title: String? = null,
-        val workspace: String? = null,
-    ) : Request
-
-    /**
-     * Change a Work item. [title], [workspace] and [due] (level 10) go with `edit`, [into] with `merge`.
-     * A stale [rev] is `conflict`. A `work-saved` comes first.
-     */
-    @Serializable
-    data class UpdateWork(
-        override val id: Long,
-        val work: String,
-        val rev: Long,
-        val action: WorkAction,
-        val title: String? = null,
-        val workspace: String? = null,
-        val into: String? = null,
-        val due: Due? = null,
-    ) : Request
-
-    /**
-     * Ask a workspace's agent to work on a Work item; needs the host daemon. [workspace] null takes the item's.
-     * The same [work] and [rev] return the request already made. A `work-saved` comes first. [worker] (level 12)
-     * names a staff member of the workspace; null asks its lead.
-     */
-    @Serializable
-    data class RequestAssistant(
-        override val id: Long,
-        val work: String,
-        val rev: Long,
-        val scope: AssistScope,
-        val workspace: String? = null,
-        val purpose: String? = null,
-        val worker: String? = null,
-    ) : Request
-
-    /** Stop a request's [version]. A `work-saved` comes first. */
-    @Serializable data class CancelRequest(override val id: Long, val request: String, val version: Long) : Request
-
-    /** One Work item with every Capture it links, sorted or not, and its requests. A `work-detail` comes first. */
-    @Serializable data class GetWork(override val id: Long, val work: String) : Request
-
-    /**
-     * Write a result's or a plan's proposed notes to the live `NOTES.md` (`work` level 10, ADR 0049). [source]
-     * is a request `q-…` or a plan `p-…`; [version] the request's version or the plan's `rev`; [base] the
-     * proposal's. A changed live file is `conflict`. A `work-saved` or `plan-saved` comes first. [step] (level 12)
-     * is the step of a request's version whose result proposed the notes; null is the version's last step.
-     */
-    @Serializable
-    data class ApplyNotes(
-        override val id: Long,
-        val source: String,
-        val version: Long,
-        val base: String,
-        val step: Int? = null,
-    ) : Request
-
-    /** Start an overall run now (`work` level 10); [minutes] is the time the user has. A `plan-saved` comes first. */
-    @Serializable data class PlanNow(override val id: Long, val minutes: Int? = null) : Request
-
-    /**
-     * The secretary proposes a Task (`work` level 18, ADR 0060): one `new-task` Inbox item. The
-     * same proposal again returns the open item. An `inbox-saved` comes first. [goal] is never logged.
-     */
-    @Serializable data class ProposeTask(
-        override val id: Long,
-        val workspace: String,
-        val repo: String? = null,
-        val title: String,
-        val goal: String,
-        val work: String? = null,
-    ) : Request
-
-    /**
-     * Keep a policy in the user's words (`work` level 11, ADR 0050). [scope] is `all` or a workspace; [from]
-     * and [until] are epoch seconds. A `policy-saved` comes first.
-     */
-    @Serializable
-    data class AddPolicy(
-        override val id: Long,
-        val text: String,
-        val scope: String,
-        val from: Long? = null,
-        val until: Long? = null,
-    ) : Request
-
-    /** Edit or delete a policy. A stale [rev] is `conflict`. `edit` sends a `policy-saved` first; `delete` only the `result`. */
-    @Serializable
-    data class UpdatePolicy(
-        override val id: Long,
-        val policy: String,
-        val rev: Long,
-        val action: PolicyAction,
-        val text: String? = null,
-        val scope: String? = null,
-        val from: Long? = null,
-        val until: Long? = null,
-    ) : Request
-
-    /**
-     * Reorder Today's rows ([order]), or remove one ([row], with the reason in [text]), on the newest `resulted`
-     * plan. A `plan-saved` comes first.
-     */
-    @Serializable
-    data class UpdatePlan(
-        override val id: Long,
-        val plan: String,
-        val rev: Long,
-        val action: PlanAction,
-        val order: kotlin.collections.List<String> = emptyList(),
-        val row: String? = null,
-        val text: String? = null,
-    ) : Request
-
-    /** Remove a correction `x-…` or a hypothesis `h-…`; [record] because [id] is the request's. */
-    @Serializable data class Forget(override val id: Long, val record: String) : Request
 
     /** The client is leaving; the bridge exits. */
     @Serializable data class Bye(override val id: Long) : Request

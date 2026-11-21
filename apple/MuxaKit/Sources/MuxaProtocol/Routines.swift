@@ -9,31 +9,13 @@ public let workRoutines: UInt32 = 1
 public let workAsk: UInt32 = 2
 /// Level 5: `close-task` also closes an ask session, which carries `ask` (ADR 0039).
 public let workCloseAsk: UInt32 = 5
-/// Level 6: `ask-agent` on an Inbox item, and the workspace's Ask session (ADR 0041).
-public let workAskAgent: UInt32 = 6
 /// Level 7: `worktree` on `update-task` and `update-inbox`, and `would-lose-work` (ADR 0043).
 public let workWorktreeEnd: UInt32 = 7
-/// Level 9: Captures, Work items and assistant requests (ADR 0048).
-public let workAssistant: UInt32 = 9
-/// Level 10: delegate notes, the overall assistant's plans and proposals, pins and due (ADR 0049).
-public let workPlans: UInt32 = 10
-/// Level 11: policies, corrections and hypotheses (ADR 0050).
-public let workPolicies: UInt32 = 11
-/// Level 12: staff and hand-offs in a workspace (ADR 0051).
-public let workStaff: UInt32 = 12
-/// Level 13: external writes only when asked (ADR 0052).
-public let workWrites: UInt32 = 13
-/// Level 14: workspace memory, `memory` Inbox items and a workspace's `memory` mode (ADR 0053).
-public let workMemory: UInt32 = 14
 /// Level 15: `start-session` with `root` opens a workspace's root Ask session (ADR 0054).
 public let workAskRoot: UInt32 = 15
-/// Level 16: `result` Inbox items, and `reply` on `result` and `write` items (ADR 0058).
-public let workResultReview: UInt32 = 16
-/// Level 17: `start-session` with `root` takes `text` and `work`, and `assistant.overallRuns`
-/// says what a Re-rank has left today (ADR 0059).
-public let workToday: UInt32 = 17
-/// Level 18: Task proposals: `result.task`, `new-task` items, `start-task` and `propose-task` (ADR 0060).
-public let workTaskProposals: UInt32 = 18
+/// Level 19: the assistant layer is gone (ADR 0066): no Captures, Work items, plans,
+/// policies, staff, writes, workspace memory or the items they made.
+public let workNoAssistant: UInt32 = 19
 /// Level 8: `protect`, `unprotect` and `delete-inbox` (ADR 0046).
 public let workDeleteInbox: UInt32 = 8
 
@@ -227,13 +209,6 @@ public enum InboxAction: String, Codable, Sendable {
     case retry, drop, read
     /// Sends the text as it is; on an `ask` it denies the menu first (ADR 0033 §4a).
     case reply
-    /// Sends the item and the text to the workspace's Ask session; the item stays open (ADR 0041).
-    case askAgent = "ask-agent"
-    /// A `hypothesis`: makes a policy of it (level 11, ADR 0050).
-    case confirm
     /// Set or clear `protectedAt` on any item (level 8, ADR 0046). Like `read`, never in `answers`.
     case protect, unprotect
-    /// A `result` item that offers a hand-off and a Task: starts the Task (level 18, ADR 0060).
-    /// Without a hand-off, `approve` starts it.
-    case startTask = "start-task"
 }

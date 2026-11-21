@@ -4,6 +4,8 @@
 
 Proposed (2026-11-21). Supersedes ADR 0017, 0032 and 0038 once built. Changes ADR 0035.
 
+muxa for tmux (`tmux/`) was removed on 2026-11-22 with the assistant layer (plan C3), before the rest of the tmux code. The bridge's tmux-agents launcher goes in F; without the plugin it uses the built-in launcher.
+
 ## Context
 
 ADR 0017 made tmux itself the desktop client: muxa for tmux adds a task tree and popups, and "a dedicated desktop app would take that away". Under ADR 0067 the default backend is herdr-core, which has no tmux key table, no panes and no status line. Home, Focus, the Reader, Capture's global hotkey and the wide detail views of `docs/next.md` need a real window.

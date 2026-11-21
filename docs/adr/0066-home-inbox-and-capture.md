@@ -4,6 +4,11 @@
 
 Proposed (2026-11-21). Product description: `docs/next.md`.
 
+The removal is done (2026-11-22, plan C3). Two decisions came with it:
+
+- Workspace memory (ADR 0053) is removed too. Its copy into a run's folder and its `memory` items ran through the assistant's notes code. ADR 0053 is superseded.
+- `ask-agent` and level 6 are gone with ADR 0041. The root Ask session of ADR 0054 stays, without the secretary: `start-session {root: true}` opens a plain one.
+
 Supersedes, once the removal below is done: ADR 0040, 0041, 0045, 0046 (for removed kinds), 0048 (requests and assistant runs; Captures and Work items become the Inbox), 0049, 0050, 0051, 0052, 0054, 0056, 0057, 0058, 0059, 0060, 0061, and ADR 0033's item kinds and order. ADR 0035's sidebar modes become Home and Focus. ADR 0028 keeps only what Codex Routines use; its delegate and staff parts go.
 
 ## Context

@@ -57,18 +57,7 @@ public enum Message: Equatable, Sendable {
     case routineSaved(routine: UInt64, entry: RoutineInfo)
     /// The stored Inbox entries for a `list-inbox` request, newest first. Level 3
     /// also sends `items`: every item, Routine entries included, in the order to show them.
-    /// Level 9 also sends `work` (open first, then the ones moved down with Later, then
-    /// at most 100 done or withdrawn), the unsorted `captures`, newest first, and the
-    /// `requests` of the listed Work items (ADR 0048).
-    /// Level 10 also sends the kept `plans`, newest first, and `assistant`: the overall
-    /// assistant and the delegates (ADR 0049).
-    /// Level 11 also sends `policies` (active, then expired), `hypotheses` (`proposed` and
-    /// `rejected`, newest first) and at most 50 `corrections`, newest first (ADR 0050).
-    case inboxList(
-        inbox: UInt64, entries: [InboxEntry], items: [InboxItem] = [], work: [WorkItem] = [],
-        captures: [Capture] = [], requests: [AssistantRequest] = [], plans: [Plan] = [],
-        assistant: AssistantInfo? = nil, policies: [Policy] = [], hypotheses: [Hypothesis] = [],
-        corrections: [Correction] = [])
+    case inboxList(inbox: UInt64, entries: [InboxEntry], items: [InboxItem] = [])
     /// What an `update-inbox` wrote, just before its `result`: the Routine entry,
     /// the item, or both for a Routine's item.
     case inboxSaved(inbox: UInt64, entry: InboxEntry?, item: InboxItem? = nil)
@@ -77,20 +66,6 @@ public enum Message: Equatable, Sendable {
     /// The session a `start-session` made, just before its `result`. `start`
     /// is the request id, `session` the `$n` id.
     case sessionStarted(start: UInt64, session: String, name: String)
-    /// What a `capture` or `sort-capture` wrote, just before its `result`: the Capture,
-    /// and the Work item and request it made, if any.
-    case captureSaved(capture: UInt64, entry: Capture, work: WorkItem? = nil, request: AssistantRequest? = nil)
-    /// What an `update-work`, `request-assistant` or `cancel-request` wrote, just before
-    /// its `result`.
-    case workSaved(work: UInt64, entry: WorkItem, request: AssistantRequest? = nil)
-    /// The Work item a `get-work` asked for, with its derived state, just before its
-    /// `result`: the Captures `entry.captures` names, sorted or not, in that order, and its requests.
-    case workDetail(work: UInt64, entry: WorkItem, captures: [Capture] = [], requests: [AssistantRequest] = [])
-    /// What a `plan-now` or `apply-notes` wrote, just before its `result`.
-    case planSaved(plan: UInt64, entry: Plan)
-    /// What an `add-policy`, an `update-policy edit` or a `confirm` wrote, just before its
-    /// `result` (`work` level 11).
-    case policySaved(policy: UInt64, entry: Policy)
     /// The bridge is exiting.
     case bye(reason: String)
     /// A type this client does not know. The protocol says to ignore it.
@@ -152,8 +127,6 @@ extension Message: Codable {
         case watch, pane, cols, rows, data, reason, chat, doc, path, text, mtime, task, session, diff, binary, image, record
         case routines, routine, entries, entry, problems, inbox, items, item
         case start, name, deleted
-        case work, captures, requests, capture, request, plans, assistant, plan
-        case policies, hypotheses, corrections, policy
         case history, truncated
     }
 
@@ -265,15 +238,7 @@ extension Message: Codable {
             self = .inboxList(
                 inbox: try c.decode(UInt64.self, forKey: .inbox),
                 entries: try c.decode([InboxEntry].self, forKey: .entries),
-                items: try c.decodeIfPresent([InboxItem].self, forKey: .items) ?? [],
-                work: try c.decodeIfPresent([WorkItem].self, forKey: .work) ?? [],
-                captures: try c.decodeIfPresent([Capture].self, forKey: .captures) ?? [],
-                requests: try c.decodeIfPresent([AssistantRequest].self, forKey: .requests) ?? [],
-                plans: try c.decodeIfPresent([Plan].self, forKey: .plans) ?? [],
-                assistant: try c.decodeIfPresent(AssistantInfo.self, forKey: .assistant),
-                policies: try c.decodeIfPresent([Policy].self, forKey: .policies) ?? [],
-                hypotheses: try c.decodeIfPresent([Hypothesis].self, forKey: .hypotheses) ?? [],
-                corrections: try c.decodeIfPresent([Correction].self, forKey: .corrections) ?? [])
+                items: try c.decodeIfPresent([InboxItem].self, forKey: .items) ?? [])
         case "inbox-saved":
             self = .inboxSaved(
                 inbox: try c.decode(UInt64.self, forKey: .inbox),
@@ -288,29 +253,6 @@ extension Message: Codable {
                 start: try c.decode(UInt64.self, forKey: .start),
                 session: try c.decode(String.self, forKey: .session),
                 name: try c.decode(String.self, forKey: .name))
-        case "capture-saved":
-            self = .captureSaved(
-                capture: try c.decode(UInt64.self, forKey: .capture),
-                entry: try c.decode(Capture.self, forKey: .entry),
-                work: try c.decodeIfPresent(WorkItem.self, forKey: .work),
-                request: try c.decodeIfPresent(AssistantRequest.self, forKey: .request))
-        case "work-saved":
-            self = .workSaved(
-                work: try c.decode(UInt64.self, forKey: .work),
-                entry: try c.decode(WorkItem.self, forKey: .entry),
-                request: try c.decodeIfPresent(AssistantRequest.self, forKey: .request))
-        case "work-detail":
-            self = .workDetail(
-                work: try c.decode(UInt64.self, forKey: .work),
-                entry: try c.decode(WorkItem.self, forKey: .entry),
-                captures: try c.decodeIfPresent([Capture].self, forKey: .captures) ?? [],
-                requests: try c.decodeIfPresent([AssistantRequest].self, forKey: .requests) ?? [])
-        case "plan-saved":
-            self = .planSaved(
-                plan: try c.decode(UInt64.self, forKey: .plan), entry: try c.decode(Plan.self, forKey: .entry))
-        case "policy-saved":
-            self = .policySaved(
-                policy: try c.decode(UInt64.self, forKey: .policy), entry: try c.decode(Policy.self, forKey: .entry))
         case "bye":
             self = .bye(reason: try c.decode(String.self, forKey: .reason))
         default:
@@ -426,21 +368,11 @@ extension Message: Codable {
             try c.encode("routine-saved", forKey: .type)
             try c.encode(routine, forKey: .routine)
             try c.encode(entry, forKey: .entry)
-        case .inboxList(
-            let inbox, let entries, let items, let work, let captures, let requests, let plans, let assistant,
-            let policies, let hypotheses, let corrections):
+        case .inboxList(let inbox, let entries, let items):
             try c.encode("inbox-list", forKey: .type)
             try c.encode(inbox, forKey: .inbox)
             try c.encode(entries, forKey: .entries)
             if !items.isEmpty { try c.encode(items, forKey: .items) }
-            if !work.isEmpty { try c.encode(work, forKey: .work) }
-            if !captures.isEmpty { try c.encode(captures, forKey: .captures) }
-            if !requests.isEmpty { try c.encode(requests, forKey: .requests) }
-            if !plans.isEmpty { try c.encode(plans, forKey: .plans) }
-            try c.encodeIfPresent(assistant, forKey: .assistant)
-            if !policies.isEmpty { try c.encode(policies, forKey: .policies) }
-            if !hypotheses.isEmpty { try c.encode(hypotheses, forKey: .hypotheses) }
-            if !corrections.isEmpty { try c.encode(corrections, forKey: .corrections) }
         case .inboxSaved(let inbox, let entry, let item):
             try c.encode("inbox-saved", forKey: .type)
             try c.encode(inbox, forKey: .inbox)
@@ -455,31 +387,6 @@ extension Message: Codable {
             try c.encode(start, forKey: .start)
             try c.encode(session, forKey: .session)
             try c.encode(name, forKey: .name)
-        case .captureSaved(let capture, let entry, let work, let request):
-            try c.encode("capture-saved", forKey: .type)
-            try c.encode(capture, forKey: .capture)
-            try c.encode(entry, forKey: .entry)
-            try c.encodeIfPresent(work, forKey: .work)
-            try c.encodeIfPresent(request, forKey: .request)
-        case .workSaved(let work, let entry, let request):
-            try c.encode("work-saved", forKey: .type)
-            try c.encode(work, forKey: .work)
-            try c.encode(entry, forKey: .entry)
-            try c.encodeIfPresent(request, forKey: .request)
-        case .workDetail(let work, let entry, let captures, let requests):
-            try c.encode("work-detail", forKey: .type)
-            try c.encode(work, forKey: .work)
-            try c.encode(entry, forKey: .entry)
-            if !captures.isEmpty { try c.encode(captures, forKey: .captures) }
-            if !requests.isEmpty { try c.encode(requests, forKey: .requests) }
-        case .planSaved(let plan, let entry):
-            try c.encode("plan-saved", forKey: .type)
-            try c.encode(plan, forKey: .plan)
-            try c.encode(entry, forKey: .entry)
-        case .policySaved(let policy, let entry):
-            try c.encode("policy-saved", forKey: .type)
-            try c.encode(policy, forKey: .policy)
-            try c.encode(entry, forKey: .entry)
         case .bye(let reason):
             try c.encode("bye", forKey: .type)
             try c.encode(reason, forKey: .reason)
