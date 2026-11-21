@@ -14,3 +14,7 @@ apple/Muxa/Config/Local.xcconfig
 .ios-qa.local.json
 mise.local.toml
 __pycache__/
+
+# Personal Claude Code settings and agent worktrees.
+.claude/settings.local.json
+.claude/worktrees/
