@@ -31,7 +31,13 @@ The developer rejected a hosted assistant for the same reason: one place with fu
 - A locked Keychain (after a reboot without login) makes an agent's start fail with a clear reason. A binary rebuilt by `make install` may ask for Keychain access again unless it is signed.
 - `docs/privacy.md` and `SECURITY.md` must describe the new rule when this is built.
 
+## Connectors of the agent's own login
+
+claude.ai connectors and hosted OAuth MCP servers follow the Claude login in `CLAUDE_CONFIG_DIR`, not muxa. For now they stay with each Workspace's login (ADR 0016), and Settings lists them as "from the Claude login".
+
+Later, muxa should hold several connections of one service at once, for example two Slack workspaces or two Linear workspaces, and give each Task or Routine the one it names (decided 2026-11-21 as the direction). That needs muxa to own the MCP config for those services.
+
 ## Not decided
 
-1. claude.ai connectors and hosted OAuth MCP servers follow the Claude login in `CLAUDE_CONFIG_DIR`, not muxa. Do they stay per Workspace login, or does muxa turn them off and own all MCP config?
-2. Where secrets live on a Linux host without a desktop secret store.
+1. Where secrets live on a Linux host without a desktop secret store.
+2. How muxa holds several OAuth connections of one service, and when it takes over MCP config from the agent's login.

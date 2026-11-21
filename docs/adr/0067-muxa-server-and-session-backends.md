@@ -76,4 +76,5 @@ Check before building:
 1. Do Claude Code and Codex send OSC 7501 by themselves? If not, which hooks report it, and is Needs you reliable without them?
 2. Do programs survive `hc server restart` and a reboot?
 3. What happens when two viewers resize the same terminal in turn?
-4. Is a required server acceptable on Linux hosts without systemd user sessions?
+
+The server is required on Linux hosts too (decided 2026-11-21). A host without systemd user sessions starts it some other way, for example from the shell's login.

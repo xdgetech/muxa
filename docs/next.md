@@ -149,12 +149,19 @@ Removal follows ADR 0066's and 0067's order. Frozen code stays until each part i
 
 ## Open questions
 
-The ADRs list them under "Not decided". The main ones:
+Decided on 2026-11-21:
 
-1. Is a Routine run also a Task, listed under its Workspace, or only in Routines?
-2. Do phone Needs you banners need push while the app is closed (ADR 0008 deferred it)?
-3. Do Claude Code and Codex report OSC 7501 to herdr-core, or do they need hooks?
-4. Do claude.ai connectors stay with each Workspace's Claude login, or does muxa own all MCP config?
+- A Routine run is not a Task; it shows only in Routines.
+- Needs you is pushed to the phone also while the app is closed.
+- Existing Captures, Work items and Inbox items are dropped at the switch, not migrated.
+- claude.ai connectors stay with each Workspace's Claude login for now. Later, muxa holds several connections of one service and owns their MCP config.
+- The server is required on Linux hosts too.
+
+Still open (each ADR lists its own under "Not decided"):
+
+1. How push reaches a closed app: the relay, what it may see, who runs it.
+2. Do Claude Code and Codex report OSC 7501 to herdr-core, or do they need hooks?
+3. Do programs survive a herdr-core restart and a reboot?
 
 ## Mockups
 
