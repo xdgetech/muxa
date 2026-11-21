@@ -96,6 +96,31 @@ final class NextTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
     }
 
+    @MainActor
+    func testDisconnectReturnsToTheHostsAndAHostCanBeAdded() throws {
+        let app = launch()
+        app.buttons["home.host"].tap()
+        app.buttons["Disconnect"].tap()
+        let add = app.buttons["next.addhost"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
+        let address = app.textFields["host-address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        app.textFields["host-name"].tap()
+        app.textFields["host-name"].typeText("Nowhere")
+        address.tap()
+        address.typeText("127.0.0.1")
+        app.textFields["host-user"].tap()
+        app.textFields["host-user"].typeText("me")
+        // Port 22 on the simulator's Mac may answer; a closed port fails at once.
+        app.buttons["Connect"].tap()
+        XCTAssertTrue(app.buttons["Nowhere"].waitForExistence(timeout: 5))
+        let link = app.staticTexts["next.link"]
+        XCTAssertTrue(XCTWaiter().wait(for: [expectation(
+            for: NSPredicate(format: "NOT (label IN %@)", ["Connecting…", "Not connected"]), evaluatedWith: link)],
+            timeout: 20) == .completed)
+    }
+
     private func waitFor(_ e: XCUIElement, valueContaining text: String) -> Bool {
         let p = NSPredicate(format: "value CONTAINS %@", text)
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed

@@ -28,6 +28,7 @@ struct HomeView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             VStack(spacing: 8) {
+                modeBar.padding(.horizontal)
                 CaptureField().padding(.horizontal)
                 NeedsYouStrip(open: openTerminal).padding(.horizontal)
                 Picker("Show", selection: $part) {
@@ -201,14 +202,28 @@ struct HomeView: View {
             }
         }
         ToolbarItem(placement: .topBarLeading) {
-            Button("Focus", systemImage: "terminal", action: showFocus).accessibilityIdentifier("mode.focus")
-        }
-        ToolbarItem(placement: .topBarLeading) {
             if part == .inbox, !filtered {
                 Button(editMode.isEditing ? "Done" : "Reorder") {
                     editMode = editMode.isEditing ? .inactive : .active
                 }
             }
+        }
+    }
+
+    /// The host and the way to Focus: always shown, also in a narrow sidebar.
+    private var modeBar: some View {
+        HStack {
+            Menu {
+                Button("Disconnect", systemImage: "xmark.circle") { Task { await model.disconnect() } }
+            } label: {
+                Label(model.demo ? "Demo" : model.currentHost?.title ?? "Host", systemImage: "server.rack")
+                    .font(.callout)
+            }
+            .accessibilityIdentifier("home.host")
+            Spacer()
+            Button("Focus", systemImage: "terminal", action: showFocus)
+                .font(.callout)
+                .accessibilityIdentifier("mode.focus")
         }
     }
 

@@ -8,6 +8,7 @@ struct NextRoot: View {
     @Environment(NextModel.self) private var model
     @State private var focus = false
     @State private var terminal: String?
+    @State private var editing: HostDraft?
 
     var body: some View {
         switch model.link {
@@ -45,36 +46,37 @@ struct NextRoot: View {
             List {
                 Section {
                     Text(status).accessibilityIdentifier("next.link")
-                    if model.untrustedKey != nil {
-                        Button("Trust This Host") { Task { await model.trust() } }
-                    }
                 }
-                if model.isConnected {
-                    Section("Connected") {
-                        Text("\(model.inbox.items.count) in the Inbox")
-                            .accessibilityIdentifier("next.inbox.count")
-                        Text("\(model.needsYou.count) need you")
-                            .accessibilityIdentifier("next.needsyou.count")
-                        Text("\(model.routines.count) Routines")
-                    }
-                } else {
-                    Section("Hosts") {
-                        ForEach(model.hosts.hosts) { host in
+                Section("Hosts") {
+                    ForEach(model.hosts.hosts) { host in
+                        HStack {
                             Button(host.title) { Task { await model.connect(to: host.id) } }
+                            Spacer()
+                            Button("Edit", systemImage: "info.circle") { editing = HostDraft(host) }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
                         }
-                        Button("Try the Demo") { Task { await model.startDemo() } }
-                            .accessibilityIdentifier("next.demo")
                     }
+                    Button("Add Host", systemImage: "plus") { editing = HostDraft() }
+                        .accessibilityIdentifier("next.addhost")
+                }
+                Section {
+                    Button("Try the Demo") { Task { await model.startDemo() } }
+                        .accessibilityIdentifier("next.demo")
+                } footer: {
+                    Text("The demo runs in the app. Nothing reaches a host.")
                 }
             }
             .navigationTitle("muxa")
+            .sheet(item: $editing) { NextHostEditor(draft: $0) }
+            .sheet(item: Bindable(model).untrustedKey) { NextTrustSheet(key: $0) }
         }
     }
 
     private var status: String {
         switch model.link {
         case .offline: "Not connected"
-        case .connecting: "Connecting…"
+        case .connecting: model.addingKey ? "Adding this device's key…" : "Connecting…"
         case .connected: model.demo ? "Connected to the demo" : "Connected"
         case .reconnecting(let why): "Reconnecting: \(why)"
         case .failed(let why): why

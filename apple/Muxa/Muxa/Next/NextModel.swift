@@ -24,7 +24,13 @@ final class NextModel {
     private(set) var hostID: UUID?
     private(set) var demo = false
     /// A host key the user has not trusted yet; `trust()` pins it.
-    private(set) var untrustedKey: HostKey?
+    var untrustedKey: HostKey?
+    /// Logging in with the password to add this device's key.
+    private(set) var addingKey = false
+    /// The password of a key setup that waits for the user to trust the host key.
+    private var setUpAfterTrust: String?
+    /// The user pressed Disconnect: coming back to the foreground does not connect.
+    private var stayDisconnected = false
     private(set) var inbox = Inbox.empty
     private(set) var terminals: [Terminal] = []
     private(set) var routines: [Routine] = []
@@ -56,6 +62,7 @@ final class NextModel {
 
     func connect(to id: UUID) async {
         guard let host = hosts.host(id) else { return }
+        stayDisconnected = false
         if hostID != id { forget() }
         hostID = id
         demo = false
@@ -68,19 +75,73 @@ final class NextModel {
 
     /// Try the Demo: the in-app server, no host.
     func startDemo() async {
+        stayDisconnected = false
         forget()
         hostID = nil
         demo = true
         await open { DemoChannel() }
     }
 
-    /// Pins the presented host key and connects again.
+    var currentHost: Host? { hosts.host(hostID) }
+
+    /// Pins the presented host key, then goes on with what it stopped.
     func trust() async {
         guard let key = untrustedKey, let id = hostID, var host = hosts.host(id) else { return }
         host.target.hostKey = key
         hosts.upsert(host)
         untrustedKey = nil
+        if let password = setUpAfterTrust {
+            setUpAfterTrust = nil
+            await setUpKey(on: id, password: password)
+        } else {
+            await connect(to: id)
+        }
+    }
+
+    func cancelTrust() {
+        untrustedKey = nil
+        setUpAfterTrust = nil
+        link = .offline
+    }
+
+    /// Logs in once with the password to add this device's key, restricted to
+    /// the bridge, then connects. The password is not kept.
+    func setUpKey(on id: UUID, password: String) async {
+        guard let host = hosts.host(id) else { return }
+        hostID = id
+        addingKey = true
+        defer { addingKey = false }
+        do {
+            let key = try ClientKeyStore.loadOrCreate()
+            let line = try KeySetup.authorizedLine(for: key, command: host.target.command, comment: Self.keyComment)
+            _ = try await KeySetup.install(line, on: host.target, password: password)
+        } catch let TransportError.hostKeyMismatch(presented) {
+            setUpAfterTrust = password
+            untrustedKey = presented
+            return
+        } catch TransportError.notAuthorized {
+            link = .failed("The host refused the password. Check the user and password.")
+            return
+        } catch {
+            link = .failed(Self.describe(error))
+            return
+        }
         await connect(to: id)
+    }
+
+    /// The `authorized_keys` line for this device, to add by hand.
+    func authorizedKeyLine(command: String) -> String? {
+        guard let key = try? ClientKeyStore.loadOrCreate() else { return nil }
+        return try? KeySetup.authorizedLine(for: key, command: command, comment: Self.keyComment)
+    }
+
+    private static let keyComment = "muxa-ios"
+
+    func disconnect() async {
+        stayDisconnected = true
+        retry?.cancel()
+        await drop()
+        link = .offline
     }
 
     /// Leaves for the background: the server keeps the session for a resume.
@@ -92,7 +153,7 @@ final class NextModel {
 
     /// Back in the foreground, or the network came back.
     func resumeIfNeeded() async {
-        guard client == nil, link != .connecting else { return }
+        guard client == nil, link != .connecting, !stayDisconnected else { return }
         if demo { return await startDemo() }
         if let hostID { await connect(to: hostID) }
     }
