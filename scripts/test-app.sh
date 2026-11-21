@@ -10,4 +10,4 @@ export TEST_RUNNER_MUXA_SCREENSHOT_DIR="${TEST_RUNNER_MUXA_SCREENSHOT_DIR:-$IOS_
 exec xcodebuild -project "$root/apple/Muxa/Muxa.xcodeproj" -scheme Muxa \
   -skipPackagePluginValidation -destination "platform=iOS Simulator,id=$IOS_QA_UDID" \
   -derivedDataPath "$IOS_QA_DERIVED_DATA" -resultBundlePath "$IOS_QA_OUTPUT_ROOT/tests.xcresult" \
-  -parallel-testing-enabled NO test
+  -parallel-testing-enabled NO test "$@"

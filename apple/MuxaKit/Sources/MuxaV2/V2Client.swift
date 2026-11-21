@@ -146,6 +146,16 @@ public actor V2Client {
         try field("inbox", of: await request(r))
     }
 
+    public func routines() async throws -> (routines: [Routine], problems: [RoutineProblem]) {
+        let reply = try await request(.routines)
+        return (try field("routines", of: reply), try field("problems", of: reply))
+    }
+
+    /// Runs a Routine now; `refused(code: "conflict")` while it already runs.
+    public func runRoutine(workspace: String, name: String) async throws {
+        _ = try await request(.runRoutine(workspace: workspace, name: name))
+    }
+
     // MARK: Terminal channels
 
     /// Sends input; it is kept until the server acknowledges it.

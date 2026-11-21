@@ -47,6 +47,35 @@ public struct Capture: Codable, Equatable, Sendable {
     }
 }
 
+/// A Routine as the host defines it, with its last run. `workspace/name` is its id.
+public struct Routine: Codable, Equatable, Sendable, Identifiable {
+    public var workspace: String
+    public var name: String
+    public var enabled: Bool
+    /// `HH:MM` in `timezone`; nil for a Routine that runs only on request.
+    public var at: String?
+    public var timezone: String?
+    /// The five cron fields; nil means every day.
+    public var schedule: String?
+    public var nextDue: Int64?
+    public var runningSince: Int64?
+    public var last: RoutineLast?
+
+    public var id: String { "\(workspace)/\(name)" }
+}
+
+public struct RoutineLast: Codable, Equatable, Sendable {
+    public var at: Int64
+    public var ok: Bool
+    public var reason: String?
+    public var published: UInt32?
+}
+
+public struct RoutineProblem: Codable, Equatable, Sendable {
+    public var workspace: String
+    public var reason: String
+}
+
 public struct TerminalStatus: Codable, Equatable, Sendable {
     /// What the program reported with OSC 7501: `working`, `blocked`, `done`…
     public var state: String

@@ -22,7 +22,7 @@ targets:
     sources: [Muxa]
     dependencies:
       - package: MuxaKit
-        products: [MuxaProtocol, MuxaTransport, MuxaSession, MuxaUI]
+        products: [MuxaProtocol, MuxaTransport, MuxaSession, MuxaUI, MuxaV2]
       - package: MarkdownUI
     settings:
       base:

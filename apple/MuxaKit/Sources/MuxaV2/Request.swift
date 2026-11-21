@@ -18,6 +18,8 @@ public enum V2Request: Sendable {
     case inboxReopen(item: String)
     case inboxDelete(item: String)
     case taskReview(terminal: String, note: String? = nil)
+    case routines
+    case runRoutine(workspace: String, name: String)
 
     func json(id: UInt64) throws -> Data {
         var m: [String: Any] = ["id": id]
@@ -44,6 +46,8 @@ public enum V2Request: Sendable {
         case let .inboxReopen(item): set("inbox-reopen", ["item": item])
         case let .inboxDelete(item): set("inbox-delete", ["item": item])
         case let .taskReview(terminal, note): set("task-review", ["terminal": terminal, "note": note])
+        case .routines: set("routines", [:])
+        case let .runRoutine(workspace, name): set("run-routine", ["workspace": workspace, "name": name])
         }
         return try JSONSerialization.data(withJSONObject: m, options: [.sortedKeys])
     }

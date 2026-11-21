@@ -1,9 +1,13 @@
+import MuxaSession
 import MuxaUI
 import SwiftUI
 
 @main
 struct MuxaApp: App {
     @State private var model = AppModel()
+    /// `-next`: the app on protocol v2 (D4), until it replaces the v1 screens.
+    private static let next = ProcessInfo.processInfo.arguments.contains("-next")
+    @State private var nextModel = NextModel(hosts: HostStore(file: HostStore.defaultFile))
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -30,12 +34,31 @@ struct MuxaApp: App {
 
     var body: some Scene {
         WindowGroup {
-            root
-                .environment(model)
-                .tint(Theme.accent)
-                .task { await model.resume() }
+            if Self.next {
+                NextRoot()
+                    .environment(nextModel)
+                    .tint(Theme.accent)
+                    .task {
+                        if ProcessInfo.processInfo.arguments.contains("-demo") { await nextModel.startDemo() }
+                    }
+            } else {
+                root
+                    .environment(model)
+                    .tint(Theme.accent)
+                    .task { await model.resume() }
+            }
         }
         .onChange(of: scenePhase) { _, phase in
+            if Self.next {
+                Task {
+                    switch phase {
+                    case .active: await nextModel.resumeIfNeeded()
+                    case .background: await nextModel.suspend()
+                    default: break
+                    }
+                }
+                return
+            }
             Task {
                 switch phase {
                 case .active: await model.resume()

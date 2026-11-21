@@ -5,6 +5,7 @@ Status: draft (2026-11-21), built in slices B1–B3 (resume: B3) of `docs/plan.m
 ## Transport
 
 - A client on another device runs `muxa-bridge connect` over SSH exec. The bridge relays stdin and stdout to the server's socket and adds nothing.
+- A device key whose `authorized_keys` line forces `command="…/muxa-bridge"` still reaches v2: sshd runs `muxa-bridge` with the client's command in `SSH_ORIGINAL_COMMAND`, and when its last word is `connect` the bridge relays as `muxa-bridge connect` does. The key can run nothing else.
 - A client on the host connects to the server's Unix socket directly: `server.sock` in the daemon's directory (`$XDG_STATE_HOME/muxa`, else `~/.local/state/muxa`), beside v1's `daemon.sock`.
 - The socket is mode 0600 in a 0700 directory; the server checks the peer's uid.
 

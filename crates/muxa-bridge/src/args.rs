@@ -66,6 +66,13 @@ pub enum Action {
     Help(&'static str),
 }
 
+/// A device key may only run `muxa-bridge` (its `authorized_keys` line forces
+/// the command). Its client asks for protocol v2 by sending `… connect`, which
+/// sshd puts in `SSH_ORIGINAL_COMMAND`.
+pub fn asks_for_connect(original: Option<&str>) -> bool {
+    original.and_then(|c| c.split_whitespace().last()) == Some("connect")
+}
+
 /// `muxa-bridge daemon <op> [flags]`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Daemon {
@@ -511,6 +518,14 @@ mod tests {
         // A Homebrew or /usr/local tmux on this machine comes first.
         assert!(found == bin || TMUX_CANDIDATES.iter().any(|c| found == Path::new(c)));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_forced_bridge_relays_when_its_client_asks_for_connect() {
+        assert!(asks_for_connect(Some("~/.local/bin/muxa-bridge connect")));
+        assert!(!asks_for_connect(Some("~/.local/bin/muxa-bridge")));
+        assert!(!asks_for_connect(Some("connect-me please")));
+        assert!(!asks_for_connect(None));
     }
 
     #[test]

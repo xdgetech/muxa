@@ -43,6 +43,11 @@ fn main() -> ExitCode {
         args::USAGE
     };
     let args = match args::parse(std::env::args_os().skip(1)) {
+        Ok(Action::Serve(args))
+            if args::asks_for_connect(std::env::var("SSH_ORIGINAL_COMMAND").ok().as_deref()) =>
+        {
+            return connect(args);
+        }
         Ok(Action::Serve(args)) => args,
         Ok(Action::Daemon(d)) => return daemon::main(d),
         Ok(Action::Connect(a)) => return connect(a),
