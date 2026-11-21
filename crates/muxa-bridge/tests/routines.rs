@@ -610,3 +610,68 @@ async fn the_daemon_starts_a_scheduled_run_at_its_time() {
     assert_eq!(inbox(&mut conn).await.len(), 1);
     daemon.shutdown().await;
 }
+
+/// ADR 0069: a run gets the default connections and the ones its Routine
+/// names, and no other. The values never reach the log.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_gets_only_its_routines_connections() {
+    let server = Server::start();
+    let h = Host::with(
+        "connections",
+        "[[routine]]\nname = \"Linked\"\ninstructions = \"brief.md\"\nenabled = true\n\
+         connections = [\"linear\"]\n",
+    );
+    let path = h.base.join("workspaces.toml");
+    let mut toml = std::fs::read_to_string(&path).unwrap();
+    let at = toml.find("[[worker]]").unwrap();
+    toml.insert_str(
+        at,
+        "[[workspace.connection]]\nname = \"linear\"\nenv = \"LINEAR_API_KEY\"\n\
+         [[workspace.connection]]\nname = \"docs\"\nenv = \"DOCS_TOKEN\"\ndefault = true\n\
+         [[workspace.connection]]\nname = \"slack\"\nenv = \"SLACK_TOKEN\"\n",
+    );
+    std::fs::write(&path, toml).unwrap();
+    let secrets = h.base.join("secrets");
+    std::fs::create_dir_all(&secrets).unwrap();
+    for (name, value) in [
+        ("linear", "lin-5ecret"),
+        ("docs", "docs-5ecret"),
+        ("slack", "slack-5ecret"),
+    ] {
+        std::fs::write(secrets.join(format!("w__{name}")), format!("{value}\n")).unwrap();
+    }
+    let flags = h.flags();
+    let flags: Vec<&str> = flags.iter().map(String::as_str).collect();
+    let secrets = secrets.display().to_string();
+    let mut daemon = Daemon::start_with(
+        &server,
+        common::daemon::short_dir(),
+        &flags,
+        &[("MUXA_TEST_SECRETS_DIR", &secrets)],
+    )
+    .await;
+    let mut conn = daemon.connect().await;
+    let started = conn
+        .request(json!({"type": "run-routine", "workspace": "w", "routine": "Linked"}))
+        .await;
+    assert!(
+        started
+            .iter()
+            .any(|m| matches!(m, Message::Result { error: None, .. })),
+        "{started:?}"
+    );
+    let seen = h.base.join("steer/env.json");
+    let deadline = Instant::now() + RUN_WAIT;
+    while !seen.exists() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let env: Value = serde_json::from_str(&std::fs::read_to_string(&seen).unwrap()).unwrap();
+    assert_eq!(
+        env,
+        json!({"LINEAR_API_KEY": "lin-5ecret", "DOCS_TOKEN": "docs-5ecret", "SLACK_TOKEN": null})
+    );
+    let log = daemon.log();
+    assert!(!log.contains("5ecret"), "a secret reached the log");
+    assert!(log.contains("connections given"), "{log}");
+    daemon.shutdown().await;
+}

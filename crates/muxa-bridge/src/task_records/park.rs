@@ -144,10 +144,20 @@ pub(super) async fn resume(env: &Env, record: Record) -> Result<Record, ErrorBod
         ));
     }
     let config = Arc::clone(&env.records);
-    let workspace = record.workspace.clone();
+    let (workspace, routine) = (
+        record.workspace.clone(),
+        record.routine_run().map(|r| r.name),
+    );
     let agent = blocking(move || {
         let workspaces = config.load_workspaces()?;
-        Ok(workspaces.get(&workspace).and_then(|w| w.agent.clone()))
+        let Some(w) = workspaces.get(&workspace) else {
+            return Ok(None);
+        };
+        let mut env = w.agent.as_ref().map(|a| a.env.clone()).unwrap_or_default();
+        let given = crate::connections::for_run(&workspaces, &workspace, routine.as_deref())
+            .map_err(|m| error_body(ErrorCode::BadRequest, m))?;
+        crate::connections::merge(&mut env, given);
+        Ok(crate::connections::default_agent(w, &env))
     })
     .await?;
     let config = Arc::clone(&env.records);

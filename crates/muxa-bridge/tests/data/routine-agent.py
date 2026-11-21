@@ -9,9 +9,11 @@ STEER_DIR/turns.log. Files in STEER_DIR steer it:
   hold        present: it starts on a dialog (state running) until answered
               appears, as Claude does in a folder it does not trust
 It also copies .muxa/routine/state.json, when present, to
-STEER_DIR/seen-state-<n>.json, so a test sees what the run received.
+STEER_DIR/seen-state-<n>.json, so a test sees what the run received, and
+writes the connection variables it got to STEER_DIR/env.json.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -22,6 +24,7 @@ PANE = os.environ["TMUX_PANE"]
 STEER = sys.argv[1]
 OUTPUT = ".muxa/routine/output.json"
 STATE = ".muxa/routine/state.json"
+SEEN = ["LINEAR_API_KEY", "DOCS_TOKEN", "SLACK_TOKEN"]
 
 
 def tmux(*args):
@@ -44,6 +47,9 @@ def copy(name):
 
 def main():
     tmux("set-option", "-p", "-t", PANE, "@muxa_role", "agent")
+    # The connections it got (ADR 0069), for a test to compare.
+    with open(os.path.join(STEER, "env.json"), "w") as f:
+        json.dump({k: os.environ.get(k) for k in SEEN}, f)
     if os.path.exists(os.path.join(STEER, "hold")):
         state("running")
         while not os.path.exists(os.path.join(STEER, "answered")):

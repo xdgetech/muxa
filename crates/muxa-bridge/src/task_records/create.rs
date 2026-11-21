@@ -204,7 +204,7 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
     req.agent = if resolved.worker.is_some() {
         Some(resolved.environment.clone())
     } else {
-        workspace.agent.clone()
+        crate::connections::default_agent(&workspace, &resolved.environment.env)
     };
     if resolved.worker.is_some() {
         if let Some(path) = builtin::existing_worktree(&main, branch)
@@ -372,8 +372,9 @@ async fn start(
             })
             .await
             .map_err(|e| Failure::before(e.message))?;
+            let agent = crate::connections::default_agent(workspace, &resolved.environment.env);
             builtin::Builtin::new(env.tasks.command.clone())
-                .launch_in_dir(client, &dir, workspace.agent.as_ref())
+                .launch_in_dir(client, &dir, agent.as_ref())
                 .await
         }
         Target::Dir(workspace, owned) => {
@@ -406,9 +407,10 @@ async fn start(
                     .in_plan_mode(plan)
                     .launch_in_dir(client, &dir, Some(&resolved.environment)).await
             } else {
+                let agent = crate::connections::default_agent(workspace, &resolved.environment.env);
                 builtin::Builtin::new(env.tasks.command.clone())
                     .in_plan_mode(plan)
-                    .launch_in_dir(client, &dir, workspace.agent.as_ref()).await
+                    .launch_in_dir(client, &dir, agent.as_ref()).await
             }
         }
     }
