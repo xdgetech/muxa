@@ -87,6 +87,8 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"inbox-move","item","index"}` | `{"inbox":Inbox}`. An index past the end means last |
 | `{"type":"inbox-later","item","until"}` | `{"inbox":Inbox}`. `until` is Unix seconds, in the future |
 | `{"type":"inbox-done","item"}`, `inbox-reopen`, `inbox-delete` | `{"inbox":Inbox}` |
+| `{"type":"routines"}` | `{"routines":[Routine...],"problems":[{"workspace","reason"}...]}` |
+| `{"type":"run-routine","workspace","name"}` | `{}`. The run reports through the Inbox; `conflict` while it already runs |
 | `{"type":"task-review","terminal","note"?}` | `{"inbox":Inbox}`. One open Review item for the Task of this agent terminal; `bad-request` for a terminal that is not a Task's agent |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
@@ -103,6 +105,10 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"resync"}` | After `watch`: changes were lost. The client sends `terminals` again |
 
 A watch ends with the connection. After a resume the client sends `watch` and `inbox` again.
+
+### Routines
+
+`Routine`: `{"workspace","name","enabled","at"?,"timezone"?,"schedule"?,"next_due"?,"running_since"?,"last"?}`. `at` is `HH:MM` in `timezone`; `schedule` the five cron fields (absent: every day). A Routine without `at` runs only on `run-routine`. `last`: `{"at","ok","reason"?,"published"?}`, the newer of the last success and failure. Times are Unix seconds.
 
 ### Inbox
 
@@ -123,7 +129,7 @@ Items the server makes:
 
 ### Error codes
 
-`bad-request`, `version`, `not-found`, `backend`, `closed`.
+`bad-request`, `version`, `not-found`, `backend`, `closed`, `conflict`.
 
 ## Not yet specified
 

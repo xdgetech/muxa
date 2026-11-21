@@ -310,7 +310,8 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
             let host = crate::v2::BridgeHost::new(
                 daemon.records.tasks.command.clone(),
                 Arc::clone(&daemon.records.records),
-            );
+            )
+            .with_engine(daemon.records.clone());
             let inbox = crate::v2::inbox(daemon.records.records.state_dir.as_deref());
             crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&daemon.records.records));
             let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));

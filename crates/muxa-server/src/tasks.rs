@@ -7,6 +7,7 @@ use std::future::Future;
 use std::path::PathBuf;
 
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
+use muxa_protocol::v2::{Routine, RoutineProblem};
 
 /// Labels on an agent terminal muxa started. herdr-core keeps them with the
 /// terminal, so a restarted server still finds the Task's agent.
@@ -41,8 +42,18 @@ pub enum TaskError {
     /// The request is wrong; the message says what to change.
     #[error("{0}")]
     Invalid(String),
+    /// It cannot happen now, e.g. the Routine already runs.
+    #[error("{0}")]
+    Busy(String),
     #[error("{0}")]
     Failed(String),
+}
+
+/// The host's Routines, and the Workspaces whose Routines cannot be read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoutineList {
+    pub routines: Vec<Routine>,
+    pub problems: Vec<RoutineProblem>,
 }
 
 /// What the server asks of the host: Task places and Workspace names.
@@ -53,6 +64,19 @@ pub trait Host: Send + Sync {
     /// The Workspace names, for Capture's `#name`.
     fn workspaces(&self) -> impl Future<Output = Vec<String>> + Send {
         async { Vec::new() }
+    }
+
+    fn routines(&self) -> impl Future<Output = Result<RoutineList, TaskError>> + Send {
+        async { Ok(RoutineList::default()) }
+    }
+
+    /// Starts a run now; it reports through the Inbox like a scheduled one.
+    fn run_routine(
+        &self,
+        _workspace: &str,
+        _name: &str,
+    ) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host runs no Routines".into())) }
     }
 }
 

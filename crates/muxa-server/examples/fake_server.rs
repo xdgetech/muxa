@@ -9,7 +9,8 @@ use std::sync::Arc;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend};
 use muxa_server::{
-    Config, Host, Inbox, PARK, Prepared, Services, Sessions, TaskError, TaskSpec, serve,
+    Config, Host, Inbox, PARK, Prepared, RoutineList, Services, Sessions, TaskError, TaskSpec,
+    serve,
 };
 use tokio::net::UnixListener;
 
@@ -28,6 +29,31 @@ impl Host for FakeHost {
 
     async fn workspaces(&self) -> Vec<String> {
         vec!["Personal".into()]
+    }
+
+    async fn routines(&self) -> Result<RoutineList, TaskError> {
+        let routine = |name: &str, at: Option<&str>| muxa_protocol::v2::Routine {
+            workspace: "Personal".into(),
+            name: name.into(),
+            enabled: true,
+            at: at.map(str::to_owned),
+            timezone: at.map(|_| "Europe/Berlin".to_owned()),
+            schedule: None,
+            next_due: None,
+            running_since: None,
+            last: None,
+        };
+        Ok(RoutineList {
+            routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
+            problems: vec![],
+        })
+    }
+
+    async fn run_routine(&self, _workspace: &str, name: &str) -> Result<(), TaskError> {
+        match name {
+            "digest" => Err(TaskError::Busy("digest already runs".into())),
+            _ => Ok(()),
+        }
     }
 }
 

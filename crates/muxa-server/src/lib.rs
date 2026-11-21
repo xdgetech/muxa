@@ -15,4 +15,4 @@ pub use muxa_inbox::Inbox;
 pub use session::{Config, PARK, ServeError, Services, serve};
 pub use sessions::Sessions;
 pub use task_items::watch_tasks;
-pub use tasks::{Host, Prepared, TaskError, TaskSpec};
+pub use tasks::{Host, Prepared, RoutineList, TaskError, TaskSpec};

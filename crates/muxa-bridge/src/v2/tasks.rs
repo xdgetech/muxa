@@ -4,20 +4,35 @@
 
 use std::sync::Arc;
 
-use muxa_server::{Host, Prepared, TaskError, TaskSpec};
+use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
-use crate::task_records;
+use crate::routines::runs::{self, StartError, When};
+use crate::task_records::{self, Context};
 use crate::tasks::{self, builtin};
 
 pub struct BridgeHost {
     /// `--task-command`: the agent when the Workspace names none.
     command: String,
     records: Arc<task_records::Config>,
+    /// The daemon's Routine engine, for Run now.
+    engine: Option<Context>,
 }
 
 impl BridgeHost {
     pub fn new(command: String, records: Arc<task_records::Config>) -> Self {
-        BridgeHost { command, records }
+        BridgeHost {
+            command,
+            records,
+            engine: None,
+        }
+    }
+
+    /// Runs Routines through the daemon's engine.
+    pub fn with_engine(self, cx: Context) -> Self {
+        BridgeHost {
+            engine: Some(cx),
+            ..self
+        }
     }
 }
 
@@ -50,6 +65,34 @@ impl Host for BridgeHost {
                 .map(|a| a.env.into_iter().collect())
                 .unwrap_or_default(),
         })
+    }
+
+    async fn routines(&self) -> Result<RoutineList, TaskError> {
+        let records = Arc::clone(&self.records);
+        let listed = tokio::task::spawn_blocking(move || crate::routines::list(&records))
+            .await
+            .map_err(|e| TaskError::Failed(e.to_string()))?;
+        let (routines, problems) = listed.map_err(|e| TaskError::Failed(e.message))?;
+        Ok(RoutineList {
+            routines: routines.into_iter().map(super::routines::to_v2).collect(),
+            problems: problems.into_iter().map(super::routines::problem).collect(),
+        })
+    }
+
+    async fn run_routine(&self, workspace: &str, name: &str) -> Result<(), TaskError> {
+        let cx = self
+            .engine
+            .as_ref()
+            .ok_or_else(|| TaskError::Invalid("this host runs no Routines".into()))?;
+        runs::start(cx, workspace, name, When::Now(crate::records::now()))
+            .await
+            .map(drop)
+            .map_err(|e| match e {
+                StartError::Bad(m) | StartError::Unsupported(m) => TaskError::Invalid(m),
+                StartError::Busy(m) => TaskError::Busy(m),
+                StartError::Handled => TaskError::Busy(e.to_string()),
+                StartError::Failed(m) => TaskError::Failed(m),
+            })
     }
 
     async fn workspaces(&self) -> Vec<String> {

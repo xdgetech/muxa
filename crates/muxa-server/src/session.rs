@@ -325,6 +325,24 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 self.start_task(id, &spec).await;
             }
             ClientMsg::Watch { id } => self.watch(id).await,
+            ClientMsg::Routines { id } => match self.host.routines().await {
+                Ok(list) => self.reply(
+                    id,
+                    Reply::Routines {
+                        routines: list.routines,
+                        problems: list.problems,
+                    },
+                ),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
+            ClientMsg::RunRoutine {
+                id,
+                workspace,
+                name,
+            } => match self.host.run_routine(&workspace, &name).await {
+                Ok(()) => self.reply(id, Reply::Empty {}),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
             ClientMsg::TaskReview { id, terminal, note } => {
                 match task_items::review(self.backend, self.inbox, &terminal, note).await {
                     Ok(()) => self.reply(
@@ -348,10 +366,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         let prepared = match self.host.prepare(spec).await {
             Ok(p) => p,
             Err(e) => {
-                let code = match e {
-                    TaskError::Invalid(_) => ErrorCode::BadRequest,
-                    TaskError::Failed(_) => ErrorCode::Backend,
-                };
+                let code = task_code(&e);
                 self.error(Some(id), code, e.to_string());
                 return;
             }
@@ -616,5 +631,13 @@ async fn next_revision(revisions: &mut Option<watch::Receiver<u64>>) {
     if !changed {
         *revisions = None;
         std::future::pending::<()>().await;
+    }
+}
+
+fn task_code(e: &TaskError) -> ErrorCode {
+    match e {
+        TaskError::Invalid(_) => ErrorCode::BadRequest,
+        TaskError::Busy(_) => ErrorCode::Conflict,
+        TaskError::Failed(_) => ErrorCode::Backend,
     }
 }

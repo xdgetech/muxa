@@ -26,6 +26,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] inbox move ITEM INDEX
        muxa-cli v2 [--bridge CMD] inbox later ITEM --minutes N
        muxa-cli v2 [--bridge CMD] review [TERMINAL] [--note TEXT]
+       muxa-cli v2 [--bridge CMD] routines [--json]
+       muxa-cli v2 [--bridge CMD] run-routine WORKSPACE NAME
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
 
   --bridge CMD   runs through sh -c (default: muxa-bridge connect),
@@ -53,6 +55,13 @@ enum Cmd {
     Review {
         terminal: String,
         note: Option<String>,
+    },
+    Routines {
+        json: bool,
+    },
+    RunRoutine {
+        workspace: String,
+        name: String,
     },
     StartTask {
         repo: String,
@@ -130,6 +139,11 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             terminal: std::env::var("HC_TERMINAL_ID")
                 .map_err(|_| "review needs a TERMINAL outside a herdr-core terminal")?,
             note,
+        },
+        ["routines"] => Cmd::Routines { json },
+        ["run-routine", w, n] => Cmd::RunRoutine {
+            workspace: (*w).to_owned(),
+            name: (*n).to_owned(),
         },
         ["review", t] => Cmd::Review {
             terminal: (*t).to_owned(),
@@ -226,6 +240,35 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             Ok(())
         }
         Cmd::Watch { seconds } => watch(bridge, seconds).await,
+        Cmd::Routines { json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c.request(json!({"type": "routines"})).await?;
+            if json {
+                println!(
+                    "{}",
+                    json!({"routines": reply["routines"], "problems": reply["problems"]})
+                );
+                return Ok(());
+            }
+            for r in reply["routines"].as_array().into_iter().flatten() {
+                println!("{}", routine_row(r));
+            }
+            for p in reply["problems"].as_array().into_iter().flatten() {
+                eprintln!(
+                    "muxa-cli: {}: {}",
+                    p["workspace"].as_str().unwrap_or("?"),
+                    p["reason"].as_str().unwrap_or("")
+                );
+            }
+            Ok(())
+        }
+        Cmd::RunRoutine { workspace, name } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            c.request(json!({"type": "run-routine", "workspace": workspace, "name": name}))
+                .await?;
+            println!("started {workspace}/{name}");
+            Ok(())
+        }
         Cmd::Review { terminal, note } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let msg = json!({"type": "task-review", "terminal": terminal, "note": note});
@@ -254,6 +297,29 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
         }
         Cmd::Attach { terminal, seconds } => attach(bridge, &terminal, seconds).await,
     }
+}
+
+/// `workspace/name  when  last`, one line per Routine.
+fn routine_row(r: &Value) -> String {
+    let when = match (r["at"].as_str(), r["enabled"].as_bool()) {
+        (_, Some(false)) => "off".to_owned(),
+        (Some(at), _) => at.to_owned(),
+        (None, _) => "on request".to_owned(),
+    };
+    let last = if r["running_since"].is_i64() {
+        "running".to_owned()
+    } else {
+        match (r["last"]["ok"].as_bool(), r["last"]["reason"].as_str()) {
+            (Some(true), _) => "ok".to_owned(),
+            (Some(false), why) => format!("failed: {}", why.unwrap_or("")),
+            _ => "-".to_owned(),
+        }
+    };
+    format!(
+        "{}/{}\t{when}\t{last}",
+        r["workspace"].as_str().unwrap_or("?"),
+        r["name"].as_str().unwrap_or("?")
+    )
 }
 
 /// `id  state  name  dir`, one line per terminal.

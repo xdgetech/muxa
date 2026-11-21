@@ -3,6 +3,7 @@
 //! relays an SSH client's stdin and stdout to it.
 
 pub mod feed;
+mod routines;
 mod tasks;
 
 use std::path::{Path, PathBuf};

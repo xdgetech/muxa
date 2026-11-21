@@ -293,6 +293,15 @@ pub enum ClientMsg {
         id: u64,
         item: String,
     },
+    Routines {
+        id: u64,
+    },
+    /// Runs a Routine now, outside its schedule.
+    RunRoutine {
+        id: u64,
+        workspace: String,
+        name: String,
+    },
     /// The Task of this agent terminal is ready for review: one Review item
     /// while it is open.
     TaskReview {
@@ -344,6 +353,53 @@ pub struct Inbox {
     pub done: Vec<InboxItem>,
 }
 
+/// A Routine as the host defines it, with its last run. `(workspace, name)`
+/// is its id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Routine {
+    pub workspace: String,
+    pub name: String,
+    /// Nothing runs, also not `run-routine`, while this is false.
+    pub enabled: bool,
+    /// `HH:MM` in `timezone`; absent for a Routine that runs only on request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    /// The five cron fields; absent means every day.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+    /// Unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_due: Option<i64>,
+    /// Unix seconds; a run is going on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running_since: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last: Option<RoutineLast>,
+}
+
+/// How the last run ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineLast {
+    /// Unix seconds.
+    pub at: i64,
+    pub ok: bool,
+    /// Why it failed: one sentence with ids only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Items the run published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published: Option<u32>,
+}
+
+/// A Workspace whose Routines could not be read; it lists none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineProblem {
+    pub workspace: String,
+    pub reason: String,
+}
+
 /// A Capture line read into fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capture {
@@ -392,6 +448,8 @@ pub enum ErrorCode {
     NotFound,
     Backend,
     Closed,
+    /// The thing is busy: a Routine already runs.
+    Conflict,
 }
 
 /// Server → client on channel 0.
@@ -437,11 +495,26 @@ pub enum ServerMsg {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Reply {
-    Terminals { terminals: Vec<Terminal> },
-    Attached { channel: u32 },
-    Started { terminal: Terminal, existing: bool },
-    Inbox { inbox: Inbox },
-    Capture { capture: Capture },
+    Terminals {
+        terminals: Vec<Terminal>,
+    },
+    Attached {
+        channel: u32,
+    },
+    Started {
+        terminal: Terminal,
+        existing: bool,
+    },
+    Inbox {
+        inbox: Inbox,
+    },
+    Capture {
+        capture: Capture,
+    },
+    Routines {
+        routines: Vec<Routine>,
+        problems: Vec<RoutineProblem>,
+    },
     Empty {},
 }
 

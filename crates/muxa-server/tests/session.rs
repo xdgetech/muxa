@@ -7,8 +7,8 @@ use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Exit, Launch, SessionBackend, TerminalId};
 use muxa_protocol::v2::{Frame, INITIAL_CREDIT, Kind};
 use muxa_server::{
-    Config, Host, Inbox, Prepared, ServeError, Services, Sessions, TaskError, TaskSpec, serve,
-    watch_tasks,
+    Config, Host, Inbox, Prepared, RoutineList, ServeError, Services, Sessions, TaskError,
+    TaskSpec, serve, watch_tasks,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
@@ -37,6 +37,31 @@ impl Host for FakeTasks {
 
     async fn workspaces(&self) -> Vec<String> {
         vec!["Personal".into()]
+    }
+
+    async fn routines(&self) -> Result<RoutineList, TaskError> {
+        let routine = |name: &str, at: Option<&str>| muxa_protocol::v2::Routine {
+            workspace: "Personal".into(),
+            name: name.into(),
+            enabled: true,
+            at: at.map(str::to_owned),
+            timezone: at.map(|_| "Europe/Berlin".to_owned()),
+            schedule: None,
+            next_due: None,
+            running_since: None,
+            last: None,
+        };
+        Ok(RoutineList {
+            routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
+            problems: vec![],
+        })
+    }
+
+    async fn run_routine(&self, _workspace: &str, name: &str) -> Result<(), TaskError> {
+        match name {
+            "digest" => Err(TaskError::Busy("digest already runs".into())),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -848,4 +873,27 @@ async fn a_failed_agent_makes_one_failed_item_and_a_kill_none() {
     );
     assert_eq!(view["items"][0]["note"], "It exited with code 1.");
     assert_eq!(view["items"][0]["kind"], "failed");
+}
+
+#[tokio::test]
+async fn routines_are_listed_and_run_now() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let list = request(&mut client, json!({"type": "routines", "id": 1})).await;
+    assert_eq!(list["routines"][0]["name"], "digest");
+    assert_eq!(list["routines"][0]["at"], "09:00");
+    assert!(list["routines"][1].get("at").is_none());
+    let ran = request(
+        &mut client,
+        json!({"type": "run-routine", "id": 2, "workspace": "Personal", "name": "audit"}),
+    )
+    .await;
+    assert_eq!(ran, json!({"type": "reply", "id": 2}));
+    let busy = request(
+        &mut client,
+        json!({"type": "run-routine", "id": 3, "workspace": "Personal", "name": "digest"}),
+    )
+    .await;
+    assert_eq!(busy["code"], "conflict");
 }
