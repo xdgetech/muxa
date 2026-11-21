@@ -64,20 +64,6 @@ pub enum Cause {
 /// Claude Code's trust dialog when its prompt was given up.
 pub const ASKS_TRUST_FIELD: &str = "agentAsksTrust";
 
-/// Why a background run never got its prompt, when muxa knows. `root` is
-/// the workspace's root: trusting it trusts every run folder in it. A
-/// Task's own note says it already; a run's session closes.
-pub fn trust_reason(r: &Record, root: Option<&std::path::Path>) -> Option<String> {
-    if !r.extra.contains_key(ASKS_TRUST_FIELD) {
-        return None;
-    }
-    let root = root.or(r.dir.as_deref())?;
-    Some(format!(
-        "Claude Code has not trusted {}. Open claude there once and accept.",
-        root.display()
-    ))
-}
-
 impl Prompt {
     /// The record's note when the prompt was not typed for `cause`.
     pub fn note(&self, cause: Cause) -> String {
@@ -1035,7 +1021,10 @@ mod tests {
             run,
         };
         record.set_pending_prompt(Some(pending));
-        assert_eq!(trust_reason(&record, None), None, "no dialog seen");
+        assert!(
+            !record.extra.contains_key(ASKS_TRUST_FIELD),
+            "no dialog seen"
+        );
 
         not_sent(&mut record, pending, None, Cause::AsksTrust, 130);
         assert_eq!(record.extra.get(ASKS_TRUST_FIELD), Some(&130.into()));
@@ -1046,18 +1035,6 @@ mod tests {
                  In its pane, choose \"Yes, I trust this folder\", then type: Read \
                  .muxa/TASK.md and start."
             )
-        );
-        assert_eq!(
-            trust_reason(&record, Some(std::path::Path::new("/r"))).as_deref(),
-            Some("Claude Code has not trusted /r. Open claude there once and accept.")
-        );
-        assert_eq!(
-            trust_reason(&record, None).as_deref(),
-            Some(
-                "Claude Code has not trusted /r/assistant/x-t-000001. Open claude there once \
-                 and accept."
-            ),
-            "without a workspace, the run's folder"
         );
     }
 

@@ -53,7 +53,12 @@ impl Host for FakeHost {
         })
     }
 
-    async fn run_routine(&self, _workspace: &str, name: &str) -> Result<(), TaskError> {
+    async fn run_routine<B: muxa_backend::SessionBackend>(
+        &self,
+        _backend: &B,
+        _workspace: &str,
+        name: &str,
+    ) -> Result<(), TaskError> {
         match name {
             "digest" => Err(TaskError::Busy("digest already runs".into())),
             _ => Ok(()),

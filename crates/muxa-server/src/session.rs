@@ -343,7 +343,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 id,
                 workspace,
                 name,
-            } => match self.host.run_routine(&workspace, &name).await {
+            } => match self.host.run_routine(self.backend, &workspace, &name).await {
                 Ok(()) => self.reply(id, Reply::Empty {}),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
             },

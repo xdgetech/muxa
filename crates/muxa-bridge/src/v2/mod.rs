@@ -5,6 +5,7 @@
 pub mod feed;
 mod places;
 mod routines;
+pub mod runner;
 mod tasks;
 
 use std::path::{Path, PathBuf};
@@ -112,6 +113,43 @@ pub fn spawn_task_watch(herdr: Arc<Herdr>) {
         }
     });
 }
+
+/// Runs Routines on herdr-core: a watch follows the run terminals, and every
+/// [`RUNNER_TICK`] due runs start and lost ones close.
+pub fn spawn_runner(herdr: Arc<Herdr>, runner: Arc<runner::Runner>) {
+    const FIRST: Duration = Duration::from_secs(2);
+    const MOST: Duration = Duration::from_secs(60);
+    let (h, r) = (Arc::clone(&herdr), Arc::clone(&runner));
+    tokio::spawn(async move {
+        let mut wait = FIRST;
+        loop {
+            match h.backend().await {
+                Ok(backend) => {
+                    wait = FIRST;
+                    if let Err(e) = r.watch(&backend).await {
+                        tracing::info!(error = %e, "the Routine run watch ended");
+                    }
+                }
+                Err(e) => tracing::info!(error = %e, "no herdr-core for Routine runs yet"),
+            }
+            tokio::time::sleep(wait).await;
+            wait = (wait * 2).min(MOST);
+        }
+    });
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(RUNNER_TICK);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            if let Ok(backend) = herdr.backend().await {
+                runner.tick(&backend).await;
+            }
+        }
+    });
+}
+
+/// How often due Routine runs start.
+const RUNNER_TICK: Duration = Duration::from_secs(30);
 
 /// Accepts v2 clients until the listener fails.
 pub async fn accept(listener: UnixListener, herdr: Arc<Herdr>) {

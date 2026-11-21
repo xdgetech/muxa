@@ -1,21 +1,16 @@
-//! Starting a Routine run (run-now or the daemon's tick) and following it to
-//! its end (ADR 0026 section 2). One open run per Routine: the claim in its
-//! state file is taken before the run's record exists.
-use std::sync::Arc;
+//! The Routine schedule and the run claim (ADR 0026 section 2), shared with
+//! the runner on the session backend (`v2::runner`). One open run per
+//! Routine: the claim in its state file is taken before the run starts.
 
 use jiff::civil::Date;
 use muxa_protocol::{RoutineFailure, RoutineRun};
 
-use super::record::RunOf;
 use super::schedule;
 use super::store::{RoutineState, RoutineStore, StateError};
 use crate::records::routines::Routine;
-use crate::records::workers::{WorkerAgent, WorkerChoice};
-use crate::records::{LoopState, Status, Store, StoreError, Workspaces, now};
-use crate::task_records::{Config, Context, NewTask, create};
-
-/// A run that took no record this long after its claim did not start. Seconds.
-const START_LIMIT: u64 = 300;
+use crate::records::workers::WorkerAgent;
+use crate::records::{Status, Store, Workspaces, now};
+use crate::task_records::Config;
 
 /// What starts a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,10 +43,6 @@ impl From<StateError> for StartError {
     }
 }
 
-/// Codex runs a Routine only on a thread muxa owns (ADR 0026, Consequences;
-/// ADR 0028): a Routine has no person to type its prompt.
-pub const CODEX: &str = "a Routine needs automatic prompt delivery, which Codex has only with [codex] owned_threads = true and the shared daemon (ADR 0028). Turn it on after the checks in ADR 0028, or use a Claude Code worker for this Routine.";
-
 /// Whether the Routine would start Codex: a Codex worker, or a default
 /// command whose program is `codex`.
 pub fn runs_codex(workspaces: &Workspaces, routine: &Routine, fallback: &str) -> bool {
@@ -74,19 +65,6 @@ pub fn runs_codex(workspaces: &Workspaces, routine: &Routine, fallback: &str) ->
     }
 }
 
-/// Whether the Routine's Codex would run on a thread muxa owns.
-pub fn owned_codex(workspaces: &Workspaces, routine: &Routine, fallback: &str) -> bool {
-    let choice = match routine.worker.as_deref() {
-        Some(name) => WorkerChoice::Named(name),
-        None => WorkerChoice::WorkspaceDefault,
-    };
-    workspaces
-        .resolve_worker(&routine.workspace, choice, None, fallback)
-        .ok()
-        .and_then(|resolved| crate::task_records::owned::launch(workspaces, &resolved))
-        .is_some()
-}
-
 pub fn occurrence(routine: &Routine, when: When) -> String {
     match (when, &routine.trigger) {
         (When::Scheduled(date), Some(t)) => schedule::occurrence_id(t, date),
@@ -95,84 +73,7 @@ pub fn occurrence(routine: &Routine, when: When) -> String {
     }
 }
 
-/// Starts one run and returns the Routine's state with it. A failure after
-/// the claim is kept as the Routine's last failure.
-pub async fn start(
-    cx: &Context,
-    workspace: &str,
-    name: &str,
-    when: When,
-) -> Result<RoutineState, StartError> {
-    let (config, ws, nm, fallback) = (
-        Arc::clone(&cx.records),
-        workspace.to_owned(),
-        name.to_owned(),
-        cx.tasks.command.clone(),
-    );
-    let (routine, goal, occurrence) = tokio::task::spawn_blocking(move || {
-        let workspaces = load(&config)?;
-        let routine = workspaces.routine(&ws, &nm).cloned().ok_or_else(|| {
-            StartError::Bad(format!(
-                "no routine {nm:?} in workspace {ws:?}; list-routines shows the host's Routines"
-            ))
-        })?;
-        if !routine.enabled {
-            return Err(StartError::Bad(format!(
-                "routine {nm:?} is not enabled; set enabled = true in workspaces.toml on the host"
-            )));
-        }
-        let occurrence = occurrence(&routine, when);
-        let store = RoutineStore::open(&dir(&config)?)?;
-        let fail = |e: StartError| fail_claimless(&store, &routine, &occurrence, when, e);
-        if runs_codex(&workspaces, &routine, &fallback)
-            && !owned_codex(&workspaces, &routine, &fallback)
-        {
-            return Err(fail(StartError::Unsupported(CODEX.into())));
-        }
-        let instructions = routine
-            .read_instructions()
-            .map_err(|e| fail(StartError::Failed(e.to_string())))?;
-        let goal = super::brief::goal(&routine, &instructions);
-        claim(&store, &routine, &occurrence, when)?;
-        Ok((routine, goal, occurrence))
-    })
-    .await
-    .map_err(|_| StartError::Failed("the routine start stopped".into()))??;
-    tracing::info!(
-        workspace,
-        routine = name,
-        occurrence,
-        "routine run starting"
-    );
-    let run = RunOf {
-        name: routine.name.clone(),
-        occurrence: occurrence.clone(),
-    };
-    let (record, error) = match cx.env().await {
-        Ok(env) => {
-            let new = NewTask {
-                workspace: routine.workspace.clone(),
-                worker: routine.worker.clone(),
-                title: format!("{} {occurrence}", routine.name),
-                goal,
-                project: routine.project.clone(),
-                routine: Some(run),
-                ..NewTask::default()
-            };
-            let (record, error) = create(&env, new).await;
-            (record, error.map(|e| e.message))
-        }
-        Err(e) => (None, Some(e.message)),
-    };
-    let config = Arc::clone(&cx.records);
-    tokio::task::spawn_blocking(move || {
-        finish_start(&config, &routine, &occurrence, record.map(|r| r.id), error)
-    })
-    .await
-    .map_err(|_| StartError::Failed("the routine start stopped".into()))?
-}
-
-fn claim(
+pub(crate) fn claim(
     store: &RoutineStore,
     routine: &Routine,
     occurrence: &str,
@@ -204,7 +105,7 @@ fn claim(
 
 /// Keeps a failure that came before the claim; a scheduled occurrence counts
 /// as handled, so a broken Routine does not retry every tick.
-fn fail_claimless(
+pub(crate) fn fail_claimless(
     store: &RoutineStore,
     routine: &Routine,
     occurrence: &str,
@@ -230,7 +131,7 @@ fn fail_claimless(
     error
 }
 
-fn finish_start(
+pub(crate) fn finish_start(
     config: &Config,
     routine: &Routine,
     occurrence: &str,
@@ -270,30 +171,13 @@ fn finish_start(
     Ok(state)
 }
 
-/// One daemon tick: closes ended runs, starts the due ones in the background,
-/// and clears what published runs left (ADR 0037 §2).
-pub async fn tick(cx: &Context) {
-    let config = Arc::clone(&cx.records);
-    let due = tokio::task::spawn_blocking(move || scan(&config, now()))
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "the routine scan stopped");
-            Vec::new()
-        });
-    for (workspace, name, date) in due {
-        let cx2 = cx.clone();
-        cx.pending.spawn(async move {
-            match start(&cx2, &workspace, &name, When::Scheduled(date)).await {
-                Ok(_) | Err(StartError::Handled | StartError::Busy(_)) => {}
-                Err(e) => tracing::info!(routine = %name, error = %e, "scheduled run not started"),
-            }
-        });
-    }
-    super::cleanup::tick(cx).await;
-}
-
-/// Blocking. The due `(workspace, name, date)`s after closing ended runs.
-fn scan(config: &Config, at: u64) -> Vec<(String, String, Date)> {
+/// Blocking. The due `(workspace, name, date)`s; `open` sees each Routine
+/// that has an open run, to close it when it ended.
+pub(crate) fn scan_with(
+    config: &Config,
+    at: u64,
+    mut open: impl FnMut(&RoutineStore, &Workspaces, &Routine, &RoutineState),
+) -> Vec<(String, String, Date)> {
     let Some(state_dir) = config.state_dir.as_ref().filter(|d| d.is_dir()) else {
         return Vec::new();
     };
@@ -304,14 +188,10 @@ fn scan(config: &Config, at: u64) -> Vec<(String, String, Date)> {
     if workspaces.routines().is_empty() {
         return Vec::new();
     }
-    let (store, records) = match (RoutineStore::open(state_dir), Store::open(state_dir)) {
-        (Ok(s), Ok(r)) => (s, r),
-        (Err(e), _) => {
+    let store = match RoutineStore::open(state_dir) {
+        Ok(s) => s,
+        Err(e) => {
             tracing::warn!(error = %e, "cannot open routine state");
-            return Vec::new();
-        }
-        (_, Err(e)) => {
-            tracing::warn!(error = %e, "cannot open task records for routines");
             return Vec::new();
         }
     };
@@ -328,8 +208,7 @@ fn scan(config: &Config, at: u64) -> Vec<(String, String, Date)> {
             }
         };
         if state.running.is_some() {
-            let root = workspaces.get(&routine.workspace).map(|w| w.root.as_path());
-            reconcile(&store, &records, routine, root, &state, at);
+            open(&store, &workspaces, routine, &state);
             continue;
         }
         let Some(trigger) = &routine.trigger else {
@@ -365,90 +244,6 @@ fn scan(config: &Config, at: u64) -> Vec<(String, String, Date)> {
     due
 }
 
-/// Closes the open run when its record ended: a publish closes it as a
-/// success; anything else is the Routine's last failure.
-fn reconcile(
-    store: &RoutineStore,
-    records: &Store,
-    routine: &Routine,
-    root: Option<&std::path::Path>,
-    state: &RoutineState,
-    at: u64,
-) {
-    let Some(open) = &state.running else { return };
-    let ended = match &open.task {
-        None if at.saturating_sub(open.started_at) > START_LIMIT => {
-            Some((None, "The run did not start.".to_owned()))
-        }
-        None => None,
-        Some(task) => match records.get(task) {
-            Err(StoreError::NotFound(_)) => Some((
-                Some(task.clone()),
-                "The run's record is missing.".to_owned(),
-            )),
-            Err(e) => {
-                tracing::debug!(task, error = %e, "cannot read a routine run");
-                None
-            }
-            Ok(r) => ended(&r, root).map(|why| (Some(task.clone()), why)),
-        },
-    };
-    let Some((task, why)) = ended else { return };
-    if let Some(id) = &task {
-        drop_run_with(records, id, &why);
-    }
-    let occurrence = open.occurrence.clone();
-    let saved = store.update::<_, StateError>(&routine.workspace, &routine.name, |s| {
-        if s.running.as_ref().map(|r| (&r.occurrence, &r.task)) != Some((&occurrence, &task)) {
-            return Ok(());
-        }
-        s.running = None;
-        s.last_failure = Some(RoutineFailure {
-            at,
-            occurrence: occurrence.clone(),
-            task: task.clone(),
-            reason: why.clone(),
-        });
-        Ok(())
-    });
-    match saved {
-        Ok(()) => {
-            tracing::info!(routine = %routine.name, task, "routine run ended without a publish")
-        }
-        Err(e) => tracing::warn!(routine = %routine.name, error = %e, "cannot close a routine run"),
-    }
-}
-
-const NOT_STARTED: &str = "The start prompt was not typed: the agent did not become idle \
-                           within 30 seconds. Open the run's session to see why.";
-
-/// Why the run's record says it ended, or None while it may still publish.
-/// `root` is the workspace's, which the user trusts for every run folder.
-fn ended(r: &crate::records::Record, root: Option<&std::path::Path>) -> Option<String> {
-    match r.status {
-        Status::Done => return Some("The run ended without a publish.".into()),
-        Status::Dropped => return Some("The run was dropped.".into()),
-        Status::Open | Status::Review => {}
-    }
-    match r.task_loop() {
-        Ok(Some(lp)) if lp.never_started() => Some(
-            crate::task_records::handoff::trust_reason(r, root)
-                .unwrap_or_else(|| NOT_STARTED.into()),
-        ),
-        Ok(Some(lp)) if lp.state == LoopState::Stopped => Some(format!(
-            "The output check stopped: {}.",
-            lp.reason.map_or("unknown".to_owned(), String::from)
-        )),
-        Ok(Some(_)) => None,
-        // No check means the start never completed.
-        Ok(None) if r.pending_prompt().is_none() && !r.runs.is_empty() => {
-            Some("The run has no output check.".into())
-        }
-        Ok(None) => None,
-        Err(_) => Some("The run's check is unreadable.".into()),
-    }
-}
-
 fn drop_run(config: &Config, task: &str, note: &str) {
     match config.state_dir.as_ref().map(Store::open) {
         Some(Ok(records)) => drop_run_with(&records, task, note),
@@ -475,7 +270,7 @@ pub fn last_date(state: &RoutineState) -> Option<Date> {
     state.last_occurrence.as_deref()?.parse().ok()
 }
 
-pub(super) fn load(config: &Config) -> Result<Workspaces, StartError> {
+pub(crate) fn load(config: &Config) -> Result<Workspaces, StartError> {
     let Some(path) = &config.workspaces else {
         return Ok(Workspaces::default());
     };
@@ -485,7 +280,7 @@ pub(super) fn load(config: &Config) -> Result<Workspaces, StartError> {
     })
 }
 
-pub(super) fn dir(config: &Config) -> Result<std::path::PathBuf, StartError> {
+pub(crate) fn dir(config: &Config) -> Result<std::path::PathBuf, StartError> {
     config.state_dir.clone().ok_or_else(|| {
         StartError::Unsupported(
             "this host keeps no task records: HOME is not set; pass --state-dir".into(),

@@ -92,9 +92,11 @@ pub trait Host: Send + Sync {
         async { Ok(RoutineList::default()) }
     }
 
-    /// Starts a run now; it reports through the Inbox like a scheduled one.
-    fn run_routine(
+    /// Starts a run now on `backend`; it reports through the Inbox like a
+    /// scheduled one.
+    fn run_routine<B: SessionBackend>(
         &self,
+        _backend: &B,
         _workspace: &str,
         _name: &str,
     ) -> impl Future<Output = Result<(), TaskError>> + Send {

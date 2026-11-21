@@ -13,10 +13,43 @@ use crate::loops::step::CheckEnd;
 use crate::records::{Record, now};
 use crate::task_records::Config;
 
+/// A Routine run by its parts: no task record needed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunAt {
+    pub workspace: String,
+    pub name: String,
+    pub occurrence: String,
+    /// The run's id, as the Routine's open run names it.
+    pub id: String,
+    pub dir: std::path::PathBuf,
+}
+
 /// Blocking. Exit 0 once the output is published (also when it was already).
 pub fn run(config: &Config, record: &Record, attempt: u32) -> CheckEnd {
+    let (Some(run), Some(dir)) = (record.routine_run(), record.dir.clone()) else {
+        tracing::warn!(task = %record.id, "not a readable Routine run");
+        return CheckEnd::Exited {
+            code: 1,
+            seconds: 0,
+        };
+    };
+    run_at(
+        config,
+        &RunAt {
+            workspace: record.workspace.clone(),
+            name: run.name,
+            occurrence: run.occurrence,
+            id: record.id.clone(),
+            dir,
+        },
+        attempt,
+    )
+}
+
+/// Blocking. As [`run`], for a run by its parts.
+pub fn run_at(config: &Config, run: &RunAt, attempt: u32) -> CheckEnd {
     let started = Instant::now();
-    let result = publish(config, record);
+    let result = publish(config, run);
     let seconds = started.elapsed().as_secs();
     let (code, lines) = match &result {
         Ok(n) => (0, vec![format!("passed: {n} new Inbox entries stored.")]),
@@ -24,39 +57,30 @@ pub fn run(config: &Config, record: &Record, attempt: u32) -> CheckEnd {
     };
     match &result {
         Ok(n) => {
-            tracing::info!(task = %record.id, attempt, entries = n, "routine output published")
+            tracing::info!(task = %run.id, attempt, entries = n, "routine output published")
         }
         Err(r) => {
-            tracing::info!(task = %record.id, attempt, reasons = r.len(), "routine output refused")
+            tracing::info!(task = %run.id, attempt, reasons = r.len(), "routine output refused")
         }
     }
-    if let Some(dir) = &record.dir {
-        if let Err(e) = report(dir, attempt, code == 0, &lines, "the Routine output") {
-            tracing::warn!(task = %record.id, error = %e, "cannot write the routine check log");
-        }
+    if let Err(e) = report(&run.dir, attempt, code == 0, &lines, "the Routine output") {
+        tracing::warn!(task = %run.id, error = %e, "cannot write the routine check log");
     }
     CheckEnd::Exited { code, seconds }
 }
 
-fn publish(config: &Config, record: &Record) -> Result<u32, Vec<String>> {
+fn publish(config: &Config, run: &RunAt) -> Result<u32, Vec<String>> {
     let one = |r: String| vec![r];
-    let run = record
-        .routine_run()
-        .ok_or_else(|| one("This record is not a readable Routine run.".into()))?;
-    let dir = record
-        .dir
-        .as_ref()
-        .ok_or_else(|| one("The run has no directory.".into()))?;
     let workspaces = runs::load(config).map_err(|e| one(e.to_string()))?;
     let routine = workspaces
-        .routine(&record.workspace, &run.name)
+        .routine(&run.workspace, &run.name)
         .ok_or_else(|| one("The Routine is no longer in workspaces.toml.".into()))?;
-    let out = output::read(dir, routine.items)?;
+    let out = output::read(&run.dir, routine.items)?;
     let state_dir = runs::dir(config).map_err(|e| one(e.to_string()))?;
     let store = RoutineStore::open(&state_dir).map_err(|e| one(e.to_string()))?;
     let at = now();
-    let stored = store.update::<_, Failure>(&record.workspace, &run.name, |s| {
-        output::publish(s, &record.id, &run.occurrence, out, at, output::entry_id)
+    let stored = store.update::<_, Failure>(&run.workspace, &run.name, |s| {
+        output::publish(s, &run.id, &run.occurrence, out, at, output::entry_id)
             .map_err(Failure::Publish)
     });
     match stored {
@@ -65,7 +89,7 @@ fn publish(config: &Config, record: &Record) -> Result<u32, Vec<String>> {
             "This run is no longer the Routine's open run; its output is not published.".into(),
         )),
         Err(e) => {
-            tracing::warn!(task = %record.id, error = %e, "cannot store routine output");
+            tracing::warn!(task = %run.id, error = %e, "cannot store routine output");
             Err(one(
                 "muxa could not store the output. It checks again after your next turn.".into(),
             ))

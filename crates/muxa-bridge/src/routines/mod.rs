@@ -6,7 +6,6 @@
 
 pub mod brief;
 pub mod check;
-pub mod cleanup;
 pub mod inbox;
 pub mod output;
 pub mod record;
@@ -25,10 +24,8 @@ use crate::convert::error_body;
 use crate::records::Record;
 use crate::records::routines::Routine;
 use crate::task_records::{Config, Context};
-use runs::{StartError, When};
+use runs::StartError;
 use store::{RoutineState, RoutineStore};
-
-pub use runs::tick;
 
 /// Answers a `work` level 1 request: its list or saved message, and its error.
 pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
@@ -43,11 +40,7 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
                     problems,
                 })
         }
-        Request::RunRoutine {
-            id,
-            workspace,
-            routine,
-        } => run_now(cx, id, &workspace, &routine).await,
+        Request::RunRoutine { .. } => run_now(),
         Request::ListInbox { id } => {
             let config = Arc::clone(&cx.records);
             blocking(move || {
@@ -115,28 +108,12 @@ pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBo
     }
 }
 
-async fn run_now(
-    cx: &Context,
-    id: u64,
-    workspace: &str,
-    routine: &str,
-) -> Result<Message, ErrorBody> {
-    let state = runs::start(cx, workspace, routine, When::Now(crate::records::now()))
-        .await
-        .map_err(|e| start_error(&e))?;
-    let config = Arc::clone(&cx.records);
-    let (ws, name) = (workspace.to_owned(), routine.to_owned());
-    blocking(move || {
-        let workspaces = runs::load(&config).map_err(|e| start_error(&e))?;
-        let routine = workspaces
-            .routine(&ws, &name)
-            .ok_or_else(|| error_body(ErrorCode::BadRequest, "the Routine was removed"))?;
-        Ok(Message::RoutineSaved {
-            routine: id,
-            entry: info(routine, &state, crate::records::now()),
-        })
-    })
-    .await
+/// Routine runs moved to herdr-core (plan F1): Run now is protocol v2's.
+fn run_now() -> Result<Message, ErrorBody> {
+    Err(error_body(
+        ErrorCode::Unsupported,
+        "Routines run in the muxa daemon over protocol v2 now; use Run now in the app or muxa-cli v2",
+    ))
 }
 
 fn start_error(e: &StartError) -> ErrorBody {
@@ -236,10 +213,16 @@ pub fn info(r: &Routine, state: &RoutineState, at: u64) -> RoutineInfo {
 /// Blocking. Before the agent starts: the private stage folder (0700) and
 /// the state the last successful run committed. Called by `create-task`'s path.
 pub fn prepare(config: &Config, record: &Record, dir: &Path) -> Result<(), String> {
-    use std::os::unix::fs::DirBuilderExt;
     let run = record
         .routine_run()
         .ok_or("the record is not a Routine run")?;
+    prepare_at(config, &record.workspace, &run.name, dir)
+}
+
+/// Blocking. The run folder's private output stage, and the state the last
+/// run committed.
+pub fn prepare_at(config: &Config, workspace: &str, name: &str, dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt;
     let stage = dir.join(output::STAGE_DIR);
     std::fs::DirBuilder::new()
         .recursive(true)
@@ -248,7 +231,7 @@ pub fn prepare(config: &Config, record: &Record, dir: &Path) -> Result<(), Strin
         .map_err(|e| format!("cannot create {}: {e}", stage.display()))?;
     let state_dir = runs::dir(config).map_err(|e| e.to_string())?;
     let state = RoutineStore::open(&state_dir)
-        .and_then(|s| s.get(&record.workspace, &run.name))
+        .and_then(|s| s.get(workspace, name))
         .map_err(|e| e.to_string())?;
     if let Some(value) = state.state {
         let path = dir.join(output::STATE);

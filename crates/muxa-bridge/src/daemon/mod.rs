@@ -139,9 +139,7 @@ impl Daemon {
         };
         drop(items);
         self.park(idle).await;
-        let step = slow("tasks", step);
-        crate::routines::tick(&self.records).await;
-        slow("routines", step);
+        slow("tasks", step);
         self.sweep();
     }
 
@@ -299,15 +297,20 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
     match socket::bind(&v2_path) {
         Ok(v2) => {
             let program = std::env::var("MUXA_HC").unwrap_or_else(|_| "hc".to_owned());
+            let runner = Arc::new(crate::v2::runner::Runner::new(
+                Arc::clone(&daemon.records.records),
+                daemon.records.tasks.command.clone(),
+            ));
             let host = crate::v2::BridgeHost::new(
                 daemon.records.tasks.command.clone(),
                 Arc::clone(&daemon.records.records),
             )
-            .with_engine(daemon.records.clone());
+            .with_runner(Arc::clone(&runner));
             let inbox = crate::v2::inbox(daemon.records.records.state_dir.as_deref());
             crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&daemon.records.records));
             let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
             crate::v2::spawn_task_watch(Arc::clone(&herdr));
+            crate::v2::spawn_runner(Arc::clone(&herdr), runner);
             tokio::spawn(crate::v2::accept(v2, herdr));
             tracing::info!(socket = %v2_path.display(), "protocol v2 listening");
         }

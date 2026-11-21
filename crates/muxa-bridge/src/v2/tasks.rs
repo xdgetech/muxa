@@ -7,17 +7,18 @@ use std::sync::Arc;
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::places;
+use super::runner::Runner;
 use crate::records::workers::LaunchCommand;
-use crate::routines::runs::{self, StartError, When};
-use crate::task_records::{self, Context};
+use crate::routines::runs::{StartError, When};
+use crate::task_records;
 use crate::tasks::builtin;
 
 pub struct BridgeHost {
     /// `--task-command`: the agent when the Workspace names none.
     command: String,
     records: Arc<task_records::Config>,
-    /// The daemon's Routine engine, for Run now.
-    engine: Option<Context>,
+    /// Runs Routines on the session backend, for Run now.
+    runner: Option<Arc<Runner>>,
 }
 
 impl BridgeHost {
@@ -25,14 +26,13 @@ impl BridgeHost {
         BridgeHost {
             command,
             records,
-            engine: None,
+            runner: None,
         }
     }
 
-    /// Runs Routines through the daemon's engine.
-    pub fn with_engine(self, cx: Context) -> Self {
+    pub fn with_runner(self, runner: Arc<Runner>) -> Self {
         BridgeHost {
-            engine: Some(cx),
+            runner: Some(runner),
             ..self
         }
     }
@@ -123,12 +123,18 @@ impl Host for BridgeHost {
         })
     }
 
-    async fn run_routine(&self, workspace: &str, name: &str) -> Result<(), TaskError> {
-        let cx = self
-            .engine
+    async fn run_routine<B: muxa_backend::SessionBackend>(
+        &self,
+        backend: &B,
+        workspace: &str,
+        name: &str,
+    ) -> Result<(), TaskError> {
+        let runner = self
+            .runner
             .as_ref()
             .ok_or_else(|| TaskError::Invalid("this host runs no Routines".into()))?;
-        runs::start(cx, workspace, name, When::Now(crate::records::now()))
+        runner
+            .start(backend, workspace, name, When::Now(crate::records::now()))
             .await
             .map(drop)
             .map_err(|e| match e {
