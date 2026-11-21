@@ -20,12 +20,13 @@ ADR 0067 relies on these facts. Checked on a Mac on 2026-11-21: herdr-core 0.1.2
 | A stream starts with 256 KiB of credit. The viewer returns CREDIT for the bytes it consumed. A viewer more than 4 MiB behind gets a fresh paint instead of the backlog. | Docs |
 | A program's OSC 7501 report (`ESC ] 7501 ; state=done:app=x ESC \`) shows in `terminal.get` as `status`. | Script |
 | herdr-core never infers a state from the screen. | Docs |
+| Claude Code (2.1.330) sends OSC 7501 by itself, with no hooks: herdr-core shows `reported: true` and `status: {app: "claude-code", state: "working"}` for a running session, and `done` after a turn. Its `msg` is the current activity text, so it counts as conversation content (invariant 5). | Seen by hand on running sessions |
 | `events.subscribe` with a label filter sends events on their own channel. The first is `created`; `status` and `size` follow. | Script |
 | The full event list: `created`, `lost`, `restarted`, `keep`, `finished`, `removed`, `status`, `turn`, `title`, `labels`, `size`, `doc`, with a `heartbeat` every 15 s and `missed` plus a snapshot for a subscriber that fell behind. | Docs |
-| `terminal.kill` ends the program, and the stream closes with `{"reason":"killed"}`. `terminal.rm` then removes it. | Script |
+| `terminal.kill` ends the program, and the stream closes with `{"reason":"killed"}`. `terminal.rm` then removes it. | Script, `make test-herdr` |
 | herdr-core has no panes or splits. The Herdr app groups terminals by the labels `herdr.space` and `herdr.tab`. | Docs (Herdr app) |
 
-Not checked: programs surviving `hc server restart` (the docs say "programs keep running"), what survives a reboot, two viewers changing the size in turn, and whether Claude Code and Codex send OSC 7501 by themselves.
+Not checked: programs surviving `hc server restart` (the docs say "programs keep running"), what survives a reboot, two viewers changing the size in turn, and whether Codex sends OSC 7501 by itself.
 
 The script needs a running herdr-core and uses the user's own: herdr-core has no option for an isolated server that the script could start. It adds one labelled terminal and removes it. Run it by hand with `MUXA_REPRO_HERDR=1`; CI skips it.
 

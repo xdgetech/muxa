@@ -470,6 +470,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "muxa-herdr"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "muxa-protocol"
 version = "0.1.0"
 dependencies = [

@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-harness test-tmux-plugin test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
@@ -31,6 +31,11 @@ test:
 # Integration tests on throwaway tmux servers (tmux >= 3.2).
 test-tmux:
 	cargo test --workspace --features muxa-tmux/tmux-integration,muxa-bridge/tmux-integration
+
+# Humans only: the herdr-core client against the running herdr-core (ADR 0067).
+# It adds one labelled terminal per test and removes it.
+test-herdr:
+	MUXA_TEST_HERDR=1 cargo test -p muxa-herdr --features herdr-integration
 
 test-harness:
 	bats tests/harness

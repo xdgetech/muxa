@@ -1,0 +1,25 @@
+[package]
+name = "muxa-herdr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Tests against the user's running herdr-core (`hc` on PATH). They also need
+# MUXA_TEST_HERDR=1, because herdr-core has no isolated server mode.
+herdr-integration = []
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["process", "io-util", "sync", "rt", "macros", "time"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time"] }

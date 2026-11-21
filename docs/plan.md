@@ -36,6 +36,14 @@ What works today:
 
 Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow below.
 
+**muxa next comes first** (ordered 2026-11-21; ADR 0066–0070, `docs/next.md`). Its phases replace the phases below where they overlap:
+- **A. herdr backend:** A1 the `muxa-herdr` client (done: calls, attach streams with credit, events; `cargo test -p muxa-herdr`, `make test-herdr`); A2 the session backend trait and its contract tests.
+- **B. muxa server:** the required daemon, the bridge as a relay, resumable client sessions (ADR 0067).
+- **C. Inbox:** the ADR 0066 model, then the removal of the assistant layer.
+- **D. Apps:** Home and Focus on iOS and Android, then the Mac app (ADR 0070).
+- **E. Places and connections** (ADR 0068, 0069).
+- **F. tmux removal:** `muxa-tmux`, control mode and `tmux/`.
+
 1. **Phase 0, clean up:** done. The open work is committed and merged agent worktrees are removed. Work continues on `plan/workspace-vision`; it is not merged into `main` yet.
 2. **Phase 1, ship 1.0:** real-device checks, the daemon on a Mac, the developer's decisions on ADR 0015–0021 and 0023, then publish. Agent lane: the supported tmux CI matrix.
 3. **Phase 2, Workers:** simplify the selection contract (ADR 0027 section 1), named create and restart, the pickers, then advertise `workers`. Codex continues restarted runs by hand. Parallel lanes: manual-only Sessions (UI only, done in both apps; no All Sessions filter); the Codex session-ownership ADR (proposed ADR 0028: muxa creates the thread and sends turns by id; waits for the developer's checks with a real login).
