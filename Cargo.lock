@@ -499,6 +499,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "muxa-server"
+version = "0.1.0"
+dependencies = [
+ "muxa-backend",
+ "muxa-herdr",
+ "muxa-protocol",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "muxa-tmux"
 version = "0.1.0"
 dependencies = [

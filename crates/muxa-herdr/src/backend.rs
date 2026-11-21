@@ -30,6 +30,11 @@ impl HerdrBackend {
 fn err(op: &'static str) -> impl Fn(Error) -> BackendError {
     move |e| match e {
         Error::Closed => BackendError::Closed,
+        Error::Rpc {
+            kind: Some(k),
+            message,
+            ..
+        } if k == "not_found" => BackendError::NotFound(message),
         Error::InvalidName(_) => BackendError::Invalid(e.to_string()),
         other => BackendError::failed(op, other),
     }

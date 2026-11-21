@@ -36,6 +36,7 @@ test-tmux:
 # It adds one labelled terminal per test and removes it.
 test-herdr:
 	MUXA_TEST_HERDR=1 cargo test -p muxa-herdr --features herdr-integration
+	MUXA_TEST_HERDR=1 cargo test -p muxa-server --features herdr-integration --test herdr_live
 
 test-harness:
 	bats tests/harness

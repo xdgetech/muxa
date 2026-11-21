@@ -130,7 +130,10 @@ async fn an_unknown_terminal_is_an_rpc_error() {
     }
     let client = Client::spawn("hc", &["connect"]).await.unwrap();
     let err = client.get("muxa-test-no-such-terminal").await.unwrap_err();
-    assert!(matches!(err, muxa_herdr::Error::Rpc { .. }), "{err}");
+    assert!(
+        matches!(&err, muxa_herdr::Error::Rpc { kind: Some(k), .. } if k == "not_found"),
+        "{err}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

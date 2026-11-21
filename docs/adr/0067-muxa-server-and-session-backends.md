@@ -29,7 +29,7 @@ herdr-core (Apache-2.0, preview 0.x) has a documented JSON-RPC API with a raw ou
    - the scheduler (slots and resource checks);
    - one session per client that the client can resume.
 2. **The bridge becomes a relay.** The app still runs `muxa-bridge` over SSH exec, so SSH keeps doing authentication. The bridge connects stdin and stdout to the server's Unix socket (mode 0600, peer uid checked). No port is opened.
-3. **A client can resume.**
+3. **A client can resume** (wire details in `protocol/PROTOCOL-v2.md`).
    - The server gives each client a token. It keeps the token on disk; it keeps buffers in memory only (invariant 5).
    - Pane output carries a sequence number per pane. The server keeps 256 KiB of recent output per watched pane.
    - Input carries a client sequence number. The server acknowledges it, and ignores a number it has already applied, so an approval is never typed twice.
@@ -46,11 +46,12 @@ herdr-core (Apache-2.0, preview 0.x) has a documented JSON-RPC API with a raw ou
    Workspace, Task and place stay in muxa's records; the backend only stores labels.
 5. **herdr-core replaces tmux.** It is the only backend, over `hc connect` in framed mode. The trait exists so that Rex can replace it later, when Rex's terminal stream is documented. It is not for running two backends side by side.
    - muxa pins the herdr-core version it was tested with, and the server checks the protocol generation at start. herdr-core is Apache-2.0, so a breaking release can be skipped or forked.
-   - **The switch:** tmux sessions that are open at the switch finish in tmux with the current apps. New Tasks start in herdr-core. Then `muxa-tmux`, the control-mode code and its tests are removed.
-6. **The server attaches once per client.** With herdr-core, each client that watches a terminal gets its own viewer, so "the last active viewer sets the size" means the device in use.
-7. **The apps own pane layout.** herdr-core has no splits. The apps draw a Task's panes and keep the layout per device. The wire protocol carries raw bytes, sizes and states, and never a backend's own types.
-8. **State comes from OSC 7501 where a program sends it.** The agent adapters (ADR 0005) stay for questions, transcripts and Chat. Under herdr-core an adapter matches an agent to its terminal by `HC_TERMINAL_ID` in the agent's environment, the way it uses `TMUX_PANE` today. The rule "no invented state" (invariant 6) holds.
-9. **A contract test suite checks the backend.** It checks: run, attach, input round trip, resize reaches the program, status from OSC 7501, kill with a reason, and events in order. A Rex adapter must pass the same suite.
+   - **The switch is hard** (decided 2026-11-21). Once the server and the apps ship, the apps talk only to the server and herdr-core. Tmux sessions still open then are finished from the desktop. `muxa-tmux`, the control-mode code and its tests are removed with protocol v1.
+6. **The wire protocol is v2, binary** (decided 2026-11-21; `protocol/PROTOCOL-v2.md`). It uses herdr-core's framing: `[channel u32 LE][kind u8][len u32 LE][payload]`. Channel 0 carries JSON control messages. Each attached terminal has its own channel of raw bytes with credit flow control. Output and input carry sequence numbers for resume and acknowledgement. Protocol v1 is not extended; it goes at the switch.
+7. **The server attaches once per client.** With herdr-core, each client that watches a terminal gets its own viewer, so "the last active viewer sets the size" means the device in use.
+8. **The apps own pane layout.** herdr-core has no splits. The apps draw a Task's panes and keep the layout per device. The wire protocol carries raw bytes, sizes and states, and never a backend's own types.
+9. **State comes from OSC 7501 where a program sends it.** The agent adapters (ADR 0005) stay for questions, transcripts and Chat. Under herdr-core an adapter matches an agent to its terminal by `HC_TERMINAL_ID` in the agent's environment, the way it uses `TMUX_PANE` today. The rule "no invented state" (invariant 6) holds.
+10. **A contract test suite checks the backend.** It checks: run, attach, input round trip, resize reaches the program, status from OSC 7501, kill with a reason, and events in order. A Rex adapter must pass the same suite.
 
 ## Consequences
 

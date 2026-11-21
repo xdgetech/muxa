@@ -6,6 +6,8 @@ pub enum BackendError {
     Closed,
     #[error("{0}")]
     Invalid(String),
+    #[error("not found: {0}")]
+    NotFound(String),
     #[error("{op}: {message}")]
     Failed { op: &'static str, message: String },
 }

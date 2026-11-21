@@ -5,6 +5,8 @@
 #[cfg(feature = "contract")]
 pub mod contract;
 mod error;
+#[cfg(feature = "fake")]
+pub mod fake;
 mod types;
 
 use std::future::Future;

@@ -11,6 +11,8 @@ pub enum Error {
     Rpc {
         method: String,
         code: i64,
+        /// herdr-core's `data.kind`, for example `not_found`.
+        kind: Option<String>,
         message: String,
     },
     #[error("herdr-core speaks protocol generation {found}, muxa needs {wanted}")]

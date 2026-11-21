@@ -13,6 +13,7 @@ mod routines;
 mod staff;
 mod task_proposals;
 mod today;
+pub mod v2;
 mod workers;
 mod writes;
 pub use assistant::{

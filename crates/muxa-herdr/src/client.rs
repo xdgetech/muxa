@@ -177,9 +177,15 @@ impl Client {
         }
         let reply = reply_rx.await.map_err(|_| Error::Closed)?;
         reply.map_err(|e| match e {
-            Error::Rpc { code, message, .. } => Error::Rpc {
+            Error::Rpc {
+                code,
+                kind,
+                message,
+                ..
+            } => Error::Rpc {
                 method: method.to_owned(),
                 code,
+                kind,
                 message,
             },
             other => other,
@@ -278,6 +284,7 @@ fn rpc_result(method: &str, msg: Value) -> Result<Value, Error> {
         return Err(Error::Rpc {
             method: method.to_owned(),
             code: err["code"].as_i64().unwrap_or(0),
+            kind: err["data"]["kind"].as_str().map(str::to_owned),
             message: err["message"].as_str().unwrap_or_default().to_owned(),
         });
     }
