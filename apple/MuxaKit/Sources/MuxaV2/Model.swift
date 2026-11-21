@@ -76,6 +76,37 @@ public struct RoutineProblem: Codable, Equatable, Sendable {
     public var reason: String
 }
 
+/// A place a client asks for (ADR 0068). A repo is absolute, or relative to
+/// the Workspace's root.
+public enum PlaceSpec: Equatable, Sendable {
+    /// A new folder in the Workspace's tasks folder.
+    case folder
+    /// A worktree of `repo` on `branch`.
+    case branch(repo: String, branch: String, base: String? = nil)
+    /// The repo's main checkout, never written.
+    case read(repo: String)
+
+    var json: [String: String] {
+        switch self {
+        case .folder: return ["kind": "folder"]
+        case let .branch(repo, branch, base):
+            var m = ["kind": "branch", "repo": repo, "branch": branch]
+            if let base { m["base"] = base }
+            return m
+        case let .read(repo): return ["kind": "read", "repo": repo]
+        }
+    }
+}
+
+/// A Task's place as it is, from its agent's `muxa.places` label; the
+/// working place comes first.
+public struct Place: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable { case folder, branch, read }
+    public var kind: Kind
+    public var path: String
+    public var branch: String?
+}
+
 public struct TerminalStatus: Codable, Equatable, Sendable {
     /// What the program reported with OSC 7501: `working`, `blocked`, `done`…
     public var state: String
@@ -96,6 +127,11 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     public var taskDir: String? { labels["muxa.dir"] }
     public var branch: String? { labels["muxa.branch"] }
     public var isTaskAgent: Bool { labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent" }
+    /// A Task's places, the working place first; empty for other terminals.
+    public var places: [Place] {
+        guard let text = labels["muxa.places"], let data = text.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([Place].self, from: data)) ?? []
+    }
 }
 
 public struct Exit: Codable, Equatable, Sendable {

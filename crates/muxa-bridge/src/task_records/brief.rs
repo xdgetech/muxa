@@ -297,7 +297,7 @@ pub fn refresh(dir: &Path, record: &Record) -> Result<PathBuf, String> {
 
 /// Writes `<dir>/.muxa/<name>` through a temp file and a rename, so the
 /// agent never reads half of it. Blocking.
-pub(super) fn write_file(dir: &Path, name: &str, text: &str) -> Result<PathBuf, String> {
+pub(crate) fn write_file(dir: &Path, name: &str, text: &str) -> Result<PathBuf, String> {
     let folder = dir.join(DIR);
     std::fs::create_dir_all(&folder)
         .map_err(|e| format!("cannot create {}: {e}", folder.display()))?;
@@ -312,7 +312,7 @@ pub(super) fn write_file(dir: &Path, name: &str, text: &str) -> Result<PathBuf, 
 }
 
 /// Adds `.muxa/` to the repo's `info/exclude`, shared by all its worktrees.
-fn exclude(dir: &Path) -> Result<(), String> {
+pub(crate) fn exclude(dir: &Path) -> Result<(), String> {
     let out = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)

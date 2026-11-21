@@ -2,6 +2,7 @@ package tech.xdge.muxa.v2
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -10,7 +11,14 @@ sealed interface V2Request {
     data object Terminals : V2Request
     data class Attach(val terminal: String, val cols: Int, val rows: Int, val history: Int = 0) : V2Request
     data class Detach(val channel: Int) : V2Request
-    data class StartTask(val repo: String, val branch: String, val base: String? = null, val plan: Boolean = false) : V2Request
+    /** No places: one folder (ADR 0068). */
+    data class StartTask(
+        val workspace: String,
+        val title: String,
+        val goal: String? = null,
+        val places: List<PlaceSpec> = emptyList(),
+        val plan: Boolean = false,
+    ) : V2Request
     data object Watch : V2Request
     data object GetInbox : V2Request
 
@@ -36,7 +44,10 @@ sealed interface V2Request {
             Terminals -> type("terminals")
             is Attach -> { type("attach"); put("terminal", r.terminal); put("cols", r.cols); put("rows", r.rows); put("history", r.history) }
             is Detach -> { type("detach"); put("channel", r.channel) }
-            is StartTask -> { type("start-task"); put("repo", r.repo); put("branch", r.branch); opt("base", r.base); put("plan", r.plan) }
+            is StartTask -> {
+                type("start-task"); put("workspace", r.workspace); put("title", r.title); opt("goal", r.goal)
+                put("places", buildJsonArray { r.places.forEach { add(placeJson(it)) } }); put("plan", r.plan)
+            }
             Watch -> type("watch")
             GetInbox -> type("inbox")
             is ParseCapture -> { type("parse-capture"); put("text", r.text); put("today", r.today) }
@@ -53,5 +64,16 @@ sealed interface V2Request {
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
         }
+    }
+}
+
+private fun placeJson(p: PlaceSpec): JsonObject = buildJsonObject {
+    when (p) {
+        PlaceSpec.Folder -> put("kind", "folder")
+        is PlaceSpec.Branch -> {
+            put("kind", "branch"); put("repo", p.repo); put("branch", p.branch)
+            if (p.base != null) put("base", p.base)
+        }
+        is PlaceSpec.Read -> { put("kind", "read"); put("repo", p.repo) }
     }
 }

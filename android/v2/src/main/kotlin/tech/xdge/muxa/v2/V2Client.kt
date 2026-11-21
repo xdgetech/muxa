@@ -141,8 +141,14 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     }
 
     /** The Task's agent terminal, and whether it was already running. */
-    suspend fun startTask(repo: String, branch: String, base: String? = null, plan: Boolean = false): Pair<Terminal, Boolean> {
-        val reply = request(V2Request.StartTask(repo, branch, base, plan))
+    suspend fun startTask(
+        workspace: String,
+        title: String,
+        goal: String? = null,
+        places: List<PlaceSpec> = emptyList(),
+        plan: Boolean = false,
+    ): Pair<Terminal, Boolean> {
+        val reply = request(V2Request.StartTask(workspace, title, goal, places, plan))
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 

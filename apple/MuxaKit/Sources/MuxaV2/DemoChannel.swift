@@ -108,7 +108,7 @@ actor DemoServer {
             write(Frame(channel: n, kind: .close, payload: []))
             reply(id, [:])
         case "start-task":
-            startTask(id, branch: m["branch"] as? String ?? "task", repo: m["repo"] as? String ?? "")
+            startTask(id, title: m["title"] as? String ?? "Task", places: m["places"] as? [[String: Any]] ?? [])
         case "watch":
             watching = true
             reply(id, [:])
@@ -197,18 +197,24 @@ actor DemoServer {
         offsets[n] = UInt64(screen.count)
     }
 
-    private func startTask(_ id: UInt64, branch: String, repo: String) {
-        if let running = content.terminals.first(where: { $0.live && $0.branch == branch && $0.isTaskAgent }) {
+    /// The first branch is the working place; without one, a folder named after the title.
+    private func startTask(_ id: UInt64, title: String, places: [[String: Any]]) {
+        let firstBranch = places.first { $0["kind"] as? String == "branch" }
+        let branch = firstBranch?["branch"] as? String
+        let repo = firstBranch?["repo"] as? String
+        let dir = branch.map { "\(repo ?? "/demo")-\($0)" } ?? "/demo/tasks/\(title)"
+        if let running = content.terminals.first(where: { $0.live && $0.isTaskAgent && $0.taskDir == dir }) {
             return reply(id, ["terminal": json(running), "existing": true])
         }
+        var labels = ["muxa.kind": "task", "muxa.role": "agent", "muxa.dir": dir]
+        if let branch { labels["muxa.branch"] = branch }
+        if let repo { labels["muxa.repo"] = repo }
         let t = Terminal(
-            id: "t\(content.terminals.count + 1)", name: branch, live: true,
+            id: "t\(content.terminals.count + 1)", name: title, live: true,
             status: TerminalStatus(state: "working", app: "claude-code"),
-            labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.branch": branch,
-                     "muxa.repo": repo, "muxa.dir": "\(repo)-\(branch)"],
-            cols: 80, rows: 24)
+            labels: labels, cols: 80, rows: 24)
         content.terminals.append(t)
-        content.screens[t.id] = "Starting the agent on \(branch)…\r\n"
+        content.screens[t.id] = "Starting the agent for \(title)…\r\n"
         reply(id, ["terminal": json(t), "existing": false])
         if watching { send(["type": "changed", "terminal": json(t)]) }
     }

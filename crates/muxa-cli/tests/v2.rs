@@ -40,12 +40,16 @@ struct WorkTasks;
 
 impl Host for WorkTasks {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
+        let (repo, branch) = spec.branch().unwrap_or(("", &spec.title));
         Ok(Prepared {
-            dir: format!("/work/{}", spec.branch).into(),
-            repo: spec.repo.clone().into(),
-            branch: spec.branch.clone(),
+            dir: format!("/work/{branch}").into(),
+            workspace: spec.workspace.clone(),
+            title: spec.title.clone(),
+            repo: Some(repo.into()),
+            branch: Some(branch.to_owned()),
             argv: vec!["agent".into()],
             env: Default::default(),
+            places: Vec::new(),
         })
     }
 }
@@ -131,14 +135,31 @@ async fn terminals_and_start_task_through_the_relay() {
     let host = TestHost::start("tasks").await;
     let started = stdout(
         &host
-            .cli(&["start-task", "--repo", "/r", "--branch", "fix", "--json"])
+            .cli(&[
+                "start-task",
+                "--workspace",
+                "w",
+                "--title",
+                "fix",
+                "--branch",
+                "/r:fix",
+                "--json",
+            ])
             .await,
     );
     let reply: Value = serde_json::from_str(&started).unwrap();
     assert_eq!(reply["existing"], false);
     let again = stdout(
         &host
-            .cli(&["start-task", "--repo", "/r", "--branch", "fix"])
+            .cli(&[
+                "start-task",
+                "--workspace",
+                "w",
+                "--title",
+                "fix",
+                "--branch",
+                "/r:fix",
+            ])
             .await,
     );
     assert!(again.starts_with("running "), "{again}");
@@ -216,7 +237,16 @@ async fn an_agent_says_its_task_is_ready_for_review() {
     let host = TestHost::start("review").await;
     let started: Value = serde_json::from_str(&stdout(
         &host
-            .cli(&["start-task", "--repo", "/r", "--branch", "fix", "--json"])
+            .cli(&[
+                "start-task",
+                "--workspace",
+                "w",
+                "--title",
+                "fix",
+                "--branch",
+                "/r:fix",
+                "--json",
+            ])
             .await,
     ))
     .unwrap();

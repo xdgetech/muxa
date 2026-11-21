@@ -311,15 +311,17 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
             },
             ClientMsg::StartTask {
                 id,
-                repo,
-                branch,
-                base,
+                workspace,
+                title,
+                goal,
+                places,
                 plan,
             } => {
                 let spec = TaskSpec {
-                    repo,
-                    branch,
-                    base,
+                    workspace,
+                    title,
+                    goal,
+                    places,
                     plan,
                 };
                 self.start_task(id, &spec).await;

@@ -80,7 +80,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"terminals"}` | `{"terminals":[Terminal...]}`: the live terminals |
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
-| `{"type":"start-task","repo","branch","base"?,"plan"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal |
+| `{"type":"start-task","workspace","title","goal"?,"places"?,"plan"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal |
 | `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
 | `{"type":"inbox"}` | `{"inbox":Inbox}` |
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
@@ -94,7 +94,22 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
-`start-task` makes the branch's worktree (or finds it) and runs the Workspace's agent there, in plan mode when `plan` is true. If the Task's agent is still running, the reply has it with `existing: true` and nothing new starts. The agent terminal has these labels: `muxa.kind` = `task`, `muxa.role` = `agent`, `muxa.dir` (the worktree), `muxa.repo` (the main checkout) and `muxa.branch`. A wrong repo or branch is `bad-request`.
+`start-task` makes a Task's places and runs the Workspace's agent in the working place, in plan mode when `plan` is true (ADR 0068). Each place is one of:
+
+- `{"kind":"folder"}`: a new folder `<root>/tasks/<slug>-<id>`;
+- `{"kind":"branch","repo","branch","base"?}`: a worktree of the repo on the branch, made or found;
+- `{"kind":"read","repo"}`: the repo's main checkout, never written.
+
+A `repo` is absolute, or relative to the Workspace's root. The working place is the folder, else the first branch; with neither, the server adds a folder, so no `places` means one folder. A Task has at most one folder and one place per repo. The working place gets `.muxa/TASK.md` with the title, the goal and every place with its mode. A restarted Task keeps its own. Claude Code also gets the other places as additional directories, with edits denied in the read-only ones (`--settings .muxa/claude-settings.json`). Read only is a rule for the agent, not a boundary.
+
+If the Task's agent is still running in that working place, the reply has it with `existing: true` and nothing new starts. A folder is new each time, so a folder Task always starts a new agent. The agent terminal's `name` is the title, and it has these labels:
+
+- `muxa.kind` = `task`, `muxa.role` = `agent` and `muxa.dir`, the working place;
+- `muxa.workspace`;
+- `muxa.repo` (the main checkout) and `muxa.branch`, when the working place is a branch;
+- `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
+
+An unknown Workspace, a missing title, a wrong repo or branch, or a repo named twice is `bad-request`.
 
 ### Notifications
 

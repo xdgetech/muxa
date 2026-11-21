@@ -1,14 +1,16 @@
-//! The host's side of the v2 server: a Task's branch worktree, as the
-//! built-in launcher makes it, the Workspace's agent command and environment
-//! (ADR 0016), and the Workspace names for Capture.
+//! The host's side of the v2 server: a Task's places (`places.rs`, ADR 0068),
+//! the Workspace's agent command and environment (ADR 0016), and the
+//! Workspace names for Capture.
 
 use std::sync::Arc;
 
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
+use super::places;
+use crate::records::workers::LaunchCommand;
 use crate::routines::runs::{self, StartError, When};
 use crate::task_records::{self, Context};
-use crate::tasks::{self, builtin};
+use crate::tasks::builtin;
 
 pub struct BridgeHost {
     /// `--task-command`: the agent when the Workspace names none.
@@ -38,30 +40,64 @@ impl BridgeHost {
 
 impl Host for BridgeHost {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
-        let req = tasks::validate(&spec.repo, &spec.branch, spec.base.as_deref())
+        let title = spec.title.trim();
+        if title.is_empty() {
+            return Err(TaskError::Invalid("a Task needs a title".into()));
+        }
+        let records = Arc::clone(&self.records);
+        let ws = tokio::task::spawn_blocking(move || records.load_workspaces())
             .await
-            .map_err(convert)?;
-        let agent = task_records::agent_for_repo(&self.records, &req.repo).await;
-        let worktree = builtin::worktree(&req).await.map_err(convert)?;
-        let command = agent
+            .map_err(|e| TaskError::Failed(e.to_string()))?
+            .map_err(|e| TaskError::Failed(e.message))?
+            .get(&spec.workspace)
+            .cloned()
+            .ok_or_else(|| {
+                TaskError::Invalid(format!("no Workspace named {:?}", spec.workspace))
+            })?;
+        let checked = places::check(&ws, &spec.places).await?;
+        let made = places::make(&ws, title, checked).await?;
+        let command = ws
+            .agent
             .as_ref()
             .and_then(|a| a.command.clone())
             .unwrap_or_else(|| self.command.clone());
-        let line = if spec.plan {
-            builtin::plan_line(&command)
-        } else {
-            command
+        let claude =
+            crate::task_records::reading::is_claude_code(&LaunchCommand::Shell(command.clone()));
+        let (made, title_owned, goal) = (made, title.to_owned(), spec.goal.clone());
+        let (made, settings) = tokio::task::spawn_blocking(move || {
+            places::brief(&made, &title_owned, goal.as_deref())?;
+            let settings = if claude {
+                places::claude_settings(&made)?
+            } else {
+                None
+            };
+            Ok::<_, String>((made, settings))
+        })
+        .await
+        .map_err(|e| TaskError::Failed(e.to_string()))?
+        .map_err(TaskError::Failed)?;
+        let mut line = match settings {
+            Some(flag) => format!("{command} {flag}"),
+            None => command,
         };
-        if let Some(a) = &agent {
+        if spec.plan {
+            line = builtin::plan_line(&line);
+        }
+        if let Some(a) = &ws.agent {
             // Keys only: values may be tokens.
             tracing::info!(keys = ?a.keys(), "agent environment");
         }
+        tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
         Ok(Prepared {
-            dir: worktree.path,
-            repo: worktree.main,
-            branch: req.branch,
+            dir: made.working().to_owned(),
+            workspace: ws.name.clone(),
+            title: title.to_owned(),
+            repo: made.repo.clone(),
+            branch: made.branch.clone(),
+            places: made.places,
             argv: shell_line(line),
-            env: agent
+            env: ws
+                .agent
                 .map(|a| a.env.into_iter().collect())
                 .unwrap_or_default(),
         })
@@ -110,19 +146,12 @@ fn shell_line(line: String) -> Vec<String> {
     vec!["/bin/sh".into(), "-c".into(), line]
 }
 
-fn convert(e: tasks::TaskError) -> TaskError {
-    match e {
-        tasks::TaskError::Invalid(m) => TaskError::Invalid(m),
-        other => TaskError::Failed(other.to_string()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn a_repo_that_is_not_there_is_invalid() {
+    async fn a_workspace_that_is_not_there_is_invalid() {
         let host = BridgeHost::new(
             "claude".into(),
             Arc::new(task_records::Config {
@@ -132,9 +161,10 @@ mod tests {
             }),
         );
         let spec = TaskSpec {
-            repo: "/nowhere/at/all".into(),
-            branch: "fix".into(),
-            base: None,
+            workspace: "nowhere".into(),
+            title: "Fix".into(),
+            goal: None,
+            places: Vec::new(),
             plan: false,
         };
         assert!(matches!(

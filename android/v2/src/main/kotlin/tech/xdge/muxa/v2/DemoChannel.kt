@@ -4,6 +4,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -120,7 +121,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 write(Frame(n, FrameKind.CLOSE, ByteArray(0)))
                 reply(id)
             }
-            "start-task" -> startTask(id, m.str("branch") ?: "task", m.str("repo") ?: "")
+            "start-task" -> startTask(id, m.str("title") ?: "Task", (m["places"] as? JsonArray).orEmpty())
             "watch" -> {
                 watching = true
                 reply(id)
@@ -184,16 +185,26 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         offsets[n] = screen.size.toLong()
     }
 
-    private fun startTask(id: Long, branch: String, repo: String) {
-        terminals.firstOrNull { it.live && it.branch == branch && it.isTaskAgent }?.let {
+    /** The first branch is the working place; without one, a folder named after the title. */
+    private fun startTask(id: Long, title: String, places: List<JsonElement>) {
+        val first = places.mapNotNull { it as? JsonObject }.firstOrNull { it.str("kind") == "branch" }
+        val branch = first?.str("branch")
+        val repo = first?.str("repo")
+        val dir = if (branch != null) "${repo ?: "/demo"}-$branch" else "/demo/tasks/$title"
+        terminals.firstOrNull { it.live && it.isTaskAgent && it.taskDir == dir }?.let {
             return reply(id, "terminal" to enc(it), "existing" to JsonPrimitive(true))
         }
+        val labels = buildMap {
+            put("muxa.kind", "task"); put("muxa.role", "agent"); put("muxa.dir", dir)
+            if (branch != null) put("muxa.branch", branch)
+            if (repo != null) put("muxa.repo", repo)
+        }
         val t = Terminal(
-            "t${terminals.size + 1}", branch, live = true, status = TerminalStatus("working", "claude-code"),
-            labels = agentLabels(branch, repo, "$repo-$branch"), cols = 80, rows = 24,
+            "t${terminals.size + 1}", title, live = true, status = TerminalStatus("working", "claude-code"),
+            labels = labels, cols = 80, rows = 24,
         )
         terminals += t
-        screens[t.id] = "Starting the agent on $branch…\r\n"
+        screens[t.id] = "Starting the agent for $title…\r\n"
         reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
     }

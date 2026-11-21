@@ -72,6 +72,29 @@ data class RoutineLast(val at: Long, val ok: Boolean, val reason: String? = null
 @Serializable
 data class RoutineProblem(val workspace: String, val reason: String)
 
+/** A place a client asks for (ADR 0068). A repo is absolute, or relative to the Workspace's root. */
+sealed interface PlaceSpec {
+    /** A new folder in the Workspace's tasks folder. */
+    data object Folder : PlaceSpec
+
+    /** A worktree of [repo] on [branch]. */
+    data class Branch(val repo: String, val branch: String, val base: String? = null) : PlaceSpec
+
+    /** The repo's main checkout, never written. */
+    data class Read(val repo: String) : PlaceSpec
+}
+
+/** A Task's place as it is, from its agent's `muxa.places` label; the working place comes first. */
+@Serializable
+data class Place(val kind: PlaceKind, val path: String, val branch: String? = null)
+
+@Serializable
+enum class PlaceKind {
+    @SerialName("folder") FOLDER,
+    @SerialName("branch") BRANCH,
+    @SerialName("read") READ,
+}
+
 @Serializable
 data class TerminalStatus(val state: String, val app: String? = null)
 
@@ -89,6 +112,10 @@ data class Terminal(
     val taskDir: String? get() = labels["muxa.dir"]
     val branch: String? get() = labels["muxa.branch"]
     val isTaskAgent: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent"
+
+    /** A Task's places, the working place first; empty for other terminals. */
+    val places: List<Place>
+        get() = labels["muxa.places"]?.let { runCatching { json.decodeFromString<List<Place>>(it) }.getOrNull() } ?: emptyList()
 }
 
 @Serializable

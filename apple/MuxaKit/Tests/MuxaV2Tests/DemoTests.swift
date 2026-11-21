@@ -45,4 +45,25 @@ struct DemoTests {
             try await c.runRoutine(workspace: "app", name: "release-notes")
         }
     }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aTaskStartsInItsPlaceOnce() async throws {
+        let c = try await open()
+        let (audit, existing) = try await c.startTask(workspace: "app", title: "Audit", places: [.read(repo: "/demo/app")])
+        #expect(audit.name == "Audit" && !existing && audit.branch == nil)
+        let (fix, _) = try await c.startTask(
+            workspace: "app", title: "Fix", places: [.branch(repo: "/demo/app", branch: "fix-2")])
+        #expect(fix.branch == "fix-2")
+        let (again, running) = try await c.startTask(
+            workspace: "app", title: "Fix", places: [.branch(repo: "/demo/app", branch: "fix-2")])
+        #expect(running && again.id == fix.id)
+    }
+
+    @Test func placesDecodeFromTheLabel() {
+        let t = Terminal(
+            id: "t9", name: "Audit", live: true, status: nil,
+            labels: ["muxa.places": #"[{"kind":"folder","path":"/w/tasks/a"},{"kind":"read","path":"/w/docs"}]"#],
+            cols: 80, rows: 24)
+        #expect(t.places == [Place(kind: .folder, path: "/w/tasks/a"), Place(kind: .read, path: "/w/docs")])
+    }
 }

@@ -19,19 +19,23 @@ struct FakeTasks;
 
 impl Host for FakeTasks {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
-        if spec.branch == "bad" {
+        if spec.branch().is_some_and(|(_, b)| b == "bad") {
             return Err(TaskError::Invalid("bad is not a branch".into()));
         }
         let mut argv = vec!["agent".to_owned()];
         if spec.plan {
             argv.push("--plan".into());
         }
+        let (repo, branch) = spec.branch().unwrap_or(("", &spec.title));
         Ok(Prepared {
-            dir: format!("/work/{}", spec.branch).into(),
-            repo: spec.repo.clone().into(),
-            branch: spec.branch.clone(),
+            dir: format!("/work/{branch}").into(),
+            workspace: spec.workspace.clone(),
+            title: spec.title.clone(),
+            repo: Some(repo.into()),
+            branch: Some(branch.to_owned()),
             argv,
             env: [("K".to_owned(), "v".to_owned())].into(),
+            places: Vec::new(),
         })
     }
 
@@ -582,8 +586,7 @@ async fn start_task_runs_the_agent_in_its_worktree_once() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;
     client.welcome().await;
-    let start =
-        json!({"type": "start-task", "id": 1, "repo": "/src/app", "branch": "fix", "plan": true});
+    let start = json!({"type": "start-task", "id": 1, "workspace": "w", "title": "fix", "places": [{"kind": "branch", "repo": "/src/app", "branch": "fix"}], "plan": true});
     client.control(start.clone()).await;
     let reply = client.read_control().await;
     assert_eq!(reply["existing"], false, "{reply}");
@@ -602,6 +605,12 @@ async fn start_task_runs_the_agent_in_its_worktree_once() {
             &json!("fix")
         )
     );
+    assert_eq!(labels["muxa.workspace"], "w");
+    assert_eq!(labels["muxa.places"], "[]");
+    assert_eq!(
+        reply["terminal"]["name"], "fix",
+        "the title names the terminal"
+    );
     let launches = backend.launches();
     assert_eq!(launches[0].argv, vec!["agent", "--plan"]);
     assert_eq!(
@@ -612,7 +621,7 @@ async fn start_task_runs_the_agent_in_its_worktree_once() {
 
     // The same Task again finds the running agent.
     client
-        .control(json!({"type": "start-task", "id": 2, "repo": "/src/app", "branch": "fix"}))
+        .control(json!({"type": "start-task", "id": 2, "workspace": "w", "title": "fix", "places": [{"kind": "branch", "repo": "/src/app", "branch": "fix"}]}))
         .await;
     let again = client.read_control().await;
     assert_eq!(again["existing"], true);
@@ -623,7 +632,7 @@ async fn start_task_runs_the_agent_in_its_worktree_once() {
     let id = TerminalId::new(reply["terminal"]["id"].as_str().unwrap());
     backend.kill(&id).await.unwrap();
     client
-        .control(json!({"type": "start-task", "id": 3, "repo": "/src/app", "branch": "fix"}))
+        .control(json!({"type": "start-task", "id": 3, "workspace": "w", "title": "fix", "places": [{"kind": "branch", "repo": "/src/app", "branch": "fix"}]}))
         .await;
     assert_eq!(client.read_control().await["existing"], false);
 }
@@ -634,7 +643,7 @@ async fn a_task_the_host_refuses_is_a_bad_request() {
     let mut client = Client::start(&backend, 2).await;
     client.welcome().await;
     client
-        .control(json!({"type": "start-task", "id": 4, "repo": "/src/app", "branch": "bad"}))
+        .control(json!({"type": "start-task", "id": 4, "workspace": "w", "title": "bad", "places": [{"kind": "branch", "repo": "/src/app", "branch": "bad"}]}))
         .await;
     let err = client.read_control().await;
     assert_eq!(
@@ -812,7 +821,7 @@ async fn a_task_ready_for_review_makes_one_review_item() {
     client.welcome().await;
     let started = request(
         &mut client,
-        json!({"type": "start-task", "id": 1, "repo": "/r", "branch": "fix"}),
+        json!({"type": "start-task", "id": 1, "workspace": "w", "title": "fix", "places": [{"kind": "branch", "repo": "/r", "branch": "fix"}]}),
     )
     .await;
     let agent = started["terminal"]["id"].clone();

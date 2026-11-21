@@ -10,6 +10,7 @@ use std::io::Write;
 use std::process::Stdio;
 use std::time::Duration;
 
+use muxa_protocol::v2::PlaceSpec;
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, ChildStdin, ChildStdout};
@@ -18,7 +19,8 @@ use crate::view::Raw;
 use client::{Client, Event, State};
 
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
-       muxa-cli v2 [--bridge CMD] start-task --repo REPO --branch B [--base REF] [--plan] [--json]
+       muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
+                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--plan] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
        muxa-cli v2 [--bridge CMD] inbox [--json]
@@ -64,9 +66,11 @@ enum Cmd {
         name: String,
     },
     StartTask {
-        repo: String,
-        branch: String,
-        base: Option<String>,
+        workspace: String,
+        title: String,
+        goal: Option<String>,
+        /// In the order given; none is one folder (ADR 0068).
+        places: Vec<PlaceSpec>,
         plan: bool,
         json: bool,
     },
@@ -100,7 +104,8 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut p = lexopt::Parser::from_args(args);
     let mut bridge = "muxa-bridge connect".to_owned();
     let (mut json, mut plan, mut seconds) = (false, false, None);
-    let (mut repo, mut branch, mut base) = (None, None, None);
+    let (mut workspace, mut title, mut goal) = (None, None, None);
+    let mut places: Vec<PlaceSpec> = Vec::new();
     let mut words = Vec::new();
     let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
@@ -110,9 +115,32 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("json") => json = true,
             Long("plan") => plan = true,
             Long("seconds") => seconds = Some(p.value()?.parse()?),
-            Long("repo") => repo = Some(p.value()?.string()?),
-            Long("branch") => branch = Some(p.value()?.string()?),
-            Long("base") => base = Some(p.value()?.string()?),
+            Long("workspace") => workspace = Some(p.value()?.string()?),
+            Long("title") => title = Some(p.value()?.string()?),
+            Long("goal") => goal = Some(p.value()?.string()?),
+            Long("folder") => places.push(PlaceSpec::Folder),
+            Long("branch") => {
+                let value = p.value()?.string()?;
+                let (repo, branch) = value
+                    .rsplit_once(':')
+                    .filter(|(r, b)| !r.is_empty() && !b.is_empty())
+                    .ok_or("--branch wants REPO:BRANCH")?;
+                places.push(PlaceSpec::Branch {
+                    repo: repo.to_owned(),
+                    branch: branch.to_owned(),
+                    base: None,
+                });
+            }
+            Long("base") => {
+                let value = p.value()?.string()?;
+                match places.last_mut() {
+                    Some(PlaceSpec::Branch { base, .. }) => *base = Some(value),
+                    _ => return Err("--base follows a --branch".into()),
+                }
+            }
+            Long("read") => places.push(PlaceSpec::Read {
+                repo: p.value()?.string()?,
+            }),
             Long("minutes") => minutes = Some(p.value()?.parse()?),
             Long("note") => note = Some(p.value()?.string()?),
             Long("help") | Short('h') => return Ok(None),
@@ -124,9 +152,10 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let cmd = match words.as_slice() {
         ["terminals"] => Cmd::Terminals { json },
         ["start-task"] => Cmd::StartTask {
-            repo: repo.ok_or("start-task needs --repo")?,
-            branch: branch.ok_or("start-task needs --branch")?,
-            base,
+            workspace: workspace.ok_or("start-task needs --workspace")?,
+            title: title.ok_or("start-task needs --title")?,
+            goal,
+            places,
             plan,
             json,
         },
@@ -217,15 +246,16 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             Ok(())
         }
         Cmd::StartTask {
-            repo,
-            branch,
-            base,
+            workspace,
+            title,
+            goal,
+            places,
             plan,
             json,
         } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
-            let msg = json!({"type": "start-task", "repo": repo, "branch": branch,
-                             "base": base, "plan": plan});
+            let msg = json!({"type": "start-task", "workspace": workspace, "title": title,
+                             "goal": goal, "places": places, "plan": plan});
             let reply = c.request(msg).await?;
             if json {
                 println!("{reply}");
@@ -490,10 +520,16 @@ mod tests {
         );
         let (bridge, cmd) = parse(args(&[
             "start-task",
-            "--repo",
-            "/r",
+            "--workspace",
+            "w",
+            "--title",
+            "Fix login",
+            "--read",
+            "docs",
             "--branch",
-            "fix",
+            "/r:fix",
+            "--base",
+            "main",
             "--plan",
         ]))
         .unwrap()
@@ -502,14 +538,48 @@ mod tests {
         assert_eq!(
             cmd,
             Cmd::StartTask {
-                repo: "/r".into(),
-                branch: "fix".into(),
-                base: None,
+                workspace: "w".into(),
+                title: "Fix login".into(),
+                goal: None,
+                places: vec![
+                    PlaceSpec::Read {
+                        repo: "docs".into()
+                    },
+                    PlaceSpec::Branch {
+                        repo: "/r".into(),
+                        branch: "fix".into(),
+                        base: Some("main".into()),
+                    },
+                ],
                 plan: true,
                 json: false
             }
         );
-        assert!(parse(args(&["start-task", "--repo", "/r"])).is_err());
+        assert!(parse(args(&["start-task", "--workspace", "w"])).is_err());
+        assert!(
+            parse(args(&[
+                "start-task",
+                "--title",
+                "t",
+                "--workspace",
+                "w",
+                "--branch",
+                "fix"
+            ]))
+            .is_err()
+        );
+        assert!(
+            parse(args(&[
+                "start-task",
+                "--title",
+                "t",
+                "--workspace",
+                "w",
+                "--base",
+                "main"
+            ]))
+            .is_err()
+        );
         assert_eq!(parse(args(&["nope"])).unwrap(), None);
     }
 

@@ -490,7 +490,7 @@ mod tests {
         let backend = FakeBackend::new();
         let mut c = connect(&backend, &Arc::new(Sessions::new()), State::default()).await;
         let err = c
-            .request(json!({"type": "start-task", "repo": "/r", "branch": "b"}))
+            .request(json!({"type": "start-task", "workspace": "w", "title": "b", "places": [{"kind": "branch", "repo": "/r", "branch": "b"}]}))
             .await
             .unwrap_err();
         assert_eq!(err, "no tasks here (bad-request)");

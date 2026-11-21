@@ -19,12 +19,14 @@ struct Script;
 impl Host for Script {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         let line = r"printf '\033]7501;state=blocked:app=muxa-test\033\\'; sleep 30";
+        let branch = spec.branch().map(|(_, b)| b.to_owned());
         Ok(Prepared {
             dir: std::env::temp_dir(),
-            repo: spec.repo.clone().into(),
-            branch: spec.branch.clone(),
+            workspace: spec.workspace.clone(),
+            title: spec.title.clone(),
+            branch,
             argv: vec!["sh".into(), "-c".into(), line.into()],
-            env: Default::default(),
+            ..Prepared::default()
         })
     }
 }
@@ -91,7 +93,7 @@ async fn a_started_task_reports_its_agent_state() {
         assert_eq!(control(&mut io, &mut buf).await["id"], 1);
         send(
             &mut io,
-            json!({"type": "start-task", "id": 2, "repo": "/r", "branch": branch}),
+            json!({"type": "start-task", "id": 2, "workspace": "w", "title": branch, "places": [{"kind": "branch", "repo": "/r", "branch": branch}]}),
         )
         .await;
         loop {

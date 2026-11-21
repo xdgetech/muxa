@@ -56,4 +56,28 @@ class DemoTest {
             c.close()
         }
     }
+
+    @Test
+    fun aTaskStartsInItsPlaceOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val (audit, existing) = c.startTask("app", "Audit", places = listOf(PlaceSpec.Read("/demo/app")))
+            assertEquals(Triple("Audit", false, null), Triple(audit.name, existing, audit.branch))
+            val fix = listOf(PlaceSpec.Branch("/demo/app", "fix-2"))
+            val (first, _) = c.startTask("app", "Fix", places = fix)
+            assertEquals("fix-2", first.branch)
+            val (again, running) = c.startTask("app", "Fix", places = fix)
+            assertEquals(first.id to true, again.id to running)
+            c.close()
+        }
+    }
+
+    @Test
+    fun placesDecodeFromTheLabel() {
+        val t = Terminal(
+            "t9", "Audit", live = true, cols = 80, rows = 24,
+            labels = mapOf("muxa.places" to """[{"kind":"folder","path":"/w/tasks/a"},{"kind":"read","path":"/w/docs"}]"""),
+        )
+        assertEquals(listOf(Place(PlaceKind.FOLDER, "/w/tasks/a"), Place(PlaceKind.READ, "/w/docs")), t.places)
+    }
 }

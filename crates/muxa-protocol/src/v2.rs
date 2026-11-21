@@ -198,6 +198,42 @@ pub struct Terminal {
     pub rows: u16,
 }
 
+/// A place a client asks for (ADR 0068). A repo is absolute, or relative
+/// to the Workspace's root as in ADR 0031.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum PlaceSpec {
+    /// A new folder in the Workspace's tasks folder.
+    Folder,
+    /// A worktree of `repo` on a new or existing `branch`.
+    Branch {
+        repo: String,
+        branch: String,
+        #[serde(default)]
+        base: Option<String>,
+    },
+    /// The repo's main checkout, never written.
+    Read { repo: String },
+}
+
+/// A Task's place as it is: the `muxa.places` label of its agent terminal
+/// holds a JSON list of them, the working place first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Place {
+    pub kind: PlaceKind,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PlaceKind {
+    Folder,
+    Branch,
+    Read,
+}
+
 /// How a program or stream ended; the CLOSE payload from the server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Exit {
@@ -233,13 +269,17 @@ pub enum ClientMsg {
         id: u64,
         channel: u32,
     },
-    /// Starts a Task's agent on a branch worktree, or finds the one running.
+    /// Starts a Task's agent in its working place, or finds the one running
+    /// there (ADR 0068).
     StartTask {
         id: u64,
-        repo: String,
-        branch: String,
+        workspace: String,
+        title: String,
         #[serde(default)]
-        base: Option<String>,
+        goal: Option<String>,
+        /// Empty: one folder.
+        #[serde(default)]
+        places: Vec<PlaceSpec>,
         /// Claude Code starts in plan mode (ADR 0060).
         #[serde(default)]
         plan: bool,

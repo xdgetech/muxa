@@ -18,12 +18,16 @@ struct FakeHost;
 
 impl Host for FakeHost {
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
+        let (repo, branch) = spec.branch().unwrap_or(("", &spec.title));
         Ok(Prepared {
-            dir: format!("/work/{}", spec.branch).into(),
-            repo: spec.repo.clone().into(),
-            branch: spec.branch.clone(),
+            dir: format!("/work/{branch}").into(),
+            workspace: spec.workspace.clone(),
+            title: spec.title.clone(),
+            repo: Some(repo.into()),
+            branch: Some(branch.to_owned()),
             argv: vec!["agent".into()],
             env: Default::default(),
+            places: Vec::new(),
         })
     }
 

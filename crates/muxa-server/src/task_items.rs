@@ -20,8 +20,12 @@ fn is_agent(t: &TerminalInfo) -> bool {
     agents().iter().all(|(k, v)| t.labels.get(k) == Some(v))
 }
 
+/// What items call the Task: its branch, else its title (a folder Task).
 fn branch(t: &TerminalInfo) -> &str {
-    t.labels.get(BRANCH).map_or("a Task", String::as_str)
+    t.labels
+        .get(BRANCH)
+        .or(t.name.as_ref())
+        .map_or("a Task", String::as_str)
 }
 
 /// Adds a Failed item for each Task agent that fails, once per terminal,
