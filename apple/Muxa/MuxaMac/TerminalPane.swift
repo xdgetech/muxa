@@ -10,18 +10,30 @@ import SwiftUI
 struct TerminalPane: NSViewRepresentable {
     @Environment(NextModel.self) private var model
     let terminal: MuxaV2.Terminal
+    /// This pane has the keyboard; a new `focusRequest` moves it here.
+    var active = true
+    var focusRequest = 0
+    /// The user clicked into this pane.
+    var onActivate: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model, terminal: terminal.id) }
 
     func makeNSView(context: Context) -> SwiftTerm.TerminalView {
-        let view = SwiftTerm.TerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+        let view = FocusReportingTerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+        view.onFocus = { context.coordinator.onActivate() }
         view.terminalDelegate = context.coordinator
         view.setAccessibilityIdentifier("focus.pane")
         context.coordinator.view = view
         return view
     }
 
-    func updateNSView(_ view: SwiftTerm.TerminalView, context: Context) {}
+    func updateNSView(_ view: SwiftTerm.TerminalView, context: Context) {
+        context.coordinator.onActivate = onActivate
+        guard active, context.coordinator.focusRequest != focusRequest else { return }
+        context.coordinator.focusRequest = focusRequest
+        // The view may not be in its window yet.
+        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+    }
 
     static func dismantleNSView(_ view: SwiftTerm.TerminalView, coordinator: Coordinator) {
         coordinator.unbind()
@@ -32,6 +44,9 @@ struct TerminalPane: NSViewRepresentable {
         private let model: NextModel
         private let terminal: String
         weak var view: SwiftTerm.TerminalView?
+        var onActivate: () -> Void = {}
+        /// The last focus request this pane carried out.
+        var focusRequest = -1
         private var channel: UInt32?
         private var grid: (cols: Int, rows: Int)?
         private var attaching: Task<Void, Never>?
@@ -118,5 +133,15 @@ struct TerminalPane: NSViewRepresentable {
             NSPasteboard.general.setData(content, forType: .string)
         }
         func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) {}
+    }
+}
+
+/// Tells which pane the user clicked into, so the list's pick goes to that pane.
+final class FocusReportingTerminalView: SwiftTerm.TerminalView {
+    var onFocus: () -> Void = {}
+
+    override func mouseDown(with event: NSEvent) {
+        onFocus()
+        super.mouseDown(with: event)
     }
 }

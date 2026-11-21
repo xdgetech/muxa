@@ -6,6 +6,10 @@ import SwiftUI
 /// before adding.
 struct CaptureField: View {
     @Environment(NextModel.self) private var model
+    /// After an item was added: the Mac's Capture window closes.
+    var onAdded: () -> Void = {}
+    /// Takes the keyboard when shown: the Mac's Capture window.
+    var focusOnAppear = false
     @State private var text = ""
     @State private var parsed: Capture?
     @State private var parsing: Task<Void, Never>?
@@ -29,6 +33,7 @@ struct CaptureField: View {
             if let p = parsed, !text.isEmpty { chips(p) }
         }
         .onChange(of: text) { _, new in parse(new) }
+        .onAppear { if focusOnAppear { focused = true } }
         .background {
             Button("") { focused = true }
                 .keyboardShortcut("n", modifiers: .command)
@@ -95,6 +100,7 @@ struct CaptureField: View {
         if model.requestError == nil {
             text = ""
             parsed = nil
+            onAdded()
         }
     }
 }

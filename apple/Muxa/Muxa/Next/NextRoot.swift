@@ -19,6 +19,7 @@ struct NextRoot: View {
                 }
             }
             .background { modeKeys }
+            .sheet(isPresented: Bindable(nav).showPalette) { GoToTask() }
         default:
             connect
         }
@@ -30,6 +31,7 @@ struct NextRoot: View {
             #if os(iOS)
             Button("") { nav.focus = false }.keyboardShortcut("h", modifiers: [.command, .shift])
             Button("") { nav.focus = true }.keyboardShortcut("f", modifiers: [.command, .shift])
+            Button("") { nav.showPalette = true }.keyboardShortcut("p", modifiers: .command)
             #endif
         }
         .opacity(0)

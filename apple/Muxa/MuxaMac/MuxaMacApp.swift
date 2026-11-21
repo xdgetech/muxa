@@ -7,6 +7,7 @@ import SwiftUI
 struct MuxaMacApp: App {
     @State private var model = NextModel(hosts: HostStore(file: HostStore.defaultFile))
     @State private var nav = NextNavigation()
+    @State private var quickCapture: QuickCapture?
 
     var body: some Scene {
         Window("Muxa", id: "main") {
@@ -16,6 +17,11 @@ struct MuxaMacApp: App {
                 .tint(Theme.accent)
                 .frame(minWidth: 720, minHeight: 480)
                 .task {
+                    if quickCapture == nil {
+                        let capture = QuickCapture(model: model)
+                        capture.register()
+                        quickCapture = capture
+                    }
                     if ProcessInfo.processInfo.arguments.contains("-demo") {
                         await model.startDemo()
                     } else if model.prefersLocal, model.serverIsLocal {
@@ -26,7 +32,10 @@ struct MuxaMacApp: App {
                 }
         }
         .commands {
-            CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .newItem) {
+                Button("Quick Capture") { quickCapture?.show() }
+                    .keyboardShortcut(.space, modifiers: [.control, .option])
+            }
             // The keys of docs/next.md, which follow VS Code (ADR 0070 decision 2).
             CommandMenu("Go") {
                 Button("Home") { nav.focus = false }
@@ -40,6 +49,26 @@ struct MuxaMacApp: App {
                 Button("Toggle Sidebar") { nav.toggleSidebar() }
                     .keyboardShortcut("b", modifiers: .command)
                     .disabled(!nav.focus)
+                Divider()
+                Button("Go to Task…") { nav.showPalette = true }
+                    .keyboardShortcut("p", modifiers: .command)
+                    .disabled(!model.isConnected)
+            }
+            CommandMenu("Pane") {
+                Button("Split Pane") {
+                    nav.focus = true
+                    nav.split(from: model.needsYou + model.terminals.filter(\.live))
+                }
+                .keyboardShortcut("\\", modifiers: .command)
+                .disabled(!model.isConnected || nav.panes.count >= NextNavigation.maxPanes)
+                Button("Close Pane") { nav.closePane() }
+                    .disabled(nav.panes.count < 2)
+                Divider()
+                ForEach(1...9, id: \.self) { n in
+                    Button("Pane \(n)") { nav.focusPane(n) }
+                        .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
+                        .disabled(n > nav.panes.count)
+                }
             }
             CommandMenu("Host") {
                 Button("Disconnect") { Task { await model.disconnect() } }

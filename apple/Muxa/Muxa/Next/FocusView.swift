@@ -30,9 +30,7 @@ struct FocusView: View {
         } detail: {
             Group {
                 if let t = model.terminals.first(where: { $0.id == selected }) {
-                    TerminalPane(terminal: t)
-                        .id(t.id)
-                        .ignoresSafeArea(.keyboard)
+                    panes(t)
                         .navigationTitle(t.branch ?? t.name ?? t.id)
                         .inlineTitle()
                         .toolbar {
@@ -46,6 +44,17 @@ struct FocusView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+    }
+
+    @ViewBuilder
+    private func panes(_ t: MuxaV2.Terminal) -> some View {
+        #if os(macOS)
+        PaneSplit()
+        #else
+        TerminalPane(terminal: t)
+            .id(t.id)
+            .ignoresSafeArea(.keyboard)
+        #endif
     }
 
     private var tasks: [Terminal] {

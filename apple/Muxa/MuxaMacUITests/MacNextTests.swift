@@ -58,6 +58,23 @@ final class MacNextTests: XCTestCase {
         XCTAssertTrue(waitFor(pane, valueContaining: "(y/n) y"))
     }
 
+    @MainActor
+    func testGoToTaskAndASecondPane() throws {
+        let app = launch()
+        app.typeKey("p", modifierFlags: .command)
+        let field = app.textFields["goto.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("docs\r")
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        // ⌘\ adds the next Task beside it, and ⌘1 goes back to the first.
+        app.typeKey("\\", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["pane.2"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "focus.pane").count, 2)
+        app.typeKey("1", modifierFlags: .command)
+        app.menuBars.menuItems["Close Pane"].click()
+        XCTAssertTrue(waitForGone(app.descendants(matching: .any)["pane.2"]))
+    }
+
     private func waitFor(_ e: XCUIElement, valueContaining text: String) -> Bool {
         let p = NSPredicate(format: "value CONTAINS %@", text)
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed

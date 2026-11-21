@@ -97,6 +97,18 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testGoToTaskOpensItInFocus() throws {
+        let app = launch()
+        app.typeKey("p", modifierFlags: .command)
+        let field = app.textFields["goto.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("docs\n")
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "Allow edits to README.md"))
+    }
+
+    @MainActor
     func testDisconnectReturnsToTheHostsAndAHostCanBeAdded() throws {
         let app = launch()
         app.buttons["home.host"].tap()
