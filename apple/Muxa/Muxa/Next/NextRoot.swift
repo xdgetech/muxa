@@ -5,18 +5,17 @@ import SwiftUI
 /// The app on protocol v2: the hosts until one is connected, then Home or Focus.
 struct NextRoot: View {
     @Environment(NextModel.self) private var model
-    @State private var focus = false
-    @State private var terminal: String?
+    @Environment(NextNavigation.self) private var nav
     @State private var editing: HostDraft?
 
     var body: some View {
         switch model.link {
         case .connected, .reconnecting:
             Group {
-                if focus {
-                    FocusView(selected: $terminal) { focus = false }
+                if nav.focus {
+                    FocusView(selected: Bindable(nav).terminal) { nav.focus = false }
                 } else {
-                    HomeView(openTerminal: open, showFocus: { focus = true })
+                    HomeView(openTerminal: nav.open, showFocus: { nav.focus = true })
                 }
             }
             .background { modeKeys }
@@ -25,16 +24,13 @@ struct NextRoot: View {
         }
     }
 
-    private func open(_ t: Terminal) {
-        terminal = t.id
-        focus = true
-    }
-
-    /// `⌘⇧H` and `⌘⇧F`, as on the desktop (ADR 0070).
+    /// `⌘⇧H` and `⌘⇧F`, as on the desktop (ADR 0070). The Mac has them in its Go menu.
     private var modeKeys: some View {
         Group {
-            Button("") { focus = false }.keyboardShortcut("h", modifiers: [.command, .shift])
-            Button("") { focus = true }.keyboardShortcut("f", modifiers: [.command, .shift])
+            #if os(iOS)
+            Button("") { nav.focus = false }.keyboardShortcut("h", modifiers: [.command, .shift])
+            Button("") { nav.focus = true }.keyboardShortcut("f", modifiers: [.command, .shift])
+            #endif
         }
         .opacity(0)
         .accessibilityHidden(true)
@@ -46,6 +42,16 @@ struct NextRoot: View {
                 Section {
                     Text(status).accessibilityIdentifier("next.link")
                 }
+                #if os(macOS)
+                if model.serverIsLocal {
+                    Section {
+                        Button("This Mac") { Task { await model.connectLocal() } }
+                            .accessibilityIdentifier("next.local")
+                    } footer: {
+                        Text("The muxa server runs here. The app reaches it without SSH.")
+                    }
+                }
+                #endif
                 Section("Hosts") {
                     ForEach(model.hosts.hosts) { host in
                         HStack {

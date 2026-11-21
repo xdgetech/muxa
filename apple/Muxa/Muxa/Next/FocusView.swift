@@ -8,11 +8,10 @@ struct FocusView: View {
     @Binding var selected: String?
     var showHome: () -> Void
 
-    @State private var showInbox = false
-    @State private var columns = NavigationSplitViewVisibility.all
+    @Environment(NextNavigation.self) private var nav
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columns) {
+        NavigationSplitView(columnVisibility: Bindable(nav).sidebar) {
             List(selection: $selected) {
                 if !model.needsYou.isEmpty {
                     Section("Needs you") { rows(model.needsYou) }
@@ -37,10 +36,10 @@ struct FocusView: View {
                         .navigationTitle(t.branch ?? t.name ?? t.id)
                         .inlineTitle()
                         .toolbar {
-                            Button("Inbox", systemImage: "tray.full") { showInbox.toggle() }
+                            Button("Inbox", systemImage: "tray.full") { nav.showInbox.toggle() }
                                 .accessibilityIdentifier("focus.inbox")
                         }
-                        .inspector(isPresented: $showInbox) { InboxPanel() }
+                        .inspector(isPresented: Bindable(nav).showInbox) { InboxPanel() }
                 } else {
                     ContentUnavailableView("Select a Task", systemImage: "terminal")
                 }

@@ -27,7 +27,7 @@ struct ServerTests {
         }
 
         func connect(_ state: V2Client.State = .init()) async throws -> V2Client {
-            try await V2Client.open(try ProcessBytes(command: "nc -U \(socket)"), name: "test", state: state)
+            try await V2Client.open(try UnixSocketBytes(path: socket), name: "test", state: state)
         }
 
         deinit {

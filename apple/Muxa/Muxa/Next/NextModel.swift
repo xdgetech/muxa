@@ -23,6 +23,8 @@ final class NextModel {
     private(set) var link: Link = .offline
     private(set) var hostID: UUID?
     private(set) var demo = false
+    /// Connected to the server on this Mac through its socket, without SSH.
+    private(set) var local = false
     /// A host key the user has not trusted yet; `trust()` pins it.
     var untrustedKey: HostKey?
     /// Logging in with the password to add this device's key.
@@ -66,6 +68,8 @@ final class NextModel {
         if hostID != id { forget() }
         hostID = id
         demo = false
+        local = false
+        UserDefaults.standard.set(false, forKey: Self.localKey)
         hosts.markUsed(id)
         await open {
             try await SSHExec.connect(
@@ -79,7 +83,36 @@ final class NextModel {
         forget()
         hostID = nil
         demo = true
+        local = false
         await open { DemoChannel() }
+    }
+
+    #if os(macOS)
+    /// The muxa server on this Mac (ADR 0070 decision 3).
+    func connectLocal() async {
+        stayDisconnected = false
+        if !local { forget() }
+        hostID = nil
+        demo = false
+        local = true
+        UserDefaults.standard.set(true, forKey: Self.localKey)
+        await open { try UnixSocketBytes(path: UnixSocketBytes.serverSocket.path) }
+    }
+
+    /// The daemon runs here: its socket exists.
+    var serverIsLocal: Bool { FileManager.default.fileExists(atPath: UnixSocketBytes.serverSocket.path) }
+
+    /// The user's last choice was this Mac.
+    var prefersLocal: Bool { UserDefaults.standard.bool(forKey: Self.localKey) }
+    #endif
+
+    private static let localKey = "next.connectsLocally"
+
+    /// What Home calls the connection.
+    var connectionTitle: String {
+        if demo { return "Demo" }
+        if local { return "This Mac" }
+        return currentHost?.title ?? "Host"
     }
 
     var currentHost: MuxaSession.Host? { hosts.host(hostID) }
@@ -155,6 +188,9 @@ final class NextModel {
     func resumeIfNeeded() async {
         guard client == nil, link != .connecting, !stayDisconnected else { return }
         if demo { return await startDemo() }
+        #if os(macOS)
+        if local { return await connectLocal() }
+        #endif
         if let hostID { await connect(to: hostID) }
     }
 

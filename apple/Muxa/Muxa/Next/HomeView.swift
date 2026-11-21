@@ -222,7 +222,7 @@ struct HomeView: View {
             Menu {
                 Button("Disconnect", systemImage: "xmark.circle") { Task { await model.disconnect() } }
             } label: {
-                Label(model.demo ? "Demo" : model.currentHost?.title ?? "Host", systemImage: "server.rack")
+                Label(model.connectionTitle, systemImage: "server.rack")
                     .font(.callout)
             }
             .accessibilityIdentifier("home.host")

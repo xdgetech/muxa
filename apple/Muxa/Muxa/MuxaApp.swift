@@ -6,12 +6,14 @@ import SwiftUI
 @main
 struct MuxaApp: App {
     @State private var model = NextModel(hosts: HostStore(file: HostStore.defaultFile))
+    @State private var nav = NextNavigation()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             NextRoot()
                 .environment(model)
+                .environment(nav)
                 .tint(Theme.accent)
                 .task {
                     if ProcessInfo.processInfo.arguments.contains("-demo") {
