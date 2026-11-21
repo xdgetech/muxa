@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-app-tmux test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon screenshots screenshots-android install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
@@ -82,6 +82,11 @@ GRADLEW = ./gradlew --console=plain
 # The protocol, terminal, transport and session modules: plain JVM tests, no emulator.
 test-android:
 	cd android && $(GRADLEW) test
+
+# The Android v2 client, also against the real server on the fake backend.
+test-android-v2:
+	cargo build -p muxa-server --example fake_server
+	cd android && MUXA_TEST_V2_SERVER=$(CURDIR)/target/debug/examples/fake_server $(GRADLEW) :v2:test
 
 # The Android app: build it, and run Android lint on it.
 build-android:
