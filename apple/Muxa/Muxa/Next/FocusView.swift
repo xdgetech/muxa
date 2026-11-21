@@ -24,7 +24,7 @@ struct FocusView: View {
             }
             .navigationTitle("Focus")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .leadingBar) {
                     Button("Home", systemImage: "tray", action: showHome).accessibilityIdentifier("mode.home")
                 }
             }
@@ -35,7 +35,7 @@ struct FocusView: View {
                         .id(t.id)
                         .ignoresSafeArea(.keyboard)
                         .navigationTitle(t.branch ?? t.name ?? t.id)
-                        .navigationBarTitleDisplayMode(.inline)
+                        .inlineTitle()
                         .toolbar {
                             Button("Inbox", systemImage: "tray.full") { showInbox.toggle() }
                                 .accessibilityIdentifier("focus.inbox")

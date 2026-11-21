@@ -4,6 +4,7 @@ options:
   bundleIdPrefix: tech.xdge
   deploymentTarget:
     iOS: "17.0"
+    macOS: "15.0"
   createIntermediateGroups: true
 configFiles:
   Debug: Config/Muxa.xcconfig
@@ -15,6 +16,10 @@ packages:
   MarkdownUI:
     url: https://github.com/gonzalezreal/swift-markdown-ui
     exactVersion: 2.4.1
+  # The Mac app's terminal view (AppKit); MuxaKit uses the same package.
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    from: 1.99.1
 targets:
   Muxa:
     type: application
@@ -47,6 +52,46 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  # The desktop app (ADR 0070): Home and Focus from Muxa/Next, with an AppKit terminal.
+  MuxaMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Muxa/Next
+        excludes: [TerminalPane.swift]
+      - Muxa/Theme.swift
+      - Muxa/Assets.xcassets
+      - MuxaMac
+    dependencies:
+      - package: MuxaKit
+        products: [MuxaProtocol, MuxaTransport, MuxaSession, MuxaV2]
+      - package: SwiftTerm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(MUXA_BUNDLE_ID).mac
+        PRODUCT_NAME: Muxa
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Muxa
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # The device key lives in the data protection keychain, as on iOS.
+        CODE_SIGN_ENTITLEMENTS: MuxaMac/MuxaMac.entitlements
+  MuxaMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [MuxaMacUITests]
+    dependencies:
+      - target: MuxaMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(MUXA_BUNDLE_ID).mac.uitests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: MuxaMac
   MuxaUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -67,3 +112,10 @@ schemes:
         MuxaUITests: [test]
     test:
       targets: [MuxaUITests]
+  MuxaMac:
+    build:
+      targets:
+        MuxaMac: all
+        MuxaMacUITests: [test]
+    test:
+      targets: [MuxaMacUITests]

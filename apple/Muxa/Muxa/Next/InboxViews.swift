@@ -151,7 +151,7 @@ struct InboxItemPane: View {
             .frame(maxWidth: 760, alignment: .leading)
         }
         .navigationTitle(item.kind.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitle()
     }
 
     private var header: some View {

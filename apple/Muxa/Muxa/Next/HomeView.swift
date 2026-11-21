@@ -20,7 +20,9 @@ struct HomeView: View {
     @State private var workspaceFilter: String?
     @State private var showHidden = false
     @State private var showDone = false
+    #if os(iOS)
     @State private var editMode = EditMode.inactive
+    #endif
     @State private var now = Int64(Date().timeIntervalSince1970)
     /// The list stays beside the detail on a tablet, also in portrait.
     @State private var columns = NavigationSplitViewVisibility.all
@@ -91,7 +93,9 @@ struct HomeView: View {
                 }
             }
         }
+        #if os(iOS)
         .environment(\.editMode, $editMode)
+        #endif
         .accessibilityIdentifier("inbox.list")
         .background { reorderKeys }
     }
@@ -201,6 +205,7 @@ struct HomeView: View {
                 }
             }
         }
+        #if os(iOS)
         ToolbarItem(placement: .topBarLeading) {
             if part == .inbox, !filtered {
                 Button(editMode.isEditing ? "Done" : "Reorder") {
@@ -208,6 +213,7 @@ struct HomeView: View {
                 }
             }
         }
+        #endif
     }
 
     /// The host and the way to Focus: always shown, also in a narrow sidebar.

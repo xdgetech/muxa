@@ -78,7 +78,7 @@ struct RoutinePane: View {
             }
         }
         .navigationTitle(routine.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitle()
     }
 }
 

@@ -82,7 +82,7 @@ final class NextModel {
         await open { DemoChannel() }
     }
 
-    var currentHost: Host? { hosts.host(hostID) }
+    var currentHost: MuxaSession.Host? { hosts.host(hostID) }
 
     /// Pins the presented host key, then goes on with what it stopped.
     func trust() async {

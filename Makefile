@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-tmux-plugin test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
 
 SHELL_SCRIPTS := $(shell find scripts tmux -name '*.sh' -o -name '*.bash') tmux/agents.tmux
 SHELLCHECK ?= shellcheck
@@ -129,6 +129,17 @@ app-project:
 
 build-app: app-project
 	$(XCODEBUILD) -destination 'generic/platform=iOS Simulator' build
+
+# The Mac app (ADR 0070), signed to run on this Mac only: the device key's keychain
+# entitlement needs a provisioning profile, which a human creates in Xcode.
+MAC_XCODEBUILD = xcodebuild -project apple/Muxa/Muxa.xcodeproj -scheme MuxaMac -skipPackagePluginValidation \
+	-destination 'platform=macOS' CODE_SIGN_IDENTITY=- CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=
+build-mac-app: app-project
+	$(MAC_XCODEBUILD) build
+
+# Its UI tests on the in-app v2 demo server. macOS asks once to allow UI automation.
+test-mac-app: app-project
+	$(MAC_XCODEBUILD) test
 
 # UI test against the in-app demo bridge; no host needed.
 test-app:

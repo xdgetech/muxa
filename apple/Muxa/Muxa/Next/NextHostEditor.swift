@@ -1,7 +1,6 @@
 import MuxaSession
 import MuxaTransport
 import SwiftUI
-import UIKit
 
 /// The editable fields of a host, as text. A new host has no saved id yet.
 struct HostDraft: Identifiable {
@@ -19,7 +18,7 @@ struct HostDraft: Identifiable {
         isNew = true
     }
 
-    init(_ host: Host) {
+    init(_ host: MuxaSession.Host) {
         id = host.id
         isNew = false
         name = host.name
@@ -41,16 +40,16 @@ struct HostDraft: Identifiable {
 
     /// The host to save. A changed address, port or user drops the trusted host key:
     /// it belonged to the old server.
-    func host(replacing old: Host?) -> Host {
+    func host(replacing old: MuxaSession.Host?) -> MuxaSession.Host {
         let target = SSHTarget(host: trimmedAddress, port: Int(port) ?? 22, user: trimmedUser, command: command)
-        var host = Host(id: id, name: name.trimmingCharacters(in: .whitespaces), target: target)
+        var host = MuxaSession.Host(id: id, name: name.trimmingCharacters(in: .whitespaces), target: target)
         if let old, keepsHostKey(of: old) {
             host.target.hostKey = hostKey
         }
         return host
     }
 
-    func keepsHostKey(of old: Host) -> Bool {
+    func keepsHostKey(of old: MuxaSession.Host) -> Bool {
         old.target.host == trimmedAddress && old.target.port == Int(port) && old.target.user == trimmedUser
     }
 }
@@ -74,21 +73,18 @@ struct NextHostEditor: View {
                     }
                     LabeledContent("Address") {
                         TextField("Address", text: $draft.address, prompt: Text("Hostname or IP address"))
-                            .keyboardType(.URL)
                             .accessibilityIdentifier("host-address")
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            .plainEntry(url: true)
                     }
                     LabeledContent("User") {
                         TextField("User", text: $draft.user, prompt: Text("Your login on the host"))
                             .textContentType(.username)
                             .accessibilityIdentifier("host-user")
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            .plainEntry()
                     }
                     LabeledContent("Port") {
                         TextField("Port", text: $draft.port)
-                            .keyboardType(.numberPad)
+                            .numberEntry()
                     }
                 } header: {
                     Text("Host")
@@ -112,7 +108,7 @@ struct NextHostEditor: View {
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
                         Button(copied ? "Copied" : "Copy Key Line", systemImage: copied ? "checkmark" : "doc.on.doc") {
-                            UIPasteboard.general.string = line
+                            Clipboard.copy(line)
                             copied = true
                         }
                     } header: {
@@ -123,8 +119,7 @@ struct NextHostEditor: View {
                 }
                 Section {
                     TextField("Bridge command", text: $draft.command)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                        .plainEntry()
                         .font(.body.monospaced())
                 } header: {
                     Text("Bridge")
@@ -149,7 +144,7 @@ struct NextHostEditor: View {
                 }
             }
             .navigationTitle(draft.isNew ? "New Host" : "Edit Host")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
