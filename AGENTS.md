@@ -16,7 +16,8 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | Path | What |
 |---|---|
 | `crates/muxa-tmux` | control-mode client, quoting, discovery, snapshot, input. The only code that talks to tmux. |
-| `crates/muxa-herdr` | herdr-core client: JSON-RPC calls, attach streams with credit, events (ADR 0067). The only code that talks to herdr-core. Not used by the bridge yet. |
+| `crates/muxa-backend` | the session backend trait (ADR 0067): one terminal at a time, no Workspaces or layout. Its `contract` feature is the suite every adapter must pass. |
+| `crates/muxa-herdr` | herdr-core client (JSON-RPC calls, attach streams with credit, events) and `HerdrBackend`, the backend over it. The only code that talks to herdr-core. Not used by the bridge yet. |
 | `crates/muxa-protocol` | wire types and version. Must match `protocol/PROTOCOL.md` and `protocol/fixtures`. |
 | `crates/muxa-bridge` | the bridge binary: protocol over stdin/stdout. `src/agents/` holds the agent adapters behind `chat` (`docs/agents.md`); `src/docs/` serves the Reader's documents and images, `src/changes/` its diffs, `src/tasks/` starts and closes task sessions (ADR 0007), `src/records/` stores task records and `src/task_records/` serves them (ADR 0015), and `src/states.rs` follows agent states (ADR 0008). |
 | `crates/muxa-cli` | terminal reference client and end-to-end harness. |
@@ -35,7 +36,7 @@ muxa lets you work on your **existing** tmux panes from an iPad, an iPhone or an
 | `make check` | fmt, clippy, unit tests, shellcheck, harness tests. Must be green before every commit. |
 | `make install` | **humans only**: installs `muxa-bridge` and `muxa-cli` into `~/.local/bin` (`PREFIX` picks another root) and restarts a running daemon. It replaces the binaries the developer's devices use. |
 | `make test-tmux` | integration tests on throwaway tmux servers. |
-| `make test-herdr` | **humans only**: the herdr-core client against the running herdr-core. It adds one labelled terminal per test and removes it. |
+| `make test-herdr` | **humans only**: the herdr-core client and the backend contract against the running herdr-core. It adds one labelled terminal per test and removes it. |
 | `make repro` | re-checks every tmux fact in `docs/findings/`. |
 | `make test-apple` | MuxaKit tests (macOS, Xcode toolchain): protocol fixtures, SwiftTerm scenario replay, the pane session. The Makefile uses `/Applications/Xcode.app` when xcode-select points to the Command Line Tools; set `DEVELOPER_DIR` to use another Xcode. |
 | `make test-apple-tmux` | the same, plus `PaneSession` against the real bridge on a throwaway tmux server. |

@@ -1,0 +1,18 @@
+[package]
+name = "muxa-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The contract suite every backend adapter must pass (ADR 0067).
+contract = ["dep:tokio"]
+
+[dependencies]
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["time"], optional = true }

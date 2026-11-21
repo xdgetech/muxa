@@ -37,7 +37,7 @@ What works today:
 Order (ADR 0026, 0027). Each phase lists parallel lanes; the details follow below.
 
 **muxa next comes first** (ordered 2026-11-21; ADR 0066–0070, `docs/next.md`). Its phases replace the phases below where they overlap:
-- **A. herdr backend:** A1 the `muxa-herdr` client (done: calls, attach streams with credit, events; `cargo test -p muxa-herdr`, `make test-herdr`); A2 the session backend trait and its contract tests.
+- **A. herdr backend:** A1 the `muxa-herdr` client (done: calls, attach streams with credit, events; `cargo test -p muxa-herdr`, `make test-herdr`); A2 the session backend trait and its contract tests (done: `crates/muxa-backend`, `HerdrBackend`; the contract passes on herdr-core 0.1.21 in `make test-herdr`).
 - **B. muxa server:** the required daemon, the bridge as a relay, resumable client sessions (ADR 0067).
 - **C. Inbox:** the ADR 0066 model, then the removal of the assistant layer.
 - **D. Apps:** Home and Focus on iOS and Android, then the Mac app (ADR 0070).

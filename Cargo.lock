@@ -434,6 +434,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "muxa-backend"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "muxa-bridge"
 version = "0.1.0"
 dependencies = [
@@ -473,6 +481,7 @@ dependencies = [
 name = "muxa-herdr"
 version = "0.1.0"
 dependencies = [
+ "muxa-backend",
  "serde",
  "serde_json",
  "thiserror",

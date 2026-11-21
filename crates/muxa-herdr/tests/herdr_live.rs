@@ -132,3 +132,16 @@ async fn an_unknown_terminal_is_an_rpc_error() {
     let err = client.get("muxa-test-no-such-terminal").await.unwrap_err();
     assert!(matches!(err, muxa_herdr::Error::Rpc { .. }), "{err}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn herdr_core_passes_the_backend_contract() {
+    if !enabled() {
+        return;
+    }
+    let client = Client::spawn("hc", &["connect"]).await.unwrap();
+    let backend = muxa_herdr::HerdrBackend::new(client);
+    let tag = format!("muxa-contract-{}", std::process::id());
+    muxa_backend::contract::check(&backend, &std::env::temp_dir(), &tag)
+        .await
+        .unwrap();
+}
