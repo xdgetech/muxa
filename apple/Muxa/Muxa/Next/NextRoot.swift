@@ -6,14 +6,38 @@ import SwiftUI
 /// Step 1 of D4: connecting; Home and Focus follow.
 struct NextRoot: View {
     @Environment(NextModel.self) private var model
+    @State private var focus = false
+    @State private var terminal: String?
 
     var body: some View {
         switch model.link {
         case .connected, .reconnecting:
-            HomeView()
+            Group {
+                if focus {
+                    FocusView(selected: $terminal) { focus = false }
+                } else {
+                    HomeView(openTerminal: open, showFocus: { focus = true })
+                }
+            }
+            .background { modeKeys }
         default:
             connect
         }
+    }
+
+    private func open(_ t: Terminal) {
+        terminal = t.id
+        focus = true
+    }
+
+    /// `⌘⇧H` and `⌘⇧F`, as on the desktop (ADR 0070).
+    private var modeKeys: some View {
+        Group {
+            Button("") { focus = false }.keyboardShortcut("h", modifiers: [.command, .shift])
+            Button("") { focus = true }.keyboardShortcut("f", modifiers: [.command, .shift])
+        }
+        .opacity(0)
+        .accessibilityHidden(true)
     }
 
     private var connect: some View {

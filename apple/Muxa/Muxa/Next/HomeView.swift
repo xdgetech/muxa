@@ -6,6 +6,7 @@ import SwiftUI
 struct HomeView: View {
     @Environment(NextModel.self) private var model
     var openTerminal: (Terminal) -> Void = { _ in }
+    var showFocus: () -> Void = {}
 
     enum Part: String, CaseIterable, Identifiable {
         case inbox = "Inbox", routines = "Routines"
@@ -198,6 +199,9 @@ struct HomeView: View {
                         .accessibilityLabel("Filter")
                 }
             }
+        }
+        ToolbarItem(placement: .topBarLeading) {
+            Button("Focus", systemImage: "terminal", action: showFocus).accessibilityIdentifier("mode.focus")
         }
         ToolbarItem(placement: .topBarLeading) {
             if part == .inbox, !filtered {

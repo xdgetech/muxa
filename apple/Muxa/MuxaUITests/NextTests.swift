@@ -69,6 +69,38 @@ final class NextTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Running since"].exists)
     }
 
+    @MainActor
+    func testNeedsYouOpensTheWaitingAgentInFocus() throws {
+        let app = launch()
+        app.buttons["needsyou.t2"].tap()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "Allow edits to README.md"))
+    }
+
+    @MainActor
+    func testTypingInFocusReachesTheTerminal() throws {
+        let app = launch()
+        app.buttons["mode.focus"].tap()
+        let shell = app.descendants(matching: .any)["terminal.t3"]
+        XCTAssertTrue(shell.waitForExistence(timeout: 5))
+        shell.tap()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "$"))
+        pane.tap()
+        pane.typeText("echo hi\n")
+        XCTAssertTrue(waitFor(pane, valueContaining: "echo hi"))
+        // The Inbox panel opens beside the terminal.
+        app.buttons["focus.inbox"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
+    }
+
+    private func waitFor(_ e: XCUIElement, valueContaining text: String) -> Bool {
+        let p = NSPredicate(format: "value CONTAINS %@", text)
+        return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
+    }
+
     private func waitFor(_ e: XCUIElement, labelContaining text: String) -> Bool {
         let p = NSPredicate(format: "label CONTAINS %@", text)
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
