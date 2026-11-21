@@ -73,6 +73,8 @@ pub struct Routine {
     pub direct_writes: bool,
     pub project: Option<String>,
     pub enabled: bool,
+    /// The workspace's connections its agent gets, besides the default ones (ADR 0069).
+    pub connections: Vec<String>,
 }
 
 /// A workspace whose routines file could not be used. It lists no Routines.
@@ -102,6 +104,8 @@ struct RawRoutine {
     project: Option<String>,
     enabled: bool,
     output: Option<RawOutput>,
+    #[serde(default)]
+    connections: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -209,6 +213,15 @@ impl RawRoutine {
                 "direct_writes needs direct_writes = true in [workspace.routines] of workspaces.toml",
             ));
         }
+        if let Some(unknown) = self
+            .connections
+            .iter()
+            .find(|n| !workspace.connections.iter().any(|c| &c.name == *n))
+        {
+            return Err(at(&format!(
+                "connection {unknown:?} is not a [[workspace.connection]] of its workspace"
+            )));
+        }
         Ok(Routine {
             workspace: workspace.name.clone(),
             name: self.name,
@@ -220,6 +233,7 @@ impl RawRoutine {
             direct_writes: output.direct_writes,
             project: self.project,
             enabled: self.enabled,
+            connections: self.connections,
         })
     }
 }

@@ -55,6 +55,13 @@ impl Host for BridgeHost {
                 TaskError::Invalid(format!("no Workspace named {:?}", spec.workspace))
             })?;
         let checked = places::check(&ws, &spec.places).await?;
+        crate::connections::chosen(&ws, &spec.connections).map_err(TaskError::Invalid)?;
+        // Before any place is made: a missing secret stops the start.
+        let (named, ws_owned) = (spec.connections.clone(), ws.clone());
+        let given = tokio::task::spawn_blocking(move || crate::connections::env(&ws_owned, &named))
+            .await
+            .map_err(|e| TaskError::Failed(e.to_string()))?
+            .map_err(TaskError::Failed)?;
         let made = places::make(&ws, title, checked).await?;
         let command = ws
             .agent
@@ -63,7 +70,7 @@ impl Host for BridgeHost {
             .unwrap_or_else(|| self.command.clone());
         let claude =
             crate::task_records::reading::is_claude_code(&LaunchCommand::Shell(command.clone()));
-        let (made, title_owned, goal) = (made, title.to_owned(), spec.goal.clone());
+        let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let (made, settings) = tokio::task::spawn_blocking(move || {
             places::brief(&made, &title_owned, goal.as_deref())?;
             let settings = if claude {
@@ -96,10 +103,11 @@ impl Host for BridgeHost {
             branch: made.branch.clone(),
             places: made.places,
             argv: shell_line(line),
-            env: ws
-                .agent
-                .map(|a| a.env.into_iter().collect())
-                .unwrap_or_default(),
+            env: {
+                let mut env = ws.agent.map(|a| a.env).unwrap_or_default();
+                crate::connections::merge(&mut env, given);
+                env.into_iter().collect()
+            },
         })
     }
 
@@ -165,6 +173,7 @@ mod tests {
             title: "Fix".into(),
             goal: None,
             places: Vec::new(),
+            connections: Vec::new(),
             plan: false,
         };
         assert!(matches!(

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::agent_env::{AgentSettings, RawAgent};
+use super::connections::{self, Connection, RawConnection};
 use super::is_valid_id;
 use super::loops::{Checks, command_shape};
 use super::routines::{self, Routine, RoutineGate, RoutineProblem};
@@ -63,6 +64,8 @@ pub struct Workspace {
     pub park_after: Option<u64>,
     /// None: this workspace has no Routines (ADR 0036).
     pub routines: Option<RoutineGate>,
+    /// Secrets an agent gets only when its Task or Routine names them (ADR 0069).
+    pub connections: Vec<Connection>,
 }
 
 /// The configured workspaces, in file order.
@@ -111,6 +114,8 @@ struct RawWorkspace {
     loop_table: Option<RawLoop>,
     park_after: Option<String>,
     routines: Option<RawGate>,
+    #[serde(default)]
+    connection: Vec<RawConnection>,
     /// `[workspace.assistant]` and `memory` of the removed assistant layer
     /// (ADR 0066): read so an older file still loads, not used.
     assistant: Option<toml::Value>,
@@ -229,6 +234,9 @@ impl Workspaces {
             let routines = w.routines.filter(|g| g.enabled).map(|g| RoutineGate {
                 direct_writes: g.direct_writes,
             });
+            let taken: Vec<&str> = agent.as_ref().map(|a| a.keys()).unwrap_or_default();
+            let connections = connections::check_all(w.connection, &taken)
+                .map_err(|r| invalid(format!("workspace {:?}: {r}", w.name)))?;
             if w.assistant.is_some() || w.memory.is_some() {
                 tracing::warn!(workspace = %w.name, "[workspace.assistant] and memory are no longer used; remove them");
             }
@@ -241,6 +249,7 @@ impl Workspaces {
                 loop_checks,
                 park_after,
                 routines,
+                connections,
             });
         }
         let codex_threads = raw.codex.is_some_and(|c| c.owned_threads);

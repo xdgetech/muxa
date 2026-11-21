@@ -138,15 +138,19 @@ async fn check(env: &Env, new: &NewTask) -> Result<(Target, ResolvedWorker), Err
     let workspace_name = new.workspace.clone();
     let selected = new.worker.clone();
     let fallback = env.tasks.command.clone();
+    let routine = new.routine.as_ref().map(|r| r.name.clone());
     let (workspaces, resolved) = blocking(move || {
         let workspaces = config.load_workspaces()?;
         let choice = match selected.as_deref() {
             None | Some(muxa_protocol::DEFAULT_WORKER) => WorkerChoice::WorkspaceDefault,
             Some(name) => WorkerChoice::Named(name),
         };
-        let resolved = workspaces
+        let mut resolved = workspaces
             .resolve_worker(&workspace_name, choice, None, &fallback)
             .map_err(|e| error_body(ErrorCode::BadRequest, e.to_string()))?;
+        let given = crate::connections::for_run(&workspaces, &workspace_name, routine.as_deref())
+            .map_err(|m| error_body(ErrorCode::BadRequest, m))?;
+        crate::connections::merge(&mut resolved.environment.env, given);
         Ok((workspaces, resolved))
     })
     .await?;

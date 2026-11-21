@@ -146,9 +146,10 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         title: String,
         goal: String? = null,
         places: List<PlaceSpec> = emptyList(),
+        connections: List<String> = emptyList(),
         plan: Boolean = false,
     ): Pair<Terminal, Boolean> {
-        val reply = request(V2Request.StartTask(workspace, title, goal, places, plan))
+        val reply = request(V2Request.StartTask(workspace, title, goal, places, connections, plan))
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 

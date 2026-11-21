@@ -80,7 +80,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"terminals"}` | `{"terminals":[Terminal...]}`: the live terminals |
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
-| `{"type":"start-task","workspace","title","goal"?,"places"?,"plan"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal |
+| `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"plan"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal |
 | `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
 | `{"type":"inbox"}` | `{"inbox":Inbox}` |
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
@@ -109,7 +109,9 @@ If the Task's agent is still running in that working place, the reply has it wit
 - `muxa.repo` (the main checkout) and `muxa.branch`, when the working place is a branch;
 - `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
 
-An unknown Workspace, a missing title, a wrong repo or branch, or a repo named twice is `bad-request`.
+`connections` names the Workspace's connections the agent gets as environment variables, besides the ones on by default (ADR 0069). Their secrets come from the host's Keychain and never cross the wire. A missing or locked secret fails the start before any place is made.
+
+An unknown Workspace or connection, a missing title, a wrong repo or branch, or a repo named twice is `bad-request`.
 
 ### Notifications
 

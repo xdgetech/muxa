@@ -26,6 +26,7 @@ fn workspace(root: &Path, repos: Vec<PathBuf>) -> Workspace {
         loop_checks: None,
         park_after: None,
         routines: None,
+        connections: Vec::new(),
     }
 }
 

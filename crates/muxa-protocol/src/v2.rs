@@ -280,6 +280,10 @@ pub enum ClientMsg {
         /// Empty: one folder.
         #[serde(default)]
         places: Vec<PlaceSpec>,
+        /// The Workspace's connections the agent gets besides the default
+        /// ones (ADR 0069).
+        #[serde(default)]
+        connections: Vec<String>,
         /// Claude Code starts in plan mode (ADR 0060).
         #[serde(default)]
         plan: bool,

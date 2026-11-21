@@ -61,7 +61,13 @@ pub(super) async fn restart_record(
     let fallback = env.tasks.command.clone();
     let resolved = blocking(move || {
         let workspaces = config.load_workspaces()?;
-        resolve(&workspaces, &snapshot, worker.as_deref(), rev, &fallback)
+        let mut resolved = resolve(&workspaces, &snapshot, worker.as_deref(), rev, &fallback)?;
+        let routine = snapshot.routine_run().map(|r| r.name);
+        let given =
+            crate::connections::for_run(&workspaces, &snapshot.workspace, routine.as_deref())
+                .map_err(|m| error_body(ErrorCode::BadRequest, m))?;
+        crate::connections::merge(&mut resolved.environment.env, given);
+        Ok(resolved)
     })
     .await?;
     let config = Arc::clone(&env.records);

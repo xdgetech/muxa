@@ -54,6 +54,7 @@ fn workspace(name: &str) -> Workspace {
         loop_checks: None,
         park_after: None,
         routines: None,
+        connections: Vec::new(),
     }
 }
 

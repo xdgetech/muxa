@@ -28,6 +28,8 @@ pub struct TaskSpec {
     pub goal: Option<String>,
     /// Empty: one folder.
     pub places: Vec<PlaceSpec>,
+    /// Besides the default ones (ADR 0069).
+    pub connections: Vec<String>,
     pub plan: bool,
 }
 

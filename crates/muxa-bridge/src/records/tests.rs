@@ -530,6 +530,7 @@ fn workspace(name: &str) -> (PathBuf, Workspace) {
         loop_checks: None,
         park_after: None,
         routines: None,
+        connections: Vec::new(),
     };
     (dir, ws)
 }
@@ -664,4 +665,50 @@ fn worker_fields_survive_legacy_record_and_run_rewrites() {
         None,
         "an unknown kind is unrecorded"
     );
+}
+
+#[test]
+fn connections_load_and_a_routine_names_only_its_own() {
+    let dir = temp("connections");
+    std::fs::create_dir_all(dir.join(".muxa")).unwrap();
+    std::fs::write(dir.join(".muxa/brief.md"), "Read.\n").unwrap();
+    let ws = |extra: &str, routine: &str| {
+        std::fs::write(
+            dir.join(".muxa/routines.toml"),
+            format!(
+                "[[routine]]\nname = \"r\"\ninstructions = \"brief.md\"\nenabled = true\n{routine}"
+            ),
+        )
+        .unwrap();
+        config(
+            &dir,
+            &format!(
+                "[[workspace]]\nname = \"w\"\nroot = \"{}\"\n[workspace.routines]\nenabled = true\n\
+                 [workspace.agent]\nenv = {{ CLAUDE_CONFIG_DIR = \"/c\" }}\n{extra}",
+                dir.display()
+            ),
+        )
+    };
+    let two = "[[workspace.connection]]\nname = \"linear\"\nenv = \"LINEAR_API_KEY\"\naccess = \"read\"\n\
+               account = \"me@acme\"\n[[workspace.connection]]\nname = \"docs\"\nenv = \"DOCS\"\ndefault = true\n";
+    let loaded = ws(two, "connections = [\"linear\"]\n").unwrap();
+    let w = &loaded.all()[0];
+    assert_eq!(w.connections.len(), 2);
+    assert_eq!(w.connections[0].access, super::connections::Access::Read);
+    assert!(w.connections[1].default);
+    assert_eq!(loaded.routine("w", "r").unwrap().connections, ["linear"]);
+    // A Routine that names another connection loads no Routines of its workspace.
+    let other = ws(two, "connections = [\"github\"]\n").unwrap();
+    assert!(other.routine("w", "r").is_none());
+    assert!(other.routine_problems()[0].reason.contains("\"github\""));
+    for bad in [
+        "[[workspace.connection]]\nname = \"Linear\"\nenv = \"X\"\n",
+        "[[workspace.connection]]\nname = \"a\"\nenv = \"1X\"\n",
+        "[[workspace.connection]]\nname = \"a\"\nenv = \"CLAUDE_CONFIG_DIR\"\n",
+        "[[workspace.connection]]\nname = \"a\"\nenv = \"X\"\n[[workspace.connection]]\nname = \"b\"\nenv = \"X\"\n",
+        "[[workspace.connection]]\nname = \"a\"\nenv = \"X\"\naccess = \"admin\"\n",
+        "[[workspace.connection]]\nname = \"a\"\nenv = \"X\"\nsecret = \"t\"\n",
+    ] {
+        assert!(ws(bad, "").is_err(), "{bad}");
+    }
 }

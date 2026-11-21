@@ -8,8 +8,8 @@
 # root   the Entity's folder. It must exist. A leading ~/ is your home
 #        directory. The git repos one or two levels below it are this
 #        workspace's repos, e.g. <root>/api or <root>/clients/portal. Dot
-#        folders such as .worktrees/, and tasks/, routines/ and assistant/,
-#        are skipped.
+#        folders such as .worktrees/, and tasks/ and routines/, are
+#        skipped.
 #        Tasks without a repo get <root>/tasks/<slug>-<id>/. A client can
 #        name a repo relative to root: api, clients/portal.
 # repos  optional; more repos, usually outside root. They must exist. A
@@ -19,12 +19,6 @@
 #        item: it writes .muxa/HANDOFF.md and closes the Task's session. The
 #        Task, its TASK.md and its directory stay; Resume starts it again
 #        (ADR 0034). Without it, nothing is parked.
-# memory  optional; "review", "auto" or "off" (ADR 0053). <root>/.muxa/
-#        WORKSPACE.md is what this workspace has learned: every Task, staff
-#        and Routine run reads a copy of it. At a Task's end, its agent's
-#        "For the workspace" section in TASK.md is added to it. "auto" (the
-#        default): muxa appends it at once. "review": you approve each
-#        addition in the Inbox. "off": muxa proposes nothing.
 #
 # [workspace.agent]  optional; how this workspace's agents start (ADR 0016).
 #   command  the agent command; else the bridge's --task-command (claude).
@@ -32,8 +26,25 @@
 #            CLAUDE_CONFIG_DIR and CODEX_HOME give the workspace its own
 #            Claude Code or Codex login, claude.ai connectors, MCP servers
 #            and settings. Run the agent once with that variable set to log in.
-#            Values may be tokens: the bridge never logs them. TMUX and
-#            TMUX_PANE are refused.
+#            Values may be tokens: the bridge never logs them. Every agent of
+#            the workspace gets them; a token that only some agents need is
+#            better as a connection. TMUX and TMUX_PANE are refused.
+#
+# [[workspace.connection]]  optional; a secret an agent gets only when its
+#   Task or Routine names it (ADR 0069). A Routine names its connections in
+#   routines.toml (connections = ["linear"]); a Task, when it starts. Less
+#   access for agents that read untrusted text; not a security boundary.
+#   name     a-z, 0-9 and -, at most 64; unique in the workspace
+#   env      the variable the agent gets, e.g. LINEAR_API_KEY
+#   account  optional; who the secret acts as, shown to you
+#   access   optional; "read" or "write". A label: the token itself decides
+#            what an agent can do, so give a read-only token where the
+#            service has one.
+#   default  optional; true gives it to every Task and Routine here
+#   The secret is in the macOS Keychain of the host, never in this file:
+#     security add-generic-password -s muxa -a '<workspace>/<name>' -w
+#   (it asks for the secret). A missing or locked one stops the agent's
+#   start with that reason.
 #
 # [workspace.loop]  optional; lets a Task in this workspace have a Task Loop
 #   (ADR 0019). The muxa daemon then runs a check command with /bin/sh -c
@@ -52,89 +63,14 @@
 #   direct_writes  a Routine may change external systems without a proposal
 #                  only when this is true (default false)
 #
-# [workspace.assistant]  optional; lets the assistant work on this
-#   workspace's Work items (ADR 0048). Without it, the workspace keeps
-#   Captures and Work items but takes no requests, and shares nothing with
-#   the overall assistant. Each run gets its own folder,
-#   <root>/assistant/<slug>-<id>/.
-#   delegate          required; false: no requests here
-#   worker            optional; a [[worker]] this workspace may use. Else the
-#                     workspace's agent.
-#   staff             optional; instead of worker, at most 8 [[worker]]s that
-#                     answer this workspace's requests, the staff members
-#                     (ADR 0051). Each is allowed here, runs Claude Code, has
-#                     a description and a name of one path segment. Each
-#                     member but the lead keeps its own notes in
-#                     <root>/.muxa/assistant/staff/<worker>/NOTES.md.
-#   lead              optional; the staff member that takes a request naming
-#                     nobody, and keeps NOTES.md (default the first in staff)
-#   handoffs          "review", "auto" or "none": whether a staff member may
-#                     pass a request on to another (default "review": you
-#                     approve each hand-off)
-#   max_steps         staff members one request may pass through (default 3,
-#                     at most 5)
-#   writer            optional; the one [[worker]] that performs the writes
-#                     you approve (ADR 0052). It runs Claude Code, has a
-#                     description, and is neither worker nor on staff. Give it
-#                     the write tools of its targets and no web or search.
-#   writes            "review" or "none": whether a result may propose writes
-#                     outside the host (default "review" with writer, else
-#                     "none"). Each write is an Inbox item you approve.
-#   max_open_runs     runs open at once (default 1)
-#   max_runs_per_day  runs started a day (default 10)
-#   run_timeout       "30m", "12h" or "2d": a run with no result by then is
-#                     timed-out; the agent is not stopped (default "30m")
-#   notes             "review" or "auto": who writes a run's proposed
-#                     <root>/.muxa/WORKSPACE.md (default "review": you
-#                     apply each one) (ADR 0049)
-#   share             "none", "outline" or "summaries": what the overall
-#                     assistant reads of this workspace (default "summaries"
-#                     with delegate = true, else "none"). "none" leaves no
-#                     trace, not even the name. Raw files, Capture text,
-#                     findings and notes never cross.
-#   overall_requests  "none", "review" or "auto": whether the overall
-#                     assistant may ask this workspace (default "review": you
-#                     approve each request)
-#   overall           true makes this workspace the overall assistant's
-#                     (ADR 0049): at most one workspace. Its root holds only
-#                     its notes and runs. It takes no requests, so delegate,
-#                     share and overall_requests are refused. Its defaults:
-#                     max_open_runs 1, max_runs_per_day 8, run_timeout "15m".
-#   plans             overall workspace only: when it plans, at most 3
-#                     schedules of five cron fields, as a Routine's
-#                     (default ["30 7 * * 1-5"]: weekday mornings at 07:30;
-#                     [] plans only when you ask). A missed time runs once
-#                     on wake-up; a budget reached skips it with a reason.
-#   timezone          overall workspace only: the IANA zone of plans
-#                     (default the host's own zone)
-#   resident          overall workspace only: the daemon keeps its root Ask
-#                     session, the assistant's chat, open, and starts it
-#                     again with the same Claude Code conversation when it
-#                     closes (ADR 0056; default true). false: it opens only
-#                     when you open it
-#
-# [assistant]  optional, at the top level; the host's switch for all
-#   workspaces. Without it, or with enabled = false, no workspace takes
-#   requests and there is no overall assistant.
-#   enabled           required
-#   max_runs_per_day  runs started a day across all workspaces (default 20)
-#   max_auto_requests_per_day  requests the overall assistant sends without
-#                     your approval, across all workspaces (default 5)
-#   max_auto_handoffs_per_day  hand-offs started without your approval
-#                     (handoffs = "auto"), across all workspaces (default 10)
-#   max_writes_per_day  writes you may approve a day, across all workspaces
-#                     (default 10)
-#
 # [[worker]]  optional; a named agent setup (ADR 0022, docs/workers.md).
-#   description       what it does, at most 1 KiB; required for a staff
-#                     member or a writer, and shown to you as its job
+#   description       what it does, at most 1 KiB, shown to you as its job
 #
 # [codex]  optional, at the top level (ADR 0028).
-#   owned_threads  true lets a Codex worker or command run Routines and
-#                  assistant runs: muxa creates the Codex thread and sends
-#                  prompts to it by id (default false). Turn it on only after
-#                  the developer checklist in docs/adr/0028 passes. The writer
-#                  stays Claude Code.
+#   owned_threads  true lets a Codex worker or command run Routines: muxa
+#                  creates the Codex thread and sends prompts to it by id
+#                  (default false). Turn it on only after the developer
+#                  checklist in docs/adr/0028 passes.
 #
 # Unknown keys are refused, so a typo fails loudly instead of being ignored.
 
@@ -144,8 +80,6 @@ name = "Company"
 root = "~/work/company"
 # Remove the # sign to park Tasks idle for 12 hours.
 # park_after = "12h"
-# Remove the # sign to add what Tasks learn without asking.
-# memory = "auto"
 
 [workspace.agent]
 env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company" }
@@ -153,20 +87,17 @@ env = { CLAUDE_CONFIG_DIR = "~/.claude-company", CODEX_HOME = "~/.codex-company"
 [workspace.routines]
 enabled = true
 
+# A Linear token only the Tasks and Routines that name "linear" get.
+# Its secret: security add-generic-password -s muxa -a 'Company/linear' -w
+[[workspace.connection]]
+name = "linear"
+env = "LINEAR_API_KEY"
+account = "me@company.example"
+access = "read"
+
 # Remove the # signs to allow these two checks in Company's Tasks.
 # [workspace.loop]
 # checks = ["make check", "cargo test --workspace"]
-
-# Remove the # signs to give Company a staff of two and a writer. The three
-# workers need their own [[worker]] tables, with a description each.
-# [workspace.assistant]
-# delegate = true
-# staff = ["company-research", "company-delivery"]
-# lead = "company-research"
-# handoffs = "review"
-# max_steps = 3
-# writer = "company-writer"
-# writes = "review"
 
 [[workspace]]
 name = "Side project"

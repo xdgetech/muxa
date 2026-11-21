@@ -5,6 +5,7 @@ mod agents;
 mod args;
 mod changes;
 mod chat;
+mod connections;
 mod convert;
 mod daemon;
 mod docs;

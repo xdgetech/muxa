@@ -453,6 +453,7 @@ mod tests {
             loop_checks: Some(Checks::Any),
             park_after: None,
             routines: None,
+            connections: Vec::new(),
         };
         assert!(
             ws.may_loop(&record(Some(&repo), Some(&other))).is_ok(),

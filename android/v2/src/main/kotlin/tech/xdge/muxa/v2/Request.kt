@@ -17,6 +17,8 @@ sealed interface V2Request {
         val title: String,
         val goal: String? = null,
         val places: List<PlaceSpec> = emptyList(),
+        /** The Workspace's connections, besides the default ones (ADR 0069). */
+        val connections: List<String> = emptyList(),
         val plan: Boolean = false,
     ) : V2Request
     data object Watch : V2Request
@@ -46,7 +48,8 @@ sealed interface V2Request {
             is Detach -> { type("detach"); put("channel", r.channel) }
             is StartTask -> {
                 type("start-task"); put("workspace", r.workspace); put("title", r.title); opt("goal", r.goal)
-                put("places", buildJsonArray { r.places.forEach { add(placeJson(it)) } }); put("plan", r.plan)
+                put("places", buildJsonArray { r.places.forEach { add(placeJson(it)) } })
+                put("connections", buildJsonArray { r.connections.forEach { add(JsonPrimitive(it)) } }); put("plan", r.plan)
             }
             Watch -> type("watch")
             GetInbox -> type("inbox")

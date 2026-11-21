@@ -4,6 +4,8 @@
 
 Proposed (2026-11-21). Changes ADR 0016 (per-Workspace agent environments) and ADR 0026 (a Routine's sources are its agent's native tools).
 
+Decided while building (2026-11-22): the move is gradual. A Workspace's `[workspace.agent] env` keeps going to every agent, so nothing that relies on it breaks. Connections are the way to take a token out of it: a connection reaches only the Tasks and Routines that name it, or all of them with `default = true`. Secrets are read with `/usr/bin/security`; no Keychain library is linked in.
+
 ## Context
 
 ADR 0016 gives each Workspace an agent environment. Today muxa puts every filled token of the Workspace into every agent it starts. A personal API key there means every agent can act as the user in that service, and an agent that reads untrusted text (an issue, a web page) holds all of them.

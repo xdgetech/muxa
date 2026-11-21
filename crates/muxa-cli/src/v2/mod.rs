@@ -20,7 +20,8 @@ use client::{Client, Event, State};
 
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
-                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--plan] [--json]
+                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--connection NAME]...
+                [--plan] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
        muxa-cli v2 [--bridge CMD] inbox [--json]
@@ -71,6 +72,8 @@ enum Cmd {
         goal: Option<String>,
         /// In the order given; none is one folder (ADR 0068).
         places: Vec<PlaceSpec>,
+        /// Besides the Workspace's default ones (ADR 0069).
+        connections: Vec<String>,
         plan: bool,
         json: bool,
     },
@@ -106,6 +109,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let (mut json, mut plan, mut seconds) = (false, false, None);
     let (mut workspace, mut title, mut goal) = (None, None, None);
     let mut places: Vec<PlaceSpec> = Vec::new();
+    let mut connections: Vec<String> = Vec::new();
     let mut words = Vec::new();
     let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
@@ -138,6 +142,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
                     _ => return Err("--base follows a --branch".into()),
                 }
             }
+            Long("connection") => connections.push(p.value()?.string()?),
             Long("read") => places.push(PlaceSpec::Read {
                 repo: p.value()?.string()?,
             }),
@@ -156,6 +161,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             title: title.ok_or("start-task needs --title")?,
             goal,
             places,
+            connections,
             plan,
             json,
         },
@@ -250,12 +256,14 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             title,
             goal,
             places,
+            connections,
             plan,
             json,
         } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let msg = json!({"type": "start-task", "workspace": workspace, "title": title,
-                             "goal": goal, "places": places, "plan": plan});
+                             "goal": goal, "places": places, "connections": connections,
+                             "plan": plan});
             let reply = c.request(msg).await?;
             if json {
                 println!("{reply}");
@@ -530,6 +538,8 @@ mod tests {
             "/r:fix",
             "--base",
             "main",
+            "--connection",
+            "linear",
             "--plan",
         ]))
         .unwrap()
@@ -551,6 +561,7 @@ mod tests {
                         base: Some("main".into()),
                     },
                 ],
+                connections: vec!["linear".into()],
                 plan: true,
                 json: false
             }

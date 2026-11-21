@@ -6,7 +6,10 @@ public enum V2Request: Sendable {
     case attach(terminal: String, cols: UInt16, rows: UInt16, history: UInt32 = 0)
     case detach(channel: UInt32)
     /// No places: one folder (ADR 0068).
-    case startTask(workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], plan: Bool = false)
+    /// `connections`: the Workspace's, besides the default ones (ADR 0069).
+    case startTask(
+        workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], connections: [String] = [],
+        plan: Bool = false)
     case watch
     case inbox
     /// `today` is the device's local date, `YYYY-MM-DD`.
@@ -33,9 +36,9 @@ public enum V2Request: Sendable {
         case let .attach(terminal, cols, rows, history):
             set("attach", ["terminal": terminal, "cols": cols, "rows": rows, "history": history])
         case let .detach(channel): set("detach", ["channel": channel])
-        case let .startTask(workspace, title, goal, places, plan):
+        case let .startTask(workspace, title, goal, places, connections, plan):
             set("start-task", ["workspace": workspace, "title": title, "goal": goal,
-                               "places": places.map(\.json), "plan": plan])
+                               "places": places.map(\.json), "connections": connections, "plan": plan])
         case .watch: set("watch", [:])
         case .inbox: set("inbox", [:])
         case let .parseCapture(text, today): set("parse-capture", ["text": text, "today": today])

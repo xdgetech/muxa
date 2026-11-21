@@ -315,6 +315,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 title,
                 goal,
                 places,
+                connections,
                 plan,
             } => {
                 let spec = TaskSpec {
@@ -322,6 +323,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     title,
                     goal,
                     places,
+                    connections,
                     plan,
                 };
                 self.start_task(id, &spec).await;
