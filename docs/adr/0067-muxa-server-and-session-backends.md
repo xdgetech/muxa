@@ -30,13 +30,13 @@ herdr-core (Apache-2.0, preview 0.x) has a documented JSON-RPC API with a raw ou
    - one session per client that the client can resume.
 2. **The bridge becomes a relay.** The app still runs `muxa-bridge` over SSH exec, so SSH keeps doing authentication. The bridge connects stdin and stdout to the server's Unix socket (mode 0600, peer uid checked). No port is opened.
 3. **A client can resume** (wire details in `protocol/PROTOCOL-v2.md`).
-   - The server gives each client a token. It keeps the token on disk; it keeps buffers in memory only (invariant 5).
+   - The server gives each client a token. It keeps tokens and buffers in memory only (invariant 5). _Changed 2026-11-21 (slice B3): tokens are no longer kept on disk. A resume names each channel's terminal, so after a server restart or an expired token the server attaches each terminal again with a fresh paint. A stored token would add nothing._
    - Pane output carries a sequence number per pane. The server keeps 256 KiB of recent output per watched pane.
    - Input carries a client sequence number. The server acknowledges it, and ignores a number it has already applied, so an approval is never typed twice.
    - The Inbox carries a revision.
    - On reconnect the client sends its token, its last sequence numbers and its last revision. The server sends what is new.
    - A fresh snapshot is sent when the buffer no longer covers the gap, after a resize, after the backend sends a fresh paint, or when the client lost its screen state (the app was killed).
-   - A token expires after 24 hours without use.
+   - ~~A token expires after 24 hours without use.~~ _Changed 2026-11-21 (slice B3): a client's attachments wait 10 minutes for its resume, then let go of their viewers. A later resume gets a fresh paint per terminal; only the input count is lost, and the client then drops unacknowledged input instead of resending it._
 4. **Terminals sit behind a session backend trait.** The trait works on one terminal at a time:
    - list, run (argv, cwd, name, labels, env);
    - attach: a stream of the first paint and the raw output, with input, resize and close;

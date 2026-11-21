@@ -1,14 +1,39 @@
 //! A protocol v2 client against the server on the fake backend.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
 use muxa_protocol::v2::{Frame, INITIAL_CREDIT, Kind};
-use muxa_server::{Config, ServeError, serve};
+use muxa_server::{Config, Prepared, ServeError, Sessions, TaskError, TaskSpec, Tasks, serve};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::task::JoinHandle;
+
+/// Worktrees under `/work`; a branch named `bad` is refused.
+struct FakeTasks;
+
+impl Tasks for FakeTasks {
+    async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
+        if spec.branch == "bad" {
+            return Err(TaskError::Invalid("bad is not a branch".into()));
+        }
+        let mut argv = vec!["agent".to_owned()];
+        if spec.plan {
+            argv.push("--plan".into());
+        }
+        Ok(Prepared {
+            dir: format!("/work/{}", spec.branch).into(),
+            repo: spec.repo.clone().into(),
+            branch: spec.branch.clone(),
+            argv,
+            env: [("K".to_owned(), "v".to_owned())].into(),
+        })
+    }
+}
+
+const PARK: Duration = Duration::from_secs(60);
 
 struct Client {
     io: DuplexStream,
@@ -18,25 +43,43 @@ struct Client {
 
 impl Client {
     async fn start(backend: &FakeBackend, version: u32) -> Client {
+        let hello = json!({"type": "hello", "version": version, "client": "test", "resume": null});
+        Client::connect(backend, &Arc::new(Sessions::new()), PARK, hello).await
+    }
+
+    async fn connect(
+        backend: &FakeBackend,
+        sessions: &Arc<Sessions>,
+        park: Duration,
+        hello: Value,
+    ) -> Client {
         let (client_end, server_end) = tokio::io::duplex(8 << 20);
         let backend = backend.clone();
+        let sessions = Arc::clone(sessions);
         let server = tokio::spawn(async move {
             let (r, w) = tokio::io::split(server_end);
             let config = Config {
                 server: "muxa test".into(),
                 backend: "fake".into(),
+                park,
             };
-            serve(&backend, r, w, &config).await
+            serve(&backend, &FakeTasks, &sessions, r, w, &config).await
         });
         let mut client = Client {
             io: client_end,
             buf: Vec::new(),
             server,
         };
+        client.control(hello).await;
         client
-            .control(json!({"type": "hello", "version": version, "client": "test", "resume": null}))
-            .await;
-        client
+    }
+
+    /// Ends the connection the way a lost network does, and waits for the
+    /// server to notice.
+    async fn drop_connection(self) {
+        let Client { io, server, .. } = self;
+        drop(io);
+        server.await.unwrap().unwrap();
     }
 
     async fn send(&mut self, frame: Frame) {
@@ -253,17 +296,333 @@ async fn an_unknown_terminal_is_not_found() {
 }
 
 #[tokio::test]
-async fn leaving_detaches_every_terminal_and_keeps_programs_running() {
+async fn a_client_that_does_not_return_is_detached_and_programs_keep_running() {
     let backend = FakeBackend::new();
     let id = terminal(&backend).await;
-    let mut client = Client::start(&backend, 2).await;
+    let sessions = Arc::new(Sessions::new());
+    let mut client =
+        Client::connect(&backend, &sessions, Duration::from_millis(100), hello(None)).await;
     client.welcome().await;
     client.attach(1, &id).await;
+    client.drop_connection().await;
+    // Parked: still attached, for a resume.
     assert_eq!(backend.viewers(&id), 1);
-    let Client { io, server, .. } = client;
-    drop(io);
-    server.await.unwrap().unwrap();
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(backend.viewers(&id), 0);
     assert!(backend.get(&id).await.unwrap().live);
+}
+
+fn hello(resume: Option<Value>) -> Value {
+    json!({"type": "hello", "version": 2, "client": "test", "resume": resume})
+}
+
+fn resume(token: &Value, channel: u32, id: &TerminalId, offset: u64, input_seq: u64) -> Value {
+    json!({"token": token, "channels": [{"channel": channel, "terminal": id.as_str(),
+        "offset": offset, "input_seq": input_seq, "cols": 100, "rows": 30}]})
+}
+
+/// A client that attached `id` and read its first output, `hello `.
+async fn attached(
+    backend: &FakeBackend,
+    sessions: &Arc<Sessions>,
+    id: &TerminalId,
+) -> (Client, Value, u32) {
+    backend.emit(id, b"hello ");
+    let mut client = Client::connect(backend, sessions, PARK, hello(None)).await;
+    let token = client.welcome().await["token"].clone();
+    let ch = client.attach(1, id).await;
+    assert_eq!(client.output(ch, 6).await, (0, b"hello ".to_vec()));
+    (client, token, ch)
+}
+
+#[tokio::test]
+async fn a_resume_sends_only_the_output_the_client_missed() {
+    let backend = FakeBackend::new();
+    let id = terminal(&backend).await;
+    let sessions = Arc::new(Sessions::new());
+    let (client, token, ch) = attached(&backend, &sessions, &id).await;
+    client.drop_connection().await;
+    backend.emit(&id, b"world");
+
+    // The client lost the last bytes of `hello ` on the way.
+    let mut client = Client::connect(
+        &backend,
+        &sessions,
+        PARK,
+        hello(Some(resume(&token, ch, &id, 3, 0))),
+    )
+    .await;
+    let welcome = client.welcome().await;
+    assert_eq!(welcome["token"], token);
+    assert_eq!(welcome["resumed"], json!([{"channel": ch, "input_seq": 0}]));
+    assert_eq!(client.output(ch, 8).await, (3, b"lo world".to_vec()));
+    // The channel goes on as before.
+    backend.emit(&id, b"!");
+    assert_eq!(client.output(ch, 1).await, (11, b"!".to_vec()));
+    assert_eq!(backend.viewers(&id), 1);
+}
+
+#[tokio::test]
+async fn input_resent_after_a_resume_is_not_applied_twice() {
+    let backend = FakeBackend::new();
+    let id = terminal(&backend).await;
+    let sessions = Arc::new(Sessions::new());
+    let (mut client, token, ch) = attached(&backend, &sessions, &id).await;
+    client.send(Frame::input(ch, 1, b"y")).await;
+    // Applied, but the ACK is lost with the connection.
+    while backend.inputs(&id).is_empty() {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    client.drop_connection().await;
+
+    let mut client = Client::connect(
+        &backend,
+        &sessions,
+        PARK,
+        hello(Some(resume(&token, ch, &id, 6, 0))),
+    )
+    .await;
+    let welcome = client.welcome().await;
+    assert_eq!(welcome["resumed"], json!([{"channel": ch, "input_seq": 1}]));
+    client.send(Frame::input(ch, 1, b"y")).await;
+    client.send(Frame::input(ch, 2, b"n")).await;
+    let mut acks = Vec::new();
+    while acks.len() < 2 {
+        let f = client.read().await;
+        if f.kind == Kind::Ack {
+            acks.push(f.split_u64().unwrap().0);
+        }
+    }
+    assert_eq!(acks, vec![1, 2]);
+    assert_eq!(backend.inputs(&id), vec![b"y".to_vec(), b"n".to_vec()]);
+}
+
+#[tokio::test]
+async fn output_past_the_buffer_gets_a_paint_and_keeps_the_input_count() {
+    let backend = FakeBackend::new();
+    let id = terminal(&backend).await;
+    let sessions = Arc::new(Sessions::new());
+    let (mut client, token, ch) = attached(&backend, &sessions, &id).await;
+    client.send(Frame::input(ch, 1, b"y")).await;
+    while backend.inputs(&id).is_empty() {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    client.drop_connection().await;
+    backend.emit(&id, &vec![b'x'; 300 * 1024]);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    // The parked viewer let go when its buffer could no longer cover the client.
+    assert_eq!(backend.viewers(&id), 0);
+
+    let mut client = Client::connect(
+        &backend,
+        &sessions,
+        PARK,
+        hello(Some(resume(&token, ch, &id, 6, 0))),
+    )
+    .await;
+    let welcome = client.welcome().await;
+    assert_eq!(welcome["resumed"], json!([{"channel": ch, "input_seq": 1}]));
+    assert_eq!(
+        client.read_control().await,
+        json!({"type": "paint", "channel": ch})
+    );
+    let (offset, bytes) = client.output(ch, 6).await;
+    assert_eq!((offset, &bytes[..6]), (0, &b"hello "[..]));
+    client.send(Frame::input(ch, 1, b"y")).await;
+    client.send(Frame::input(ch, 2, b"n")).await;
+    while backend.inputs(&id).len() < 2 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(backend.inputs(&id), vec![b"y".to_vec(), b"n".to_vec()]);
+}
+
+#[tokio::test]
+async fn an_unknown_token_repaints_each_live_terminal_and_drops_the_rest() {
+    let backend = FakeBackend::new();
+    let id = terminal(&backend).await;
+    backend.emit(&id, b"screen");
+    let sessions = Arc::new(Sessions::new());
+    let channels = json!({"token": "00", "channels": [
+        {"channel": 4, "terminal": id.as_str(), "offset": 99, "input_seq": 7, "cols": 90, "rows": 20},
+        {"channel": 5, "terminal": "gone", "offset": 0, "input_seq": 0, "cols": 90, "rows": 20}]});
+    let mut client = Client::connect(&backend, &sessions, PARK, hello(Some(channels))).await;
+    let welcome = client.welcome().await;
+    assert_ne!(welcome["token"], "00");
+    assert_eq!(
+        welcome["resumed"],
+        json!([{"channel": 4, "input_seq": null}])
+    );
+    assert_eq!(
+        client.read_control().await,
+        json!({"type": "paint", "channel": 4})
+    );
+    assert_eq!(client.output(4, 6).await, (0, b"screen".to_vec()));
+    assert_eq!(backend.size(&id).map(|s| (s.cols, s.rows)), Some((90, 20)));
+    // Old input is not applied again, and new channels do not reuse 4.
+    client.send(Frame::input(4, 7, b"old")).await;
+    client.send(Frame::input(4, 8, b"new")).await;
+    while backend.inputs(&id).is_empty() {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(backend.inputs(&id), vec![b"new".to_vec()]);
+    let other = terminal(&backend).await;
+    client
+        .control(
+            json!({"type": "attach", "id": 1, "terminal": other.as_str(), "cols": 80, "rows": 24}),
+        )
+        .await;
+    let reply = loop {
+        let f = client.read().await;
+        if f.channel == 0 {
+            break serde_json::from_slice::<Value>(&f.payload).unwrap();
+        }
+    };
+    assert_eq!(reply["channel"], 6);
+}
+
+#[tokio::test]
+async fn a_resume_takes_over_a_connection_that_is_still_open() {
+    let backend = FakeBackend::new();
+    let id = terminal(&backend).await;
+    let sessions = Arc::new(Sessions::new());
+    let (mut old, token, ch) = attached(&backend, &sessions, &id).await;
+    let mut new = Client::connect(
+        &backend,
+        &sessions,
+        PARK,
+        hello(Some(resume(&token, ch, &id, 6, 0))),
+    )
+    .await;
+    let welcome = new.welcome().await;
+    assert_eq!(welcome["resumed"], json!([{"channel": ch, "input_seq": 0}]));
+    backend.emit(&id, b"x");
+    assert_eq!(new.output(ch, 1).await, (6, b"x".to_vec()));
+    // The old connection was closed.
+    let mut rest = Vec::new();
+    let n = tokio::time::timeout(Duration::from_secs(2), old.io.read_to_end(&mut rest)).await;
+    assert!(n.is_ok(), "the old connection is still open");
+    assert_eq!(backend.viewers(&id), 1);
+}
+
+#[tokio::test]
+async fn a_program_that_ended_while_parked_closes_after_the_missed_output() {
+    let backend = FakeBackend::new();
+    let id = terminal(&backend).await;
+    let sessions = Arc::new(Sessions::new());
+    let (client, token, ch) = attached(&backend, &sessions, &id).await;
+    client.drop_connection().await;
+    backend.emit(&id, b"bye");
+    backend.kill(&id).await.unwrap();
+    let mut client = Client::connect(
+        &backend,
+        &sessions,
+        PARK,
+        hello(Some(resume(&token, ch, &id, 6, 0))),
+    )
+    .await;
+    client.welcome().await;
+    assert_eq!(client.output(ch, 3).await, (6, b"bye".to_vec()));
+    let close = client.read().await;
+    assert_eq!((close.channel, close.kind), (ch, Kind::Close));
+    let exit: Value = serde_json::from_slice(&close.payload).unwrap();
+    assert_eq!(exit["reason"], "killed");
+}
+
+#[tokio::test]
+async fn start_task_runs_the_agent_in_its_worktree_once() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let start =
+        json!({"type": "start-task", "id": 1, "repo": "/src/app", "branch": "fix", "plan": true});
+    client.control(start.clone()).await;
+    let reply = client.read_control().await;
+    assert_eq!(reply["existing"], false, "{reply}");
+    let labels = &reply["terminal"]["labels"];
+    assert_eq!(
+        (
+            &labels["muxa.kind"],
+            &labels["muxa.role"],
+            &labels["muxa.dir"],
+            &labels["muxa.branch"]
+        ),
+        (
+            &json!("task"),
+            &json!("agent"),
+            &json!("/work/fix"),
+            &json!("fix")
+        )
+    );
+    let launches = backend.launches();
+    assert_eq!(launches[0].argv, vec!["agent", "--plan"]);
+    assert_eq!(
+        launches[0].cwd.as_deref(),
+        Some(std::path::Path::new("/work/fix"))
+    );
+    assert_eq!(launches[0].env.get("K").map(String::as_str), Some("v"));
+
+    // The same Task again finds the running agent.
+    client
+        .control(json!({"type": "start-task", "id": 2, "repo": "/src/app", "branch": "fix"}))
+        .await;
+    let again = client.read_control().await;
+    assert_eq!(again["existing"], true);
+    assert_eq!(again["terminal"]["id"], reply["terminal"]["id"]);
+    assert_eq!(backend.launches().len(), 1);
+
+    // Once the agent ended, a start runs a new one.
+    let id = TerminalId::new(reply["terminal"]["id"].as_str().unwrap());
+    backend.kill(&id).await.unwrap();
+    client
+        .control(json!({"type": "start-task", "id": 3, "repo": "/src/app", "branch": "fix"}))
+        .await;
+    assert_eq!(client.read_control().await["existing"], false);
+}
+
+#[tokio::test]
+async fn a_task_the_host_refuses_is_a_bad_request() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    client
+        .control(json!({"type": "start-task", "id": 4, "repo": "/src/app", "branch": "bad"}))
+        .await;
+    let err = client.read_control().await;
+    assert_eq!(
+        (err["code"].as_str(), err["message"].as_str()),
+        (Some("bad-request"), Some("bad is not a branch"))
+    );
+    assert!(backend.launches().is_empty());
+}
+
+#[tokio::test]
+async fn watch_sends_each_change_as_the_terminal_now_is() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    client.control(json!({"type": "watch", "id": 1})).await;
+    assert_eq!(
+        client.read_control().await,
+        json!({"type": "reply", "id": 1})
+    );
+
+    let id = terminal(&backend).await;
+    let created = client.read_control().await;
+    assert_eq!(
+        (created["type"].as_str(), created["terminal"]["id"].as_str()),
+        (Some("changed"), Some(id.as_str()))
+    );
+    backend.set_status(&id, "blocked");
+    let status = client.read_control().await;
+    assert_eq!(
+        status["terminal"]["status"],
+        json!({"state": "blocked", "app": "fake"})
+    );
+    backend.kill(&id).await.unwrap();
+    assert_eq!(client.read_control().await["terminal"]["live"], false);
+    backend.remove(&id).await.unwrap();
+    assert_eq!(
+        client.read_control().await,
+        json!({"type": "removed", "terminal": id.as_str()})
+    );
 }

@@ -2,12 +2,14 @@
 //! served by `muxa-server` on herdr-core, and `muxa-bridge connect`, which
 //! relays an SSH client's stdin and stdout to it.
 
+mod tasks;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use muxa_backend::SessionBackend;
 use muxa_herdr::{Client, HerdrBackend};
-use muxa_server::Config;
+use muxa_server::{Config, PARK, Sessions, Tasks};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex;
@@ -27,18 +29,25 @@ pub fn path(dir: &Path) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// One herdr-core connection, made on first use and again after it is lost.
+pub use tasks::HostTasks;
+
+/// One herdr-core connection, made on first use and again after it is lost,
+/// the client sessions a resume returns to, and how Tasks start.
 pub struct Herdr {
     program: String,
     current: Mutex<Option<HerdrBackend>>,
+    sessions: Sessions,
+    tasks: HostTasks,
 }
 
 impl Herdr {
     /// `program` runs as `<program> connect`: `hc`, or a path to it.
-    pub fn new(program: String) -> Self {
+    pub fn new(program: String, tasks: HostTasks) -> Self {
         Herdr {
             program,
             current: Mutex::new(None),
+            sessions: Sessions::new(),
+            tasks,
         }
     }
 
@@ -75,7 +84,7 @@ pub async fn accept(listener: UnixListener, herdr: Arc<Herdr>) {
                         }
                     };
                     let name = format!("herdr-core {}", backend.client().version());
-                    serve(stream, &backend, name).await;
+                    serve(stream, &backend, &herdr.tasks, &herdr.sessions, name).await;
                 });
             }
             Err(e) => {
@@ -87,13 +96,20 @@ pub async fn accept(listener: UnixListener, herdr: Arc<Herdr>) {
 }
 
 /// Serves one v2 client on `stream`.
-pub async fn serve<B: SessionBackend>(stream: UnixStream, backend: &B, backend_name: String) {
+pub async fn serve<B: SessionBackend, T: Tasks>(
+    stream: UnixStream,
+    backend: &B,
+    tasks: &T,
+    sessions: &Sessions,
+    backend_name: String,
+) {
     let (r, w) = stream.into_split();
     let config = Config {
         server: format!("muxa {}", env!("CARGO_PKG_VERSION")),
         backend: backend_name,
+        park: PARK,
     };
-    match muxa_server::serve(backend, r, w, &config).await {
+    match muxa_server::serve(backend, tasks, sessions, r, w, &config).await {
         Ok(()) => tracing::info!("a v2 client left"),
         Err(e) => tracing::info!(error = %e, "a v2 client ended"),
     }
@@ -143,6 +159,15 @@ mod tests {
 
     use super::*;
 
+    fn no_tasks() -> HostTasks {
+        let records = crate::task_records::Config {
+            state_dir: None,
+            workspaces: None,
+            home: None,
+        };
+        HostTasks::new("true".into(), Arc::new(records))
+    }
+
     fn short_dir(name: &str) -> PathBuf {
         let dir = PathBuf::from(format!("/tmp/muxa-v2-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -158,7 +183,14 @@ mod tests {
         let backend = FakeBackend::new();
         tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
-            serve(stream, &backend, "fake".into()).await;
+            serve(
+                stream,
+                &backend,
+                &no_tasks(),
+                &Sessions::new(),
+                "fake".into(),
+            )
+            .await;
         });
 
         // The client's side of SSH: what it writes, and what it reads back.
@@ -200,7 +232,10 @@ mod tests {
         let dir = short_dir("herdr");
         let sock = path(&dir).unwrap();
         let listener = UnixListener::bind(&sock).unwrap();
-        tokio::spawn(accept(listener, Arc::new(Herdr::new("hc".into()))));
+        tokio::spawn(accept(
+            listener,
+            Arc::new(Herdr::new("hc".into(), no_tasks())),
+        ));
         let mut stream = UnixStream::connect(&sock).await.unwrap();
         for msg in [
             json!({"type": "hello", "version": 2, "client": "test", "resume": null}),

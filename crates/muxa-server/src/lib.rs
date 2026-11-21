@@ -3,7 +3,12 @@
 //! [`muxa_backend::SessionBackend`]. It never logs terminal bytes.
 
 mod attachment;
+mod ring;
 mod session;
+mod sessions;
+pub mod tasks;
 mod wire;
 
-pub use session::{Config, ServeError, serve};
+pub use session::{Config, PARK, ServeError, serve};
+pub use sessions::Sessions;
+pub use tasks::{Prepared, TaskError, TaskSpec, Tasks};

@@ -216,7 +216,7 @@ pub enum ClientMsg {
         version: u32,
         client: String,
         #[serde(default)]
-        resume: Option<serde_json::Value>,
+        resume: Option<Resume>,
     },
     Terminals {
         id: u64,
@@ -233,6 +233,52 @@ pub enum ClientMsg {
         id: u64,
         channel: u32,
     },
+    /// Starts a Task's agent on a branch worktree, or finds the one running.
+    StartTask {
+        id: u64,
+        repo: String,
+        branch: String,
+        #[serde(default)]
+        base: Option<String>,
+        /// Claude Code starts in plan mode (ADR 0060).
+        #[serde(default)]
+        plan: bool,
+    },
+    /// Asks for `changed`, `removed` and `resync` notifications.
+    Watch {
+        id: u64,
+    },
+}
+
+/// `hello.resume`: the session to continue and where each channel stopped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resume {
+    pub token: String,
+    #[serde(default)]
+    pub channels: Vec<ResumeChannel>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResumeChannel {
+    pub channel: u32,
+    pub terminal: String,
+    /// The next output offset the client expects.
+    pub offset: u64,
+    /// The last input sequence number the client got an ACK for.
+    #[serde(default)]
+    pub input_seq: u64,
+    pub cols: u16,
+    pub rows: u16,
+    #[serde(default)]
+    pub history: u32,
+}
+
+/// A channel that continues after a resume.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resumed {
+    pub channel: u32,
+    /// The last input the server applied; `None` when it cannot tell.
+    pub input_seq: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -254,7 +300,7 @@ pub enum ServerMsg {
         server: String,
         backend: String,
         token: String,
-        resumed: Vec<serde_json::Value>,
+        resumed: Vec<Resumed>,
     },
     Reply {
         id: u64,
@@ -270,6 +316,15 @@ pub enum ServerMsg {
     Paint {
         channel: u32,
     },
+    /// A terminal started, or its state, size or liveness changed.
+    Changed {
+        terminal: Terminal,
+    },
+    Removed {
+        terminal: String,
+    },
+    /// Changes were lost: the client lists the terminals again.
+    Resync {},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -277,6 +332,7 @@ pub enum ServerMsg {
 pub enum Reply {
     Terminals { terminals: Vec<Terminal> },
     Attached { channel: u32 },
+    Started { terminal: Terminal, existing: bool },
     Empty {},
 }
 
@@ -319,6 +375,29 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(hello, ClientMsg::Hello { version: 2, .. }));
+        let resume: ClientMsg = serde_json::from_value(json!({"type": "hello", "version": 2,
+            "client": "c", "resume": {"token": "ab", "channels": [{"channel": 3,
+            "terminal": "t7", "offset": 10, "input_seq": 2, "cols": 80, "rows": 24}]}}))
+        .unwrap();
+        let ClientMsg::Hello {
+            resume: Some(resume),
+            ..
+        } = resume
+        else {
+            panic!("no resume");
+        };
+        assert_eq!(
+            (resume.channels[0].offset, resume.channels[0].history),
+            (10, 0)
+        );
+        assert_eq!(
+            serde_json::to_value(Resumed {
+                channel: 3,
+                input_seq: None
+            })
+            .unwrap(),
+            json!({"channel": 3, "input_seq": null})
+        );
         let attach: ClientMsg = serde_json::from_value(
             json!({"type": "attach", "id": 4, "terminal": "t7", "cols": 80, "rows": 24}),
         )

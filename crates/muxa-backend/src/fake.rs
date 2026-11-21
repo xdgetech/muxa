@@ -24,6 +24,7 @@ struct State {
     subscribers: Vec<(Labels, mpsc::UnboundedSender<Change>)>,
     /// Every input applied, per terminal, in order.
     inputs: BTreeMap<TerminalId, Vec<Vec<u8>>>,
+    launches: Vec<Launch>,
 }
 
 /// Cloning shares the terminals.
@@ -97,6 +98,11 @@ impl FakeBackend {
             .unwrap_or_default()
     }
 
+    /// Every `run`, in order.
+    pub fn launches(&self) -> Vec<Launch> {
+        lock(&self.state).launches.clone()
+    }
+
     pub fn size(&self, id: &TerminalId) -> Option<Size> {
         lock(&self.state).terms.get(id).map(|t| t.info.size)
     }
@@ -134,6 +140,7 @@ impl SessionBackend for FakeBackend {
 
     async fn run(&self, launch: &Launch) -> Result<TerminalInfo> {
         let mut s = lock(&self.state);
+        s.launches.push(launch.clone());
         s.next += 1;
         let id = TerminalId::new(format!("f{}", s.next));
         let info = TerminalInfo {

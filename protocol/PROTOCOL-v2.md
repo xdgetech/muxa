@@ -1,6 +1,6 @@
 # muxa protocol v2
 
-Status: draft (2026-11-21), built in slices B1–B3 of `docs/plan.md`. ADR 0067. Protocol v1 (`PROTOCOL.md`) stays until the hard switch.
+Status: draft (2026-11-21), built in slices B1–B3 (resume: B3) of `docs/plan.md`. ADR 0067. Protocol v1 (`PROTOCOL.md`) stays until the hard switch.
 
 ## Transport
 
@@ -31,7 +31,7 @@ A payload is at most 16 MiB. An unknown kind or an oversized frame ends the conn
 The server opens one channel per attach. Channel numbers are the server's.
 
 - **Output** (server → client DATA): `[offset u64 LE][bytes]`. `offset` is the position of the first byte in the stream since its last paint. A paint starts at offset 0.
-- **Paint:** before a paint, the server sends the control message `paint` with the channel. The client then resets its terminal emulator. A paint follows an attach, and a resume the server's buffer cannot cover (B3).
+- **Paint:** before a paint, the server sends the control message `paint` with the channel. The client then resets its terminal emulator. A paint follows an attach, and a resume the server's buffer cannot cover.
 - **Input** (client → server DATA): `[seq u64 LE][bytes]`. `seq` starts at 1 per channel and grows by 1. The server applies each `seq` once and answers ACK. A repeated `seq` (after a resume) is acknowledged again, not applied again.
 - **Credit:** each channel starts with 256 KiB of output credit. The client sends CREDIT for the output bytes (not headers) it has consumed. With no credit left, the server stops reading the terminal for this client, and the backend's own flow control slows the program.
 - **Resize** (client → server RESIZE): the terminal takes this size while this client is its last active viewer. The program redraws itself; no paint is sent.
@@ -50,7 +50,27 @@ The client's first frame is `hello`. The server answers `welcome`, or `error` an
 {"type":"welcome","version":2,"server":"muxa 0.1.0","backend":"herdr-core 0.1.21","token":"…","resumed":[]}
 ```
 
-`token` identifies the client's session for a resume (slice B3).
+`token` identifies the client's session for a resume.
+
+### Resume
+
+A client that lost its connection sends `hello` with `resume`: its token and, per open channel, where it stopped.
+
+```json
+{"type":"hello","version":2,"client":"muxa-ios 1.3","resume":{"token":"…","channels":[
+  {"channel":1,"terminal":"t7","offset":20480,"input_seq":12,"cols":120,"rows":40,"history":0}]}}
+{"type":"welcome",…,"token":"…","resumed":[{"channel":1,"input_seq":13}]}
+```
+
+- `offset` is the next output offset the client expects. `input_seq` is the last input it got an ACK for.
+- When a client goes away, the server keeps its attachments for 10 minutes. Each keeps reading its terminal into a buffer of the last 256 KiB, in memory only.
+- `resumed` lists the channels that go on, with the same numbers. A channel not listed is over (its terminal is gone, or the request was not valid). The server never gives a named channel number to a new attach.
+- If the buffer still holds `offset`, output continues from `offset` with no paint. Otherwise the server attaches the terminal again at `cols`×`rows` and sends a paint.
+- `resumed[].input_seq` is the last input the server applied. The client resends its unacknowledged input after it; the server acknowledges a repeated `seq` without applying it again. `null` means the server cannot tell (its state for the channel is gone, for example after a restart). The client then drops its unacknowledged input instead of sending it again, and the server applies only `seq` above the client's `input_seq`.
+- Credit starts again at 256 KiB on each resumed channel.
+- `token` in `welcome` is the same when the server found the session, and a new one otherwise.
+- If a connection with the same token is still open (the client changed networks before the server noticed), the server closes it and takes over its attachments.
+- A program that ended while the client was away: the client gets the output it missed, then CLOSE with the exit.
 
 ### Requests
 
@@ -59,14 +79,23 @@ The client's first frame is `hello`. The server answers `welcome`, or `error` an
 | `{"type":"terminals"}` | `{"terminals":[Terminal...]}`: the live terminals |
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
+| `{"type":"start-task","repo","branch","base"?,"plan"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal |
+| `{"type":"watch"}` | `{}`. `changed`, `removed` and `resync` notifications follow |
 
-`Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text.
+`Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
+
+`start-task` makes the branch's worktree (or finds it) and runs the Workspace's agent there, in plan mode when `plan` is true. If the Task's agent is still running, the reply has it with `existing: true` and nothing new starts. The agent terminal has these labels: `muxa.kind` = `task`, `muxa.role` = `agent`, `muxa.dir` (the worktree), `muxa.repo` (the main checkout) and `muxa.branch`. A wrong repo or branch is `bad-request`.
 
 ### Notifications
 
 | Notification | Meaning |
 |---|---|
 | `{"type":"paint","channel"}` | The next output on the channel starts a fresh screen at offset 0 |
+| `{"type":"changed","terminal":Terminal}` | After `watch`: a terminal started, or its status, size or liveness changed. It carries the whole terminal as it is now |
+| `{"type":"removed","terminal":"<id>"}` | After `watch`: the terminal is gone |
+| `{"type":"resync"}` | After `watch`: changes were lost. The client sends `terminals` again |
+
+A watch ends with the connection. After a resume the client sends `watch` again.
 
 ### Error codes
 
@@ -74,4 +103,4 @@ The client's first frame is `hello`. The server answers `welcome`, or `error` an
 
 ## Not yet specified
 
-Resume (B3), Task start and agent state (B4), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.
+Closing a Task, Task places (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.
