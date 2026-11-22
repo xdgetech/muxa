@@ -19,13 +19,13 @@ use muxa_backend::TerminalInfo;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
-use muxa_protocol::v2::{
-    ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
-    UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
-};
 use muxa_protocol::settings::{
     Access, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SecretState, Settings, SettingsAgent,
     SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine, SettingsWorkspace, WorkerSpec,
+};
+use muxa_protocol::v2::{
+    ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
+    UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
 };
 use muxa_server::memory_settings::MemorySettings;
 use muxa_server::{

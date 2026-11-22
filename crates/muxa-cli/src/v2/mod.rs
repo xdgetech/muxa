@@ -6,6 +6,7 @@ mod chat;
 pub mod client;
 mod inbox;
 mod reader;
+mod settings;
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -36,6 +37,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] retry ITEM
        muxa-cli v2 [--bridge CMD] workspaces [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
+       muxa-cli v2 [--bridge CMD] settings [--json]
+       muxa-cli v2 [--bridge CMD] settings-set [FILE|-] [--revision REV] [--json]
        muxa-cli v2 [--bridge CMD] run-routine WORKSPACE NAME
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
        muxa-cli v2 [--bridge CMD] chat TERMINAL [--seconds N] [--json]
@@ -59,6 +62,11 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                  or its agent
   --loop         a Task Loop: after each finished turn the host runs the check;
                  without --check, the Workspace's only allowed one
+  settings       the host's workspaces.toml and routines files as the apps edit them;
+                 env values and secrets never show
+  settings-set   applies settings ops (protocol/PROTOCOL-v2.md, Settings) from FILE
+                 or stdin: a JSON list, or {\"revision\",\"ops\"}. Without a revision
+                 it uses the current one, which overwrites a hand edit made since
   chat           the conversation of a Task's agent, from its own records
   reader         the files of a Task's or a Routine run's folder; read prints
                  one (an image as its bytes), and with --seconds each change;
@@ -90,6 +98,10 @@ enum Cmd {
     Routines {
         json: bool,
     },
+    Settings {
+        json: bool,
+    },
+    SettingsSet(settings::Set),
     RunRoutine {
         workspace: String,
         name: String,
@@ -172,6 +184,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
     let mut force = false;
+    let mut revision: Option<String> = None;
     while let Some(arg) = p.next()? {
         match arg {
             Long("bridge") => bridge = p.value()?.string()?,
@@ -216,6 +229,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("minutes") => minutes = Some(p.value()?.parse()?),
             Long("note") => note = Some(p.value()?.string()?),
             Long("force") => force = true,
+            Long("revision") => revision = Some(p.value()?.string()?),
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),
             _ => return Err(arg.unexpected()),
@@ -279,6 +293,12 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             note,
         },
         ["routines"] => Cmd::Routines { json },
+        ["settings"] => Cmd::Settings { json },
+        ["settings-set", file @ ..] if file.len() <= 1 => Cmd::SettingsSet(settings::Set {
+            file: file.first().map(|f| (*f).to_owned()),
+            revision,
+            json,
+        }),
         ["run-routine", w, n] => Cmd::RunRoutine {
             workspace: (*w).to_owned(),
             name: (*n).to_owned(),
@@ -478,6 +498,8 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             }
             Ok(())
         }
+        Cmd::Settings { json } => settings::show(bridge, json).await,
+        Cmd::SettingsSet(args) => settings::set(bridge, args).await,
         Cmd::RunRoutine { workspace, name } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             c.request(json!({"type": "run-routine", "workspace": workspace, "name": name}))

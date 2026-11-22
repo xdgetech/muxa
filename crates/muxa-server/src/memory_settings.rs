@@ -131,7 +131,9 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
         SettingsOp::WorkspaceRemove { workspace } => {
             remove(&mut s.workspaces, &workspace, |w| &w.name)
         }
-        SettingsOp::EnvSet { workspace: w, key, .. } => {
+        SettingsOp::EnvSet {
+            workspace: w, key, ..
+        } => {
             let env = &mut workspace(s, &w)?.agent.env;
             if !env.iter().any(|e| e.key == key) {
                 env.push(EnvKey { key, set: true });
@@ -191,9 +193,7 @@ fn apply(s: &mut Settings, op: SettingsOp) -> Result<(), String> {
             put(list, item, false, |c| &c.spec.name)
         }
         SettingsOp::ConnectionSecret {
-            workspace: w,
-            name,
-            ..
+            workspace: w, name, ..
         } => {
             let c = workspace(s, &w)?
                 .connections

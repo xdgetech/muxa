@@ -18,6 +18,7 @@ use crate::records::Workspace;
 use crate::records::mcp::McpServer;
 use crate::records::workers::LaunchCommand;
 use crate::routines::runs::{StartError, When};
+use crate::settings::{SettingsError, SettingsStore};
 
 pub struct BridgeHost {
     /// `--task-command`: the agent when the Workspace names none.
@@ -27,6 +28,7 @@ pub struct BridgeHost {
     runner: Option<Arc<Runner>>,
     loops: Option<Arc<TaskLoops>>,
     chats: Option<Arc<Chats>>,
+    settings: Option<Arc<SettingsStore>>,
 }
 
 impl BridgeHost {
@@ -37,7 +39,21 @@ impl BridgeHost {
             runner: None,
             loops: None,
             chats: None,
+            settings: None,
         }
+    }
+
+    pub fn with_settings(self, settings: Arc<SettingsStore>) -> Self {
+        BridgeHost {
+            settings: Some(settings),
+            ..self
+        }
+    }
+
+    fn settings_store(&self) -> Result<Arc<SettingsStore>, TaskError> {
+        self.settings
+            .clone()
+            .ok_or_else(|| TaskError::Invalid("this host has no settings".into()))
     }
 
     fn task_loops(&self) -> Result<&TaskLoops, TaskError> {
@@ -230,7 +246,39 @@ async fn blocking<T: Send + 'static>(
         .map_err(TaskError::Failed)
 }
 
+/// Runs a settings call off the async threads.
+async fn settings_call<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, SettingsError> + Send + 'static,
+) -> Result<T, TaskError> {
+    let done = tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| TaskError::Failed(e.to_string()))?;
+    done.map_err(|e| match e {
+        SettingsError::Invalid(m) => TaskError::Invalid(m),
+        SettingsError::Stale => TaskError::Stale(e.to_string()),
+        SettingsError::ReadOnly => TaskError::ReadOnly(e.to_string()),
+        SettingsError::Failed(m) => {
+            tracing::warn!(error = %m, "settings not changed");
+            TaskError::Failed(m)
+        }
+    })
+}
+
 impl Host for BridgeHost {
+    async fn settings(&self) -> Result<muxa_protocol::v2::Settings, TaskError> {
+        let store = self.settings_store()?;
+        settings_call(move || store.view()).await
+    }
+
+    async fn settings_update(
+        &self,
+        revision: &str,
+        ops: Vec<muxa_protocol::v2::SettingsOp>,
+    ) -> Result<muxa_protocol::v2::Settings, TaskError> {
+        let (store, revision) = (self.settings_store()?, revision.to_owned());
+        settings_call(move || store.update(&revision, ops)).await
+    }
+
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         let title = spec.title.trim();
         if title.is_empty() {

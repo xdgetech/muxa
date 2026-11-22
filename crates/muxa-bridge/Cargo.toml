@@ -26,6 +26,7 @@ sha2 = "0.10.9"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt", "macros", "io-util", "io-std", "net", "signal", "sync", "time", "process"] }
 toml = { version = "1.1.8", default-features = false, features = ["parse", "serde"] }
+toml_edit = "0.25.20"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 

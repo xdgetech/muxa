@@ -143,7 +143,13 @@ async fn serve(setup: Setup, path: &Path) -> std::io::Result<()> {
     let host = crate::v2::BridgeHost::new(setup.task_command, Arc::clone(&config))
         .with_runner(Arc::clone(&runner))
         .with_loops(Arc::clone(&loops))
-        .with_chats(chats);
+        .with_chats(chats)
+        .with_settings(Arc::new(crate::settings::SettingsStore::new(
+            config.workspaces.clone(),
+            config.home.clone(),
+            setup.settings_read_only,
+            Box::new(crate::settings::secrets::Keychain),
+        )));
     crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&config));
     let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
     crate::v2::spawn_task_watch(Arc::clone(&herdr));

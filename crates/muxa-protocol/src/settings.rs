@@ -425,7 +425,10 @@ mod tests {
         )
         .unwrap();
         let shown = format!("{op:?} {env:?}");
-        assert!(!shown.contains("s3cret") && !shown.contains("v4lue"), "{shown}");
+        assert!(
+            !shown.contains("s3cret") && !shown.contains("v4lue"),
+            "{shown}"
+        );
         assert_eq!((op.name(), op.workspace()), ("connection-add", Some("w")));
     }
 

@@ -13,6 +13,7 @@ mod launch;
 mod loops;
 mod records;
 mod routines;
+mod settings;
 mod usage;
 mod utc;
 mod v2;
@@ -55,6 +56,7 @@ pub struct Setup {
     pub agents: Arc<agents::Registry>,
     /// None when neither `--daemon-dir` nor `HOME` gives one.
     pub daemon_dir: Option<PathBuf>,
+    pub settings_read_only: bool,
 }
 
 impl Setup {
@@ -91,6 +93,7 @@ impl Setup {
             |key| records::agent_env::dirs_of(workspace_agents.iter(), key),
         ));
         Self {
+            settings_read_only: args.settings_read_only,
             task_command: args.task_command,
             config: Arc::new(config),
             agents: Arc::new(agents),

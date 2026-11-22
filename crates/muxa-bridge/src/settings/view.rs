@@ -1,0 +1,238 @@
+//! The editable view of the settings files, as written in them (ADR 0074).
+//! It reads the files leniently, so a file the loader refuses still shows,
+//! with the reason. Env values and secrets never enter the view.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use muxa_protocol::settings::{
+    ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SettingsAgent, SettingsConnection, SettingsLoop,
+    SettingsRoutine, SettingsWorkspace, WorkerSpec,
+};
+use muxa_protocol::v2::LoopChecks;
+use serde::Deserialize;
+
+use super::files::{self, Revision};
+use super::secrets::Secrets;
+use crate::records::routines::{MAX_INSTRUCTIONS, ROUTINES_FILE, WORKSPACE_DIR};
+use crate::records::workspaces::expand;
+
+#[derive(Deserialize, Default)]
+pub struct FileConfig {
+    #[serde(default)]
+    pub workspace: Vec<FileWorkspace>,
+    #[serde(default)]
+    pub worker: Vec<WorkerSpec>,
+}
+
+#[derive(Deserialize)]
+pub struct FileWorkspace {
+    pub name: String,
+    pub root: String,
+    #[serde(default)]
+    repos: Vec<String>,
+    park_after: Option<String>,
+    agent: Option<FileAgent>,
+    #[serde(rename = "loop")]
+    task_loop: Option<FileLoop>,
+    routines: Option<FileGate>,
+    #[serde(default)]
+    connection: Vec<ConnectionSpec>,
+    #[serde(default)]
+    mcp: Vec<McpSpec>,
+}
+
+#[derive(Deserialize)]
+struct FileAgent {
+    command: Option<String>,
+    /// Values are read only to be dropped.
+    #[serde(default)]
+    env: BTreeMap<String, toml::Value>,
+}
+
+#[derive(Deserialize)]
+struct FileLoop {
+    checks: LoopChecks,
+}
+
+#[derive(Deserialize)]
+struct FileGate {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    direct_writes: bool,
+}
+
+#[derive(Deserialize, Default)]
+struct FileRoutines {
+    #[serde(default)]
+    routine: Vec<FileRoutine>,
+}
+
+#[derive(Deserialize)]
+struct FileRoutine {
+    name: String,
+    at: Option<String>,
+    schedule: Option<String>,
+    timezone: Option<String>,
+    worker: Option<String>,
+    instructions: String,
+    project: Option<String>,
+    #[serde(default)]
+    enabled: bool,
+    output: Option<FileOutput>,
+    #[serde(default)]
+    connections: Vec<String>,
+    #[serde(default)]
+    mcp: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct FileOutput {
+    items: Option<u32>,
+    #[serde(default)]
+    direct_writes: bool,
+}
+
+impl FileWorkspace {
+    /// `<root>/.muxa`, `~/` expanded, not resolved.
+    pub fn muxa_dir(&self, home: Option<&Path>) -> Option<PathBuf> {
+        expand(&self.root, home).ok().map(|r| r.join(WORKSPACE_DIR))
+    }
+}
+
+/// `workspaces.toml` as written; an empty config when it cannot be read.
+pub fn parse_config(text: &str) -> Result<FileConfig, String> {
+    toml::from_str(text).map_err(|e| format!("workspaces.toml: {}", e.message()))
+}
+
+/// The routines file of a Workspace, read for the view and the revision.
+pub struct RoutinesFile {
+    pub path: PathBuf,
+    pub bytes: Option<Vec<u8>>,
+}
+
+pub fn read_routines(dir: &Path) -> Result<RoutinesFile, files::FileError> {
+    let path = dir.join(ROUTINES_FILE);
+    let bytes = files::read(&path)?;
+    Ok(RoutinesFile { path, bytes })
+}
+
+/// The instruction file's text, when it stays inside `dir` and fits.
+fn instructions_text(dir: &Path, rel: &str) -> Option<String> {
+    let real_dir = dir.canonicalize().ok()?;
+    let real = dir.join(rel).canonicalize().ok()?;
+    if !real.starts_with(&real_dir) || !real.is_file() {
+        return None;
+    }
+    let bytes = files::read(&real).ok()??;
+    if bytes.len() > MAX_INSTRUCTIONS || bytes.contains(&0) {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// The Routines in a routines file's text, and why they cannot be shown.
+fn routines(
+    file: &RoutinesFile,
+    dir: &Path,
+    revision: &mut Revision,
+) -> (Vec<SettingsRoutine>, Option<String>) {
+    let Some(bytes) = &file.bytes else {
+        return (Vec::new(), None);
+    };
+    let parsed = std::str::from_utf8(bytes)
+        .map_err(|_| "is not UTF-8".to_owned())
+        .and_then(|t| toml::from_str::<FileRoutines>(t).map_err(|e| e.message().to_owned()));
+    let raw = match parsed {
+        Ok(raw) => raw,
+        Err(why) => return (Vec::new(), Some(format!(".muxa/routines.toml: {why}"))),
+    };
+    let list = raw
+        .routine
+        .into_iter()
+        .map(|r| {
+            let path = dir.join(&r.instructions);
+            revision.add(&path, files::read(&path).ok().flatten().as_deref());
+            let text = instructions_text(dir, &r.instructions);
+            let output = r.output.unwrap_or(FileOutput {
+                items: None,
+                direct_writes: false,
+            });
+            SettingsRoutine {
+                spec: RoutineSpec {
+                    name: r.name,
+                    at: r.at,
+                    schedule: r.schedule,
+                    timezone: r.timezone,
+                    worker: r.worker,
+                    instructions: r.instructions,
+                    project: r.project,
+                    enabled: r.enabled,
+                    items: output.items,
+                    direct_writes: output.direct_writes,
+                    connections: r.connections,
+                    mcp: r.mcp,
+                },
+                instructions_text: text,
+            }
+        })
+        .collect();
+    (list, None)
+}
+
+/// One Workspace of the view. `routines_problem` comes from the loader.
+pub fn workspace(
+    w: FileWorkspace,
+    home: Option<&Path>,
+    secrets: &dyn Secrets,
+    revision: &mut Revision,
+) -> SettingsWorkspace {
+    let mut problem = None;
+    let mut list = Vec::new();
+    if let Some(dir) = w.muxa_dir(home) {
+        match read_routines(&dir) {
+            Ok(file) => {
+                revision.add(&file.path, file.bytes.as_deref());
+                (list, problem) = routines(&file, &dir, revision);
+            }
+            Err(e) => problem = Some(e.to_string()),
+        }
+    }
+    let agent = w
+        .agent
+        .map_or_else(SettingsAgent::default, |a| SettingsAgent {
+            command: a.command,
+            env: a
+                .env
+                .into_keys()
+                .map(|key| EnvKey { key, set: true })
+                .collect(),
+        });
+    let connections = w
+        .connection
+        .into_iter()
+        .map(|spec| SettingsConnection {
+            secret: secrets.state(&crate::connections::account(&w.name, &spec.name)),
+            spec,
+        })
+        .collect();
+    let gate = w.routines.unwrap_or(FileGate {
+        enabled: false,
+        direct_writes: false,
+    });
+    SettingsWorkspace {
+        name: w.name,
+        root: w.root,
+        repos: w.repos,
+        park_after: w.park_after,
+        agent,
+        task_loop: w.task_loop.map(|l| SettingsLoop { checks: l.checks }),
+        routines_enabled: gate.enabled,
+        direct_writes: gate.direct_writes,
+        connections,
+        mcp: w.mcp,
+        routines: list,
+        routines_problem: problem,
+    }
+}

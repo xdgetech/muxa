@@ -512,7 +512,7 @@ fn resolve_repos(
 }
 
 /// `raw` with a leading `~/` expanded; it must be absolute.
-fn expand(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+pub fn expand(raw: &str, home: Option<&Path>) -> Result<PathBuf, String> {
     let path = match raw.strip_prefix("~/").or((raw == "~").then_some("")) {
         Some(rest) => home
             .ok_or_else(|| format!("{raw:?} starts with ~ but HOME is not set"))?

@@ -9,11 +9,13 @@ use std::time::Duration;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
 use muxa_inbox::NewItem;
+use muxa_protocol::settings::{Settings, SettingsOp};
 use muxa_protocol::v2::{
     ChatUpdate, ItemKind, LoopChecks, Place, PlaceKind, ReaderContent, ReaderEntry, ReaderKind,
     ReaderList, RoutineRef, UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
     WorktreeMode,
 };
+use muxa_server::memory_settings::MemorySettings;
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, Services, Sessions, TaskError, TaskSpec, serve,
 };
@@ -42,9 +44,37 @@ while True:
 "#;
 
 /// Agents in `/work/<branch>`; a worktree under `/work/dirty` holds work.
-struct WorkTasks;
+struct WorkTasks {
+    settings: MemorySettings,
+}
+
+/// One Workspace whose `github` connection has its secret.
+fn start_settings() -> Settings {
+    serde_json::from_value(serde_json::json!({
+        "revision": "1", "read_only": false, "problem": null, "workers": [],
+        "workspaces": [{"name": "w", "root": "~/w", "repos": [], "park_after": null,
+            "agent": {"command": null, "env": [{"key": "CLAUDE_CONFIG_DIR", "set": true}]},
+            "loop": null, "routines_enabled": false, "direct_writes": false,
+            "connections": [{"name": "github", "env": "GH_TOKEN", "account": null,
+                "access": null, "default": false, "secret": "set"}],
+            "mcp": [], "routines": [], "routines_problem": null}]
+    }))
+    .unwrap()
+}
 
 impl Host for WorkTasks {
+    async fn settings(&self) -> Result<Settings, TaskError> {
+        Ok(self.settings.view())
+    }
+
+    async fn settings_update(
+        &self,
+        revision: &str,
+        ops: Vec<SettingsOp>,
+    ) -> Result<Settings, TaskError> {
+        self.settings.update(revision, ops)
+    }
+
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         let (repo, branch) = spec.branch().unwrap_or(("", &spec.title));
         Ok(Prepared {
@@ -187,10 +217,13 @@ impl TestHost {
         let sessions = Arc::new(Sessions::new());
         let inbox = Arc::new(Inbox::memory());
         let shared = Arc::clone(&inbox);
+        let host = Arc::new(WorkTasks {
+            settings: MemorySettings::new(start_settings()),
+        });
         tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let (backend, sessions) = (served.clone(), Arc::clone(&sessions));
-                let inbox = Arc::clone(&inbox);
+                let (inbox, host) = (Arc::clone(&inbox), Arc::clone(&host));
                 tokio::spawn(async move {
                     let (r, w) = stream.into_split();
                     let config = Config {
@@ -200,7 +233,7 @@ impl TestHost {
                     };
                     let services = Services {
                         backend: &backend,
-                        host: &WorkTasks,
+                        host: host.as_ref(),
                         sessions: &sessions,
                         inbox: &inbox,
                     };
@@ -549,4 +582,64 @@ async fn retry_runs_a_failed_routine_again() {
     assert_eq!(after["done"][0]["id"], item.as_str(), "{after}");
     let again = host.cli(&["retry", &item]).await;
     assert!(!again.status.success(), "a done item is not retried twice");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_and_settings_set_script_the_ops() {
+    let host = TestHost::start("settings").await;
+    let shown = stdout(&host.cli(&["settings"]).await);
+    assert!(shown.starts_with("revision 1\n"), "{shown}");
+    assert!(
+        shown.contains("w\t~/w\tenv:CLAUDE_CONFIG_DIR\tconnections:github(set)"),
+        "{shown}"
+    );
+
+    let ops = host.dir.join("ops.json");
+    std::fs::write(
+        &ops,
+        r#"[{"op":"env-set","workspace":"w","key":"API_TOKEN","value":"v4lue"},
+            {"op":"connection-add","workspace":"w","connection":{"name":"linear","env":"LINEAR_API_KEY"},"secret":"s3cret"}]"#,
+    )
+    .unwrap();
+    let out = stdout(
+        &host
+            .cli(&[
+                "settings-set",
+                ops.to_str().unwrap(),
+                "--revision",
+                "1",
+                "--json",
+            ])
+            .await,
+    );
+    assert!(!out.contains("v4lue") && !out.contains("s3cret"), "{out}");
+    let after: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(after["revision"], "2");
+    assert_eq!(
+        after["workspaces"][0]["agent"]["env"][0]["key"],
+        "API_TOKEN"
+    );
+    assert_eq!(after["workspaces"][0]["connections"][1]["secret"], "set");
+
+    let stale = host
+        .cli(&["settings-set", ops.to_str().unwrap(), "--revision", "1"])
+        .await;
+    assert!(!stale.status.success());
+    let err = String::from_utf8_lossy(&stale.stderr);
+    assert!(
+        err.contains("(conflict)") && !err.contains("s3cret"),
+        "{err}"
+    );
+
+    std::fs::write(
+        &ops,
+        r#"{"ops":[{"op":"workspace-remove","workspace":"nope"}]}"#,
+    )
+    .unwrap();
+    let bad = host.cli(&["settings-set", ops.to_str().unwrap()]).await;
+    let err = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        err.contains("ops[0] workspace-remove:") && err.contains("(bad-request)"),
+        "{err}"
+    );
 }

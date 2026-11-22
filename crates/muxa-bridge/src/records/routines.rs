@@ -139,29 +139,61 @@ pub(super) fn load(
     gate: RoutineGate,
     workers: &[Worker],
 ) -> Result<Vec<Routine>, String> {
+    match read_file(workspace)? {
+        Some((dir, text)) => parse_text(&text, workspace, gate, &dir, workers),
+        None => Ok(Vec::new()),
+    }
+}
+
+fn at(reason: &str) -> String {
     let file = Path::new(WORKSPACE_DIR).join(ROUTINES_FILE);
-    let at = |reason: &str| format!("{}: {reason}", file.display());
+    format!("{}: {reason}", file.display())
+}
+
+/// The canonical `.muxa/` folder of `workspace`, checked to be a folder
+/// inside its root; None when it does not exist.
+pub fn routines_dir(workspace: &Workspace) -> Result<Option<PathBuf>, String> {
     let dir = match workspace.root.join(WORKSPACE_DIR).canonicalize() {
         Ok(dir) => dir,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(at(&format!("cannot resolve the folder: {e}"))),
     };
     if !dir.starts_with(&workspace.root) || !dir.is_dir() {
         return Err(at("the folder must be a folder inside the workspace root"));
     }
+    Ok(Some(dir))
+}
+
+/// The `.muxa/` folder and the routines file's text; None when either is missing.
+pub fn read_file(workspace: &Workspace) -> Result<Option<(PathBuf, String)>, String> {
+    let Some(dir) = routines_dir(workspace)? else {
+        return Ok(None);
+    };
     let bytes = match read_regular(&dir.join(ROUTINES_FILE), MAX_ROUTINES_FILE) {
         Ok(bytes) => bytes,
-        Err(ReadFail::Io(e)) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(ReadFail::Io(e)) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(ReadFail::Io(e)) => return Err(at(&format!("cannot read: {e}"))),
         Err(ReadFail::Invalid(reason)) => return Err(at(reason)),
     };
     let text = String::from_utf8(bytes).map_err(|_| at("is not UTF-8"))?;
-    let raw: RawFile = toml::from_str(&text).map_err(|e| at(e.message()))?;
+    Ok(Some((dir, text)))
+}
+
+/// The Routines in `text`, a routines file whose folder is `dir`.
+pub fn parse_text(
+    text: &str,
+    workspace: &Workspace,
+    gate: RoutineGate,
+    dir: &Path,
+    workers: &[Worker],
+) -> Result<Vec<Routine>, String> {
+    if text.len() > MAX_ROUTINES_FILE {
+        return Err(at("is too large"));
+    }
+    let raw: RawFile = toml::from_str(text).map_err(|e| at(e.message()))?;
     let mut routines: Vec<Routine> = Vec::with_capacity(raw.routine.len());
     for r in raw.routine {
-        let routine = r
-            .check(workspace, gate, &dir, workers)
-            .map_err(|r| at(&r))?;
+        let routine = r.check(workspace, gate, dir, workers).map_err(|r| at(&r))?;
         if routines.iter().any(|other| other.name == routine.name) {
             return Err(at(&format!("routine {:?} appears twice", routine.name)));
         }

@@ -25,6 +25,7 @@ and changes nothing.
                           (default: $XDG_CONFIG_HOME/muxa/workspaces.toml, else ~/.config/...)
   --daemon-dir DIR        the daemon's socket, lock and log
                           (default: $XDG_STATE_HOME/muxa, else ~/.local/state/muxa)
+  --settings-read-only    the apps may read the settings but not change them (ADR 0074)
 Logs go to stderr; MUXA_LOG sets the level (default: warn; the daemon: info).";
 
 /// Flags of muxa for tmux that an older service file still passes: read and
@@ -91,6 +92,8 @@ pub struct Args {
     pub state_dir: Option<PathBuf>,
     pub workspaces: Option<PathBuf>,
     pub daemon_dir: Option<PathBuf>,
+    /// `settings-update` is refused (ADR 0074).
+    pub settings_read_only: bool,
 }
 
 impl Args {
@@ -112,6 +115,9 @@ impl Args {
         }
         if self.task_command != DEFAULT_TASK_COMMAND {
             push("--task-command", self.task_command.clone());
+        }
+        if self.settings_read_only {
+            out.push("--settings-read-only".to_owned());
         }
         out
     }
@@ -165,6 +171,7 @@ fn parse_flags(
         state_dir: None,
         workspaces: None,
         daemon_dir: None,
+        settings_read_only: false,
     };
     while let Some(arg) = parser.next()? {
         match arg {
@@ -196,6 +203,7 @@ fn parse_flags(
             Long("daemon-dir") => {
                 out.daemon_dir = Some(absolute(parser.value()?.into(), "--daemon-dir")?)
             }
+            Long("settings-read-only") => out.settings_read_only = true,
             Long(flag) if RETIRED.contains(&flag) => {
                 parser.value()?;
             }
@@ -238,6 +246,7 @@ mod tests {
             "/s",
             "--agent-dir",
             "claude-code=/c",
+            "--settings-read-only",
         ])
         .unwrap() else {
             panic!("not a daemon command")
@@ -245,7 +254,13 @@ mod tests {
         assert_eq!((d.op, d.print), (DaemonOp::Install, true));
         assert_eq!(
             d.args.service_flags(),
-            ["--state-dir", "/s", "--agent-dir", "claude-code=/c"]
+            [
+                "--state-dir",
+                "/s",
+                "--agent-dir",
+                "claude-code=/c",
+                "--settings-read-only"
+            ]
         );
         assert!(
             parse_strs(&["daemon", "run", "--print"]).is_err(),
