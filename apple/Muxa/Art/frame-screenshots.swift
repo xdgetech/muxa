@@ -19,7 +19,7 @@ let touch: [String: [String: (String, String)]] = [
         "6-shell": ("The shell is one tap away", "Switch between the agent and its shell."),
     ],
     "ja": [
-        "1-chat": ("いつものエージェントと、手元で話す", "tmuxで動くエージェントを、ネイティブのチャットで。"),
+        "1-chat": ("いつものエージェントと、手元で話す", "マシンで動くエージェントを、ネイティブのチャットで。"),
         "3-switcher": ("どのエージェントにも、タップ1つで", "実行中・回答待ち・完了がひと目でわかる。"),
         "4-plan": ("エージェントが書いたプランを読む", "Markdownも図も、オフラインで表示。"),
         "6-shell": ("シェルもタップ1つで", "エージェントとシェルを行き来。"),
@@ -41,7 +41,7 @@ let targets: [String: Target] = [
             "6-shell": ("The shell is one key away", "Ctrl+Shift+J switches between the agent and its shell."),
         ],
         "ja": [
-            "1-chat": ("いつものエージェントと、タブレットで話す", "tmuxで動くエージェントを、ネイティブのチャットで。"),
+            "1-chat": ("いつものエージェントと、タブレットで話す", "マシンで動くエージェントを、ネイティブのチャットで。"),
             "3-switcher": ("どのエージェントにも、キー1つで", "Ctrl+Shift+Kで、実行中・回答待ち・完了がひと目でわかる。"),
             "4-plan": ("エージェントが書いたプランを読む", "Markdownも図も、タブレットの上で表示。"),
             "6-shell": ("シェルもキー1つで", "Ctrl+Shift+Jで、エージェントとシェルを行き来。"),
@@ -66,7 +66,7 @@ let order = ["1-chat", "2-agent", "3-switcher", "7-alert", "4-plan", "5-diff", "
 /// Caption and subtitle per screenshot, per locale, as the iPad shows them.
 let captions: [String: [String: (String, String)]] = [
     "en": [
-        "1-chat": ("Talk to the agents you already run", "The agents in your tmux, as a native chat."),
+        "1-chat": ("Talk to the agents you already run", "The agents on your machine, as a native chat."),
         "2-agent": ("The real pane, at its real size", "Your desktop layout never changes."),
         "3-switcher": ("Every agent, one keystroke away", "⌘K shows who is running, waiting or done."),
         "7-alert": ("Know when an agent needs you", "A banner when another session waits for your answer."),
@@ -75,7 +75,7 @@ let captions: [String: [String: (String, String)]] = [
         "6-shell": ("The shell is one key away", "⌘J switches between the agent and its shell."),
     ],
     "ja": [
-        "1-chat": ("いつものエージェントと、iPadで話す", "tmuxで動くエージェントを、ネイティブのチャットで。"),
+        "1-chat": ("いつものエージェントと、iPadで話す", "マシンで動くエージェントを、ネイティブのチャットで。"),
         "2-agent": ("本物のペインを、本来のサイズで", "デスクトップのレイアウトは一切変わりません。"),
         "3-switcher": ("どのエージェントにも、キー1つで", "⌘Kで、実行中・回答待ち・完了がひと目でわかる。"),
         "7-alert": ("エージェントに呼ばれたら、すぐわかる", "別のセッションが回答を待つと、バナーで知らせます。"),

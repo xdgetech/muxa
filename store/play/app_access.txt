@@ -1,16 +1,18 @@
 No account or host is needed to review Muxa.
 
-Muxa connects over SSH to the reviewer's own machine, where tmux runs. To review it without one, the app has a built-in demo with sample sessions. It runs on the device; nothing is sent anywhere.
+Muxa connects over SSH to the user's own Mac or Linux machine, where the muxa daemon runs the coding agents. To review it without one, the app has a built-in demo server with sample Tasks, Inbox items, Routines, documents and a conversation. It runs on the device; nothing is sent anywhere.
 
-1. Open the app. The host list is empty.
-2. Tap "Try the Demo". It opens a sample agent session in Chat.
+1. Open the app. The Hosts list is empty.
+2. Tap "Try the Demo". Home opens with the Inbox.
 3. Try:
-   - Chat: the agent waits on a question. Tap an answer card, or type in the composer.
-   - The Agent and Shell switches above the chat show the terminal panes.
-   - The sidebar lists the sessions by repo, with each agent's state. Tap another session.
-   - Documents opens the Reader: the plan with a diagram, the changes as diffs, and images. It is the page button in the pane's bar, or an item in its "..." menu on a phone.
-   - About 10 seconds in, a banner says that an agent in another session waits.
-   - With a hardware keyboard: Ctrl+Shift+K switches session, Ctrl+Shift+J switches agent and terminal.
-4. "Leave Demo" in the sidebar goes back to the empty host list.
+   - Inbox: tap "Review fix-login", then Approve. The item leaves the list.
+   - Capture: in the field above the Inbox, type "reply Sam about the launch #personal due today" and add it. It goes on top as a Reply.
+   - Needs you: tap the waiting agent. Focus opens its terminal, which asks to allow edits to README.md.
+   - In Focus, tap Chat: the agent's conversation and an approval card. Tap Allow. The terminal shows the answer.
+   - In Focus, tap Reader: the Task's PLAN.md, and its Changes as diffs.
+   - In Focus, tap Loop, then Start. Tap Loop again, then Stop.
+   - On Home, tap Routines, pick a Routine, then tap Run Now.
+   - With a hardware keyboard: Ctrl+Shift+H and Ctrl+Shift+F switch between Home and Focus; in Focus, Ctrl+Shift+R and Ctrl+Shift+C open the Reader and Chat.
+4. To leave, tap "Demo" at the top of Home, then Disconnect. The empty Hosts list comes back.
 
-A real connection needs a Mac or Linux machine with tmux and muxa-bridge (free, open source): https://github.com/xdgetech/muxa#setup
+A real connection needs a Mac or Linux machine with herdr-core and muxa-bridge (free, open source): https://github.com/xdgetech/muxa#setup

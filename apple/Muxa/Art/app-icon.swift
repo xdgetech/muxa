@@ -240,8 +240,8 @@ func featureGraphic(tagline: String) -> CGImage {
 
 /// Per Play listing locale.
 let taglines = [
-    "en-US": "The AI agents in your tmux, on your phone and tablet.",
-    "ja-JP": "tmuxのAIエージェントを、スマホとタブレットで。",
+    "en-US": "Your AI coding agents, on your phone and tablet.",
+    "ja-JP": "コーディングエージェントを、\nスマホとタブレットで。",
 ]
 
 guard CommandLine.arguments.count == 4 else {

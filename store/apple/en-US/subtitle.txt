@@ -1,1 +1,1 @@
-Your tmux agents, anywhere
+Your coding agents, anywhere

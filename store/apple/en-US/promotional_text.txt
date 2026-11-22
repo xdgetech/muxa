@@ -1,1 +1,1 @@
-Answer your coding agents from the couch. Muxa shows the Claude Code and Codex sessions already in your tmux, at their real size, and never changes your desktop layout.
+Keep your coding agents moving from the couch. One Inbox in your order, each agent's terminal at its real size, and its conversation as a chat.

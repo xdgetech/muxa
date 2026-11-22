@@ -7,7 +7,7 @@ Everything a human enters in App Store Connect and the Play Console, in order. T
 | App Store text | `store/apple/{en-US,ja}/*.txt`; review notes in `store/apple/review_information/notes.txt` |
 | Play text | `store/play/{en-US,ja-JP}/*.txt`; reviewer steps in `store/play/app_access.txt` |
 | Play icon and feature graphic | `store/play/{en-US,ja-JP}/images/` (`make app-icon`) |
-| Screenshots | none yet for the v2 apps: `make screenshots` and `make screenshots-android` went with the v1 screens (`docs/plan.md`, D4 and D5) |
+| Screenshots | not taken yet for Home and Focus (see [Screenshots](#screenshots)) |
 | Privacy policy | `docs/privacy.md`, URL `https://github.com/xdgetech/muxa/blob/main/docs/privacy.md` |
 
 `make lint-store` (part of `make check`) checks every length limit and that the listing never says "demo" or "trial". App Review guideline 2.2 rejects trial versions, so the store text calls the built-in demo a "sample workspace".
@@ -17,12 +17,29 @@ Everything a human enters in App Store Connect and the Play Console, in order. T
 **$9.99, paid once, on both stores.** In Japan: ¥1,500.
 
 - muxa has no server, so there is no running cost for a subscription to pay for. Developers pushed back when Blink moved to a subscription.
-- It costs less than Prompt 3 ($20 a year or $100 once) and Termius (about $10 a month). It costs more than the free tools (Happy, ServerCC). The listing names what they lack: the real pane at its size, the layout never changing, the Reader, and approval cards.
+- It costs less than Prompt 3 ($20 a year or $100 once) and Termius (about $10 a month). It costs more than the free tools (Happy, ServerCC). The listing names what they lack: one Inbox in your order, the terminal at its real size, the Reader, Task Loops, Routines and approval cards.
 - The sample workspace lets people see the app before they pay.
 - A paid Play app can later become free, but a free one can never become paid. So start paid.
 - **Later, if few people buy:** a launch discount, or a free app with a one-time unlock. That needs StoreKit and Play Billing code, so it is not in 1.0.
 
 Fees: Apple's Small Business Program and Google's 15% tier each take 15% instead of 30%. Both need enrolling (below).
+
+## Screenshots
+
+There is no screenshot target for Home and Focus yet. `make screenshots` and `make screenshots-android` went with the v1 screens, and no UI test saves screenshots today. Take them by hand:
+
+1. Start Try the Demo on each device below. Debug Android builds start it with `adb shell am start -n tech.xdge.muxa/tech.xdge.muxa.app.MainActivity --ez demo true`.
+2. Show Home with the Inbox and Needs you, Focus with a terminal, Chat with the approval card, the Reader, a Task Loop, and Routines.
+3. Save each image into the folder the table below names, one folder per language.
+
+| Store slot | Device | Folder |
+|---|---|---|
+| App Store iPad 13" | iPad simulator, landscape | `build/screenshots/appstore-ipad/{en,ja}/` |
+| App Store iPhone 6.9" | iPhone simulator, portrait | `build/screenshots/appstore-iphone/{en,ja}/` |
+| Play phone | phone emulator, portrait | `build/screenshots/play-phone/{en,ja}/` |
+| Play 7- and 10-inch tablet | tablet emulator, landscape | `build/screenshots/play-tablet/{en,ja}/` |
+
+`apple/Muxa/Art/frame-screenshots.swift` puts a caption over each image at the store's size. Its captions still name the v1 screens: rewrite them for the new set before you use it.
 
 ## Before the first upload
 
@@ -166,5 +183,5 @@ An organization account needs no closed test before production. A personal accou
    - iOS: `CURRENT_PROJECT_VERSION` in `apple/Muxa/project.yml`, and `MARKETING_VERSION` for a new version.
    - Android: `versionCode`, and `versionName`, in `android/app/build.gradle.kts`.
 2. Add `store/play/*/changelogs/<versionCode>.txt`, and update both `release_notes.txt`.
-3. New screenshots if the UI changed. The v2 apps have no screenshot target yet.
+3. New screenshots if the UI changed ([Screenshots](#screenshots)).
 4. Build and upload as above.

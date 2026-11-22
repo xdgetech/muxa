@@ -2,7 +2,7 @@
 
 ## Status
 
-Pre-alpha. The daemon, the terminal client, the iPad and iPhone app, the Android app and the Mac app work; the iOS app runs on a real iPad and iPhone, the Android app on phones and tablets. The privacy policy and release settings are ready (`store/RELEASE.md`). The store listings' text and screenshots still describe the removed tmux client and need new copy. No app is published yet.
+Pre-alpha. The daemon, the terminal client, the iPad and iPhone app, the Android app and the Mac app work; the iOS app runs on a real iPad and iPhone, the Android app on phones and tablets. The privacy policy, release settings and the store listings' text are ready (`store/RELEASE.md`). The screenshots of Home and Focus are not taken yet; a human takes them by hand. The app name on both stores, "Muxa: AI agents in tmux", still names tmux. No app is published yet.
 
 Since F5 (2026-11-22), muxa runs on herdr-core only: protocol v1, tmux, muxa for tmux, the v1 Task records, restart and handoff, park and workers' v1 launch paths are gone (ADR 0071).
 
