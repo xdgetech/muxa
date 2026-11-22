@@ -8,7 +8,7 @@ struct FocusHeader: View {
     let onHome: () -> Void
 
     var body: some View {
-        MacHeaderBar(height: 44) {
+        MacHeaderBar {
             HStack(spacing: 16) {
                 HStack(spacing: 10) {
                     LogoTile()

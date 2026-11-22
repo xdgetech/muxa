@@ -43,7 +43,6 @@ struct FocusView: View {
         .font(.system(size: 13))
         .foregroundStyle(Palette.text)
         .background(Palette.ground)
-        .toolbar(.hidden, for: .windowToolbar)
         .sheet(item: $loopFor) { t in LoopSheet(terminal: t) }
         .onAppear(perform: openFirstTask)
     }

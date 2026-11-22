@@ -23,6 +23,8 @@ struct MuxaMacApp: App {
                 .containerBackground(Palette.ground, for: .window)
                 .toolbarBackground(Palette.ground, for: .windowToolbar)
                 .sheet(isPresented: $chrome.showShortcuts) { ShortcutsSheet() }
+                // Every screen draws the mocks' header where the title bar was.
+                .toolbar(.hidden, for: .windowToolbar)
                 .ignoresSafeArea(.container, edges: .top)
                 .modifier(OnWindowStart { openWindow in
                     let capture = quickCapture ?? QuickCapture(model: model, nav: nav)
