@@ -19,20 +19,21 @@ struct TaskRequest: Equatable {
     var loop: LoopSpec?
 }
 
-/// The Start Task form's choices for one Workspace.
+/// The Start Task form's choices for one Workspace: one repo or none (ADR 0077).
 struct TaskDraft {
-    /// How the Task uses one of the Workspace's repos (ADR 0068).
-    enum RepoUse: String, CaseIterable, Identifiable {
-        case none = "Not used", branch = "Branch", read = "Read only"
+    /// How the Task uses its one repo.
+    enum RepoMode: String, CaseIterable, Identifiable {
+        case branch = "Branch", read = "Read only"
         var id: Self { self }
     }
 
     var title: String
     var goal: String
     var workspace = ""
-    var folder = true
-    var repos: [String: RepoUse] = [:]
-    var branches: [String: String] = [:]
+    /// Nil: no repo; the Task's folder, with every repo read only.
+    var repo: String?
+    var mode = RepoMode.branch
+    var branch = ""
     var plan = false
     var loop = false
     var check = ""
@@ -46,39 +47,27 @@ struct TaskDraft {
     /// A new Workspace: its repos and checks differ.
     mutating func choose(_ ws: Workspace) {
         workspace = ws.name
-        folder = true
-        repos = [:]
-        branches = [:]
+        repo = nil
+        mode = .branch
+        branch = ""
         loop = false
         if case .list(let checks)? = ws.loop?.checks { check = checks.first ?? "" } else { check = "" }
-    }
-
-    func use(of repo: String) -> RepoUse { repos[repo] ?? .none }
-
-    /// A branch worktree usually is where the agent works: the folder is then not needed.
-    mutating func setUse(_ use: RepoUse, of repo: String) {
-        repos[repo] = use
-        if use == .branch { folder = false }
     }
 
     /// What still keeps Start off, or nil.
     func missing(in ws: Workspace) -> String? {
         if trimmed(title).isEmpty { return "Name the Task." }
-        if let repo = ws.repos.first(where: { use(of: $0) == .branch && trimmed(branches[$0] ?? "").isEmpty }) {
-            return "Name the branch for \(repo)."
-        }
+        if let repo, mode == .branch, trimmed(branch).isEmpty { return "Name the branch for \(repo)." }
         if loop, ws.loop?.checks == .any, trimmed(check).isEmpty { return "Type the loop's check." }
         return nil
     }
 
     func request(in ws: Workspace) -> TaskRequest {
-        var places: [PlaceSpec] = folder ? [.folder] : []
-        for repo in ws.repos {
-            switch use(of: repo) {
-            case .none: break
-            case .branch: places.append(.branch(repo: repo, branch: trimmed(branches[repo] ?? "")))
-            case .read: places.append(.read(repo: repo))
-            }
+        let places: [PlaceSpec]
+        switch (repo, mode) {
+        case (nil, _): places = [.allRead]
+        case let (repo?, .branch): places = [.branch(repo: repo, branch: trimmed(branch))]
+        case let (repo?, .read): places = [.read(repo: repo)]
         }
         let goal = trimmed(goal)
         return TaskRequest(

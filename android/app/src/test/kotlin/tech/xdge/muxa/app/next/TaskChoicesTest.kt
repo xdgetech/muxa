@@ -3,6 +3,7 @@ package tech.xdge.muxa.app.next
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.ItemKind
@@ -19,23 +20,22 @@ class TaskChoicesTest {
     private val app = Workspace("app", "/w", listOf("app", "docs"), loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))))
 
     @Test
-    fun aFolderTaskHasOneFolderAndItsReadOnlyRepos() {
-        val draft = TaskChoices(title = " Fix login ").inWorkspace(app).copy(readOnly = setOf("docs")).draft()
+    fun noRepoReadsEveryRepo() {
+        val draft = TaskChoices(title = " Fix login ").inWorkspace(app).draft()
         assertEquals("app", draft.workspace)
         assertEquals("Fix login", draft.title)
         assertNull(draft.goal)
-        assertEquals(listOf(PlaceSpec.Folder, PlaceSpec.Read("docs")), draft.places)
+        assertEquals(listOf(PlaceSpec.AllRead), draft.places)
         assertNull(draft.loop)
     }
 
     @Test
-    fun worktreesSkipUnnamedRowsAndARepoIsNotAlsoReadOnly() {
-        val choices = TaskChoices(title = "t").inWorkspace(app).copy(
-            worktrees = true,
-            branches = listOf(BranchChoice("app", "fix-login"), BranchChoice("docs", " ")),
-            readOnly = setOf("app", "docs"),
-        )
-        assertEquals(listOf(PlaceSpec.Branch("app", "fix-login"), PlaceSpec.Read("docs")), choices.draft().places)
+    fun oneRepoIsABranchOrReadOnly() {
+        val choices = TaskChoices(title = "t").inWorkspace(app).copy(repo = "app", branch = " fix-login ")
+        assertEquals(listOf(PlaceSpec.Branch("app", "fix-login")), choices.draft().places)
+        assertEquals(listOf(PlaceSpec.Read("app")), choices.copy(readOnly = true).draft().places)
+        assertFalse("a branch needs a name", choices.copy(branch = " ").canStart)
+        assertTrue(choices.copy(branch = " ", readOnly = true).canStart)
     }
 
     @Test

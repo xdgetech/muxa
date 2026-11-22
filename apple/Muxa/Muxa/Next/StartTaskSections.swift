@@ -43,39 +43,44 @@ struct TaskAgentSection: View {
     }
 }
 
-/// Where the agent works: a new folder, branch worktrees, read-only repos.
+/// Where the agent works: one repo, as a branch or read only, or no repo,
+/// where it reads every repo (ADR 0077).
 struct TaskPlacesSection: View {
     @Binding var draft: TaskDraft
     let workspace: Workspace
 
     var body: some View {
         Section {
-            Toggle("New folder", isOn: $draft.folder)
-                .accessibilityIdentifier("task.folder")
-            ForEach(workspace.repos, id: \.self) { repo in
-                Picker(repo, selection: use(repo)) {
-                    ForEach(TaskDraft.RepoUse.allCases) { Text($0.rawValue).tag($0) }
+            Picker("Repo", selection: $draft.repo) {
+                Text("No repo").tag(String?.none)
+                ForEach(workspace.repos, id: \.self) { Text($0).tag(Optional($0)) }
+            }
+            .accessibilityIdentifier("task.repo")
+            if let repo = draft.repo {
+                Picker("Use", selection: $draft.mode) {
+                    ForEach(TaskDraft.RepoMode.allCases) { Text($0.rawValue).tag($0) }
                 }
-                .accessibilityIdentifier("task.repo.\(repo)")
-                if draft.use(of: repo) == .branch {
-                    TextField("Branch in \(repo)", text: branch(repo))
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("task.mode")
+                if draft.mode == .branch {
+                    TextField("Branch in \(repo)", text: $draft.branch)
                         .plainEntry()
-                        .accessibilityIdentifier("task.branch.\(repo)")
+                        .accessibilityIdentifier("task.branch")
                 }
             }
         } header: {
-            Text("Places")
+            Text("Repo")
         } footer: {
-            Text("The agent works in the folder, else in the first branch. Read only is a rule for the agent.")
+            Text(footer)
         }
     }
 
-    private func use(_ repo: String) -> Binding<TaskDraft.RepoUse> {
-        Binding(get: { draft.use(of: repo) }, set: { draft.setUse($0, of: repo) })
-    }
-
-    private func branch(_ repo: String) -> Binding<String> {
-        Binding(get: { draft.branches[repo] ?? "" }, set: { draft.branches[repo] = $0 })
+    private var footer: String {
+        switch (draft.repo, draft.mode) {
+        case (nil, _): "The agent works in a new folder and can read every repo of \(workspace.name)."
+        case (_, .branch): "The agent works in a new worktree on this branch."
+        case (_, .read): "The agent works in a new folder and reads this repo. Read only is a rule for the agent."
+        }
     }
 }
 

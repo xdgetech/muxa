@@ -158,72 +158,41 @@ private fun TaskOptions(ws: Workspace, choices: TaskChoices, change: (TaskChoice
     ws.loop?.let { LoopOptions(it.checks, choices, change) }
 }
 
+/** One repo, as a branch or read only, or no repo, where the agent reads every repo (ADR 0077). */
 @Composable
 private fun Places(ws: Workspace, choices: TaskChoices, change: (TaskChoices) -> Unit) {
-    Text("Places", style = MaterialTheme.typography.titleSmall)
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        SegmentedButton(!choices.worktrees, { change(choices.copy(worktrees = false)) }, SegmentedButtonDefaults.itemShape(0, 2, Corners.button),
-            Modifier.testTag("task.places.folder")) { Text("New folder") }
-        SegmentedButton(
-            choices.worktrees,
-            {
-                val rows = choices.branches.ifEmpty { listOf(BranchChoice(ws.repos.first())) }
-                change(choices.copy(worktrees = true, branches = rows))
-            },
-            SegmentedButtonDefaults.itemShape(1, 2, Corners.button), Modifier.testTag("task.places.branch"), enabled = ws.repos.isNotEmpty(),
-        ) { Text("Branch worktrees") }
-    }
-    if (choices.worktrees) {
-        choices.branches.forEachIndexed { i, row ->
-            BranchRow(ws.repos, row, i, { new -> change(choices.copy(branches = choices.branches.toMutableList().also { it[i] = new })) }) {
-                change(choices.copy(branches = choices.branches.filterIndexed { at, _ -> at != i }))
-            }
-        }
-        TextButton({ change(choices.copy(branches = choices.branches + BranchChoice(ws.repos.first()))) }, Modifier.testTag("task.addbranch"), shape = Corners.link) {
-            Icon(Icons.add, null)
-            Text(" Add Worktree")
-        }
-    }
-    if (ws.repos.isNotEmpty()) {
-        val taken = if (choices.worktrees) choices.branches.map { it.repo }.toSet() else emptySet()
-        Toggles("Read only", "read", ws.repos.filter { it !in taken }, choices.readOnly) {
-            change(choices.copy(readOnly = it))
-        }
-    }
-}
-
-@Composable
-private fun BranchRow(repos: List<String>, row: BranchChoice, index: Int, change: (BranchChoice) -> Unit, remove: () -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box {
-            SecondaryButton(row.repo, { open = true }, Modifier.testTag("task.repo.$index"))
-            DropdownMenu(open, { open = false }) {
-                for (r in repos) {
-                    DropdownMenuItem({ Text(r) }, {
-                        open = false
-                        change(row.copy(repo = r))
-                    })
-                }
+    Text("Repo", style = MaterialTheme.typography.titleSmall)
+    Box {
+        SecondaryButton(choices.repo ?: "No repo", { open = true }, Modifier.testTag("task.repo"))
+        DropdownMenu(open, { open = false }) {
+            DropdownMenuItem({ Text("No repo") }, { open = false; change(choices.copy(repo = null)) }, Modifier.testTag("task.repo.none"))
+            for (r in ws.repos) {
+                DropdownMenuItem({ Text(r) }, { open = false; change(choices.copy(repo = r)) }, Modifier.testTag("task.repo.$r"))
             }
         }
-        OutlinedTextField(
-            row.branch, { change(row.copy(branch = it.trim())) }, Modifier.weight(1f).testTag("task.branch.$index"),
-            placeholder = { Text("branch") }, singleLine = true,
-        )
-        IconButton(remove) { Icon(Icons.close, "Remove") }
     }
-}
-
-/** Chips for names. */
-@Composable
-private fun Toggles(title: String, tag: String, names: List<String>, on: Set<String>, change: (Set<String>) -> Unit) {
-    Text(title, style = MaterialTheme.typography.titleSmall)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (name in names) {
-            FilterChip(name in on, { change(if (name in on) on - name else on + name) }, { Text(name) }, Modifier.testTag("task.$tag.$name"))
+    val repo = choices.repo
+    if (repo != null) {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(!choices.readOnly, { change(choices.copy(readOnly = false)) }, SegmentedButtonDefaults.itemShape(0, 2, Corners.button),
+                Modifier.testTag("task.mode.branch")) { Text("Branch") }
+            SegmentedButton(choices.readOnly, { change(choices.copy(readOnly = true)) }, SegmentedButtonDefaults.itemShape(1, 2, Corners.button),
+                Modifier.testTag("task.mode.read")) { Text("Read only") }
+        }
+        if (!choices.readOnly) {
+            OutlinedTextField(
+                choices.branch, { change(choices.copy(branch = it.trim())) }, Modifier.fillMaxWidth().testTag("task.branch"),
+                placeholder = { Text("Branch in $repo") }, singleLine = true,
+            )
         }
     }
+    val footer = when {
+        repo == null -> "The agent works in a new folder and can read every repo of ${ws.name}."
+        choices.readOnly -> "The agent works in a new folder and reads $repo. Read only is a rule for the agent."
+        else -> "The agent works in a new worktree on this branch."
+    }
+    Text(footer, color = Palette.textSecondary, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

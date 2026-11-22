@@ -43,44 +43,42 @@ fun toolsLine(ws: Workspace): String? {
     return if (parts.isEmpty()) null else "This Workspace's agents get: " + parts.joinToString(" · ")
 }
 
-data class BranchChoice(val repo: String, val branch: String = "")
-
-/** What the user picked in the Start Task sheet. */
+/** What the user picked in the Start Task sheet: one repo or none (ADR 0077). */
 data class TaskChoices(
     val workspace: String = "",
     val title: String = "",
     val goal: String = "",
-    val worktrees: Boolean = false,
-    val branches: List<BranchChoice> = emptyList(),
-    val readOnly: Set<String> = emptySet(),
+    /** Null: no repo; the Task's folder, with every repo read only. */
+    val repo: String? = null,
+    /** With a repo: read it beside the folder instead of working on a branch. */
+    val readOnly: Boolean = false,
+    val branch: String = "",
     val plan: Boolean = false,
     val loop: Boolean = false,
     val check: String = "",
     val maxAttempts: Int = DEFAULT_ATTEMPTS,
 ) {
-    val canStart: Boolean get() = workspace.isNotEmpty() && title.isNotBlank()
+    val canStart: Boolean
+        get() = workspace.isNotEmpty() && title.isNotBlank() && (repo == null || readOnly || branch.isNotBlank())
 
-    /** A new Workspace keeps the title and the goal; its places and loop start over. */
+    /** A new Workspace keeps the title and the goal; its repo and loop start over. */
     fun inWorkspace(ws: Workspace): TaskChoices = copy(
-        workspace = ws.name, worktrees = false, branches = emptyList(), readOnly = emptySet(),
+        workspace = ws.name, repo = null, readOnly = false, branch = "",
         loop = false,
         check = (ws.loop?.checks as? LoopChecks.List)?.commands?.firstOrNull().orEmpty(),
     )
 
-    /** Branch rows without a name are left out; a repo with a worktree is not also read-only. */
     fun draft(): TaskDraft {
-        val branchPlaces = if (worktrees) {
-            branches.filter { it.branch.isNotBlank() }.map { PlaceSpec.Branch(it.repo, it.branch.trim()) }
-        } else {
-            emptyList()
+        val places = when {
+            repo == null -> listOf(PlaceSpec.AllRead)
+            readOnly -> listOf(PlaceSpec.Read(repo))
+            else -> listOf(PlaceSpec.Branch(repo, branch.trim()))
         }
-        val working = branchPlaces.ifEmpty { listOf(PlaceSpec.Folder) }
-        val reads = readOnly.filter { r -> branchPlaces.none { it.repo == r } }.sorted().map { PlaceSpec.Read(it) }
         return TaskDraft(
             workspace = workspace,
             title = title.trim(),
             goal = goal.trim().ifEmpty { null },
-            places = working + reads,
+            places = places,
             plan = plan,
             loop = if (loop) LoopSpec(check = check.trim().ifEmpty { null }, maxAttempts = maxAttempts) else null,
         )
