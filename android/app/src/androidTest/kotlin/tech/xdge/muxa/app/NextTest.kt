@@ -132,6 +132,22 @@ class NextTest {
     }
 
     @Test
+    fun aTasksLoopStartsAndStops() {
+        launch()
+        compose.onNodeWithTag("needsyou.t2").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("focus.loop"), TIMEOUT)
+        compose.onNodeWithTag("focus.loop").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("loop.start"), TIMEOUT)
+        compose.onNodeWithTag("loop.start").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("loop.start"), TIMEOUT)
+        compose.waitUntilAtLeastOneExists(hasText("Loop 0/3"), TIMEOUT)
+        compose.onNodeWithTag("focus.loop").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("loop.now"), TIMEOUT)
+        compose.onNodeWithTag("loop.stop").performClick()
+        compose.waitUntilAtLeastOneExists(hasText("Stopped"), TIMEOUT)
+    }
+
+    @Test
     fun disconnectReturnsToTheHostsAndAHostCanBeAdded() {
         launch()
         compose.onNodeWithTag("home.host").performClick()

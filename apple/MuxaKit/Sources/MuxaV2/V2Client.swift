@@ -131,11 +131,12 @@ public actor V2Client {
     /// The Task's agent terminal, and whether it was already running.
     public func startTask(
         workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], connections: [String] = [],
-        plan: Bool = false
+        plan: Bool = false, loop: LoopSpec? = nil
     ) async throws -> (Terminal, existing: Bool) {
         let reply = try await request(
             .startTask(
-                workspace: workspace, title: title, goal: goal, places: places, connections: connections, plan: plan))
+                workspace: workspace, title: title, goal: goal, places: places, connections: connections, plan: plan,
+                loop: loop))
         return (try field("terminal", of: reply), try field("existing", of: reply))
     }
 
@@ -180,6 +181,21 @@ public actor V2Client {
 
     public func readerClose(_ reader: UInt32) async throws {
         _ = try await request(.readerClose(reader: reader))
+    }
+
+    // MARK: Task Loop
+
+    public func loops() async throws -> [LoopInfo] {
+        try field("loops", of: await request(.loops))
+    }
+
+    /// Starts or restarts the loop of a Task's agent; `reset` counts the failed checks from 0.
+    public func loopStart(_ terminal: String, spec: LoopSpec = LoopSpec(), reset: Bool = false) async throws -> LoopInfo {
+        try field("loop", of: await request(.loopStart(terminal: terminal, spec: spec, reset: reset)))
+    }
+
+    public func loopStop(_ terminal: String) async throws -> LoopInfo {
+        try field("loop", of: await request(.loopStop(terminal: terminal)))
     }
 
     // MARK: Terminal channels
@@ -258,6 +274,8 @@ public actor V2Client {
             eventsOut.yield(.resync)
         case "inbox":
             if let i: Inbox = try? field("inbox", of: data) { eventsOut.yield(.inbox(i)) }
+        case "loops":
+            if let l: [LoopInfo] = try? field("loops", of: data) { eventsOut.yield(.loops(l)) }
         case "reader":
             guard let n = (msg["reader"] as? NSNumber)?.uint32Value,
                   let content: ReaderContent = try? field("content", of: data) else { return }

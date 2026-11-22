@@ -224,6 +224,72 @@ public struct ReaderContent: Codable, Equatable, Sendable {
     public var bytes: Data? { data.flatMap { Data(base64Encoded: $0) } }
 }
 
+/// A Task Loop a client asks for (ADR 0019).
+public struct LoopSpec: Codable, Equatable, Sendable {
+    /// Nil: the Workspace's only allowed check.
+    public var check: String?
+    /// 1 to 10; nil means 3.
+    public var maxAttempts: UInt32?
+    /// Seconds one check may run; nil means 600.
+    public var timeout: UInt64?
+
+    public init(check: String? = nil, maxAttempts: UInt32? = nil, timeout: UInt64? = nil) {
+        self.check = check
+        self.maxAttempts = maxAttempts
+        self.timeout = timeout
+    }
+
+    var json: [String: Any] {
+        var m: [String: Any] = [:]
+        if let check { m["check"] = check }
+        if let maxAttempts { m["max_attempts"] = maxAttempts }
+        if let timeout { m["timeout"] = timeout }
+        return m
+    }
+}
+
+/// Where a Task's loop stands. Times are Unix seconds.
+public struct LoopInfo: Codable, Equatable, Sendable, Identifiable {
+    public var terminal: String
+    public var check: String
+    public var maxAttempts: UInt32
+    public var timeout: UInt64
+    /// `armed`, `checking`, `paused`, `passed` or `stopped`.
+    public var state: String
+    public var attempts: UInt32
+    public var armedAt: Int64
+    public var since: Int64
+    /// `waiting`, `limit`, `error`, `no-agent`, `not-sent`, `user`…
+    public var reason: String?
+    public var lastCheck: LastCheck?
+
+    public var id: String { terminal }
+    /// It still works on the Task.
+    public var isActive: Bool { ["armed", "checking", "paused"].contains(state) }
+
+    public init(terminal: String, check: String, maxAttempts: UInt32, timeout: UInt64, state: String, attempts: UInt32,
+                armedAt: Int64, since: Int64, reason: String? = nil, lastCheck: LastCheck? = nil) {
+        self.terminal = terminal
+        self.check = check
+        self.maxAttempts = maxAttempts
+        self.timeout = timeout
+        self.state = state
+        self.attempts = attempts
+        self.armedAt = armedAt
+        self.since = since
+        self.reason = reason
+        self.lastCheck = lastCheck
+    }
+}
+
+public struct LastCheck: Codable, Equatable, Sendable {
+    public var attempt: UInt32
+    /// Nil when the check timed out.
+    public var exit: Int32?
+    public var seconds: UInt64
+    public var at: Int64
+}
+
 public struct Exit: Codable, Equatable, Sendable {
     public var reason: String
     public var exitCode: Int64?
@@ -243,6 +309,8 @@ public enum V2Event: Equatable, Sendable {
     case removed(terminal: String)
     /// Changes were lost: list the terminals again.
     case resync
+    /// A Task Loop changed; every loop as it is now.
+    case loops([LoopInfo])
     /// An open Reader file changed.
     case reader(reader: UInt32, content: ReaderContent)
     /// An open Reader file ended; the reader is closed.

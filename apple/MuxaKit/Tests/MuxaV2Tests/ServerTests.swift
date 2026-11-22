@@ -77,6 +77,21 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aTasksLoopStartsAndStops() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let (agent, _) = try await c.startTask(workspace: "w", title: "fix", loop: LoopSpec(check: "make test"))
+        let started = try await c.loopStart(agent.id, spec: LoopSpec(), reset: true)
+        #expect(started == LoopInfo(terminal: agent.id, check: "make test", maxAttempts: 3, timeout: 600,
+                                    state: "armed", attempts: 0, armedAt: 1, since: 1))
+        #expect(try await c.loopStop(agent.id).reason == "user")
+        await #expect(throws: V2Error.self) {
+            try await c.startTask(workspace: "w", title: "bad", loop: LoopSpec(check: "rm -rf /"))
+        }
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func aResumeContinuesWithoutAPaint() async throws {
         let server = try Server()
         let first = try await server.connect()

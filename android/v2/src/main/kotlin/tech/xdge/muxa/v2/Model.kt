@@ -175,6 +175,46 @@ data class ReaderContent(
     val bytes: ByteArray? get() = data?.let { runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }
 }
 
+/** A Task Loop a client asks for (ADR 0019). */
+@Serializable
+data class LoopSpec(
+    /** Null: the Workspace's only allowed check. */
+    val check: String? = null,
+    /** 1 to 10; null means 3. */
+    @SerialName("max_attempts") val maxAttempts: Int? = null,
+    /** Seconds one check may run; null means 600. */
+    val timeout: Long? = null,
+)
+
+/** Where a Task's loop stands. Times are Unix seconds. */
+@Serializable
+data class LoopInfo(
+    val terminal: String,
+    val check: String,
+    @SerialName("max_attempts") val maxAttempts: Int,
+    val timeout: Long,
+    /** `armed`, `checking`, `paused`, `passed` or `stopped`. */
+    val state: String,
+    val attempts: Int,
+    @SerialName("armed_at") val armedAt: Long,
+    val since: Long,
+    /** `waiting`, `limit`, `error`, `no-agent`, `not-sent`, `user`… */
+    val reason: String? = null,
+    @SerialName("last_check") val lastCheck: LastCheck? = null,
+) {
+    /** It still works on the Task. */
+    val isActive: Boolean get() = state in setOf("armed", "checking", "paused")
+}
+
+@Serializable
+data class LastCheck(
+    val attempt: Int,
+    /** Null when the check timed out. */
+    val exit: Int? = null,
+    val seconds: Long,
+    val at: Long,
+)
+
 @Serializable
 data class Exit(val reason: String, @SerialName("exit_code") val exitCode: Long? = null, val signal: Long? = null)
 
@@ -198,6 +238,9 @@ sealed interface V2Event {
 
     /** Changes were lost: list the terminals again. */
     data object Resync : V2Event
+
+    /** A Task Loop changed; every loop as it is now. */
+    data class Loops(val loops: List<LoopInfo>) : V2Event
 
     /** An open Reader file changed. */
     data class Reader(val reader: Int, val content: ReaderContent) : V2Event

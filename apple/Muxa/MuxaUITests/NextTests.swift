@@ -116,6 +116,25 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testATasksLoopStartsAndStops() throws {
+        let app = launch()
+        app.buttons["needsyou.t2"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.buttons["focus.loop"].tap()
+        let start = app.buttons["loop.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        start.tap()
+        XCTAssertTrue(waitForGone(start))
+        XCTAssertTrue(app.buttons["Loop 0/3"].waitForExistence(timeout: 5))
+        app.buttons["focus.loop"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["loop.now"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["loop.stop"].tap()
+        XCTAssertTrue(waitForGone(app.buttons["loop.stop"]))
+        let stopped = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Stopped'")).firstMatch
+        XCTAssertTrue(stopped.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testGoToTaskOpensItInFocus() throws {
         let app = launch()
         app.typeKey("p", modifierFlags: .command)

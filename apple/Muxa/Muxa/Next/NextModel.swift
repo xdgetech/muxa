@@ -39,6 +39,8 @@ final class NextModel {
     private(set) var routineProblems: [RoutineProblem] = []
     /// Why the last request failed, shown until the next one.
     var requestError: String?
+    /// Task Loops by agent terminal.
+    private(set) var loops: [String: LoopInfo] = [:]
     /// Open Reader files by reader number, as the server last sent them.
     private(set) var readerContents: [UInt32: ReaderContent] = [:]
     /// Why a Reader file ended, by reader number, until it is closed.
@@ -234,6 +236,7 @@ final class NextModel {
         case .removed(let id): terminals.removeAll { $0.id == id }
         case .resync: terminals = (try? await c.terminals()) ?? terminals
         case .output(let ch, _), .paint(let ch), .closed(let ch, _): sinks[ch]?(e)
+        case .loops(let all): loops = Dictionary(all.map { ($0.terminal, $0) }) { _, b in b }
         case .reader(let n, let content):
             if readerContents[n] != nil { readerContents[n] = content }
         case .readerEnded(let n, let reason):
@@ -270,6 +273,7 @@ final class NextModel {
             inbox = try await c.inbox()
             terminals = try await c.terminals()
             (routines, routineProblems) = try await c.routines()
+            loops = Dictionary(try await c.loops().map { ($0.terminal, $0) }) { _, b in b }
         } catch {
             requestError = Self.describe(error)
         }
@@ -294,6 +298,7 @@ final class NextModel {
         routineProblems = []
         readerContents = [:]
         readerEnded = [:]
+        loops = [:]
     }
 
     // MARK: Requests
@@ -331,6 +336,17 @@ final class NextModel {
         } catch {
             requestError = Self.describe(error)
         }
+    }
+
+    // MARK: Task Loop
+
+    /// Starts or restarts the loop of a Task's agent.
+    func startLoop(_ terminal: String, spec: LoopSpec, reset: Bool) async {
+        await run { self.loops[terminal] = try await $0.loopStart(terminal, spec: spec, reset: reset) }
+    }
+
+    func stopLoop(_ terminal: String) async {
+        await run { self.loops[terminal] = try await $0.loopStop(terminal) }
     }
 
     // MARK: Reader

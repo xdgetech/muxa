@@ -21,6 +21,8 @@ import tech.xdge.muxa.v2.Capture
 import tech.xdge.muxa.v2.DemoChannel
 import tech.xdge.muxa.v2.DiffScope
 import tech.xdge.muxa.v2.Inbox
+import tech.xdge.muxa.v2.LoopInfo
+import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.ReaderContent
 import tech.xdge.muxa.v2.ReaderKind
 import tech.xdge.muxa.v2.ReaderList
@@ -81,6 +83,10 @@ class NextModel(
 
     /** Why the last request failed, shown until the next one. */
     var requestError: String? by mutableStateOf(null)
+
+    /** Task Loops by agent terminal. */
+    var loops by mutableStateOf(emptyMap<String, LoopInfo>())
+        private set
 
     /** Open Reader files by reader number, as the server last sent them. */
     var readerContents by mutableStateOf(emptyMap<Int, ReaderContent>())
@@ -254,6 +260,7 @@ class NextModel(
             is V2Event.Output -> sinks[e.channel]?.invoke(e)
             is V2Event.Paint -> sinks[e.channel]?.invoke(e)
             is V2Event.Closed -> sinks[e.channel]?.invoke(e)
+            is V2Event.Loops -> loops = e.loops.associateBy { it.terminal }
             is V2Event.Reader -> if (e.reader in readerContents) readerContents = readerContents + (e.reader to e.content)
             is V2Event.ReaderEnded -> {
                 readerContents = readerContents - e.reader
@@ -289,6 +296,7 @@ class NextModel(
         inbox = c.inbox()
         terminals = c.terminals()
         c.routines().let { (r, p) -> routines = r; routineProblems = p }
+        loops = c.loops().associateBy { it.terminal }
     }
 
     private suspend fun drop() {
@@ -310,6 +318,7 @@ class NextModel(
         routineProblems = emptyList()
         readerContents = emptyMap()
         readerEnded = emptyMap()
+        loops = emptyMap()
     }
 
     // Requests
@@ -334,6 +343,17 @@ class NextModel(
 
     fun refreshRoutines() = scope.launch {
         request { it.routines().let { (list, problems) -> routines = list; routineProblems = problems } }
+    }
+
+    // Task Loop
+
+    /** Starts or restarts the loop of a Task's agent. */
+    suspend fun startLoop(terminal: String, spec: LoopSpec, reset: Boolean) = request {
+        loops = loops + (terminal to it.loopStart(terminal, spec, reset))
+    }
+
+    fun stopLoop(terminal: String) = scope.launch {
+        request { loops = loops + (terminal to it.loopStop(terminal)) }
     }
 
     // Reader

@@ -8,9 +8,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
@@ -73,6 +75,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private val workspaces = content.workspaces
     private val files = content.files
     private var nextReader = 1
+    private val loops = sortedMapOf<String, LoopInfo>()
     private var inbox = Inbox(1, content.inbox, emptyList())
     private var nextItem = 100
     private val channels = mutableMapOf<Int, String>()
@@ -190,8 +193,35 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 reply(id, "reader" to JsonPrimitive(n), "content" to enc(file.content))
             }
             "reader-close" -> reply(id)
+            "loops" -> reply(id, "loops" to enc(loops.values.toList()))
+            "loop-start" -> {
+                val terminal = m.str("terminal") ?: ""
+                if (terminals.none { it.id == terminal && it.isTaskAgent }) {
+                    return send(error(id, "bad-request", "$terminal is not a Task's agent"))
+                }
+                val spec = (m["loop"] as? JsonObject)?.let { json.decodeFromJsonElement<LoopSpec>(it) } ?: LoopSpec()
+                val previous = if ((m["reset"] as? JsonPrimitive)?.booleanOrNull == true) null else loops[terminal]
+                val lp = LoopInfo(
+                    terminal, spec.check ?: "make test", spec.maxAttempts ?: 3, spec.timeout ?: 600, "armed",
+                    previous?.attempts ?: 0, now(), now(),
+                )
+                setLoop(lp)
+                reply(id, "loop" to enc(lp))
+            }
+            "loop-stop" -> {
+                val terminal = m.str("terminal") ?: ""
+                val lp = loops[terminal] ?: return send(error(id, "bad-request", "$terminal has no Task Loop"))
+                val stopped = if (lp.isActive) lp.copy(state = "stopped", reason = "user", since = now()) else lp
+                setLoop(stopped)
+                reply(id, "loop" to enc(stopped))
+            }
             else -> send(error(id, "bad-request", "unknown request"))
         }
+    }
+
+    private fun setLoop(lp: LoopInfo) {
+        loops[lp.terminal] = lp
+        if (watching) send(buildJsonObject { put("type", "loops"); put("loops", enc(loops.values.toList())) })
     }
 
     /** The kind of a Reader request on a terminal with a folder, or null after an error. */

@@ -77,6 +77,20 @@ struct DemoTests {
         await #expect(throws: V2Error.self) { try await c.readerList(shell.id, kind: .docs) }
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func aLoopStartsAndStopsAndWatchersSeeIt() async throws {
+        let c = try await open()
+        try await c.watch()
+        var events = c.events.makeAsyncIterator()
+        let started = try await c.loopStart("t1", spec: LoopSpec(maxAttempts: 5))
+        #expect(started.state == "armed" && started.maxAttempts == 5)
+        #expect(await events.next() == .loops([started]))
+        let stopped = try await c.loopStop("t1")
+        #expect(stopped.state == "stopped" && stopped.reason == "user")
+        #expect(try await c.loops() == [stopped])
+        await #expect(throws: V2Error.self) { try await c.loopStart("t3") }
+    }
+
     @Test func placesDecodeFromTheLabel() {
         let t = Terminal(
             id: "t9", name: "Audit", live: true, status: nil,

@@ -9,7 +9,7 @@ public enum V2Request: Sendable {
     /// `connections`: the Workspace's, besides the default ones (ADR 0069).
     case startTask(
         workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], connections: [String] = [],
-        plan: Bool = false)
+        plan: Bool = false, loop: LoopSpec? = nil)
     case watch
     case inbox
     /// `today` is the device's local date, `YYYY-MM-DD`.
@@ -27,6 +27,9 @@ public enum V2Request: Sendable {
     case readerList(terminal: String, kind: ReaderKind, html: Bool = false)
     case readerOpen(terminal: String, kind: ReaderKind, path: String, html: Bool = false, scope: DiffScope = .uncommitted)
     case readerClose(reader: UInt32)
+    case loops
+    case loopStart(terminal: String, spec: LoopSpec, reset: Bool = false)
+    case loopStop(terminal: String)
 
     func json(id: UInt64) throws -> Data {
         var m: [String: Any] = ["id": id]
@@ -39,9 +42,10 @@ public enum V2Request: Sendable {
         case let .attach(terminal, cols, rows, history):
             set("attach", ["terminal": terminal, "cols": cols, "rows": rows, "history": history])
         case let .detach(channel): set("detach", ["channel": channel])
-        case let .startTask(workspace, title, goal, places, connections, plan):
+        case let .startTask(workspace, title, goal, places, connections, plan, loop):
             set("start-task", ["workspace": workspace, "title": title, "goal": goal,
-                               "places": places.map(\.json), "connections": connections, "plan": plan])
+                               "places": places.map(\.json), "connections": connections, "plan": plan,
+                               "loop": loop?.json])
         case .watch: set("watch", [:])
         case .inbox: set("inbox", [:])
         case let .parseCapture(text, today): set("parse-capture", ["text": text, "today": today])
@@ -62,6 +66,10 @@ public enum V2Request: Sendable {
             set("reader-open", ["terminal": terminal, "kind": kind.rawValue, "path": path, "html": html,
                                 "scope": scope.rawValue])
         case let .readerClose(reader): set("reader-close", ["reader": reader])
+        case .loops: set("loops", [:])
+        case let .loopStart(terminal, spec, reset):
+            set("loop-start", ["terminal": terminal, "loop": spec.json, "reset": reset])
+        case let .loopStop(terminal): set("loop-stop", ["terminal": terminal])
         }
         return try JSONSerialization.data(withJSONObject: m, options: [.sortedKeys])
     }

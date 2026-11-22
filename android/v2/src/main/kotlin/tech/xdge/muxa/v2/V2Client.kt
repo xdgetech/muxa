@@ -148,8 +148,9 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         places: List<PlaceSpec> = emptyList(),
         connections: List<String> = emptyList(),
         plan: Boolean = false,
+        loop: LoopSpec? = null,
     ): Pair<Terminal, Boolean> {
-        val reply = request(V2Request.StartTask(workspace, title, goal, places, connections, plan))
+        val reply = request(V2Request.StartTask(workspace, title, goal, places, connections, plan, loop))
         return field<Terminal>("terminal", reply) to field<Boolean>("existing", reply)
     }
 
@@ -195,6 +196,16 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     suspend fun readerClose(reader: Int) {
         request(V2Request.ReaderClose(reader))
     }
+
+    // Task Loop
+
+    suspend fun loops(): List<LoopInfo> = field("loops", request(V2Request.Loops))
+
+    /** Starts or restarts the loop of a Task's agent; [reset] counts the failed checks from 0. */
+    suspend fun loopStart(terminal: String, spec: LoopSpec = LoopSpec(), reset: Boolean = false): LoopInfo =
+        field("loop", request(V2Request.LoopStart(terminal, spec, reset)))
+
+    suspend fun loopStop(terminal: String): LoopInfo = field("loop", request(V2Request.LoopStop(terminal)))
 
     // Terminal channels
 
@@ -271,6 +282,7 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
             "removed" -> msg.str("terminal")?.let { out.trySend(V2Event.Removed(it)) }
             "resync" -> out.trySend(V2Event.Resync)
             "inbox" -> runCatching { field<Inbox>("inbox", msg) }.getOrNull()?.let { out.trySend(V2Event.InboxChanged(it)) }
+            "loops" -> runCatching { field<List<LoopInfo>>("loops", msg) }.getOrNull()?.let { out.trySend(V2Event.Loops(it)) }
             "reader" -> {
                 val n = (msg["reader"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
                 runCatching { field<ReaderContent>("content", msg) }.getOrNull()?.let { out.trySend(V2Event.Reader(n, it)) }

@@ -59,6 +59,18 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testATasksLoopStarts() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.buttons["focus.loop"].click()
+        let start = app.buttons["loop.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        start.click()
+        XCTAssertTrue(app.buttons["Loop 0/3"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testTypingInFocusReachesTheTerminal() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()

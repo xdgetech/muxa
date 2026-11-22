@@ -63,6 +63,7 @@ actor DemoServer {
     private var applied: [UInt32: UInt64] = [:]
     private var nextChannel: UInt32 = 1
     private var nextReader: UInt32 = 1
+    private var loops: [String: LoopInfo] = [:]
     private var watching = false
 
     init(content: DemoContent, out: AsyncThrowingStream<Data, any Error>.Continuation) {
@@ -208,9 +209,43 @@ actor DemoServer {
             reply(id, ["reader": n, "content": json(file.content)])
         case "reader-close":
             reply(id, [:])
+        case "loops":
+            reply(id, ["loops": json(loops.values.sorted { $0.terminal < $1.terminal })])
+        case "loop-start":
+            let terminal = m["terminal"] as? String ?? ""
+            guard content.terminals.contains(where: { $0.id == terminal && $0.isTaskAgent }) else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "\(terminal) is not a Task's agent"])
+            }
+            let spec = m["loop"] as? [String: Any] ?? [:]
+            let now = Int64(Date().timeIntervalSince1970)
+            let previous = (m["reset"] as? Bool) == true ? nil : loops[terminal]
+            let lp = LoopInfo(
+                terminal: terminal, check: spec["check"] as? String ?? "make test",
+                maxAttempts: (spec["max_attempts"] as? NSNumber)?.uint32Value ?? 3,
+                timeout: (spec["timeout"] as? NSNumber)?.uint64Value ?? 600, state: "armed",
+                attempts: previous?.attempts ?? 0, armedAt: now, since: now)
+            setLoop(lp)
+            reply(id, ["loop": json(lp)])
+        case "loop-stop":
+            let terminal = m["terminal"] as? String ?? ""
+            guard var lp = loops[terminal] else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "\(terminal) has no Task Loop"])
+            }
+            if lp.isActive {
+                lp.state = "stopped"
+                lp.reason = "user"
+                lp.since = Int64(Date().timeIntervalSince1970)
+            }
+            setLoop(lp)
+            reply(id, ["loop": json(lp)])
         default:
             send(["type": "error", "id": id, "code": "bad-request", "message": "unknown request"])
         }
+    }
+
+    private func setLoop(_ lp: LoopInfo) {
+        loops[lp.terminal] = lp
+        if watching { send(["type": "loops", "loops": json(loops.values.sorted { $0.terminal < $1.terminal })]) }
     }
 
     /// The kind of a Reader request on a terminal with a folder, or nil after an error.

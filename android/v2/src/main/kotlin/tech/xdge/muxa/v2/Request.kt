@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 
 /** A request on channel 0. The client adds `id`. */
@@ -20,6 +21,7 @@ sealed interface V2Request {
         /** The Workspace's connections, besides the default ones (ADR 0069). */
         val connections: List<String> = emptyList(),
         val plan: Boolean = false,
+        val loop: LoopSpec? = null,
     ) : V2Request
     data object Watch : V2Request
     data object GetInbox : V2Request
@@ -46,6 +48,9 @@ sealed interface V2Request {
         val scope: DiffScope = DiffScope.UNCOMMITTED,
     ) : V2Request
     data class ReaderClose(val reader: Int) : V2Request
+    data object Loops : V2Request
+    data class LoopStart(val terminal: String, val spec: LoopSpec = LoopSpec(), val reset: Boolean = false) : V2Request
+    data class LoopStop(val terminal: String) : V2Request
 
     fun json(id: Long): JsonObject = buildJsonObject {
         put("id", id)
@@ -59,6 +64,7 @@ sealed interface V2Request {
                 type("start-task"); put("workspace", r.workspace); put("title", r.title); opt("goal", r.goal)
                 put("places", buildJsonArray { r.places.forEach { add(placeJson(it)) } })
                 put("connections", buildJsonArray { r.connections.forEach { add(JsonPrimitive(it)) } }); put("plan", r.plan)
+                if (r.loop != null) put("loop", json.encodeToJsonElement(r.loop))
             }
             Watch -> type("watch")
             GetInbox -> type("inbox")
@@ -81,6 +87,11 @@ sealed interface V2Request {
                 put("html", r.html); put("scope", r.scope.wire)
             }
             is ReaderClose -> { type("reader-close"); put("reader", r.reader) }
+            Loops -> type("loops")
+            is LoopStart -> {
+                type("loop-start"); put("terminal", r.terminal); put("loop", json.encodeToJsonElement(r.spec)); put("reset", r.reset)
+            }
+            is LoopStop -> { type("loop-stop"); put("terminal", r.terminal) }
         }
     }
 }

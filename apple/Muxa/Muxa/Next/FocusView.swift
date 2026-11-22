@@ -9,6 +9,8 @@ struct FocusView: View {
     var showHome: () -> Void
 
     @Environment(NextNavigation.self) private var nav
+    /// The Task whose loop sheet is open.
+    @State private var loopFor: MuxaV2.Terminal?
 
     var body: some View {
         NavigationSplitView(columnVisibility: Bindable(nav).sidebar) {
@@ -34,6 +36,9 @@ struct FocusView: View {
                         .navigationTitle(t.branch ?? t.name ?? t.id)
                         .inlineTitle()
                         .toolbar {
+                            Button(loopTitle(t), systemImage: "arrow.triangle.2.circlepath") { loopFor = t }
+                                .disabled(!t.isTaskAgent)
+                                .accessibilityIdentifier("focus.loop")
                             Button("Reader", systemImage: "doc.text.magnifyingglass") { nav.showReader.toggle() }
                                 .touchShortcut("r")
                                 .disabled(t.taskDir == nil)
@@ -53,6 +58,12 @@ struct FocusView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .sheet(item: $loopFor) { t in LoopSheet(terminal: t) }
+    }
+
+    private func loopTitle(_ t: MuxaV2.Terminal) -> String {
+        guard let lp = model.loops[t.id], lp.isActive else { return "Loop" }
+        return "Loop \(lp.attempts)/\(lp.maxAttempts)"
     }
 
     /// The panel beside the terminal: the Inbox or the Reader.
@@ -97,6 +108,9 @@ struct FocusView: View {
                     }
                 }
                 if let dir = t.taskDir { Text(dir).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                if let lp = model.loops[t.id] {
+                    Text(LoopText.badge(lp)).font(.caption2).foregroundStyle(lp.reason == "limit" ? .orange : .secondary)
+                }
             }
             .tag(t.id)
             .accessibilityElement(children: .combine)

@@ -104,4 +104,25 @@ class DemoTest {
             c.close()
         }
     }
+
+    @Test
+    fun aLoopStartsAndStopsAndWatchersSeeIt() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            c.watch()
+            val started = c.loopStart("t1", LoopSpec(maxAttempts = 5))
+            assertEquals("armed" to 5, started.state to started.maxAttempts)
+            assertEquals(V2Event.Loops(listOf(started)), c.events.receive())
+            val stopped = c.loopStop("t1")
+            assertEquals("stopped" to "user", stopped.state to stopped.reason)
+            assertEquals(listOf(stopped), c.loops())
+            try {
+                c.loopStart("t3")
+                fail("a shell has no loop")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
 }

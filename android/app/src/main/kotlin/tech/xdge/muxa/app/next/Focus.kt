@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.Theme
+import tech.xdge.muxa.v2.LoopInfo
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.V2Request
 
@@ -51,6 +52,7 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
     fun toggle(p: Panel) {
         panel = if (panel == p) Panel.NONE else p
     }
+    var loopOpen by rememberSaveable { mutableStateOf(false) }
     val phone = LocalPhoneLayout.current
     val terminal = model.terminals.firstOrNull { it.id == selected }
 
@@ -79,6 +81,10 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (phone) IconButton({ select(null) }, Modifier.testTag("focus.back")) { Icon(Icons.back, "Back") }
                 Text(terminal.title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                val lp = model.loops[terminal.id]
+                TextButton({ loopOpen = true }, Modifier.testTag("focus.loop"), enabled = terminal.isTaskAgent) {
+                    Text(if (lp?.isActive == true) "Loop ${lp.attempts}/${lp.maxAttempts}" else "Loop")
+                }
                 TextButton({ toggle(Panel.READER) }, Modifier.testTag("focus.reader"), enabled = terminal.taskDir != null) {
                     Text("Reader")
                 }
@@ -101,6 +107,7 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
             }
             // On a phone the panel shares the screen with the terminal, below it.
             if (panel != Panel.NONE && phone) shownPanel(Modifier.fillMaxWidth().weight(1f))
+            if (loopOpen) LoopDialog(model, terminal) { loopOpen = false }
         }
     }
 
@@ -129,7 +136,9 @@ private fun TerminalList(model: NextModel, selected: String?, select: (String) -
         fun section(title: String, list: List<Terminal>) {
             if (list.isEmpty()) return
             item(key = "section-$title") { Text(title, Modifier.padding(16.dp, 12.dp, 16.dp, 4.dp), style = MaterialTheme.typography.titleSmall) }
-            items(list, key = { it.id }) { t -> TerminalRow(t, Modifier.selectable(t.id == selected) { select(t.id) }) }
+            items(list, key = { it.id }) { t ->
+                TerminalRow(t, model.loops[t.id], Modifier.selectable(t.id == selected) { select(t.id) })
+            }
         }
         section("Needs you", waiting)
         section("Tasks", tasks)
@@ -138,7 +147,7 @@ private fun TerminalList(model: NextModel, selected: String?, select: (String) -
 }
 
 @Composable
-private fun TerminalRow(t: Terminal, modifier: Modifier) {
+private fun TerminalRow(t: Terminal, loop: LoopInfo?, modifier: Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("terminal.${t.id}")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(t.title, Modifier.weight(1f))
@@ -152,6 +161,12 @@ private fun TerminalRow(t: Terminal, modifier: Modifier) {
         t.taskDir?.let {
             Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        loop?.let {
+            Text(
+                LoopText.badge(it), style = MaterialTheme.typography.labelSmall,
+                color = if (it.reason == "limit") Theme.attention else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

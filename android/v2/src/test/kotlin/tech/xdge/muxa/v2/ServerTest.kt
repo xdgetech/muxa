@@ -82,6 +82,24 @@ class ServerTest {
     }
 
     @Test
+    fun aTasksLoopStartsAndStops() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val (agent, _) = c.startTask("w", "fix", loop = LoopSpec(check = "make test"))
+            val started = c.loopStart(agent.id, reset = true)
+            assertEquals(LoopInfo(agent.id, "make test", 3, 600, "armed", 0, 1, 1), started)
+            assertEquals("user", c.loopStop(agent.id).reason)
+            try {
+                c.startTask("w", "bad", loop = LoopSpec(check = "rm -rf /"))
+                fail("only an allowed check")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
     fun aResumeContinuesWithoutAPaint() = runBlocking {
         withTimeout(10_000) {
             val first = connect()
