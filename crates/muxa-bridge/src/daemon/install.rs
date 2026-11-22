@@ -93,6 +93,9 @@ impl Platform {
                 if self.loaded(run) {
                     run.run("launchctl", &["bootout", &self.target()])?;
                 }
+                // A label disabled by `launchctl disable` (older muxa, or by
+                // hand) fails bootstrap with "Input/output error".
+                run.run("launchctl", &["enable", &self.target()])?;
                 run.run("launchctl", &["bootstrap", &format!("gui/{uid}"), &file])
             }
             Self::Systemd => {
@@ -325,6 +328,7 @@ mod tests {
             [
                 "launchctl print gui/501/tech.xdge.muxa.daemon",
                 "launchctl bootout gui/501/tech.xdge.muxa.daemon",
+                "launchctl enable gui/501/tech.xdge.muxa.daemon",
                 "launchctl bootstrap gui/501 /Users/example/Library/LaunchAgents/tech.xdge.muxa.daemon.plist",
                 "launchctl print gui/501/tech.xdge.muxa.daemon",
                 "launchctl kickstart -k gui/501/tech.xdge.muxa.daemon",
@@ -341,6 +345,7 @@ mod tests {
             [
                 "launchctl print gui/501/tech.xdge.muxa.daemon",
                 "launchctl print gui/501/tech.xdge.muxa.daemon",
+                "launchctl enable gui/501/tech.xdge.muxa.daemon",
                 "launchctl bootstrap gui/501 /Users/example/Library/LaunchAgents/tech.xdge.muxa.daemon.plist",
                 "launchctl print gui/501/tech.xdge.muxa.daemon",
             ],
