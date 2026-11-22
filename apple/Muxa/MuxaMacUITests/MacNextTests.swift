@@ -87,7 +87,7 @@ final class MacNextTests: XCTestCase {
         let app = launch()
         app.typeKey("w", modifierFlags: .command)
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
-        app.menuBars.menuItems["Quick Capture"].click()
+        app.menuBars.menuItems["Capture from Anywhere"].click()
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText("Write the release notes")
