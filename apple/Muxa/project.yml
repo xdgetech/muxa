@@ -78,6 +78,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Muxa
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # The device key lives in the data protection keychain, as on iOS.
         CODE_SIGN_ENTITLEMENTS: MuxaMac/MuxaMac.entitlements

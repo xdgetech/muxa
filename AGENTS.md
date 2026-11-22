@@ -51,7 +51,7 @@ muxa lets you run and follow coding agents from an iPad, an iPhone, an Android p
 | `make build-android` / `make lint-android` | build the debug app, or run Android lint on it. |
 | `make test-android-app` | the app's UI tests (`NextTest` against the in-app demo server, and the terminal view's input) on the running emulator or device. |
 | `make install-iphone` / `make install-ipad` | **humans only**: build, sign, install and open the app on a paired iPhone or iPad. The device's name or identifier comes from `MUXA_IPHONE` or `MUXA_IPAD` (`MUXA_DEVICE` still works for the iPad); list them with `xcrun devicectl list devices`. A locked device gets the app; unlock it to open Muxa. It creates signing assets on the developer's Apple account. |
-| `make app-icon` | renders the icon from `apple/Muxa/Art/app-icon.swift`: iOS's light, dark and tinted images, Android's adaptive icon layers, and Play's store icon and feature graphic. |
+| `make app-icon` | renders the icon from `apple/Muxa/Art/app-icon.swift`: iOS's light, dark and tinted images, the Mac's sizes, Android's adaptive icon layers, and Play's store icon and feature graphic. |
 | `make lint-store` | the store listings fit each store's limits and never say "demo" or "trial" (part of `make check`). |
 | `make bundle-android` | the signed Play bundle into `build/release/muxa.aab`, with the upload key from `~/.gradle/gradle.properties` (`store/RELEASE.md`). |
 | `make archive-ios` | **humans only**: a signed release archive and the `.ipa` for App Store Connect, in `build/release/`. It signs with the developer's Apple account. |

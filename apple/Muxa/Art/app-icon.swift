@@ -1,5 +1,5 @@
-// Renders the app icon from one glyph: iOS's light, dark and tinted images, Android's
-// adaptive icon layers, and Google Play's store icon and feature graphic.
+// Renders the app icon from one glyph: iOS's light, dark and tinted images, the Mac's
+// sizes, Android's adaptive icon layers, and Google Play's store icon and feature graphic.
 // Run: swift apple/Muxa/Art/app-icon.swift <appiconset dir> <android res dir> <play listing dir>
 import AppKit
 import CoreGraphics
@@ -86,6 +86,34 @@ func fill(_ ctx: CGContext, _ paths: [CGPath], with gradient: CGGradient) {
                            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
     ctx.restoreGState()
 }
+
+// MARK: macOS
+
+/// macOS does not mask app icons: the art sits in Apple's 824 px rounded square,
+/// with a soft shadow in the transparent margin.
+func macIcon(side: Int) -> CGImage {
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    let scale = Double(side) / size
+    ctx.scaleBy(x: scale, y: scale)
+    let tile = CGRect(x: 100, y: 100, width: 824, height: 824)
+    let shape = CGPath(roundedRect: tile, cornerWidth: 185.4, cornerHeight: 185.4, transform: nil)
+    ctx.saveGState()
+    ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 20, color: rgb(0, 0, 0, 0.3))
+    ctx.addPath(shape)
+    ctx.setFillColor(rgb(0x3F, 0x37, 0xC2))
+    ctx.fillPath()
+    ctx.restoreGState()
+    ctx.addPath(shape)
+    ctx.clip()
+    ctx.interpolationQuality = .high
+    ctx.draw(render(.light), in: tile)
+    return ctx.makeImage()!
+}
+
+/// The Mac's sizes in points, each at 1x and 2x.
+let macSizes = [16, 32, 128, 256, 512]
 
 func write(_ image: CGImage, to url: URL) throws {
     let rep = NSBitmapImageRep(cgImage: image)
@@ -254,6 +282,11 @@ let play = URL(fileURLWithPath: CommandLine.arguments[3])
 do {
     for v in Variant.allCases {
         try write(render(v), to: dir.appendingPathComponent("icon-1024-\(v.rawValue).png"))
+    }
+    for points in macSizes {
+        for scale in [1, 2] {
+            try write(macIcon(side: points * scale), to: dir.appendingPathComponent("mac-\(points)@\(scale)x.png"))
+        }
     }
     try androidForeground().write(to: res.appendingPathComponent("drawable/ic_launcher_foreground.xml"), atomically: true, encoding: .utf8)
     try androidBackground().write(to: res.appendingPathComponent("drawable/ic_launcher_background.xml"), atomically: true, encoding: .utf8)

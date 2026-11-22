@@ -156,7 +156,7 @@ test-app-iphone:
 	python3 scripts/ios-simulator.py run iphone -- bash scripts/test-app.sh
 
 # Renders the icon from apple/Muxa/Art/app-icon.swift: iOS's light, dark and tinted images,
-# Android's adaptive icon layers, and Play's store icon and feature graphic.
+# the Mac's sizes, Android's adaptive icon layers, and Play's store icon and feature graphic.
 app-icon:
 	swift apple/Muxa/Art/app-icon.swift apple/Muxa/Muxa/Assets.xcassets/AppIcon.appiconset \
 		android/app/src/main/res store/play
