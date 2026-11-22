@@ -74,7 +74,7 @@ struct ConnectionDraft: Identifiable {
 
 /// Adds or changes a connection. The secret field is write-only and empty
 /// after each save; the host says only whether a secret is set.
-private struct ConnectionEditor: View {
+struct ConnectionEditor: View {
     let workspace: String
     @State private var draft: ConnectionDraft
     @State private var secret = ""

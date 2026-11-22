@@ -112,7 +112,7 @@ struct RoutineDraft: Identifiable {
 }
 
 /// Adds or changes a Routine: when it runs, who runs it, and its instructions.
-private struct RoutineEditor: View {
+struct RoutineEditor: View {
     @Environment(NextModel.self) private var model
     let workspace: String
     @State private var draft: RoutineDraft

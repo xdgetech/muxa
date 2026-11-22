@@ -59,6 +59,34 @@ enum Palette {
     static let onAmber = Color(hex: 0x1A1203)
     static let swipeLater = Color(hex: 0x5B4BB8)
     static let swipeDone = Color(hex: 0x2E8B6A)
+
+    // The desktop mocks' extra tones (Mac only today; additive).
+    /// Detail panes and legend strips beside the ground.
+    static let pane = Color(hex: 0x12151A)
+    /// Cards, sheet rows and secondary buttons.
+    static let cardRaised = Color(hex: 0x1A1E25)
+    /// Due, branch and filter pills.
+    static let pill = Color(hex: 0x1F242C)
+    /// A selected row's border.
+    static let rowBorder = Color(hex: 0x3A414D)
+    static let buttonBorder = Color(hex: 0x323843)
+    static let rowDivider = Color(hex: 0x1C2027)
+    static let cardDivider = Color(hex: 0x22272F)
+    static let textMid = Color(hex: 0xC9CED6)
+    static let textDim = Color(hex: 0x5A626E)
+    static let destructive = Color(hex: 0xD14B4B)
+    static let warnBack = Color(hex: 0x2A1414)
+    static let warnBorder = Color(hex: 0x4A1F1F)
+    static let warnText = Color(hex: 0xFFB4B4)
+    static let infoBack = Color(hex: 0x16202E)
+    static let infoBorder = Color(hex: 0x24344A)
+    static let infoText = Color(hex: 0xC9D8EE)
+    static let readText = Color(hex: 0x9CC4FF)
+    static let readBack = Color(hex: 0x14263F)
+    static let writeText = Color(hex: 0xF5C26B)
+    static let writeBack = Color(hex: 0x2A2110)
+    static let okBack = Color(hex: 0x123326)
+    static let okText = Color(hex: 0x7FE0B8)
 }
 
 extension Color {

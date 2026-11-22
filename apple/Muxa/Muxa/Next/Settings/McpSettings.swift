@@ -99,7 +99,7 @@ struct McpDraft: Identifiable {
 
 /// Adds or changes an MCP server: a command with args and env, or a url
 /// with its type and headers, and the connections it needs.
-private struct McpEditor: View {
+struct McpEditor: View {
     let workspace: SettingsWorkspace
     @State private var draft: McpDraft
 

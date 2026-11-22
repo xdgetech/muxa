@@ -232,6 +232,9 @@ struct PaletteForm<Content: View>: View {
 
     var body: some View {
         Form { Group { content }.listRowBackground(Palette.card) }
+            #if os(macOS)
+            .formStyle(.grouped)
+            #endif
             .groundList()
             .presentationBackground(Palette.ground)
     }

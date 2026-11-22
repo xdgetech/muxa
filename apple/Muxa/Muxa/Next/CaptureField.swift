@@ -44,8 +44,11 @@ struct CaptureField: View {
         .onAppear { if focusOnAppear { focused = true } }
         .background {
             Group {
+                #if os(iOS)
+                // The Mac's Capture menu item owns ⌘N and opens the Quick Capture panel.
                 Button("") { focused = true }
                     .keyboardShortcut("n", modifiers: .command)
+                #endif
                 if let onStartTask {
                     Button("") {
                         Task { if let added = await add() { onStartTask(added) } }
