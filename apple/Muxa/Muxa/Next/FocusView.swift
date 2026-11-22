@@ -39,6 +39,10 @@ struct FocusView: View {
                             Button(loopTitle(t), systemImage: "arrow.triangle.2.circlepath") { loopFor = t }
                                 .disabled(!t.isTaskAgent)
                                 .accessibilityIdentifier("focus.loop")
+                            Button("Chat", systemImage: "bubble.left.and.text.bubble.right") { nav.showChat.toggle() }
+                                .touchShortcut("c")
+                                .disabled(!t.isTaskAgent)
+                                .accessibilityIdentifier("focus.chat")
                             Button("Reader", systemImage: "doc.text.magnifyingglass") { nav.showReader.toggle() }
                                 .touchShortcut("r")
                                 .disabled(t.taskDir == nil)
@@ -48,7 +52,13 @@ struct FocusView: View {
                         }
                         .inspector(isPresented: panel) {
                             Group {
-                                if nav.showReader { ReaderPanel(terminal: t).id(t.id) } else { InboxPanel() }
+                                if nav.showReader {
+                                    ReaderPanel(terminal: t).id(t.id)
+                                } else if nav.showChat {
+                                    ChatPanel(terminal: t).id(t.id)
+                                } else {
+                                    InboxPanel()
+                                }
                             }
                             .inspectorColumnWidth(min: 300, ideal: 460, max: 900)
                         }
@@ -66,14 +76,15 @@ struct FocusView: View {
         return "Loop \(lp.attempts)/\(lp.maxAttempts)"
     }
 
-    /// The panel beside the terminal: the Inbox or the Reader.
+    /// The panel beside the terminal: the Inbox, the Reader or Chat.
     private var panel: Binding<Bool> {
         Binding(
-            get: { nav.showInbox || nav.showReader },
+            get: { nav.showInbox || nav.showReader || nav.showChat },
             set: { shown in
                 if !shown {
                     nav.showInbox = false
                     nav.showReader = false
+                    nav.showChat = false
                 }
             })
     }

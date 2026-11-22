@@ -92,6 +92,19 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func aTasksChatOpensWithItsPrompt() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let (agent, _) = try await c.startTask(workspace: "w", title: "chat")
+        let (chat, update) = try await c.chatOpen(agent.id)
+        #expect(update.entries.map(\.text) == ["Clean the build folder", "Removing it."])
+        #expect(update.prompt?.options == [ChatOption(label: "Allow", input: "1"),
+                                           ChatOption(label: "Deny", input: "\u{1b}", cancel: true)])
+        try await c.chatClose(chat)
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func aResumeContinuesWithoutAPaint() async throws {
         let server = try Server()
         let first = try await server.connect()

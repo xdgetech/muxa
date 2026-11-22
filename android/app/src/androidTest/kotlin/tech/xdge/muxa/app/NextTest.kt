@@ -148,6 +148,19 @@ class NextTest {
     }
 
     @Test
+    fun chatShowsTheConversationAndAnswersThePrompt() {
+        launch()
+        compose.onNodeWithTag("needsyou.t2").performClick()
+        compose.waitUntilAtLeastOneExists(screenContains("Allow edits to README.md"), TIMEOUT)
+        compose.onNodeWithTag("focus.chat").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("chat.prompt"), TIMEOUT)
+        compose.onNodeWithText("Fix the README links.").assertExists()
+        compose.onNodeWithTag("chat.option.Allow").performClick()
+        // The demo's program echoes what the option sends.
+        compose.waitUntilAtLeastOneExists(screenContains("(y/n) y"), TIMEOUT)
+    }
+
+    @Test
     fun disconnectReturnsToTheHostsAndAHostCanBeAdded() {
         launch()
         compose.onNodeWithTag("home.host").performClick()

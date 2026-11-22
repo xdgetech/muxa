@@ -183,6 +183,19 @@ public actor V2Client {
         _ = try await request(.readerClose(reader: reader))
     }
 
+    // MARK: Chat
+
+    /// Follows the conversation of a Task's agent: `chat` and `chatEnded`
+    /// events follow until `chatClose`; a resume ends it.
+    public func chatOpen(_ terminal: String) async throws -> (chat: UInt32, update: ChatUpdate) {
+        let reply = try await request(.chatOpen(terminal: terminal))
+        return (try field("chat", of: reply), try field("update", of: reply))
+    }
+
+    public func chatClose(_ chat: UInt32) async throws {
+        _ = try await request(.chatClose(chat: chat))
+    }
+
     // MARK: Task Loop
 
     public func loops() async throws -> [LoopInfo] {
@@ -274,6 +287,13 @@ public actor V2Client {
             eventsOut.yield(.resync)
         case "inbox":
             if let i: Inbox = try? field("inbox", of: data) { eventsOut.yield(.inbox(i)) }
+        case "chat":
+            guard let n = (msg["chat"] as? NSNumber)?.uint32Value,
+                  let update: ChatUpdate = try? field("update", of: data) else { return }
+            eventsOut.yield(.chat(chat: n, update: update))
+        case "chat-ended":
+            guard let n = (msg["chat"] as? NSNumber)?.uint32Value else { return }
+            eventsOut.yield(.chatEnded(chat: n, reason: msg["reason"] as? String ?? ""))
         case "loops":
             if let l: [LoopInfo] = try? field("loops", of: data) { eventsOut.yield(.loops(l)) }
         case "reader":

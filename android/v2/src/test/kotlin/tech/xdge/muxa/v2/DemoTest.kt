@@ -125,4 +125,31 @@ class DemoTest {
             c.close()
         }
     }
+
+    @Test
+    fun aTasksChatShowsItsConversationAndPrompt() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val (_, update) = c.chatOpen("t2")
+            assertEquals(true, update.reset)
+            assertEquals(listOf("user", "assistant", "tool"), update.entries.map { it.kind })
+            assertEquals(listOf("Allow", "Deny"), update.prompt?.options?.map { it.label })
+            try {
+                c.chatOpen("t3")
+                fail("a shell has no chat")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
+    fun anUpdateReplacesEntriesById() {
+        val before = listOf(ChatEntry("a", "user", "1"), ChatEntry("b", "tool"))
+        val update = ChatUpdate(entries = listOf(ChatEntry("b", "tool", "done"), ChatEntry("c", "notice")))
+        assertEquals(listOf("a", "b", "c"), update.appliedTo(before).map { it.id })
+        assertEquals("done", update.appliedTo(before)[1].text)
+        assertEquals(emptyList<ChatEntry>(), ChatUpdate(reset = true, entries = emptyList()).appliedTo(before))
+    }
 }

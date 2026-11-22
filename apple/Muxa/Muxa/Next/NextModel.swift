@@ -39,6 +39,11 @@ final class NextModel {
     private(set) var routineProblems: [RoutineProblem] = []
     /// Why the last request failed, shown until the next one.
     var requestError: String?
+    /// Followed conversations by chat number.
+    private(set) var chats: [UInt32: [ChatEntry]] = [:]
+    private(set) var chatPrompts: [UInt32: ChatPrompt] = [:]
+    /// Why a chat ended, until it is closed.
+    private(set) var chatEnded: [UInt32: String] = [:]
     /// Task Loops by agent terminal.
     private(set) var loops: [String: LoopInfo] = [:]
     /// Open Reader files by reader number, as the server last sent them.
@@ -52,6 +57,8 @@ final class NextModel {
     private var retry: Task<Void, Never>?
     /// Where each attached channel's output goes (Focus).
     private var sinks: [UInt32: @MainActor (V2Event) -> Void] = [:]
+    /// The channel each shown terminal is attached on, for Chat's input.
+    private var channelOf: [String: UInt32] = [:]
 
     static let clientName = "muxa-ios \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")"
 
@@ -236,6 +243,14 @@ final class NextModel {
         case .removed(let id): terminals.removeAll { $0.id == id }
         case .resync: terminals = (try? await c.terminals()) ?? terminals
         case .output(let ch, _), .paint(let ch), .closed(let ch, _): sinks[ch]?(e)
+        case .chat(let n, let update):
+            guard let entries = chats[n] else { break }
+            chats[n] = update.applied(to: entries)
+            chatPrompts[n] = update.prompt
+        case .chatEnded(let n, let reason):
+            chats[n] = nil
+            chatPrompts[n] = nil
+            chatEnded[n] = reason
         case .loops(let all): loops = Dictionary(all.map { ($0.terminal, $0) }) { _, b in b }
         case .reader(let n, let content):
             if readerContents[n] != nil { readerContents[n] = content }
@@ -243,7 +258,10 @@ final class NextModel {
             readerContents[n] = nil
             readerEnded[n] = reason
         case .lost(let why):
-            // The server closes Reader files with the connection.
+            // The server closes chats and Reader files with the connection.
+            for n in chats.keys { chatEnded[n] = "The connection was lost. Open the chat again." }
+            chats = [:]
+            chatPrompts = [:]
             for n in readerContents.keys { readerEnded[n] = "The connection was lost. Open the file again." }
             readerContents = [:]
             resume = await c.resumeState
@@ -299,6 +317,10 @@ final class NextModel {
         readerContents = [:]
         readerEnded = [:]
         loops = [:]
+        chats = [:]
+        chatPrompts = [:]
+        chatEnded = [:]
+        channelOf = [:]
     }
 
     // MARK: Requests
@@ -336,6 +358,38 @@ final class NextModel {
         } catch {
             requestError = Self.describe(error)
         }
+    }
+
+    // MARK: Chat
+
+    /// Follows the conversation of a Task's agent; it stays in `chats` until `closeChat`.
+    func openChat(_ terminal: String) async -> UInt32? {
+        var opened: UInt32?
+        await run {
+            let (n, update) = try await $0.chatOpen(terminal)
+            self.chats[n] = update.applied(to: [])
+            self.chatPrompts[n] = update.prompt
+            opened = n
+        }
+        return opened
+    }
+
+    func closeChat(_ n: UInt32) async {
+        let open = chats.removeValue(forKey: n) != nil
+        chatPrompts[n] = nil
+        chatEnded[n] = nil
+        if open { try? await client?.chatClose(n) }
+    }
+
+    /// Types `text` into the terminal through the channel Focus shows it on.
+    /// Attaching only for this would resize the agent's terminal.
+    func send(_ text: String, to terminal: String) async {
+        guard let ch = channelOf[terminal] else {
+            requestError = "Show the Task's terminal to answer it."
+            return
+        }
+        requestError = nil
+        await input(ch, Array(text.utf8))
     }
 
     // MARK: Task Loop
@@ -383,6 +437,7 @@ final class NextModel {
         do {
             let ch = try await c.attach(terminal, cols: cols, rows: rows, history: 2000)
             sinks[ch] = sink
+            channelOf[terminal] = ch
             return ch
         } catch {
             requestError = Self.describe(error)
@@ -392,6 +447,7 @@ final class NextModel {
 
     func detach(_ channel: UInt32) async {
         sinks[channel] = nil
+        channelOf = channelOf.filter { $0.value != channel }
         try? await client?.detach(channel)
     }
 

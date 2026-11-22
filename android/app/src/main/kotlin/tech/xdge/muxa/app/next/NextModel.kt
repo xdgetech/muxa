@@ -18,6 +18,8 @@ import tech.xdge.muxa.transport.KeySetup
 import tech.xdge.muxa.transport.SshExec
 import tech.xdge.muxa.transport.TransportError
 import tech.xdge.muxa.v2.Capture
+import tech.xdge.muxa.v2.ChatEntry
+import tech.xdge.muxa.v2.ChatPrompt
 import tech.xdge.muxa.v2.DemoChannel
 import tech.xdge.muxa.v2.DiffScope
 import tech.xdge.muxa.v2.Inbox
@@ -84,6 +86,16 @@ class NextModel(
     /** Why the last request failed, shown until the next one. */
     var requestError: String? by mutableStateOf(null)
 
+    /** Followed conversations by chat number. */
+    var chats by mutableStateOf(emptyMap<Int, List<ChatEntry>>())
+        private set
+    var chatPrompts by mutableStateOf(emptyMap<Int, ChatPrompt>())
+        private set
+
+    /** Why a chat ended, until it is closed. */
+    var chatEnded by mutableStateOf(emptyMap<Int, String>())
+        private set
+
     /** Task Loops by agent terminal. */
     var loops by mutableStateOf(emptyMap<String, LoopInfo>())
         private set
@@ -108,6 +120,9 @@ class NextModel(
 
     /** Where each attached channel's events go (Focus). */
     private val sinks = mutableMapOf<Int, (V2Event) -> Unit>()
+
+    /** The channel each shown terminal is attached on, for Chat's input. */
+    private val channelOf = mutableMapOf<String, Int>()
 
     /** Agents waiting on the user: a short-lived state, never an Inbox item. */
     val needsYou: List<Terminal>
@@ -260,6 +275,15 @@ class NextModel(
             is V2Event.Output -> sinks[e.channel]?.invoke(e)
             is V2Event.Paint -> sinks[e.channel]?.invoke(e)
             is V2Event.Closed -> sinks[e.channel]?.invoke(e)
+            is V2Event.Chat -> chats[e.chat]?.let { entries ->
+                chats = chats + (e.chat to e.update.appliedTo(entries))
+                chatPrompts = e.update.prompt?.let { chatPrompts + (e.chat to it) } ?: (chatPrompts - e.chat)
+            }
+            is V2Event.ChatEnded -> {
+                chats = chats - e.chat
+                chatPrompts = chatPrompts - e.chat
+                chatEnded = chatEnded + (e.chat to e.reason)
+            }
             is V2Event.Loops -> loops = e.loops.associateBy { it.terminal }
             is V2Event.Reader -> if (e.reader in readerContents) readerContents = readerContents + (e.reader to e.content)
             is V2Event.ReaderEnded -> {
@@ -267,7 +291,10 @@ class NextModel(
                 readerEnded = readerEnded + (e.reader to e.reason)
             }
             is V2Event.Lost -> {
-                // The server closes Reader files with the connection.
+                // The server closes chats and Reader files with the connection.
+                chatEnded = chatEnded + chats.keys.associateWith { "The connection was lost. Open the chat again." }
+                chats = emptyMap()
+                chatPrompts = emptyMap()
                 readerEnded = readerEnded + readerContents.keys.associateWith { "The connection was lost. Open the file again." }
                 readerContents = emptyMap()
                 resume = c.state()
@@ -319,6 +346,10 @@ class NextModel(
         readerContents = emptyMap()
         readerEnded = emptyMap()
         loops = emptyMap()
+        chats = emptyMap()
+        chatPrompts = emptyMap()
+        chatEnded = emptyMap()
+        channelOf.clear()
     }
 
     // Requests
@@ -343,6 +374,42 @@ class NextModel(
 
     fun refreshRoutines() = scope.launch {
         request { it.routines().let { (list, problems) -> routines = list; routineProblems = problems } }
+    }
+
+    // Chat
+
+    /** Follows the conversation of a Task's agent; it stays in [chats] until [closeChat]. */
+    suspend fun openChat(terminal: String): Int? {
+        var opened: Int? = null
+        request {
+            val (n, update) = it.chatOpen(terminal)
+            chats = chats + (n to update.appliedTo(emptyList()))
+            update.prompt?.let { p -> chatPrompts = chatPrompts + (n to p) }
+            opened = n
+        }
+        return opened
+    }
+
+    fun closeChat(n: Int) {
+        val open = n in chats
+        chats = chats - n
+        chatPrompts = chatPrompts - n
+        chatEnded = chatEnded - n
+        if (open) scope.launch { runCatching { client?.chatClose(n) } }
+    }
+
+    /**
+     * Types [text] into the terminal through the channel Focus shows it on.
+     * Attaching only for this would resize the agent's terminal.
+     */
+    fun send(text: String, terminal: String) {
+        val ch = channelOf[terminal]
+        if (ch == null) {
+            requestError = "Show the Task's terminal to answer it."
+            return
+        }
+        requestError = null
+        input(ch, text.toByteArray())
     }
 
     // Task Loop
@@ -405,7 +472,10 @@ class NextModel(
     suspend fun attach(terminal: String, cols: Int, rows: Int, sink: (V2Event) -> Unit): Int? {
         val c = client ?: return null
         return try {
-            c.attach(terminal, cols, rows, HISTORY).also { sinks[it] = sink }
+            c.attach(terminal, cols, rows, HISTORY).also {
+                sinks[it] = sink
+                channelOf[terminal] = it
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -416,6 +486,7 @@ class NextModel(
 
     fun detach(channel: Int) = scope.launch {
         sinks.remove(channel)
+        channelOf.entries.removeAll { it.value == channel }
         runCatching { client?.detach(channel) }
     }
 

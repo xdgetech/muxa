@@ -29,15 +29,18 @@ public struct DemoContent: Sendable {
     public var workspaces: [String]
     /// What the Reader shows in every Task's folder, by kind.
     public var files: [ReaderKind: [DemoFile]]
+    /// Each Task agent's conversation, by terminal id.
+    public var chats: [String: ChatUpdate]
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
-                files: [ReaderKind: [DemoFile]] = [:]) {
+                files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:]) {
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
         self.routines = routines
         self.workspaces = workspaces
         self.files = files
+        self.chats = chats
     }
 }
 
@@ -64,6 +67,7 @@ actor DemoServer {
     private var nextChannel: UInt32 = 1
     private var nextReader: UInt32 = 1
     private var loops: [String: LoopInfo] = [:]
+    private var nextChat: UInt32 = 1
     private var watching = false
 
     init(content: DemoContent, out: AsyncThrowingStream<Data, any Error>.Continuation) {
@@ -208,6 +212,17 @@ actor DemoServer {
             nextReader += 1
             reply(id, ["reader": n, "content": json(file.content)])
         case "reader-close":
+            reply(id, [:])
+        case "chat-open":
+            let terminal = m["terminal"] as? String ?? ""
+            guard content.terminals.contains(where: { $0.id == terminal && $0.isTaskAgent }) else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "\(terminal) is not a Task's agent"])
+            }
+            let update = content.chats[terminal] ?? ChatUpdate(reset: true, entries: [])
+            let n = nextChat
+            nextChat += 1
+            reply(id, ["chat": n, "update": json(update)])
+        case "chat-close":
             reply(id, [:])
         case "loops":
             reply(id, ["loops": json(loops.values.sorted { $0.terminal < $1.terminal })])

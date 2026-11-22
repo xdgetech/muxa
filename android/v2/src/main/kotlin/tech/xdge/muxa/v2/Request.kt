@@ -51,6 +51,8 @@ sealed interface V2Request {
     data object Loops : V2Request
     data class LoopStart(val terminal: String, val spec: LoopSpec = LoopSpec(), val reset: Boolean = false) : V2Request
     data class LoopStop(val terminal: String) : V2Request
+    data class ChatOpen(val terminal: String) : V2Request
+    data class ChatClose(val chat: Int) : V2Request
 
     fun json(id: Long): JsonObject = buildJsonObject {
         put("id", id)
@@ -92,6 +94,8 @@ sealed interface V2Request {
                 type("loop-start"); put("terminal", r.terminal); put("loop", json.encodeToJsonElement(r.spec)); put("reset", r.reset)
             }
             is LoopStop -> { type("loop-stop"); put("terminal", r.terminal) }
+            is ChatOpen -> { type("chat-open"); put("terminal", r.terminal) }
+            is ChatClose -> { type("chat-close"); put("chat", r.chat) }
         }
     }
 }

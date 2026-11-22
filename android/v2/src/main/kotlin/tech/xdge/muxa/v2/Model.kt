@@ -175,6 +175,59 @@ data class ReaderContent(
     val bytes: ByteArray? get() = data?.let { runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }
 }
 
+/** One item of an agent's conversation (plan F4). */
+@Serializable
+data class ChatEntry(
+    val id: String,
+    /** `user`, `assistant`, `tool` or `notice`. */
+    val kind: String,
+    val text: String? = null,
+    val tool: ChatTool? = null,
+)
+
+@Serializable
+data class ChatTool(val name: String, val summary: String, val result: String? = null, val error: Boolean = false)
+
+/** What the agent waits on, with the input that picks each option. */
+@Serializable
+data class ChatPrompt(
+    val entry: String,
+    /** `permission`, `question` or `plan`. */
+    val kind: String,
+    val question: String? = null,
+    val options: List<ChatOption>,
+)
+
+@Serializable
+data class ChatOption(
+    val label: String,
+    /** Sent as the terminal's input to pick this option. */
+    val input: String,
+    val cancel: Boolean = false,
+)
+
+/** What changed in a followed conversation. */
+@Serializable
+data class ChatUpdate(
+    /** [entries] replace everything; else each replaces the entry with its id, or is added. */
+    val reset: Boolean = false,
+    val entries: List<ChatEntry>,
+    val truncated: Boolean = false,
+    /** What the agent waits on now; null: nothing known. */
+    val prompt: ChatPrompt? = null,
+) {
+    /** [before] after this update. */
+    fun appliedTo(before: List<ChatEntry>): List<ChatEntry> {
+        if (reset) return entries
+        val out = before.toMutableList()
+        for (e in entries) {
+            val at = out.indexOfFirst { it.id == e.id }
+            if (at >= 0) out[at] = e else out += e
+        }
+        return out
+    }
+}
+
 /** A Task Loop a client asks for (ADR 0019). */
 @Serializable
 data class LoopSpec(
@@ -238,6 +291,12 @@ sealed interface V2Event {
 
     /** Changes were lost: list the terminals again. */
     data object Resync : V2Event
+
+    /** A followed conversation changed. */
+    data class Chat(val chat: Int, val update: ChatUpdate) : V2Event
+
+    /** A followed conversation ended; the chat is closed. */
+    data class ChatEnded(val chat: Int, val reason: String) : V2Event
 
     /** A Task Loop changed; every loop as it is now. */
     data class Loops(val loops: List<LoopInfo>) : V2Event

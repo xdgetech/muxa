@@ -290,6 +290,95 @@ public struct LastCheck: Codable, Equatable, Sendable {
     public var at: Int64
 }
 
+/// One item of an agent's conversation (plan F4).
+public struct ChatEntry: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    /// `user`, `assistant`, `tool` or `notice`.
+    public var kind: String
+    public var text: String?
+    public var tool: ChatTool?
+
+    public init(id: String, kind: String, text: String? = nil, tool: ChatTool? = nil) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.tool = tool
+    }
+}
+
+public struct ChatTool: Codable, Equatable, Sendable {
+    public var name: String
+    /// One line about the call, e.g. the command or the file.
+    public var summary: String
+    public var result: String?
+    public var error: Bool?
+
+    public init(name: String, summary: String, result: String? = nil, error: Bool? = nil) {
+        self.name = name
+        self.summary = summary
+        self.result = result
+        self.error = error
+    }
+}
+
+/// What the agent waits on, with the input that picks each option.
+public struct ChatPrompt: Codable, Equatable, Sendable {
+    public var entry: String
+    /// `permission`, `question` or `plan`.
+    public var kind: String
+    public var question: String?
+    public var options: [ChatOption]
+
+    public init(entry: String, kind: String, question: String? = nil, options: [ChatOption]) {
+        self.entry = entry
+        self.kind = kind
+        self.question = question
+        self.options = options
+    }
+}
+
+public struct ChatOption: Codable, Equatable, Sendable, Identifiable {
+    public var label: String
+    /// Sent as the terminal's input to pick this option.
+    public var input: String
+    public var cancel: Bool?
+
+    public var id: String { label }
+
+    public init(label: String, input: String, cancel: Bool? = nil) {
+        self.label = label
+        self.input = input
+        self.cancel = cancel
+    }
+}
+
+/// What changed in a followed conversation.
+public struct ChatUpdate: Codable, Equatable, Sendable {
+    /// `entries` replace everything; else each replaces the entry with its id, or is added.
+    public var reset: Bool?
+    public var entries: [ChatEntry]
+    public var truncated: Bool?
+    /// What the agent waits on now; nil: nothing known.
+    public var prompt: ChatPrompt?
+
+    public init(reset: Bool? = nil, entries: [ChatEntry], truncated: Bool? = nil, prompt: ChatPrompt? = nil) {
+        self.reset = reset
+        self.entries = entries
+        self.truncated = truncated
+        self.prompt = prompt
+    }
+
+    /// `entries` after this update.
+    public func applied(to entries: [ChatEntry]) -> [ChatEntry] {
+        if reset == true { return self.entries }
+        var out = entries
+        for e in self.entries {
+            if let at = out.firstIndex(where: { $0.id == e.id }) { out[at] = e } else { out.append(e) }
+        }
+        return out
+    }
+}
+
 public struct Exit: Codable, Equatable, Sendable {
     public var reason: String
     public var exitCode: Int64?
@@ -309,6 +398,10 @@ public enum V2Event: Equatable, Sendable {
     case removed(terminal: String)
     /// Changes were lost: list the terminals again.
     case resync
+    /// A followed conversation changed.
+    case chat(chat: UInt32, update: ChatUpdate)
+    /// A followed conversation ended; the chat is closed.
+    case chatEnded(chat: UInt32, reason: String)
     /// A Task Loop changed; every loop as it is now.
     case loops([LoopInfo])
     /// An open Reader file changed.

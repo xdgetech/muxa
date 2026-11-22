@@ -58,6 +58,8 @@ data class DemoContent(
     val workspaces: List<String>,
     /** What the Reader shows in every Task's folder, by kind. */
     val files: Map<ReaderKind, List<DemoFile>> = emptyMap(),
+    /** Each Task agent's conversation, by terminal id. */
+    val chats: Map<String, ChatUpdate> = emptyMap(),
 ) {
     companion object {
         /** Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines. */
@@ -76,6 +78,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private val files = content.files
     private var nextReader = 1
     private val loops = sortedMapOf<String, LoopInfo>()
+    private val chats = content.chats
+    private var nextChat = 1
     private var inbox = Inbox(1, content.inbox, emptyList())
     private var nextItem = 100
     private val channels = mutableMapOf<Int, String>()
@@ -193,6 +197,15 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 reply(id, "reader" to JsonPrimitive(n), "content" to enc(file.content))
             }
             "reader-close" -> reply(id)
+            "chat-open" -> {
+                val terminal = m.str("terminal") ?: ""
+                if (terminals.none { it.id == terminal && it.isTaskAgent }) {
+                    return send(error(id, "bad-request", "$terminal is not a Task's agent"))
+                }
+                val update = chats[terminal] ?: ChatUpdate(reset = true, entries = emptyList())
+                reply(id, "chat" to JsonPrimitive(nextChat++), "update" to enc(update))
+            }
+            "chat-close" -> reply(id)
             "loops" -> reply(id, "loops" to enc(loops.values.toList()))
             "loop-start" -> {
                 val terminal = m.str("terminal") ?: ""
@@ -406,6 +419,25 @@ private fun standardContent(): DemoContent {
             ),
             ReaderKind.IMAGES to listOf(
                 DemoFile(ReaderEntry("screenshots/login.png", size = 70), ReaderContent("screenshots/login.png", data = DEMO_PIXEL)),
+            ),
+        ),
+        chats = mapOf(
+            "t1" to ChatUpdate(
+                reset = true,
+                entries = listOf(
+                    ChatEntry("u1", "user", "Refresh the session before it expires."),
+                    ChatEntry("a1", "assistant", "I'll schedule the refresh **60 s** early."),
+                    ChatEntry("t:1", "tool", tool = ChatTool("Edit", "src/auth/session.ts", result = "Updated.")),
+                ),
+            ),
+            "t2" to ChatUpdate(
+                reset = true,
+                entries = listOf(
+                    ChatEntry("u1", "user", "Fix the README links."),
+                    ChatEntry("a1", "assistant", "Three pages moved. I'll update the links."),
+                    ChatEntry("t:1", "tool", tool = ChatTool("Edit", "README.md")),
+                ),
+                prompt = ChatPrompt("t:1", "permission", options = listOf(ChatOption("Allow", "y"), ChatOption("Deny", "n", cancel = true))),
             ),
         ),
     )

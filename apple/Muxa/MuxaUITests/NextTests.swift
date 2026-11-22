@@ -135,6 +135,20 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testChatShowsTheConversationAndAnswersThePrompt() throws {
+        let app = launch()
+        app.buttons["needsyou.t2"].tap()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        app.buttons["focus.chat"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["chat.prompt"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Fix the README links."].exists)
+        app.buttons["chat.option.Allow"].tap()
+        // The demo's program echoes what the option sends.
+        XCTAssertTrue(waitFor(pane, valueContaining: "(y/n) y"))
+    }
+
+    @MainActor
     func testGoToTaskOpensItInFocus() throws {
         let app = launch()
         app.typeKey("p", modifierFlags: .command)

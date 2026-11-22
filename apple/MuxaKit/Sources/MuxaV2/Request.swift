@@ -30,6 +30,8 @@ public enum V2Request: Sendable {
     case loops
     case loopStart(terminal: String, spec: LoopSpec, reset: Bool = false)
     case loopStop(terminal: String)
+    case chatOpen(terminal: String)
+    case chatClose(chat: UInt32)
 
     func json(id: UInt64) throws -> Data {
         var m: [String: Any] = ["id": id]
@@ -70,6 +72,8 @@ public enum V2Request: Sendable {
         case let .loopStart(terminal, spec, reset):
             set("loop-start", ["terminal": terminal, "loop": spec.json, "reset": reset])
         case let .loopStop(terminal): set("loop-stop", ["terminal": terminal])
+        case let .chatOpen(terminal): set("chat-open", ["terminal": terminal])
+        case let .chatClose(chat): set("chat-close", ["chat": chat])
         }
         return try JSONSerialization.data(withJSONObject: m, options: [.sortedKeys])
     }

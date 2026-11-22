@@ -100,6 +100,19 @@ class ServerTest {
     }
 
     @Test
+    fun aTasksChatOpensWithItsPrompt() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val (agent, _) = c.startTask("w", "chat")
+            val (chat, update) = c.chatOpen(agent.id)
+            assertEquals(listOf("Clean the build folder", "Removing it."), update.entries.map { it.text })
+            assertEquals(listOf(ChatOption("Allow", "1"), ChatOption("Deny", "\u001b", cancel = true)), update.prompt?.options)
+            c.chatClose(chat)
+            c.close()
+        }
+    }
+
+    @Test
     fun aResumeContinuesWithoutAPaint() = runBlocking {
         withTimeout(10_000) {
             val first = connect()

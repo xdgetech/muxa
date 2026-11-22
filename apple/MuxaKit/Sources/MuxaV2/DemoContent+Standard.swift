@@ -58,6 +58,25 @@ extension DemoContent {
                     DemoFile(entry: ReaderEntry(path: "screenshots/login.png", size: 70),
                              content: ReaderContent(path: "screenshots/login.png", data: pixel)),
                 ],
+            ],
+            chats: [
+                "t1": ChatUpdate(reset: true, entries: [
+                    ChatEntry(id: "u1", kind: "user", text: "Refresh the session before it expires."),
+                    ChatEntry(id: "a1", kind: "assistant", text: "I'll schedule the refresh **60 s** early."),
+                    ChatEntry(id: "t:1", kind: "tool",
+                              tool: ChatTool(name: "Edit", summary: "src/auth/session.ts", result: "Updated.")),
+                ]),
+                "t2": ChatUpdate(
+                    reset: true,
+                    entries: [
+                        ChatEntry(id: "u1", kind: "user", text: "Fix the README links."),
+                        ChatEntry(id: "a1", kind: "assistant", text: "Three pages moved. I'll update the links."),
+                        ChatEntry(id: "t:1", kind: "tool", tool: ChatTool(name: "Edit", summary: "README.md")),
+                    ],
+                    prompt: ChatPrompt(entry: "t:1", kind: "permission", options: [
+                        ChatOption(label: "Allow", input: "y"),
+                        ChatOption(label: "Deny", input: "n", cancel: true),
+                    ])),
             ])
     }()
 

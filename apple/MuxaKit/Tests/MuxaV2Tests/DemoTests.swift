@@ -91,6 +91,24 @@ struct DemoTests {
         await #expect(throws: V2Error.self) { try await c.loopStart("t3") }
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func aTasksChatShowsItsConversationAndPrompt() async throws {
+        let c = try await open()
+        let (_, update) = try await c.chatOpen("t2")
+        #expect(update.reset == true)
+        #expect(update.entries.map(\.kind) == ["user", "assistant", "tool"])
+        #expect(update.prompt?.options.map(\.label) == ["Allow", "Deny"])
+        await #expect(throws: V2Error.self) { try await c.chatOpen("t3") }
+    }
+
+    @Test func anUpdateReplacesEntriesByID() {
+        let before = [ChatEntry(id: "a", kind: "user", text: "1"), ChatEntry(id: "b", kind: "tool")]
+        let update = ChatUpdate(entries: [ChatEntry(id: "b", kind: "tool", text: "done"), ChatEntry(id: "c", kind: "notice")])
+        #expect(update.applied(to: before).map(\.id) == ["a", "b", "c"])
+        #expect(update.applied(to: before)[1].text == "done")
+        #expect(ChatUpdate(reset: true, entries: []).applied(to: before).isEmpty)
+    }
+
     @Test func placesDecodeFromTheLabel() {
         let t = Terminal(
             id: "t9", name: "Audit", live: true, status: nil,

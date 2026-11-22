@@ -68,10 +68,14 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
         }
     }
     val detail: @Composable (Modifier) -> Unit = { modifier ->
-        // Ctrl+Shift+R opens the Reader, as ⌘⇧R does on iOS and the Mac.
+        // Ctrl+Shift+R opens the Reader and Ctrl+Shift+C Chat, as ⌘⇧R and ⌘⇧C do on iOS and the Mac.
         val readerKey = Modifier.onPreviewKeyEvent { e ->
-            val hit = e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.isShiftPressed && e.key == Key.R
-            hit.also { if (it && terminal?.taskDir != null) toggle(Panel.READER) }
+            if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed || !e.isShiftPressed) return@onPreviewKeyEvent false
+            when (e.key) {
+                Key.R -> true.also { if (terminal?.taskDir != null) toggle(Panel.READER) }
+                Key.C -> true.also { if (terminal?.isTaskAgent == true) toggle(Panel.CHAT) }
+                else -> false
+            }
         }
         Column(modifier.then(readerKey)) {
             if (terminal == null) {
@@ -85,6 +89,9 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
                 TextButton({ loopOpen = true }, Modifier.testTag("focus.loop"), enabled = terminal.isTaskAgent) {
                     Text(if (lp?.isActive == true) "Loop ${lp.attempts}/${lp.maxAttempts}" else "Loop")
                 }
+                TextButton({ toggle(Panel.CHAT) }, Modifier.testTag("focus.chat"), enabled = terminal.isTaskAgent) {
+                    Text("Chat")
+                }
                 TextButton({ toggle(Panel.READER) }, Modifier.testTag("focus.reader"), enabled = terminal.taskDir != null) {
                     Text("Reader")
                 }
@@ -94,6 +101,7 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
                 when (panel) {
                     Panel.INBOX -> InboxPanel(model, m)
                     Panel.READER -> key(terminal.id) { ReaderPanel(model, terminal, m) }
+                    Panel.CHAT -> key(terminal.id) { ChatPanel(model, terminal, m) }
                     Panel.NONE -> {}
                 }
             }
@@ -101,7 +109,7 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
                 key(terminal.id) { TerminalPane(model, terminal.id, Modifier.weight(1f)) }
                 if (panel != Panel.NONE && !phone) {
                     VerticalDivider()
-                    val width = if (panel == Panel.READER) READER_WIDTH else PANEL_WIDTH
+                    val width = if (panel == Panel.INBOX) PANEL_WIDTH else READER_WIDTH
                     shownPanel(Modifier.width(width.dp).fillMaxHeight())
                 }
             }
@@ -188,7 +196,7 @@ private fun InboxPanel(model: NextModel, modifier: Modifier) {
     }
 }
 
-private enum class Panel { NONE, INBOX, READER }
+private enum class Panel { NONE, INBOX, READER, CHAT }
 
 private const val LIST_WIDTH = 300
 private const val PANEL_WIDTH = 320

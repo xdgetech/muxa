@@ -71,6 +71,19 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testChatAnswersThePrompt() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        app.typeKey("c", modifierFlags: [.command, .shift])
+        let allow = app.buttons["chat.option.Allow"]
+        XCTAssertTrue(allow.waitForExistence(timeout: 10))
+        allow.click()
+        XCTAssertTrue(waitFor(pane, valueContaining: "(y/n) y"))
+    }
+
+    @MainActor
     func testTypingInFocusReachesTheTerminal() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()

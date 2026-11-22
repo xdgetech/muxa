@@ -197,6 +197,18 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         request(V2Request.ReaderClose(reader))
     }
 
+    // Chat
+
+    /** Follows the conversation of a Task's agent: [V2Event.Chat] and [V2Event.ChatEnded] follow until [chatClose]. */
+    suspend fun chatOpen(terminal: String): Pair<Int, ChatUpdate> {
+        val reply = request(V2Request.ChatOpen(terminal))
+        return field<Int>("chat", reply) to field<ChatUpdate>("update", reply)
+    }
+
+    suspend fun chatClose(chat: Int) {
+        request(V2Request.ChatClose(chat))
+    }
+
     // Task Loop
 
     suspend fun loops(): List<LoopInfo> = field("loops", request(V2Request.Loops))
@@ -282,6 +294,14 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
             "removed" -> msg.str("terminal")?.let { out.trySend(V2Event.Removed(it)) }
             "resync" -> out.trySend(V2Event.Resync)
             "inbox" -> runCatching { field<Inbox>("inbox", msg) }.getOrNull()?.let { out.trySend(V2Event.InboxChanged(it)) }
+            "chat" -> {
+                val n = (msg["chat"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
+                runCatching { field<ChatUpdate>("update", msg) }.getOrNull()?.let { out.trySend(V2Event.Chat(n, it)) }
+            }
+            "chat-ended" -> {
+                val n = (msg["chat"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
+                out.trySend(V2Event.ChatEnded(n, msg.str("reason") ?: ""))
+            }
             "loops" -> runCatching { field<List<LoopInfo>>("loops", msg) }.getOrNull()?.let { out.trySend(V2Event.Loops(it)) }
             "reader" -> {
                 val n = (msg["reader"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
