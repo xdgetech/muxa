@@ -5,6 +5,9 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
+/// The name that means the workspace's own agent, never a worker.
+pub const DEFAULT_WORKER: &str = "default";
+
 use serde::Deserialize;
 
 use super::{AgentSettings, LoopSpec, Workspace, Workspaces};
@@ -162,10 +165,10 @@ impl RawWorker {
         workspaces: &[Workspace],
     ) -> Result<Worker, String> {
         text(&self.name, 64).map_err(|reason| format!("worker name {reason}"))?;
-        if self.name == muxa_protocol::DEFAULT_WORKER {
+        if self.name == DEFAULT_WORKER {
             return Err(format!(
                 "worker name {:?} is reserved for the workspace default agent",
-                muxa_protocol::DEFAULT_WORKER
+                DEFAULT_WORKER
             ));
         }
         if let Some(description) = &self.description {

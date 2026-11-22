@@ -6,8 +6,8 @@
 
 use std::process::{Command, Stdio};
 
+use crate::records::Workspace;
 use crate::records::connections::Connection;
-use crate::records::{AgentSettings, Workspace};
 
 /// The Keychain items' service; the account is `<workspace>/<connection>`.
 pub const SERVICE: &str = "muxa";
@@ -76,16 +76,6 @@ pub fn for_run(
         .map(|r| r.connections.clone())
         .unwrap_or_default();
     env(ws, &named)
-}
-
-/// A launch on the workspace's default agent: the workspace's command, and
-/// `env`, the variables resolved for it (its own and the connections).
-pub fn default_agent(workspace: &Workspace, env: &[(String, String)]) -> Option<AgentSettings> {
-    let command = workspace.agent.as_ref().and_then(|a| a.command.clone());
-    (command.is_some() || !env.is_empty()).then(|| AgentSettings {
-        command,
-        env: env.to_vec(),
-    })
 }
 
 /// Adds `extra` to an agent's variables, keeping them sorted by key.
@@ -196,24 +186,6 @@ mod tests {
         assert!(e.contains("no connection \"github\""), "{e}");
         let e = env_with(&ws(), &["slack".into()], fake).unwrap_err();
         assert_eq!(e, "connection \"slack\": no secret");
-    }
-
-    #[test]
-    fn the_default_agent_keeps_its_command_and_gets_the_resolved_variables() {
-        let mut w = ws();
-        w.agent = Some(AgentSettings {
-            command: Some("claude --model opus".into()),
-            env: vec![("A".into(), "1".into())],
-        });
-        let env = vec![
-            ("A".to_owned(), "1".to_owned()),
-            ("DOCS_TOKEN".to_owned(), "t".to_owned()),
-        ];
-        let agent = default_agent(&w, &env).unwrap();
-        assert_eq!(agent.command.as_deref(), Some("claude --model opus"));
-        assert_eq!(agent.env, env);
-        w.agent = None;
-        assert!(default_agent(&w, &[]).is_none());
     }
 
     #[test]

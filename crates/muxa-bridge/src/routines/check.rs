@@ -8,10 +8,10 @@ use std::time::Instant;
 use super::output::{self, PublishError};
 use super::runs;
 use super::store::{RoutineStore, StateError};
+use crate::config::Config;
+use crate::loops::CheckEnd;
 use crate::loops::check::{REPORT, log_path};
-use crate::loops::step::CheckEnd;
-use crate::records::{Record, now};
-use crate::task_records::Config;
+use crate::records::now;
 
 /// A Routine run by its parts: no task record needed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,29 +24,8 @@ pub struct RunAt {
     pub dir: std::path::PathBuf,
 }
 
-/// Blocking. Exit 0 once the output is published (also when it was already).
-pub fn run(config: &Config, record: &Record, attempt: u32) -> CheckEnd {
-    let (Some(run), Some(dir)) = (record.routine_run(), record.dir.clone()) else {
-        tracing::warn!(task = %record.id, "not a readable Routine run");
-        return CheckEnd::Exited {
-            code: 1,
-            seconds: 0,
-        };
-    };
-    run_at(
-        config,
-        &RunAt {
-            workspace: record.workspace.clone(),
-            name: run.name,
-            occurrence: run.occurrence,
-            id: record.id.clone(),
-            dir,
-        },
-        attempt,
-    )
-}
-
-/// Blocking. As [`run`], for a run by its parts.
+/// Blocking. Checks and publishes a run's output; exit 0 once the output
+/// is published (also when it was already).
 pub fn run_at(config: &Config, run: &RunAt, attempt: u32) -> CheckEnd {
     let started = Instant::now();
     let result = publish(config, run);

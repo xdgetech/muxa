@@ -17,7 +17,8 @@ use muxa_backend::{
 };
 use muxa_protocol::RoutineFailure;
 
-use crate::loops::step::CheckEnd;
+use super::git as brief;
+use crate::loops::CheckEnd;
 use crate::records::routines::Routine;
 use crate::records::workers::{LaunchCommand, WorkerChoice};
 use crate::records::{Workspaces, is_valid_id, now};
@@ -25,7 +26,6 @@ use crate::routines::check::{self, RunAt};
 use crate::routines::record::{MAX_ATTEMPTS, fail_prompt};
 use crate::routines::runs::{self, StartError, When};
 use crate::routines::store::{RoutineState, RoutineStore, StateError};
-use crate::task_records::{self, brief};
 
 pub const KIND: &str = "routine";
 const RUN: &str = "muxa.run";
@@ -41,7 +41,7 @@ const SIZE: Size = Size {
 };
 
 pub struct Runner {
-    config: Arc<task_records::Config>,
+    config: Arc<crate::config::Config>,
     /// `--task-command`: the agent when the Workspace names none.
     fallback: String,
 }
@@ -57,7 +57,7 @@ struct Ready {
 }
 
 impl Runner {
-    pub fn new(config: Arc<task_records::Config>, fallback: String) -> Self {
+    pub fn new(config: Arc<crate::config::Config>, fallback: String) -> Self {
         Runner { config, fallback }
     }
 
@@ -266,7 +266,7 @@ impl Runner {
 }
 
 /// Blocking. The run id of the Routine's last publish.
-fn last_published(config: &task_records::Config, run: &RunAt) -> Option<String> {
+fn last_published(config: &crate::config::Config, run: &RunAt) -> Option<String> {
     let store = RoutineStore::open(&runs::dir(config).ok()?).ok()?;
     let state = store.get(&run.workspace, &run.name).ok()?;
     state.last_success.map(|s| s.task)
@@ -274,7 +274,7 @@ fn last_published(config: &task_records::Config, run: &RunAt) -> Option<String> 
 
 /// Blocking. A publish replaces the previous one, whose folder goes; a failed
 /// run's folder stays to be read (ADR 0037 §2).
-fn remove_run_dir(config: &task_records::Config, run: &RunAt, old: &str) {
+fn remove_run_dir(config: &crate::config::Config, run: &RunAt, old: &str) {
     let Ok(workspaces) = runs::load(config) else {
         return;
     };
@@ -297,7 +297,7 @@ fn remove_run_dir(config: &task_records::Config, run: &RunAt, old: &str) {
 
 /// Blocking. Claims the run, makes its folder and works out the agent.
 fn ready(
-    config: &task_records::Config,
+    config: &crate::config::Config,
     workspace: &str,
     name: &str,
     when: When,
@@ -344,7 +344,7 @@ const CODEX: &str =
     "a Routine on herdr-core needs Claude Code; Codex Routines are not supported yet";
 
 fn made(
-    config: &task_records::Config,
+    config: &crate::config::Config,
     workspaces: &Workspaces,
     routine: Routine,
     occurrence: String,

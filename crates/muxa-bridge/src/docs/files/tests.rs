@@ -1,10 +1,6 @@
 use std::process::Command;
 
 use super::*;
-use crate::agents::claude::ClaudeAdapter;
-
-const SAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/claude-code");
-const SESSION_ID: &str = "0b8c3c0e-1111-4a2b-9c3d-000000000003";
 
 fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("muxa-docs-{}-{name}", std::process::id()));
@@ -53,17 +49,6 @@ fn repo(name: &str) -> PathBuf {
     dir
 }
 
-fn pane(path: &Path) -> PaneInfo {
-    PaneInfo {
-        pane: "%7".into(),
-        session: "work".into(),
-        // A live pid inside "the pane" for the Claude adapter's liveness check.
-        pid: std::process::id(),
-        path: path.join("docs").display().to_string(),
-        shell_foreground: false,
-    }
-}
-
 fn paths(listing: &Listing) -> Vec<&str> {
     listing.docs.iter().map(|d| d.info.path.as_str()).collect()
 }
@@ -71,7 +56,7 @@ fn paths(listing: &Listing) -> Vec<&str> {
 #[test]
 fn lists_tracked_and_untracked_markdown_but_not_ignored_files() {
     let root = repo("list");
-    let listing = list(&pane(&root), &Registry::new(vec![]));
+    let listing = for_folder(&root, false);
     assert_eq!(listing.root.as_deref(), Some("app"));
     assert_eq!(
         paths(&listing),
@@ -97,20 +82,13 @@ fn html_files_are_listed_and_opened_only_when_asked() {
     let outside = root.parent().unwrap().join("outside.html");
     write(&outside, "<title>Private</title>");
     std::os::unix::fs::symlink(&outside, root.join("escape.html")).unwrap();
-    let none = Config {
-        state_dir: None,
-        workspaces: None,
-        home: None,
-    };
-    let agents = Registry::new(vec![]);
-
-    let plain = for_pane(&pane(&root), &agents, &none, false);
+    let plain = for_folder(&root, false);
     assert_eq!(
         plain.find("build/report.html"),
         Err(ReadError::NotListed("build/report.html".into()))
     );
 
-    let asked = for_pane(&pane(&root), &agents, &none, true);
+    let asked = for_folder(&root, true);
     assert_eq!(
         paths(&asked),
         [
@@ -136,7 +114,7 @@ fn html_files_are_listed_and_opened_only_when_asked() {
 #[test]
 fn reads_only_listed_documents_inside_their_directory() {
     let root = repo("read");
-    let listing = list(&pane(&root), &Registry::new(vec![]));
+    let listing = for_folder(&root, false);
     let (text, mtime) = read(listing.find("docs/plan.md").unwrap()).unwrap();
     assert!(text.contains("```mermaid"));
     assert!(mtime.is_some());
@@ -171,7 +149,7 @@ fn a_task_brief_is_listed_in_a_repo_and_without_one() {
     write(&root.join(".muxa/TASK.md"), "# Ship it\n");
     write(&root.join(".muxa/HANDOFF.md"), "# Handoff\n");
     write(&root.join(".muxa/CHECK.md"), "# Check\n");
-    let listing = list(&pane(&root), &Registry::new(vec![]));
+    let listing = for_folder(&root, false);
     assert_eq!(
         paths(&listing)[paths(&listing).len() - 3..],
         [".muxa/TASK.md", ".muxa/HANDOFF.md", ".muxa/CHECK.md"]
@@ -182,58 +160,15 @@ fn a_task_brief_is_listed_in_a_repo_and_without_one() {
 
     let dir = temp("brief-norepo");
     write(&dir.join(".muxa/TASK.md"), "# Taxes\n");
-    let mut p = pane(&dir);
-    p.path = dir.display().to_string();
-    let listing = list(&p, &Registry::new(vec![]));
+    let listing = for_folder(&dir, false);
     assert_eq!(paths(&listing), [".muxa/TASK.md"]);
     assert_eq!(listing.root, None);
 }
 
 #[test]
-fn a_pane_outside_any_repo_lists_nothing() {
+fn an_empty_folder_outside_any_repo_lists_nothing() {
     let dir = temp("norepo");
-    let listing = list(&pane(&dir), &Registry::new(vec![]));
+    let listing = for_folder(&dir, false);
     assert!(listing.docs.is_empty());
     assert_eq!(listing.root, None);
-}
-
-#[test]
-fn the_claude_plan_comes_first_and_is_named_by_the_transcript() {
-    let root = repo("plan");
-    let claude = temp("plan-claude");
-    let mut session: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(format!("{SAMPLE}/session.json")).unwrap())
-            .unwrap();
-    session["pid"] = std::process::id().into();
-    session["sessionId"] = SESSION_ID.into();
-    session["tmux"] = "work:@1.%7".into();
-    write(
-        &claude.join(format!("sessions/{}.json", std::process::id())),
-        &session.to_string(),
-    );
-    let transcript = std::fs::read_to_string(format!("{SAMPLE}/transcript.jsonl")).unwrap();
-    write(
-        &claude.join(format!("projects/-work-app/{SESSION_ID}.jsonl")),
-        &transcript,
-    );
-    write(
-        &claude.join("plans/sample-plan.md"),
-        "# Reader plan\n\nBody\n",
-    );
-
-    let agents = Registry::new(vec![Box::new(ClaudeAdapter::new(vec![claude.clone()]))]);
-    let listing = list(&pane(&root), &agents);
-    assert_eq!(paths(&listing)[0], "plans/sample-plan.md");
-    let plan = &listing.docs[0];
-    assert_eq!(plan.info.kind, DocKind::Plan);
-    assert_eq!(plan.info.title.as_deref(), Some("Reader plan"));
-    assert_eq!(read(plan).unwrap().0, "# Reader plan\n\nBody\n");
-
-    // A slug that would leave the plans directory is not used.
-    let evil = transcript.replace("\"slug\":\"sample-plan\"", "\"slug\":\"../../etc/passwd\"");
-    write(
-        &claude.join(format!("projects/-work-app/{SESSION_ID}.jsonl")),
-        &evil,
-    );
-    assert_eq!(list(&pane(&root), &agents).docs[0].info.kind, DocKind::Repo);
 }

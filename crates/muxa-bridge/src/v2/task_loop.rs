@@ -17,12 +17,11 @@ use muxa_server::TaskError;
 use muxa_server::tasks::{BRANCH, DIR, KIND, ROLE, WORKSPACE};
 use tokio::sync::watch;
 
+use crate::loops::CheckEnd;
 use crate::loops::check::{self, CheckRun};
-use crate::loops::step::CheckEnd;
-use crate::loops::typing::fail_prompt;
+use crate::loops::fail_prompt;
 use crate::records::loops::{Checks, LastCheck, Loop, LoopSpec, LoopState, Reason};
 use crate::records::{Workspaces, now};
-use crate::task_records;
 
 const FILE: &str = ".muxa/loop.json";
 
@@ -36,14 +35,14 @@ struct Agent {
 }
 
 pub struct TaskLoops {
-    config: Arc<task_records::Config>,
+    config: Arc<crate::config::Config>,
     inbox: Arc<Inbox>,
     changes: watch::Sender<u64>,
     agents: Mutex<HashMap<TerminalId, Agent>>,
 }
 
 impl TaskLoops {
-    pub fn new(config: Arc<task_records::Config>, inbox: Arc<Inbox>) -> Self {
+    pub fn new(config: Arc<crate::config::Config>, inbox: Arc<Inbox>) -> Self {
         TaskLoops {
             config,
             inbox,
@@ -535,7 +534,7 @@ fn write(dir: &Path, lp: &Loop) -> Result<(), TaskError> {
     std::fs::rename(&tmp, &path).map_err(fail)
 }
 
-fn load(config: &task_records::Config) -> Result<Workspaces, TaskError> {
+fn load(config: &crate::config::Config) -> Result<Workspaces, TaskError> {
     crate::routines::runs::load(config).map_err(|e| TaskError::Failed(e.to_string()))
 }
 

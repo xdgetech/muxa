@@ -10,7 +10,6 @@ use muxa_protocol::v2::ItemKind;
 use muxa_protocol::{InboxEntryKind, RoutineFailure};
 
 use crate::routines::store::{RoutineState, RoutineStore};
-use crate::task_records;
 
 const EVERY: Duration = Duration::from_secs(15);
 const SOURCE: &str = "routines";
@@ -18,7 +17,7 @@ const SOURCE: &str = "routines";
 const MAX_NOTE: usize = 4096;
 
 /// Copies Routine output into `inbox` every 15 s, for as long as the daemon runs.
-pub fn spawn(inbox: Arc<Inbox>, records: Arc<task_records::Config>) {
+pub fn spawn(inbox: Arc<Inbox>, records: Arc<crate::config::Config>) {
     tokio::spawn(async move {
         loop {
             let config = Arc::clone(&records);

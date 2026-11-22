@@ -10,7 +10,7 @@ use muxa_protocol::{InboxEntry, RoutineFailure, RoutineRun, RoutineSuccess};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::records::store::Lock;
+use crate::records::lock::{Lock, LockError};
 
 pub const FORMAT_VERSION: u32 = 1;
 const DIR: &str = "routines";
@@ -34,7 +34,7 @@ pub enum StateError {
     #[error("state file {0} is too large")]
     TooLarge(String),
     #[error(transparent)]
-    Lock(#[from] crate::records::StoreError),
+    Lock(#[from] LockError),
     #[error("no random source for an entry id: {0}")]
     Random(#[from] getrandom::Error),
 }
@@ -109,22 +109,6 @@ impl RoutineState {
     /// Whether the Routine already published this key, kept or deleted.
     pub fn has_key(&self, key: &str) -> bool {
         self.entries.iter().any(|s| s.entry.key == key) || self.deleted.iter().any(|k| k == key)
-    }
-
-    /// Deletes the unprotected entries made before `cutoff` (epoch seconds),
-    /// keeping their keys. An entry being approved stays. Returns how many.
-    pub fn delete_before(&mut self, cutoff: u64) -> u32 {
-        let (gone, kept): (Vec<Stored>, Vec<Stored>) = std::mem::take(&mut self.entries)
-            .into_iter()
-            .partition(|s| {
-                s.entry.created_at < cutoff
-                    && s.entry.protected_at.is_none()
-                    && s.approving.is_none()
-            });
-        self.entries = kept;
-        self.deleted
-            .extend(gone.iter().map(|s| s.entry.key.clone()));
-        u32::try_from(gone.len()).unwrap_or(u32::MAX)
     }
 
     /// Drops the oldest closed entries, then the oldest of all, down to [`KEEP_ENTRIES`].

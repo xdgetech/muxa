@@ -12,13 +12,11 @@ use super::runner::Runner;
 use super::task_loop::TaskLoops;
 use crate::records::workers::LaunchCommand;
 use crate::routines::runs::{StartError, When};
-use crate::task_records;
-use crate::tasks::builtin;
 
 pub struct BridgeHost {
     /// `--task-command`: the agent when the Workspace names none.
     command: String,
-    records: Arc<task_records::Config>,
+    records: Arc<crate::config::Config>,
     /// Runs Routines on the session backend, for Run now.
     runner: Option<Arc<Runner>>,
     loops: Option<Arc<TaskLoops>>,
@@ -26,7 +24,7 @@ pub struct BridgeHost {
 }
 
 impl BridgeHost {
-    pub fn new(command: String, records: Arc<task_records::Config>) -> Self {
+    pub fn new(command: String, records: Arc<crate::config::Config>) -> Self {
         BridgeHost {
             command,
             records,
@@ -74,7 +72,7 @@ impl Host for BridgeHost {
         let ws = tokio::task::spawn_blocking(move || records.load_workspaces())
             .await
             .map_err(|e| TaskError::Failed(e.to_string()))?
-            .map_err(|e| TaskError::Failed(e.message))?
+            .map_err(TaskError::Failed)?
             .get(&spec.workspace)
             .cloned()
             .ok_or_else(|| {
@@ -94,8 +92,7 @@ impl Host for BridgeHost {
             .as_ref()
             .and_then(|a| a.command.clone())
             .unwrap_or_else(|| self.command.clone());
-        let claude =
-            crate::task_records::reading::is_claude_code(&LaunchCommand::Shell(command.clone()));
+        let claude = crate::launch::is_claude_code(&LaunchCommand::Shell(command.clone()));
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let (made, settings) = tokio::task::spawn_blocking(move || {
             places::brief(&made, &title_owned, goal.as_deref())?;
@@ -114,7 +111,7 @@ impl Host for BridgeHost {
             None => command,
         };
         if spec.plan {
-            line = builtin::plan_line(&line);
+            line = crate::launch::plan_line(&line);
         }
         if let Some(a) = &ws.agent {
             // Keys only: values may be tokens.
@@ -142,7 +139,7 @@ impl Host for BridgeHost {
         let listed = tokio::task::spawn_blocking(move || crate::routines::list(&records))
             .await
             .map_err(|e| TaskError::Failed(e.to_string()))?;
-        let (routines, problems) = listed.map_err(|e| TaskError::Failed(e.message))?;
+        let (routines, problems) = listed.map_err(TaskError::Failed)?;
         Ok(RoutineList {
             routines: routines.into_iter().map(super::routines::to_v2).collect(),
             problems: problems.into_iter().map(super::routines::problem).collect(),
@@ -269,7 +266,7 @@ mod tests {
     async fn a_workspace_that_is_not_there_is_invalid() {
         let host = BridgeHost::new(
             "claude".into(),
-            Arc::new(task_records::Config {
+            Arc::new(crate::config::Config {
                 state_dir: None,
                 workspaces: None,
                 home: None,

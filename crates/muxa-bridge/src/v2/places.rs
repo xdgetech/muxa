@@ -10,9 +10,8 @@ use std::path::{Path, PathBuf};
 use muxa_protocol::v2::{Place, PlaceKind, PlaceSpec};
 use muxa_server::TaskError;
 
+use super::git::{self, BranchRequest, GitError};
 use crate::records::{Workspace, is_valid_id};
-use crate::task_records::brief;
-use crate::tasks::{self, builtin};
 
 /// Claude Code's settings for the other places, beside `TASK.md`.
 const CLAUDE_SETTINGS: &str = "claude-settings.json";
@@ -22,7 +21,7 @@ const TASK_FILE: &str = "TASK.md";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Checked {
     Folder,
-    Branch(tasks::TaskRequest),
+    Branch(BranchRequest),
     Read(PathBuf),
 }
 
@@ -50,14 +49,14 @@ pub async fn check(ws: &Workspace, specs: &[PlaceSpec]) -> Result<Vec<Checked>, 
             PlaceSpec::Folder => Checked::Folder,
             PlaceSpec::Branch { repo, branch, base } => {
                 let path = repo_path(ws, repo)?;
-                let req = tasks::validate(&path.to_string_lossy(), branch, base.as_deref())
+                let req = git::validate(&path.to_string_lossy(), branch, base.as_deref())
                     .await
                     .map_err(invalid)?;
                 Checked::Branch(req)
             }
             PlaceSpec::Read { repo } => {
                 let path = repo_path(ws, repo)?;
-                Checked::Read(builtin::main_checkout(&path).await.map_err(invalid)?)
+                Checked::Read(git::main_checkout(&path).await.map_err(invalid)?)
             }
         };
         if let Some(main) = main_of(&checked).await? {
@@ -82,7 +81,7 @@ async fn main_of(c: &Checked) -> Result<Option<PathBuf>, TaskError> {
     match c {
         Checked::Folder => Ok(None),
         Checked::Read(main) => Ok(Some(main.clone())),
-        Checked::Branch(req) => builtin::main_checkout(&req.repo)
+        Checked::Branch(req) => git::main_checkout(&req.repo)
             .await
             .map(Some)
             .map_err(invalid),
@@ -117,7 +116,7 @@ pub async fn make(ws: &Workspace, title: &str, checked: Vec<Checked>) -> Result<
                 branch: None,
             },
             Checked::Branch(req) => {
-                let tree = builtin::worktree(&req).await.map_err(invalid)?;
+                let tree = git::worktree(&req).await.map_err(invalid)?;
                 if i == 0 {
                     made.repo = Some(tree.main);
                     made.branch = Some(req.branch.clone());
@@ -161,12 +160,12 @@ fn new_id() -> Option<String> {
 pub fn brief(made: &Made, title: &str, goal: Option<&str>) -> Result<(), String> {
     let working = made.working();
     if made.repo.is_some() {
-        brief::exclude(working)?;
+        git::exclude(working)?;
     }
     if working.join(".muxa").join(TASK_FILE).exists() {
         return Ok(());
     }
-    brief::write_file(working, TASK_FILE, &task_text(made, title, goal)).map(drop)
+    git::write_file(working, TASK_FILE, &task_text(made, title, goal)).map(drop)
 }
 
 /// Pure.
@@ -201,7 +200,7 @@ pub fn claude_settings(made: &Made) -> Result<Option<String>, String> {
     if others.is_empty() {
         return Ok(None);
     }
-    let path = brief::write_file(made.working(), CLAUDE_SETTINGS, &settings_text(others))?;
+    let path = git::write_file(made.working(), CLAUDE_SETTINGS, &settings_text(others))?;
     Ok(Some(format!(
         "--settings {}",
         quote(&path.to_string_lossy())
@@ -230,9 +229,9 @@ fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-fn invalid(e: tasks::TaskError) -> TaskError {
+fn invalid(e: GitError) -> TaskError {
     match e {
-        tasks::TaskError::Invalid(m) => TaskError::Invalid(m),
+        GitError::Invalid(m) => TaskError::Invalid(m),
         other => TaskError::Failed(other.to_string()),
     }
 }

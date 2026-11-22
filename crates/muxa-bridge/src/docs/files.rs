@@ -9,15 +9,16 @@ use std::time::UNIX_EPOCH;
 
 use muxa_protocol::{DocInfo, DocKind};
 
-use crate::agents::{AgentDoc, PaneInfo, Registry};
 use crate::loops::check::REPORT as CHECK;
-use crate::task_records::{BRIEF, Config, HANDOFF};
+
+/// The Task's brief and handoff, which git does not list (ADR 0015, 0018).
+const BRIEF: &str = ".muxa/TASK.md";
+const HANDOFF: &str = ".muxa/HANDOFF.md";
 
 /// Documents listed for one pane at most.
 pub const MAX_DOCS: usize = 2000;
 /// A larger document is refused.
 pub const MAX_DOC: u64 = 2 << 20;
-const PLAN_PREFIX: &str = "plans/";
 /// Bytes read from the start of an HTML file to find its `<title>`.
 const TITLE_HEAD: u64 = 8 << 10;
 
@@ -35,34 +36,6 @@ pub struct Listing {
     pub root: Option<String>,
     pub docs: Vec<Doc>,
     pub truncated: bool,
-}
-
-/// The agent's documents first (a plan), then the repo's Markdown files in path order.
-#[cfg(test)]
-pub fn list(pane: &PaneInfo, agents: &Registry) -> Listing {
-    let none = Config {
-        state_dir: None,
-        workspaces: None,
-        home: None,
-    };
-    for_pane(pane, agents, &none, false)
-}
-
-/// As `list`; outside a repo, also the folder's files `folder::served` allows.
-/// `html` also lists HTML files.
-pub fn for_pane(pane: &PaneInfo, agents: &Registry, records: &Config, html: bool) -> Listing {
-    let mut listing = Listing::default();
-    match agents.documents(pane) {
-        Ok(docs) => listing.docs.extend(docs.into_iter().map(agent_doc)),
-        // Without its plan the list is still useful; the reason goes to the log.
-        Err(e) => {
-            tracing::warn!(pane = %pane.pane, error = %e, "cannot list the agent's documents")
-        }
-    }
-    let keep = if html { is_doc_or_html } else { is_doc };
-    build(listing, Path::new(&pane.path), html, || {
-        super::folder::served(records, pane, keep)
-    })
 }
 
 /// A Task's or a Routine run's folder (protocol v2): its repo's documents,
@@ -152,19 +125,6 @@ fn task_file(base: &Path, path: &str) -> Option<Doc> {
         file,
         root: base.to_path_buf(),
     })
-}
-
-fn agent_doc(d: AgentDoc) -> Doc {
-    Doc {
-        info: DocInfo {
-            path: format!("{PLAN_PREFIX}{}", d.name),
-            kind: DocKind::Plan,
-            title: title(&d.path),
-            mtime: mtime(&d.path),
-        },
-        file: d.path,
-        root: d.root,
-    }
 }
 
 pub(crate) fn repo_root(path: &Path) -> Option<PathBuf> {

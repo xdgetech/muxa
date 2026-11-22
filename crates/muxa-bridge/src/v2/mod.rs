@@ -4,6 +4,7 @@
 
 pub mod chat;
 pub mod feed;
+mod git;
 mod places;
 pub mod reader;
 mod routines;
@@ -273,7 +274,7 @@ mod tests {
     use super::*;
 
     fn no_tasks() -> BridgeHost {
-        let records = crate::task_records::Config {
+        let records = crate::config::Config {
             state_dir: None,
             workspaces: None,
             home: None,

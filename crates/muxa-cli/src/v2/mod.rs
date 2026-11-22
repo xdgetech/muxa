@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, ChildStdin, ChildStdout};
 
-use crate::view::Raw;
+use crate::raw::Raw;
 use client::{Client, Event, State};
 
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]

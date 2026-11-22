@@ -1,66 +1,43 @@
-//! Command-line flags, and finding tmux when SSH gives a minimal PATH.
+//! Command-line flags.
 
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::path::PathBuf;
 
-use crate::tasks::Choice;
-
-pub const USAGE: &str = "usage: muxa-bridge [--tmux PATH] [--socket NAME] [--idle-timeout SECONDS]
-                   [--agent-dir AGENT=PATH]... [--task-launcher builtin|tmux-agents=PATH]
-                   [--task-command COMMAND] [--state-dir DIR] [--workspaces FILE]
-                   [--daemon-dir DIR] [--version]
+pub const USAGE: &str = "usage: muxa-bridge connect [--daemon-dir DIR]
        muxa-bridge daemon run|install|stop|restart|uninstall|status [flags] [--print]
-       muxa-bridge connect [--daemon-dir DIR]
+       muxa-bridge --version
 
-Serves the muxa protocol on stdin/stdout. Run it as an SSH exec command.
-  --tmux PATH             tmux binary (default: Homebrew, /usr/local/bin, then PATH)
-  --socket NAME           tmux -L socket name (default: the user's default server)
-  --idle-timeout SECONDS  exit after this long without a request (default: 60)
+`connect` relays protocol v2 (ADR 0067) to the daemon's server.sock; apps run
+it as their SSH exec command. With no command, muxa-bridge does the same when
+SSH_ORIGINAL_COMMAND ends in `connect`, for a key whose authorized_keys line
+forces muxa-bridge.
+
+The daemon serves protocol v2 on herdr-core: Tasks, Routines, Task Loops,
+the Reader and Chat. `daemon install` takes these flags, writes a LaunchAgent
+(macOS) or a systemd user unit (Linux) and starts it; `--print` shows the file
+and changes nothing.
   --agent-dir AGENT=PATH  where an agent keeps its data, e.g. claude-code=~/.claude;
                           repeat it for several dirs (default: claude-code=$HOME/.claude,
                           codex=$HOME/.codex, plus each workspace's agent env dirs)
-  --task-launcher L       how new tasks start: builtin, or tmux-agents=PATH to its new.sh
-                          (default: tmux-agents when it sets @agents_scripts, else builtin)
-  --task-command COMMAND  the agent the built-in launcher starts (default: claude)
-  --state-dir DIR         where task records are kept
+  --task-command COMMAND  the agent a Workspace without one runs (default: claude)
+  --state-dir DIR         where Routine and Inbox state is kept
                           (default: $XDG_STATE_HOME/muxa/tasks, else ~/.local/state/muxa/tasks)
   --workspaces FILE       the workspaces config
                           (default: $XDG_CONFIG_HOME/muxa/workspaces.toml, else ~/.config/...)
   --daemon-dir DIR        the daemon's socket, lock and log
                           (default: $XDG_STATE_HOME/muxa, else ~/.local/state/muxa)
-
-`connect` relays protocol v2 (ADR 0067) to the daemon's server.sock; v2 apps
-run it as their SSH exec command.
-
-The daemon runs the Task Loop on the host (ADR 0019). `daemon install` takes
-the flags above, writes a LaunchAgent (macOS) or a systemd user unit (Linux)
-and starts it; `--print` shows the file and changes nothing.
 Logs go to stderr; MUXA_LOG sets the level (default: warn; the daemon: info).";
 
-/// Not in [`USAGE`]: a tool for the developer's checks of ADR 0028.
-pub const CODEX_RPC_USAGE: &str =
-    "usage: muxa-bridge codex-rpc [--codex PROGRAM] [--codex-home DIR] [--hold SECONDS] METHOD [JSON_PARAMS]
-
-Sends `initialize`, then one request, to the Codex app-server daemon through
-`codex app-server proxy`, the way muxa's runs do. Prints the result as JSON;
-an error answer goes to stderr and exits 1. JSON_PARAMS defaults to {}.
-  --codex PROGRAM   the codex to run (default: codex)
-  --codex-home DIR  CODEX_HOME for the proxy (default: the inherited one)
-  --hold SECONDS    keep the connection open that long after the answer, and
-                    print each notification's method and ids to stderr";
-
-/// Non-interactive SSH sessions often lack Homebrew's directories in PATH.
-const TMUX_CANDIDATES: [&str; 2] = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"];
-
-const DEFAULT_IDLE: Duration = Duration::from_secs(60);
+/// Flags of muxa for tmux that an older service file still passes: read and
+/// ignored, so the daemon starts before `daemon install` writes a new file.
+const RETIRED: [&str; 4] = ["tmux", "socket", "idle-timeout", "task-launcher"];
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
-    Serve(Args),
+    /// No command: relay when SSH asked for `connect`, else print the usage.
+    Bare(Args),
     Daemon(Daemon),
     /// `connect [--daemon-dir DIR]`: relay a protocol v2 client to the daemon.
     Connect(Args),
-    CodexRpc(CodexRpc),
     Version,
     /// The usage text to print.
     Help(&'static str),
@@ -80,17 +57,6 @@ pub struct Daemon {
     pub args: Args,
     /// `install --print`: show the file, change nothing.
     pub print: bool,
-}
-
-/// `muxa-bridge codex-rpc ...`: one App Server request (ADR 0028 checklist).
-#[derive(Debug, PartialEq, Eq)]
-pub struct CodexRpc {
-    pub program: String,
-    pub home: Option<PathBuf>,
-    pub method: String,
-    pub params: String,
-    /// Keep the connection open this long after the answer.
-    pub hold: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,12 +85,8 @@ impl DaemonOp {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Args {
-    pub tmux: Option<PathBuf>,
-    pub socket: Option<String>,
-    pub idle: Duration,
     /// Agent adapter id -> data directory.
     pub agent_dirs: Vec<(String, PathBuf)>,
-    pub task_launcher: Option<Choice>,
     pub task_command: String,
     pub state_dir: Option<PathBuf>,
     pub workspaces: Option<PathBuf>,
@@ -133,16 +95,12 @@ pub struct Args {
 
 impl Args {
     /// The flags that give these args again, for the daemon's service file.
-    /// `--tmux` and `--idle-timeout` are left to the caller.
     pub fn service_flags(&self) -> Vec<String> {
         let mut out = Vec::new();
         let mut push = |flag: &str, value: String| {
             out.push(flag.to_owned());
             out.push(value);
         };
-        if let Some(s) = &self.socket {
-            push("--socket", s.clone());
-        }
         if let Some(d) = &self.state_dir {
             push("--state-dir", d.display().to_string());
         }
@@ -151,13 +109,6 @@ impl Args {
         }
         for (agent, dir) in &self.agent_dirs {
             push("--agent-dir", format!("{agent}={}", dir.display()));
-        }
-        match &self.task_launcher {
-            Some(Choice::Builtin) => push("--task-launcher", "builtin".into()),
-            Some(Choice::TmuxAgents(p)) => {
-                push("--task-launcher", format!("tmux-agents={}", p.display()))
-            }
-            None => {}
         }
         if self.task_command != DEFAULT_TASK_COMMAND {
             push("--task-command", self.task_command.clone());
@@ -188,53 +139,20 @@ pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Actio
             allowed
         })?;
         return Ok(match parsed {
-            Action::Serve(args) => Action::Daemon(Daemon { op, args, print }),
+            Action::Bare(args) => Action::Daemon(Daemon { op, args, print }),
             other => other,
         });
     }
     if args.first().is_some_and(|a| a == "connect") {
         return Ok(match parse_flags(args.split_off(1), |_| false)? {
-            Action::Serve(args) => Action::Connect(args),
+            Action::Bare(args) => Action::Connect(args),
             other => other,
         });
-    }
-    if args.first().is_some_and(|a| a == "codex-rpc") {
-        return parse_codex_rpc(args.split_off(1));
     }
     parse_flags(args, |_| false)
 }
 
-fn parse_codex_rpc(args: Vec<std::ffi::OsString>) -> Result<Action, lexopt::Error> {
-    use lexopt::prelude::*;
-    let mut parser = lexopt::Parser::from_args(args);
-    let mut program = "codex".to_owned();
-    let mut home = None;
-    let mut hold = None;
-    let mut positional = Vec::new();
-    while let Some(arg) = parser.next()? {
-        match arg {
-            Long("codex") => program = parser.value()?.string()?,
-            Long("codex-home") => home = Some(absolute(parser.value()?.into(), "--codex-home")?),
-            Long("hold") => hold = Some(Duration::from_secs(parser.value()?.parse()?)),
-            Long("help") | Short('h') => return Ok(Action::Help(CODEX_RPC_USAGE)),
-            Value(v) if positional.len() < 2 => positional.push(v.string()?),
-            _ => return Err(arg.unexpected()),
-        }
-    }
-    let mut positional = positional.into_iter();
-    let method = positional
-        .next()
-        .ok_or_else(|| lexopt::Error::from("codex-rpc wants a METHOD"))?;
-    Ok(Action::CodexRpc(CodexRpc {
-        program,
-        home,
-        method,
-        params: positional.next().unwrap_or_else(|| "{}".to_owned()),
-        hold,
-    }))
-}
-
-/// The serve flags, plus the switches `extra` accepts.
+/// The flags, plus the switches `extra` accepts.
 fn parse_flags(
     args: Vec<std::ffi::OsString>,
     mut extra: impl FnMut(&str) -> bool,
@@ -242,11 +160,7 @@ fn parse_flags(
     use lexopt::prelude::*;
     let mut parser = lexopt::Parser::from_args(args);
     let mut out = Args {
-        tmux: None,
-        socket: None,
-        idle: DEFAULT_IDLE,
         agent_dirs: Vec::new(),
-        task_launcher: None,
         task_command: DEFAULT_TASK_COMMAND.into(),
         state_dir: None,
         workspaces: None,
@@ -254,9 +168,6 @@ fn parse_flags(
     };
     while let Some(arg) = parser.next()? {
         match arg {
-            Long("tmux") => out.tmux = Some(parser.value()?.into()),
-            Long("socket") => out.socket = Some(parser.value()?.string()?),
-            Long("idle-timeout") => out.idle = Duration::from_secs(parser.value()?.parse()?),
             Long("agent-dir") => {
                 let value = parser.value()?.string()?;
                 let Some((agent, dir)) = value
@@ -268,20 +179,6 @@ fn parse_flags(
                     )));
                 };
                 out.agent_dirs.push((agent.to_owned(), dir.into()));
-            }
-            Long("task-launcher") => {
-                let value = parser.value()?.string()?;
-                out.task_launcher = Some(match value.split_once('=') {
-                    None if value == "builtin" => Choice::Builtin,
-                    Some(("tmux-agents", path)) if !path.is_empty() => {
-                        Choice::TmuxAgents(path.into())
-                    }
-                    _ => {
-                        return Err(lexopt::Error::from(format!(
-                            "--task-launcher wants builtin or tmux-agents=PATH, got {value:?}"
-                        )));
-                    }
-                });
             }
             Long("task-command") => {
                 let value = parser.value()?.string()?;
@@ -299,13 +196,16 @@ fn parse_flags(
             Long("daemon-dir") => {
                 out.daemon_dir = Some(absolute(parser.value()?.into(), "--daemon-dir")?)
             }
+            Long(flag) if RETIRED.contains(&flag) => {
+                parser.value()?;
+            }
             Long("version") => return Ok(Action::Version),
             Long("help") | Short('h') => return Ok(Action::Help(USAGE)),
             Long(flag) if extra(flag) => {}
             _ => return Err(arg.unexpected()),
         }
     }
-    Ok(Action::Serve(out))
+    Ok(Action::Bare(out))
 }
 
 /// Relative paths would depend on where SSH starts the bridge.
@@ -320,28 +220,6 @@ fn absolute(path: PathBuf, flag: &str) -> Result<PathBuf, lexopt::Error> {
     }
 }
 
-/// The tmux to run: the flag, then the usual install locations, then PATH.
-pub fn find_tmux(flag: Option<PathBuf>, path_var: Option<&str>) -> Option<PathBuf> {
-    if flag.is_some() {
-        return flag;
-    }
-    TMUX_CANDIDATES
-        .iter()
-        .map(PathBuf::from)
-        .chain(
-            path_var
-                .into_iter()
-                .flat_map(|p| std::env::split_paths(p).map(|d| d.join("tmux"))),
-        )
-        .find(|p| is_executable(p))
-}
-
-fn is_executable(p: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    p.metadata()
-        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,192 +229,67 @@ mod tests {
     }
 
     #[test]
-    fn parses_flags() {
-        assert_eq!(
-            parse_strs(&[
-                "--tmux",
-                "/x/tmux",
-                "--socket",
-                "s",
-                "--idle-timeout",
-                "5",
-                "--agent-dir",
-                "claude-code=/tmp/c=d",
-            ])
-            .unwrap(),
-            Action::Serve(Args {
-                tmux: Some("/x/tmux".into()),
-                socket: Some("s".into()),
-                idle: Duration::from_secs(5),
-                agent_dirs: vec![("claude-code".into(), "/tmp/c=d".into())],
-                task_launcher: None,
-                task_command: DEFAULT_TASK_COMMAND.into(),
-                state_dir: None,
-                workspaces: None,
-                daemon_dir: None,
-            })
-        );
-        let Action::Serve(a) = parse_strs(&[
-            "--agent-dir",
-            "claude-code=/a",
-            "--agent-dir",
-            "claude-code=/b",
-        ])
-        .unwrap() else {
-            panic!("not serve")
-        };
-        assert_eq!(
-            a.agent_dirs,
-            [
-                ("claude-code".into(), "/a".into()),
-                ("claude-code".into(), "/b".into())
-            ],
-            "a repeated --agent-dir keeps both"
-        );
-        assert!(parse_strs(&["--agent-dir", "/no/agent"]).is_err());
-        assert!(parse_strs(&["--agent-dir", "claude-code="]).is_err());
-        let Action::Serve(a) = parse_strs(&[
-            "--task-launcher",
-            "tmux-agents=/p/new.sh",
-            "--task-command",
-            "codex",
-        ])
-        .unwrap() else {
-            panic!("not serve")
-        };
-        assert_eq!(
-            a.task_launcher,
-            Some(Choice::TmuxAgents("/p/new.sh".into()))
-        );
-        assert_eq!(a.task_command, "codex");
-        assert!(parse_strs(&["--task-launcher", "other"]).is_err());
-        let Action::Serve(a) =
-            parse_strs(&["--state-dir", "/s/tasks", "--workspaces", "/c/w.toml"]).unwrap()
-        else {
-            panic!("not serve")
-        };
-        assert_eq!(a.state_dir, Some("/s/tasks".into()));
-        assert_eq!(a.workspaces, Some("/c/w.toml".into()));
-        assert!(parse_strs(&["--state-dir", "rel/tasks"]).is_err());
-        assert!(parse_strs(&["--workspaces", "w.toml"]).is_err());
-        assert!(parse_strs(&["--task-command", " "]).is_err());
-        assert_eq!(parse_strs(&["--version"]).unwrap(), Action::Version);
-        assert!(parse_strs(&["--bogus"]).is_err());
-        assert!(parse_strs(&["--idle-timeout", "x"]).is_err());
-    }
-
-    #[test]
-    fn parses_daemon_commands() {
+    fn daemon_ops_take_the_flags() {
         let Action::Daemon(d) = parse_strs(&[
             "daemon",
             "install",
-            "--socket",
-            "s",
-            "--daemon-dir",
-            "/d",
-            "--task-launcher",
-            "tmux-agents=/p/new.sh",
             "--print",
+            "--state-dir",
+            "/s",
+            "--agent-dir",
+            "claude-code=/c",
         ])
         .unwrap() else {
-            panic!("not daemon")
+            panic!("not a daemon command")
         };
         assert_eq!((d.op, d.print), (DaemonOp::Install, true));
-        assert_eq!(d.args.daemon_dir, Some("/d".into()));
         assert_eq!(
             d.args.service_flags(),
-            ["--socket", "s", "--task-launcher", "tmux-agents=/p/new.sh"]
+            ["--state-dir", "/s", "--agent-dir", "claude-code=/c"]
         );
-        let Action::Daemon(d) = parse_strs(&["daemon", "run"]).unwrap() else {
-            panic!("not daemon")
-        };
-        assert_eq!((d.op, d.print), (DaemonOp::Run, false));
         assert!(
             parse_strs(&["daemon", "run", "--print"]).is_err(),
-            "--print is for install"
+            "--print is install's"
         );
-        assert!(parse_strs(&["--print"]).is_err());
-        assert!(parse_strs(&["daemon"]).is_err());
-        assert!(parse_strs(&["daemon", "bogus"]).is_err());
-        assert!(parse_strs(&["daemon", "status", "--daemon-dir", "rel"]).is_err());
+        assert!(parse_strs(&["daemon", "fly"]).is_err());
     }
 
     #[test]
-    fn parses_codex_rpc() {
-        assert_eq!(
-            parse_strs(&[
-                "codex-rpc",
-                "--codex",
-                "/x/codex",
-                "--codex-home",
-                "/h",
-                "thread/read",
-                r#"{"threadId":"t"}"#,
-            ])
-            .unwrap(),
-            Action::CodexRpc(CodexRpc {
-                program: "/x/codex".into(),
-                home: Some("/h".into()),
-                method: "thread/read".into(),
-                params: r#"{"threadId":"t"}"#.into(),
-                hold: None,
-            })
-        );
-        let Action::CodexRpc(held) = parse_strs(&["codex-rpc", "--hold", "30", "m"]).unwrap()
-        else {
-            panic!("not codex-rpc")
+    fn an_older_service_files_tmux_flags_are_ignored() {
+        let Action::Daemon(d) = parse_strs(&[
+            "daemon",
+            "run",
+            "--tmux",
+            "/opt/homebrew/bin/tmux",
+            "--socket",
+            "work",
+            "--task-launcher",
+            "builtin",
+            "--workspaces",
+            "/w.toml",
+        ])
+        .unwrap() else {
+            panic!("not a daemon command")
         };
-        assert_eq!(held.hold, Some(Duration::from_secs(30)));
-        assert!(parse_strs(&["codex-rpc", "--hold", "x", "m"]).is_err());
-        let Action::CodexRpc(c) = parse_strs(&["codex-rpc", "thread/list"]).unwrap() else {
-            panic!("not codex-rpc")
-        };
-        assert_eq!((c.program.as_str(), c.params.as_str()), ("codex", "{}"));
-        assert_eq!(c.home, None);
-        assert!(parse_strs(&["codex-rpc"]).is_err());
-        assert!(parse_strs(&["codex-rpc", "m", "{}", "extra"]).is_err());
-        assert!(parse_strs(&["codex-rpc", "--codex-home", "rel", "m"]).is_err());
         assert_eq!(
-            parse_strs(&["codex-rpc", "--help"]).unwrap(),
-            Action::Help(CODEX_RPC_USAGE)
+            d.args.workspaces.as_deref(),
+            Some(std::path::Path::new("/w.toml"))
         );
+        assert_eq!(d.args.service_flags(), ["--workspaces", "/w.toml"]);
     }
 
     #[test]
-    fn the_flag_wins_and_path_is_searched() {
-        assert_eq!(
-            find_tmux(Some("/given".into()), None),
-            Some("/given".into())
-        );
-        let dir = std::env::temp_dir().join(format!("muxa-args-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let bin = dir.join("tmux");
-        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let found = find_tmux(None, Some(dir.to_str().unwrap())).unwrap();
-        // A Homebrew or /usr/local tmux on this machine comes first.
-        assert!(found == bin || TMUX_CANDIDATES.iter().any(|c| found == Path::new(c)));
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn a_forced_bridge_relays_when_its_client_asks_for_connect() {
-        assert!(asks_for_connect(Some("~/.local/bin/muxa-bridge connect")));
-        assert!(!asks_for_connect(Some("~/.local/bin/muxa-bridge")));
-        assert!(!asks_for_connect(Some("connect-me please")));
-        assert!(!asks_for_connect(None));
-    }
-
-    #[test]
-    fn connect_takes_the_daemon_dir() {
-        let Action::Connect(a) = parse_strs(&["connect", "--daemon-dir", "/d"]).unwrap() else {
-            panic!("not connect");
-        };
-        assert_eq!(a.daemon_dir, Some("/d".into()));
+    fn connect_and_bare_and_bad_paths() {
         assert!(matches!(
-            parse_strs(&["connect"]).unwrap(),
-            Action::Connect(_)
+            parse_strs(&["connect", "--daemon-dir", "/d"]),
+            Ok(Action::Connect(_))
         ));
+        assert!(matches!(parse_strs(&[]), Ok(Action::Bare(_))));
+        assert!(matches!(parse_strs(&["--version"]), Ok(Action::Version)));
+        assert!(parse_strs(&["--state-dir", "relative"]).is_err());
+        assert!(parse_strs(&["--agent-dir", "nodir"]).is_err());
+        assert!(asks_for_connect(Some("~/.local/bin/muxa-bridge connect")));
+        assert!(!asks_for_connect(Some("muxa-bridge")));
+        assert!(!asks_for_connect(None));
     }
 }

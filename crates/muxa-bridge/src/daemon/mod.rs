@@ -1,14 +1,12 @@
-//! The host daemon (ADR 0019): one long-lived process per user that serves
-//! task records on a Unix socket, so work goes on while no client is
-//! connected. It opens no network port. `daemon install` and friends manage
-//! the LaunchAgent or systemd unit that starts it.
+//! The host daemon: one long-lived process per user that serves protocol v2
+//! on `server.sock` over herdr-core (ADR 0067), so Tasks, Routines and Task
+//! Loops go on while no client is connected. It opens no network port.
+//! `daemon install` and friends manage the LaunchAgent or systemd unit.
 
 pub mod install;
-mod items;
 mod lock;
 mod log;
 pub mod socket;
-mod tmux;
 
 use std::ffi::OsStr;
 use std::io::{ErrorKind, Write};
@@ -16,39 +14,28 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use muxa_protocol::{ErrorCode, Message, Request};
-use tokio::io::BufReader;
+use muxa_protocol::v2::{ClientMsg, Frame, Kind, ServerMsg};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
-use tokio::sync::mpsc;
 
 use crate::Setup;
 use crate::args::{self, DaemonOp};
-use crate::convert::error_body;
-use crate::loops;
-use crate::server::MAX_REQUEST;
-use crate::task_records::{self, Context, Pending};
 use install::{Platform, Runner, Spec};
-use socket::Control;
 
-/// What `daemon stop` waits for the daemon to answer `shutdown`.
-const SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 const CONNECT_WAIT: Duration = Duration::from_millis(500);
-const TICK: Duration = Duration::from_secs(2);
-/// A tick step slower than this is logged with its name.
-const SLOW_STEP: Duration = Duration::from_secs(2);
-/// Between two worktree sweeps (ADR 0043 §6).
-const SWEEP_EVERY: Duration = Duration::from_secs(10 * 60);
 /// What `install` and `restart` wait for the new daemon to answer `hello`.
 const START_WAIT: Duration = Duration::from_secs(5);
 const START_POLL: Duration = Duration::from_millis(100);
 
-/// `$XDG_STATE_HOME/muxa`, else `~/.local/state/muxa`: the parent of `tasks/`.
+/// `$XDG_STATE_HOME/muxa`, else `~/.local/state/muxa`.
 pub fn default_dir(xdg_state_home: Option<&OsStr>, home: Option<&Path>) -> Option<PathBuf> {
-    crate::records::Store::default_dir(xdg_state_home, home)
-        .and_then(|tasks| tasks.parent().map(Path::to_path_buf))
+    let base = xdg_state_home
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| home.map(|h| h.join(".local/state")))?;
+    Some(base.join("muxa"))
 }
 
 pub fn main(cmd: args::Daemon) -> ExitCode {
@@ -70,109 +57,8 @@ pub fn main(cmd: args::Daemon) -> ExitCode {
     }
 }
 
-/// The daemon itself.
-struct Daemon {
-    records: Context,
-    /// The same client `records` gets its tmux from.
-    tmux: Arc<tmux::Lazy>,
-    loops: tokio::sync::Mutex<loops::Engine>,
-    items: tokio::sync::Mutex<items::Watch>,
-    /// When the last worktree sweep started (ADR 0043 §6); None before the first.
-    swept: std::sync::Mutex<Option<std::time::Instant>>,
-}
-
-impl Daemon {
-    /// Parks the Tasks idle past their workspace's `park_after` (ADR 0034 §4).
-    async fn park(&self, tasks: Vec<String>) {
-        if tasks.is_empty() {
-            return;
-        }
-        let env = match self.records.env().await {
-            Ok(env) => env,
-            Err(e) => {
-                tracing::warn!(error = %e.message, "cannot park idle tasks");
-                return;
-            }
-        };
-        for task in tasks {
-            match crate::task_records::park::park(&env, task.clone()).await {
-                Ok(_) => tracing::info!(task, "idle task parked"),
-                Err(e) => tracing::warn!(task, error = %e.message, "cannot park an idle task"),
-            }
-        }
-    }
-
-    /// Called once before the daemon exits for the user's `daemon stop`:
-    /// every loop stops with reason `user`, so the next daemon does not resume them.
-    async fn on_user_stop(&self) {
-        let config = Arc::clone(&self.records.records);
-        match tokio::task::spawn_blocking(move || loops::stop_all(&config)).await {
-            Ok(Ok(stopped)) => tracing::info!(loops = stopped.len(), "loops stopped by the user"),
-            Ok(Err(e)) => tracing::warn!(error = %e, "cannot stop the loops"),
-            Err(e) => tracing::warn!(error = %e, "stopping the loops failed"),
-        }
-        self.loops.lock().await.stop_checks().await;
-    }
-
-    /// Runs every [`TICK`]. The tmux client stays attached while a loop is
-    /// active, or while an open Task has a session to make Inbox items for.
-    async fn tick(&self) {
-        // A debug build's test makes every tick slow, to check the socket still answers.
-        if cfg!(debug_assertions) && std::env::var_os("MUXA_TEST_SLOW_TICK").is_some() {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-        }
-        let step = Instant::now();
-        let mut items = self.items.lock().await;
-        let watch = items.due(&self.records.records).await;
-        let mut engine = self.loops.lock().await;
-        let client = self.tmux.tick(engine.busy() || watch).await;
-        engine.tick(client.as_deref()).await;
-        drop(engine);
-        // After the loops, so a loop that just passed or stopped makes its item.
-        let idle = match client.as_deref().filter(|_| watch) {
-            Some(client) => {
-                items
-                    .look(client, &self.records.records, &self.records.agents)
-                    .await
-            }
-            None => Vec::new(),
-        };
-        drop(items);
-        self.park(idle).await;
-        slow("tasks", step);
-        self.sweep();
-    }
-
-    /// Starts a sweep at start, then every [`SWEEP_EVERY`], in the background:
-    /// it closes ended Tasks' sessions, then runs git on each worktree nothing holds.
-    fn sweep(&self) {
-        let Ok(mut swept) = self.swept.lock() else {
-            return;
-        };
-        if swept.is_some_and(|at| at.elapsed() < SWEEP_EVERY) {
-            return;
-        }
-        *swept = Some(std::time::Instant::now());
-        let cx = self.records.clone();
-        self.records.pending.spawn(async move {
-            // First, so a worktree that only an ended Task's session held can go now.
-            crate::task_records::close::close_all_ended(&cx).await;
-            let pending = crate::task_records::sweep::sweep(&cx).await;
-            if !pending.is_empty() {
-                tracing::info!(count = pending.len(), "worktrees wait for the user");
-            }
-        });
-    }
-}
-
 fn run(args: args::Args) -> ExitCode {
-    let setup = match Setup::new(args) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("muxa-bridge daemon: {e}");
-            return ExitCode::from(2);
-        }
-    };
+    let setup = Setup::new(args);
     let Some(dir) = setup.daemon_dir.clone() else {
         eprintln!("muxa-bridge daemon: HOME is not set; pass --daemon-dir");
         return ExitCode::from(2);
@@ -229,27 +115,7 @@ fn run(args: args::Args) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let tmux = Arc::new(tmux::Lazy::new(setup.tmux_options()));
-    // Install wrote the shell's PATH into the service: a check's fallback.
-    let engine = loops::Engine::new(
-        Arc::clone(&setup.records),
-        Arc::clone(&setup.agents),
-        std::env::var("PATH").ok(),
-    );
-    let daemon = Daemon {
-        records: Context {
-            tmux: Arc::clone(&tmux) as Arc<dyn task_records::ClientSource>,
-            tasks: setup.tasks,
-            records: setup.records,
-            agents: setup.agents,
-            pending: Pending::default(),
-        },
-        loops: tokio::sync::Mutex::new(engine),
-        items: tokio::sync::Mutex::new(items::Watch::default()),
-        swept: std::sync::Mutex::new(None),
-        tmux,
-    };
-    match runtime.block_on(serve(Arc::new(daemon), &path)) {
+    match runtime.block_on(serve(setup, &path)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             tracing::error!(error = %e, "the daemon failed");
@@ -258,221 +124,51 @@ fn run(args: args::Args) -> ExitCode {
     }
 }
 
-/// Clears the running flag when a tick ends, also by a panic.
-struct Ticking(Arc<AtomicBool>);
-
-impl Drop for Ticking {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
+/// Serves `server.sock` and runs the watches until SIGTERM or SIGINT.
+async fn serve(setup: Setup, path: &Path) -> std::io::Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+    let listener = socket::bind(path)?;
+    let program = std::env::var("MUXA_HC").unwrap_or_else(|_| "hc".to_owned());
+    let config = Arc::clone(&setup.config);
+    let inbox = crate::v2::inbox(config.state_dir.as_deref());
+    let runner = Arc::new(crate::v2::runner::Runner::new(
+        Arc::clone(&config),
+        setup.task_command.clone(),
+    ));
+    let loops = Arc::new(crate::v2::task_loop::TaskLoops::new(
+        Arc::clone(&config),
+        Arc::clone(&inbox),
+    ));
+    let chats = Arc::new(crate::v2::chat::Chats::new(Arc::clone(&setup.agents)));
+    let host = crate::v2::BridgeHost::new(setup.task_command, Arc::clone(&config))
+        .with_runner(Arc::clone(&runner))
+        .with_loops(Arc::clone(&loops))
+        .with_chats(chats);
+    crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&config));
+    let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
+    crate::v2::spawn_task_watch(Arc::clone(&herdr));
+    crate::v2::spawn_runner(Arc::clone(&herdr), runner);
+    crate::v2::spawn_loops(Arc::clone(&herdr), loops);
+    tokio::spawn(crate::v2::accept(listener, herdr));
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), socket = %path.display(), "daemon started");
+    let mut term = signal(SignalKind::terminate())?;
+    let mut int = signal(SignalKind::interrupt())?;
+    tokio::select! {
+        _ = term.recv() => tracing::info!("SIGTERM; exiting"),
+        _ = int.recv() => tracing::info!("SIGINT; exiting"),
     }
-}
-
-/// Logs a tick step that took longer than [`SLOW_STEP`], and starts the next.
-fn slow(step: &str, since: Instant) -> Instant {
-    let took = since.elapsed();
-    if took > SLOW_STEP {
-        tracing::warn!(
-            step,
-            ms = took.as_millis() as u64,
-            "a slow daemon tick step"
-        );
-    }
-    Instant::now()
+    // Loops and Routine runs live in files: the next daemon goes on with them.
+    let _ = std::fs::remove_file(path);
+    Ok(())
 }
 
 /// Creates the daemon dir with mode 0700 and checks the socket path.
 fn prepare(dir: &Path) -> Result<PathBuf, String> {
-    let path = socket::path(dir)?;
+    let path = crate::v2::path(dir)?;
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
         .map_err(|e| format!("cannot set the mode of {}: {e}", dir.display()))?;
     Ok(path)
-}
-
-async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
-    use tokio::signal::unix::{SignalKind, signal};
-    let listener = socket::bind(path)?;
-    // Protocol v2 beside v1 until the switch (ADR 0067).
-    let v2_path = path.with_file_name(crate::v2::FILE);
-    match socket::bind(&v2_path) {
-        Ok(v2) => {
-            let program = std::env::var("MUXA_HC").unwrap_or_else(|_| "hc".to_owned());
-            let runner = Arc::new(crate::v2::runner::Runner::new(
-                Arc::clone(&daemon.records.records),
-                daemon.records.tasks.command.clone(),
-            ));
-            let inbox = crate::v2::inbox(daemon.records.records.state_dir.as_deref());
-            let loops = Arc::new(crate::v2::task_loop::TaskLoops::new(
-                Arc::clone(&daemon.records.records),
-                Arc::clone(&inbox),
-            ));
-            let host = crate::v2::BridgeHost::new(
-                daemon.records.tasks.command.clone(),
-                Arc::clone(&daemon.records.records),
-            )
-            .with_runner(Arc::clone(&runner))
-            .with_loops(Arc::clone(&loops))
-            .with_chats(Arc::new(crate::v2::chat::Chats::new(Arc::clone(
-                &daemon.records.agents,
-            ))));
-            crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&daemon.records.records));
-            let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
-            crate::v2::spawn_task_watch(Arc::clone(&herdr));
-            crate::v2::spawn_runner(Arc::clone(&herdr), runner);
-            crate::v2::spawn_loops(Arc::clone(&herdr), loops);
-            tokio::spawn(crate::v2::accept(v2, herdr));
-            tracing::info!(socket = %v2_path.display(), "protocol v2 listening");
-        }
-        Err(e) => tracing::warn!(error = %e, "protocol v2 is off: cannot bind its socket"),
-    }
-    let mut term = signal(SignalKind::terminate())?;
-    let mut int = signal(SignalKind::interrupt())?;
-    let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
-    tracing::info!(version = env!("CARGO_PKG_VERSION"), socket = %path.display(), "daemon started");
-    let resume = Arc::clone(&daemon);
-    tokio::spawn(async move { task_records::resume_prompts(&resume.records).await });
-    let mut tick = tokio::time::interval(TICK);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    // A tick runs beside the socket: a slow one never keeps a client waiting.
-    // At most one runs at a time.
-    let ticking = Arc::new(AtomicBool::new(false));
-    loop {
-        tokio::select! {
-            _ = tick.tick() => {
-                if !ticking.swap(true, Ordering::AcqRel) {
-                    let (daemon, ticking) = (Arc::clone(&daemon), Arc::clone(&ticking));
-                    tokio::spawn(async move {
-                        let _done = Ticking(ticking);
-                        daemon.tick().await;
-                    });
-                }
-            }
-            accepted = listener.accept() => match accepted {
-                Ok((stream, _)) => {
-                    tokio::spawn(connection(Arc::clone(&daemon), stream, stop_tx.clone()));
-                }
-                Err(e) => tracing::warn!(error = %e, "cannot accept a connection"),
-            },
-            _ = stop_rx.recv() => {
-                tracing::info!("stopped by the user");
-                break;
-            }
-            // Not the user's stop: loops stay as they are, and the next daemon resumes them.
-            _ = term.recv() => {
-                tracing::info!("terminated");
-                break;
-            }
-            _ = int.recv() => {
-                tracing::info!("interrupted");
-                break;
-            }
-        }
-    }
-    // A check's process group does not outlive a clean exit (ADR 0019).
-    daemon.loops.lock().await.stop_checks().await;
-    for socket in [path, v2_path.as_path()] {
-        if let Err(e) = std::fs::remove_file(socket)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            tracing::warn!(error = %e, socket = %socket.display(), "cannot remove a socket");
-        }
-    }
-    Ok(())
-}
-
-fn hello() -> Message {
-    Message::Hello {
-        protocol: muxa_protocol::VERSION,
-        bridge: env!("CARGO_PKG_VERSION").into(),
-        tmux: String::new(),
-        capabilities: vec![
-            "task-records".into(),
-            "task-loop".into(),
-            "task-restart-recovery".into(),
-            muxa_protocol::work_capability(muxa_protocol::WORK_ROUTINES),
-        ],
-    }
-}
-
-/// One client: `hello`, then requests until it closes.
-async fn connection(daemon: Arc<Daemon>, stream: UnixStream, stop: mpsc::Sender<()>) {
-    if !socket::peer_allowed(&stream) {
-        return;
-    }
-    let (read, mut write) = stream.into_split();
-    let mut read = BufReader::new(read);
-    if socket::write(&mut write, &hello()).await.is_err() {
-        return;
-    }
-    loop {
-        let line = match socket::read::<serde_json::Value, _>(&mut read, MAX_REQUEST).await {
-            Ok(Some(v)) => v,
-            Ok(None) => return,
-            Err(e) => {
-                tracing::warn!(error = %e, "unreadable request on the socket");
-                return;
-            }
-        };
-        let answer = answer(&daemon, line).await;
-        let shutdown = answer.shutdown;
-        for msg in answer.messages {
-            if socket::write(&mut write, &msg).await.is_err() {
-                return;
-            }
-        }
-        if shutdown {
-            let _ = stop.send(()).await;
-            return;
-        }
-    }
-}
-
-struct Answer {
-    messages: Vec<Message>,
-    shutdown: bool,
-}
-
-async fn answer(daemon: &Daemon, line: serde_json::Value) -> Answer {
-    let id = line.get("id").and_then(serde_json::Value::as_u64);
-    if let Ok(Control::Shutdown { id }) = serde_json::from_value::<Control>(line.clone()) {
-        daemon.on_user_stop().await;
-        return Answer {
-            messages: vec![ok(id)],
-            shutdown: true,
-        };
-    }
-    let messages = match serde_json::from_value::<Request>(line) {
-        Ok(req) if task_records::is_record_request(&req) => {
-            tracing::info!(id = req.id(), "record request");
-            task_records::handle(&daemon.records, req).await
-        }
-        Ok(req) => vec![failure(
-            Some(req.id()),
-            ErrorCode::Unsupported,
-            "the muxa daemon serves task records only",
-        )],
-        Err(e) => vec![failure(id, ErrorCode::BadRequest, &e.to_string())],
-    };
-    Answer {
-        messages,
-        shutdown: false,
-    }
-}
-
-fn ok(id: u64) -> Message {
-    Message::Result {
-        id: Some(id),
-        error: None,
-        sessions: None,
-    }
-}
-
-fn failure(id: Option<u64>, code: ErrorCode, message: &str) -> Message {
-    Message::Result {
-        id,
-        error: Some(error_body(code, message)),
-        sessions: None,
-    }
 }
 
 /// The daemon dir and `HOME`, which every management command needs.
@@ -499,16 +195,10 @@ fn say(out: &mut dyn Write, text: std::fmt::Arguments) -> Result<(), String> {
 
 fn install(args: args::Args, print: bool, out: &mut dyn Write) -> Result<(), String> {
     let (dir, home) = locate(&args)?;
-    socket::path(&dir)?;
-    let path = std::env::var("PATH").ok();
-    let tmux = args::find_tmux(args.tmux.clone(), path.as_deref())
-        .ok_or("tmux not found; pass --tmux PATH")?;
-    let tmux = std::path::absolute(&tmux)
-        .map_err(|e| format!("cannot resolve {}: {e}", tmux.display()))?;
+    crate::v2::path(&dir)?;
     let binary = std::env::current_exe().map_err(|e| format!("cannot find this binary: {e}"))?;
     let spec = Spec {
         binary,
-        tmux,
         flags: args.service_flags(),
         daemon_dir: dir.clone(),
         env: install::COPIED_ENV
@@ -536,12 +226,11 @@ fn install(args: args::Args, print: bool, out: &mut dyn Write) -> Result<(), Str
     report_start(&dir, out)
 }
 
-/// `stop`, and with `remove`, `uninstall`: the loops stop for the user,
-/// then the service is unloaded.
+/// `stop`, and with `remove`, `uninstall`. The service manager ends the
+/// daemon; its loops and Routine runs stay in their files.
 fn stop(args: args::Args, remove: bool, out: &mut dyn Write) -> Result<(), String> {
     let (dir, home) = locate(&args)?;
-    let answered = block_on(shutdown(&dir))??;
-    if !answered {
+    if block_on(version(&dir))?.is_none() {
         say(out, format_args!("The daemon was not running.\n"))?;
     }
     let platform = Platform::current();
@@ -550,11 +239,8 @@ fn stop(args: args::Args, remove: bool, out: &mut dyn Write) -> Result<(), Strin
     if remove {
         platform.disable(run)?;
         match std::fs::remove_file(&file) {
-            Ok(()) => say(
-                out,
-                format_args!("Removed {}. Task records stay.\n", file.display()),
-            )?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Ok(()) => say(out, format_args!("Removed {}.\n", file.display()))?,
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
             Err(e) => return Err(format!("cannot remove {}: {e}", file.display())),
         }
     } else {
@@ -619,7 +305,6 @@ async fn wait_for_version(dir: &Path, expected: &str, wait: Duration) -> Option<
 
 fn status(args: args::Args, out: &mut dyn Write) -> Result<(), String> {
     let (dir, _) = locate(&args)?;
-    let socket = dir.join(socket::FILE);
     match block_on(version(&dir))? {
         Some(v) => say(out, format_args!("running, version {v}\n"))?,
         None => say(out, format_args!("not running\n"))?,
@@ -631,7 +316,10 @@ fn status(args: args::Args, out: &mut dyn Write) -> Result<(), String> {
             format_args!("not loaded: the LaunchAgent is not loaded in this GUI session\n"),
         )?;
     }
-    say(out, format_args!("socket: {}\n", socket.display()))?;
+    say(
+        out,
+        format_args!("socket: {}\n", dir.join(crate::v2::FILE).display()),
+    )?;
     say(
         out,
         format_args!("log: {}\n", dir.join(log::FILE).display()),
@@ -646,53 +334,43 @@ fn block_on<T>(f: impl Future<Output = T>) -> Result<T, String> {
     Ok(rt.block_on(f))
 }
 
-async fn open(
-    dir: &Path,
-) -> Option<(
-    BufReader<tokio::net::unix::OwnedReadHalf>,
-    tokio::net::unix::OwnedWriteHalf,
-    Message,
-)> {
-    let stream = tokio::time::timeout(CONNECT_WAIT, UnixStream::connect(dir.join(socket::FILE)))
-        .await
-        .ok()?
-        .ok()?;
-    let (read, write) = stream.into_split();
-    let mut read = BufReader::new(read);
-    let hello = tokio::time::timeout(
-        CONNECT_WAIT,
-        socket::read::<Message, _>(&mut read, socket::MAX_LINE),
-    )
-    .await
-    .ok()?
-    .ok()??;
-    Some((read, write, hello))
-}
-
-/// The running daemon's version.
+/// The running daemon's version, from protocol v2's `welcome`
+/// (`"server": "muxa 0.1.0"`).
 async fn version(dir: &Path) -> Option<String> {
-    match open(dir).await? {
-        (_, _, Message::Hello { bridge, .. }) => Some(bridge),
-        _ => None,
-    }
+    tokio::time::timeout(CONNECT_WAIT, welcome(dir))
+        .await
+        .ok()
+        .flatten()
 }
 
-/// Sends `shutdown` and waits for its answer. False when no daemon runs.
-async fn shutdown(dir: &Path) -> Result<bool, String> {
-    let Some((mut read, mut write, _)) = open(dir).await else {
-        return Ok(false);
+async fn welcome(dir: &Path) -> Option<String> {
+    let mut stream = UnixStream::connect(dir.join(crate::v2::FILE)).await.ok()?;
+    let hello = ClientMsg::Hello {
+        version: muxa_protocol::v2::VERSION,
+        client: format!("muxa-bridge {}", env!("CARGO_PKG_VERSION")),
+        resume: None,
     };
-    socket::write(&mut write, &Control::Shutdown { id: 1 })
-        .await
-        .map_err(|e| format!("cannot send shutdown: {e}"))?;
-    match tokio::time::timeout(
-        SHUTDOWN_WAIT,
-        socket::read::<Message, _>(&mut read, socket::MAX_LINE),
-    )
-    .await
-    {
-        Ok(Ok(Some(Message::Result { error: None, .. }))) => Ok(true),
-        _ => Err("the daemon did not confirm the shutdown".into()),
+    let frame = Frame::control(&hello).ok()?.encode().ok()?;
+    stream.write_all(&frame).await.ok()?;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        if let Some(f) = Frame::decode(&mut buf).ok()? {
+            if f.channel != 0 || f.kind != Kind::Data {
+                return None;
+            }
+            return match serde_json::from_slice(&f.payload).ok()? {
+                ServerMsg::Welcome { server, .. } => {
+                    server.strip_prefix("muxa ").map(str::to_owned)
+                }
+                _ => None,
+            };
+        }
+        let n = stream.read(&mut chunk).await.ok()?;
+        if n == 0 {
+            return None;
+        }
+        buf.extend_from_slice(&chunk[..n]);
     }
 }
 
@@ -734,14 +412,24 @@ mod tests {
     }
 
     #[test]
-    fn waiting_returns_once_the_daemon_answers_hello() {
+    fn the_version_comes_from_the_welcome() {
         let dir = std::env::temp_dir().join(format!("muxa-hello-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let seen = block_on(async {
-            let listener = tokio::net::UnixListener::bind(dir.join(socket::FILE)).unwrap();
+            let listener = tokio::net::UnixListener::bind(dir.join(crate::v2::FILE)).unwrap();
             tokio::spawn(async move {
                 while let Ok((mut stream, _)) = listener.accept().await {
-                    let _ = socket::write(&mut stream, &hello()).await;
+                    let welcome = ServerMsg::Welcome {
+                        version: 2,
+                        server: format!("muxa {}", env!("CARGO_PKG_VERSION")),
+                        backend: "fake".into(),
+                        token: "t".into(),
+                        resumed: vec![],
+                    };
+                    let mut hello = [0u8; 256];
+                    let _ = stream.read(&mut hello).await;
+                    let frame = Frame::control(&welcome).unwrap().encode().unwrap();
+                    let _ = stream.write_all(&frame).await;
                 }
             });
             wait_for_version(&dir, env!("CARGO_PKG_VERSION"), START_WAIT).await

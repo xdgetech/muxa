@@ -17,7 +17,6 @@ use super::{
 };
 
 pub(crate) mod prompt;
-pub mod trust;
 
 pub const ID: &str = "claude-code";
 /// Moves the config dir, and with it the session files (ADR 0016).

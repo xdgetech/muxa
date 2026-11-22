@@ -3,11 +3,8 @@
 //! command may hold anything: `Debug` leaves it out, and no error names it.
 
 use std::fmt;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-
-use super::{Record, Workspace};
 
 /// Bytes.
 pub const MAX_CHECK: usize = 4096;
@@ -17,7 +14,6 @@ pub const MAX_ATTEMPTS: u32 = 10;
 pub const DEFAULT_TIMEOUT: u64 = 600;
 pub const MIN_TIMEOUT: u64 = 10;
 pub const MAX_TIMEOUT: u64 = 3600;
-const FIELD: &str = "loop";
 
 /// The record's `loop`. Times are Unix epoch seconds.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -202,14 +198,6 @@ impl Loop {
         }
     }
 
-    /// Stopped with `not-sent` before any check ran: the start prompt was
-    /// never typed (`handoff::give_up`), and the start's failure says so.
-    pub fn never_started(&self) -> bool {
-        self.state == LoopState::Stopped
-            && self.reason == Some(Reason::NotSent)
-            && self.last_check.is_none()
-    }
-
     /// Ended for `reason`. An ended loop stays as it is.
     pub fn stopped(&self, reason: Reason, now: u64) -> Loop {
         if !self.active() {
@@ -270,50 +258,6 @@ pub fn command_shape(check: &str) -> Result<(), String> {
         return Err("the check command has a control character".into());
     }
     Ok(())
-}
-
-impl Workspace {
-    /// Only a Task inside its workspace can have a loop: a repo Task in one
-    /// of its repos (ADR 0031), or a Task without a repo under the root.
-    pub fn may_loop(&self, record: &Record) -> Result<(), String> {
-        let inside = match (&record.repo, &record.dir) {
-            (Some(repo), _) => self.has_repo(&canonical(repo)),
-            (None, Some(dir)) => canonical(dir).starts_with(&self.root),
-            (None, None) => false,
-        };
-        if inside {
-            Ok(())
-        } else {
-            Err(format!(
-                "task {} is outside workspace {:?}: a loop needs one of its repos, \
-                 or a directory under its root",
-                record.id, self.name
-            ))
-        }
-    }
-}
-
-fn canonical(p: &Path) -> std::path::PathBuf {
-    p.canonicalize().unwrap_or_else(|_| p.to_owned())
-}
-
-impl Record {
-    /// The record's `loop`, None when the Task has none.
-    pub fn task_loop(&self) -> Result<Option<Loop>, serde_json::Error> {
-        self.extra.get(FIELD).map(Loop::deserialize).transpose()
-    }
-
-    pub fn set_loop(&mut self, value: Option<&Loop>) -> Result<(), serde_json::Error> {
-        match value {
-            Some(l) => {
-                self.extra.insert(FIELD.into(), serde_json::to_value(l)?);
-            }
-            None => {
-                self.extra.remove(FIELD);
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -385,7 +329,8 @@ mod tests {
     }
 
     fn parse(text: &str) -> Result<super::super::Workspaces, String> {
-        super::super::Workspaces::parse(text, Path::new("w.toml"), None).map_err(|e| e.to_string())
+        super::super::Workspaces::parse(text, std::path::Path::new("w.toml"), None)
+            .map_err(|e| e.to_string())
     }
 
     #[test]
@@ -413,78 +358,6 @@ mod tests {
             ));
             assert!(e.is_err(), "{bad}");
         }
-    }
-
-    fn record(repo: Option<&Path>, dir: Option<&Path>) -> Record {
-        Record {
-            version: 1,
-            id: "t-000001".into(),
-            rev: 1,
-            workspace: "w".into(),
-            title: "T".into(),
-            goal: String::new(),
-            status: super::super::Status::Open,
-            created_at: 0,
-            updated_at: 0,
-            project: None,
-            repo: repo.map(Path::to_owned),
-            branch: None,
-            dir: dir.map(Path::to_owned),
-            session: None,
-            note: None,
-            runs: Vec::new(),
-            extra: serde_json::Map::new(),
-        }
-    }
-
-    #[test]
-    fn only_a_task_inside_its_workspace_may_loop() {
-        let dir = temp("inside");
-        let (root, repo, other) = (dir.join("root"), dir.join("repo"), dir.join("other"));
-        for d in [&root, &repo, &other, &root.join("tasks/x")] {
-            std::fs::create_dir_all(d).unwrap();
-        }
-        let ws = Workspace {
-            name: "w".into(),
-            root: root.clone(),
-            repos: vec![repo.clone()],
-            missing_repos: Vec::new(),
-            agent: None,
-            loop_checks: Some(Checks::Any),
-            park_after: None,
-            routines: None,
-            connections: Vec::new(),
-        };
-        assert!(
-            ws.may_loop(&record(Some(&repo), Some(&other))).is_ok(),
-            "repos may lie outside the root"
-        );
-        assert!(
-            ws.may_loop(&record(Some(&other), Some(&root.join("tasks/x"))))
-                .is_err()
-        );
-        assert!(
-            ws.may_loop(&record(None, Some(&root.join("tasks/x"))))
-                .is_ok()
-        );
-        assert!(ws.may_loop(&record(None, Some(&other))).is_err());
-        assert!(ws.may_loop(&record(None, None)).is_err());
-    }
-
-    #[test]
-    fn the_loop_lives_in_the_record_and_survives_older_code() {
-        let mut r = record(None, None);
-        assert_eq!(r.task_loop().unwrap(), None);
-        let l = Loop::start(spec("x"), None, false, 3);
-        r.set_loop(Some(&l)).unwrap();
-        let text = serde_json::to_string(&r).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(v["loop"]["check"], "x");
-        assert_eq!(v["loop"]["state"], "armed");
-        let back: Record = serde_json::from_str(&text).unwrap();
-        assert_eq!(back.task_loop().unwrap(), Some(l));
-        r.set_loop(None).unwrap();
-        assert_eq!(r.task_loop().unwrap(), None);
     }
 
     #[test]

@@ -17,10 +17,6 @@ use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, c
 use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
 use super::{AgentAdapter, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
 
-pub mod app_server;
-pub mod owned;
-mod proxy;
-
 pub const ID: &str = "codex";
 /// Moves Codex's state, and with it the rollouts (ADR 0016).
 pub const DIR_ENV: &str = "CODEX_HOME";
@@ -276,19 +272,6 @@ pub struct CodexSource {
 }
 
 impl CodexSource {
-    /// The chat of an owned thread, read at its rollout path. The file may
-    /// not exist before the first turn.
-    pub fn owned(path: PathBuf) -> Self {
-        let mut source = Self::new(
-            Vec::new(),
-            UNIX_EPOCH,
-            Some(path),
-            Box::new(|| Ok(Processes::default())),
-        );
-        source.fixed = true;
-        source
-    }
-
     fn new(
         dirs: Vec<PathBuf>,
         started: SystemTime,

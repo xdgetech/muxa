@@ -10,13 +10,12 @@ pub const UNIT: &str = "muxa-daemon.service";
 /// launchd's stderr: only start-up failures land here; the daemon logs to `daemon.log`.
 pub const ERR_FILE: &str = "daemon.err";
 /// The environment `install` copies from its shell, and no other.
-pub const COPIED_ENV: [&str; 3] = ["HOME", "TMUX_TMPDIR", "PATH"];
+pub const COPIED_ENV: [&str; 2] = ["HOME", "PATH"];
 
 /// What the service file starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spec {
     pub binary: PathBuf,
-    pub tmux: PathBuf,
     /// Serve-mode flags, as `Args::service_flags` gives them.
     pub flags: Vec<String>,
     pub daemon_dir: PathBuf,
@@ -29,8 +28,6 @@ impl Spec {
             self.binary.display().to_string(),
             "daemon".into(),
             "run".into(),
-            "--tmux".into(),
-            self.tmux.display().to_string(),
         ];
         out.extend(self.flags.iter().cloned());
         out.push("--daemon-dir".into());
@@ -254,10 +251,7 @@ mod tests {
     fn spec() -> Spec {
         Spec {
             binary: "/opt/muxa/bin/muxa-bridge".into(),
-            tmux: "/opt/homebrew/bin/tmux".into(),
             flags: vec![
-                "--socket".into(),
-                "work".into(),
                 "--workspaces".into(),
                 "/Users/example/muxa & co/workspaces.toml".into(),
                 "--task-command".into(),
@@ -266,7 +260,6 @@ mod tests {
             daemon_dir: "/Users/example/.local/state/muxa".into(),
             env: vec![
                 ("HOME".into(), "/Users/example".into()),
-                ("TMUX_TMPDIR".into(), "/tmp/example".into()),
                 ("PATH".into(), "/opt/homebrew/bin:/usr/bin:/bin".into()),
             ],
         }

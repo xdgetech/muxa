@@ -61,7 +61,7 @@ fn paths(listing: &Listing) -> Vec<&str> {
 #[test]
 fn ignored_images_are_listed_newest_first_and_nothing_else() {
     let dir = repo("list");
-    let listing = list(&dir.join("build"));
+    let listing = for_folder(&dir.join("build"));
     assert_eq!(listing.root.as_deref(), Some("app"));
     let mut found = paths(&listing);
     // The symlink's target was written last: it comes first.
@@ -77,7 +77,7 @@ fn ignored_images_are_listed_newest_first_and_nothing_else() {
 #[test]
 fn reads_listed_images_inside_the_repo_only() {
     let dir = repo("read");
-    let listing = list(&dir);
+    let listing = for_folder(&dir);
     let login = listing.find("build/qa/login.png").unwrap();
     assert_eq!(read(login).unwrap().0, b"old");
 
@@ -101,10 +101,11 @@ fn reads_listed_images_inside_the_repo_only() {
 }
 
 #[test]
-fn a_pane_outside_any_repo_lists_nothing() {
+fn a_folder_outside_any_repo_lists_its_images() {
     let dir = temp("norepo");
     write(&dir.join("shot.png"), b"x");
-    let listing = list(&dir);
-    assert!(listing.images.is_empty());
+    write(&dir.join(".env"), b"SECRET=1");
+    let listing = for_folder(&dir);
+    assert_eq!(paths(&listing), ["shot.png"]);
     assert_eq!(listing.root, None);
 }

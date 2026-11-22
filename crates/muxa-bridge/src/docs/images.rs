@@ -9,8 +9,6 @@ use std::process::Command;
 use muxa_protocol::ImageInfo;
 
 use super::files::{self, ReadError};
-use crate::agents::PaneInfo;
-use crate::task_records::Config;
 
 /// Images listed for one pane at most; the newest are kept.
 pub const MAX_IMAGES: usize = 2000;
@@ -59,17 +57,16 @@ impl Listing {
     }
 }
 
-/// The images of the repo `path` is in, newest first.
-#[cfg(test)]
-pub fn list(path: &Path) -> Listing {
-    files::repo_root(path).map(in_repo).unwrap_or_default()
-}
-
-/// As `list`; outside a repo, the folder's images `folder::served` allows.
-pub fn for_pane(pane: &PaneInfo, records: &Config) -> Listing {
-    match files::repo_root(Path::new(&pane.path)) {
+/// A Task's or a Routine run's folder (protocol v2): its repo's images, or
+/// outside a repo every image in the folder.
+pub fn for_folder(dir: &Path) -> Listing {
+    match files::repo_root(dir) {
         Some(root) => in_repo(root),
-        None => outside_repo(pane, records),
+        None => {
+            let base = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+            let found = super::folder::scan(&base, is_image, None);
+            outside(base, found)
+        }
     }
 }
 
@@ -99,24 +96,6 @@ fn in_repo(root: PathBuf) -> Listing {
         images,
         truncated,
     }
-}
-
-/// A Task's or a Routine run's folder (protocol v2): its repo's images, or
-/// outside a repo every image in the folder.
-pub fn for_folder(dir: &Path) -> Listing {
-    match files::repo_root(dir) {
-        Some(root) => in_repo(root),
-        None => {
-            let base = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-            let found = super::folder::scan(&base, is_image, None);
-            outside(base, found)
-        }
-    }
-}
-
-fn outside_repo(pane: &PaneInfo, records: &Config) -> Listing {
-    let found = super::folder::served(records, pane, is_image);
-    outside(PathBuf::from(&pane.path), found)
 }
 
 fn outside(base: PathBuf, found: Vec<super::folder::Found>) -> Listing {

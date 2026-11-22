@@ -1,47 +1,6 @@
-//! Routines and the stored Inbox entries they publish (ADR 0026). Gated by
-//! the shared `work` capability at level 1 or higher (ADR 0027 section 5).
+//! Routines and the stored Inbox entries they publish (ADR 0026), as the
+//! daemon keeps them in each Routine's state file.
 use serde::{Deserialize, Serialize};
-
-/// The shared capability of the newer features. The host advertises it as
-/// `work:<level>`; a client reads the level with [`work_level`].
-pub const WORK_CAPABILITY: &str = "work";
-/// Level 1: Routines (`list-routines`, `run-routine`) and stored Inbox
-/// entries (`list-inbox`, `update-inbox`).
-pub const WORK_ROUTINES: u32 = 1;
-/// Level 2: repos relative to the workspace root, a branch from the title,
-/// and `start-session` (ADR 0031).
-pub const WORK_ASK: u32 = 2;
-/// Level 4: reading Tasks, `branch-task` and `park-task` (ADR 0034).
-pub const WORK_READ: u32 = 4;
-/// Level 5: `close-task` also closes an ask session, and a session carries
-/// `ask` (ADR 0039).
-pub const WORK_CLOSE_ASK: u32 = 5;
-/// Level 7: `update-task` and `update-inbox` take `worktree`, and a Task's
-/// end removes its worktree (ADR 0043).
-pub const WORK_END_REMOVES: u32 = 7;
-/// Level 8: `protect` and `unprotect` on an Inbox item, and `delete-inbox` (ADR 0046).
-pub const WORK_DELETE_INBOX: u32 = 8;
-/// Level 15: `start-session` with `root` opens the workspace's Ask session at
-/// its root, also the overall assistant's (ADR 0054).
-pub const WORK_ASK_ROOT: u32 = 15;
-/// Level 19: the assistant layer is gone (ADR 0066): no Captures, Work items,
-/// plans, policies, staff, writes, workspace memory or the items they made.
-pub const WORK_NO_ASSISTANT: u32 = 19;
-
-/// `work:<level>` as `hello` carries it.
-pub fn work_capability(level: u32) -> String {
-    format!("{WORK_CAPABILITY}:{level}")
-}
-
-/// The highest `work` level in `capabilities`; 0 when the host has none.
-pub fn work_level(capabilities: &[String]) -> u32 {
-    capabilities
-        .iter()
-        .filter_map(|c| c.strip_prefix(WORK_CAPABILITY)?.strip_prefix(':'))
-        .filter_map(|level| level.parse().ok())
-        .max()
-        .unwrap_or(0)
-}
 
 /// A Routine as the host's `workspaces.toml` defines it, with its schedule
 /// state. `(workspace, name)` is its id.
@@ -208,64 +167,4 @@ pub struct Proposal {
     pub content: String,
     /// `sha256:<hex>` of action, target and content.
     pub hash: String,
-}
-
-/// An answer in `update-inbox`. Level 1 has `approve`, `dismiss` and
-/// `later`; the rest are Inbox items' answers (level 3, ADR 0033).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum InboxAction {
-    /// A proposal: creates one Task, also when sent twice. An `ask`: picks the
-    /// prompt's first option that is not `cancel`.
-    Approve,
-    /// Answers the item without acting; a briefing's Done.
-    Dismiss,
-    /// Moves the item below the others (ADR 0040). A host before it needs `until`.
-    Later,
-    /// An `ask`: picks the prompt's `cancel` option. A proposal: as `dismiss`.
-    Reject,
-    /// An `ask`: picks the prompt's option at index `option`.
-    Choose,
-    /// A `review`: marks the Task done.
-    Accept,
-    /// A `review`: answers the item and leaves the Task open.
-    KeepOpen,
-    /// A `failure`: restarts the agent with a handoff.
-    Retry,
-    /// A `failure`: marks the Task dropped.
-    Drop,
-    /// Marks the item read. It stays open.
-    Read,
-    /// A reading Task's changed-checkout `proposal`: `branch-task` (level 4).
-    Branch,
-    /// A reading Task's changed-checkout `proposal`: leaves the changes as they are.
-    Keep,
-    /// A `review` or `failure`: sends `text` to the agent as it is. An `ask`
-    /// about a permission: picks the `cancel` option first (ADR 0033 §4a).
-    Reply,
-    /// Any item: `delete-inbox` keeps it. It still takes every answer (ADR 0046, level 8).
-    Protect,
-    /// Any item: `delete-inbox` may remove it again.
-    Unprotect,
-    /// A value a newer host added; shown as unknown.
-    #[serde(other)]
-    Unknown,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_work_level_is_the_highest_advertised_one() {
-        let caps = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        assert_eq!(work_level(&caps(&["task-records"])), 0);
-        assert_eq!(work_level(&caps(&["work:1"])), 1);
-        assert_eq!(
-            work_level(&caps(&["work:1", "work:3", "work:x", "workers"])),
-            3
-        );
-        assert_eq!(work_level(&caps(&["work", "work-model:2"])), 0);
-        assert_eq!(work_capability(WORK_ROUTINES), "work:1");
-    }
 }

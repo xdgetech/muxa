@@ -184,7 +184,7 @@ impl RawRoutine {
         )
         .map_err(|r| at(&r))?;
         let worker = match self.worker.as_deref() {
-            None | Some(muxa_protocol::DEFAULT_WORKER) => None,
+            None | Some(super::workers::DEFAULT_WORKER) => None,
             Some(name) => {
                 let found = workers
                     .iter()

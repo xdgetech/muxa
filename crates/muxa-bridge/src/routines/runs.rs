@@ -7,10 +7,10 @@ use muxa_protocol::{RoutineFailure, RoutineRun};
 
 use super::schedule;
 use super::store::{RoutineState, RoutineStore, StateError};
+use crate::config::Config;
 use crate::records::routines::Routine;
 use crate::records::workers::WorkerAgent;
-use crate::records::{Status, Store, Workspaces, now};
-use crate::task_records::Config;
+use crate::records::{Workspaces, now};
 
 /// What starts a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,9 +140,6 @@ pub(crate) fn finish_start(
 ) -> Result<RoutineState, StartError> {
     let store = RoutineStore::open(&dir(config)?)?;
     if let Some(why) = error {
-        if let Some(id) = &task {
-            drop_run(config, id, &format!("The run did not start: {why}"));
-        }
         store.update::<_, StateError>(&routine.workspace, &routine.name, |s| {
             if s.running
                 .as_ref()
@@ -242,28 +239,6 @@ pub(crate) fn scan_with(
         }
     }
     due
-}
-
-fn drop_run(config: &Config, task: &str, note: &str) {
-    match config.state_dir.as_ref().map(Store::open) {
-        Some(Ok(records)) => drop_run_with(&records, task, note),
-        Some(Err(e)) => tracing::warn!(task, error = %e, "cannot open task records"),
-        None => {}
-    }
-}
-
-/// The run's record ends as `dropped`, with why. A done run stays done.
-fn drop_run_with(records: &Store, task: &str, note: &str) {
-    let Ok(r) = records.get(task) else { return };
-    if matches!(r.status, Status::Done | Status::Dropped) || !r.is_routine_run() {
-        return;
-    }
-    if let Err(e) = records.update(task, r.rev, |r| {
-        r.status = Status::Dropped;
-        r.note = Some(note.to_owned());
-    }) {
-        tracing::warn!(task, error = %e, "cannot close a routine run's record");
-    }
 }
 
 pub fn last_date(state: &RoutineState) -> Option<Date> {

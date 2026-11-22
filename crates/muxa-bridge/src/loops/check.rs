@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use super::step::CheckEnd;
+use super::CheckEnd;
 use crate::records::AgentSettings;
 
 /// `CHECK.md` relative to the task's directory, as the Reader lists it.
@@ -88,21 +88,6 @@ pub fn log_path(dir: &Path, attempt: u32) -> PathBuf {
 /// drops the oldest logs. The process group is gone when this returns, also
 /// when the future is dropped.
 pub async fn run(spec: CheckRun) -> Result<CheckEnd, CheckError> {
-    run_with_claim(spec, None).await
-}
-
-/// Keep restart excluded until the check process has actually been spawned.
-pub async fn run_claimed(
-    spec: CheckRun,
-    claim: crate::records::store::ClaimedTask,
-) -> Result<CheckEnd, CheckError> {
-    run_with_claim(spec, Some(claim)).await
-}
-
-async fn run_with_claim(
-    spec: CheckRun,
-    claim: Option<crate::records::store::ClaimedTask>,
-) -> Result<CheckEnd, CheckError> {
     let path = log_path(&spec.dir, spec.attempt);
     let folder = path.parent().unwrap_or(&spec.dir).to_owned();
     std::fs::create_dir_all(&folder).map_err(io("create", &folder))?;
@@ -129,7 +114,6 @@ async fn run_with_claim(
             dir: spec.dir.clone(),
             source,
         })?;
-    drop(claim);
     let group = Group(child.id());
     let mut readers: Vec<_> = [
         child
@@ -368,20 +352,6 @@ fn prune(folder: &Path, keep: usize) -> Result<(), CheckError> {
     Ok(())
 }
 
-/// `show-environment -g` output as pairs. A `-NAME` line is a variable
-/// removed from the environment, and is left out.
-pub fn parse_global_env(lines: &[Vec<u8>]) -> Vec<(String, String)> {
-    lines
-        .iter()
-        .map(|l| String::from_utf8_lossy(l))
-        .filter(|l| !l.starts_with('-'))
-        .filter_map(|l| {
-            let (k, v) = l.split_once('=')?;
-            Some((k.to_owned(), v.to_owned()))
-        })
-        .collect()
-}
-
 /// The check's environment: the tmux server's global environment, which the
 /// panes get, with the workspace's `agent.env` on top. Without tmux, the
 /// daemon's own environment with `fallback_path` as `PATH`.
@@ -406,14 +376,6 @@ pub fn environment(
         env.push((k.clone(), v.clone()));
     }
     env
-}
-
-/// The tmux server's global environment. The command line holds no value.
-pub async fn global_env(
-    client: &muxa_tmux::Client,
-) -> Result<Vec<(String, String)>, muxa_tmux::Error> {
-    let reply = client.command("show-environment -g").await?;
-    Ok(parse_global_env(&reply.lines))
 }
 
 #[cfg(test)]

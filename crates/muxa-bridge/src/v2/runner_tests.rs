@@ -40,7 +40,7 @@ impl Host {
             ),
         )
         .unwrap();
-        let config = Arc::new(task_records::Config {
+        let config = Arc::new(crate::config::Config {
             state_dir: Some(base.join("state")),
             workspaces: Some(base.join("workspaces.toml")),
             home: None,

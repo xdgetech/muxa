@@ -56,7 +56,7 @@ mod tests {
         };
         let full = "x".repeat(crate::records::routines::MAX_INSTRUCTIONS);
         let g = goal(&routine, &full);
-        assert!(g.len() <= crate::records::MAX_GOAL);
+        assert!(g.len() <= 16 * 1024);
         assert!(g.contains("At most 5 items") && g.contains("Do not change anything"));
         routine.direct_writes = true;
         assert!(goal(&routine, "Read.").contains("You may change external systems"));

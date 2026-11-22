@@ -164,19 +164,6 @@ fn escapes_and_controls_are_removed() {
 }
 
 #[test]
-fn global_env_drops_removed_variables() {
-    let lines = [
-        b"PATH=/bin".to_vec(),
-        b"-SSH_AUTH_SOCK".to_vec(),
-        b"A=b=c".to_vec(),
-    ];
-    assert_eq!(
-        parse_global_env(&lines),
-        vec![("PATH".into(), "/bin".into()), ("A".into(), "b=c".into())]
-    );
-}
-
-#[test]
 fn the_workspace_env_overlays_the_tmux_env() {
     let agent = AgentSettings {
         command: None,

@@ -1,12 +1,10 @@
 //! Routines (ADR 0026): a configured agent run on a trigger that publishes
-//! briefings and proposals to Inbox. Config is `records::routines`; a run is
-//! a task record of kind `routine-run` that reuses the Task machinery; this
-//! module schedules runs, checks and publishes their output, and serves the
-//! `work` level 1 requests.
+//! briefings and proposals to the Inbox. Config is `records::routines`; this
+//! module keeps the schedule and each Routine's state, and checks and
+//! publishes a run's output. `v2::runner` runs them on herdr-core.
 
 pub mod brief;
 pub mod check;
-pub mod inbox;
 pub mod output;
 pub mod record;
 pub mod runs;
@@ -14,126 +12,21 @@ pub mod schedule;
 pub mod store;
 
 use std::path::Path;
-use std::sync::Arc;
 
-use muxa_protocol::{
-    ErrorBody, ErrorCode, Message, Request, RoutineInfo, RoutineProblem, RoutineTrigger,
-};
+use muxa_protocol::{RoutineInfo, RoutineProblem, RoutineTrigger};
 
-use crate::convert::error_body;
-use crate::records::Record;
+use crate::config::Config;
 use crate::records::routines::Routine;
-use crate::task_records::{Config, Context};
-use runs::StartError;
 use store::{RoutineState, RoutineStore};
-
-/// Answers a `work` level 1 request: its list or saved message, and its error.
-pub async fn handle(cx: &Context, req: Request) -> (Vec<Message>, Option<ErrorBody>) {
-    let result = match req {
-        Request::ListRoutines { id } => {
-            let config = Arc::clone(&cx.records);
-            blocking(move || list(&config))
-                .await
-                .map(|(entries, problems)| Message::RoutineList {
-                    routines: id,
-                    entries,
-                    problems,
-                })
-        }
-        Request::RunRoutine { .. } => run_now(),
-        Request::ListInbox { id } => {
-            let config = Arc::clone(&cx.records);
-            blocking(move || {
-                let entries = inbox::list(&config)?;
-                let items = crate::items::list(&config, &entries)?;
-                Ok((entries, items))
-            })
-            .await
-            .map(|(entries, items)| Message::InboxList {
-                inbox: id,
-                entries,
-                items,
-            })
-        }
-        Request::UpdateInbox {
-            id,
-            entry,
-            action,
-            text,
-            option,
-            worktree,
-            ..
-        } if entry.starts_with("i-") => {
-            // `until` is ignored: Later moves an item down (ADR 0040).
-            let answer = crate::items::answer::Answer {
-                item: entry,
-                action,
-                text,
-                option,
-                worktree,
-            };
-            crate::items::answer::update(cx, answer)
-                .await
-                .map(|item| Message::InboxSaved {
-                    inbox: id,
-                    entry: None,
-                    item: Some(Box::new(item)),
-                })
-        }
-        Request::DeleteInbox {
-            id,
-            older_than_days,
-        } => {
-            let config = Arc::clone(&cx.records);
-            blocking(move || {
-                crate::items::delete::delete(&config, older_than_days, crate::records::now())
-            })
-            .await
-            .map(|deleted| Message::InboxDeleted { inbox: id, deleted })
-        }
-        Request::UpdateInbox {
-            id, entry, action, ..
-        } => inbox::update(cx, entry, action)
-            .await
-            .map(|entry| Message::InboxSaved {
-                inbox: id,
-                item: Some(Box::new(crate::items::from_entry(&entry))),
-                entry: Some(Box::new(entry)),
-            }),
-        _ => Err(error_body(ErrorCode::Unsupported, "not a routine request")),
-    };
-    match result {
-        Ok(m) => (vec![m], None),
-        Err(e) => (Vec::new(), Some(e)),
-    }
-}
-
-/// Routine runs moved to herdr-core (plan F1): Run now is protocol v2's.
-fn run_now() -> Result<Message, ErrorBody> {
-    Err(error_body(
-        ErrorCode::Unsupported,
-        "Routines run in the muxa daemon over protocol v2 now; use Run now in the app or muxa-cli v2",
-    ))
-}
-
-fn start_error(e: &StartError) -> ErrorBody {
-    let code = match e {
-        StartError::Bad(_) => ErrorCode::BadRequest,
-        StartError::Busy(_) | StartError::Handled => ErrorCode::Conflict,
-        StartError::Unsupported(_) => ErrorCode::Unsupported,
-        StartError::Failed(_) => ErrorCode::TaskFailed,
-    };
-    error_body(code, e.to_string())
-}
 
 /// Blocking. Every configured Routine with its state, in file order, and
 /// the workspaces whose routines file is broken.
-pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), ErrorBody> {
-    let workspaces = runs::load(config).map_err(|e| start_error(&e))?;
+pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), String> {
+    let workspaces = runs::load(config).map_err(|e| e.to_string())?;
     let store = match config.state_dir.as_ref().filter(|d| d.is_dir()) {
         Some(dir) => Some(RoutineStore::open(dir).map_err(|e| {
             tracing::warn!(error = %e, "cannot open routine state");
-            error_body(ErrorCode::Internal, e.to_string())
+            e.to_string()
         })?),
         None => None,
     };
@@ -210,15 +103,6 @@ pub fn info(r: &Routine, state: &RoutineState, at: u64) -> RoutineInfo {
     }
 }
 
-/// Blocking. Before the agent starts: the private stage folder (0700) and
-/// the state the last successful run committed. Called by `create-task`'s path.
-pub fn prepare(config: &Config, record: &Record, dir: &Path) -> Result<(), String> {
-    let run = record
-        .routine_run()
-        .ok_or("the record is not a Routine run")?;
-    prepare_at(config, &record.workspace, &run.name, dir)
-}
-
 /// Blocking. The run folder's private output stage, and the state the last
 /// run committed.
 pub fn prepare_at(config: &Config, workspace: &str, name: &str, dir: &Path) -> Result<(), String> {
@@ -240,12 +124,4 @@ pub fn prepare_at(config: &Config, workspace: &str, name: &str, dir: &Path) -> R
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
     Ok(())
-}
-
-async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
-) -> Result<T, ErrorBody> {
-    tokio::task::spawn_blocking(f)
-        .await
-        .unwrap_or_else(|_| Err(error_body(ErrorCode::Internal, "the routine store stopped")))
 }
