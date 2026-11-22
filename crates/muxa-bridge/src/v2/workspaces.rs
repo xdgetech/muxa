@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use muxa_protocol::v2::{self, LoopChecks, WorkspaceConnection, WorkspaceLoop};
+use muxa_protocol::v2::{self, LoopChecks, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp};
 
 use crate::launch::program;
 use crate::records::Workspace;
@@ -45,6 +45,14 @@ pub fn to_v2(ws: &Workspace, default_command: &str) -> v2::Workspace {
                 default: c.default,
             })
             .collect(),
+        mcp: ws
+            .mcp
+            .iter()
+            .map(|m| WorkspaceMcp {
+                name: m.name.clone(),
+                default: m.default,
+            })
+            .collect(),
     }
 }
 
@@ -65,6 +73,7 @@ mod tests {
     use super::*;
     use crate::records::agent_env::AgentSettings;
     use crate::records::connections::{Access, Connection};
+    use crate::records::mcp::{McpServer, Transport};
 
     fn workspace(root: &Path) -> Workspace {
         Workspace {
@@ -85,6 +94,17 @@ mod tests {
                 account: Some("me".into()),
                 access: Access::default(),
                 default: true,
+            }],
+            mcp: vec![McpServer {
+                name: "docs".into(),
+                transport: Transport::Stdio {
+                    command: "docs-mcp".into(),
+                    args: vec!["--key-file".into()],
+                },
+                env: [("DOCS_HOST".into(), "internal.example".into())].into(),
+                headers: Default::default(),
+                connections: vec!["github".into()],
+                default: false,
             }],
         }
     }
@@ -107,7 +127,23 @@ mod tests {
             })
         );
         let wire = serde_json::to_string(&shown).unwrap();
-        for secret in ["secret", "TOKEN", "GH_TOKEN", "--model", "\"me\""] {
+        assert_eq!(
+            shown.mcp,
+            [WorkspaceMcp {
+                name: "docs".into(),
+                default: false
+            }]
+        );
+        for secret in [
+            "secret",
+            "TOKEN",
+            "GH_TOKEN",
+            "--model",
+            "\"me\"",
+            "docs-mcp",
+            "--key-file",
+            "internal.example",
+        ] {
             assert!(!wire.contains(secret), "{secret} leaked: {wire}");
         }
         let plain = Workspace {

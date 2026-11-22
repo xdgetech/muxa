@@ -52,7 +52,8 @@ extension DemoContent {
                 Workspace(name: "app", root: "/demo", repos: ["app", "docs"], agent: "claude",
                           loop: WorkspaceLoop(checks: .list(["make test", "make lint"])),
                           connections: [WorkspaceConnection(name: "github", isDefault: true),
-                                        WorkspaceConnection(name: "linear", isDefault: false)]),
+                                        WorkspaceConnection(name: "linear", isDefault: false)],
+                          mcp: [WorkspaceMcp(name: "docs", isDefault: true)]),
                 Workspace(name: "Personal", root: "/demo/personal", agent: "claude"),
             ],
             files: [

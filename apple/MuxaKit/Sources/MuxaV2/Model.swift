@@ -57,17 +57,55 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
     /// Nil when the Workspace runs no Task Loops.
     public var loop: WorkspaceLoop?
     public var connections: [WorkspaceConnection]
+    /// The MCP servers a Task can name (ADR 0069).
+    public var mcp: [WorkspaceMcp]
 
     public var id: String { name }
 
     public init(name: String, root: String, repos: [String] = [], agent: String? = nil, loop: WorkspaceLoop? = nil,
-                connections: [WorkspaceConnection] = []) {
+                connections: [WorkspaceConnection] = [], mcp: [WorkspaceMcp] = []) {
         self.name = name
         self.root = root
         self.repos = repos
         self.agent = agent
         self.loop = loop
         self.connections = connections
+        self.mcp = mcp
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, root, repos, agent, loop, connections, mcp
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        root = try c.decode(String.self, forKey: .root)
+        repos = try c.decode([String].self, forKey: .repos)
+        agent = try c.decodeIfPresent(String.self, forKey: .agent)
+        loop = try c.decodeIfPresent(WorkspaceLoop.self, forKey: .loop)
+        connections = try c.decode([WorkspaceConnection].self, forKey: .connections)
+        // Servers before E2b send no list.
+        mcp = try c.decodeIfPresent([WorkspaceMcp].self, forKey: .mcp) ?? []
+    }
+}
+
+/// An MCP server's name only; its command and variables stay on the host.
+public struct WorkspaceMcp: Codable, Equatable, Sendable, Identifiable {
+    public var name: String
+    /// On for every Task and Routine of the Workspace.
+    public var isDefault: Bool
+
+    public var id: String { name }
+
+    public init(name: String, isDefault: Bool) {
+        self.name = name
+        self.isDefault = isDefault
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case isDefault = "default"
     }
 }
 

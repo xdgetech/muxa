@@ -466,6 +466,17 @@ pub struct Workspace {
     #[serde(rename = "loop")]
     pub task_loop: Option<WorkspaceLoop>,
     pub connections: Vec<WorkspaceConnection>,
+    /// The `[[workspace.mcp]]` servers a Task can name (ADR 0069).
+    #[serde(default)]
+    pub mcp: Vec<WorkspaceMcp>,
+}
+
+/// An MCP server's name only; its command, URL and variables stay on the host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceMcp {
+    pub name: String,
+    /// On for every Task and Routine of the Workspace.
+    pub default: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1128,8 +1139,13 @@ mod tests {
                 name: "github".into(),
                 default: true,
             }],
+            mcp: vec![WorkspaceMcp {
+                name: "docs".into(),
+                default: false,
+            }],
         };
         let wire = serde_json::to_value(&ws).unwrap();
+        assert_eq!(wire["mcp"], json!([{"name": "docs", "default": false}]));
         assert_eq!(wire["loop"], json!({"checks": "any"}));
         assert_eq!(serde_json::from_value::<Workspace>(wire).unwrap(), ws);
         let none = Workspace {

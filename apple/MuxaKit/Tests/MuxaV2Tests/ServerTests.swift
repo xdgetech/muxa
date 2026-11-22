@@ -111,7 +111,8 @@ struct ServerTests {
         #expect(try await c.workspaces() == [
             Workspace(name: "Personal", root: "/work", repos: ["app", "docs"], agent: "claude",
                       loop: WorkspaceLoop(checks: .list(["make test"])),
-                      connections: [WorkspaceConnection(name: "github", isDefault: true)]),
+                      connections: [WorkspaceConnection(name: "github", isDefault: true)],
+                      mcp: [WorkspaceMcp(name: "docs", isDefault: false)]),
         ])
         await c.close()
     }

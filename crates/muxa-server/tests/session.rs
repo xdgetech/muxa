@@ -63,6 +63,7 @@ impl Host for FakeTasks {
                 name: "github".into(),
                 default: false,
             }],
+            mcp: Vec::new(),
         }])
     }
 
@@ -1291,7 +1292,7 @@ async fn workspaces_list_what_a_task_may_use() {
     assert_eq!(
         reply["workspaces"],
         json!([{"name": "Personal", "root": "/work", "repos": ["app"], "agent": "claude",
-                "loop": {"checks": "any"}, "connections": [{"name": "github", "default": false}]}])
+                "loop": {"checks": "any"}, "connections": [{"name": "github", "default": false}], "mcp": []}])
     );
 }
 

@@ -107,6 +107,8 @@ data class Workspace(
     /** Null: the Workspace has no Task Loop. */
     val loop: WorkspaceLoop? = null,
     val connections: List<WorkspaceConnection> = emptyList(),
+    /** The MCP servers a Task can name (ADR 0069). */
+    val mcp: List<WorkspaceMcp> = emptyList(),
 )
 
 @Serializable
@@ -151,6 +153,10 @@ internal object LoopChecksSerializer : KSerializer<LoopChecks> {
 /** A connection of a Workspace; default ones go to every Task (ADR 0069). */
 @Serializable
 data class WorkspaceConnection(val name: String, @SerialName("default") val isDefault: Boolean)
+
+/** An MCP server of a Workspace, by name only; default ones go to every Task (ADR 0069). */
+@Serializable
+data class WorkspaceMcp(val name: String, @SerialName("default") val isDefault: Boolean)
 
 /** A place a client asks for (ADR 0068). A repo is absolute, or relative to the Workspace's root. */
 sealed interface PlaceSpec {

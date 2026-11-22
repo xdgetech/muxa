@@ -484,6 +484,7 @@ private fun standardContent(): DemoContent {
                 "app", "/demo", listOf("app", "docs"), agent = "claude",
                 loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
                 connections = listOf(WorkspaceConnection("github", isDefault = true), WorkspaceConnection("linear", isDefault = false)),
+                mcp = listOf(WorkspaceMcp("docs", isDefault = true)),
             ),
             Workspace("Personal", "/demo/personal", emptyList(), agent = "claude"),
         ),

@@ -164,6 +164,7 @@ class ServerTest {
                 "Personal", "/work", listOf("app", "docs"), agent = "claude",
                 loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
                 connections = listOf(WorkspaceConnection("github", isDefault = true)),
+                mcp = listOf(WorkspaceMcp("docs", isDefault = false)),
             )
             assertEquals(listOf(expected), c.workspaces())
             c.close()

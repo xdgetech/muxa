@@ -109,6 +109,7 @@ struct DemoTests {
         #expect(workspaces[0].repos == ["app", "docs"])
         #expect(workspaces[0].loop?.checks == .list(["make test", "make lint"]))
         #expect(workspaces[0].connections.filter(\.isDefault).map(\.name) == ["github"])
+        #expect(workspaces[0].mcp.map(\.name) == ["docs"])
         #expect(workspaces[1].loop == nil && workspaces[1].connections.isEmpty)
     }
 

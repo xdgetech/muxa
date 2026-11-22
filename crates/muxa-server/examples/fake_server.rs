@@ -17,7 +17,7 @@ use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
 use muxa_protocol::v2::{
     ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
-    Workspace, WorkspaceConnection, WorkspaceLoop,
+    Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
 };
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
@@ -59,6 +59,10 @@ impl Host for FakeHost {
             connections: vec![WorkspaceConnection {
                 name: "github".into(),
                 default: true,
+            }],
+            mcp: vec![WorkspaceMcp {
+                name: "docs".into(),
+                default: false,
             }],
         }])
     }

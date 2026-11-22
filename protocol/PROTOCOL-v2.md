@@ -216,7 +216,7 @@ Items the server makes:
 
 ADR 0072. The actions of a Review or Failed item, and the Workspaces a client offers when it starts a Task.
 
-`Workspace`: `{"name","root","repos":[...],"agent"?,"loop","connections":[{"name","default"}]}`.
+`Workspace`: `{"name","root","repos":[...],"agent"?,"loop","connections":[{"name","default"}],"mcp":[{"name","default"}]}`.
 - `repos`: the Workspace's repos as `start-task` takes them, relative to the root, or a listed repo's folder name.
 - `agent`: the program name of the Workspace's agent, such as `claude` or `codex`. Never its arguments or environment.
 - `loop`: `null` when the Workspace runs no Task Loops, else `{"checks":"any"}` or `{"checks":["make test",...]}`.
