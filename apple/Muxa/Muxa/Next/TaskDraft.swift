@@ -15,8 +15,6 @@ struct TaskRequest: Equatable {
     var title: String
     var goal: String?
     var places: [PlaceSpec]
-    var connections: [String]
-    var mcp: [String]
     var plan: Bool
     var loop: LoopSpec?
 }
@@ -35,9 +33,6 @@ struct TaskDraft {
     var folder = true
     var repos: [String: RepoUse] = [:]
     var branches: [String: String] = [:]
-    /// The connections and MCP servers named besides the default ones.
-    var connections: Set<String> = []
-    var mcp: Set<String> = []
     var plan = false
     var loop = false
     var check = ""
@@ -48,14 +43,12 @@ struct TaskDraft {
         goal = seed.goal ?? ""
     }
 
-    /// A new Workspace: its repos, connections and checks differ.
+    /// A new Workspace: its repos and checks differ.
     mutating func choose(_ ws: Workspace) {
         workspace = ws.name
         folder = true
         repos = [:]
         branches = [:]
-        connections = []
-        mcp = []
         loop = false
         if case .list(let checks)? = ws.loop?.checks { check = checks.first ?? "" } else { check = "" }
     }
@@ -90,8 +83,6 @@ struct TaskDraft {
         let goal = trimmed(goal)
         return TaskRequest(
             workspace: ws.name, title: trimmed(title), goal: goal.isEmpty ? nil : goal, places: places,
-            connections: ws.connections.filter { !$0.isDefault && connections.contains($0.name) }.map(\.name),
-            mcp: ws.mcp.filter { !$0.isDefault && mcp.contains($0.name) }.map(\.name),
             plan: plan,
             loop: loop && ws.loop != nil
                 ? LoopSpec(check: trimmed(check).isEmpty ? nil : trimmed(check), maxAttempts: UInt32(attempts)) : nil)

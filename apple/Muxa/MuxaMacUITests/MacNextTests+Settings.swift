@@ -1,0 +1,104 @@
+import XCTest
+
+/// The Settings window (`⌘,`) against the demo's in-memory settings, Start
+/// Task's line, and Remove anyway, as the iOS `NextTests`.
+extension MacNextTests {
+    @MainActor
+    func testAWorkspaceIsAdded() throws {
+        let app = launch()
+        openSettings(app)
+        let add = app.buttons["settings.addworkspace"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.click()
+        type("Lab", into: app.textFields["workspace.name"])
+        type("/demo/lab", into: app.textFields["workspace.root"])
+        app.buttons["editor.save"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.workspace.Lab"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testAConnectionWithASecretShowsSet() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.connections")
+        app.buttons["connection.add"].click()
+        type("notion", into: app.textFields["connection.name"])
+        type("NOTION_TOKEN", into: app.textFields["connection.env"])
+        type("not-a-real-token", into: app.secureTextFields["connection.secret"])
+        app.buttons["editor.save"].click()
+        let row = app.descendants(matching: .any)["connection.notion"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitFor(row, labelContaining: "set"))
+        XCTAssertFalse(row.label.contains("not-a-real-token"))
+    }
+
+    @MainActor
+    func testAnMcpServerIsAdded() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.mcp")
+        app.buttons["mcp.add"].click()
+        type("search", into: app.textFields["mcp.name"])
+        type("npx", into: app.textFields["mcp.command"])
+        type("search-mcp", into: app.textFields["mcp.args"])
+        app.buttons["editor.save"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["mcp.search"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testARoutinesInstructionsAreEdited() throws {
+        let app = launch()
+        openWorkspace(app, tab: "ws.tab.routines")
+        let row = app.descendants(matching: .any)["settings.routine.dependency-digest"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.click()
+        let editor = app.textViews["routine.instructions"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.click()
+        editor.typeText(" Skip dev dependencies.")
+        app.buttons["editor.save"].click()
+        XCTAssertTrue(waitForGone(editor))
+        row.click()
+        XCTAssertTrue(waitFor(editor, valueContaining: "Skip dev dependencies."))
+    }
+
+    @MainActor
+    func testStartTaskShowsWhatTheWorkspacesAgentsGet() throws {
+        let app = launch()
+        app.typeKey("n", modifierFlags: [.command, .shift])
+        let line = app.staticTexts["task.tools"]
+        XCTAssertTrue(line.waitForExistence(timeout: 10))
+        XCTAssertEqual(line.value as? String ?? line.label, "This Workspace's agents get: github, linear · MCP: docs")
+    }
+
+    @MainActor
+    func testRemoveAnywayClosesATaskWhoseWorktreeHoldsWork() throws {
+        let app = launch()
+        app.descendants(matching: .any)["item.d8"].click()
+        XCTAssertTrue(app.staticTexts["detail.title"].waitForExistence(timeout: 5))
+        app.typeKey(.return, modifierFlags: .command)
+        let force = app.buttons["Remove Anyway"].firstMatch
+        XCTAssertTrue(force.waitForExistence(timeout: 5))
+        force.click()
+        XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d8"]))
+    }
+
+    func openSettings(_ app: XCUIApplication) {
+        app.typeKey(",", modifierFlags: .command)
+    }
+
+    /// The demo's `app` Workspace, on one of its tabs.
+    func openWorkspace(_ app: XCUIApplication, tab: String) {
+        openSettings(app)
+        let row = app.descendants(matching: .any)["settings.workspace.app"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.click()
+        let button = app.buttons[tab]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        button.click()
+    }
+
+    func type(_ text: String, into field: XCUIElement) {
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText(text)
+    }
+}

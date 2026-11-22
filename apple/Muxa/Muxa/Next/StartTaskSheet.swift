@@ -15,8 +15,8 @@ struct NewTaskButton: View {
     }
 }
 
-/// Start Task (ADR 0068): a Workspace, a title and a goal, the places, the
-/// connections and MCP servers, plan mode and a Task Loop. The started
+/// Start Task (ADR 0068): a Workspace, a title and a goal, the places, plan
+/// mode and a Task Loop, and what the Workspace's agents get. The started
 /// agent opens in Focus.
 struct StartTaskSheet: View {
     @Environment(NextModel.self) private var model
@@ -41,9 +41,9 @@ struct StartTaskSheet: View {
                     task(ws)
                     TaskAgentSection(draft: $draft, workspace: ws)
                     TaskPlacesSection(draft: $draft, workspace: ws)
-                    TaskToolsSection(draft: $draft, workspace: ws)
+                    TaskToolsSection(workspace: ws)
                 } else if workspaces?.isEmpty == true {
-                    Text("The host has no Workspaces. Add one in workspaces.toml on the host.")
+                    Text("The host has no Workspaces. Add one in Settings.")
                         .foregroundStyle(Palette.textSecondary)
                 } else if workspaces == nil, error == nil {
                     ProgressView()

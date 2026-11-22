@@ -8,7 +8,7 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
-    private func launch() -> XCUIApplication {
+    func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
@@ -223,17 +223,17 @@ final class MacNextTests: XCTestCase {
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["pane.2"]))
     }
 
-    private func waitFor(_ e: XCUIElement, valueContaining text: String) -> Bool {
+    func waitFor(_ e: XCUIElement, valueContaining text: String) -> Bool {
         let p = NSPredicate(format: "value CONTAINS %@", text)
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
     }
 
-    private func waitFor(_ e: XCUIElement, labelContaining text: String) -> Bool {
+    func waitFor(_ e: XCUIElement, labelContaining text: String) -> Bool {
         let p = NSPredicate(format: "label CONTAINS %@", text)
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
     }
 
-    private func waitForGone(_ e: XCUIElement) -> Bool {
+    func waitForGone(_ e: XCUIElement) -> Bool {
         let p = NSPredicate(format: "exists == false")
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
     }

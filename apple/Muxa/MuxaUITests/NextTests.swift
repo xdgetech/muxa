@@ -13,7 +13,7 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
-    private func launch() -> XCUIApplication {
+    func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-demo"]
         app.launch()
@@ -300,46 +300,46 @@ final class NextTests: XCTestCase {
     }
 
     /// On a phone an item covers the Inbox until it is done: go back to the list.
-    private func backToList(_ app: XCUIApplication) {
+    func backToList(_ app: XCUIApplication) {
         let back = app.navigationBars.buttons.firstMatch
         if back.exists, back.isHittable { back.tap() }
         XCTAssertTrue(app.descendants(matching: .any)["inbox.list"].waitForExistence(timeout: 5))
     }
 
     /// The Tasks: the phone's Workspaces tab, or the tablet sidebar's Tasks segment.
-    private func showTasks(_ app: XCUIApplication) {
+    func showTasks(_ app: XCUIApplication) {
         show(app, tab: "Workspaces", segment: "mode.focus")
     }
 
     /// The Routines: the phone's tab, or the tablet sidebar's segment.
-    private func showRoutines(_ app: XCUIApplication) {
+    func showRoutines(_ app: XCUIApplication) {
         show(app, tab: "Routines", segment: "home.routines")
     }
 
     /// The layout follows the size class: a phone has tabs, a tablet segments.
-    private func show(_ app: XCUIApplication, tab: String, segment: String) {
+    func show(_ app: XCUIApplication, tab: String, segment: String) {
         let button = app.tabBars.buttons[tab]
         if button.exists { button.tap() } else { app.buttons[segment].tap() }
     }
 
     /// A Form's switch takes taps on its knob, at the trailing edge.
-    private func turnOn(_ s: XCUIElement) {
+    func turnOn(_ s: XCUIElement) {
         if s.value as? String != "1" { s.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
         XCTAssertTrue(XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "value == '1'"), evaluatedWith: s)],
                                        timeout: 5) == .completed)
     }
 
-    private func waitFor(_ e: XCUIElement, valueContaining text: String) -> Bool {
+    func waitFor(_ e: XCUIElement, valueContaining text: String) -> Bool {
         let p = NSPredicate(format: "value CONTAINS %@", text)
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
     }
 
-    private func waitFor(_ e: XCUIElement, labelContaining text: String) -> Bool {
+    func waitFor(_ e: XCUIElement, labelContaining text: String) -> Bool {
         let p = NSPredicate(format: "label CONTAINS %@", text)
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
     }
 
-    private func waitForGone(_ e: XCUIElement) -> Bool {
+    func waitForGone(_ e: XCUIElement) -> Bool {
         let p = NSPredicate(format: "exists == false")
         return XCTWaiter().wait(for: [expectation(for: p, evaluatedWith: e)], timeout: 10) == .completed
     }

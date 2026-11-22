@@ -35,6 +35,15 @@ struct MuxaMacApp: App {
                     }
                 })
         }
+        // ⌘, opens it, as in every Mac app.
+        Settings {
+            SettingsStack()
+                .environment(model)
+                .environment(nav)
+                .frame(minWidth: 640, minHeight: 560)
+                .background(Palette.ground)
+                .preferredColorScheme(.dark)
+        }
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Quick Capture") { quickCapture?.show() }

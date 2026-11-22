@@ -46,27 +46,7 @@ struct PhoneRoutines: View {
     }
 }
 
-/// The phone's Settings tab: the connection and the saved hosts.
+/// The phone's Settings tab: the connection, the saved hosts and the host's settings.
 struct PhoneSettings: View {
-    @Environment(NextModel.self) private var model
-    @State private var editing: HostDraft?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Connection") {
-                    LabeledContent(model.connectionTitle, value: model.isConnected ? "connected" : "reconnecting")
-                    Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
-                        Task { await model.disconnect() }
-                    }
-                }
-                .listRowBackground(Palette.card)
-                HostsSection(editing: $editing)
-            }
-            .groundList()
-            .navigationTitle("Settings")
-            .sheet(item: $editing) { NextHostEditor(draft: $0) }
-        }
-        .tint(Palette.accent)
-    }
+    var body: some View { SettingsStack() }
 }

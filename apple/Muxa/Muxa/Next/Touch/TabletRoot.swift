@@ -2,12 +2,14 @@ import MuxaV2
 import SwiftUI
 
 /// The tablet (Tablet mock): a sidebar with Inbox | Tasks | Routines, and the
-/// picked item, Task or Routine beside it.
+/// picked item, Task or Routine beside it. Settings has its index in the
+/// sidebar and the picked page beside it.
 struct TabletRoot: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     @State private var selectedItem: String?
     @State private var selectedRoutine: String?
+    @State private var selectedSetting: SettingsPlace?
     @State private var filter = InboxFilter()
     @State private var now = Int64(Date().timeIntervalSince1970)
 
@@ -19,7 +21,7 @@ struct TabletRoot: View {
             HStack(spacing: 0) {
                 TabletSidebar(
                     mode: mode, selectedItem: $selectedItem, selectedRoutine: $selectedRoutine,
-                    filter: $filter, now: now)
+                    selectedSetting: $selectedSetting, filter: $filter, now: now)
                     .frame(width: min(Self.sidebarWidth, max(300, geo.size.width * 0.4)))
                 Rectangle().fill(Palette.border).frame(width: 1)
                 main.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -36,10 +38,10 @@ struct TabletRoot: View {
         }
     }
 
-    /// The sidebar's segment: Tasks while a Task is open, else the Inbox or Routines.
+    /// The sidebar's segment: Tasks while a Task is open, else the Inbox, Routines or Settings.
     private var mode: Binding<NextNavigation.Tab> {
         Binding(
-            get: { nav.focus ? .tasks : (nav.tab == .routines ? .routines : .inbox) },
+            get: { nav.focus ? .tasks : ([.routines, .hosts].contains(nav.tab) ? nav.tab : .inbox) },
             set: { tab in
                 if tab == .tasks {
                     nav.focus = true
@@ -58,6 +60,12 @@ struct TabletRoot: View {
                 TabletTaskView(terminal: t).id(t.id)
             } else {
                 ContentUnavailableView("Select a Task", systemImage: "terminal")
+            }
+        case .hosts:
+            if let place = selectedSetting {
+                NavigationStack { SettingsDetail(place: place) }.id(place)
+            } else {
+                ContentUnavailableView("Select a Workspace", systemImage: "gearshape")
             }
         case .routines:
             if let id = selectedRoutine, let r = model.routines.first(where: { $0.id == id }) {

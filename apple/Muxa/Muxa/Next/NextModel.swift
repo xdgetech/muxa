@@ -20,6 +20,8 @@ final class NextModel {
     }
 
     let hosts: HostStore
+    /// The host's settings, read when Settings opens.
+    let settings = SettingsModel()
     private(set) var link: Link = .offline
     private(set) var hostID: UUID?
     private(set) var demo = false
@@ -64,6 +66,10 @@ final class NextModel {
 
     init(hosts: HostStore) {
         self.hosts = hosts
+        settings.client = { [weak self] in
+            guard let self else { throw V2Error.lost("not connected") }
+            return try self.connected()
+        }
     }
 
     /// Agents waiting on the user: a short-lived state, never an Inbox item.
@@ -321,6 +327,7 @@ final class NextModel {
         chatPrompts = [:]
         chatEnded = [:]
         channelOf = [:]
+        settings.reset()
     }
 
     // MARK: Requests
@@ -354,7 +361,7 @@ final class NextModel {
     func startTask(_ request: TaskRequest) async throws -> Terminal {
         let (t, _) = try await connected().startTask(
             workspace: request.workspace, title: request.title, goal: request.goal, places: request.places,
-            connections: request.connections, mcp: request.mcp, plan: request.plan, loop: request.loop)
+            plan: request.plan, loop: request.loop)
         if let at = terminals.firstIndex(where: { $0.id == t.id }) { terminals[at] = t } else { terminals.append(t) }
         return t
     }

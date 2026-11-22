@@ -48,6 +48,7 @@ private struct SegmentStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 13, weight: picked ? .semibold : .medium))
             .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .foregroundStyle(picked ? Palette.text : Palette.textSecondary)
             .frame(maxWidth: .infinity, minHeight: 38)
             .background(picked ? Palette.selected : .clear, in: RoundedRectangle(cornerRadius: 8))

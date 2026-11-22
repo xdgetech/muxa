@@ -79,41 +79,28 @@ struct TaskPlacesSection: View {
     }
 }
 
-/// The Workspace's connections and MCP servers. The default ones are always on.
+/// What every agent of the Workspace gets (ADR 0075); Settings changes it.
 struct TaskToolsSection: View {
-    @Binding var draft: TaskDraft
     let workspace: Workspace
 
     var body: some View {
-        if !workspace.connections.isEmpty {
-            Section("Connections") {
-                ForEach(workspace.connections) { c in
-                    row(c.name, isDefault: c.isDefault, chosen: $draft.connections, id: "task.connection")
-                }
-            }
-        }
-        if !workspace.mcp.isEmpty {
-            Section("MCP servers") {
-                ForEach(workspace.mcp) { m in
-                    row(m.name, isDefault: m.isDefault, chosen: $draft.mcp, id: "task.mcp")
-                }
+        if let line = Self.line(for: workspace) {
+            Section {
+                Text(line)
+                    .font(.callout)
+                    .foregroundStyle(Palette.textSecondary)
+                    .accessibilityIdentifier("task.tools")
+            } footer: {
+                Text("Change them in Settings.")
             }
         }
     }
 
-    private func row(_ name: String, isDefault: Bool, chosen: Binding<Set<String>>, id: String) -> some View {
-        Toggle(isOn: Binding(
-            get: { isDefault || chosen.wrappedValue.contains(name) },
-            set: { on in
-                if on { chosen.wrappedValue.insert(name) } else { chosen.wrappedValue.remove(name) }
-            })
-        ) {
-            HStack {
-                Text(name)
-                if isDefault { Text("Default").font(.caption).foregroundStyle(Palette.textSecondary) }
-            }
-        }
-        .disabled(isDefault)
-        .accessibilityIdentifier("\(id).\(name)")
+    /// "This Workspace's agents get: github, linear · MCP: docs", or nil when it has neither.
+    static func line(for ws: Workspace) -> String? {
+        var parts: [String] = []
+        if !ws.connections.isEmpty { parts.append(ws.connections.map(\.name).joined(separator: ", ")) }
+        if !ws.mcp.isEmpty { parts.append("MCP: " + ws.mcp.map(\.name).joined(separator: ", ")) }
+        return parts.isEmpty ? nil : "This Workspace's agents get: " + parts.joined(separator: " · ")
     }
 }

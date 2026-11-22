@@ -2,13 +2,14 @@ import MuxaV2
 import SwiftUI
 
 /// The tablet's sidebar: a title and New Task, the Inbox | Tasks | Routines
-/// segments, the list, and the host at the foot.
+/// segments, the list, and the host and Settings at the foot.
 struct TabletSidebar: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     let mode: Binding<NextNavigation.Tab>
     @Binding var selectedItem: String?
     @Binding var selectedRoutine: String?
+    @Binding var selectedSetting: SettingsPlace?
     @Binding var filter: InboxFilter
     let now: Int64
     @State private var reordering = false
@@ -35,6 +36,7 @@ struct TabletSidebar: View {
             switch mode.wrappedValue {
             case .tasks: tasks
             case .routines: routines
+            case .hosts: settings
             default: inbox
             }
             footer
@@ -46,6 +48,7 @@ struct TabletSidebar: View {
         switch mode.wrappedValue {
         case .tasks: "Tasks"
         case .routines: "Routines"
+        case .hosts: "Settings"
         default: "Inbox"
         }
     }
@@ -183,10 +186,20 @@ struct TabletSidebar: View {
         .task { await model.refreshRoutines() }
     }
 
+    // MARK: Settings
+
+    private var settings: some View {
+        SettingsIndex(picked: selectedSetting) { selectedSetting = $0 }
+    }
+
     private var footer: some View {
         HStack {
             HostMenu()
             Spacer()
+            Button("Settings", systemImage: "gearshape") { mode.wrappedValue = .hosts }
+                .labelStyle(.iconOnly)
+                .buttonStyle(BareIconStyle(color: mode.wrappedValue == .hosts ? Palette.text : Palette.textTertiary))
+                .accessibilityIdentifier("home.settings")
         }
         .padding(.horizontal, 16)
         .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
