@@ -366,6 +366,19 @@ final class NextModel {
         return t
     }
 
+    /// Resume Task: starts the agent in the item's place, then marks the item Done.
+    /// The agent's terminal comes back once it started, even when Done failed.
+    func resumeTask(_ item: InboxItem) async -> Terminal? {
+        guard let place = item.place else { return nil }
+        var started: Terminal?
+        await run { c in
+            started = try await self.startTask(TaskRequest(
+                workspace: place.workspace, title: item.resumeTitle, places: [.existing(path: place.path)], plan: false))
+            self.inbox = try await c.inbox(.inboxDone(item: item.id))
+        }
+        return started
+    }
+
     private func connected() throws -> V2Client {
         guard let client else { throw V2Error.lost("not connected") }
         return client

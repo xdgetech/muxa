@@ -22,6 +22,8 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var terminal: String?
     /// The Routine that made the item.
     public var routine: RoutineRef?
+    /// Where a Task of muxa v1 worked; Resume Task starts its agent there.
+    public var place: ItemPlace? = nil
 
     /// Hidden by Later at `now` (Unix seconds).
     public func isLater(now: Int64) -> Bool { (laterUntil ?? 0) > now }
@@ -35,6 +37,17 @@ public struct RoutineRef: Codable, Equatable, Sendable {
     public init(workspace: String, name: String) {
         self.workspace = workspace
         self.name = name
+    }
+}
+
+/// An existing working place in a Workspace.
+public struct ItemPlace: Codable, Equatable, Sendable {
+    public var workspace: String
+    public var path: String
+
+    public init(workspace: String, path: String) {
+        self.workspace = workspace
+        self.path = path
     }
 }
 
@@ -295,6 +308,9 @@ public enum PlaceSpec: Equatable, Sendable {
     case branch(repo: String, branch: String, base: String? = nil)
     /// The repo's main checkout, never written.
     case read(repo: String)
+    /// A folder or worktree that already exists: nothing is made. It is the
+    /// working place, so it never comes with a folder or a branch.
+    case existing(path: String)
 
     var json: [String: String] {
         switch self {
@@ -304,6 +320,7 @@ public enum PlaceSpec: Equatable, Sendable {
             if let base { m["base"] = base }
             return m
         case let .read(repo): return ["kind": "read", "repo": repo]
+        case let .existing(path): return ["kind": "existing", "path": path]
         }
     }
 }

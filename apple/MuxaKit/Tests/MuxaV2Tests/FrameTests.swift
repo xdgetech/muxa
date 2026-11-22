@@ -54,6 +54,22 @@ struct FrameTests {
         #expect(try wire(.workspaces) == #"{"id":1,"type":"workspaces"}"#)
     }
 
+    @Test func anExistingPlaceMatchesTheSpec() throws {
+        let start = try V2Request.startTask(workspace: "app", title: "Tidy", places: [.existing(path: "/w/tasks/tidy")])
+            .json(id: 2)
+        let fields = try JSONSerialization.jsonObject(with: start) as? [String: Any]
+        #expect(fields?["places"] as? [[String: String]] == [["kind": "existing", "path": "/w/tasks/tidy"]])
+    }
+
+    @Test func aMigratedItemNamesItsPlace() throws {
+        let wire = #"{"inbox":{"revision":1,"items":[{"id":"i1","kind":"todo","title":"Resume: Tidy","created":1,"source":"v1","place":{"workspace":"app","path":"/w/tasks/tidy"}},{"id":"i2","kind":"todo","title":"c","created":1,"source":"capture"}],"done":[]}}"#
+        let items = try (field("inbox", of: Data(wire.utf8)) as Inbox).items
+        #expect(items[0].place == ItemPlace(workspace: "app", path: "/w/tasks/tidy"))
+        #expect(items[1].place == nil)
+        let back = try JSONSerialization.jsonObject(with: JSONEncoder().encode(items[1])) as? [String: Any]
+        #expect(back?["place"] == nil, "no place is absent on the wire")
+    }
+
     @Test func itemsSayWhatMadeThem() throws {
         let wire = #"{"inbox":{"revision":1,"items":[{"id":"i1","kind":"review","title":"a","created":1,"source":"task","terminal":"t4"},{"id":"i2","kind":"failed","title":"b","created":1,"source":"routine","routine":{"workspace":"app","name":"digest"}},{"id":"i3","kind":"todo","title":"c","created":1,"source":"capture"}],"done":[]}}"#
         let items = try (field("inbox", of: Data(wire.utf8)) as Inbox).items

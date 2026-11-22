@@ -3,7 +3,7 @@ import Foundation
 extension DemoContent {
     /// Two Tasks (one waits on the user), a shell, a terminal muxa did not
     /// start, a Routine run, every Inbox kind, and three Routines.
-    /// Approving `d8` needs force: its worktree holds work.
+    /// Approving `d8` needs force: its worktree holds work. `d9` came from muxa v1.
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
             Terminal(
@@ -13,9 +13,11 @@ extension DemoContent {
                 cols: 80, rows: 24)
         }
         func item(_ id: String, _ kind: ItemKind, _ title: String, note: String? = nil, workspace: String? = "app",
-                  due: String? = nil, source: String, terminal: String? = nil, routine: RoutineRef? = nil) -> InboxItem {
+                  due: String? = nil, source: String, terminal: String? = nil, routine: RoutineRef? = nil,
+                  place: ItemPlace? = nil) -> InboxItem {
             InboxItem(id: id, kind: kind, title: title, note: note, workspace: workspace, due: due,
-                      laterUntil: nil, created: 1_764_000_000, source: source, terminal: terminal, routine: routine)
+                      laterUntil: nil, created: 1_764_000_000, source: source, terminal: terminal, routine: routine,
+                      place: place)
         }
         func routine(_ name: String, at: String?, running: Int64? = nil, last: RoutineLast?) -> Routine {
             Routine(workspace: "app", name: name, enabled: true, at: at, timezone: at.map { _ in "Europe/Berlin" },
@@ -54,6 +56,9 @@ extension DemoContent {
                 item("d7", .failed, "The agent of docs-audit stopped", note: "It exited with code 1.", source: "task",
                      terminal: "t2"),
                 item("d8", .review, "Review docs-audit", note: "Two links still to check.", source: "task", terminal: "t2"),
+                item("d9", .todo, "Resume: Tidy the release notes",
+                     note: "From the old muxa. Resume Task starts the agent where it worked.", source: "v1",
+                     place: ItemPlace(workspace: "app", path: "/demo/tasks/tidy-the-release-notes-t-1a2b3c")),
             ],
             routines: [
                 // t5 runs it.

@@ -60,6 +60,22 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func aMigratedTaskResumesInItsPlace() async throws {
+        let c = try await open()
+        let item = try #require(try await c.inbox().items.first { $0.place != nil })
+        let place = try #require(item.place)
+        let (t, existing) = try await c.startTask(
+            workspace: place.workspace, title: "Tidy the release notes", places: [.existing(path: place.path)])
+        #expect(t.name == "Tidy the release notes" && !existing && t.taskDir == place.path)
+        let (again, running) = try await c.startTask(
+            workspace: place.workspace, title: "Tidy the release notes", places: [.existing(path: place.path)])
+        #expect(running && again.id == t.id)
+        await #expect(throws: V2Error.self) {
+            try await c.startTask(workspace: "app", title: "X", places: [.existing(path: place.path), .folder])
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func aTaskStartsWithItsLoopAndGetsANewID() async throws {
         let c = try await open()
         let review = try #require(try await c.inbox().items.first { $0.kind == .review })

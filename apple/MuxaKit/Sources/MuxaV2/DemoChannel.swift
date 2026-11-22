@@ -411,8 +411,8 @@ actor DemoServer {
         offsets[n] = UInt64(screen.count)
     }
 
-    /// The first branch is the working place; without one, a folder named after the title.
-    /// A `loop` arms the new agent's Task Loop, as the server does.
+    /// An existing place or the first branch is the working place; without one, a folder
+    /// named after the title. A `loop` arms the new agent's Task Loop, as the server does.
     private func startTask(_ id: UInt64, _ m: [String: Any]) {
         func refuse(_ message: String) { send(["type": "error", "id": id, "code": "bad-request", "message": message]) }
         let title = (m["title"] as? String ?? "").trimmingCharacters(in: .whitespaces)
@@ -424,10 +424,14 @@ actor DemoServer {
         let loopSpec = m["loop"] as? [String: Any]
         if let loopSpec, let refusal = loopRefusal(loopSpec, workspace) { return refuse(refusal) }
         let places = m["places"] as? [[String: Any]] ?? []
+        let existing = places.first { $0["kind"] as? String == "existing" }?["path"] as? String
+        if existing != nil, places.contains(where: { ["folder", "branch"].contains($0["kind"] as? String) }) {
+            return refuse("an existing place is the working place: it comes without a folder or a branch")
+        }
         let firstBranch = places.first { $0["kind"] as? String == "branch" }
         let branch = firstBranch?["branch"] as? String
         let repo = firstBranch?["repo"] as? String
-        let dir = branch.map { "\(repo ?? "/demo")-\($0)" } ?? "/demo/tasks/\(title)"
+        let dir = existing ?? branch.map { "\(repo ?? "/demo")-\($0)" } ?? "/demo/tasks/\(title)"
         if let running = content.terminals.first(where: { $0.live && $0.isTaskAgent && $0.taskDir == dir }) {
             return reply(id, ["terminal": json(running), "existing": true])
         }

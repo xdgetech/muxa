@@ -21,8 +21,17 @@ extension InboxItem {
     /// A Failed item that knows what made it can run that again.
     var canRetry: Bool { kind == .failed && (terminal != nil || routine != nil) }
 
-    /// Work the user may hand to a new Task.
-    var canStartTask: Bool { [.reply, .decide, .todo].contains(kind) }
+    /// Work the user may hand to a new Task. A Task of muxa v1 resumes instead.
+    var canStartTask: Bool { [.reply, .decide, .todo].contains(kind) && place == nil }
+
+    /// A Task of muxa v1: its agent starts again in the place it worked.
+    var canResumeTask: Bool { place != nil }
+
+    /// The resumed Task's title: the item's, without `Resume: `.
+    var resumeTitle: String {
+        let prefix = "Resume: "
+        return title.hasPrefix(prefix) ? String(title.dropFirst(prefix.count)) : title
+    }
 
     /// Something to read the user may turn into work (docs/next.md, Make it a Task).
     var canMakeTask: Bool { kind == .read }
@@ -33,6 +42,7 @@ extension InboxItem {
         let from = switch source {
         case "task": "Task"
         case "routine": "Routine"
+        case "v1": "muxa v1"
         default: "captured"
         }
         return [workspace, from].compactMap { $0 }.joined(separator: " · ")

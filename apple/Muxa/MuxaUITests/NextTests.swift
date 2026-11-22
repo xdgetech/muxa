@@ -75,6 +75,24 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testResumeTaskStartsAV1TaskWhereItWorked() throws {
+        let app = launch()
+        let item = app.descendants(matching: .any)["item.d9"]
+        scrollTo(item, in: app)
+        item.tap()
+        let resume = app.buttons["detail.resumetask"]
+        XCTAssertTrue(resume.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["detail.starttask"].exists)
+        resume.tap()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "Starting the agent for Tidy the release notes"))
+        app.buttons["focus.inbox"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["item.d1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d9"]))
+    }
+
+    @MainActor
     func testOtherTerminalsStayClosedUntilOpened() throws {
         let app = launch()
         showTasks(app)

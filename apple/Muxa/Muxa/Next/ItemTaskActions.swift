@@ -2,7 +2,7 @@ import MuxaV2
 import SwiftUI
 
 /// What an item can do with the Task or Routine behind it (ADR 0072):
-/// Request changes, Retry, Open in Focus, Start Task and Make it a Task.
+/// Request changes, Retry, Open in Focus, Resume Task, Start Task and Make it a Task.
 struct ItemTaskActions: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -42,6 +42,10 @@ struct ItemTaskActions: View {
         if let t = liveTerminal {
             Button("Open in Focus", systemImage: "terminal") { nav.open(t) }
                 .accessibilityIdentifier("detail.open")
+        }
+        if item.canResumeTask {
+            Button("Resume Task", systemImage: "play") { Task { await resume() } }
+                .accessibilityIdentifier("detail.resumetask")
         }
         if item.canStartTask {
             Button("Start Task", systemImage: "play") { nav.newTask = seed }
@@ -90,6 +94,12 @@ struct ItemTaskActions: View {
             comment = ""
             requesting = false
         }
+    }
+
+    private func resume() async {
+        guard let t = await model.resumeTask(item) else { return }
+        if model.requestError == nil { onDone() }
+        nav.open(t)
     }
 
     private func act(_ r: V2Request) async {
