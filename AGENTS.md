@@ -46,6 +46,7 @@ muxa lets you run and follow coding agents from an iPad, an iPhone, an Android p
 | `make build-app` / `make test-app` | generate the Xcode project (XcodeGen) and build the app, or run its UI tests on an iPad against the in-app demo server (`MUXA_SIM` picks the simulator). |
 | `make test-app-iphone` | the same UI tests on an iPhone (`MUXA_SIM_IPHONE`). |
 | `make build-mac-app` / `make test-mac-app` | build the Mac app signed to run locally, or run its UI tests on the in-app demo server. macOS asks once to allow UI automation (`automationmodetool`). |
+| `make install-mac` | **humans only**: build the Mac app, replace `/Applications/Muxa.app` (`MAC_APPS` picks another folder) and open it. A running Muxa is quit first. |
 | `make test-android-release` | the minified release build (full R8, ADR 0030) connects over SSH to a throwaway host on 127.0.0.1, which runs the v2 server on the fake backend, and shows a terminal in Focus. Boots a read-only `Pixel_10a` emulator (`MUXA_AVD`) unless `ANDROID_SERIAL` names one. |
 | `make build-android` / `make lint-android` | build the debug app, or run Android lint on it. |
 | `make test-android-app` | the app's UI tests (`NextTest` against the in-app demo server, and the terminal view's input) on the running emulator or device. |

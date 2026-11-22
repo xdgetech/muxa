@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-herdr test-harness test-apple test-apple-v2 app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad install-iphone ios-device-app archive-ios lint-sh lint-store
+.PHONY: install check fmt fmt-check clippy test test-herdr test-harness test-apple test-apple-v2 app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad install-iphone install-mac ios-device-app archive-ios lint-sh lint-store
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -118,6 +118,18 @@ build-mac-app: app-project
 	$(MAC_XCODEBUILD) build
 
 # Its UI tests on the in-app v2 demo server. macOS asks once to allow UI automation.
+# Humans only: builds the Mac app (signed to run on this Mac), replaces
+# /Applications/Muxa.app (MAC_APPS picks another folder) and opens it. The app
+# keeps running with its window closed, so a running one is quit first.
+MAC_APPS ?= /Applications
+install-mac: build-mac-app
+	@app="$$($(MAC_XCODEBUILD) -showBuildSettings 2>/dev/null | awk '$$1 == "BUILT_PRODUCTS_DIR" { print $$3 }')/Muxa.app"; \
+	test -d "$$app" || { echo "no built app at $$app"; exit 1; }; \
+	id="$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$$app/Contents/Info.plist")"; \
+	osascript -e "tell application id \"$$id\" to quit" >/dev/null 2>&1 || true; \
+	rm -rf "$(MAC_APPS)/Muxa.app" && cp -R "$$app" "$(MAC_APPS)/" && open "$(MAC_APPS)/Muxa.app" && \
+	echo "Muxa is installed in $(MAC_APPS) and open."
+
 test-mac-app: app-project
 	$(MAC_XCODEBUILD) test
 
