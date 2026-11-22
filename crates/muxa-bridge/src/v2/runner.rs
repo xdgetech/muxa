@@ -376,7 +376,9 @@ fn made(
     brief::write_file(&dir, "TASK.md", &text)?;
     crate::routines::prepare_at(config, &routine.workspace, &routine.name, &dir)?;
     let servers = mcp::chosen(ws, &routine.mcp)?;
-    let command = if crate::launch::is_claude_code(&resolved.command) {
+    let command = if !mcp::managed(ws) {
+        resolved.command
+    } else if crate::launch::is_claude_code(&resolved.command) {
         let config = mcp::write(&dir, &servers, &ws.connections)?;
         mcp::with_flags(resolved.command, &config)
     } else {

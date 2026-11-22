@@ -100,19 +100,9 @@ async fn a_run_starts_its_agent_in_its_folder_with_the_prompt() {
     let launch = &backend.launches()[0];
     assert_eq!(launch.argv[..2], ["/bin/sh", "-c"]);
     let dir = launch.cwd.clone().unwrap();
-    // No MCP server named: an empty config keeps the user's servers out.
-    assert_eq!(
-        launch.argv[2],
-        format!(
-            "claude --mcp-config '{}' --strict-mcp-config 'Read .muxa/TASK.md and start.'",
-            dir.join(".muxa/mcp.json").display()
-        )
-    );
-    let config = std::fs::read_to_string(dir.join(".muxa/mcp.json")).unwrap();
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&config).unwrap(),
-        json!({"mcpServers": {}})
-    );
+    // A workspace without [[workspace.mcp]]: the agent keeps its own login's servers.
+    assert_eq!(launch.argv[2], "claude 'Read .muxa/TASK.md and start.'");
+    assert!(!dir.join(".muxa/mcp.json").exists());
     assert!(
         dir.starts_with(h.base.join("root/routines")),
         "{}",

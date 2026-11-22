@@ -1,8 +1,9 @@
 //! What an agent gets of its workspace's MCP servers (ADR 0069): the ones on
-//! by default and the ones its Task or Routine names. Claude Code gets them
-//! in `.muxa/mcp.json` with `--strict-mcp-config`, so no other configured
-//! server loads. The file holds `${VAR}` references, never a secret: the
-//! values reach the agent's environment as connections.
+//! by default and the ones its Task or Routine names. Once a workspace lists
+//! any `[[workspace.mcp]]`, Claude Code gets them in `.muxa/mcp.json` with
+//! `--strict-mcp-config`, so no other configured server loads. The file holds
+//! `${VAR}` references, never a secret: the values reach the agent's
+//! environment as connections.
 
 use std::path::{Path, PathBuf};
 
@@ -17,6 +18,13 @@ use crate::records::workers::LaunchCommand;
 const FILE: &str = "mcp.json";
 const CONFIG_FLAG: &str = "--mcp-config";
 const STRICT_FLAG: &str = "--strict-mcp-config";
+
+/// muxa owns the agent's MCP config only in a workspace that lists servers.
+/// Without any, the agent keeps the servers and connectors of its own login,
+/// so a workspace set up before E2b works as before.
+pub fn managed(ws: &Workspace) -> bool {
+    !ws.mcp.is_empty()
+}
 
 /// The servers an agent gets: the default ones and `named`, in the
 /// workspace's order. An unknown name is an error.

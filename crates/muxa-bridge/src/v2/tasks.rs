@@ -92,6 +92,7 @@ impl Host for BridgeHost {
             mcp::only_claude(crate::launch::program(&launch), &servers)
                 .map_err(TaskError::Invalid)?;
         }
+        let managed = mcp::managed(&ws);
         let named = mcp::with_connections(&spec.connections, &servers);
         crate::connections::chosen(&ws, &named).map_err(TaskError::Invalid)?;
         // Before any place is made: a missing secret stops the start.
@@ -108,9 +109,9 @@ impl Host for BridgeHost {
             let mut flags = Vec::new();
             if claude {
                 flags.extend(places::claude_settings(&made)?);
-                let config = mcp::write(made.working(), &servers, &known)?;
-                flags.push(mcp::shell_flags(&config));
-                if !servers.is_empty() {
+                if managed {
+                    let config = mcp::write(made.working(), &servers, &known)?;
+                    flags.push(mcp::shell_flags(&config));
                     let names: Vec<&str> = servers.iter().map(|s| s.name.as_str()).collect();
                     tracing::info!(mcp = ?names, "mcp servers given");
                 }

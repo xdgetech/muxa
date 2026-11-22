@@ -15,6 +15,6 @@ muxa gives a Claude Code agent only the MCP servers its Task or Routine names (A
 ## What muxa does with it
 
 - The file is `.muxa/mcp.json` in the working place, passed by absolute path. A connection's variable appears only as `${VAR}`; the value goes into the agent's environment.
-- Every Claude Code agent gets `--strict-mcp-config`, also with no servers (`{"mcpServers":{}}`), so the servers of the user's own config never load in a muxa agent (ADR 0069, §5).
+- In a workspace that lists any `[[workspace.mcp]]`, every Claude Code agent gets `--strict-mcp-config`, also with no servers chosen (`{"mcpServers":{}}`), so the servers of the user's own config do not load (ADR 0069, §5). A workspace without any gets no MCP flags.
 - A connection whose variable is one of the names that read as empty cannot authenticate a remote server through `headers`. Give it a name of its own.
 - Codex: its docs describe `[mcp_servers.<name>]` tables in `config.toml` and an `enabled` key, but no per-run override and no way to skip the user's servers. muxa gives Codex no MCP servers and refuses a start that would.
