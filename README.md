@@ -37,7 +37,7 @@ flowchart LR
    make install
    muxa-bridge daemon install
    ```
-2. Describe your workspaces in `~/.config/muxa/workspaces.toml` (see `docs/examples/workspaces.toml`).
+2. Describe your workspaces: in an app's **Settings** once you are connected (step 4), or by hand in `~/.config/muxa/workspaces.toml` (see `docs/examples/workspaces.toml`). Both edit the same file.
 3. Build an app:
    - iOS: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`.
    - Mac: `make build-mac-app`. It connects to "This Mac" without SSH.
@@ -48,18 +48,20 @@ flowchart LR
 
 ## Using it
 
-**Home** is the Inbox and Capture. Type a line such as `reply Anna about the launch #personal due fri`; muxa reads the kind, the workspace and the date into chips, and the item goes on top. Drag items into your order, swipe Done or Later, open one for its note and its Task. A Review's **Approve** (`⌘⏎`) closes its Task: the agent ends and its worktrees go, after a question when one holds work. **Request changes** (`⌘R`) types a one-line comment into the agent, and a Failed item's **Retry** (`⌘R`) runs it again. **New Task** (`⌘⇧N`, or Start Task on an item) picks a workspace, the places, the connections, plan mode and a Task Loop, then opens the agent in Focus. **Needs you** lists the agents that wait on you right now. **Routines** lists each Routine with its next run and last result, and runs one now.
+**Home** is the Inbox and Capture. Type a line such as `reply Anna about the launch #personal due fri`; muxa reads the kind, the workspace and the date into chips, and the item goes on top. Drag items into your order, swipe Done or Later, open one for its note and its Task. A Review's **Approve** (`⌘⏎`) closes its Task: the agent ends and its worktrees go, after a question when one holds work. **Request changes** (`⌘R`) types a one-line comment into the agent, and a Failed item's **Retry** (`⌘R`) runs it again. **New Task** (`⌘⇧N`, or Start Task on an item) picks a workspace, the places, plan mode and a Task Loop, then opens the agent in Focus. It shows what every agent of the workspace gets: its connections and MCP servers. **Needs you** lists the agents that wait on you right now. **Routines** lists each Routine with its next run and last result, and runs one now.
 
 **Focus** is one Task's terminal, with the Tasks and other terminals beside it. The terminal takes the size of the view you look at it in. Beside it, one panel at a time:
 - **Inbox** (`⌘⇧I`);
 - **Reader** (`⌘⇧R`, `Ctrl+Shift+R` on Android): the Task folder's Markdown and HTML documents, its changed files and the branch's commits as diffs, and its images, kept current while open; a link to another of the documents opens it;
 - **Chat** (`⌘⇧C`, `Ctrl+Shift+C`): the agent's conversation from its own records, the approval card when it waits on you, and a line to send it.
 
-**Task Loop:** the Loop button runs a check after each finished turn of a Task's agent, for example `make check` (ADR 0019). A failed check types a fixed prompt: `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.` A pass makes a Review item; the last allowed failure (3 by default) makes a Failed item. While the agent waits on you, the loop pauses. Allow checks for a workspace with `[workspace.loop]` in `workspaces.toml`.
+**Task Loop:** the Loop button runs a check after each finished turn of a Task's agent, for example `make check` (ADR 0019). A failed check types a fixed prompt: `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.` A pass makes a Review item; the last allowed failure (3 by default) makes a Failed item. While the agent waits on you, the loop pauses. Allow checks for a workspace in Settings, or with `[workspace.loop]` in `workspaces.toml`.
 
-**Routines** (ADR 0026, 0036): a `[[routine]]` in a workspace's `.muxa/routines.toml` runs an agent on a schedule, for example at 8:00 on weekdays, in its own folder under `<root>/routines/`. `[workspace.routines]` in `workspaces.toml` allows them. The agent reads its sources with its own tools and writes briefings and proposals, which a check validates before they reach the Inbox.
+**Routines** (ADR 0026, 0036): a `[[routine]]` in a workspace's `.muxa/routines.toml` runs an agent on a schedule, for example at 8:00 on weekdays, in its own folder under `<root>/routines/`. `[workspace.routines]` in `workspaces.toml` allows them. Settings in the apps adds and edits Routines and their instructions too. The agent reads its sources with its own tools and writes briefings and proposals, which a check validates before they reach the Inbox.
 
-**Connections** (ADR 0069, 0075): a workspace names its tokens in `[[workspace.connection]]`; the secrets live in the macOS Keychain and reach every agent of that workspace.
+**Connections** (ADR 0069, 0075): a workspace names its tokens in `[[workspace.connection]]`; the secrets live in the macOS Keychain and reach every agent of that workspace, as do its `[[workspace.mcp]]` servers.
+
+**Settings** (ADR 0074): the phone's Settings tab, the gear at the foot of the tablet's sidebar, and `⌘,` on the Mac edit every Workspace: its root and repos, agent command, env, loop checks, Routines, connections with their secrets, MCP servers, and the workers. Secrets and env values are write-only: the app sends them to the host and never shows them again. Hand edits to the files still work; an app that saved over a newer file is refused and reloads. `muxa-bridge daemon install --settings-read-only` locks it.
 
 On the Mac: the Go, Pane and Host menus, up to four Tasks side by side in Focus (`⌘\`), and `⌃⌥Space` for a Capture window from any app, where `⌘⏎` adds the item and starts a Task from it (ADR 0070).
 

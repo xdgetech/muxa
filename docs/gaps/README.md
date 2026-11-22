@@ -20,8 +20,8 @@ What is built but not verified, and what is left after the F phases and their fo
 
 ## Not built
 
-- **Settings** that show who uses which connection and MCP server, and when it was last used (ADR 0069 §7). The `workspaces` reply carries it (`used_by`, `last_used`). Android shows it in Settings, read only; iOS and the Mac do not yet.
-- **Editable Settings screens** (ADR 0074): `settings` and `settings-update` are on the wire, in the daemon, in `muxa-cli` and in the MuxaV2 and `:v2` clients with their demo servers. No app has the screens yet; they are next.
+- **Settings** that show who uses which connection and MCP server, and when it was last used (ADR 0069 §7). The `workspaces` reply carries it (`used_by`, `last_used`). Android shows it in Settings, read only; iOS and the Mac show it beside each connection and MCP server in Settings.
+- **Editable Settings screens** (ADR 0074): `settings` and `settings-update` are on the wire, in the daemon, in `muxa-cli` and in the MuxaV2 and `:v2` clients with their demo servers. iOS and the Mac have the screens (the phone's Settings tab, the tablet's Settings place, the Mac's `⌘,` window); Android does not yet.
 - **Codex**: no MCP servers, no Routines (whether Codex sends OSC 7501 by itself is unchecked), no approval prompt in Chat.
 - **Edit Routine** on a Failed item (`docs/next.md`), in every app.
 - **Adding a place** to an open Task.
@@ -33,5 +33,5 @@ What is built but not verified, and what is left after the F phases and their fo
 
 ## Tests missing
 
-- No iOS or Mac UI test reaches "Remove anyway". The demo servers refuse the first Approve of `d8` with `would-lose-work`; Android's `NextTest` taps Remove Anyway on it, and the MuxaV2 and `:v2` client tests use it.
+- `MacNextTests` has the Settings and Remove anyway tests of `NextTests`, but they have not run: macOS UI automation needs a human to allow it once.
 - `BridgeHost::prepare` is long; the adapters' and runner's MCP paths are tested, the shape is not refactored.
