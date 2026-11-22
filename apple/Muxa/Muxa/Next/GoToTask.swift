@@ -2,7 +2,8 @@ import MuxaV2
 import SwiftUI
 
 /// `⌘P`: type part of a Task's branch or a terminal's name, `⏎` opens the
-/// first match in Focus. Tasks that need the user come first.
+/// first match in Focus. Tasks that need the user come first. Other terminals
+/// show only once the text matches them, as the lists keep them closed.
 struct GoToTask: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -11,10 +12,10 @@ struct GoToTask: View {
     @FocusState private var focused: Bool
 
     private var matches: [MuxaV2.Terminal] {
-        let live = model.needsYou + model.terminals.filter { $0.live && !model.needsYou.contains($0) }
+        let tasks = model.needsYou + model.liveTasks.filter { !model.needsYou.contains($0) }
         let query = text.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return live }
-        return live.filter { title($0).lowercased().contains(query) }
+        guard !query.isEmpty else { return tasks }
+        return (tasks + model.otherTerminals).filter { $0.title.lowercased().contains(query) }
     }
 
     var body: some View {
@@ -30,7 +31,7 @@ struct GoToTask: View {
             List(matches) { t in
                 Button { pick(t) } label: {
                     HStack {
-                        Text(title(t))
+                        Text(t.title)
                         Spacer()
                         if let state = t.status?.state {
                             Text(state).font(.caption).foregroundStyle(model.needsYou.contains(t) ? Theme.attention : Palette.textSecondary)
@@ -53,8 +54,6 @@ struct GoToTask: View {
         .onExitCommand { dismiss() }
         #endif
     }
-
-    private func title(_ t: MuxaV2.Terminal) -> String { t.branch ?? t.name ?? t.id }
 
     private func pick(_ t: MuxaV2.Terminal) {
         nav.open(t)

@@ -11,6 +11,8 @@ struct FocusView: View {
     @Environment(NextNavigation.self) private var nav
     /// The Task whose loop sheet is open.
     @State private var loopFor: MuxaV2.Terminal?
+    /// The other terminals start closed: Tasks are what Focus is for.
+    @State private var showOthers = false
 
     var body: some View {
         NavigationSplitView(columnVisibility: Bindable(nav).sidebar) {
@@ -19,8 +21,14 @@ struct FocusView: View {
                     Section("Needs you") { rows(model.needsYou) }
                 }
                 Section("Tasks") { rows(tasks) }
-                if !others.isEmpty {
-                    Section("Terminals") { rows(others) }
+                if !model.otherTerminals.isEmpty {
+                    Section(isExpanded: $showOthers) {
+                        rows(model.otherTerminals)
+                    } header: {
+                        Button(OtherTerminals.title) { showOthers.toggle() }
+                            .buttonStyle(.plain)
+                            .otherTerminalsToggle(open: showOthers)
+                    }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -90,11 +98,7 @@ struct FocusView: View {
     }
 
     private var tasks: [Terminal] {
-        model.terminals.filter { $0.live && $0.isTaskAgent && !model.needsYou.contains($0) }
-    }
-
-    private var others: [Terminal] {
-        model.terminals.filter { $0.live && !$0.isTaskAgent }
+        model.liveTasks.filter { !model.needsYou.contains($0) }
     }
 
     private func rows(_ list: [Terminal]) -> some View {

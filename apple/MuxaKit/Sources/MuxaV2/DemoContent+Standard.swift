@@ -1,7 +1,8 @@
 import Foundation
 
 extension DemoContent {
-    /// Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines.
+    /// Two Tasks (one waits on the user), a shell, a terminal muxa did not
+    /// start, a Routine run, every Inbox kind, and three Routines.
     /// Approving `d8` needs force: its worktree holds work.
     public static let standard: DemoContent = {
         func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
@@ -16,9 +17,9 @@ extension DemoContent {
             InboxItem(id: id, kind: kind, title: title, note: note, workspace: workspace, due: due,
                       laterUntil: nil, created: 1_764_000_000, source: source, terminal: terminal, routine: routine)
         }
-        func routine(_ name: String, at: String?, last: RoutineLast?) -> Routine {
+        func routine(_ name: String, at: String?, running: Int64? = nil, last: RoutineLast?) -> Routine {
             Routine(workspace: "app", name: name, enabled: true, at: at, timezone: at.map { _ in "Europe/Berlin" },
-                    schedule: nil, nextDue: nil, runningSince: nil, last: last)
+                    schedule: nil, nextDue: nil, runningSince: running, last: last)
         }
         let everyRoutine = ["dependency-digest", "nightly-backup", "release-notes"]
         return DemoContent(
@@ -26,11 +27,20 @@ extension DemoContent {
                 agent("t1", "fix-login", "working"),
                 agent("t2", "docs-audit", "blocked"),
                 Terminal(id: "t3", name: "shell", live: true, status: nil, labels: [:], cols: 80, rows: 24),
+                // A terminal muxa did not start: no name, no labels.
+                Terminal(id: "t4", name: nil, live: true, status: nil, labels: [:], cols: 80, rows: 24),
+                Terminal(
+                    id: "t5", name: nil, live: true, status: TerminalStatus(state: "working", app: "claude-code"),
+                    labels: ["muxa.kind": "routine", "muxa.role": "agent", "muxa.workspace": "app",
+                             "muxa.routine": "dependency-digest", "muxa.dir": "/demo/runs/dependency-digest"],
+                    cols: 80, rows: 24),
             ],
             screens: [
                 "t1": "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
                 "t2": "● The README links three pages that moved.\r\n\r\n  Allow edits to README.md? (y/n) ",
                 "t3": "$ ",
+                "t4": "% ",
+                "t5": "● Reading the lockfile\r\n",
             ],
             inbox: [
                 item("d1", .review, "Review fix-login", note: "Draft PR #42: refresh the session before it expires.", source: "task",
@@ -46,7 +56,8 @@ extension DemoContent {
                 item("d8", .review, "Review docs-audit", note: "Two links still to check.", source: "task", terminal: "t2"),
             ],
             routines: [
-                routine("dependency-digest", at: "09:00", last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 1)),
+                // t5 runs it.
+                routine("dependency-digest", at: "09:00", running: 1_764_000_000, last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 1)),
                 routine("nightly-backup", at: "02:00", last: RoutineLast(at: 1_764_000_000, ok: false, reason: "gh login expired.", published: nil)),
                 routine("release-notes", at: nil, last: nil),
             ],

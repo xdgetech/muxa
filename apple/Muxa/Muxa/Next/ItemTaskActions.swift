@@ -2,7 +2,7 @@ import MuxaV2
 import SwiftUI
 
 /// What an item can do with the Task or Routine behind it (ADR 0072):
-/// Request changes, Retry, Open in Focus and Start Task.
+/// Request changes, Retry, Open in Focus, Start Task and Make it a Task.
 struct ItemTaskActions: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
@@ -44,11 +44,18 @@ struct ItemTaskActions: View {
                 .accessibilityIdentifier("detail.open")
         }
         if item.canStartTask {
-            Button("Start Task", systemImage: "play") {
-                nav.newTask = TaskSeed(title: item.title, goal: item.note, workspace: item.workspace)
-            }
-            .accessibilityIdentifier("detail.starttask")
+            Button("Start Task", systemImage: "play") { nav.newTask = seed }
+                .accessibilityIdentifier("detail.starttask")
         }
+        if item.canMakeTask {
+            Button("Make it a Task", systemImage: "play") { nav.newTask = seed }
+                .accessibilityIdentifier("detail.maketask")
+        }
+    }
+
+    /// The Start Task sheet, prefilled from the item.
+    private var seed: TaskSeed {
+        TaskSeed(title: item.title, goal: item.note, workspace: item.workspace)
     }
 
     private var liveTerminal: MuxaV2.Terminal? {

@@ -2,12 +2,6 @@ import MuxaV2
 import SwiftUI
 
 extension NextModel {
-    /// The live Tasks' agents.
-    var liveTasks: [Terminal] { terminals.filter { $0.live && $0.isTaskAgent } }
-
-    /// Live terminals that are not a Task's agent: shells and the like.
-    var otherTerminals: [Terminal] { terminals.filter { $0.live && !$0.isTaskAgent } }
-
     /// The live Tasks by Workspace, in name order; Tasks without one last.
     var tasksByWorkspace: [(name: String, tasks: [Terminal])] {
         let groups = Dictionary(grouping: liveTasks) { $0.workspace ?? "" }
@@ -45,7 +39,7 @@ struct PhoneTasks: View {
                         WorkspaceCard(name: group.name, tasks: group.tasks, workspace: group.tasks.first?.workspace)
                     }
                     if !model.otherTerminals.isEmpty {
-                        WorkspaceCard(name: "Terminals", tasks: model.otherTerminals, workspace: nil, canStart: false)
+                        OtherTerminalsCard(terminals: model.otherTerminals)
                     }
                     if model.liveTasks.isEmpty {
                         Text("No Tasks run. Start one with New Task.")
@@ -70,14 +64,13 @@ private struct WorkspaceCard: View {
     let name: String
     let tasks: [Terminal]
     let workspace: String?
-    var canStart = true
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text(name).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.text)
                 Spacer()
-                Text(count)
+                Text("\(tasks.count) Task\(tasks.count == 1 ? "" : "s")")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.textTertiary)
             }
@@ -88,26 +81,54 @@ private struct WorkspaceCard: View {
                 Divider().overlay(Palette.divider)
                 TaskRow(terminal: t) { nav.open(t) }
             }
-            if canStart {
-                Divider().overlay(Palette.divider)
-                Button { nav.newTask = TaskSeed(workspace: workspace) } label: {
-                    Label("New Task", systemImage: "plus")
-                        .font(.system(size: 14))
-                        .frame(maxWidth: .infinity, minHeight: minTouch, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Palette.accent)
+            Divider().overlay(Palette.divider)
+            Button { nav.newTask = TaskSeed(workspace: workspace) } label: {
+                Label("New Task", systemImage: "plus")
+                    .font(.system(size: 14))
+                    .frame(maxWidth: .infinity, minHeight: minTouch, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(Palette.accent)
         }
         .card(border: true)
     }
+}
 
-    /// `2 Tasks`, or `1 terminal` in the card of other terminals.
-    private var count: String {
-        let noun = canStart ? "Task" : "terminal"
-        return "\(tasks.count) \(noun)\(tasks.count == 1 ? "" : "s")"
+/// Live terminals that are not Tasks, in one card that starts closed.
+private struct OtherTerminalsCard: View {
+    @Environment(NextNavigation.self) private var nav
+    let terminals: [Terminal]
+    @State private var open = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button { open.toggle() } label: {
+                HStack {
+                    Text(OtherTerminals.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.text)
+                    Spacer()
+                    Text(OtherTerminals.count(terminals.count))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.textTertiary)
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                .padding(.horizontal, 14)
+                .frame(minHeight: minTouch)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .otherTerminalsToggle(open: open)
+            if open {
+                ForEach(terminals) { t in
+                    Divider().overlay(Palette.divider)
+                    TaskRow(terminal: t) { nav.open(t) }
+                }
+            }
+        }
+        .card(border: true)
     }
 }
 

@@ -54,8 +54,41 @@ final class NextTests: XCTestCase {
         // The demo closes the Task's agent, t1.
         backToList(app)
         showTasks(app)
-        XCTAssertTrue(app.descendants(matching: .any)["terminal.t3"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["terminal.t2"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["terminal.t1"].exists)
+    }
+
+    @MainActor
+    func testMakeItATaskStartsATaskFromAReadItem() throws {
+        let app = launch()
+        app.descendants(matching: .any)["item.d4"].tap()
+        let make = app.buttons["detail.maketask"]
+        XCTAssertTrue(make.waitForExistence(timeout: 5))
+        make.tap()
+        let title = app.textFields["task.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertEqual(title.value as? String, "Weekly dependency digest")
+        app.buttons["task.start"].tap()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "Starting the agent for Weekly dependency digest"))
+    }
+
+    @MainActor
+    func testOtherTerminalsStayClosedUntilOpened() throws {
+        let app = launch()
+        showTasks(app)
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(any["terminal.t1"].waitForExistence(timeout: 5))
+        let others = app.buttons["tasks.others"]
+        XCTAssertTrue(others.exists)
+        for id in ["t3", "t4", "t5"] { XCTAssertFalse(any["terminal.\(id)"].exists, id) }
+        others.tap()
+        XCTAssertTrue(any["terminal.t4"].waitForExistence(timeout: 5))
+        // No name and no labels: the id, said as a terminal.
+        XCTAssertTrue(any["terminal.t4"].label.contains("Terminal t4"))
+        XCTAssertTrue(any["terminal.t5"].label.contains("dependency-digest run"))
+        XCTAssertTrue(any["terminal.t3"].exists)
     }
 
     @MainActor
@@ -162,6 +195,7 @@ final class NextTests: XCTestCase {
     func testTypingInFocusReachesTheTerminal() throws {
         let app = launch()
         showTasks(app)
+        app.buttons["tasks.others"].tap()
         let shell = app.descendants(matching: .any)["terminal.t3"]
         XCTAssertTrue(shell.waitForExistence(timeout: 5))
         shell.tap()

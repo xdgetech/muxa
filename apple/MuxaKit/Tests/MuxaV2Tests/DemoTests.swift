@@ -153,7 +153,7 @@ struct DemoTests {
         #expect(!inbox.items.contains { $0.id == "d1" })
         #expect(await events.next() == .removed(terminal: "t1"))
         #expect(await events.next() == .inbox(inbox))
-        #expect(try await c.terminals().map(\.id) == ["t2", "t3"])
+        #expect(try await c.terminals().map(\.id) == ["t2", "t3", "t4", "t5"])
         await #expect(throws: V2Error.self) { try await c.inbox(.inboxApprove(item: "d2")) }
         do {
             _ = try await c.inbox(.inboxApprove(item: "nope"))

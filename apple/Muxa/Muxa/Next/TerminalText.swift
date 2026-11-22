@@ -3,7 +3,21 @@ import MuxaV2
 
 /// How a terminal reads in lists and headers, from its `muxa.*` labels.
 extension Terminal {
-    var title: String { branch ?? name ?? id }
+    /// A Task's branch, a Routine run's Routine, the terminal's name, its
+    /// folder or the program it reports; `Terminal t3` when it has none.
+    var title: String {
+        if let branch { return branch }
+        if let routine = routineName { return "\(routine) run" }
+        if let name, !name.isEmpty { return name }
+        if let dir = taskDir { return Self.lastPart(dir) }
+        if let app = status?.app, !app.isEmpty { return app }
+        return "Terminal \(id)"
+    }
+
+    /// The Routine whose run this agent is (`muxa.kind = routine`).
+    var routineName: String? {
+        labels["muxa.kind"] == "routine" ? labels["muxa.routine"] : nil
+    }
 
     var state: TaskState { TaskState(status?.state) }
 

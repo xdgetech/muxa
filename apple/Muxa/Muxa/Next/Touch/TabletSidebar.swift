@@ -12,6 +12,7 @@ struct TabletSidebar: View {
     @Binding var filter: InboxFilter
     let now: Int64
     @State private var reordering = false
+    @State private var showOthers = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -111,9 +112,7 @@ struct TabletSidebar: View {
                 ForEach(model.tasksByState, id: \.state) { group in
                     taskGroup(group.state.title, color: group.state.color, group.tasks)
                 }
-                if !model.otherTerminals.isEmpty {
-                    taskGroup("Terminals", color: Palette.textTertiary, model.otherTerminals)
-                }
+                if !model.otherTerminals.isEmpty { others }
                 if model.liveTasks.isEmpty {
                     Text("No Tasks run. Start one with New Task.").foregroundStyle(Palette.textSecondary)
                 }
@@ -129,6 +128,33 @@ struct TabletSidebar: View {
             GroupHeader(title: title, color: color, count: list.count).padding(.bottom, 4)
             ForEach(list) { t in
                 SidebarTaskRow(terminal: t, color: color, picked: nav.terminal == t.id) { nav.terminal = t.id }
+            }
+        }
+    }
+
+    /// Live terminals that are not Tasks, closed until the user opens them.
+    private var others: some View {
+        let list = model.otherTerminals
+        return VStack(spacing: 4) {
+            Button { showOthers.toggle() } label: {
+                HStack(spacing: 6) {
+                    GroupHeader(title: OtherTerminals.title, count: list.count)
+                    Image(systemName: showOthers ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Palette.textTertiary)
+                        .padding(.trailing, 6)
+                }
+                .frame(minHeight: minTouch)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .otherTerminalsToggle(open: showOthers)
+            if showOthers {
+                ForEach(list) { t in
+                    SidebarTaskRow(terminal: t, color: Palette.textTertiary, picked: nav.terminal == t.id) {
+                        nav.terminal = t.id
+                    }
+                }
             }
         }
     }

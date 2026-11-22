@@ -24,6 +24,9 @@ extension InboxItem {
     /// Work the user may hand to a new Task.
     var canStartTask: Bool { [.reply, .decide, .todo].contains(kind) }
 
+    /// Something to read the user may turn into work (docs/next.md, Make it a Task).
+    var canMakeTask: Bool { kind == .read }
+
     /// Where the item came from: `Routine · nightly-backup`, `Personal · captured`.
     var origin: String {
         if let routine { return "Routine · \(routine.name)" }

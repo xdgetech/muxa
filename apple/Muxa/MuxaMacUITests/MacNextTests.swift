@@ -46,8 +46,52 @@ final class MacNextTests: XCTestCase {
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
         // The demo closes the Task's agent, t1.
         app.typeKey("f", modifierFlags: [.command, .shift])
-        XCTAssertTrue(app.descendants(matching: .any)["terminal.t3"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["terminal.t2"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["terminal.t1"].exists)
+    }
+
+    @MainActor
+    func testMakeItATaskStartsATaskFromAReadItem() throws {
+        let app = launch()
+        app.descendants(matching: .any)["item.d4"].click()
+        let make = app.buttons["detail.maketask"]
+        XCTAssertTrue(make.waitForExistence(timeout: 5))
+        make.click()
+        let title = app.textFields["task.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertEqual(title.value as? String, "Weekly dependency digest")
+        app.buttons["task.start"].click()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "Starting the agent for Weekly dependency digest"))
+    }
+
+    @MainActor
+    func testOtherTerminalsStayClosedUntilOpened() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(any["terminal.t1"].waitForExistence(timeout: 5))
+        for id in ["t3", "t4", "t5"] { XCTAssertFalse(any["terminal.\(id)"].exists, id) }
+        any["tasks.others"].firstMatch.click()
+        XCTAssertTrue(any["terminal.t4"].waitForExistence(timeout: 5))
+        XCTAssertTrue(any["terminal.t4"].label.contains("Terminal t4"))
+        XCTAssertTrue(any["terminal.t5"].label.contains("dependency-digest run"))
+    }
+
+    @MainActor
+    func testCaptureStartsATaskWithTheWindowClosed() throws {
+        let app = launch()
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
+        app.menuBars.menuItems["Quick Capture"].click()
+        let field = app.textFields["capture.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Write the release notes")
+        app.typeKey(.return, modifierFlags: .command)
+        let title = app.textFields["task.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertEqual(title.value as? String, "Write the release notes")
     }
 
     @MainActor

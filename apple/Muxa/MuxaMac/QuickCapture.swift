@@ -13,6 +13,8 @@ final class QuickCapture {
     private var panel: NSPanel?
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
+    /// Opens the main window; the window's scene sets it.
+    var openMain: () -> Void = {}
 
     init(model: NextModel, nav: NextNavigation) {
         self.model = model
@@ -47,10 +49,15 @@ final class QuickCapture {
     }
 
     /// The Start Task sheet, prefilled from the capture, in the main window.
+    /// A closed main window opens again first, so the sheet has a window to show in.
     private func startTask(from capture: Capture) {
         close()
         NSApp.activate()
-        NSApp.windows.first { !($0 is NSPanel) && $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
+        if let main = NSApp.windows.first(where: { !($0 is NSPanel) && $0.canBecomeMain && $0.isVisible }) {
+            main.makeKeyAndOrderFront(nil)
+        } else {
+            openMain()
+        }
         nav.newTask = TaskSeed(title: capture.title, workspace: capture.workspace)
     }
 

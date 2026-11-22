@@ -5,6 +5,7 @@ import SwiftUI
 /// protocol v2, as the iOS app. `-demo` starts the in-app demo server (UI tests).
 @main
 struct MuxaMacApp: App {
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var model = NextModel(hosts: HostStore(file: HostStore.defaultFile))
     @State private var nav = NextNavigation()
     @State private var quickCapture: QuickCapture?
@@ -18,12 +19,13 @@ struct MuxaMacApp: App {
                 .frame(minWidth: 720, minHeight: 480)
                 .containerBackground(Palette.ground, for: .window)
                 .toolbarBackground(Palette.ground, for: .windowToolbar)
-                .task {
-                    if quickCapture == nil {
-                        let capture = QuickCapture(model: model, nav: nav)
-                        capture.register()
-                        quickCapture = capture
-                    }
+                .modifier(OnWindowStart { openWindow in
+                    let capture = quickCapture ?? QuickCapture(model: model, nav: nav)
+                    capture.register()
+                    capture.openMain = { openWindow(id: "main") }
+                    quickCapture = capture
+                    // A reopened window finds the host already connected.
+                    guard case .offline = model.link else { return }
                     if ProcessInfo.processInfo.arguments.contains("-demo") {
                         await model.startDemo()
                     } else if model.prefersLocal, model.serverIsLocal {
@@ -31,7 +33,7 @@ struct MuxaMacApp: App {
                     } else if let last = model.hosts.lastUsed {
                         await model.connect(to: last)
                     }
-                }
+                })
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -68,7 +70,7 @@ struct MuxaMacApp: App {
             CommandMenu("Pane") {
                 Button("Split Pane") {
                     nav.focus = true
-                    nav.split(from: model.needsYou + model.terminals.filter(\.live))
+                    nav.split(from: model.needsYou + model.liveTasks + model.otherTerminals)
                 }
                 .keyboardShortcut("\\", modifiers: .command)
                 .disabled(!model.isConnected || nav.panes.count >= NextNavigation.maxPanes)
@@ -86,5 +88,21 @@ struct MuxaMacApp: App {
                     .disabled(!model.isConnected)
             }
         }
+    }
+}
+
+/// The app keeps running with its window closed: `⌃⌥Space` still opens
+/// Capture, and Capture's `⌘⏎` opens the window again.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+}
+
+/// Runs `start` when the main window appears, with the action that reopens it.
+private struct OnWindowStart: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+    let start: (OpenWindowAction) async -> Void
+
+    func body(content: Content) -> some View {
+        content.task { await start(openWindow) }
     }
 }
