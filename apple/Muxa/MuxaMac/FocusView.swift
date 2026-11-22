@@ -54,13 +54,15 @@ struct FocusView: View {
         selected = first.id
     }
 
-    private static let legend: [(key: String, label: String)] = [
-        (Shortcut.goToTask.display, "go to Task"),
-        (Shortcut.split.display, "split"),
-        (Shortcut.pane.display, "pane"),
-        (Shortcut.nextTask.display, "next Task"),
-        (Shortcut.nextNeedsYou.display, "next waiting"),
-        (Shortcut.sidebar.display, "sidebar"),
-        (Shortcut.capture.display, "capture"),
-    ]
+    private static var legend: [(key: String, label: String)] {
+        [
+            (Shortcut.goToTask.display, "go to Task"),
+            (Shortcut.split.display, "split"),
+            (Shortcut.pane.display, "pane"),
+            (Shortcut.nextTask.display, "next Task"),
+            (Shortcut.nextNeedsYou.display, "next waiting"),
+            (Shortcut.sidebar.display, "sidebar"),
+            (Shortcut.capture.display, "capture"),
+        ].filter { !$0.0.isEmpty }
+    }
 }

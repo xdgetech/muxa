@@ -5,8 +5,6 @@ import SwiftUI
 /// workers and connection, then what belongs to this Mac.
 struct MacSettingsSidebar: View {
     @Environment(NextModel.self) private var model
-    @Environment(MacChrome.self) private var chrome
-    @Environment(\.openWindow) private var openWindow
     let current: MacSettingsPlace
     let pick: (MacSettingsPlace) -> Void
     @State private var addingWorkspace = false
@@ -34,7 +32,7 @@ struct MacSettingsSidebar: View {
                 }
                 row(model.connectionTitle, meta: status, place: .connection, id: "settings.connection")
                 label("This Mac", top: 16)
-                shortcuts
+                row("Keyboard", meta: Shortcut.shortcuts.display, place: .keyboard, id: "settings.keyboard")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 14)
@@ -66,26 +64,6 @@ struct MacSettingsSidebar: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(current == place ? .isSelected : [])
         .accessibilityIdentifier(id)
-    }
-
-    /// The shortcuts sheet belongs to the main window, so it opens there.
-    private var shortcuts: some View {
-        Button {
-            chrome.showShortcuts = true
-            openWindow(id: "main")
-        } label: {
-            HStack(spacing: 8) {
-                Text("Keyboard shortcuts").font(.system(size: 13.5))
-                Spacer(minLength: 4)
-                KeyHint(Shortcut.shortcuts.display)
-            }
-            .foregroundStyle(Palette.textMid)
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("settings.shortcuts")
     }
 
     private var status: String {

@@ -7,6 +7,7 @@ enum MacSettingsPlace: Hashable {
     case workspace(String)
     case workers
     case connection
+    case keyboard
 }
 
 /// The Settings window (`⌘,`) as in `Settings.dc.html`: a header, the
@@ -43,6 +44,7 @@ struct MacSettingsView: View {
         case .workspace(let name) where workspaces.contains(where: { $0.name == name }): return .workspace(name)
         case .workers where model.settings.settings != nil: return .workers
         case .connection: return .connection
+        case .keyboard: return .keyboard
         default: return workspaces.first.map { .workspace($0.name) } ?? .connection
         }
     }
@@ -76,6 +78,7 @@ struct MacSettingsView: View {
                 WorkersSettings().frame(maxWidth: MacSettingsLayout.formWidth).padding(.horizontal, 8)
             }
         case .connection: MacConnectionPane()
+        case .keyboard: MacKeyboardPane()
         }
     }
 

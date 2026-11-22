@@ -117,14 +117,15 @@ Host settings sit beside them: server and backend, devices, shortcuts, resource 
 
 ## Keyboard (desktop)
 
-Shortcuts follow VS Code, not tmux (ADR 0070). `⌘` keys do not reach programs in the terminal, so they never clash with `⌃` keys there.
+Shortcuts follow VS Code, not tmux (ADR 0070), with iTerm2's pane keys (ADR 0078). `⌘` keys do not reach programs in the terminal, so they never clash with `⌃` keys there. Settings › This Mac › Keyboard changes any menu key, and can turn on Vim's window keys: a prefix (`⌃W`) and `v`, `h`, `l`, `w`, `c`, `o` or `1`–`9`.
 
 | Action | Key |
 |---|---|
 | Home, Focus | `⌘⇧H`, `⌘⇧F` |
 | Command palette, go to Task | `⌘⇧P`, `⌘P` |
 | Next Needs you, next Task | `F8`, `⌃Tab` |
-| Split pane, focus pane, sidebar | `⌘\`, `⌘1`…`⌘9`, `⌘B` |
+| Split pane, focus pane, sidebar | `⌘D`, `⌘1`…`⌘9`, `⌘B` |
+| Next, previous, close pane (in Focus) | `⌘]`, `⌘[`, `⌥⌘W` |
 | Capture, settings | `⌘N`, `⌘,` |
 | Inbox: select, reorder, preview, open | `↑↓`, `⌥↑⌥↓` or drag, `Space`, `⏎` |
 | Inbox: main action, later, done, due | `⌘⏎`, `⌘L`, `⌘⌫`, `⌘D` |

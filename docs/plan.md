@@ -14,7 +14,7 @@ What works today:
   - The Reader of a Task's folder (F2), Task Loops (F3, ADR 0019) and Chat from the agent's own records (F4).
 - **Terminal client** (`muxa-cli`): every protocol v2 request, with resume; the reference client and end-to-end harness.
 - **iPad and iPhone app** (ADR 0012, 0067): Home (Inbox, Capture, Routines, Needs you) and Focus (the terminals, a terminal at the size of the view, and the Inbox, Reader or Chat as a panel, and the Task Loop), saved hosts with a restricted key and pinned host keys, every shortcut in the README.
-- **Mac app** (ADR 0070): the same Home and Focus, "This Mac" over the local socket, menus, up to four panes in Focus, and a global Capture window.
+- **Mac app** (ADR 0070): the same Home and Focus, "This Mac" over the local socket, menus, up to four panes in Focus, keys the user can change and optional Vim window keys (ADR 0078), and a global Capture window.
 - **Android app** (ADR 0013, 0029): the same Home and Focus for phones, tablets and foldables, one model per window.
 - **Try the Demo** (every app, every build): a built-in v2 server with sample Tasks, Inbox items, Routines, files and conversations; no host and nothing saved. App Review and Play review use it.
 

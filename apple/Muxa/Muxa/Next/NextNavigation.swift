@@ -96,6 +96,24 @@ final class NextNavigation {
         focusRequest += 1
     }
 
+    func closeOtherPanes() {
+        guard panes.indices.contains(active), panes.count > 1 else { return }
+        panes = [panes[active]]
+        active = 0
+        focusRequest += 1
+    }
+
+    /// The pane to the right of the active one, or the first after the last.
+    func nextPane() { stepPane(by: 1) }
+
+    func previousPane() { stepPane(by: -1) }
+
+    private func stepPane(by step: Int) {
+        guard panes.count > 1 else { return }
+        active = (active + step + panes.count) % panes.count
+        focusRequest += 1
+    }
+
     /// `⌘1`…`⌘9`: `n` counts from 1.
     func focusPane(_ n: Int) {
         guard panes.indices.contains(n - 1) else { return }

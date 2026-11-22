@@ -7,6 +7,8 @@ import SwiftUI
 @Observable
 final class MacChrome {
     var showShortcuts = false
+    /// Vim's window prefix was pressed and waits for its command key.
+    var windowPrefixPending = false
     /// Opens the Quick Capture panel.
     var showCapture: () -> Void = {}
 }

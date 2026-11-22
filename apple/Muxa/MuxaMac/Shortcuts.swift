@@ -1,7 +1,9 @@
+import MuxaSession
 import SwiftUI
 
 /// Every Mac shortcut, once. The menus take their keys from here and the
 /// Keyboard Shortcuts sheet lists the table, so the two cannot drift apart.
+/// A rebindable one takes the user's key from `KeyBindings` (ADR 0078).
 struct Shortcut: Identifiable {
     enum Group: String, CaseIterable {
         case go = "Go"
@@ -13,49 +15,76 @@ struct Shortcut: Identifiable {
     let id: String
     let group: Group
     let title: String
-    /// As the sheet prints it.
-    let display: String
-    /// Nil when the key is not a menu item (handled in a view).
-    let key: KeyboardShortcut?
+    /// The key a menu item starts with; nil for none.
+    let defaultChord: KeyChord?
+    /// A key a view handles, as the sheet prints it; such a key is not rebindable.
+    let fixed: String?
 
-    static let home = Shortcut(id: "home", group: .go, title: "Home", display: "⌘⇧H", key: .init("h", modifiers: [.command, .shift]))
-    static let focus = Shortcut(id: "focus", group: .go, title: "Focus", display: "⌘⇧F", key: .init("f", modifiers: [.command, .shift]))
-    static let goToTask = Shortcut(id: "goto", group: .go, title: "Go to Task", display: "⌘P", key: .init("p", modifiers: .command))
-    static let nextNeedsYou = Shortcut(id: "next-needs-you", group: .go, title: "Next Task that needs you", display: "F8",
-                                       key: .init(KeyEquivalent(Character(UnicodeScalar(NSF8FunctionKey)!)), modifiers: []))
-    static let nextTask = Shortcut(id: "next-task", group: .go, title: "Next Task", display: "⌃Tab", key: .init(.tab, modifiers: .control))
-    static let sidebar = Shortcut(id: "sidebar", group: .go, title: "Toggle sidebar", display: "⌘B", key: .init("b", modifiers: .command))
-    static let routines = Shortcut(id: "routines", group: .go, title: "Routines", display: "⌘⇧O", key: .init("o", modifiers: [.command, .shift]))
-    static let capture = Shortcut(id: "capture", group: .capture, title: "Capture", display: "⌘N", key: .init("n", modifiers: .command))
-    static let captureAnywhere = Shortcut(id: "capture-anywhere", group: .capture, title: "Capture from anywhere",
-                                          display: "⌃⌥Space", key: .init(.space, modifiers: [.control, .option]))
-    static let newTask = Shortcut(id: "new-task", group: .capture, title: "New Task", display: "⌘⇧N", key: .init("n", modifiers: [.command, .shift]))
-    static let settings = Shortcut(id: "settings", group: .capture, title: "Settings", display: "⌘,", key: nil)
-    static let shortcuts = Shortcut(id: "shortcuts", group: .capture, title: "Keyboard shortcuts", display: "⌘/", key: .init("/", modifiers: .command))
-    static let open = Shortcut(id: "open", group: .inbox, title: "Approve or Done", display: "⌘⏎", key: nil)
-    static let later = Shortcut(id: "later", group: .inbox, title: "Later", display: "⌘L", key: nil)
-    static let done = Shortcut(id: "done", group: .inbox, title: "Done", display: "⌘⌫", key: nil)
-    static let retry = Shortcut(id: "retry", group: .inbox, title: "Request changes or Retry", display: "⌘R", key: nil)
-    static let move = Shortcut(id: "move", group: .inbox, title: "Move up / down", display: "⌥↑ ⌥↓", key: nil)
-    static let split = Shortcut(id: "split", group: .panes, title: "Split pane", display: "⌘\\", key: .init("\\", modifiers: .command))
-    static let pane = Shortcut(id: "pane", group: .panes, title: "Pane 1–9", display: "⌘1 … ⌘9", key: nil)
-    static let inboxPanel = Shortcut(id: "inbox-panel", group: .panes, title: "Inbox panel", display: "⌘⇧I", key: .init("i", modifiers: [.command, .shift]))
-    static let readerPanel = Shortcut(id: "reader-panel", group: .panes, title: "Reader panel", display: "⌘⇧R", key: .init("r", modifiers: [.command, .shift]))
-    static let chatPanel = Shortcut(id: "chat-panel", group: .panes, title: "Chat panel", display: "⌘⇧C", key: .init("c", modifiers: [.command, .shift]))
+    private init(_ id: String, _ group: Group, _ title: String, _ chord: KeyChord?) {
+        self.id = id
+        self.group = group
+        self.title = title
+        defaultChord = chord
+        fixed = nil
+    }
+
+    private init(_ id: String, _ group: Group, _ title: String, fixed: String) {
+        self.id = id
+        self.group = group
+        self.title = title
+        defaultChord = nil
+        self.fixed = fixed
+    }
+
+    var rebindable: Bool { fixed == nil }
+
+    /// The key now: the user's, else the default.
+    @MainActor var chord: KeyChord? { rebindable ? KeyBindings.shared.chord(for: self) : nil }
+
+    /// As the sheet and the hints print it; empty when it has no key.
+    @MainActor var display: String { fixed ?? chord?.display ?? "" }
+
+    static let home = Shortcut("home", .go, "Home", KeyChord("h", [.command, .shift]))
+    static let focus = Shortcut("focus", .go, "Focus", KeyChord("f", [.command, .shift]))
+    static let goToTask = Shortcut("goto", .go, "Go to Task", KeyChord("p", .command))
+    static let nextNeedsYou = Shortcut("next-needs-you", .go, "Next Task that needs you", KeyChord(.f8))
+    static let nextTask = Shortcut("next-task", .go, "Next Task", KeyChord(.tab, .control))
+    static let sidebar = Shortcut("sidebar", .go, "Toggle sidebar", KeyChord("b", .command))
+    static let routines = Shortcut("routines", .go, "Routines", KeyChord("o", [.command, .shift]))
+    static let capture = Shortcut("capture", .capture, "Capture", KeyChord("n", .command))
+    static let captureAnywhere = Shortcut("capture-anywhere", .capture, "Capture from anywhere", KeyChord(.space, [.control, .option]))
+    static let newTask = Shortcut("new-task", .capture, "New Task", KeyChord("n", [.command, .shift]))
+    static let settings = Shortcut("settings", .capture, "Settings", fixed: "⌘,")
+    static let shortcuts = Shortcut("shortcuts", .capture, "Keyboard shortcuts", KeyChord("/", .command))
+    static let open = Shortcut("open", .inbox, "Approve or Done", fixed: "⌘⏎")
+    static let later = Shortcut("later", .inbox, "Later", fixed: "⌘L")
+    static let done = Shortcut("done", .inbox, "Done", fixed: "⌘⌫")
+    static let retry = Shortcut("retry", .inbox, "Request changes or Retry", fixed: "⌘R")
+    static let move = Shortcut("move", .inbox, "Move up / down", fixed: "⌥↑ ⌥↓")
+    // iTerm2's pane keys; VS Code's `⌘\` clashes with 1Password and is hard to type on a JIS keyboard.
+    static let split = Shortcut("split", .panes, "Split pane", KeyChord("d", .command))
+    static let nextPane = Shortcut("next-pane", .panes, "Next pane", KeyChord("]", .command))
+    static let previousPane = Shortcut("previous-pane", .panes, "Previous pane", KeyChord("[", .command))
+    static let closePane = Shortcut("close-pane", .panes, "Close pane", KeyChord("w", [.option, .command]))
+    static let closeOtherPanes = Shortcut("close-other-panes", .panes, "Close other panes", nil)
+    static let pane = Shortcut("pane", .panes, "Pane 1–9", fixed: "⌘1 … ⌘9")
+    static let inboxPanel = Shortcut("inbox-panel", .panes, "Inbox panel", KeyChord("i", [.command, .shift]))
+    static let readerPanel = Shortcut("reader-panel", .panes, "Reader panel", KeyChord("r", [.command, .shift]))
+    static let chatPanel = Shortcut("chat-panel", .panes, "Chat panel", KeyChord("c", [.command, .shift]))
 
     static let all: [Shortcut] = [
         home, focus, goToTask, nextNeedsYou, nextTask, sidebar, routines,
         capture, captureAnywhere, newTask, settings, shortcuts,
         open, later, done, retry, move,
-        split, pane, inboxPanel, readerPanel, chatPanel,
+        split, nextPane, previousPane, closePane, closeOtherPanes, pane, inboxPanel, readerPanel, chatPanel,
     ]
 }
 
 extension View {
-    /// The table's key on a menu item; nothing for a key a view handles.
-    @ViewBuilder
+    /// The table's key on a menu item, as the user set it; nothing for a key a view handles.
+    @MainActor @ViewBuilder
     func shortcut(_ s: Shortcut) -> some View {
-        if let key = s.key { keyboardShortcut(key) } else { self }
+        if let chord = s.chord { keyboardShortcut(chord.keyboardShortcut) } else { self }
     }
 }
 
@@ -68,7 +97,7 @@ struct ShortcutsSheet: View {
             HStack {
                 Text("Keyboard shortcuts").font(.system(size: 17, weight: .bold))
                 Spacer()
-                Text("Also in each menu").foregroundStyle(Palette.textTertiary)
+                Text("Change them in Settings › Keyboard").foregroundStyle(Palette.textTertiary)
                 Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                     .buttonStyle(ActionButtonStyle(kind: .secondary, compact: true))
             }
@@ -84,7 +113,7 @@ struct ShortcutsSheet: View {
                             HStack {
                                 Text(s.title).foregroundStyle(Palette.textMid)
                                 Spacer()
-                                Text(s.display)
+                                Text(s.display.isEmpty ? "—" : s.display)
                                     .font(.system(size: 12, design: .monospaced))
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 1)
@@ -98,11 +127,19 @@ struct ShortcutsSheet: View {
                 }
             }
             .padding(20)
+            if let prefix = KeyBindings.shared.vimPrefix {
+                VStack(alignment: .leading, spacing: 6) {
+                    SectionLabel(title: "Vim window keys")
+                    Text(MacKeyboardPane.vimHelp(prefix.display)).foregroundStyle(Palette.textMid)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 20)
+            }
             Spacer(minLength: 0)
         }
         .font(.system(size: 13))
         .foregroundStyle(Palette.text)
-        .frame(width: 700, height: 580)
+        .frame(width: 700, height: 680)
         .background(Palette.surface)
         .accessibilityIdentifier("shortcuts.sheet")
     }

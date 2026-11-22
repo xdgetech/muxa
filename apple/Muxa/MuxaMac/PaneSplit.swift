@@ -3,11 +3,12 @@ import SwiftUI
 
 /// Focus's panes side by side (ADR 0070 decision 1). Each has a 30 pt header
 /// with its state; the active one has the keyboard, the Task's actions and,
-/// beside other panes, an outline in its state color. `⌘\` adds a pane and
-/// `⌘1`…`⌘9` pick one.
+/// beside other panes, an outline in its state color. The Pane menu's keys, or
+/// Vim's window keys (ADR 0078), add, move between and close panes.
 struct PaneSplit: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
+    @Environment(MacChrome.self) private var chrome
     /// Opens the loop sheet of a Task.
     let onLoop: (MuxaV2.Terminal) -> Void
 
@@ -53,6 +54,9 @@ struct PaneSplit: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("pane.\(index + 1)")
             Spacer(minLength: 8)
+            if active, chrome.windowPrefixPending, let prefix = KeyBindings.shared.vimPrefix {
+                KeyHint("\(prefix.display) …", color: Palette.accent)
+            }
             if active { PaneActions(terminal: t, onLoop: onLoop) }
         }
         .font(.system(size: 12))

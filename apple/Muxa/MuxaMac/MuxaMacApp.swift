@@ -11,6 +11,7 @@ struct MuxaMacApp: App {
     @State private var nav = NextNavigation()
     @State private var quickCapture: QuickCapture?
     @State private var chrome = MacChrome()
+    @State private var windowKeys: WindowKeyMonitor?
 
     var body: some Scene {
         Window("Muxa", id: "main") {
@@ -32,6 +33,9 @@ struct MuxaMacApp: App {
                     capture.openMain = { openWindow(id: "main") }
                     quickCapture = capture
                     chrome.showCapture = { [weak capture] in capture?.show() }
+                    let monitor = windowKeys ?? WindowKeyMonitor(model: model, nav: nav, chrome: chrome)
+                    monitor.install()
+                    windowKeys = monitor
                     // A reopened window finds the host already connected.
                     guard case .offline = model.link else { return }
                     if ProcessInfo.processInfo.arguments.contains("-demo") {
@@ -69,7 +73,7 @@ struct MuxaMacApp: App {
                     .shortcut(.newTask)
                     .disabled(!model.isConnected)
             }
-            // The keys of docs/next.md, which follow VS Code (ADR 0070 decision 2).
+            // The keys of docs/next.md (ADR 0070 decision 2), which the user can change (ADR 0078).
             CommandMenu("Go") {
                 Button("Home") { nav.focus = false; nav.tab = .inbox }
                     .shortcut(.home)
@@ -104,17 +108,25 @@ struct MuxaMacApp: App {
                     .disabled(!model.isConnected)
             }
             CommandMenu("Pane") {
-                Button("Split Pane") {
-                    nav.focus = true
-                    nav.split(from: model.needsYou + model.liveTasks + model.otherTerminals)
-                }
-                .shortcut(.split)
-                .disabled(!model.isConnected || nav.panes.count >= NextNavigation.maxPanes)
-                Button("Close Pane") { nav.closePane() }
-                    .disabled(nav.panes.count < 2)
+                // The keys work in Focus only, so Home keeps them for its own use.
+                Button("Split Pane") { pane(.split) }
+                    .shortcut(.split)
+                    .disabled(!nav.focus || !model.isConnected || nav.panes.count >= NextNavigation.maxPanes)
+                Button("Next Pane") { pane(.next) }
+                    .shortcut(.nextPane)
+                    .disabled(!nav.focus || nav.panes.count < 2)
+                Button("Previous Pane") { pane(.previous) }
+                    .shortcut(.previousPane)
+                    .disabled(!nav.focus || nav.panes.count < 2)
+                Button("Close Pane") { pane(.close) }
+                    .shortcut(.closePane)
+                    .disabled(!nav.focus || nav.panes.count < 2)
+                Button("Close Other Panes") { pane(.closeOthers) }
+                    .shortcut(.closeOtherPanes)
+                    .disabled(!nav.focus || nav.panes.count < 2)
                 Divider()
                 ForEach(1...9, id: \.self) { n in
-                    Button("Pane \(n)") { nav.focusPane(n) }
+                    Button("Pane \(n)") { pane(.pane(n)) }
                         .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
                         .disabled(n > nav.panes.count)
                 }
@@ -128,6 +140,10 @@ struct MuxaMacApp: App {
                     .shortcut(.shortcuts)
             }
         }
+    }
+
+    private func pane(_ command: WindowCommand) {
+        PaneCommands.run(command, nav: nav, model: model)
     }
 
     /// Opens the Task after the one Focus shows, from `list`, in Focus.

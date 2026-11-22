@@ -83,6 +83,20 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testPaneKeysSplitMoveAndClose() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(any["terminal.t1"].waitForExistence(timeout: 5))
+        app.typeKey("d", modifierFlags: .command)
+        XCTAssertTrue(any["pane.2"].waitForExistence(timeout: 5), "⌘D splits")
+        app.typeKey("[", modifierFlags: .command)
+        app.typeKey("w", modifierFlags: [.option, .command])
+        XCTAssertTrue(waitForGone(any["pane.2"]), "⌥⌘W closes the active pane")
+        XCTAssertTrue(any["pane.1"].exists)
+    }
+
+    @MainActor
     func testOtherTerminalsStayClosedUntilOpened() throws {
         let app = launch()
         app.typeKey("f", modifierFlags: [.command, .shift])

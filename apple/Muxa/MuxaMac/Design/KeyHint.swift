@@ -18,7 +18,7 @@ struct KeyHint: View {
     }
 }
 
-/// The strip of keys under a pane or a panel: `⌘P go to Task  ⌘\ split …`.
+/// The strip of keys under a pane or a panel: `⌘P go to Task  ⌘D split …`.
 struct KeyLegend: View {
     let items: [(key: String, label: String)]
 
