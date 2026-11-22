@@ -63,7 +63,7 @@
 #   direct_writes  a Routine may change external systems without a proposal
 #                  only when this is true (default false)
 #
-# [[worker]]  optional; a named agent setup (ADR 0022, docs/workers.md).
+# [[worker]]  optional; a named agent setup (ADR 0022).
 #   description       what it does, at most 1 KiB, shown to you as its job
 #
 # [codex]  optional, at the top level (ADR 0028).

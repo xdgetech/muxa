@@ -1,12 +1,13 @@
 # Contributing
 
-Thanks for helping. muxa's one promise is that it never disturbs the desktop session it attaches to. Most of the process below protects that promise.
+Thanks for helping. muxa runs other people's agents on their own machine; most of the process below keeps it from touching what it did not start, and keeps their content out of logs.
 
 ## Setup
 
 - Rust stable (`rustup`; `rust-toolchain.toml` selects the components).
-- tmux ≥ 3.2, bats, shellcheck, jq, python3.
-- For the app: Xcode 16+.
+- bats, shellcheck, jq, python3.
+- For the apps: Xcode 16+, Android Studio.
+- To try the daemon for real: herdr-core.
 
 ```sh
 make check   # must be green before you open a pull request
@@ -14,17 +15,16 @@ make check   # must be green before you open a pull request
 
 If your `shellcheck` lives elsewhere: `make check SHELLCHECK="<command>"`.
 
-## Working with tmux
+## Working with herdr-core
 
-- Never experiment on your own tmux server. Use `make sandbox` or `tmux -L muxa-test-<name>`. The scripts in `scripts/` always pass `-L`.
-- If you rely on a tmux behavior, prove it with a script in `scripts/repro/` and add a row to `docs/findings/tmux-control-mode.md`. CI runs these scripts on tmux 3.2a, 3.4 and the latest release.
-- Target tmux objects by id (`%3`), never by name.
+- Tests run on the fake backend (`muxa-backend` with `fake`). Never point a test at your own herdr-core; `make test-herdr` is for humans, and it adds and removes only its own labelled terminals.
+- If you rely on a herdr-core or agent behavior, write it down in `docs/findings/` and check it in `scripts/repro/` where you can.
 
 ## Changes
 
 - Small pull requests, one concern each.
 - Commit messages: `<type>: <description>`, where type is one of `feat fix refactor docs test chore perf ci`.
-- A wire-format change updates `protocol/PROTOCOL.md`, the fixtures, and every implementation together.
+- A wire-format change updates `protocol/PROTOCOL-v2.md` and every implementation together: Rust, Swift, Kotlin and the demo servers.
 - A design decision gets a short ADR in `docs/adr/`.
 
 ## License

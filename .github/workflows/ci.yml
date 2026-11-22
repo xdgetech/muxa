@@ -10,24 +10,21 @@ permissions:
 
 jobs:
   check:
-    # tmux 3.2a (ubuntu-22.04, the minimum), 3.4 (ubuntu-24.04), latest (Homebrew).
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-latest]
+        os: [ubuntu-24.04, macos-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      TERM: xterm-256color
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install tmux, bats, shellcheck (Linux)
+      - name: Install bats, shellcheck (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y tmux bats shellcheck
+        run: sudo apt-get update && sudo apt-get install -y bats shellcheck
 
-      - name: Install tmux, bats, shellcheck (macOS)
+      - name: Install bats, shellcheck (macOS)
         if: runner.os == 'macOS'
-        run: brew install tmux bats-core shellcheck
+        run: brew install bats-core shellcheck
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -35,25 +32,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Isolate tmux sockets
-        run: |
-          echo "TMUX_TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-          tmux -V
-
       - run: make check
-      - run: make repro
-      - run: make test-tmux
 
   apple:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - run: brew install tmux
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Isolate tmux sockets
-        run: echo "TMUX_TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
-      - run: make test-apple-tmux
+      - run: make test-apple
+      - run: make test-apple-v2
       - run: brew install xcodegen
       - run: make build-app
 
@@ -67,12 +55,9 @@ jobs:
           java-version: "21"
       # The runner has the Android SDK; Gradle fetches the platform the app compiles against.
       - uses: gradle/actions/setup-gradle@v4
-      - run: sudo apt-get update && sudo apt-get install -y tmux
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Isolate tmux sockets
-        run: echo "TMUX_TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - run: make test-android
-      - run: make test-android-tmux
+      - run: make test-android-v2
       - run: make build-android
       - run: make lint-android

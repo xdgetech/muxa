@@ -1,5 +1,5 @@
 //! The run's private output stage, `.muxa/routine/output.json` (ADR 0026
-//! section 4, schema in `protocol/PROTOCOL.md`): read, validated, and
+//! section 4, schema in `docs/agents.md`, "Routine output"): read, validated, and
 //! applied to the Routine's state in one step. Source text is untrusted:
 //! reasons name items and fields, never their values.
 use std::fs::File;
@@ -126,7 +126,7 @@ fn read_stage(path: &PathBuf) -> Result<Vec<u8>, String> {
 pub fn validate(bytes: &[u8], limit: u32) -> Result<Output, Vec<String>> {
     let raw: RawOutput = serde_json::from_slice(bytes).map_err(|e| {
         vec![format!(
-            "{OUTPUT} is not valid: {e}. The schema is in muxa's PROTOCOL.md, \"Routine output\"."
+            "{OUTPUT} is not valid: {e}. The schema is in muxa's docs/agents.md, \"Routine output\"."
         )]
     })?;
     let mut reasons = Vec::new();

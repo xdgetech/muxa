@@ -1,6 +1,6 @@
 # muxa protocol v2
 
-Status: draft (2026-11-21), built in slices B1–B3 (resume: B3) of `docs/plan.md`. ADR 0067. Protocol v1 (`PROTOCOL.md`) stays until the hard switch.
+Status: draft (2026-11-21), built in slices B1–B3 (resume: B3) of `docs/plan.md`. ADR 0067. Since F5 (ADR 0071) it is muxa's only protocol.
 
 ## Transport
 

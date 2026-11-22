@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-tmux test-herdr test-harness test-apple test-apple-v2 test-apple-tmux app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-tmux test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store repro sandbox sandbox-down
+.PHONY: install check fmt fmt-check clippy test test-herdr test-harness test-apple test-apple-v2 app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -28,10 +28,6 @@ clippy:
 test:
 	cargo test --workspace
 
-# Integration tests on throwaway tmux servers (tmux >= 3.2).
-test-tmux:
-	cargo test --workspace --features muxa-tmux/tmux-integration,muxa-bridge/tmux-integration
-
 # Humans only: the herdr-core client against the running herdr-core (ADR 0067).
 # It adds one labelled terminal per test and removes it.
 test-herdr:
@@ -52,11 +48,6 @@ test-apple-v2:
 	cargo build -p muxa-server --example fake_server
 	MUXA_TEST_V2_SERVER=$(CURDIR)/target/debug/examples/fake_server swift test --package-path apple/MuxaKit --filter MuxaV2Tests
 
-# Also runs PaneSession against the real bridge on a throwaway tmux server.
-test-apple-tmux:
-	cargo build -p muxa-bridge
-	MUXA_TEST_BRIDGE=$(CURDIR)/target/debug/muxa-bridge swift test --package-path apple/MuxaKit
-
 lint-sh:
 	$(SHELLCHECK) -x $(SHELL_SCRIPTS)
 
@@ -73,7 +64,7 @@ endif
 endif
 GRADLEW = ./gradlew --console=plain
 
-# The protocol, terminal, transport and session modules: plain JVM tests, no emulator.
+# The terminal, transport, session and v2 modules: plain JVM tests, no emulator.
 test-android:
 	cd android && $(GRADLEW) test
 
@@ -101,11 +92,6 @@ bundle-android:
 # (start one first, e.g. `emulator -avd Pixel_Tablet`).
 test-android-app:
 	cd android && $(GRADLEW) :app:connectedDebugAndroidTest
-
-# Also runs PaneSession against the real bridge on a throwaway tmux server.
-test-android-tmux:
-	cargo build -p muxa-bridge
-	cd android && MUXA_BRIDGE=$(CURDIR)/target/debug/muxa-bridge $(GRADLEW) :session:test --rerun-tasks
 
 # The minified release build connects over SSH to a throwaway host, which runs the v2
 # server on the fake backend, and shows a terminal (ADR 0029). Boots a read-only emulator unless ANDROID_SERIAL names a device.
@@ -150,7 +136,7 @@ app-icon:
 		android/app/src/main/res store/play
 
 # Installs the bridge and muxa-cli on this host, then restarts a running daemon
-# so it runs the new version (ADR 0019). PREFIX picks another root.
+# so it runs the new version. PREFIX picks another root.
 PREFIX ?= $(HOME)/.local
 install:
 	cargo install --locked --path crates/muxa-bridge --root $(PREFIX)
@@ -190,13 +176,3 @@ archive-ios: app-project
 	xcodebuild -exportArchive -archivePath $(RELEASE_DIR)/Muxa.xcarchive \
 		-exportOptionsPlist apple/Muxa/Config/ExportOptions.plist -exportPath $(RELEASE_DIR)/ios -allowProvisioningUpdates
 	@echo "Upload: $(RELEASE_DIR)/ios/Muxa.ipa"
-
-# Re-checks every tmux fact the design relies on (docs/findings/tmux-control-mode.md).
-repro:
-	@set -e; for f in scripts/repro/*.sh; do echo "== $$f"; bash "$$f"; done
-
-sandbox:
-	scripts/tmux-sandbox.sh up
-
-sandbox-down:
-	scripts/tmux-sandbox.sh down

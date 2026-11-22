@@ -1,5 +1,7 @@
 # Codex App Server: verified transport facts
 
+> History: the client these facts were for (Codex owned threads, ADR 0028) and its probe script were removed with protocol v1 in F5 (ADR 0071). The facts stay for a future Codex path.
+
 ADR 0028's client (`crates/muxa-bridge/src/agents/codex/app_server.rs`, `proxy.rs`) relies on these facts. Checked on Codex CLI 0.167.0, macOS. Rows marked *login* come from the developer's real login; the others come from `scripts/codex-app-server-probe.sh`, which uses a temporary `CODEX_HOME`, no login and no model call. Re-run the script after a Codex upgrade.
 
 ## Transport

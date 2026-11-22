@@ -19,7 +19,7 @@ muxa grows from a remote view of your tmux panes into a workspace where work run
 
 Each phase keeps everything before it. “Built” describes local code and validation, not a published product or completed real-device/native-agent release verification.
 
-The current execution work is split into Workers/handoff (W) and workspace memory/close-out (M), tracked in [the delivery plan](workers.md). Worker configuration, internal native-argv create/restart integration and capability-gated CLI/iOS/Android selection are prepared. Managed restart state, input and Chat now require fresh process-bound observation; authenticated native role/profile discovery, named startup/delivery and release gates remain. Default-agent restart recovery is implemented independently of named Workers. Memory has an adapter/source audit and acceptance matrix, but no complete snapshot/proposal/apply implementation. In particular, the existing normalized agent state cannot distinguish some same-second completed turns, so close-out readiness cannot safely reuse it unchanged. Workspace environment selection is implemented, but real-account checks remain; workspace scope lists are not an OS security boundary. Workflow orchestration and autonomous execution have no implementation commitment yet.
+The current execution work is split into Workers/handoff (W) and workspace memory/close-out (M). Worker configuration, internal native-argv create/restart integration and capability-gated CLI/iOS/Android selection are prepared. Managed restart state, input and Chat now require fresh process-bound observation; authenticated native role/profile discovery, named startup/delivery and release gates remain. Default-agent restart recovery is implemented independently of named Workers. Memory has an adapter/source audit and acceptance matrix, but no complete snapshot/proposal/apply implementation. In particular, the existing normalized agent state cannot distinguish some same-second completed turns, so close-out readiness cannot safely reuse it unchanged. Workspace environment selection is implemented, but real-account checks remain; workspace scope lists are not an OS security boundary. Workflow orchestration and autonomous execution have no implementation commitment yet.
 
 ## Inbox and recurring project intake
 
@@ -29,7 +29,7 @@ The desired daily surface is an ordered Inbox list: work from the top, complete 
 
 Routines bridge Phases 3 and 4. A Routine runs a worker on a trigger, for example every morning, while clients are disconnected. The worker reads its sources (Slack, Linear, Notion and others) through its own native tools, works in the Task Loop engine, and publishes briefings and proposals to Inbox. An approved proposal becomes a new Task that performs the action. Routine runs are not Tasks. Routines do not require the full workflow graph or autonomous execution. See [ADR 0026](adr/0026-routines.md).
 
-For the shared domain and UI definitions, see [Inbox, Tasks and Sessions](work-model.md); the integrated W/Q/S/M milestones are in [the delivery plan](workers.md#product-milestones-across-the-vision).
+For the shared domain and UI definitions, see [Inbox, Tasks and Sessions](work-model.md).
 
 ## Concepts
 
@@ -64,7 +64,7 @@ Manual Mode always stays. Every Task runs in a tmux session you can open and typ
 - muxa keeps **persistent memory** for a Task. The first form is `TASK.md`: the goal and context, written where the agent can read it. A new agent session reads the same file. This is the start of context handoff between runs.
 - **Approval gates** stop important actions until a human agrees: pushing, merging, spending money, sending messages outside the workspace. Today's approval cards (ADR 0009) are the first gate.
 - **Workspace isolation.** Each Workspace has its own credentials and directories. An agent in one Workspace does not get another's.
-- **OSS first.** The bridge, the protocol and the clients stay open source. A client of your own can rely on `protocol/PROTOCOL.md`.
+- **OSS first.** The bridge, the protocol and the clients stay open source. A client of your own can rely on `protocol/PROTOCOL-v2.md`.
 
 ## Principles that do not change
 

@@ -228,7 +228,7 @@ Workspace の環境変数・root・Worker の適用先は **OS サンドボッ�
 | Tasks / runs / handoff | 実装済み。承認された実行と経過の記録に再利用する。未着手保存とは分離 |
 | daemon / Task Loop | 実装済み。端末不在時の実行と記録管理に再利用する。新しい依頼配送は未実装 |
 | Routines | 定期実行と Inbox への publish は実装済み。朝の提案の起動基盤として使う。横断集約ロジックは新規 |
-| Workers | 設定・選択・起動の基盤がある。実 agent での残る検証条件は [workers.md](workers.md) に従う |
+| Workers | 設定・選択・起動の基盤がある。実 agent での検証条件は ADR 0022 と 0027 に従う |
 | Ask Agent | ADR 0041 の対話入口は参考になる。既存の手動 Ask session を durable な担当間 RPC とみなさない |
 | MCP | 各 agent が資料や外部サービスを利用する入口。muxa に担当間の会話・RPC・配送保証はまだない |
 | memory | Workspace memory は提案段階。本仕様の方針・仮説・訂正履歴も新規で、既実装とは扱わない |
