@@ -24,6 +24,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,7 +46,11 @@ import tech.xdge.muxa.v2.V2Request
  */
 @Composable
 fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHome: () -> Unit) {
-    var showInbox by rememberSaveable { mutableStateOf(false) }
+    // The panel beside the terminal shows the Inbox or the Reader, never both.
+    var panel by rememberSaveable { mutableStateOf(Panel.NONE) }
+    fun toggle(p: Panel) {
+        panel = if (panel == p) Panel.NONE else p
+    }
     val phone = LocalPhoneLayout.current
     val terminal = model.terminals.firstOrNull { it.id == selected }
 
@@ -55,7 +66,12 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
         }
     }
     val detail: @Composable (Modifier) -> Unit = { modifier ->
-        Column(modifier) {
+        // Ctrl+Shift+R opens the Reader, as ⌘⇧R does on iOS and the Mac.
+        val readerKey = Modifier.onPreviewKeyEvent { e ->
+            val hit = e.type == KeyEventType.KeyDown && e.isCtrlPressed && e.isShiftPressed && e.key == Key.R
+            hit.also { if (it && terminal?.taskDir != null) toggle(Panel.READER) }
+        }
+        Column(modifier.then(readerKey)) {
             if (terminal == null) {
                 Empty("Select a Task")
                 return@Column
@@ -63,17 +79,28 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (phone) IconButton({ select(null) }, Modifier.testTag("focus.back")) { Icon(Icons.back, "Back") }
                 Text(terminal.title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                TextButton({ showInbox = !showInbox }, Modifier.testTag("focus.inbox")) { Text("Inbox") }
+                TextButton({ toggle(Panel.READER) }, Modifier.testTag("focus.reader"), enabled = terminal.taskDir != null) {
+                    Text("Reader")
+                }
+                TextButton({ toggle(Panel.INBOX) }, Modifier.testTag("focus.inbox")) { Text("Inbox") }
+            }
+            val shownPanel: @Composable (Modifier) -> Unit = { m ->
+                when (panel) {
+                    Panel.INBOX -> InboxPanel(model, m)
+                    Panel.READER -> key(terminal.id) { ReaderPanel(model, terminal, m) }
+                    Panel.NONE -> {}
+                }
             }
             Row(Modifier.weight(1f)) {
                 key(terminal.id) { TerminalPane(model, terminal.id, Modifier.weight(1f)) }
-                if (showInbox && !phone) {
+                if (panel != Panel.NONE && !phone) {
                     VerticalDivider()
-                    InboxPanel(model, Modifier.width(PANEL_WIDTH.dp).fillMaxHeight())
+                    val width = if (panel == Panel.READER) READER_WIDTH else PANEL_WIDTH
+                    shownPanel(Modifier.width(width.dp).fillMaxHeight())
                 }
             }
             // On a phone the panel shares the screen with the terminal, below it.
-            if (showInbox && phone) InboxPanel(model, Modifier.fillMaxWidth().weight(1f))
+            if (panel != Panel.NONE && phone) shownPanel(Modifier.fillMaxWidth().weight(1f))
         }
     }
 
@@ -146,5 +173,8 @@ private fun InboxPanel(model: NextModel, modifier: Modifier) {
     }
 }
 
+private enum class Panel { NONE, INBOX, READER }
+
 private const val LIST_WIDTH = 300
 private const val PANEL_WIDTH = 320
+private const val READER_WIDTH = 440

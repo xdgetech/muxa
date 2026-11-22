@@ -54,6 +54,8 @@ data class DemoContent(
     val inbox: List<InboxItem>,
     val routines: List<Routine>,
     val workspaces: List<String>,
+    /** What the Reader shows in every Task's folder, by kind. */
+    val files: Map<ReaderKind, List<DemoFile>> = emptyMap(),
 ) {
     companion object {
         /** Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines. */
@@ -61,11 +63,16 @@ data class DemoContent(
     }
 }
 
+/** A Reader file of the demo: its list entry and its content. */
+data class DemoFile(val entry: ReaderEntry, val content: ReaderContent)
+
 private class DemoServer(content: DemoContent, private val write: (Frame) -> Unit) {
     private val terminals = content.terminals.toMutableList()
     private val screens = content.screens.toMutableMap()
     private val routines = content.routines.toMutableList()
     private val workspaces = content.workspaces
+    private val files = content.files
+    private var nextReader = 1
     private var inbox = Inbox(1, content.inbox, emptyList())
     private var nextItem = 100
     private val channels = mutableMapOf<Int, String>()
@@ -170,8 +177,30 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             }
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {})
             "run-routine" -> runRoutine(id, m.str("name") ?: "")
+            "reader-list" -> {
+                val kind = readerKind(id, m) ?: return
+                reply(id, "list" to enc(ReaderList(root = "app", entries = files[kind].orEmpty().map { it.entry })))
+            }
+            "reader-open" -> {
+                val kind = readerKind(id, m) ?: return
+                val path = m.str("path")
+                val file = files[kind].orEmpty().firstOrNull { it.entry.path == path }
+                    ?: return send(error(id, "bad-request", "$path is not a listed file"))
+                val n = nextReader++
+                reply(id, "reader" to JsonPrimitive(n), "content" to enc(file.content))
+            }
+            "reader-close" -> reply(id)
             else -> send(error(id, "bad-request", "unknown request"))
         }
+    }
+
+    /** The kind of a Reader request on a terminal with a folder, or null after an error. */
+    private fun readerKind(id: Long, m: JsonObject): ReaderKind? {
+        if (terminals.firstOrNull { it.id == m.str("terminal") }?.taskDir == null) {
+            send(error(id, "bad-request", "this terminal has no folder: only a Task's agent or a Routine run has a Reader"))
+            return null
+        }
+        return ReaderKind.entries.firstOrNull { it.wire == m.str("kind") }
     }
 
     private fun attach(id: Long, terminal: String) {
@@ -331,5 +360,47 @@ private fun standardContent(): DemoContent {
             routine("release-notes", null, null),
         ),
         workspaces = listOf("app", "Personal"),
+        files = mapOf(
+            ReaderKind.DOCS to listOf(
+                DemoFile(ReaderEntry("PLAN.md"), ReaderContent("PLAN.md", text = DEMO_PLAN)),
+                DemoFile(
+                    ReaderEntry(".muxa/TASK.md"),
+                    ReaderContent(".muxa/TASK.md", text = "# fix-login\n\nRefresh the session before it expires.\n"),
+                ),
+            ),
+            ReaderKind.CHANGES to listOf(
+                DemoFile(
+                    ReaderEntry("src/auth/session.ts", status = "modified", added = 2, removed = 1),
+                    ReaderContent("src/auth/session.ts", text = DEMO_DIFF),
+                ),
+            ),
+            ReaderKind.IMAGES to listOf(
+                DemoFile(ReaderEntry("screenshots/login.png", size = 70), ReaderContent("screenshots/login.png", data = DEMO_PIXEL)),
+            ),
+        ),
     )
 }
+
+private val DEMO_PLAN = """
+    # Plan
+
+    1. Refresh the session 60 s before it expires.
+    2. Retry once when the refresh fails.
+    3. Add a test for a session that expired while the app slept.
+
+""".trimIndent()
+
+private val DEMO_DIFF = """
+    diff --git a/src/auth/session.ts b/src/auth/session.ts
+    --- a/src/auth/session.ts
+    +++ b/src/auth/session.ts
+    @@ -10,3 +10,4 @@ export function schedule(session: Session) {
+    -  const at = session.expiresAt;
+    +  const margin = 60_000;
+    +  const at = session.expiresAt - margin;
+       timer = setTimeout(refresh, at - Date.now());
+
+""".trimIndent()
+
+/** A 1×1 PNG. */
+private const val DEMO_PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="

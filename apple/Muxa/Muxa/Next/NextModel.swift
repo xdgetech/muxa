@@ -39,6 +39,10 @@ final class NextModel {
     private(set) var routineProblems: [RoutineProblem] = []
     /// Why the last request failed, shown until the next one.
     var requestError: String?
+    /// Open Reader files by reader number, as the server last sent them.
+    private(set) var readerContents: [UInt32: ReaderContent] = [:]
+    /// Why a Reader file ended, by reader number, until it is closed.
+    private(set) var readerEnded: [UInt32: String] = [:]
 
     private var client: V2Client?
     private var resume = V2Client.State()
@@ -230,7 +234,15 @@ final class NextModel {
         case .removed(let id): terminals.removeAll { $0.id == id }
         case .resync: terminals = (try? await c.terminals()) ?? terminals
         case .output(let ch, _), .paint(let ch), .closed(let ch, _): sinks[ch]?(e)
+        case .reader(let n, let content):
+            if readerContents[n] != nil { readerContents[n] = content }
+        case .readerEnded(let n, let reason):
+            readerContents[n] = nil
+            readerEnded[n] = reason
         case .lost(let why):
+            // The server closes Reader files with the connection.
+            for n in readerContents.keys { readerEnded[n] = "The connection was lost. Open the file again." }
+            readerContents = [:]
             resume = await c.resumeState
             client = nil
             link = .reconnecting(why)
@@ -280,6 +292,8 @@ final class NextModel {
         terminals = []
         routines = []
         routineProblems = []
+        readerContents = [:]
+        readerEnded = [:]
     }
 
     // MARK: Requests
@@ -317,6 +331,32 @@ final class NextModel {
         } catch {
             requestError = Self.describe(error)
         }
+    }
+
+    // MARK: Reader
+
+    /// The files of `kind` in the terminal's folder; documents with HTML ones.
+    func readerList(_ terminal: String, kind: ReaderKind) async -> ReaderList? {
+        var list: ReaderList?
+        await run { list = try await $0.readerList(terminal, kind: kind, html: kind == .docs) }
+        return list
+    }
+
+    /// Opens a listed file; its content stays in `readerContents` until `closeReader`.
+    func openReader(_ terminal: String, kind: ReaderKind, path: String, scope: DiffScope) async -> UInt32? {
+        var opened: UInt32?
+        await run {
+            let (n, content) = try await $0.readerOpen(terminal, kind: kind, path: path, html: kind == .docs, scope: scope)
+            self.readerContents[n] = content
+            opened = n
+        }
+        return opened
+    }
+
+    func closeReader(_ n: UInt32) async {
+        let open = readerContents.removeValue(forKey: n) != nil
+        readerEnded[n] = nil
+        if open { try? await client?.readerClose(n) }
     }
 
     // MARK: Terminals (Focus)

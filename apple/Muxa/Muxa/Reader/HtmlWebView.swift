@@ -4,26 +4,23 @@ import WebKit
 /// Shows one HTML document and runs its scripts (ADR 0065). The document runs in a
 /// sandboxed frame of `html.html`, in a web view with no message handler: it cannot
 /// reach the app. The page's CSP and a content rule list keep it off the network.
-struct HtmlWebView: UIViewRepresentable {
+struct HtmlWebView: WebRepresentable {
     let text: String
     let path: String
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeWebView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         let view = ReaderPageView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
-        view.isOpaque = false
-        view.backgroundColor = .white
-        view.allowsLinkPreview = false
-        view.accessibilityIdentifier = "reader-html"
+        view.readerLook(identifier: "reader-html", white: true)
         context.coordinator.load(into: view)
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
+    func updateWebView(_ view: WKWebView, context: Context) {
         context.coordinator.show(Shown(text: text, path: path))
     }
 

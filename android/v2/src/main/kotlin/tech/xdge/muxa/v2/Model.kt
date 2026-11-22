@@ -118,6 +118,63 @@ data class Terminal(
         get() = labels["muxa.places"]?.let { runCatching { json.decodeFromString<List<Place>>(it) }.getOrNull() } ?: emptyList()
 }
 
+/** What the Reader lists and opens (plan F2). */
+enum class ReaderKind(val wire: String) { DOCS("docs"), CHANGES("changes"), IMAGES("images") }
+
+/** Which diff of a changed file. */
+enum class DiffScope(val wire: String) {
+    /** Against HEAD: staged, unstaged and untracked. */
+    UNCOMMITTED("uncommitted"),
+
+    /** The branch's commits since it left its base. */
+    BRANCH("branch"),
+}
+
+/** A file of a terminal's folder the Reader may open. Which fields are set depends on the kind. */
+@Serializable
+data class ReaderEntry(
+    val path: String,
+    /** Documents: an HTML `<title>`. */
+    val title: String? = null,
+    val mtime: Long? = null,
+    /** Images: bytes. */
+    val size: Long? = null,
+    /** Changes: `modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`. */
+    val status: String? = null,
+    @SerialName("old_path") val oldPath: String? = null,
+    val added: Int? = null,
+    val removed: Int? = null,
+)
+
+@Serializable
+data class ReaderBranch(val base: String, val commits: Int, val entries: List<ReaderEntry>, val truncated: Boolean = false)
+
+@Serializable
+data class ReaderList(
+    /** The repo's folder name; null outside a repo. */
+    val root: String? = null,
+    val entries: List<ReaderEntry>,
+    val truncated: Boolean = false,
+    /** Changes: what the branch's commits changed. */
+    val branch: ReaderBranch? = null,
+)
+
+/** An open file as it is now. */
+@Serializable
+data class ReaderContent(
+    val path: String,
+    /** Documents and diffs. */
+    val text: String? = null,
+    /** Images: the bytes in base64. */
+    val data: String? = null,
+    /** A diff of a binary file. */
+    val binary: Boolean = false,
+    val mtime: Long? = null,
+) {
+    /** An image's bytes. */
+    val bytes: ByteArray? get() = data?.let { runCatching { java.util.Base64.getDecoder().decode(it) }.getOrNull() }
+}
+
 @Serializable
 data class Exit(val reason: String, @SerialName("exit_code") val exitCode: Long? = null, val signal: Long? = null)
 
@@ -141,6 +198,12 @@ sealed interface V2Event {
 
     /** Changes were lost: list the terminals again. */
     data object Resync : V2Event
+
+    /** An open Reader file changed. */
+    data class Reader(val reader: Int, val content: ReaderContent) : V2Event
+
+    /** An open Reader file ended; the reader is closed. */
+    data class ReaderEnded(val reader: Int, val reason: String) : V2Event
 
     /** The connection is gone; resume with [V2Client.state]. */
     data class Lost(val reason: String) : V2Event

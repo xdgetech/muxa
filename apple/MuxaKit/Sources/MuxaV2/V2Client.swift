@@ -161,6 +161,27 @@ public actor V2Client {
         _ = try await request(.runRoutine(workspace: workspace, name: name))
     }
 
+    // MARK: Reader
+
+    /// The files of `kind` in the terminal's folder; only a Task's agent or a
+    /// Routine run has one.
+    public func readerList(_ terminal: String, kind: ReaderKind, html: Bool = false) async throws -> ReaderList {
+        try field("list", of: await request(.readerList(terminal: terminal, kind: kind, html: html)))
+    }
+
+    /// Opens a listed file. `reader` and `readerEnded` events follow it until
+    /// `readerClose`; a resume ends it.
+    public func readerOpen(
+        _ terminal: String, kind: ReaderKind, path: String, html: Bool = false, scope: DiffScope = .uncommitted
+    ) async throws -> (reader: UInt32, content: ReaderContent) {
+        let reply = try await request(.readerOpen(terminal: terminal, kind: kind, path: path, html: html, scope: scope))
+        return (try field("reader", of: reply), try field("content", of: reply))
+    }
+
+    public func readerClose(_ reader: UInt32) async throws {
+        _ = try await request(.readerClose(reader: reader))
+    }
+
     // MARK: Terminal channels
 
     /// Sends input; it is kept until the server acknowledges it.
@@ -237,6 +258,13 @@ public actor V2Client {
             eventsOut.yield(.resync)
         case "inbox":
             if let i: Inbox = try? field("inbox", of: data) { eventsOut.yield(.inbox(i)) }
+        case "reader":
+            guard let n = (msg["reader"] as? NSNumber)?.uint32Value,
+                  let content: ReaderContent = try? field("content", of: data) else { return }
+            eventsOut.yield(.reader(reader: n, content: content))
+        case "reader-ended":
+            guard let n = (msg["reader"] as? NSNumber)?.uint32Value else { return }
+            eventsOut.yield(.readerEnded(reader: n, reason: msg["reason"] as? String ?? ""))
         default:
             break
         }

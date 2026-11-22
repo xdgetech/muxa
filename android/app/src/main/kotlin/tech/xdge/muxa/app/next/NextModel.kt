@@ -19,7 +19,11 @@ import tech.xdge.muxa.transport.SshExec
 import tech.xdge.muxa.transport.TransportError
 import tech.xdge.muxa.v2.Capture
 import tech.xdge.muxa.v2.DemoChannel
+import tech.xdge.muxa.v2.DiffScope
 import tech.xdge.muxa.v2.Inbox
+import tech.xdge.muxa.v2.ReaderContent
+import tech.xdge.muxa.v2.ReaderKind
+import tech.xdge.muxa.v2.ReaderList
 import tech.xdge.muxa.v2.Routine
 import tech.xdge.muxa.v2.RoutineProblem
 import tech.xdge.muxa.v2.Terminal
@@ -77,6 +81,14 @@ class NextModel(
 
     /** Why the last request failed, shown until the next one. */
     var requestError: String? by mutableStateOf(null)
+
+    /** Open Reader files by reader number, as the server last sent them. */
+    var readerContents by mutableStateOf(emptyMap<Int, ReaderContent>())
+        private set
+
+    /** Why a Reader file ended, by reader number, until it is closed. */
+    var readerEnded by mutableStateOf(emptyMap<Int, String>())
+        private set
 
     /** The password of a key setup that waits for the user to trust the host key. */
     private var setUpAfterTrust: String? = null
@@ -242,7 +254,15 @@ class NextModel(
             is V2Event.Output -> sinks[e.channel]?.invoke(e)
             is V2Event.Paint -> sinks[e.channel]?.invoke(e)
             is V2Event.Closed -> sinks[e.channel]?.invoke(e)
+            is V2Event.Reader -> if (e.reader in readerContents) readerContents = readerContents + (e.reader to e.content)
+            is V2Event.ReaderEnded -> {
+                readerContents = readerContents - e.reader
+                readerEnded = readerEnded + (e.reader to e.reason)
+            }
             is V2Event.Lost -> {
+                // The server closes Reader files with the connection.
+                readerEnded = readerEnded + readerContents.keys.associateWith { "The connection was lost. Open the file again." }
+                readerContents = emptyMap()
                 resume = c.state()
                 client = null
                 link = Link.Reconnecting(e.reason)
@@ -288,6 +308,8 @@ class NextModel(
         terminals = emptyList()
         routines = emptyList()
         routineProblems = emptyList()
+        readerContents = emptyMap()
+        readerEnded = emptyMap()
     }
 
     // Requests
@@ -312,6 +334,33 @@ class NextModel(
 
     fun refreshRoutines() = scope.launch {
         request { it.routines().let { (list, problems) -> routines = list; routineProblems = problems } }
+    }
+
+    // Reader
+
+    /** The files of [kind] in the terminal's folder; documents with HTML ones. */
+    suspend fun readerList(terminal: String, kind: ReaderKind): ReaderList? {
+        var list: ReaderList? = null
+        request { list = it.readerList(terminal, kind, html = kind == ReaderKind.DOCS) }
+        return list
+    }
+
+    /** Opens a listed file; its content stays in [readerContents] until [closeReader]. */
+    suspend fun openReader(terminal: String, kind: ReaderKind, path: String, scope: DiffScope): Int? {
+        var opened: Int? = null
+        request {
+            val (n, content) = it.readerOpen(terminal, kind, path, html = kind == ReaderKind.DOCS, scope = scope)
+            readerContents = readerContents + (n to content)
+            opened = n
+        }
+        return opened
+    }
+
+    fun closeReader(n: Int) {
+        val open = n in readerContents
+        readerContents = readerContents - n
+        readerEnded = readerEnded - n
+        if (open) scope.launch { runCatching { client?.readerClose(n) } }
     }
 
     private suspend fun request(body: suspend (V2Client) -> Unit) {

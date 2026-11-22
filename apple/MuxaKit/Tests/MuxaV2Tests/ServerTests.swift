@@ -59,6 +59,24 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func theReaderListsAndOpensTheFoldersFiles() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let demo = try #require(try await c.terminals().first { $0.name == "demo" })
+        let changes = try await c.readerList(demo.id, kind: .changes)
+        #expect(changes.root == "demo")
+        #expect(changes.entries == [ReaderEntry(path: "a.txt", status: "modified", added: 1, removed: 1)])
+        let (_, diff) = try await c.readerOpen(demo.id, kind: .changes, path: "a.txt")
+        #expect(diff.text == "@@ -1 +1 @@\n-one\n+two\n")
+        let image = try await c.readerOpen(demo.id, kind: .images, path: "shot.png").content
+        #expect(image.bytes == Data([0x89, 0x50, 0x4E, 0x47]))
+        await #expect(throws: V2Error.self) {
+            try await c.readerOpen(demo.id, kind: .docs, path: "../secret.md")
+        }
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func aResumeContinuesWithoutAPaint() async throws {
         let server = try Server()
         let first = try await server.connect()

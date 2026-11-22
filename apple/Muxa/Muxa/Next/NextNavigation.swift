@@ -14,7 +14,13 @@ final class NextNavigation {
     private(set) var active = 0
     /// Bumped to move the keyboard to the active pane.
     private(set) var focusRequest = 0
-    var showInbox = false
+    /// The panel beside Focus shows the Inbox or the Reader, never both.
+    var showInbox = false {
+        didSet { if showInbox { showReader = false } }
+    }
+    var showReader = false {
+        didSet { if showReader { showInbox = false } }
+    }
     var showPalette = false
     var sidebar = NavigationSplitViewVisibility.all
 

@@ -43,6 +43,45 @@ extension DemoContent {
                 routine("nightly-backup", at: "02:00", last: RoutineLast(at: 1_764_000_000, ok: false, reason: "gh login expired.", published: nil)),
                 routine("release-notes", at: nil, last: nil),
             ],
-            workspaces: ["app", "Personal"])
+            workspaces: ["app", "Personal"],
+            files: [
+                .docs: [
+                    DemoFile(entry: ReaderEntry(path: "PLAN.md"), content: ReaderContent(path: "PLAN.md", text: plan)),
+                    DemoFile(entry: ReaderEntry(path: ".muxa/TASK.md"),
+                             content: ReaderContent(path: ".muxa/TASK.md", text: "# fix-login\n\nRefresh the session before it expires.\n")),
+                ],
+                .changes: [
+                    DemoFile(entry: ReaderEntry(path: "src/auth/session.ts", status: "modified", added: 2, removed: 1),
+                             content: ReaderContent(path: "src/auth/session.ts", text: diff)),
+                ],
+                .images: [
+                    DemoFile(entry: ReaderEntry(path: "screenshots/login.png", size: 70),
+                             content: ReaderContent(path: "screenshots/login.png", data: pixel)),
+                ],
+            ])
     }()
+
+    private static let plan = """
+        # Plan
+
+        1. Refresh the session 60 s before it expires.
+        2. Retry once when the refresh fails.
+        3. Add a test for a session that expired while the app slept.
+
+        """
+
+    private static let diff = """
+        diff --git a/src/auth/session.ts b/src/auth/session.ts
+        --- a/src/auth/session.ts
+        +++ b/src/auth/session.ts
+        @@ -10,3 +10,4 @@ export function schedule(session: Session) {
+        -  const at = session.expiresAt;
+        +  const margin = 60_000;
+        +  const at = session.expiresAt - margin;
+           timer = setTimeout(refresh, at - Date.now());
+
+        """
+
+    /// A 1×1 PNG.
+    private static let pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 }

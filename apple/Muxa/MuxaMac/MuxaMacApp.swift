@@ -46,6 +46,9 @@ struct MuxaMacApp: App {
                 Button(nav.showInbox ? "Hide Inbox Panel" : "Show Inbox Panel") { nav.showInbox.toggle() }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                     .disabled(!nav.focus)
+                Button(nav.showReader ? "Hide Reader Panel" : "Show Reader Panel") { nav.showReader.toggle() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(!nav.focus)
                 Button("Toggle Sidebar") { nav.toggleSidebar() }
                     .keyboardShortcut("b", modifiers: .command)
                     .disabled(!nav.focus)

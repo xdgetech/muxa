@@ -80,4 +80,28 @@ class DemoTest {
         )
         assertEquals(listOf(Place(PlaceKind.FOLDER, "/w/tasks/a"), Place(PlaceKind.READ, "/w/docs")), t.places)
     }
+
+    @Test
+    fun aTasksFolderHasAReader() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val terminals = c.terminals()
+            val agent = terminals.first { it.isTaskAgent }
+            assertEquals(listOf("PLAN.md", ".muxa/TASK.md"), c.readerList(agent.id, ReaderKind.DOCS).entries.map { it.path })
+            val (reader, plan) = c.readerOpen(agent.id, ReaderKind.DOCS, "PLAN.md")
+            assertEquals(true, plan.text?.startsWith("# Plan"))
+            c.readerClose(reader)
+            assertEquals("modified", c.readerList(agent.id, ReaderKind.CHANGES).entries.first().status)
+            val image = c.readerOpen(agent.id, ReaderKind.IMAGES, "screenshots/login.png").second
+            assertEquals(listOf(0x89.toByte(), 0x50, 0x4E, 0x47), image.bytes?.take(4))
+            val shell = terminals.first { it.name == "shell" }
+            try {
+                c.readerList(shell.id, ReaderKind.DOCS)
+                fail("a shell has no folder")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
 }

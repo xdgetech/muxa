@@ -114,6 +114,24 @@ class NextTest {
     }
 
     @Test
+    fun theReaderShowsATasksPlanAndChanges() {
+        launch()
+        compose.onNodeWithTag("needsyou.t2").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("focus.reader"), TIMEOUT)
+        compose.onNodeWithTag("focus.reader").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader.file.PLAN.md"), TIMEOUT)
+        compose.onNodeWithTag("reader.file.PLAN.md").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader"), TIMEOUT)
+        compose.onNodeWithTag("reader.back").performClick()
+        compose.onNodeWithTag("reader.kind.changes").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader.file.src/auth/session.ts"), TIMEOUT)
+        compose.onNodeWithTag("reader.kind.images").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader.file.screenshots/login.png"), TIMEOUT)
+        compose.onNodeWithTag("reader.file.screenshots/login.png").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("reader.image"), TIMEOUT)
+    }
+
+    @Test
     fun disconnectReturnsToTheHostsAndAHostCanBeAdded() {
         launch()
         compose.onNodeWithTag("home.host").performClick()

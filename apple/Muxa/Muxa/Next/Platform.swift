@@ -25,6 +25,16 @@ extension View {
         #endif
     }
 
+    /// `⌘⇧key` on iOS. The Mac gives the command a menu item with this
+    /// shortcut instead, and two of one shortcut would clash.
+    func touchShortcut(_ key: KeyEquivalent) -> some View {
+        #if os(iOS)
+        keyboardShortcut(key, modifiers: [.command, .shift])
+        #else
+        self
+        #endif
+    }
+
     func numberEntry() -> some View {
         #if os(iOS)
         keyboardType(.numberPad)
@@ -52,6 +62,19 @@ enum Clipboard {
         #else
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+}
+
+extension Image {
+    /// An image from encoded bytes (PNG, JPEG…), or nil.
+    init?(data: Data) {
+        #if canImport(UIKit)
+        guard let image = UIImage(data: data) else { return nil }
+        self.init(uiImage: image)
+        #else
+        guard let image = NSImage(data: data) else { return nil }
+        self.init(nsImage: image)
         #endif
     }
 }

@@ -59,6 +59,24 @@ struct DemoTests {
         #expect(running && again.id == fix.id)
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func aTasksFolderHasAReader() async throws {
+        let c = try await open()
+        let terminals = try await c.terminals()
+        let agent = try #require(terminals.first { $0.isTaskAgent })
+        let docs = try await c.readerList(agent.id, kind: .docs)
+        #expect(docs.entries.map(\.path) == ["PLAN.md", ".muxa/TASK.md"])
+        let (reader, plan) = try await c.readerOpen(agent.id, kind: .docs, path: "PLAN.md")
+        #expect(plan.text?.hasPrefix("# Plan") == true)
+        try await c.readerClose(reader)
+        let changes = try await c.readerList(agent.id, kind: .changes)
+        #expect(changes.entries.first?.status == "modified")
+        let image = try await c.readerOpen(agent.id, kind: .images, path: "screenshots/login.png").content
+        #expect(image.bytes?.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]))
+        let shell = try #require(terminals.first { $0.name == "shell" })
+        await #expect(throws: V2Error.self) { try await c.readerList(shell.id, kind: .docs) }
+    }
+
     @Test func placesDecodeFromTheLabel() {
         let t = Terminal(
             id: "t9", name: "Audit", live: true, status: nil,

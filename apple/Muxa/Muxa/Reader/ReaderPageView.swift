@@ -1,3 +1,4 @@
+#if canImport(UIKit)
 import UIKit
 import WebKit
 
@@ -43,3 +44,9 @@ final class ReaderPageView: WKWebView {
         return min(max(y + delta, top), bottom)
     }
 }
+#else
+import WebKit
+
+/// The Mac's web view scrolls with the keyboard by itself.
+typealias ReaderPageView = WKWebView
+#endif

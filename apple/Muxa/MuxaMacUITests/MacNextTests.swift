@@ -47,6 +47,18 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheReaderShowsATasksPlan() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let plan = app.descendants(matching: .any)["reader.file.PLAN.md"]
+        XCTAssertTrue(plan.waitForExistence(timeout: 10))
+        plan.click()
+        XCTAssertTrue(app.webViews["reader"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testTypingInFocusReachesTheTerminal() throws {
         let app = launch()
         app.descendants(matching: .any)["needsyou.t2"].click()

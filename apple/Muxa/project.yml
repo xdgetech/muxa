@@ -61,6 +61,7 @@ targets:
         excludes: [TerminalPane.swift]
       - Muxa/Theme.swift
       - Muxa/Assets.xcassets
+      - Muxa/Reader
       - MuxaMac
     dependencies:
       - package: MuxaKit

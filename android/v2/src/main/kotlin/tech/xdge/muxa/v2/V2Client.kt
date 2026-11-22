@@ -174,6 +174,28 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         request(V2Request.RunRoutine(workspace, name))
     }
 
+    // Reader
+
+    /** The files of [kind] in the terminal's folder; only a Task's agent or a Routine run has one. */
+    suspend fun readerList(terminal: String, kind: ReaderKind, html: Boolean = false): ReaderList =
+        field("list", request(V2Request.ReaderListOf(terminal, kind, html)))
+
+    /** Opens a listed file. [V2Event.Reader] and [V2Event.ReaderEnded] follow it until [readerClose]; a resume ends it. */
+    suspend fun readerOpen(
+        terminal: String,
+        kind: ReaderKind,
+        path: String,
+        html: Boolean = false,
+        scope: DiffScope = DiffScope.UNCOMMITTED,
+    ): Pair<Int, ReaderContent> {
+        val reply = request(V2Request.ReaderOpen(terminal, kind, path, html, scope))
+        return field<Int>("reader", reply) to field<ReaderContent>("content", reply)
+    }
+
+    suspend fun readerClose(reader: Int) {
+        request(V2Request.ReaderClose(reader))
+    }
+
     // Terminal channels
 
     /** Sends input; it is kept until the server acknowledges it. */
@@ -249,6 +271,14 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
             "removed" -> msg.str("terminal")?.let { out.trySend(V2Event.Removed(it)) }
             "resync" -> out.trySend(V2Event.Resync)
             "inbox" -> runCatching { field<Inbox>("inbox", msg) }.getOrNull()?.let { out.trySend(V2Event.InboxChanged(it)) }
+            "reader" -> {
+                val n = (msg["reader"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
+                runCatching { field<ReaderContent>("content", msg) }.getOrNull()?.let { out.trySend(V2Event.Reader(n, it)) }
+            }
+            "reader-ended" -> {
+                val n = (msg["reader"] as? JsonPrimitive)?.longOrNull?.toInt() ?: return
+                out.trySend(V2Event.ReaderEnded(n, msg.str("reason") ?: ""))
+            }
         }
     }
 

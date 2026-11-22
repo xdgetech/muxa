@@ -27,13 +27,28 @@ public struct DemoContent: Sendable {
     public var inbox: [InboxItem]
     public var routines: [Routine]
     public var workspaces: [String]
+    /// What the Reader shows in every Task's folder, by kind.
+    public var files: [ReaderKind: [DemoFile]]
 
-    public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String]) {
+    public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
+                files: [ReaderKind: [DemoFile]] = [:]) {
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
         self.routines = routines
         self.workspaces = workspaces
+        self.files = files
+    }
+}
+
+/// A Reader file of the demo: its list entry and its content.
+public struct DemoFile: Sendable {
+    public var entry: ReaderEntry
+    public var content: ReaderContent
+
+    public init(entry: ReaderEntry, content: ReaderContent) {
+        self.entry = entry
+        self.content = content
     }
 }
 
@@ -47,6 +62,7 @@ actor DemoServer {
     private var offsets: [UInt32: UInt64] = [:]
     private var applied: [UInt32: UInt64] = [:]
     private var nextChannel: UInt32 = 1
+    private var nextReader: UInt32 = 1
     private var watching = false
 
     init(content: DemoContent, out: AsyncThrowingStream<Data, any Error>.Continuation) {
@@ -178,9 +194,34 @@ actor DemoServer {
             }
             content.routines[at].runningSince = Int64(Date().timeIntervalSince1970)
             reply(id, [:])
+        case "reader-list":
+            guard let kind = readerKind(id, m) else { return }
+            reply(id, ["list": json(ReaderList(root: "app", entries: content.files[kind, default: []].map(\.entry)))])
+        case "reader-open":
+            guard let kind = readerKind(id, m) else { return }
+            let path = m["path"] as? String
+            guard let file = content.files[kind, default: []].first(where: { $0.entry.path == path }) else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "\(path ?? "") is not a listed file"])
+            }
+            let n = nextReader
+            nextReader += 1
+            reply(id, ["reader": n, "content": json(file.content)])
+        case "reader-close":
+            reply(id, [:])
         default:
             send(["type": "error", "id": id, "code": "bad-request", "message": "unknown request"])
         }
+    }
+
+    /// The kind of a Reader request on a terminal with a folder, or nil after an error.
+    private func readerKind(_ id: UInt64, _ m: [String: Any]) -> ReaderKind? {
+        let t = content.terminals.first { $0.id == m["terminal"] as? String }
+        guard t?.taskDir != nil else {
+            send(["type": "error", "id": id, "code": "bad-request",
+                  "message": "this terminal has no folder: only a Task's agent or a Routine run has a Reader"])
+            return nil
+        }
+        return ReaderKind(rawValue: m["kind"] as? String ?? "")
     }
 
     private func attach(_ id: UInt64, _ terminal: String, cols: UInt16) {

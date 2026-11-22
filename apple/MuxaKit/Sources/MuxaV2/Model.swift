@@ -134,6 +134,96 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// What the Reader lists and opens (plan F2).
+public enum ReaderKind: String, Codable, Sendable, CaseIterable {
+    case docs, changes, images
+}
+
+/// Which diff of a changed file.
+public enum DiffScope: String, Codable, Sendable {
+    /// Against HEAD: staged, unstaged and untracked.
+    case uncommitted
+    /// The branch's commits since it left its base.
+    case branch
+}
+
+/// A file of a terminal's folder the Reader may open. Which fields are set
+/// depends on the kind.
+public struct ReaderEntry: Codable, Equatable, Sendable, Identifiable {
+    public var path: String
+    /// Documents: an HTML `<title>`.
+    public var title: String?
+    public var mtime: Int64?
+    /// Images: bytes.
+    public var size: Int64?
+    /// Changes: `modified`, `added`, `deleted`, `renamed`, `untracked`, `conflicted`.
+    public var status: String?
+    public var oldPath: String?
+    public var added: UInt32?
+    public var removed: UInt32?
+
+    public var id: String { path }
+
+    public init(path: String, title: String? = nil, mtime: Int64? = nil, size: Int64? = nil, status: String? = nil,
+                oldPath: String? = nil, added: UInt32? = nil, removed: UInt32? = nil) {
+        self.path = path
+        self.title = title
+        self.mtime = mtime
+        self.size = size
+        self.status = status
+        self.oldPath = oldPath
+        self.added = added
+        self.removed = removed
+    }
+}
+
+public struct ReaderBranch: Codable, Equatable, Sendable {
+    /// The ref compared with, e.g. `origin/main`.
+    public var base: String
+    public var commits: UInt32
+    public var entries: [ReaderEntry]
+    public var truncated: Bool?
+}
+
+public struct ReaderList: Codable, Equatable, Sendable {
+    /// The repo's folder name; nil outside a repo.
+    public var root: String?
+    public var entries: [ReaderEntry]
+    public var truncated: Bool?
+    /// Changes: what the branch's commits changed.
+    public var branch: ReaderBranch?
+
+    public init(root: String? = nil, entries: [ReaderEntry], truncated: Bool? = nil, branch: ReaderBranch? = nil) {
+        self.root = root
+        self.entries = entries
+        self.truncated = truncated
+        self.branch = branch
+    }
+}
+
+/// An open file as it is now.
+public struct ReaderContent: Codable, Equatable, Sendable {
+    public var path: String
+    /// Documents and diffs.
+    public var text: String?
+    /// Images: the bytes in base64.
+    public var data: String?
+    /// A diff of a binary file.
+    public var binary: Bool?
+    public var mtime: Int64?
+
+    public init(path: String, text: String? = nil, data: String? = nil, binary: Bool? = nil, mtime: Int64? = nil) {
+        self.path = path
+        self.text = text
+        self.data = data
+        self.binary = binary
+        self.mtime = mtime
+    }
+
+    /// An image's bytes.
+    public var bytes: Data? { data.flatMap { Data(base64Encoded: $0) } }
+}
+
 public struct Exit: Codable, Equatable, Sendable {
     public var reason: String
     public var exitCode: Int64?
@@ -153,6 +243,10 @@ public enum V2Event: Equatable, Sendable {
     case removed(terminal: String)
     /// Changes were lost: list the terminals again.
     case resync
+    /// An open Reader file changed.
+    case reader(reader: UInt32, content: ReaderContent)
+    /// An open Reader file ended; the reader is closed.
+    case readerEnded(reader: UInt32, reason: String)
     /// The connection is gone; resume with `V2Client.state`.
     case lost(String)
 }

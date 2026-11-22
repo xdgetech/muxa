@@ -1,11 +1,13 @@
+#if canImport(UIKit)
 import MuxaUI
+#endif
 import SwiftUI
 import WebKit
 
 /// Shows one Markdown document, or one unified diff, with the bundled renderer (`reader.html`). The
 /// page loads nothing else: its CSP allows no network, and every navigation but
 /// the first is refused here. Links come back through `onLink`.
-struct ReaderWebView: UIViewRepresentable {
+struct ReaderWebView: WebRepresentable {
     enum Kind: Equatable { case markdown, diff }
 
     let text: String
@@ -16,27 +18,24 @@ struct ReaderWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeWebView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         // A weak hop: the content controller keeps its handlers alive.
         config.userContentController.add(WeakHandler(context.coordinator), name: "reader")
         let view = ReaderPageView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
-        view.isOpaque = false
-        view.backgroundColor = .systemBackground
-        view.allowsLinkPreview = false
-        view.accessibilityIdentifier = "reader"
+        view.readerLook(identifier: "reader")
         context.coordinator.load(into: view)
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
+    func updateWebView(_ view: WKWebView, context: Context) {
         context.coordinator.onLink = onLink
         context.coordinator.show(Shown(text: text, path: path, kind: kind))
     }
 
-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
+    static func dismantleWebView(_ view: WKWebView, coordinator: Coordinator) {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "reader")
     }
 
@@ -69,9 +68,11 @@ struct ReaderWebView: UIViewRepresentable {
             guard let text = Self.jsonString(wanted.text), let path = Self.jsonString(wanted.path) else { return }
             let function = wanted.kind == .diff ? "renderDiff" : "render"
             view.evaluateJavaScript("\(function)(\(text), \(path), \(first))") { _, _ in }
+            #if canImport(UIKit)
             // Keys reach only the first responder, and nothing else makes the page one.
             // Without a hardware keyboard nothing needs it.
             if first, KeyInputView.focusesByItself, view.window != nil { view.becomeFirstResponder() }
+            #endif
         }
 
         /// A JSON string literal is a valid JavaScript string literal.

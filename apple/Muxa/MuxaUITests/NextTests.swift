@@ -97,6 +97,25 @@ final class NextTests: XCTestCase {
     }
 
     @MainActor
+    func testTheReaderShowsATasksPlanAndChanges() throws {
+        let app = launch()
+        app.buttons["needsyou.t2"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.buttons["focus.reader"].tap()
+        let plan = app.descendants(matching: .any)["reader.file.PLAN.md"]
+        XCTAssertTrue(plan.waitForExistence(timeout: 10))
+        plan.tap()
+        XCTAssertTrue(app.webViews["reader"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.webViews["reader"].staticTexts["Plan"].waitForExistence(timeout: 10))
+        app.navigationBars["PLAN.md"].buttons.firstMatch.tap()
+        app.segmentedControls["reader.kind"].buttons["Changes"].tap()
+        let change = app.descendants(matching: .any)["reader.file.src/auth/session.ts"]
+        XCTAssertTrue(change.waitForExistence(timeout: 10))
+        change.tap()
+        XCTAssertTrue(app.webViews["reader"].waitForExistence(timeout: 10))
+    }
+
+    @MainActor
     func testGoToTaskOpensItInFocus() throws {
         let app = launch()
         app.typeKey("p", modifierFlags: .command)

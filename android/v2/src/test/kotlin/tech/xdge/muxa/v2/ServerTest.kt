@@ -61,6 +61,27 @@ class ServerTest {
     }
 
     @Test
+    fun theReaderListsAndOpensTheFoldersFiles() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val demo = c.terminals().first { it.name == "demo" }
+            val changes = c.readerList(demo.id, ReaderKind.CHANGES)
+            assertEquals("demo", changes.root)
+            assertEquals(listOf(ReaderEntry("a.txt", status = "modified", added = 1, removed = 1)), changes.entries)
+            assertEquals("@@ -1 +1 @@\n-one\n+two\n", c.readerOpen(demo.id, ReaderKind.CHANGES, "a.txt").second.text)
+            val image = c.readerOpen(demo.id, ReaderKind.IMAGES, "shot.png").second
+            assertEquals(listOf(0x89.toByte(), 0x50, 0x4E, 0x47), image.bytes?.toList())
+            try {
+                c.readerOpen(demo.id, ReaderKind.DOCS, "../secret.md")
+                fail("only listed files open")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
     fun aResumeContinuesWithoutAPaint() = runBlocking {
         withTimeout(10_000) {
             val first = connect()

@@ -34,16 +34,37 @@ struct FocusView: View {
                         .navigationTitle(t.branch ?? t.name ?? t.id)
                         .inlineTitle()
                         .toolbar {
+                            Button("Reader", systemImage: "doc.text.magnifyingglass") { nav.showReader.toggle() }
+                                .touchShortcut("r")
+                                .disabled(t.taskDir == nil)
+                                .accessibilityIdentifier("focus.reader")
                             Button("Inbox", systemImage: "tray.full") { nav.showInbox.toggle() }
                                 .accessibilityIdentifier("focus.inbox")
                         }
-                        .inspector(isPresented: Bindable(nav).showInbox) { InboxPanel() }
+                        .inspector(isPresented: panel) {
+                            Group {
+                                if nav.showReader { ReaderPanel(terminal: t).id(t.id) } else { InboxPanel() }
+                            }
+                            .inspectorColumnWidth(min: 300, ideal: 460, max: 900)
+                        }
                 } else {
                     ContentUnavailableView("Select a Task", systemImage: "terminal")
                 }
             }
         }
         .navigationSplitViewStyle(.balanced)
+    }
+
+    /// The panel beside the terminal: the Inbox or the Reader.
+    private var panel: Binding<Bool> {
+        Binding(
+            get: { nav.showInbox || nav.showReader },
+            set: { shown in
+                if !shown {
+                    nav.showInbox = false
+                    nav.showReader = false
+                }
+            })
     }
 
     @ViewBuilder

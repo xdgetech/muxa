@@ -24,6 +24,9 @@ public enum V2Request: Sendable {
     case taskReview(terminal: String, note: String? = nil)
     case routines
     case runRoutine(workspace: String, name: String)
+    case readerList(terminal: String, kind: ReaderKind, html: Bool = false)
+    case readerOpen(terminal: String, kind: ReaderKind, path: String, html: Bool = false, scope: DiffScope = .uncommitted)
+    case readerClose(reader: UInt32)
 
     func json(id: UInt64) throws -> Data {
         var m: [String: Any] = ["id": id]
@@ -53,6 +56,12 @@ public enum V2Request: Sendable {
         case let .taskReview(terminal, note): set("task-review", ["terminal": terminal, "note": note])
         case .routines: set("routines", [:])
         case let .runRoutine(workspace, name): set("run-routine", ["workspace": workspace, "name": name])
+        case let .readerList(terminal, kind, html):
+            set("reader-list", ["terminal": terminal, "kind": kind.rawValue, "html": html])
+        case let .readerOpen(terminal, kind, path, html, scope):
+            set("reader-open", ["terminal": terminal, "kind": kind.rawValue, "path": path, "html": html,
+                                "scope": scope.rawValue])
+        case let .readerClose(reader): set("reader-close", ["reader": reader])
         }
         return try JSONSerialization.data(withJSONObject: m, options: [.sortedKeys])
     }

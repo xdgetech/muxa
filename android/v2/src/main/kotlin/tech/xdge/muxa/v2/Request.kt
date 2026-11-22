@@ -37,6 +37,15 @@ sealed interface V2Request {
     data class TaskReview(val terminal: String, val note: String? = null) : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request
+    data class ReaderListOf(val terminal: String, val kind: ReaderKind, val html: Boolean = false) : V2Request
+    data class ReaderOpen(
+        val terminal: String,
+        val kind: ReaderKind,
+        val path: String,
+        val html: Boolean = false,
+        val scope: DiffScope = DiffScope.UNCOMMITTED,
+    ) : V2Request
+    data class ReaderClose(val reader: Int) : V2Request
 
     fun json(id: Long): JsonObject = buildJsonObject {
         put("id", id)
@@ -66,6 +75,12 @@ sealed interface V2Request {
             is TaskReview -> { type("task-review"); put("terminal", r.terminal); opt("note", r.note) }
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
+            is ReaderListOf -> { type("reader-list"); put("terminal", r.terminal); put("kind", r.kind.wire); put("html", r.html) }
+            is ReaderOpen -> {
+                type("reader-open"); put("terminal", r.terminal); put("kind", r.kind.wire); put("path", r.path)
+                put("html", r.html); put("scope", r.scope.wire)
+            }
+            is ReaderClose -> { type("reader-close"); put("reader", r.reader) }
         }
     }
 }
