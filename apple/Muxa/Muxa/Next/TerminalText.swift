@@ -24,11 +24,14 @@ extension Terminal {
 
     var workspace: String? { labels["muxa.workspace"] }
 
-    /// The working place: `app branch`, `docs · read only`, `folder + 2 repos`.
+    /// The working place: `app branch`, `docs · read only`, `folder · reads 2 repos`.
     var placeText: String? {
         if let first = places.first {
             let others = places.count - 1
             let base = Self.describe(first)
+            if first.kind == .folder, others > 0, places.dropFirst().allSatisfy({ $0.kind == .read }) {
+                return "folder · reads \(others) \(others == 1 ? "repo" : "repos")"
+            }
             return others > 0 ? "\(base) + \(others) \(others == 1 ? "repo" : "repos")" : base
         }
         guard let repo = labels["muxa.repo"] else { return taskDir.map(Self.lastPart) }

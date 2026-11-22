@@ -83,6 +83,21 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
+    func testARepoStartsItsCheckoutAgentFromTheSidebar() throws {
+        let app = launch()
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(any["repo.app.app"].waitForExistence(timeout: 5))
+        XCTAssertTrue(any["terminal.t1"].exists)
+        any["repo.start.app.app"].click()
+        // The started agent opens as a tab titled for the checkout: repo and branch.
+        let tab = any.matching(NSPredicate(format: "identifier BEGINSWITH 'tab.' AND label CONTAINS 'app main'"))
+        XCTAssertTrue(tab.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(any["repo.open.app.app"].waitForExistence(timeout: 5))
+        XCTAssertFalse(any["repo.start.app.app"].exists)
+    }
+
+    @MainActor
     func testCaptureStartsATaskWithTheWindowClosed() throws {
         let app = launch()
         app.typeKey("w", modifierFlags: .command)

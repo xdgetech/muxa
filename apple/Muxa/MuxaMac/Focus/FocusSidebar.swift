@@ -1,26 +1,31 @@
 import MuxaV2
 import SwiftUI
 
-/// Focus's left column: who needs the user, the live Tasks, the folded other
-/// terminals, and the Routines' health at the foot. Plain views on the
-/// surface tone, not a sidebar List, which draws a material.
+/// Focus's left column: who needs the user, the Workspaces with their repos
+/// and Tasks, the folded other terminals, and the Routines' health at the
+/// foot. Plain views on the surface tone, not a sidebar List (a material).
 struct FocusSidebar: View {
     @Environment(NextModel.self) private var model
     @Binding var selected: String?
     /// The other terminals start closed: Tasks are what Focus is for.
     @State private var showOthers = false
 
-    private var tasks: [MuxaV2.Terminal] {
-        model.liveTasks.filter { !model.needsYou.contains($0) }
+    /// Needs-you Tasks are listed once, on top, not again in their Workspace.
+    private var grouped: (groups: [WorkspaceGroup], unplaced: [MuxaV2.Terminal]) {
+        WorkspaceGroup.make(model.workspaceList, tasks: model.liveTasks, hidden: Set(model.needsYou.map(\.id)))
     }
 
     var body: some View {
+        let grouped = grouped
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if !model.needsYou.isEmpty { needsYou }
-                    header { SectionLabel(title: "Tasks") }
-                    ForEach(tasks) { row($0, style: .task) }
+                    FocusWorkspaces(groups: grouped.groups, selected: $selected)
+                    if !grouped.unplaced.isEmpty {
+                        header { SectionLabel(title: "Tasks") }
+                        ForEach(grouped.unplaced) { row($0, style: .task) }
+                    }
                     if !model.otherTerminals.isEmpty { others }
                 }
                 .padding(.horizontal, 8)
@@ -31,6 +36,7 @@ struct FocusSidebar: View {
         .frame(width: 280)
         .frame(maxHeight: .infinity)
         .background(Palette.surface)
+        .task { await model.refreshWorkspaces() }
         .overlay(alignment: .trailing) { Rectangle().fill(Palette.border).frame(width: 1) }
     }
 

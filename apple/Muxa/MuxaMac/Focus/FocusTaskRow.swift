@@ -9,6 +9,8 @@ struct FocusTaskRow: View {
         case needsYou
         /// With the working place under the title.
         case task
+        /// One line under a Workspace's "No repo": the header says the place.
+        case loose
         /// One line: Routine runs, shells and terminals muxa did not start.
         case other
     }
@@ -16,6 +18,8 @@ struct FocusTaskRow: View {
     let terminal: MuxaV2.Terminal
     var style = Style.task
     var loop: LoopInfo?
+    /// Under a Workspace's repo or its "No repo" line.
+    var indent: CGFloat = 0
     let selected: Bool
     let open: () -> Void
 
@@ -41,8 +45,9 @@ struct FocusTaskRow: View {
             }
             .font(.system(size: 13))
             .foregroundStyle(selected || style == .needsYou ? Palette.text : Palette.textMid)
-            .padding(.horizontal, 10)
-            .padding(.vertical, style == .task ? 4 : 6)
+            .padding(.leading, 10 + indent)
+            .padding(.trailing, 10)
+            .padding(.vertical, style == .task || style == .loose ? 4 : 6)
             .background(style == .needsYou ? Palette.bannerBack : .clear, in: RoundedRectangle(cornerRadius: 7))
             .selectableRow(selected)
             .contentShape(Rectangle())
@@ -60,8 +65,9 @@ struct FocusTaskRow: View {
 
     /// The working place, and the loop's attempts while one runs.
     private var detail: String? {
-        guard style == .task else { return nil }
-        let parts = [terminal.placeText, loop.map(LoopText.badge)].compactMap { $0 }
+        guard style == .task || style == .loose else { return nil }
+        let place = style == .task ? terminal.placeText : nil
+        let parts = [place, loop.map(LoopText.badge)].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

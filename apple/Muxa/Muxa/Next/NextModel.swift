@@ -50,6 +50,8 @@ final class NextModel {
     private(set) var chatEnded: [UInt32: String] = [:]
     /// Task Loops by agent terminal.
     private(set) var loops: [String: LoopInfo] = [:]
+    /// The Workspaces with their repos and branches, for Focus's sidebar.
+    private(set) var workspaceList: [Workspace] = []
     /// Open Reader files by reader number, as the server last sent them.
     private(set) var readerContents: [UInt32: ReaderContent] = [:]
     /// Why a Reader file ended, by reader number, until it is closed.
@@ -301,6 +303,7 @@ final class NextModel {
             terminals = try await c.terminals()
             (routines, routineProblems, routinesOff) = try await c.routines()
             loops = Dictionary(try await c.loops().map { ($0.terminal, $0) }) { _, b in b }
+            workspaceList = try await c.workspaces()
         } catch {
             requestError = Self.describe(error)
         }
@@ -326,6 +329,7 @@ final class NextModel {
         readerContents = [:]
         readerEnded = [:]
         loops = [:]
+        workspaceList = []
         chats = [:]
         chatPrompts = [:]
         chatEnded = [:]
@@ -358,6 +362,23 @@ final class NextModel {
 
     func workspaces() async throws -> [Workspace] {
         try await connected().workspaces()
+    }
+
+    /// Reads the Workspaces again: a repo's branch may have moved.
+    func refreshWorkspaces() async {
+        await run { self.workspaceList = try await $0.workspaces() }
+    }
+
+    /// Starts the agent in the repo's own checkout (ADR 0077); when one runs
+    /// there already, the server returns it.
+    func startCheckout(workspace: Workspace, repo: String) async -> Terminal? {
+        let title = [repo, workspace.branches[repo]].compactMap { $0 }.joined(separator: " ")
+        var started: Terminal?
+        await run { _ in
+            started = try await self.startTask(TaskRequest(
+                workspace: workspace.name, title: title, places: [.checkout(repo: repo)], plan: false))
+        }
+        return started
     }
 
     /// Starts a Task and keeps its agent terminal, so Focus can show it at once.
