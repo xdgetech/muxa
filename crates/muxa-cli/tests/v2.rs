@@ -83,6 +83,7 @@ impl Host for WorkTasks {
             title: spec.title.clone(),
             repo: Some(repo.into()),
             branch: Some(branch.to_owned()),
+            checkout: None,
             argv: vec!["agent".into()],
             env: Default::default(),
             places: vec![Place {

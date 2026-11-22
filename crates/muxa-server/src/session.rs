@@ -636,14 +636,25 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
     /// The live agent muxa runs in an adopted place: a second Resume finds it
     /// instead of a refusal for the busy folder.
     async fn adopted_agent(&self, spec: &TaskSpec) -> Result<Option<TerminalInfo>, BackendError> {
-        let Some(path) = spec.existing() else {
+        let wanted: Box<dyn Fn(&TerminalInfo) -> bool + Send> = if let Some(path) = spec.existing()
+        {
+            let path = path.to_owned();
+            Box::new(move |t| t.labels.get(tasks::DIR) == Some(&path))
+        } else if let Some(repo) = spec.checkout() {
+            let (repo, ws) = (repo.to_owned(), spec.workspace.clone());
+            Box::new(move |t| {
+                t.labels.get(tasks::CHECKOUT) == Some(&repo)
+                    && t.labels.get(tasks::WORKSPACE) == Some(&ws)
+            })
+        } else {
             return Ok(None);
         };
-        Ok(self.backend.list().await?.into_iter().find(|t| {
-            t.live
-                && task_items::is_agent(t)
-                && t.labels.get(tasks::DIR).map(String::as_str) == Some(path)
-        }))
+        Ok(self
+            .backend
+            .list()
+            .await?
+            .into_iter()
+            .find(|t| t.live && task_items::is_agent(t) && wanted(t)))
     }
 
     async fn start_task(&mut self, id: u64, spec: &TaskSpec, task_loop: Option<v2::LoopSpec>) {

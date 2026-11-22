@@ -86,6 +86,15 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func aCheckoutRunsOneAgentInTheReposOwnFolder() async throws {
+        let c = try await open()
+        let (t, existing) = try await c.startTask(workspace: "app", title: "app main", places: [.checkout(repo: "app")])
+        #expect(!existing && t.taskDir == "/demo/app" && t.labels["muxa.checkout"] == "app")
+        let (again, running) = try await c.startTask(workspace: "app", title: "app main", places: [.checkout(repo: "app")])
+        #expect(running && again.id == t.id)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func aTaskStartsWithItsLoopAndGetsANewID() async throws {
         let c = try await open()
         let review = try #require(try await c.inbox().items.first { $0.kind == .review })

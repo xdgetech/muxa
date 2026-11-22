@@ -431,13 +431,15 @@ actor DemoServer {
         let loopSpec = m["loop"] as? [String: Any]
         if let loopSpec, let refusal = loopRefusal(loopSpec, workspace) { return refuse(refusal) }
         let places = m["places"] as? [[String: Any]] ?? []
-        let existing = places.first { $0["kind"] as? String == "existing" }?["path"] as? String
+        let checkout = places.first { $0["kind"] as? String == "checkout" }?["repo"] as? String
+        let existing = (places.first { $0["kind"] as? String == "existing" }?["path"] as? String)
+            ?? checkout.map { "\(workspace.root)/\($0)" }
         if existing != nil, places.contains(where: { ["folder", "branch"].contains($0["kind"] as? String) }) {
-            return refuse("an existing place is the working place: it comes without a folder or a branch")
+            return refuse("an existing place or a checkout is the working place: it comes without a folder or a branch")
         }
         let firstBranch = places.first { $0["kind"] as? String == "branch" }
         let branch = firstBranch?["branch"] as? String
-        let repo = firstBranch?["repo"] as? String
+        let repo = firstBranch?["repo"] as? String ?? checkout
         let dir = existing ?? branch.map { "\(repo ?? "/demo")-\($0)" } ?? "/demo/tasks/\(title)"
         if let running = content.terminals.first(where: { $0.live && $0.isTaskAgent && $0.taskDir == dir }) {
             return reply(id, ["terminal": json(running), "existing": true])
@@ -446,6 +448,7 @@ actor DemoServer {
                       "muxa.title": title]
         if let branch { labels["muxa.branch"] = branch }
         if let repo { labels["muxa.repo"] = repo }
+        if let checkout { labels["muxa.checkout"] = checkout }
         // Every agent gets all the Workspace's connections and servers (ADR 0075);
         // `connections` and `mcp` in the request are ignored.
         let connections = workspace.connections.map(\.name)

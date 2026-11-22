@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use muxa_protocol::v2::{Place, PlaceKind};
-use muxa_server::tasks::{BRANCH, DIR, PLACES, REPO, WORKSPACE};
+use muxa_server::tasks::{BRANCH, CHECKOUT, DIR, PLACES, REPO, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::adopt::{self, AgentLookup};
@@ -254,6 +254,7 @@ fn prepared(
         title: title.to_owned(),
         repo: made.repo.clone(),
         branch: made.branch.clone(),
+        checkout: None,
         places: made.places,
         connections: given.connections,
         mcp: given.mcp,
@@ -340,14 +341,17 @@ impl Host for BridgeHost {
         })
         .await?;
         let (made, mut line) = self.agent_line(&ws, made, Some(servers)).await?;
-        if spec.existing().is_some() && self.resumes(&ws, &line, made.working()) {
+        let adopts = spec.existing().is_some() || spec.checkout().is_some();
+        if adopts && self.resumes(&ws, &line, made.working()) {
             line.push_str(" --continue");
         }
         if spec.plan {
             line = crate::launch::plan_line(&line);
         }
         tracing::info!(workspace = %ws.name, places = made.places.len(), "task places ready");
-        Ok(prepared(ws, title, made, line, given))
+        let mut prepared = prepared(ws, title, made, line, given);
+        prepared.checkout = spec.checkout().map(str::to_owned);
+        Ok(prepared)
     }
 
     async fn restart(&self, ended: &muxa_backend::TerminalInfo) -> Result<Prepared, TaskError> {
@@ -369,7 +373,9 @@ impl Host for BridgeHost {
             .clone()
             .or_else(|| made.branch.clone())
             .unwrap_or_else(|| "Task".into());
-        Ok(prepared(ws, &title, made, line, given))
+        let mut prepared = prepared(ws, &title, made, line, given);
+        prepared.checkout = ended.labels.get(CHECKOUT).cloned();
+        Ok(prepared)
     }
 
     async fn v1_tasks(&self) -> Result<Vec<muxa_protocol::v2::V1Task>, TaskError> {

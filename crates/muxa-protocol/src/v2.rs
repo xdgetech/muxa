@@ -219,6 +219,12 @@ pub enum PlaceSpec {
     /// A folder or worktree that already exists in the Workspace: nothing is
     /// made. It is the working place.
     Existing { path: String },
+    /// The repo's own checkout as the working place, as it is (ADR 0077).
+    /// It is the only place; one muxa agent works there at a time.
+    Checkout { repo: String },
+    /// Every repo of the Workspace, each as a `read` place, beside the
+    /// Task's folder (ADR 0077).
+    AllRead,
 }
 
 /// A Task's place as it is: the `muxa.places` label of its agent terminal
@@ -237,6 +243,8 @@ pub enum PlaceKind {
     Folder,
     Branch,
     Read,
+    /// A repo's own checkout; `branch` is the one it had when the Task started.
+    Checkout,
 }
 
 /// How a program or stream ended; the CLOSE payload from the server.

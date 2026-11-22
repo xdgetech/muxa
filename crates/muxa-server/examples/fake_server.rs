@@ -63,6 +63,7 @@ impl Host for FakeHost {
             title: spec.title.clone(),
             repo: Some(repo.into()),
             branch: Some(branch.to_owned()),
+            checkout: spec.checkout().map(str::to_owned),
             argv: vec!["agent".into()],
             env: Default::default(),
             places: Vec::new(),

@@ -210,3 +210,57 @@ fn a_one_place_task_writes_no_settings_and_paths_are_quoted() {
     assert_eq!(claude_settings(&made).unwrap(), None);
     assert_eq!(quote("/a b/it's"), "'/a b/it'\\''s'");
 }
+
+#[tokio::test]
+async fn all_read_is_a_folder_and_every_repo_read_only() {
+    let ws = workspace("all-read");
+    std::fs::create_dir_all(ws.root.join("notes")).unwrap();
+    let made = make(
+        &ws,
+        "Audit",
+        check(&ws, &[PlaceSpec::AllRead]).await.unwrap(),
+    )
+    .await
+    .unwrap();
+    let kinds: Vec<PlaceKind> = made.places.iter().map(|p| p.kind).collect();
+    assert_eq!(kinds, [PlaceKind::Folder, PlaceKind::Read, PlaceKind::Read]);
+    let reads: Vec<&str> = made.places[1..].iter().map(|p| p.path.as_str()).collect();
+    assert_eq!(
+        reads,
+        [
+            ws.root.join("app").to_string_lossy(),
+            ws.root.join("docs").to_string_lossy()
+        ],
+        "every repo once; a plain folder is no repo"
+    );
+}
+
+#[tokio::test]
+async fn a_checkout_is_the_repos_own_folder_and_alone() {
+    let ws = workspace("checkout");
+    let checkout = PlaceSpec::Checkout { repo: "app".into() };
+    let checked = check(&ws, std::slice::from_ref(&checkout)).await.unwrap();
+    assert!(adopted(&checked).is_some(), "the busy check applies");
+    let made = make(&ws, "Ask", checked).await.unwrap();
+    assert_eq!(made.places.len(), 1);
+    assert_eq!(made.places[0].kind, PlaceKind::Checkout);
+    assert_eq!(made.places[0].branch.as_deref(), Some("main"));
+    assert_eq!(made.working(), ws.root.join("app"));
+    assert_eq!(made.repo.as_deref(), Some(ws.root.join("app").as_path()));
+    assert_eq!(
+        made.branch, None,
+        "no branch label: Approve keeps the checkout"
+    );
+    for bad in [
+        vec![checkout.clone(), PlaceSpec::Folder],
+        vec![
+            checkout.clone(),
+            PlaceSpec::Checkout {
+                repo: "docs".into(),
+            },
+        ],
+    ] {
+        let err = check(&ws, &bad).await.unwrap_err();
+        assert!(matches!(err, TaskError::Invalid(_)), "{bad:?}: {err}");
+    }
+}

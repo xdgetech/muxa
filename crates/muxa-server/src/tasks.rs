@@ -34,6 +34,9 @@ pub const PLACES: &str = "muxa.places";
 pub const CONNECTIONS: &str = "muxa.connections";
 /// A JSON list of every MCP server the agent got. Names only.
 pub const MCP: &str = "muxa.mcp";
+/// The repo of a `checkout` Task as the request named it: a second start
+/// finds the running agent by it.
+pub const CHECKOUT: &str = "muxa.checkout";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSpec {
@@ -65,6 +68,14 @@ impl TaskSpec {
             _ => None,
         })
     }
+
+    /// The repo of a `checkout` place, as the request names it.
+    pub fn checkout(&self) -> Option<&str> {
+        self.places.iter().find_map(|p| match p {
+            PlaceSpec::Checkout { repo } => Some(repo.as_str()),
+            _ => None,
+        })
+    }
 }
 
 /// The places ready for the agent, and how to run it.
@@ -77,6 +88,8 @@ pub struct Prepared {
     /// The main checkout and branch of a worktree working place.
     pub repo: Option<PathBuf>,
     pub branch: Option<String>,
+    /// The repo a `checkout` Task names, as the request gave it.
+    pub checkout: Option<String>,
     /// Every place, the working place first.
     pub places: Vec<Place>,
     /// Every connection the agent gets: all its Workspace's (ADR 0075).
@@ -324,6 +337,9 @@ fn labels(p: &Prepared) -> Labels {
     }
     if let Some(branch) = &p.branch {
         labels.insert(BRANCH.to_owned(), branch.clone());
+    }
+    if let Some(repo) = &p.checkout {
+        labels.insert(CHECKOUT.to_owned(), repo.clone());
     }
     if let Ok(places) = serde_json::to_string(&p.places) {
         labels.insert(PLACES.to_owned(), places);

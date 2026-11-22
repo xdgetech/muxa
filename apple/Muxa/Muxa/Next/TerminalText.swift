@@ -46,6 +46,7 @@ extension Terminal {
         case .folder: "folder"
         case .branch: "\(lastPart(p.path)) branch"
         case .read: "\(lastPart(p.path)) · read only"
+        case .checkout: "\(lastPart(p.path)) \(p.branch ?? "checkout")"
         }
     }
 

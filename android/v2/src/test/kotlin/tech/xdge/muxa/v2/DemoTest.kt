@@ -103,6 +103,19 @@ class DemoTest {
     }
 
     @Test
+    fun aCheckoutRunsOneAgentInTheReposOwnFolder() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val checkout = listOf(PlaceSpec.Checkout("app"))
+            val (agent, running) = c.startTask("app", "app main", places = checkout)
+            assertEquals(Triple(false, "/demo/app", "app"), Triple(running, agent.taskDir, agent.labels["muxa.checkout"]))
+            val (again, found) = c.startTask("app", "app main", places = checkout)
+            assertEquals(agent.id to true, again.id to found)
+            c.close()
+        }
+    }
+
+    @Test
     fun placesDecodeFromTheLabel() {
         val t = Terminal(
             "t9", "Audit", live = true, cols = 80, rows = 24,

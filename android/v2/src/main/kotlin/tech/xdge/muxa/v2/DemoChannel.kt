@@ -295,9 +295,11 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         val specs = places.mapNotNull { it as? JsonObject }
         val first = specs.firstOrNull { it.str("kind") == "branch" }
         val branch = first?.str("branch")
-        val repo = first?.str("repo")
-        // An `existing` place is adopted as it is: it is the Task's folder.
+        val checkout = specs.firstOrNull { it.str("kind") == "checkout" }?.str("repo")
+        val repo = first?.str("repo") ?: checkout
+        // An `existing` place or a checkout is adopted as it is: it is the Task's folder.
         val adopted = specs.firstOrNull { it.str("kind") == "existing" }?.str("path")
+            ?: checkout?.let { "${workspace?.root ?: "/demo"}/$it" }
         val dir = adopted ?: if (branch != null) "${repo ?: "/demo"}-$branch" else "/demo/tasks/$title"
         terminals.firstOrNull { it.live && it.isTaskAgent && it.taskDir == dir }?.let {
             return reply(id, "terminal" to enc(it), "existing" to JsonPrimitive(true))
@@ -307,6 +309,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             put("muxa.title", title)
             if (branch != null) put("muxa.branch", branch)
             if (repo != null) put("muxa.repo", repo)
+            if (checkout != null) put("muxa.checkout", checkout)
             if (named.isNotEmpty()) put("muxa.connections", enc(named).toString())
             if (servers.isNotEmpty()) put("muxa.mcp", enc(servers).toString())
         }

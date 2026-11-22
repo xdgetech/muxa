@@ -26,6 +26,8 @@ pub enum Checked {
     Read(PathBuf),
     /// A place that is there already; it is the working place.
     Existing(Adopted),
+    /// A repo's own checkout as the working place (ADR 0077).
+    Checkout(Adopted),
 }
 
 /// The places as made, the working place first.
@@ -64,6 +66,15 @@ pub async fn check(ws: &Workspace, specs: &[PlaceSpec]) -> Result<Vec<Checked>, 
                 Checked::Read(git::main_checkout(&path).await.map_err(invalid)?)
             }
             PlaceSpec::Existing { path } => Checked::Existing(adopt::resolve(ws, path).await?),
+            PlaceSpec::Checkout { repo } => Checked::Checkout(checkout(ws, repo).await?),
+            PlaceSpec::AllRead => {
+                for main in all_repos(ws).await? {
+                    if repos.insert(main.clone()) {
+                        out.push(Checked::Read(main));
+                    }
+                }
+                continue;
+            }
         };
         if let Some(main) = main_of(&checked).await? {
             if !repos.insert(main.clone()) {
@@ -77,7 +88,7 @@ pub async fn check(ws: &Workspace, specs: &[PlaceSpec]) -> Result<Vec<Checked>, 
     }
     let existing = out
         .iter()
-        .filter(|c| matches!(c, Checked::Existing(_)))
+        .filter(|c| matches!(c, Checked::Existing(_) | Checked::Checkout(_)))
         .count();
     if existing > 0 {
         let others = out
@@ -85,7 +96,7 @@ pub async fn check(ws: &Workspace, specs: &[PlaceSpec]) -> Result<Vec<Checked>, 
             .any(|c| matches!(c, Checked::Folder | Checked::Branch(_)));
         if existing > 1 || others {
             return Err(TaskError::Invalid(
-                "an existing place is the working place: give one, without a folder or a branch"
+                "an existing place or a checkout is the working place: give one, without a folder or a branch"
                     .into(),
             ));
         }
@@ -103,12 +114,46 @@ async fn main_of(c: &Checked) -> Result<Option<PathBuf>, TaskError> {
     match c {
         Checked::Folder => Ok(None),
         Checked::Existing(a) => Ok(a.main.clone()),
+        Checked::Checkout(a) => Ok(Some(a.path.clone())),
         Checked::Read(main) => Ok(Some(main.clone())),
         Checked::Branch(req) => git::main_checkout(&req.repo)
             .await
             .map(Some)
             .map_err(invalid),
     }
+}
+
+/// The main checkout of `repo`, canonical, as an adopted place: never a
+/// linked worktree, whatever path names it.
+async fn checkout(ws: &Workspace, repo: &str) -> Result<Adopted, TaskError> {
+    let path = repo_path(ws, repo)?;
+    let main = git::main_checkout(&path).await.map_err(invalid)?;
+    let main = main.canonicalize().unwrap_or(main);
+    Ok(Adopted {
+        path: main,
+        main: None,
+        branch: None,
+        in_repo: true,
+    })
+}
+
+/// The main checkout of every repo of `ws`. A folder the scan finds that is
+/// not a git repo is skipped.
+async fn all_repos(ws: &Workspace) -> Result<Vec<PathBuf>, TaskError> {
+    let ws_owned = ws.clone();
+    let listed = tokio::task::spawn_blocking(move || ws_owned.repo_list())
+        .await
+        .map_err(|e| TaskError::Failed(e.to_string()))?;
+    let mut out = Vec::with_capacity(listed.len());
+    for repo in listed {
+        match git::main_checkout(&repo).await {
+            Ok(main) => out.push(main),
+            Err(e) => {
+                tracing::warn!(repo = %repo.display(), error = %e, "not a repo; all-read skips it")
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn repo_path(ws: &Workspace, raw: &str) -> Result<PathBuf, TaskError> {
@@ -119,7 +164,7 @@ fn repo_path(ws: &Workspace, raw: &str) -> Result<PathBuf, TaskError> {
 /// The existing working place of a checked request, if it has one.
 pub fn adopted(checked: &[Checked]) -> Option<&Adopted> {
     checked.iter().find_map(|c| match c {
-        Checked::Existing(a) => Some(a),
+        Checked::Existing(a) | Checked::Checkout(a) => Some(a),
         _ => None,
     })
 }
@@ -128,7 +173,7 @@ pub fn adopted(checked: &[Checked]) -> Option<&Adopted> {
 pub async fn make(ws: &Workspace, title: &str, checked: Vec<Checked>) -> Result<Made, TaskError> {
     let working = checked
         .iter()
-        .position(|c| matches!(c, Checked::Existing(_)))
+        .position(|c| matches!(c, Checked::Existing(_) | Checked::Checkout(_)))
         .or_else(|| checked.iter().position(|c| *c == Checked::Folder))
         .or_else(|| checked.iter().position(|c| matches!(c, Checked::Branch(_))))
         .ok_or_else(|| TaskError::Invalid("a Task needs a folder or a branch".into()))?;
@@ -166,6 +211,15 @@ pub async fn make(ws: &Workspace, title: &str, checked: Vec<Checked>) -> Result<
                 path: main.to_string_lossy().into_owned(),
                 branch: None,
             },
+            Checked::Checkout(a) => {
+                made.in_repo = true;
+                made.repo = Some(a.path.clone());
+                Place {
+                    kind: PlaceKind::Checkout,
+                    branch: git::current_branch(&a.path).await,
+                    path: a.path.to_string_lossy().into_owned(),
+                }
+            }
             Checked::Existing(a) => {
                 made.in_repo = a.in_repo;
                 made.repo = a.main;
@@ -229,6 +283,12 @@ pub fn task_text(made: &Made, title: &str, goal: Option<&str>) -> String {
             (PlaceKind::Branch, Some(b)) => format!("a worktree on branch {b}"),
             (PlaceKind::Branch, None) => "a worktree".to_owned(),
             (PlaceKind::Read, _) => "read only: do not change anything here".to_owned(),
+            (PlaceKind::Checkout, Some(b)) => {
+                format!("the repo's own checkout on {b}: changes land there directly")
+            }
+            (PlaceKind::Checkout, None) => {
+                "the repo's own checkout: changes land there directly".to_owned()
+            }
         };
         let lead = if i == 0 {
             "Working place, you start here: "

@@ -23,7 +23,8 @@ use client::{Client, Event, State};
 
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
-                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--existing PATH]
+                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--all-read]
+                [--existing PATH | --checkout REPO]
                 [--plan]
                 [--loop [--check CMD]] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
@@ -247,6 +248,10 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("existing") => places.push(PlaceSpec::Existing {
                 path: p.value()?.string()?,
             }),
+            Long("checkout") => places.push(PlaceSpec::Checkout {
+                repo: p.value()?.string()?,
+            }),
+            Long("all-read") => places.push(PlaceSpec::AllRead),
             Long("revision") => revision = Some(p.value()?.string()?),
             Long("help") | Short('h') => return Ok(None),
             Value(v) => words.push(v.string()?),

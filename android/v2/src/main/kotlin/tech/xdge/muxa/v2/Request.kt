@@ -137,5 +137,7 @@ private fun placeJson(p: PlaceSpec): JsonObject = buildJsonObject {
         }
         is PlaceSpec.Read -> { put("kind", "read"); put("repo", p.repo) }
         is PlaceSpec.Existing -> { put("kind", "existing"); put("path", p.path) }
+        is PlaceSpec.Checkout -> { put("kind", "checkout"); put("repo", p.repo) }
+        PlaceSpec.AllRead -> put("kind", "all-read")
     }
 }

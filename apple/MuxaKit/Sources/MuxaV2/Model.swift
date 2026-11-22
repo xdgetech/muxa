@@ -322,6 +322,10 @@ public enum PlaceSpec: Equatable, Sendable {
     /// A folder or worktree that already exists: nothing is made. It is the
     /// working place, so it never comes with a folder or a branch.
     case existing(path: String)
+    /// The repo's own checkout as the working place (ADR 0077); alone.
+    case checkout(repo: String)
+    /// Every repo of the Workspace read-only, beside the Task's folder.
+    case allRead
 
     var json: [String: String] {
         switch self {
@@ -332,6 +336,8 @@ public enum PlaceSpec: Equatable, Sendable {
             return m
         case let .read(repo): return ["kind": "read", "repo": repo]
         case let .existing(path): return ["kind": "existing", "path": path]
+        case let .checkout(repo): return ["kind": "checkout", "repo": repo]
+        case .allRead: return ["kind": "all-read"]
         }
     }
 }
@@ -339,7 +345,7 @@ public enum PlaceSpec: Equatable, Sendable {
 /// A Task's place as it is, from its agent's `muxa.places` label; the
 /// working place comes first.
 public struct Place: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case folder, branch, read }
+    public enum Kind: String, Codable, Sendable { case folder, branch, read, checkout }
     public var kind: Kind
     public var path: String
     public var branch: String?

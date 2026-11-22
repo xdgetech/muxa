@@ -42,6 +42,7 @@ impl Host for FakeTasks {
             title: spec.title.clone(),
             repo: Some(repo.into()),
             branch: Some(branch.to_owned()),
+            checkout: spec.checkout().map(str::to_owned),
             argv,
             env: [("K".to_owned(), "v".to_owned())].into(),
             places: Vec::new(),
@@ -941,6 +942,25 @@ async fn resume_finds_muxas_agent_in_the_place_before_the_host_refuses_it() {
         (json!(true), json!(agent.as_str()))
     );
     assert_eq!(backend.launches().len(), 1, "only the agent the test ran");
+}
+
+#[tokio::test]
+async fn a_second_checkout_start_finds_the_running_agent() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let start = |id: u64| {
+        json!({"type": "start-task", "id": id, "workspace": "w", "title": "app main",
+               "places": [{"kind": "checkout", "repo": "app"}]})
+    };
+    let first = request(&mut client, start(1)).await;
+    assert_eq!(first["existing"], false, "{first}");
+    assert_eq!(first["terminal"]["labels"]["muxa.checkout"], "app");
+    let again = request(&mut client, start(2)).await;
+    assert_eq!(
+        (again["existing"].clone(), again["terminal"]["id"].clone()),
+        (json!(true), first["terminal"]["id"].clone())
+    );
 }
 
 #[tokio::test]

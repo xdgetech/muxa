@@ -115,6 +115,8 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 - `{"kind":"branch","repo","branch","base"?}`: a worktree of the repo on the branch, made or found;
 - `{"kind":"read","repo"}`: the repo's main checkout, never written;
 - `{"kind":"existing","path"}`: a folder or git worktree that is there already (ADR 0076). Nothing is made. It is the working place and comes without a folder or a branch place.
+- `{"kind":"checkout","repo"}`: the repo's own main checkout as the working place, as it is (ADR 0077). Like `existing`, it comes without a folder or a branch place, nothing is made, and the same busy check and `--continue` apply. On `muxa.places` it is a `checkout` place with the branch the checkout had. The agent gets `muxa.checkout` = the `repo` as the request gave it, and `muxa.repo`; a second `start-task` with the same Workspace and `repo` returns the running agent with `existing: true`. Approve never removes it.
+- `{"kind":"all-read"}`: every repo of the Workspace (the scan of its root and the listed repos), each as a `read` place. A repo already named by another place is not added twice. With no folder or branch, the server adds the folder as usual.
 
 A `repo` is absolute, or relative to the Workspace's root. The working place is the folder, else the first branch; with neither, the server adds a folder, so no `places` means one folder. A Task has at most one folder and one place per repo. The working place gets `.muxa/TASK.md` with the title, the goal and every place with its mode. A restarted Task keeps its own. Claude Code also gets the other places as additional directories, with edits denied in the read-only ones (`--settings .muxa/claude-settings.json`). Read only is a rule for the agent, not a boundary.
 

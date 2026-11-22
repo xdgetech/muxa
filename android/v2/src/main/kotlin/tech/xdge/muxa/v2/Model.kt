@@ -202,6 +202,12 @@ sealed interface PlaceSpec {
 
     /** A folder or worktree that already exists: nothing is made. It is the only working place. */
     data class Existing(val path: String) : PlaceSpec
+
+    /** The repo's own checkout as the working place (ADR 0077); alone. */
+    data class Checkout(val repo: String) : PlaceSpec
+
+    /** Every repo of the Workspace read-only, beside the Task's folder. */
+    data object AllRead : PlaceSpec
 }
 
 /** A Task's place as it is, from its agent's `muxa.places` label; the working place comes first. */
@@ -213,6 +219,7 @@ enum class PlaceKind {
     @SerialName("folder") FOLDER,
     @SerialName("branch") BRANCH,
     @SerialName("read") READ,
+    @SerialName("checkout") CHECKOUT,
 }
 
 @Serializable
