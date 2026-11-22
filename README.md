@@ -39,7 +39,7 @@ flowchart LR
    ```
 2. Describe your workspaces: in an app's **Settings** once you are connected (step 4), or by hand in `~/.config/muxa/workspaces.toml` (see `docs/examples/workspaces.toml`). Both edit the same file.
 3. Build an app:
-   - iOS: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`.
+   - iOS: `brew install xcodegen`, put your `DEVELOPMENT_TEAM` in `apple/Muxa/Config/Local.xcconfig`, run `make app-project`, and open `apple/Muxa/Muxa.xcodeproj`, or install on a paired device with `make install-iphone` or `make install-ipad`. Set `MUXA_IPHONE` and `MUXA_IPAD` to the devices' identifiers from `xcrun devicectl list devices`, for example in your shell profile.
    - Mac: `make build-mac-app`. It connects to "This Mac" without SSH.
    - Android: install Android Studio, then `make build-android` and `adb install android/app/build/outputs/apk/debug/app-debug.apk`.
    To look around first, tap **Try the Demo**: a built-in server with sample Tasks, Inbox items and Routines, no host needed.

@@ -1,5 +1,5 @@
 # One entry point for humans, agents and CI. `make check` is the bar before a commit.
-.PHONY: install check fmt fmt-check clippy test test-herdr test-harness test-apple test-apple-v2 app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad archive-ios lint-sh lint-store
+.PHONY: install check fmt fmt-check clippy test test-herdr test-harness test-apple test-apple-v2 app-project build-app test-app test-app-iphone build-mac-app test-mac-app test-android test-android-v2 test-android-release build-android lint-android test-android-app bundle-android app-icon install-ipad install-iphone ios-device-app archive-ios lint-sh lint-store
 
 SHELL_SCRIPTS := $(shell find scripts -name '*.sh' -o -name '*.bash')
 SHELLCHECK ?= shellcheck
@@ -145,11 +145,42 @@ install:
 		$(PREFIX)/bin/muxa-bridge daemon restart; \
 	fi
 
-# Builds, signs, installs and launches the app on a paired iPad (USB or "Connect via network").
-# MUXA_DEVICE is the device name or identifier from `xcrun devicectl list devices`.
+# Humans only: build, sign, install and launch the app on a paired device (USB or
+# "Connect via network"). Each target reads its device's name or identifier from
+# the environment; list them with `xcrun devicectl list devices`.
+#   MUXA_IPHONE  the iPhone, for make install-iphone
+#   MUXA_IPAD    the iPad, for make install-ipad (MUXA_DEVICE still works)
 IOS_BUILD = build/ios
-install-ipad: app-project
-	@test -n "$(MUXA_DEVICE)" || { echo "set MUXA_DEVICE (see: xcrun devicectl list devices)"; exit 2; }
+IOS_APP = $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app
+MUXA_IPAD ?= $(MUXA_DEVICE)
+
+install-iphone:
+	@$(call need_device,$(MUXA_IPHONE),MUXA_IPHONE)
+	@$(MAKE) --no-print-directory ios-device-app
+	@$(call install_on_device,$(MUXA_IPHONE),the iPhone)
+
+install-ipad:
+	@$(call need_device,$(MUXA_IPAD),MUXA_IPAD)
+	@$(MAKE) --no-print-directory ios-device-app
+	@$(call install_on_device,$(MUXA_IPAD),the iPad)
+
+# Checked before the build, so a missing variable fails at once.
+define need_device
+test -n "$(1)" || { echo "set $(2) to the device's name or identifier (see: xcrun devicectl list devices)"; exit 2; }
+endef
+
+# $(1) the device, $(2) its name in messages. A locked device still gets the
+# app; only the launch waits for the user to unlock it.
+define install_on_device
+xcrun devicectl device install app --device '$(1)' $(IOS_APP) && \
+{ xcrun devicectl device process launch --terminate-existing --device '$(1)' \
+	"$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $(IOS_APP)/Info.plist)" >/dev/null 2>&1 \
+	&& echo "Muxa is installed and running on $(2)." \
+	|| echo "Muxa is installed on $(2). Unlock the device and open Muxa (the launch needs it unlocked)."; }
+endef
+
+# The signed device build both install targets share.
+ios-device-app: app-project
 	@mkdir -p $(IOS_BUILD)
 	@# Over SSH the login keychain is locked, and codesign fails with only errSecInternalComponent.
 	@# SYMROOT and OBJROOT: Xcode's own build location setting otherwise moves the
@@ -159,12 +190,9 @@ install-ipad: app-project
 		-allowProvisioningUpdates build 2>&1 | tee $(IOS_BUILD)/xcodebuild.log || { \
 		if grep -q errSecInternalComponent $(IOS_BUILD)/xcodebuild.log; then \
 			echo; echo "codesign could not use the signing key: the login keychain is locked."; \
-			echo "Unlock it, then run make install-ipad again:"; \
+			echo "Unlock it, then run the install again:"; \
 			echo "  security unlock-keychain ~/Library/Keychains/login.keychain-db"; \
 		fi; exit 1; }
-	xcrun devicectl device install app --device '$(MUXA_DEVICE)' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app
-	xcrun devicectl device process launch --terminate-existing --device '$(MUXA_DEVICE)' \
-		"$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $(IOS_BUILD)/Build/Products/Debug-iphoneos/Muxa.app/Info.plist)"
 
 # Humans only: archives a signed release build and exports the .ipa for App Store Connect.
 # Upload it with Xcode's Organizer or Transporter (store/RELEASE.md).
