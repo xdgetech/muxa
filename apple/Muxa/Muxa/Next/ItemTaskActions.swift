@@ -19,7 +19,7 @@ struct ItemTaskActions: View {
                 HStack { buttons }
                 VStack(alignment: .leading) { buttons }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(QuietButtonStyle())
             if requesting { commentField }
         }
     }
@@ -63,10 +63,10 @@ struct ItemTaskActions: View {
             TextField("What should the agent change?", text: $comment)
                 .focused($commentFocused)
                 .onSubmit { Task { await requestChanges() } }
-                .textFieldStyle(.roundedBorder)
+                .fieldWell(radius: 10)
                 .accessibilityIdentifier("detail.comment")
             Button("Send") { Task { await requestChanges() } }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(FilledButtonStyle())
                 .disabled(line.isEmpty)
                 .accessibilityIdentifier("detail.send")
         }

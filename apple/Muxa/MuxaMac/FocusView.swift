@@ -1,8 +1,8 @@
 import MuxaV2
 import SwiftUI
 
-/// Focus (ADR 0066 decision 1): one Task's terminal, with Needs you and the
-/// Tasks on the left. The Inbox is a panel, closed by default.
+/// The Mac's Focus (ADR 0066 decision 1, ADR 0070): the Tasks' panes, with
+/// Needs you and the Tasks on the left. The Inbox is a panel, closed by default.
 struct FocusView: View {
     @Environment(NextModel.self) private var model
     @Binding var selected: String?
@@ -23,6 +23,8 @@ struct FocusView: View {
                     Section("Terminals") { rows(others) }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Palette.surface)
             .navigationTitle("Focus")
             .toolbar {
                 ToolbarItem(placement: .leadingBar) {
@@ -35,19 +37,18 @@ struct FocusView: View {
         } detail: {
             Group {
                 if let t = model.terminals.first(where: { $0.id == selected }) {
-                    panes(t)
-                        .navigationTitle(t.branch ?? t.name ?? t.id)
-                        .inlineTitle()
+                    PaneSplit()
+                        .navigationTitle(t.title)
                         .toolbar {
-                            Button(loopTitle(t), systemImage: "arrow.triangle.2.circlepath") { loopFor = t }
-                                .disabled(!t.isTaskAgent)
-                                .accessibilityIdentifier("focus.loop")
+                            Button(LoopText.title(model.loops[t.id]), systemImage: "arrow.triangle.2.circlepath") {
+                                loopFor = t
+                            }
+                            .disabled(!t.isTaskAgent)
+                            .accessibilityIdentifier("focus.loop")
                             Button("Chat", systemImage: "bubble.left.and.text.bubble.right") { nav.showChat.toggle() }
-                                .touchShortcut("c")
                                 .disabled(!t.isTaskAgent)
                                 .accessibilityIdentifier("focus.chat")
                             Button("Reader", systemImage: "doc.text.magnifyingglass") { nav.showReader.toggle() }
-                                .touchShortcut("r")
                                 .disabled(t.taskDir == nil)
                                 .accessibilityIdentifier("focus.reader")
                             Button("Inbox", systemImage: "tray.full") { nav.showInbox.toggle() }
@@ -69,14 +70,10 @@ struct FocusView: View {
                     ContentUnavailableView("Select a Task", systemImage: "terminal")
                 }
             }
+            .background(Palette.ground)
         }
         .navigationSplitViewStyle(.balanced)
         .sheet(item: $loopFor) { t in LoopSheet(terminal: t) }
-    }
-
-    private func loopTitle(_ t: MuxaV2.Terminal) -> String {
-        guard let lp = model.loops[t.id], lp.isActive else { return "Loop" }
-        return "Loop \(lp.attempts)/\(lp.maxAttempts)"
     }
 
     /// The panel beside the terminal: the Inbox, the Reader or Chat.
@@ -92,17 +89,6 @@ struct FocusView: View {
             })
     }
 
-    @ViewBuilder
-    private func panes(_ t: MuxaV2.Terminal) -> some View {
-        #if os(macOS)
-        PaneSplit()
-        #else
-        TerminalPane(terminal: t)
-            .id(t.id)
-            .ignoresSafeArea(.keyboard)
-        #endif
-    }
-
     private var tasks: [Terminal] {
         model.terminals.filter { $0.live && $0.isTaskAgent && !model.needsYou.contains($0) }
     }
@@ -115,43 +101,24 @@ struct FocusView: View {
         ForEach(list) { t in
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(t.branch ?? t.name ?? t.id)
+                    StateDot(color: t.state.color, size: 8)
+                    Text(t.title)
                     Spacer()
                     if let state = t.status?.state {
-                        Text(state).font(.caption).foregroundStyle(state == "blocked" ? .orange : .secondary)
+                        Text(state).font(.caption).foregroundStyle(t.state.color)
                     }
                 }
-                if let dir = t.taskDir { Text(dir).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                if let dir = t.taskDir {
+                    Text(dir).font(.caption2).foregroundStyle(Palette.textTertiary).lineLimit(1)
+                }
                 if let lp = model.loops[t.id] {
-                    Text(LoopText.badge(lp)).font(.caption2).foregroundStyle(lp.reason == "limit" ? .orange : .secondary)
+                    Text(LoopText.badge(lp)).font(.caption2)
+                        .foregroundStyle(lp.reason == "limit" ? Theme.attention : Palette.textTertiary)
                 }
             }
             .tag(t.id)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("terminal.\(t.id)")
         }
-    }
-}
-
-/// The Inbox beside a terminal: the open items, Done and Later by swipe.
-struct InboxPanel: View {
-    @Environment(NextModel.self) private var model
-
-    var body: some View {
-        let now = Int64(Date().timeIntervalSince1970)
-        List {
-            CaptureField()
-            ForEach(model.inbox.items.filter { !$0.isLater(now: now) }) { item in
-                ItemRow(item: item, now: now)
-                    .swipeActions {
-                        Button("Done") { Task { await model.inbox(.inboxDone(item: item.id)) } }.tint(.green)
-                        Button("Later") {
-                            Task { await model.inbox(.inboxLater(item: item.id, until: LaterChoice.tomorrow.until())) }
-                        }
-                        .tint(.orange)
-                    }
-            }
-        }
-        .navigationTitle("Inbox")
     }
 }

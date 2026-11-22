@@ -16,22 +16,28 @@ struct InboxItemPane: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 Text(item.title).font(.title2.weight(.semibold))
+                    .foregroundStyle(Palette.text)
                     .accessibilityIdentifier("detail.title")
                 if let note = item.note {
-                    GroupBox("Summary") {
-                        Text(note).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Summary").font(.system(size: 13)).foregroundStyle(Palette.textSecondary)
+                        Text(note).foregroundStyle(Palette.text).textSelection(.enabled)
                     }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .card(radius: 12, border: true)
                 }
                 actions
                 if position != nil { ItemTaskActions(item: item, onDone: onDone) }
                 if let error = model.requestError {
-                    Text(error).font(.callout).foregroundStyle(.red)
+                    Text(error).font(.callout).foregroundStyle(Palette.late)
                         .accessibilityIdentifier("detail.error")
                 }
             }
             .padding()
             .frame(maxWidth: 760, alignment: .leading)
         }
+        .background(Palette.ground)
         .navigationTitle(item.kind.title)
         .inlineTitle()
         .alert("Remove the worktree anyway?", isPresented: losingWork, presenting: wouldLoseWork) { _ in
@@ -48,28 +54,21 @@ struct InboxItemPane: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            KindLabel(kind: item.kind)
-            if let position { Text("#\(position)").font(.caption).foregroundStyle(.secondary) }
-            Text(source).font(.caption).foregroundStyle(.secondary)
-            if let w = item.workspace { Text(w).font(.caption).foregroundStyle(.secondary) }
+        HStack(spacing: 10) {
+            KindChip(kind: item.kind)
+            if let position { Text("#\(position)") }
+            Text(item.origin).lineLimit(1)
             if let due = item.due { DueLabel(due: due) }
         }
-    }
-
-    private var source: String {
-        switch item.source {
-        case "task": "From a Task"
-        case "routine": "From a Routine"
-        default: "Captured"
-        }
+        .font(.system(size: 12.5))
+        .foregroundStyle(Palette.textSecondary)
     }
 
     @ViewBuilder
     private var actions: some View {
         if position == nil {
-            Button("Reopen") { Task { await model.inbox(.inboxReopen(item: item.id)) } }
-                .buttonStyle(.bordered)
+            Button("Reopen", systemImage: "arrow.uturn.backward") { Task { await model.inbox(.inboxReopen(item: item.id)) } }
+                .buttonStyle(QuietButtonStyle())
         } else {
             HStack {
                 Button(item.closesTask ? "Approve" : "Done") {
@@ -77,34 +76,37 @@ struct InboxItemPane: View {
                         if item.closesTask { await approve(force: false) } else { await done() }
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(FilledButtonStyle())
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityIdentifier("detail.main")
                 laterMenu
                 if item.closesTask {
-                    Button("Done") { Task { await done() } }
-                        .buttonStyle(.bordered)
+                    Button("Done", systemImage: "checkmark") { Task { await done() } }
+                        .buttonStyle(QuietButtonStyle())
                         .accessibilityIdentifier("detail.done")
                 }
                 Spacer()
                 Menu {
                     Button("Delete", role: .destructive) { Task { await act(.inboxDelete(item: item.id)) } }
                 } label: {
-                    Image(systemName: "ellipsis.circle").accessibilityLabel("More")
+                    Image(systemName: "ellipsis").accessibilityLabel("More")
                 }
+                .buttonStyle(RaisedIconStyle(round: true))
             }
             .background { hiddenKeys }
         }
     }
 
     private var laterMenu: some View {
-        Menu("Later") {
+        Menu {
             ForEach(LaterChoice.allCases) { choice in
                 Button(choice.title) { Task { await act(.inboxLater(item: item.id, until: choice.until())) } }
             }
+        } label: {
+            Label("Later", systemImage: "clock")
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
+        .buttonStyle(QuietButtonStyle())
         .accessibilityIdentifier("detail.later")
     }
 

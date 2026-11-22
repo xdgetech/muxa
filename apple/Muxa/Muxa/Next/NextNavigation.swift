@@ -7,7 +7,13 @@ import SwiftUI
 @MainActor
 @Observable
 final class NextNavigation {
+    /// The touch app's main parts: the iPhone's tabs, the iPad sidebar's segments.
+    enum Tab: Hashable { case inbox, tasks, routines, hosts }
+
+    /// A Task is open: Focus on the Mac, the Task screen on a phone, and the
+    /// sidebar's Tasks on an iPad.
     var focus = false
+    var tab = Tab.inbox
     /// The terminals Focus shows side by side; the Mac splits, iOS shows one.
     private(set) var panes: [String] = []
     /// The pane that takes picks from the list and the keyboard.
@@ -24,6 +30,22 @@ final class NextNavigation {
     var showChat = false {
         didSet { if showChat { showInbox = false; showReader = false } }
     }
+    /// What a touch Task screen shows: its segments are the Chat and Reader panels.
+    enum TaskView: Hashable { case chat, terminal, reader }
+
+    var taskView: TaskView {
+        get { showChat ? .chat : showReader ? .reader : .terminal }
+        set {
+            switch newValue {
+            case .chat: showChat = true
+            case .reader: showReader = true
+            case .terminal:
+                showChat = false
+                showReader = false
+            }
+        }
+    }
+
     var showPalette = false
     /// The Start Task sheet is open with this seed.
     var newTask: TaskSeed?

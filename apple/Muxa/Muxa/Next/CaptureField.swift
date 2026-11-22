@@ -19,19 +19,25 @@ struct CaptureField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: "plus.circle").foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Palette.textTertiary)
+                    .accessibilityHidden(true)
                 TextField("Capture: reply Anna #Personal due fri", text: $text)
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { Task { await add() } }
+                    .accessibilityLabel("Capture")
                     .accessibilityIdentifier("capture.field")
                 if !text.isEmpty {
-                    Button("Add") { Task { await add() } }
-                        .disabled(parsed?.title.isEmpty ?? true)
-                        .accessibilityIdentifier("capture.add")
+                    SendButton(title: "Add", symbol: "plus", disabled: parsed?.title.isEmpty ?? true) {
+                        Task { await add() }
+                    }
+                    .accessibilityIdentifier("capture.add")
                 }
             }
+            .fieldWell()
             if let p = parsed, !text.isEmpty { chips(p) }
         }
         .onChange(of: text) { _, new in parse(new) }
@@ -59,9 +65,9 @@ struct CaptureField: View {
                     Button(kind.title) { parsed?.kind = kind }
                 }
             } label: {
-                KindLabel(kind: p.kind).padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(p.kind.tint.opacity(0.12), in: Capsule())
+                KindChip(kind: p.kind)
             }
+            .accessibilityLabel("Kind: \(p.kind.title)")
             .accessibilityIdentifier("capture.kind")
             if let w = p.workspace {
                 chip("#\(w)") { parsed?.workspace = nil }
@@ -79,8 +85,10 @@ struct CaptureField: View {
                 Image(systemName: "xmark").font(.caption2)
             }
             .font(.caption)
+            .foregroundStyle(Palette.text)
             .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(.quaternary, in: Capsule())
+            .background(Palette.raised, in: Capsule())
+            .overlay(Capsule().stroke(Palette.borderStrong))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(text), remove")

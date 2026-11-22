@@ -61,6 +61,7 @@ final class QuickCapture {
             backing: .buffered, defer: false)
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
@@ -88,15 +89,44 @@ private struct QuickCaptureView: View {
     var startTask: (Capture) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if model.isConnected {
-                CaptureField(onAdded: close, focusOnAppear: true, onStartTask: startTask)
-            } else {
-                Text("Not connected. Open muxa to connect to a host.")
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if model.isConnected {
+                    CaptureField(onAdded: close, focusOnAppear: true, onStartTask: startTask)
+                } else {
+                    Text("Not connected. Open muxa to connect to a host.")
+                        .foregroundStyle(Palette.textSecondary)
+                }
             }
+            .padding(16)
+            keys
         }
-        .padding(16)
         .frame(width: 560, alignment: .leading)
+        .background(Palette.surface)
+        .preferredColorScheme(.dark)
+    }
+
+    /// The window's keys, as the QuickCapture mock lists them.
+    private var keys: some View {
+        HStack(spacing: 16) {
+            key("⏎", "add")
+            key("⌘⏎", "add and start a Task")
+            key("esc", "close")
+            Spacer()
+            Text("⌃⌥Space anywhere")
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(Palette.textSecondary)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(Color(hex: 0x12151A))
+        .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
+    }
+
+    private func key(_ key: String, _ what: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key).font(.system(size: 12, design: .monospaced)).foregroundStyle(Palette.text)
+            Text(what)
+        }
     }
 }

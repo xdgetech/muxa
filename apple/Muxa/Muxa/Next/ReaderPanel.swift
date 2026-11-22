@@ -65,21 +65,25 @@ struct ReaderPanel: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .accessibilityIdentifier("reader.kind")
+            .listRowBackground(Color.clear)
             if let list {
                 Section(list.root ?? "Folder") {
                     if list.entries.isEmpty { Text(empty).foregroundStyle(.secondary) }
                     rows(list.entries, scope: .uncommitted)
                 }
+                .listRowBackground(Palette.card)
                 if let branch = list.branch {
                     Section("\(branch.commits) commits since \(branch.base)") {
                         rows(branch.entries, scope: .branch)
                     }
+                    .listRowBackground(Palette.card)
                 }
                 if list.truncated == true { Text("More files than shown.").font(.caption).foregroundStyle(.secondary) }
             } else if loading {
                 ProgressView()
             }
         }
+        .groundList()
         .refreshable { await reload() }
     }
 

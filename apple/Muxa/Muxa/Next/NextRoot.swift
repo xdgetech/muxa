@@ -2,30 +2,29 @@ import MuxaSession
 import MuxaV2
 import SwiftUI
 
-/// The app on protocol v2: the hosts until one is connected, then Home or Focus.
+/// The app on protocol v2: the hosts until one is connected, then the
+/// platform's `ConnectedRoot` (the touch layouts, or the Mac's Home and Focus).
 struct NextRoot: View {
     @Environment(NextModel.self) private var model
     @Environment(NextNavigation.self) private var nav
     @State private var editing: HostDraft?
 
     var body: some View {
-        switch model.link {
-        case .connected, .reconnecting:
-            Group {
-                if nav.focus {
-                    FocusView(selected: Bindable(nav).terminal) { nav.focus = false }
-                } else {
-                    HomeView(openTerminal: nav.open, showFocus: { nav.focus = true })
-                }
+        Group {
+            switch model.link {
+            case .connected, .reconnecting:
+                ConnectedRoot()
+                    .sheet(item: Bindable(nav).newTask) { seed in
+                        StartTaskSheet(seed: seed, onClose: nav.taskStarted)
+                    }
+                    .background { modeKeys }
+                    .sheet(isPresented: Bindable(nav).showPalette) { GoToTask() }
+            default:
+                connect
             }
-            .sheet(item: Bindable(nav).newTask) { seed in
-                StartTaskSheet(seed: seed, onClose: nav.taskStarted)
-            }
-            .background { modeKeys }
-            .sheet(isPresented: Bindable(nav).showPalette) { GoToTask() }
-        default:
-            connect
         }
+        .background(Palette.ground)
+        .preferredColorScheme(.dark)
     }
 
     /// `⌘⇧H` and `⌘⇧F`, as on the desktop (ADR 0070). The Mac has them in its Go menu.
@@ -47,6 +46,7 @@ struct NextRoot: View {
                 Section {
                     Text(status).accessibilityIdentifier("next.link")
                 }
+                .listRowBackground(Palette.card)
                 #if os(macOS)
                 if model.serverIsLocal {
                     Section {
@@ -55,28 +55,19 @@ struct NextRoot: View {
                     } footer: {
                         Text("The muxa server runs here. The app reaches it without SSH.")
                     }
+                    .listRowBackground(Palette.card)
                 }
                 #endif
-                Section("Hosts") {
-                    ForEach(model.hosts.hosts) { host in
-                        HStack {
-                            Button(host.title) { Task { await model.connect(to: host.id) } }
-                            Spacer()
-                            Button("Edit", systemImage: "info.circle") { editing = HostDraft(host) }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
-                        }
-                    }
-                    Button("Add Host", systemImage: "plus") { editing = HostDraft() }
-                        .accessibilityIdentifier("next.addhost")
-                }
+                HostsSection(editing: $editing)
                 Section {
                     Button("Try the Demo") { Task { await model.startDemo() } }
                         .accessibilityIdentifier("next.demo")
                 } footer: {
                     Text("The demo runs in the app. Nothing reaches a host.")
                 }
+                .listRowBackground(Palette.card)
             }
+            .groundList()
             .navigationTitle("muxa")
             .sheet(item: $editing) { NextHostEditor(draft: $0) }
             .sheet(item: Bindable(model).untrustedKey) { NextTrustSheet(key: $0) }

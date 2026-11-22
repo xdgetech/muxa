@@ -89,6 +89,12 @@ enum LoopText {
         }
     }
 
+    /// The Loop button: `Loop`, or `Loop 1/3` while one runs.
+    static func title(_ lp: LoopInfo?) -> String {
+        guard let lp, lp.isActive else { return "Loop" }
+        return "Loop \(lp.attempts)/\(lp.maxAttempts)"
+    }
+
     /// `loop 1/3`, short for a list row.
     static func badge(_ lp: LoopInfo) -> String {
         "loop \(lp.state) \(lp.attempts)/\(lp.maxAttempts)"

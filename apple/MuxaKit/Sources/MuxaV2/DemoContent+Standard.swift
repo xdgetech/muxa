@@ -6,7 +6,7 @@ extension DemoContent {
         func agent(_ id: String, _ branch: String, _ state: String) -> Terminal {
             Terminal(
                 id: id, name: branch, live: true, status: TerminalStatus(state: state, app: "claude-code"),
-                labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.branch": branch,
+                labels: ["muxa.kind": "task", "muxa.role": "agent", "muxa.branch": branch, "muxa.workspace": "app",
                          "muxa.repo": "/demo/app", "muxa.dir": "/demo/app-\(branch)"],
                 cols: 80, rows: 24)
         }

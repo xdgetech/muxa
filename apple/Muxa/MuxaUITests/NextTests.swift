@@ -53,7 +53,7 @@ final class NextTests: XCTestCase {
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
         // The demo closes the Task's agent, t1.
         backToList(app)
-        app.buttons["mode.focus"].tap()
+        showTasks(app)
         XCTAssertTrue(app.descendants(matching: .any)["terminal.t3"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["terminal.t1"].exists)
     }
@@ -71,7 +71,7 @@ final class NextTests: XCTestCase {
         app.buttons["detail.send"].tap()
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
         backToList(app)
-        app.buttons["mode.focus"].tap()
+        showTasks(app)
         let agent = app.descendants(matching: .any)["terminal.t1"]
         XCTAssertTrue(agent.waitForExistence(timeout: 5))
         agent.tap()
@@ -89,7 +89,7 @@ final class NextTests: XCTestCase {
         retry.tap()
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d5"]))
         backToList(app)
-        app.segmentedControls["home.part"].buttons["Routines"].tap()
+        showRoutines(app)
         let row = app.descendants(matching: .any)["routine.nightly-backup"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
@@ -99,6 +99,8 @@ final class NextTests: XCTestCase {
     @MainActor
     func testATaskStartsFromTheSheetWithItsLoop() throws {
         let app = launch()
+        // New Task sits on the Tasks: the phone's Workspaces tab, the tablet's sidebar.
+        showTasks(app)
         app.buttons["home.newtask"].tap()
         let title = app.textFields["task.title"]
         XCTAssertTrue(title.waitForExistence(timeout: 10))
@@ -134,7 +136,7 @@ final class NextTests: XCTestCase {
     @MainActor
     func testARoutineRunsNow() throws {
         let app = launch()
-        app.segmentedControls["home.part"].buttons["Routines"].tap()
+        showRoutines(app)
         let row = app.descendants(matching: .any)["routine.release-notes"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
@@ -159,7 +161,7 @@ final class NextTests: XCTestCase {
     @MainActor
     func testTypingInFocusReachesTheTerminal() throws {
         let app = launch()
-        app.buttons["mode.focus"].tap()
+        showTasks(app)
         let shell = app.descendants(matching: .any)["terminal.t3"]
         XCTAssertTrue(shell.waitForExistence(timeout: 5))
         shell.tap()
@@ -263,11 +265,27 @@ final class NextTests: XCTestCase {
             timeout: 20) == .completed)
     }
 
-    /// On a phone the detail covers Home's list: go back to it.
+    /// On a phone an item covers the Inbox until it is done: go back to the list.
     private func backToList(_ app: XCUIApplication) {
-        let back = app.navigationBars.buttons["Home"]
-        if !app.buttons["mode.focus"].isHittable, back.exists { back.tap() }
-        XCTAssertTrue(app.buttons["mode.focus"].waitForExistence(timeout: 5))
+        let back = app.navigationBars.buttons.firstMatch
+        if back.exists, back.isHittable { back.tap() }
+        XCTAssertTrue(app.descendants(matching: .any)["inbox.list"].waitForExistence(timeout: 5))
+    }
+
+    /// The Tasks: the phone's Workspaces tab, or the tablet sidebar's Tasks segment.
+    private func showTasks(_ app: XCUIApplication) {
+        show(app, tab: "Workspaces", segment: "mode.focus")
+    }
+
+    /// The Routines: the phone's tab, or the tablet sidebar's segment.
+    private func showRoutines(_ app: XCUIApplication) {
+        show(app, tab: "Routines", segment: "home.routines")
+    }
+
+    /// The layout follows the size class: a phone has tabs, a tablet segments.
+    private func show(_ app: XCUIApplication, tab: String, segment: String) {
+        let button = app.tabBars.buttons[tab]
+        if button.exists { button.tap() } else { app.buttons[segment].tap() }
     }
 
     /// A Form's switch takes taps on its knob, at the trailing edge.

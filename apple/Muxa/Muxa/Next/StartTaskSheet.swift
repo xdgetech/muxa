@@ -5,9 +5,11 @@ import SwiftUI
 struct NewTaskButton: View {
     @Environment(NextNavigation.self) private var nav
     let id: String
+    /// The Workspace the sheet starts with.
+    var workspace: String?
 
     var body: some View {
-        Button("New Task", systemImage: "plus") { nav.newTask = TaskSeed() }
+        Button("New Task", systemImage: "plus") { nav.newTask = TaskSeed(workspace: workspace) }
             .touchShortcut("n")
             .accessibilityIdentifier(id)
     }

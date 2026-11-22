@@ -58,7 +58,7 @@ targets:
     platform: macOS
     sources:
       - path: Muxa/Next
-        excludes: [TerminalPane.swift]
+        excludes: [TerminalPane.swift, Touch/**]
       - Muxa/Theme.swift
       - Muxa/Assets.xcassets
       - Muxa/Reader

@@ -12,28 +12,6 @@ extension ItemKind {
         case .failed: "Failed"
         }
     }
-
-    var symbol: String {
-        switch self {
-        case .review: "checkmark.seal"
-        case .reply: "arrowshape.turn.up.left"
-        case .decide: "arrow.triangle.branch"
-        case .read: "doc.text"
-        case .todo: "circle"
-        case .failed: "exclamationmark.triangle"
-        }
-    }
-
-    var tint: Color {
-        switch self {
-        case .review: .blue
-        case .reply: .indigo
-        case .decide: .orange
-        case .read: .teal
-        case .todo: .secondary
-        case .failed: .red
-        }
-    }
 }
 
 extension InboxItem {
@@ -45,54 +23,89 @@ extension InboxItem {
 
     /// Work the user may hand to a new Task.
     var canStartTask: Bool { [.reply, .decide, .todo].contains(kind) }
-}
 
-struct KindLabel: View {
-    let kind: ItemKind
-
-    var body: some View {
-        Label(kind.title, systemImage: kind.symbol)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(kind.tint)
+    /// Where the item came from: `Routine · nightly-backup`, `Personal · captured`.
+    var origin: String {
+        if let routine { return "Routine · \(routine.name)" }
+        let from = switch source {
+        case "task": "Task"
+        case "routine": "Routine"
+        default: "captured"
+        }
+        return [workspace, from].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
-/// A due date; red once it has passed.
+/// A due date: `today`, a weekday within the week, or the date. Red once it has passed.
 struct DueLabel: View {
     let due: String
 
     var body: some View {
-        let overdue = due < NextModel.today()
-        Label(due == NextModel.today() ? "Today" : due, systemImage: "calendar")
-            .font(.caption)
-            .foregroundStyle(overdue ? Color.red : Color.secondary)
+        let today = NextModel.today()
+        let overdue = due < today
+        Text(Self.short(due, today: today))
+            .foregroundStyle(overdue ? Palette.late : Palette.textSecondary)
             .accessibilityLabel(overdue ? "Overdue \(due)" : "Due \(due)")
+    }
+
+    static func short(_ due: String, today: String, calendar: Calendar = .current) -> String {
+        if due == today { return "today" }
+        let parse = DateFormatter()
+        parse.calendar = calendar
+        parse.dateFormat = "yyyy-MM-dd"
+        guard let date = parse.date(from: due), let now = parse.date(from: today) else { return due }
+        let days = calendar.dateComponents([.day], from: now, to: date).day ?? 0
+        let format = DateFormatter()
+        format.calendar = calendar
+        format.setLocalizedDateFormatFromTemplate(days > 0 && days < 7 ? "EEE" : "MMMd")
+        return format.string(from: date)
     }
 }
 
+/// An Inbox item as the mocks show it: the kind's chip, the title, where it
+/// came from and when it is due. The list around it draws the card.
 struct ItemRow: View {
     let item: InboxItem
     let now: Int64
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                KindLabel(kind: item.kind)
-                if let w = item.workspace {
-                    Text(w).font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 12) {
+            KindChip(kind: item.kind).padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    Text(item.origin).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if item.isLater(now: now) {
+                        Image(systemName: "clock").accessibilityLabel("Later")
+                    }
+                    if let due = item.due { DueLabel(due: due) }
                 }
-                Spacer(minLength: 0)
-                if item.isLater(now: now) {
-                    Image(systemName: "clock").font(.caption).foregroundStyle(.secondary)
-                        .accessibilityLabel("Later")
-                }
-                if let due = item.due { DueLabel(due: due) }
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.textSecondary)
             }
-            Text(item.title).lineLimit(2)
         }
-        .padding(.vertical, 2)
+        .frame(minHeight: minTouch)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("item.\(item.id)")
+    }
+}
+
+/// An item row in its card; picked rows are lighter.
+struct ItemCard: View {
+    let item: InboxItem
+    let now: Int64
+    var picked = false
+
+    var body: some View {
+        ItemRow(item: item, now: now)
+            .padding(12)
+            .background(picked ? Palette.rowSelected : Palette.card, in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -123,5 +136,20 @@ enum LaterChoice: CaseIterable, Identifiable {
             date = monday ?? now.addingTimeInterval(7 * 86400)
         }
         return Int64(date.timeIntervalSince1970)
+    }
+}
+
+/// Done and Later on an item's swipe, as the mocks color them.
+struct ItemSwipeActions: View {
+    @Environment(NextModel.self) private var model
+    let item: InboxItem
+
+    var body: some View {
+        Button("Done", systemImage: "checkmark") { Task { await model.inbox(.inboxDone(item: item.id)) } }
+            .tint(Palette.swipeDone)
+        Button("Later", systemImage: "clock") {
+            Task { await model.inbox(.inboxLater(item: item.id, until: LaterChoice.tomorrow.until())) }
+        }
+        .tint(Palette.swipeLater)
     }
 }

@@ -1,5 +1,6 @@
 import MuxaSession
 import SwiftUI
+import UIKit
 
 /// The app on protocol v2 (ADR 0066, 0067): Home and Focus on a host's muxa
 /// server. `-demo` starts the in-app demo server at launch (UI tests).
@@ -8,6 +9,13 @@ struct MuxaApp: App {
     @State private var model = NextModel(hosts: HostStore(file: HostStore.defaultFile))
     @State private var nav = NextNavigation()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // The Reader's native pickers take the mocks' segment colors.
+        let segments = UISegmentedControl.appearance()
+        segments.backgroundColor = UIColor(Palette.surface)
+        segments.selectedSegmentTintColor = UIColor(Palette.selected)
+    }
 
     var body: some Scene {
         WindowGroup {
