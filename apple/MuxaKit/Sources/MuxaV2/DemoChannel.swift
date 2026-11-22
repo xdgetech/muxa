@@ -37,10 +37,12 @@ public struct DemoContent: Sendable {
     /// Review items whose Approve without force is refused with
     /// `would-lose-work`, and the message, by item id.
     public var losesWork: [String: String]
+    /// What `settings` answers first; `settings-update` changes it in memory.
+    public var settings: Settings
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
                 taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:],
-                losesWork: [String: String] = [:]) {
+                losesWork: [String: String] = [:], settings: Settings = Settings(revision: "1")) {
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
@@ -50,6 +52,7 @@ public struct DemoContent: Sendable {
         self.files = files
         self.chats = chats
         self.losesWork = losesWork
+        self.settings = settings
     }
 }
 
@@ -212,6 +215,10 @@ actor DemoServer {
             retry(id, item)
         case "workspaces":
             reply(id, ["workspaces": json(content.taskWorkspaces.map(withTasks))])
+        case "settings":
+            reply(id, ["settings": plain(content.settings)])
+        case "settings-update":
+            updateSettings(id, m)
         case "routines":
             reply(id, ["routines": json(content.routines), "problems": []])
         case "run-routine":
@@ -267,6 +274,18 @@ actor DemoServer {
             reply(id, ["loop": json(lp)])
         default:
             send(["type": "error", "id": id, "code": "bad-request", "message": "unknown request"])
+        }
+    }
+
+    private func updateSettings(_ id: UInt64, _ m: [String: Any]) {
+        guard m["revision"] as? String == content.settings.revision else {
+            return send(["type": "error", "id": id, "code": "conflict", "message": "the settings changed; read them again"])
+        }
+        do {
+            content.settings = try content.settings.demoApplying(m["ops"] as? [Any] ?? [])
+            reply(id, ["settings": plain(content.settings)])
+        } catch {
+            send(["type": "error", "id": id, "code": "bad-request", "message": (error as? DemoSettingsRefusal)?.message ?? "the ops cannot apply"])
         }
     }
 
@@ -540,6 +559,12 @@ actor DemoServer {
 
     private func write(_ frame: Frame) {
         out.yield(Data(frame.encode()))
+    }
+
+    /// The settings types spell out their wire keys.
+    private func plain<T: Encodable>(_ value: T) -> Any {
+        guard let data = try? Coding.plainEncoder.encode(value) else { return NSNull() }
+        return (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) ?? NSNull()
     }
 
     private func json<T: Encodable>(_ value: T) -> Any {

@@ -179,6 +179,17 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
         request(V2Request.RunRoutine(workspace, name))
     }
 
+    // Settings (ADR 0074)
+
+    suspend fun settings(): Settings = field("settings", request(V2Request.GetSettings))
+
+    /**
+     * Applies [ops] in order, all or none, and returns the settings after them. [V2Error.Refused] with
+     * `conflict` when [revision] is stale, `read-only`, or `bad-request` naming the failed op.
+     */
+    suspend fun settingsUpdate(revision: String, ops: List<SettingsOp>): Settings =
+        field("settings", request(V2Request.SettingsUpdate(revision, ops)))
+
     // Reader
 
     /** The files of [kind] in the terminal's folder; only a Task's agent or a Routine run has one. */

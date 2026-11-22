@@ -158,6 +158,19 @@ public actor V2Client {
         try field("workspaces", of: await request(.workspaces))
     }
 
+    /// The host's editable settings.
+    public func settings() async throws -> Settings {
+        try field("settings", of: await request(.settings), decoder: Coding.plainDecoder)
+    }
+
+    /// Applies `ops` in order, all or none, and returns the settings after them.
+    /// Refused with `conflict` when `revision` is not the current one, `read-only`
+    /// when the host locked its settings, and `bad-request` naming the op that failed.
+    public func settingsUpdate(revision: String, ops: [SettingsOp]) async throws -> Settings {
+        try field("settings", of: await request(.settingsUpdate(revision: revision, ops: ops)),
+                  decoder: Coding.plainDecoder)
+    }
+
     public func routines() async throws -> (routines: [Routine], problems: [RoutineProblem]) {
         let reply = try await request(.routines)
         return (try field("routines", of: reply), try field("problems", of: reply))
@@ -363,13 +376,13 @@ private func refusal(_ msg: [String: Any]) -> V2Error {
 }
 
 /// `key` of a reply, decoded.
-func field<T: Decodable>(_ key: String, of data: Data) throws -> T {
+func field<T: Decodable>(_ key: String, of data: Data, decoder: JSONDecoder = Coding.decoder) throws -> T {
     guard let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let value = msg[key] else {
         throw V2Error.badMessage("no \(key) in the reply")
     }
     let json = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
     do {
-        return try Coding.decoder.decode(T.self, from: json)
+        return try decoder.decode(T.self, from: json)
     } catch {
         throw V2Error.badMessage("\(key): \(error)")
     }

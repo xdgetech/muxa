@@ -216,4 +216,50 @@ class ServerTest {
             c.close()
         }
     }
+
+    @Test
+    fun settingsShowTheFilesAndApplyOpsOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val expected = Settings(
+                "1", readOnly = false, problem = null,
+                workspaces = listOf(
+                    SettingsWorkspace(
+                        "Personal", "~/personal", listOf("~/src/app"), parkAfter = null,
+                        agent = SettingsAgent("claude", listOf(EnvKey("CLAUDE_CONFIG_DIR", true))),
+                        loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
+                        routinesEnabled = true, directWrites = false,
+                        connections = listOf(SettingsConnection("github", "GITHUB_TOKEN", "me@example.com", "read", true, SecretState.SET)),
+                        mcp = listOf(McpSpec("docs", command = "npx", args = listOf("-y", "docs-mcp"))),
+                        routines = listOf(
+                            SettingsRoutine(
+                                "digest", at = "08:00", timezone = "Europe/Berlin", instructions = "routines/digest.md",
+                                enabled = true, connections = listOf("github"), instructionsText = "Summarize the day.\n",
+                            ),
+                        ),
+                    ),
+                ),
+                workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
+            )
+            assertEquals(expected, c.settings())
+            val ops = listOf(
+                SettingsOp.EnvSet("Personal", "FOO", "bar"),
+                SettingsOp.ConnectionAdd("Personal", ConnectionSpec("linear", "LINEAR_API_KEY"), "s3cret"),
+            )
+            val after = c.settingsUpdate("1", ops)
+            assertEquals("2", after.revision)
+            val ws = after.workspaces.single()
+            assertEquals(listOf("CLAUDE_CONFIG_DIR", "FOO"), ws.agent.env.map { it.key })
+            assertEquals(SecretState.SET, ws.connections.single { it.name == "linear" }.secret)
+            val text = json.encodeToString(Settings.serializer(), after)
+            assertTrue(text, "s3cret" !in text && "bar" !in text)
+            try {
+                c.settingsUpdate("1", ops)
+                fail("a stale revision")
+            } catch (e: V2Error.Refused) {
+                assertEquals("conflict", e.code)
+            }
+            c.close()
+        }
+    }
 }

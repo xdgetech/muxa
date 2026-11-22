@@ -1,0 +1,217 @@
+package tech.xdge.muxa.v2
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.put
+
+/** A field of an update: kept as it is (absent on the wire), cleared (`null`), or set. */
+sealed interface Patch<out T> {
+    data object Keep : Patch<Nothing>
+    data object Clear : Patch<Nothing>
+    data class Set<T>(val value: T) : Patch<T>
+}
+
+private const val REDACTED = "<write-only>"
+
+/**
+ * One change of `settings-update` (ADR 0074). Names are never renamed: remove and add instead.
+ * `secret` and an env `value` go only to the server; toString never shows them.
+ */
+sealed class SettingsOp(val op: String) {
+    data class WorkspaceAdd(val name: String, val root: String, val repos: List<String> = emptyList()) : SettingsOp("workspace-add")
+
+    /** Null [root] or [repos] keeps them. */
+    data class WorkspaceUpdate(
+        val workspace: String,
+        val root: String? = null,
+        val repos: List<String>? = null,
+        /** Cleared: the daemon's `--task-command`. */
+        val agentCommand: Patch<String> = Patch.Keep,
+        /** Cleared: never parked. */
+        val parkAfter: Patch<String> = Patch.Keep,
+    ) : SettingsOp("workspace-update")
+
+    /** Also removes the Keychain secrets of its connections; its folder and `.muxa/` stay. */
+    data class WorkspaceRemove(val workspace: String) : SettingsOp("workspace-remove")
+
+    data class EnvSet(val workspace: String, val key: String, val value: String) : SettingsOp("env-set") {
+        override fun toString() = "EnvSet(workspace=$workspace, key=$key, value=$REDACTED)"
+    }
+
+    data class EnvUnset(val workspace: String, val key: String) : SettingsOp("env-unset")
+
+    /** Null [checks]: no Task Loops. */
+    data class SetLoopChecks(val workspace: String, val checks: LoopChecks?) : SettingsOp("loop-checks")
+
+    /** Null [directWrites]: the server's default, false. */
+    data class RoutinesGate(val workspace: String, val enabled: Boolean, val directWrites: Boolean? = null) : SettingsOp("routines-gate")
+
+    data class ConnectionAdd(val workspace: String, val connection: ConnectionSpec, val secret: String? = null) : SettingsOp("connection-add") {
+        override fun toString() = "ConnectionAdd(workspace=$workspace, connection=$connection, secret=${secret?.let { REDACTED }})"
+    }
+
+    /** Changes the connection named `connection.name`; a [secret] replaces its Keychain secret. */
+    data class ConnectionUpdate(val workspace: String, val connection: ConnectionSpec, val secret: String? = null) :
+        SettingsOp("connection-update") {
+        override fun toString() = "ConnectionUpdate(workspace=$workspace, connection=$connection, secret=${secret?.let { REDACTED }})"
+    }
+
+    data class ConnectionSecret(val workspace: String, val name: String, val secret: String) : SettingsOp("connection-secret") {
+        override fun toString() = "ConnectionSecret(workspace=$workspace, name=$name, secret=$REDACTED)"
+    }
+
+    data class ConnectionRemove(val workspace: String, val name: String) : SettingsOp("connection-remove")
+    data class McpAdd(val workspace: String, val mcp: McpSpec) : SettingsOp("mcp-add")
+
+    /** Replaces the server named `mcp.name`. */
+    data class McpUpdate(val workspace: String, val mcp: McpSpec) : SettingsOp("mcp-update")
+    data class McpRemove(val workspace: String, val name: String) : SettingsOp("mcp-remove")
+
+    /** [instructionsText] replaces the instruction file's content. */
+    data class RoutineAdd(val workspace: String, val routine: RoutineSpec, val instructionsText: String? = null) : SettingsOp("routine-add")
+
+    /** Changes the Routine named `routine.name`. */
+    data class RoutineUpdate(val workspace: String, val routine: RoutineSpec, val instructionsText: String? = null) :
+        SettingsOp("routine-update")
+
+    /** Its instruction file stays. */
+    data class RoutineRemove(val workspace: String, val name: String) : SettingsOp("routine-remove")
+    data class WorkerAdd(val worker: WorkerSpec) : SettingsOp("worker-add")
+
+    /** Replaces the worker named `worker.name`. */
+    data class WorkerUpdate(val worker: WorkerSpec) : SettingsOp("worker-update")
+    data class WorkerRemove(val name: String) : SettingsOp("worker-remove")
+
+    /** The Workspace this op changes; null for a worker op. */
+    val workspaceName: String?
+        get() = when (this) {
+            is WorkspaceAdd -> name
+            is WorkspaceUpdate -> workspace
+            is WorkspaceRemove -> workspace
+            is EnvSet -> workspace
+            is EnvUnset -> workspace
+            is SetLoopChecks -> workspace
+            is RoutinesGate -> workspace
+            is ConnectionAdd -> workspace
+            is ConnectionUpdate -> workspace
+            is ConnectionSecret -> workspace
+            is ConnectionRemove -> workspace
+            is McpAdd -> workspace
+            is McpUpdate -> workspace
+            is McpRemove -> workspace
+            is RoutineAdd -> workspace
+            is RoutineUpdate -> workspace
+            is RoutineRemove -> workspace
+            is WorkerAdd, is WorkerUpdate, is WorkerRemove -> null
+        }
+
+    fun json(): JsonObject = buildJsonObject {
+        put("op", op)
+        when (val o = this@SettingsOp) {
+            is WorkspaceAdd -> { put("name", o.name); put("root", o.root); put("repos", enc(o.repos)) }
+            is WorkspaceUpdate -> {
+                put("workspace", o.workspace)
+                o.root?.let { put("root", it) }
+                o.repos?.let { put("repos", enc(it)) }
+                patch("agent_command", o.agentCommand)
+                patch("park_after", o.parkAfter)
+            }
+            is WorkspaceRemove -> put("workspace", o.workspace)
+            is EnvSet -> { put("workspace", o.workspace); put("key", o.key); put("value", o.value) }
+            is EnvUnset -> { put("workspace", o.workspace); put("key", o.key) }
+            is SetLoopChecks -> { put("workspace", o.workspace); put("checks", o.checks?.let(::enc) ?: JsonNull) }
+            is RoutinesGate -> {
+                put("workspace", o.workspace); put("enabled", o.enabled)
+                o.directWrites?.let { put("direct_writes", it) }
+            }
+            is ConnectionAdd -> connection(o.workspace, o.connection, o.secret)
+            is ConnectionUpdate -> connection(o.workspace, o.connection, o.secret)
+            is ConnectionSecret -> { put("workspace", o.workspace); put("name", o.name); put("secret", o.secret) }
+            is ConnectionRemove -> { put("workspace", o.workspace); put("name", o.name) }
+            is McpAdd -> { put("workspace", o.workspace); put("mcp", enc(o.mcp)) }
+            is McpUpdate -> { put("workspace", o.workspace); put("mcp", enc(o.mcp)) }
+            is McpRemove -> { put("workspace", o.workspace); put("name", o.name) }
+            is RoutineAdd -> routine(o.workspace, o.routine, o.instructionsText)
+            is RoutineUpdate -> routine(o.workspace, o.routine, o.instructionsText)
+            is RoutineRemove -> { put("workspace", o.workspace); put("name", o.name) }
+            is WorkerAdd -> put("worker", enc(o.worker))
+            is WorkerUpdate -> put("worker", enc(o.worker))
+            is WorkerRemove -> put("name", o.name)
+        }
+    }
+
+    companion object {
+        /** Reads an op as the server does; null for an unknown op or a missing field. */
+        internal fun fromJson(o: JsonObject): SettingsOp? = runCatching { decode(o) }.getOrNull()
+
+        private fun decode(o: JsonObject): SettingsOp? {
+            fun s(k: String) = (o[k] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+            fun req(k: String) = s(k) ?: throw IllegalArgumentException("no $k")
+            fun bool(k: String) = (o[k] as? JsonPrimitive)?.booleanOrNull
+            fun strings(k: String) = (o[k] as? JsonArray)?.let { a -> a.map { (it as JsonPrimitive).content } }
+            fun patch(k: String): Patch<String> = when (val e = o[k]) {
+                null -> Patch.Keep
+                JsonNull -> Patch.Clear
+                else -> Patch.Set((e as JsonPrimitive).content)
+            }
+            fun <T> obj(k: String, f: (JsonElement) -> T): T = f(o[k] ?: throw IllegalArgumentException("no $k"))
+            val ws = { req("workspace") }
+            return when (s("op")) {
+                "workspace-add" -> WorkspaceAdd(req("name"), req("root"), strings("repos").orEmpty())
+                "workspace-update" -> WorkspaceUpdate(ws(), s("root"), strings("repos"), patch("agent_command"), patch("park_after"))
+                "workspace-remove" -> WorkspaceRemove(ws())
+                "env-set" -> EnvSet(ws(), req("key"), req("value"))
+                "env-unset" -> EnvUnset(ws(), req("key"))
+                "loop-checks" -> SetLoopChecks(ws(), o["checks"]?.takeIf { it != JsonNull }?.let { opsJson.decodeFromJsonElement<LoopChecks>(it) })
+                "routines-gate" -> RoutinesGate(ws(), bool("enabled") ?: throw IllegalArgumentException("no enabled"), bool("direct_writes"))
+                "connection-add" -> ConnectionAdd(ws(), obj("connection") { opsJson.decodeFromJsonElement(it) }, s("secret"))
+                "connection-update" -> ConnectionUpdate(ws(), obj("connection") { opsJson.decodeFromJsonElement(it) }, s("secret"))
+                "connection-secret" -> ConnectionSecret(ws(), req("name"), req("secret"))
+                "connection-remove" -> ConnectionRemove(ws(), req("name"))
+                "mcp-add" -> McpAdd(ws(), obj("mcp") { opsJson.decodeFromJsonElement(it) })
+                "mcp-update" -> McpUpdate(ws(), obj("mcp") { opsJson.decodeFromJsonElement(it) })
+                "mcp-remove" -> McpRemove(ws(), req("name"))
+                "routine-add" -> RoutineAdd(ws(), obj("routine") { opsJson.decodeFromJsonElement(it) }, s("instructions_text"))
+                "routine-update" -> RoutineUpdate(ws(), obj("routine") { opsJson.decodeFromJsonElement(it) }, s("instructions_text"))
+                "routine-remove" -> RoutineRemove(ws(), req("name"))
+                "worker-add" -> WorkerAdd(obj("worker") { opsJson.decodeFromJsonElement(it) })
+                "worker-update" -> WorkerUpdate(obj("worker") { opsJson.decodeFromJsonElement(it) })
+                "worker-remove" -> WorkerRemove(req("name"))
+                else -> null
+            }
+        }
+    }
+}
+
+/** Ops carry every field the server reads, defaults included; a null optional stays absent. */
+internal val opsJson = Json(json) { encodeDefaults = true }
+
+private inline fun <reified T> enc(value: T): JsonElement = opsJson.encodeToJsonElement(value)
+
+private fun JsonObjectBuilder.patch(key: String, p: Patch<String>) {
+    when (p) {
+        Patch.Keep -> {}
+        Patch.Clear -> put(key, JsonNull)
+        is Patch.Set -> put(key, p.value)
+    }
+}
+
+private fun JsonObjectBuilder.connection(workspace: String, spec: ConnectionSpec, secret: String?) {
+    put("workspace", workspace); put("connection", enc(spec))
+    secret?.let { put("secret", it) }
+}
+
+private fun JsonObjectBuilder.routine(workspace: String, spec: RoutineSpec, instructionsText: String?) {
+    put("workspace", workspace); put("routine", enc(spec))
+    instructionsText?.let { put("instructions_text", it) }
+}

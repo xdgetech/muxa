@@ -230,6 +230,77 @@ struct DemoTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func settingsShowTheWorkspacesWithoutSecrets() async throws {
+        let c = try await open()
+        let s = try await c.settings()
+        #expect(s.revision == "1" && !s.readOnly && s.problem == nil)
+        #expect(s.workspaces.map(\.name) == ["app", "Personal"])
+        let app = s.workspaces[0]
+        #expect(app.connections.map(\.secret) == [.set, .missing])
+        #expect(app.mcp.map(\.name) == ["docs"])
+        #expect(app.routines.first?.instructionsText?.isEmpty == false)
+        #expect(s.workers.map(\.name) == ["reviewer"])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func settingsUpdateAppliesTheOpsInOrder() async throws {
+        let c = try await open()
+        let after = try await c.settingsUpdate(revision: "1", ops: [
+            .envSet(workspace: "app", key: "AAA", value: "v4lue"),
+            .connectionAdd(workspace: "app", connection: ConnectionSpec(name: "sentry", env: "SENTRY_TOKEN"), secret: "s3cret"),
+            .connectionAdd(workspace: "Personal", connection: ConnectionSpec(name: "mail", env: "MAIL_TOKEN")),
+            .workspaceUpdate(workspace: "app", agentCommand: .clear, parkAfter: .set("12h")),
+            .routineUpdate(workspace: "app", routine: RoutineSpec(name: "dependency-digest", instructions: "routines/d.md"),
+                           instructionsText: "New text.\n"),
+            .workspaceRemove(workspace: "Personal"),
+        ])
+        #expect(after.revision == "2")
+        let app = try #require(after.workspaces.first)
+        #expect(after.workspaces.map(\.name) == ["app"])
+        #expect(app.agent.env == [EnvKey(key: "AAA"), EnvKey(key: "CLAUDE_CONFIG_DIR")])
+        #expect(app.agent.command == nil && app.parkAfter == "12h")
+        #expect(app.connections.first { $0.name == "sentry" }?.secret == .set)
+        #expect(app.routines[0].instructionsText == "New text.\n")
+        let raw = String(decoding: try Coding.plainEncoder.encode(after), as: UTF8.self)
+        #expect(!raw.contains("s3cret") && !raw.contains("v4lue"))
+        #expect(try await c.settings() == after)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aStaleRevisionIsAConflict() async throws {
+        let c = try await open()
+        _ = try await c.settingsUpdate(revision: "1", ops: [.envUnset(workspace: "app", key: "CLAUDE_CONFIG_DIR")])
+        do {
+            _ = try await c.settingsUpdate(revision: "1", ops: [.workspaceRemove(workspace: "app")])
+            Issue.record("a stale revision applied")
+        } catch let V2Error.refused(code, _) {
+            #expect(code == "conflict")
+        }
+        #expect(try await c.settings().workspaces.map(\.name) == ["app", "Personal"])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aFailedOpChangesNothing() async throws {
+        let c = try await open()
+        let before = try await c.settings()
+        do {
+            _ = try await c.settingsUpdate(revision: "1", ops: [
+                .envSet(workspace: "app", key: "AAA", value: "v"),
+                .connectionSecret(workspace: "app", name: "nope", secret: "s3cret"),
+            ])
+            Issue.record("an unknown connection applied")
+        } catch let V2Error.refused(code, message) {
+            #expect(code == "bad-request")
+            #expect(message.hasPrefix("ops[1] connection-secret: "))
+            #expect(!message.contains("s3cret"))
+        }
+        await #expect(throws: V2Error.self) {
+            try await c.settingsUpdate(revision: "1", ops: [.workspaceAdd(name: "app", root: "/x")])
+        }
+        #expect(try await c.settings() == before)
+    }
+
     @Test func anUpdateReplacesEntriesByID() {
         let before = [ChatEntry(id: "a", kind: "user", text: "1"), ChatEntry(id: "b", kind: "tool")]
         let update = ChatUpdate(entries: [ChatEntry(id: "b", kind: "tool", text: "done"), ChatEntry(id: "c", kind: "notice")])

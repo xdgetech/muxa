@@ -303,4 +303,74 @@ class DemoTest {
         assertEquals("done", update.appliedTo(before)[1].text)
         assertEquals(emptyList<ChatEntry>(), ChatUpdate(reset = true, entries = emptyList()).appliedTo(before))
     }
+
+    @Test
+    fun theDemoShowsItsSettings() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val s = c.settings()
+            assertEquals("1", s.revision)
+            assertEquals(listOf("app", "Personal"), s.workspaces.map { it.name })
+            val app = s.workspaces[0]
+            assertEquals(SecretState.SET, app.connections.single().secret)
+            assertEquals("docs", app.mcp.single().name)
+            assertTrue(app.routines.single().instructionsText.orEmpty().isNotEmpty())
+            assertEquals(listOf("reviewer"), s.workers.map { it.name })
+            c.close()
+        }
+    }
+
+    @Test
+    fun settingsOpsApplyAndKeepOnlyThatASecretIsSet() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val s = c.settingsUpdate(
+                "1",
+                listOf(
+                    SettingsOp.EnvSet("app", "AAA", "bar-value"),
+                    SettingsOp.ConnectionAdd("app", ConnectionSpec("linear", "LINEAR_API_KEY"), "s3cret"),
+                    SettingsOp.ConnectionAdd("app", ConnectionSpec("notion", "NOTION_TOKEN")),
+                    SettingsOp.WorkspaceUpdate("app", agentCommand = Patch.Clear, parkAfter = Patch.Set("2d")),
+                    SettingsOp.WorkspaceRemove("Personal"),
+                ),
+            )
+            assertEquals("2", s.revision)
+            val app = s.workspaces.single()
+            assertEquals(listOf(EnvKey("AAA", true), EnvKey("CLAUDE_CONFIG_DIR", true)), app.agent.env)
+            assertEquals(listOf(SecretState.SET, SecretState.SET, SecretState.MISSING), app.connections.map { it.secret })
+            assertEquals(null to "2d", app.agent.command to app.parkAfter)
+            val text = json.encodeToString(Settings.serializer(), s)
+            assertTrue(text, "s3cret" !in text && "bar-value" !in text)
+            assertEquals(s, c.settings())
+            c.close()
+        }
+    }
+
+    @Test
+    fun aStaleRevisionIsAConflictAndAFailedOpChangesNothing() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val before = c.settings()
+            val bad = refusal {
+                c.settingsUpdate("1", listOf(SettingsOp.EnvSet("app", "X", "y"), SettingsOp.ConnectionRemove("app", "nope")))
+            }
+            assertEquals("bad-request", bad.code)
+            assertTrue(bad.message, bad.message.orEmpty().startsWith("ops[1] connection-remove: "))
+            assertEquals(before, c.settings())
+            val exists = refusal { c.settingsUpdate("1", listOf(SettingsOp.McpAdd("app", McpSpec("docs", command = "x")))) }
+            assertTrue(exists.message, exists.message.orEmpty().startsWith("ops[0] mcp-add: "))
+            c.settingsUpdate("1", listOf(SettingsOp.EnvUnset("app", "CLAUDE_CONFIG_DIR")))
+            assertEquals("conflict", refusal { c.settingsUpdate("1", listOf(SettingsOp.WorkerRemove("reviewer"))) }.code)
+            c.close()
+        }
+    }
+
+    private suspend fun refusal(block: suspend () -> Unit): V2Error.Refused {
+        try {
+            block()
+        } catch (e: V2Error.Refused) {
+            return e
+        }
+        throw AssertionError("not refused")
+    }
 }

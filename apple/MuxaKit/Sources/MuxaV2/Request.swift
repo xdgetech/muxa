@@ -39,6 +39,10 @@ public enum V2Request: Sendable {
     case chatOpen(terminal: String)
     case chatClose(chat: UInt32)
     case workspaces
+    /// The host's editable settings (ADR 0074).
+    case settings
+    /// `revision` must be the current one; the ops apply all or none.
+    case settingsUpdate(revision: String, ops: [SettingsOp])
 
     func json(id: UInt64) throws -> Data {
         var m: [String: Any] = ["id": id]
@@ -87,6 +91,9 @@ public enum V2Request: Sendable {
         case let .chatOpen(terminal): set("chat-open", ["terminal": terminal])
         case let .chatClose(chat): set("chat-close", ["chat": chat])
         case .workspaces: set("workspaces", [:])
+        case .settings: set("settings", [:])
+        case let .settingsUpdate(revision, ops):
+            set("settings-update", ["revision": revision, "ops": try ops.map { try $0.jsonObject() }])
         }
         return try JSONSerialization.data(withJSONObject: m, options: [.sortedKeys])
     }

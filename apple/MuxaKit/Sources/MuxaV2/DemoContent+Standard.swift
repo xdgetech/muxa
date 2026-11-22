@@ -109,8 +109,33 @@ extension DemoContent {
                         ChatOption(label: "Deny", input: "n", cancel: true),
                     ])),
             ],
-            losesWork: ["d8": "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"])
+            losesWork: ["d8": "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"],
+            settings: settings)
     }()
+
+    /// The Workspaces of `workspaces` as their files say, with no secret.
+    private static let settings = Settings(
+        revision: "1",
+        workspaces: [
+            SettingsWorkspace(
+                name: "app", root: "/demo", repos: ["app", "docs"], parkAfter: "2d",
+                agent: SettingsAgent(command: "claude", env: [EnvKey(key: "CLAUDE_CONFIG_DIR")]),
+                loop: WorkspaceLoop(checks: .list(["make test", "make lint"])), routinesEnabled: true,
+                connections: [
+                    SettingsConnection(spec: ConnectionSpec(name: "github", env: "GITHUB_TOKEN", account: "me@example.com",
+                                                            access: "read", isDefault: true), secret: .set),
+                    SettingsConnection(spec: ConnectionSpec(name: "linear", env: "LINEAR_API_KEY"), secret: .missing),
+                ],
+                mcp: [McpSpec(name: "docs", command: "npx", args: ["-y", "docs-mcp"], isDefault: true)],
+                routines: [
+                    SettingsRoutine(
+                        spec: RoutineSpec(name: "dependency-digest", at: "09:00", timezone: "Europe/Berlin",
+                                          instructions: "routines/dependency-digest.md", connections: ["github", "linear"]),
+                        instructionsText: "List the dependency updates of the week, security fixes first.\n"),
+                ]),
+            SettingsWorkspace(name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude")),
+        ],
+        workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")])
 
     private static let plan = """
         # Plan

@@ -124,6 +124,64 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func settingsShowTheHostsFilesWithoutSecrets() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.settings() == Settings(
+            revision: "1",
+            workspaces: [
+                SettingsWorkspace(
+                    name: "Personal", root: "~/personal", repos: ["~/src/app"],
+                    agent: SettingsAgent(command: "claude", env: [EnvKey(key: "CLAUDE_CONFIG_DIR")]),
+                    loop: WorkspaceLoop(checks: .list(["make test"])), routinesEnabled: true,
+                    connections: [SettingsConnection(
+                        spec: ConnectionSpec(name: "github", env: "GITHUB_TOKEN", account: "me@example.com", access: "read",
+                                             isDefault: true),
+                        secret: .set)],
+                    mcp: [McpSpec(name: "docs", command: "npx", args: ["-y", "docs-mcp"])],
+                    routines: [SettingsRoutine(
+                        spec: RoutineSpec(name: "digest", at: "08:00", timezone: "Europe/Berlin",
+                                          instructions: "routines/digest.md", connections: ["github"]),
+                        instructionsText: "Summarize the day.\n")]),
+            ],
+            workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")]))
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func settingsUpdateNeverSendsASecretBack() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let ops: [SettingsOp] = [
+            .envSet(workspace: "Personal", key: "FOO", value: "bar"),
+            .connectionAdd(workspace: "Personal", connection: ConnectionSpec(name: "linear", env: "LINEAR_API_KEY"),
+                           secret: "s3cret"),
+        ]
+        let raw = try await c.request(.settingsUpdate(revision: "1", ops: ops))
+        let text = String(decoding: raw, as: UTF8.self)
+        #expect(!text.contains("s3cret") && !text.contains("bar"))
+        let after: Settings = try field("settings", of: raw, decoder: Coding.plainDecoder)
+        #expect(after.revision == "2")
+        let personal = try #require(after.workspaces.first)
+        #expect(personal.agent.env.map(\.key) == ["CLAUDE_CONFIG_DIR", "FOO"])
+        #expect(personal.connections.first { $0.name == "linear" }?.secret == .set)
+        do {
+            _ = try await c.settingsUpdate(revision: "1", ops: [.envUnset(workspace: "Personal", key: "FOO")])
+            Issue.record("a stale revision applied")
+        } catch let V2Error.refused(code, _) {
+            #expect(code == "conflict")
+        }
+        do {
+            _ = try await c.settingsUpdate(revision: "2", ops: [.mcpRemove(workspace: "Personal", name: "nope")])
+            Issue.record("an unknown server was removed")
+        } catch let V2Error.refused(code, message) {
+            #expect(code == "bad-request" && message.hasPrefix("ops[0] mcp-remove: "))
+        }
+        #expect(try await c.settings() == after)
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func approveClosesTheTaskAndRequestChangesResolves() async throws {
         let server = try Server()
         let c = try await server.connect()

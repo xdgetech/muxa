@@ -1,0 +1,136 @@
+import Foundation
+
+/// Why the demo refuses an op; the message never holds a secret or a value.
+struct DemoSettingsRefusal: Error {
+    var message: String
+}
+
+extension Settings {
+    /// The settings after `ops`, as the server applies them without its file
+    /// checks: all or none, and the error names the op that failed. A secret
+    /// only makes the connection's secret `set`; an env value is dropped.
+    func demoApplying(_ raw: [Any]) throws -> Settings {
+        var out = self
+        for (i, value) in raw.enumerated() {
+            let name = (value as? [String: Any])?["op"] as? String ?? "?"
+            do {
+                let data = try JSONSerialization.data(withJSONObject: value)
+                let op = try Coding.plainDecoder.decode(SettingsOp.self, from: data)
+                try out.demoApply(op)
+            } catch let refusal as DemoSettingsRefusal {
+                throw DemoSettingsRefusal(message: "ops[\(i)] \(name): \(refusal.message)")
+            } catch {
+                throw DemoSettingsRefusal(message: "ops[\(i)] \(name): not a known op with its fields")
+            }
+        }
+        out.revision = String((Int(revision) ?? 0) + 1)
+        return out
+    }
+
+    private mutating func demoApply(_ op: SettingsOp) throws {
+        switch op {
+        case let .workspaceAdd(name, root, repos):
+            guard !workspaces.contains(where: { $0.name == name }) else { throw refusal("\(name) exists") }
+            workspaces.append(SettingsWorkspace(name: name, root: root, repos: repos))
+        case let .workspaceUpdate(workspace, root, repos, agentCommand, parkAfter):
+            try edit(workspace) { w in
+                if let root { w.root = root }
+                if let repos { w.repos = repos }
+                w.agent.command = agentCommand.applied(to: w.agent.command)
+                w.parkAfter = parkAfter.applied(to: w.parkAfter)
+            }
+        case let .workspaceRemove(workspace):
+            _ = try index(workspace)
+            workspaces.removeAll { $0.name == workspace }
+        case let .envSet(workspace, key, _):
+            try edit(workspace) { w in
+                guard !w.agent.env.contains(where: { $0.key == key }) else { return }
+                w.agent.env.append(EnvKey(key: key))
+                w.agent.env.sort { $0.key < $1.key }
+            }
+        case let .envUnset(workspace, key):
+            try edit(workspace) { w in
+                guard w.agent.env.contains(where: { $0.key == key }) else { throw refusal("no variable \(key)") }
+                w.agent.env.removeAll { $0.key == key }
+            }
+        case let .loopChecks(workspace, checks):
+            try edit(workspace) { $0.loop = checks.map(WorkspaceLoop.init) }
+        case let .routinesGate(workspace, enabled, directWrites):
+            try edit(workspace) { w in
+                w.routinesEnabled = enabled
+                w.directWrites = directWrites
+            }
+        case let .connectionAdd(workspace, spec, secret):
+            try edit(workspace) { w in
+                guard !w.connections.contains(where: { $0.name == spec.name }) else { throw refusal("\(spec.name) exists") }
+                w.connections.append(SettingsConnection(spec: spec, secret: secret == nil ? .missing : .set))
+            }
+        case let .connectionUpdate(workspace, spec, secret):
+            try edit(workspace) { w in
+                let at = try find(w.connections, spec.name, \.name)
+                w.connections[at] = SettingsConnection(spec: spec, secret: secret == nil ? w.connections[at].secret : .set)
+            }
+        case let .connectionSecret(workspace, name, _):
+            try edit(workspace) { w in w.connections[try find(w.connections, name, \.name)].secret = .set }
+        case let .connectionRemove(workspace, name):
+            try edit(workspace) { w in w.connections.remove(at: try find(w.connections, name, \.name)) }
+        case let .mcpAdd(workspace, mcp):
+            try edit(workspace) { w in
+                guard !w.mcp.contains(where: { $0.name == mcp.name }) else { throw refusal("\(mcp.name) exists") }
+                w.mcp.append(mcp)
+            }
+        case let .mcpUpdate(workspace, mcp):
+            try edit(workspace) { w in w.mcp[try find(w.mcp, mcp.name, \.name)] = mcp }
+        case let .mcpRemove(workspace, name):
+            try edit(workspace) { w in w.mcp.remove(at: try find(w.mcp, name, \.name)) }
+        case let .routineAdd(workspace, spec, text):
+            try edit(workspace) { w in
+                guard !w.routines.contains(where: { $0.name == spec.name }) else { throw refusal("\(spec.name) exists") }
+                w.routines.append(SettingsRoutine(spec: spec, instructionsText: text))
+            }
+        case let .routineUpdate(workspace, spec, text):
+            try edit(workspace) { w in
+                let at = try find(w.routines, spec.name, \.name)
+                w.routines[at] = SettingsRoutine(spec: spec, instructionsText: text ?? w.routines[at].instructionsText)
+            }
+        case let .routineRemove(workspace, name):
+            try edit(workspace) { w in w.routines.remove(at: try find(w.routines, name, \.name)) }
+        case let .workerAdd(worker):
+            guard !workers.contains(where: { $0.name == worker.name }) else { throw refusal("\(worker.name) exists") }
+            workers.append(worker)
+        case let .workerUpdate(worker):
+            workers[try find(workers, worker.name, \.name)] = worker
+        case let .workerRemove(name):
+            workers.remove(at: try find(workers, name, \.name))
+        }
+    }
+
+    private func index(_ workspace: String) throws -> Int {
+        guard let at = workspaces.firstIndex(where: { $0.name == workspace }) else { throw refusal("no Workspace \(workspace)") }
+        return at
+    }
+
+    private mutating func edit(
+        _ workspace: String, _ f: (inout SettingsWorkspace) throws -> Void
+    ) throws {
+        let at = try index(workspace)
+        try f(&workspaces[at])
+    }
+}
+
+private func find<T>(_ list: [T], _ name: String, _ key: KeyPath<T, String>) throws -> Int {
+    guard let at = list.firstIndex(where: { $0[keyPath: key] == name }) else { throw refusal("no \(name)") }
+    return at
+}
+
+private func refusal(_ message: String) -> DemoSettingsRefusal { DemoSettingsRefusal(message: message) }
+
+extension FieldChange {
+    func applied(to value: Value?) -> Value? {
+        switch self {
+        case .keep: value
+        case .clear: nil
+        case let .set(new): new
+        }
+    }
+}

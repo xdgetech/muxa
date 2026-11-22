@@ -63,6 +63,8 @@ data class DemoContent(
     val chats: Map<String, ChatUpdate> = emptyMap(),
     /** Review items whose Approve without force is refused with `would-lose-work`, and the message, by item id. */
     val losesWork: Map<String, String> = emptyMap(),
+    /** What `settings` answers first; `settings-update` changes a copy in memory. */
+    val settings: Settings = Settings("1"),
 ) {
     companion object {
         /** Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines. Approving `d8` needs force. */
@@ -84,6 +86,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     private val chats = content.chats
     private val losesWork = content.losesWork
     private var nextChat = 1
+    private val settings = DemoSettings(content.settings)
     private var inbox = Inbox(1, content.inbox, emptyList())
     private var nextItem = 100
     private val channels = mutableMapOf<Int, String>()
@@ -236,6 +239,13 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 val stopped = if (lp.isActive) lp.copy(state = "stopped", reason = "user", since = now()) else lp
                 setLoop(stopped)
                 reply(id, "loop" to enc(stopped))
+            }
+            "settings" -> reply(id, "settings" to enc(settings.current))
+            "settings-update" -> try {
+                val ops = (m["ops"] as? JsonArray).orEmpty().map { it as? JsonObject ?: JsonObject(emptyMap()) }
+                reply(id, "settings" to enc(settings.update(m.str("revision") ?: "", ops)))
+            } catch (e: DemoSettings.Refusal) {
+                send(error(id, e.code, e.message ?: ""))
             }
             else -> send(error(id, "bad-request", "unknown request"))
         }
@@ -567,6 +577,7 @@ private fun standardContent(): DemoContent {
             ),
         ),
         losesWork = mapOf("d8" to "branch docs-audit in /demo/app-docs-audit has uncommitted changes. Approve with force to remove them anyway"),
+        settings = DEMO_SETTINGS,
     )
 }
 
@@ -595,3 +606,28 @@ private val DEMO_DIFF = """
 
 /** A 1×1 PNG. */
 private const val DEMO_PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+/** The demo's `workspaces.toml` and `routines.toml`, as `settings` shows them; the secret is only "set". */
+private val DEMO_SETTINGS = Settings(
+    revision = "1",
+    workspaces = listOf(
+        SettingsWorkspace(
+            "app", "/demo", listOf("app", "docs"),
+            agent = SettingsAgent("claude", listOf(EnvKey("CLAUDE_CONFIG_DIR", true))),
+            loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
+            routinesEnabled = true,
+            connections = listOf(
+                SettingsConnection("github", "GITHUB_TOKEN", "demo@example.com", "read", isDefault = true, secret = SecretState.SET),
+            ),
+            mcp = listOf(McpSpec("docs", command = "npx", args = listOf("-y", "docs-mcp"), isDefault = true)),
+            routines = listOf(
+                SettingsRoutine(
+                    "dependency-digest", at = "09:00", timezone = "Europe/Berlin", instructions = "routines/dependency-digest.md",
+                    connections = listOf("github"), instructionsText = "List the dependency updates of the week.\n",
+                ),
+            ),
+        ),
+        SettingsWorkspace("Personal", "/demo/personal", agent = SettingsAgent("claude")),
+    ),
+    workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
+)

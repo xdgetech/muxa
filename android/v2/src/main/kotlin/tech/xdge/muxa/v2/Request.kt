@@ -65,6 +65,10 @@ sealed interface V2Request {
     data class LoopStop(val terminal: String) : V2Request
     data class ChatOpen(val terminal: String) : V2Request
     data class ChatClose(val chat: Int) : V2Request
+    data object GetSettings : V2Request
+
+    /** Applies [ops] in order, all or none; refused with `conflict` unless [revision] is the current one. */
+    data class SettingsUpdate(val revision: String, val ops: List<SettingsOp>) : V2Request
 
     fun json(id: Long): JsonObject = buildJsonObject {
         put("id", id)
@@ -113,6 +117,11 @@ sealed interface V2Request {
             is LoopStop -> { type("loop-stop"); put("terminal", r.terminal) }
             is ChatOpen -> { type("chat-open"); put("terminal", r.terminal) }
             is ChatClose -> { type("chat-close"); put("chat", r.chat) }
+            GetSettings -> type("settings")
+            is SettingsUpdate -> {
+                type("settings-update"); put("revision", r.revision)
+                put("ops", buildJsonArray { r.ops.forEach { add(it.json()) } })
+            }
         }
     }
 }
