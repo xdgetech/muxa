@@ -87,7 +87,7 @@ private data class InboxFilter(
  * In the phone layout the list and the detail are two screens.
  */
 @Composable
-fun Home(model: NextModel, openTerminal: (Terminal) -> Unit, showFocus: () -> Unit) {
+fun Home(model: NextModel, openTerminal: (Terminal) -> Unit, showFocus: () -> Unit, newTask: (TaskSeed) -> Unit) {
     var part by rememberSaveable { mutableStateOf(Part.INBOX) }
     var selectedItem by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedRoutine by rememberSaveable { mutableStateOf<String?>(null) }
@@ -96,6 +96,8 @@ fun Home(model: NextModel, openTerminal: (Terminal) -> Unit, showFocus: () -> Un
     var now by remember { mutableLongStateOf(nowSeconds()) }
     val capture = remember { FocusRequester() }
     val phone = LocalPhoneLayout.current
+    val scope = rememberCoroutineScope()
+    val actions = remember(model) { ItemActionState(model, scope) }
 
     // Later items come back on their own; the clock decides what shows.
     LaunchedEffect(Unit) {
@@ -129,11 +131,19 @@ fun Home(model: NextModel, openTerminal: (Terminal) -> Unit, showFocus: () -> Un
     val keys = Modifier.onPreviewKeyEvent { e ->
         if (e.type != KeyEventType.KeyDown || e.isShiftPressed) return@onPreviewKeyEvent false
         val item = selected?.takeIf { part == Part.INBOX && it.id in model.inbox.items.map(InboxItem::id) }
+        // While the comment field is open, its own keys win.
+        val commenting = item != null && actions.commenting == item.id
         when {
             e.isCtrlPressed && e.key == Key.N -> capture.requestFocus().let { true }
             e.isAltPressed && e.key == Key.DirectionUp && item != null -> step(-1).let { true }
             e.isAltPressed && e.key == Key.DirectionDown && item != null -> step(1).let { true }
-            e.isCtrlPressed && e.key == Key.Enter && item != null -> act(V2Request.InboxDone(item.id)).let { true }
+            e.isCtrlPressed && e.key == Key.Enter && item != null && !commenting -> true.also {
+                actions.main(item) { selectedItem = nextVisible(item.id) }
+            }
+            e.isCtrlPressed && e.key == Key.R && item?.kind == ItemKind.REVIEW -> true.also { actions.commenting = item.id }
+            e.isCtrlPressed && e.key == Key.R && item?.kind == ItemKind.FAILED -> true.also {
+                actions.retry(item.id) { selectedItem = nextVisible(item.id) }
+            }
             e.isCtrlPressed && e.key == Key.Backspace && item != null -> act(V2Request.InboxDone(item.id)).let { true }
             e.isCtrlPressed && e.key == Key.L && item != null -> act(V2Request.InboxLater(item.id, LaterChoice.TOMORROW.until())).let { true }
             else -> false
@@ -143,7 +153,7 @@ fun Home(model: NextModel, openTerminal: (Terminal) -> Unit, showFocus: () -> Un
     val list: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeBar(model, showFocus)
+                ModeBar(model, showFocus) { newTask(TaskSeed()) }
                 CaptureField(model, capture)
                 NeedsYouStrip(model, openTerminal)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().testTag("home.part")) {
@@ -170,7 +180,7 @@ fun Home(model: NextModel, openTerminal: (Terminal) -> Unit, showFocus: () -> Un
             when (part) {
                 Part.INBOX -> if (selected != null) {
                     val position = model.inbox.items.indexOfFirst { it.id == selected.id }.takeIf { it >= 0 }?.plus(1)
-                    InboxItemPane(model, selected, position) { selectedItem = nextVisible(selected.id) }
+                    InboxItemPane(model, selected, position, actions, openTerminal, newTask) { selectedItem = nextVisible(selected.id) }
                 } else {
                     Empty(if (model.inbox.items.isEmpty()) "Inbox zero" else "Select an item")
                 }
@@ -206,7 +216,7 @@ fun Home(model: NextModel, openTerminal: (Terminal) -> Unit, showFocus: () -> Un
 
 /** The host and the way to Focus: always shown, also in a narrow list. */
 @Composable
-private fun ModeBar(model: NextModel, showFocus: () -> Unit) {
+private fun ModeBar(model: NextModel, showFocus: () -> Unit, newTask: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box {
@@ -222,6 +232,7 @@ private fun ModeBar(model: NextModel, showFocus: () -> Unit) {
             }
         }
         Box(Modifier.weight(1f))
+        IconButton(newTask, Modifier.testTag("home.newtask")) { Icon(Icons.newTask, "New Task") }
         TextButton(showFocus, Modifier.testTag("mode.focus")) {
             Icon(Icons.agent, null)
             Text(" Focus")

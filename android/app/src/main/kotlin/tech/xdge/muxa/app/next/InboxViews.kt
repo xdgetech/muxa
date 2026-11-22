@@ -12,20 +12,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,6 +31,7 @@ import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.ItemKind
+import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.V2Request
 import java.time.DayOfWeek
 import java.time.ZonedDateTime
@@ -65,7 +58,12 @@ val ItemKind.tint: Color
     }
 
 /** The action Ctrl+Enter takes on an item of this kind. */
-val ItemKind.mainAction: String get() = if (this == ItemKind.REVIEW) "Approve" else "Done"
+val ItemKind.mainAction: String
+    get() = when (this) {
+        ItemKind.REVIEW -> "Approve"
+        ItemKind.FAILED -> "Retry"
+        else -> "Done"
+    }
 
 @Composable
 fun KindLabel(kind: ItemKind) {
@@ -122,7 +120,15 @@ enum class LaterChoice(val title: String) {
  * item stands in the user's order, from 1; null when done.
  */
 @Composable
-fun InboxItemPane(model: NextModel, item: InboxItem, position: Int?, onDone: () -> Unit) {
+fun InboxItemPane(
+    model: NextModel,
+    item: InboxItem,
+    position: Int?,
+    actions: ItemActionState,
+    openTerminal: (Terminal) -> Unit,
+    newTask: (TaskSeed) -> Unit,
+    onDone: () -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).widthIn(max = 760.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -147,9 +153,9 @@ fun InboxItemPane(model: NextModel, item: InboxItem, position: Int?, onDone: () 
         if (position == null) {
             OutlinedButton({ model.inbox(V2Request.InboxReopen(item.id)) }) { Text("Reopen") }
         } else {
-            ItemActions(model, item, onDone)
+            ItemActions(model, item, actions, openTerminal, newTask, onDone)
         }
-        model.requestError?.let { Text(it, color = Theme.failure) }
+        model.requestError?.let { Text(it, Modifier.testTag("detail.error"), color = Theme.failure) }
     }
 }
 
@@ -157,39 +163,4 @@ private fun source(item: InboxItem) = when (item.source) {
     "task" -> "From a Task"
     "routine" -> "From a Routine"
     else -> "Captured"
-}
-
-@Composable
-private fun ItemActions(model: NextModel, item: InboxItem, onDone: () -> Unit) {
-    fun act(r: V2Request) {
-        model.inbox(r)
-        onDone()
-    }
-    var later by remember { mutableStateOf(false) }
-    var more by remember { mutableStateOf(false) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Button({ act(V2Request.InboxDone(item.id)) }, Modifier.testTag("detail.main")) { Text(item.kind.mainAction) }
-        Column {
-            OutlinedButton({ later = true }, Modifier.testTag("detail.later")) { Text("Later") }
-            DropdownMenu(later, { later = false }) {
-                for (choice in LaterChoice.entries) {
-                    DropdownMenuItem({ Text(choice.title) }, {
-                        later = false
-                        act(V2Request.InboxLater(item.id, choice.until()))
-                    })
-                }
-            }
-        }
-        if (item.kind.mainAction != "Done") OutlinedButton({ act(V2Request.InboxDone(item.id)) }) { Text("Done") }
-        Spacer(Modifier.weight(1f))
-        Column {
-            IconButton({ more = true }) { Icon(Icons.more, "More") }
-            DropdownMenu(more, { more = false }) {
-                DropdownMenuItem({ Text("Delete", color = Theme.failure) }, {
-                    more = false
-                    act(V2Request.InboxDelete(item.id))
-                })
-            }
-        }
-    }
 }

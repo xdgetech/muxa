@@ -1,6 +1,7 @@
 package tech.xdge.muxa.app.next
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -46,7 +47,7 @@ import tech.xdge.muxa.v2.V2Request
  * Tasks on the left. The Inbox is a panel, closed by default.
  */
 @Composable
-fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHome: () -> Unit) {
+fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHome: () -> Unit, newTask: () -> Unit) {
     // The panel beside the terminal shows the Inbox or the Reader, never both.
     var panel by rememberSaveable { mutableStateOf(Panel.NONE) }
     fun toggle(p: Panel) {
@@ -63,6 +64,8 @@ fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHo
                     Icon(Icons.list, null)
                     Text(" Home")
                 }
+                Box(Modifier.weight(1f))
+                IconButton(newTask, Modifier.testTag("focus.newtask")) { Icon(Icons.newTask, "New Task") }
             }
             TerminalList(model, selected, select)
         }

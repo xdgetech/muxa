@@ -63,6 +63,8 @@ flowchart LR
 
 On the Mac: the Go, Pane and Host menus, up to four Tasks side by side in Focus (`⌘\`), and `⌃⌥Space` for a Capture window from any app (ADR 0070).
 
+On Android with a keyboard: `Ctrl+N` Capture, `Ctrl+Shift+N` a new Task (`Ctrl+Enter` starts it), `Ctrl+Enter` the item's main action (Approve, Retry or Done), `Ctrl+R` Request changes on a Review or Retry on a Failed item, `Ctrl+L` Later, `Ctrl+Backspace` Done, `Alt+↑↓` to reorder, and `Ctrl+Shift+H`, `Ctrl+Shift+F` for Home and Focus.
+
 From a terminal: `muxa-cli --bridge 'ssh host ~/.local/bin/muxa-bridge connect' terminals`, then `inbox`, `capture`, `start-task`, `attach`, `reader`, `chat`, `loops` and the rest (`muxa-cli --help`).
 
 ## The daemon

@@ -60,19 +60,46 @@ private data class ReaderTarget(val kind: ReaderKind, val path: String, val scop
 @Composable
 fun ReaderPanel(model: NextModel, terminal: Terminal, modifier: Modifier) {
     var kind by rememberSaveable(terminal.id) { mutableStateOf(ReaderKind.DOCS) }
-    var target by remember(terminal.id) { mutableStateOf<ReaderTarget?>(null) }
+    // The documents opened, the shown one last: Back returns to the one a link left.
+    var opened by remember(terminal.id) { mutableStateOf(emptyList<ReaderTarget>()) }
+    var linkNote by remember(terminal.id) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    fun back() {
+        opened = opened.dropLast(1)
+        linkNote = null
+    }
+
+    // A link opens only a document the Reader lists; the web view never navigates.
+    fun follow(path: String) {
+        scope.launch {
+            val listed = model.readerList(terminal.id, ReaderKind.DOCS)?.entries.orEmpty().any { it.path == path }
+            val next = ReaderTarget(ReaderKind.DOCS, path, DiffScope.UNCOMMITTED)
+            // A second tap before the first opened adds nothing.
+            if (listed && opened.lastOrNull() == next) return@launch
+            if (listed) {
+                opened = opened + next
+                linkNote = null
+            } else {
+                linkNote = "$path is not one of the Reader's documents."
+            }
+        }
+    }
+    val target = opened.lastOrNull()
     Column(modifier.testTag("focus.readerpanel")) {
         when {
             terminal.taskDir == null -> Empty("Only a Task's agent or a Routine run has files to read.")
             target != null -> {
-                val t = target!!
-                BackHandler { target = null }
+                BackHandler { back() }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton({ target = null }, Modifier.testTag("reader.back")) { Icon(Icons.back, "Back") }
-                    Text(t.path.substringAfterLast('/'), style = MaterialTheme.typography.titleSmall, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis)
+                    IconButton({ back() }, Modifier.testTag("reader.back")) { Icon(Icons.back, "Back") }
+                    Text(target.path.substringAfterLast('/'), Modifier.testTag("reader.path"), style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                ReaderDocument(model, terminal.id, t, Modifier.weight(1f))
+                linkNote?.let {
+                    Text(it, Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error)
+                }
+                ReaderDocument(model, terminal.id, target, ::follow, Modifier.weight(1f))
             }
             else -> {
                 Row(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -80,7 +107,7 @@ fun ReaderPanel(model: NextModel, terminal: Terminal, modifier: Modifier) {
                         FilterChip(kind == k, { kind = k }, { Text(label) }, Modifier.testTag("reader.kind.${k.wire}"))
                     }
                 }
-                ReaderFiles(model, terminal.id, kind, Modifier.weight(1f)) { path, scope -> target = ReaderTarget(kind, path, scope) }
+                ReaderFiles(model, terminal.id, kind, Modifier.weight(1f)) { path, diff -> opened = listOf(ReaderTarget(kind, path, diff)) }
             }
         }
     }
@@ -152,7 +179,7 @@ private fun FileRow(e: ReaderEntry, onClick: () -> Unit) {
 
 /** One open file, kept current while it is shown. */
 @Composable
-private fun ReaderDocument(model: NextModel, terminal: String, target: ReaderTarget, modifier: Modifier) {
+private fun ReaderDocument(model: NextModel, terminal: String, target: ReaderTarget, follow: (String) -> Unit, modifier: Modifier) {
     var reader by remember(target) { mutableStateOf<Int?>(null) }
     var attempt by remember(target) { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -176,19 +203,23 @@ private fun ReaderDocument(model: NextModel, terminal: String, target: ReaderTar
                     }
                 }) { Text("Open again") }
             }
-            content != null -> Shown(target, content)
+            content != null -> Shown(target, content, follow)
             else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
         }
     }
 }
 
 @Composable
-private fun Shown(target: ReaderTarget, content: ReaderContent) {
+private fun Shown(target: ReaderTarget, content: ReaderContent, follow: (String) -> Unit) {
     val context = LocalContext.current
-    // Web links open in the browser; other links stay in the document.
-    val onLink: (String, String) -> Unit = { href, _ ->
+    // Web links open in the browser, and a document's relative links its other documents.
+    val onLink: (String, String) -> Unit = { href, from ->
         val uri = Uri.parse(href)
-        if (uri.scheme == "http" || uri.scheme == "https") context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        if (uri.scheme == "http" || uri.scheme == "https") {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } else if (target.kind == ReaderKind.DOCS) {
+            ReaderLinks.resolve(href, from)?.let(follow)
+        }
     }
     val html = target.path.substringAfterLast('.').lowercase() in setOf("html", "htm")
     when {

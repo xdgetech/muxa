@@ -56,17 +56,20 @@ fun NextRoot(model: NextModel) {
     val layout = currentWindowLayout()
     var focus by rememberSaveable { mutableStateOf(false) }
     var terminal by rememberSaveable { mutableStateOf<String?>(null) }
+    var newTask by remember { mutableStateOf<TaskSeed?>(null) }
     fun open(t: Terminal) {
         terminal = t.id
         focus = true
     }
 
-    // Ctrl+Shift+H and Ctrl+Shift+F, as on the desktop (ADR 0070).
+    // Ctrl+Shift+H and Ctrl+Shift+F, as on the desktop (ADR 0070); Ctrl+Shift+N for a new Task,
+    // since Ctrl+N is Capture.
     val modeKeys = Modifier.onPreviewKeyEvent { e ->
         if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed || !e.isShiftPressed) return@onPreviewKeyEvent false
         when (e.key) {
             Key.H -> true.also { focus = false }
             Key.F -> true.also { focus = true }
+            Key.N -> true.also { if (model.isConnected) newTask = TaskSeed() }
             else -> false
         }
     }
@@ -77,14 +80,20 @@ fun NextRoot(model: NextModel) {
                 when (model.link) {
                     NextModel.Link.Connected, is NextModel.Link.Reconnecting ->
                         if (focus) {
-                            Focus(model, terminal, { terminal = it }) { focus = false }
+                            Focus(model, terminal, { terminal = it }, { focus = false }) { newTask = TaskSeed() }
                         } else {
-                            Home(model, ::open) { focus = true }
+                            Home(model, ::open, { focus = true }) { newTask = it }
                         }
                     else -> Hosts(model)
                 }
             }
             model.untrustedKey?.let { TrustHostDialog(model, it) }
+            newTask?.takeIf { model.isConnected }?.let { seed ->
+                StartTaskSheet(model, seed, { newTask = null }) { t ->
+                    newTask = null
+                    open(t)
+                }
+            }
         }
     }
 }

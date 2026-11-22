@@ -35,6 +35,8 @@ import tech.xdge.muxa.v2.V2Client
 import tech.xdge.muxa.v2.V2Error
 import tech.xdge.muxa.v2.V2Event
 import tech.xdge.muxa.v2.V2Request
+import tech.xdge.muxa.v2.Workspace
+import tech.xdge.muxa.v2.WorktreeChoice
 import java.time.LocalDate
 import kotlin.time.Duration.Companion.seconds
 
@@ -372,6 +374,54 @@ class NextModel(
         }
     }
 
+    // Task actions (ADR 0072)
+
+    /**
+     * Closes a Review item's Task. Returns the server's message when closing it
+     * would lose work and [force] was not given; other failures go to [requestError].
+     */
+    suspend fun approve(item: String, force: Boolean): String? {
+        var loss: String? = null
+        val choice = if (force) WorktreeChoice.FORCE else WorktreeChoice.REMOVE
+        request { c ->
+            try {
+                inbox = c.inbox(V2Request.InboxApprove(item, choice))
+            } catch (e: V2Error.Refused) {
+                if (e.code != WOULD_LOSE_WORK) throw e
+                loss = e.message?.removeSuffix(" (${e.code})") ?: e.code
+            }
+        }
+        return loss
+    }
+
+    /** Runs a Failed item's Routine or Task again; true when it did. */
+    suspend fun retry(item: String): Boolean {
+        var ok = false
+        request { c ->
+            inbox = c.inbox(V2Request.InboxRetry(item))
+            c.routines().let { (list, problems) -> routines = list; routineProblems = problems }
+            ok = true
+        }
+        return ok
+    }
+
+    suspend fun workspaces(): List<Workspace>? {
+        var list: List<Workspace>? = null
+        request { list = it.workspaces() }
+        return list
+    }
+
+    /** Starts a Task; its agent terminal, or null with [requestError] set. */
+    suspend fun startTask(draft: TaskDraft): Terminal? {
+        var started: Terminal? = null
+        request { c ->
+            val (t, _) = c.startTask(draft.workspace, draft.title, draft.goal, draft.places, draft.connections, draft.mcp, draft.plan, draft.loop)
+            if (terminals.none { it.id == t.id }) terminals = terminals + t
+            started = t
+        }
+        return started
+    }
+
     fun refreshRoutines() = scope.launch {
         request { it.routines().let { (list, problems) -> routines = list; routineProblems = problems } }
     }
@@ -498,6 +548,7 @@ class NextModel(
         private val WAITING = setOf("blocked", "waiting")
         private const val KEY_COMMENT = "muxa-android"
         private const val HISTORY = 2000
+        private const val WOULD_LOSE_WORK = "would-lose-work"
 
         /** The device's local date, `YYYY-MM-DD`, as Capture reads `due`. */
         fun today(): String = LocalDate.now().toString()
