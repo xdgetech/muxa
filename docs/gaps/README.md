@@ -9,6 +9,7 @@ What is built but not verified, and what is left after the F phases and their fo
 - **App name**: `store/*/name.txt` and `title.txt` still say "AI agents in tmux". The rest of the store text is current.
 - **Store screenshots** of Home and Focus: none exist; take them by hand (`store/RELEASE.md`, Screenshots). The captions in `apple/Muxa/Art/frame-screenshots.swift` still describe the v1 screens.
 - **Install**: `make install`, then `muxa-bridge daemon install` to rewrite the service file without the old tmux flags.
+- **Migration from v1**: after `make install`, `muxa-cli v2 migrate-v1 --dry-run`, then without `--dry-run` (ADR 0076). Not run on a real state dir yet.
 
 ## Built on an assumption (check on a real host)
 
@@ -16,6 +17,8 @@ What is built but not verified, and what is left after the F phases and their fo
 - **MCP config**: Claude Code expands `${VAR}` in `.mcp.json`; that it does the same in a `--mcp-config` file is assumed (`docs/findings/claude-code-mcp.md`).
 - **claude.ai connectors** under `--strict-mcp-config`: unknown whether they still load. Only workspaces that list `[[workspace.mcp]]` get the flag.
 - **Bracketed paste** for multi-line Request changes: unverified for Claude Code and Codex, so the apps send one line only (ADR 0072).
+- **`claude --continue`** in an adopted place resumes the newest conversation whose `projects/` folder name is the folder with every non-alphanumeric as `-`. That Claude Code picks the same one is assumed from `docs/agents.md`, not probed.
+- **The agent check** for an adopted place knows `claude` and `codex` by their process names only; an agent run under another name (for example through `node`) is not seen.
 - **Japanese input in the terminal**: claimed in the store text, not re-checked on a device after D4.
 
 ## Not built
@@ -26,7 +29,8 @@ What is built but not verified, and what is left after the F phases and their fo
 - **Edit Routine** on a Failed item (`docs/next.md`), in every app.
 - **Adding a place** to an open Task.
 - **Review from a draft PR**: only a passed check or the user makes a Review item. Approve's "merged" is by ancestry, so a squash-merged branch needs Remove anyway.
-- **A restarted agent** (Retry) is not in plan mode and does not continue the old conversation.
+- **A restarted agent** (Retry) is not in plan mode and does not continue the old conversation, also in an adopted place.
+- **ADR 0043's worktree list files** (`<state dir>/../worktrees/`) are not read by the migration; they stay on disk.
 - **Push** for Needs you while the app is closed (ADR 0066, a relay).
 - **A Routine run in a folder Claude Code does not trust** waits on the trust dialog until the 2 h limit.
 - **Agent state age** (invariant 6) is not reported.
