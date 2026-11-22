@@ -10,6 +10,8 @@ struct CaptureField: View {
     var onAdded: () -> Void = {}
     /// Takes the keyboard when shown: the Mac's Capture window.
     var focusOnAppear = false
+    /// `⌘⏎` adds the item and starts a Task from it: the Mac's Capture window.
+    var onStartTask: ((Capture) -> Void)?
     @State private var text = ""
     @State private var parsed: Capture?
     @State private var parsing: Task<Void, Never>?
@@ -35,10 +37,18 @@ struct CaptureField: View {
         .onChange(of: text) { _, new in parse(new) }
         .onAppear { if focusOnAppear { focused = true } }
         .background {
-            Button("") { focused = true }
-                .keyboardShortcut("n", modifiers: .command)
-                .opacity(0)
-                .accessibilityHidden(true)
+            Group {
+                Button("") { focused = true }
+                    .keyboardShortcut("n", modifiers: .command)
+                if let onStartTask {
+                    Button("") {
+                        Task { if let added = await add() { onStartTask(added) } }
+                    }
+                    .keyboardShortcut(.return, modifiers: .command)
+                }
+            }
+            .opacity(0)
+            .accessibilityHidden(true)
         }
     }
 
@@ -91,16 +101,18 @@ struct CaptureField: View {
         }
     }
 
-    private func add() async {
+    /// The added capture, or nil when nothing was added.
+    @discardableResult
+    private func add() async -> Capture? {
         parsing?.cancel()
         let capture: Capture?
         if let parsed { capture = parsed } else { capture = await model.parseCapture(text) }
-        guard let capture, !capture.title.isEmpty else { return }
+        guard let capture, !capture.title.isEmpty else { return nil }
         await model.inbox(.inboxAdd(capture))
-        if model.requestError == nil {
-            text = ""
-            parsed = nil
-            onAdded()
-        }
+        guard model.requestError == nil else { return nil }
+        text = ""
+        parsed = nil
+        onAdded()
+        return capture
     }
 }

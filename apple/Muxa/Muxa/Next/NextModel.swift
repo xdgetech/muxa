@@ -330,6 +330,40 @@ final class NextModel {
         await run { self.inbox = try await $0.inbox(r) }
     }
 
+    /// Closes the Review item's Task. A worktree that holds work stops it:
+    /// the server's message comes back, for the user to confirm `force`.
+    func approve(_ item: String, force: Bool = false) async -> String? {
+        var wouldLoseWork: String?
+        await run { c in
+            do {
+                self.inbox = try await c.inbox(.inboxApprove(item: item, worktree: force ? .force : nil))
+            } catch V2Error.refused(let code, let message) where code == "would-lose-work" {
+                wouldLoseWork = message
+            }
+        }
+        return wouldLoseWork
+    }
+
+    // MARK: Start Task
+
+    func workspaces() async throws -> [Workspace] {
+        try await connected().workspaces()
+    }
+
+    /// Starts a Task and keeps its agent terminal, so Focus can show it at once.
+    func startTask(_ request: TaskRequest) async throws -> Terminal {
+        let (t, _) = try await connected().startTask(
+            workspace: request.workspace, title: request.title, goal: request.goal, places: request.places,
+            connections: request.connections, mcp: request.mcp, plan: request.plan, loop: request.loop)
+        if let at = terminals.firstIndex(where: { $0.id == t.id }) { terminals[at] = t } else { terminals.append(t) }
+        return t
+    }
+
+    private func connected() throws -> V2Client {
+        guard let client else { throw V2Error.lost("not connected") }
+        return client
+    }
+
     func parseCapture(_ text: String) async -> Capture? {
         var parsed: Capture?
         await run { parsed = try await $0.parseCapture(text, today: Self.today()) }

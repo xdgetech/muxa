@@ -38,12 +38,79 @@ final class MacNextTests: XCTestCase {
     }
 
     @MainActor
-    func testApproveTakesTheReviewOutOfTheList() throws {
+    func testApproveClosesTheReviewsTask() throws {
         let app = launch()
         app.descendants(matching: .any)["item.d1"].click()
         XCTAssertTrue(app.staticTexts["detail.title"].waitForExistence(timeout: 5))
-        app.buttons["detail.main"].click()
+        app.typeKey(.return, modifierFlags: .command)
         XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
+        // The demo closes the Task's agent, t1.
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["terminal.t3"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["terminal.t1"].exists)
+    }
+
+    @MainActor
+    func testRequestChangesTypesTheCommentIntoTheAgent() throws {
+        let app = launch()
+        app.descendants(matching: .any)["item.d1"].click()
+        XCTAssertTrue(app.staticTexts["detail.title"].waitForExistence(timeout: 5))
+        app.typeKey("r", modifierFlags: .command)
+        let comment = app.textFields["detail.comment"]
+        XCTAssertTrue(comment.waitForExistence(timeout: 5))
+        comment.click()
+        comment.typeText("Use a 30 s margin\r")
+        XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d1"]))
+        app.typeKey("f", modifierFlags: [.command, .shift])
+        let agent = app.descendants(matching: .any)["terminal.t1"]
+        XCTAssertTrue(agent.waitForExistence(timeout: 5))
+        agent.click()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(pane, valueContaining: "Use a 30 s margin"))
+    }
+
+    @MainActor
+    func testRetryRunsTheFailedRoutineAgain() throws {
+        let app = launch()
+        app.descendants(matching: .any)["item.d5"].click()
+        XCTAssertTrue(app.buttons["detail.retry"].waitForExistence(timeout: 5))
+        app.typeKey("r", modifierFlags: .command)
+        XCTAssertTrue(waitForGone(app.descendants(matching: .any)["item.d5"]))
+    }
+
+    @MainActor
+    func testATaskStartsFromTheSheetWithItsLoop() throws {
+        let app = launch()
+        app.typeKey("n", modifierFlags: [.command, .shift])
+        let title = app.textFields["task.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        title.click()
+        title.typeText("Write the session tests")
+        let loop = app.checkBoxes["task.loop"].exists ? app.checkBoxes["task.loop"] : app.switches["task.loop"]
+        XCTAssertTrue(loop.waitForExistence(timeout: 5))
+        loop.click()
+        XCTAssertTrue(app.descendants(matching: .any)["task.check"].waitForExistence(timeout: 5))
+        app.buttons["task.start"].click()
+        let pane = app.descendants(matching: .any)["focus.pane"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Loop 0/3"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testAReaderLinkOpensTheLinkedDocument() throws {
+        let app = launch()
+        app.descendants(matching: .any)["needsyou.t2"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["focus.pane"].waitForExistence(timeout: 10))
+        app.typeKey("r", modifierFlags: [.command, .shift])
+        let plan = app.descendants(matching: .any)["reader.file.PLAN.md"]
+        XCTAssertTrue(plan.waitForExistence(timeout: 10))
+        plan.click()
+        let link = app.webViews["reader"].links.firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 10))
+        link.click()
+        XCTAssertTrue(waitFor(app.staticTexts["reader.title"], labelContaining: "TASK.md"))
+        XCTAssertTrue(app.webViews["reader"].staticTexts["fix-login"].waitForExistence(timeout: 10))
     }
 
     @MainActor

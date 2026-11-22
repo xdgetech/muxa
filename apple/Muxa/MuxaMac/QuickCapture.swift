@@ -1,18 +1,22 @@
 import AppKit
 import Carbon.HIToolbox
+import MuxaV2
 import SwiftUI
 
 /// `⌃⌥Space` from any app opens a one-line Capture window (docs/next.md,
-/// "Capture"). `⏎` adds the item and closes it; `⎋` closes it.
+/// "Capture"). `⏎` adds the item and closes it; `⌘⏎` also opens Start Task
+/// from it in the main window; `⎋` closes it.
 @MainActor
 final class QuickCapture {
     private let model: NextModel
+    private let nav: NextNavigation
     private var panel: NSPanel?
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
 
-    init(model: NextModel) {
+    init(model: NextModel, nav: NextNavigation) {
         self.model = model
+        self.nav = nav
     }
 
     /// Registers the global hotkey. Carbon's hotkeys need no Accessibility permission.
@@ -42,6 +46,14 @@ final class QuickCapture {
         panel?.orderOut(nil)
     }
 
+    /// The Start Task sheet, prefilled from the capture, in the main window.
+    private func startTask(from capture: Capture) {
+        close()
+        NSApp.activate()
+        NSApp.windows.first { !($0 is NSPanel) && $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
+        nav.newTask = TaskSeed(title: capture.title, workspace: capture.workspace)
+    }
+
     private func makePanel() -> NSPanel {
         let panel = CapturePanel(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 96),
@@ -54,8 +66,10 @@ final class QuickCapture {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.onCancel = { [weak self] in self?.close() }
-        panel.contentView = NSHostingView(rootView: QuickCaptureView(close: { [weak self] in self?.close() })
-            .environment(model))
+        let view = QuickCaptureView(
+            close: { [weak self] in self?.close() },
+            startTask: { [weak self] in self?.startTask(from: $0) })
+        panel.contentView = NSHostingView(rootView: view.environment(model))
         panel.setAccessibilityIdentifier("quickcapture")
         return panel
     }
@@ -71,11 +85,12 @@ private final class CapturePanel: NSPanel {
 private struct QuickCaptureView: View {
     @Environment(NextModel.self) private var model
     var close: () -> Void
+    var startTask: (Capture) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if model.isConnected {
-                CaptureField(onAdded: close, focusOnAppear: true)
+                CaptureField(onAdded: close, focusOnAppear: true, onStartTask: startTask)
             } else {
                 Text("Not connected. Open muxa to connect to a host.")
                     .foregroundStyle(.secondary)

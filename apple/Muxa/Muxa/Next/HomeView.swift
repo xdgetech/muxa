@@ -227,6 +227,8 @@ struct HomeView: View {
             }
             .accessibilityIdentifier("home.host")
             Spacer()
+            NewTaskButton(id: "home.newtask")
+                .font(.callout)
             Button("Focus", systemImage: "terminal", action: showFocus)
                 .font(.callout)
                 .accessibilityIdentifier("mode.focus")

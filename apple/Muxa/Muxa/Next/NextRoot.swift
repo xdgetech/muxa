@@ -18,6 +18,9 @@ struct NextRoot: View {
                     HomeView(openTerminal: nav.open, showFocus: { nav.focus = true })
                 }
             }
+            .sheet(item: Bindable(nav).newTask) { seed in
+                StartTaskSheet(seed: seed, onClose: nav.taskStarted)
+            }
             .background { modeKeys }
             .sheet(isPresented: Bindable(nav).showPalette) { GoToTask() }
         default:

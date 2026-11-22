@@ -16,24 +16,43 @@ struct ReaderPanel: View {
     @State private var kind: ReaderKind = .docs
     @State private var list: ReaderList?
     @State private var loading = false
+    /// The open files, the shown one last; a link between documents adds one.
+    /// Not a NavigationStack: on a phone the panel is a sheet inside Focus's
+    /// stack, and a nested stack pushed its files behind the sheet.
+    @State private var path: [ReaderTarget] = []
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if terminal.taskDir == nil {
-                    ContentUnavailableView(
-                        "No folder", systemImage: "folder",
-                        description: Text("Only a Task's agent or a Routine run has files to read."))
-                } else {
-                    files
+        Group {
+            if terminal.taskDir == nil {
+                ContentUnavailableView(
+                    "No folder", systemImage: "folder",
+                    description: Text("Only a Task's agent or a Routine run has files to read."))
+            } else if let target = path.last {
+                VStack(spacing: 0) {
+                    header(target)
+                    ReaderDocument(terminal: terminal.id, target: target) { follow($0, from: target) }
+                        .id(target)
                 }
-            }
-            .navigationTitle("Reader")
-            .navigationDestination(for: ReaderTarget.self) { target in
-                ReaderDocument(terminal: terminal.id, target: target)
+            } else {
+                files
             }
         }
         .task(id: "\(terminal.id)/\(kind.rawValue)") { await reload() }
+    }
+
+    private func header(_ target: ReaderTarget) -> some View {
+        HStack {
+            Button("Back", systemImage: "chevron.backward") { path.removeLast() }
+                .accessibilityIdentifier("reader.back")
+            Spacer()
+            Text((target.path as NSString).lastPathComponent)
+                .font(.headline)
+                .lineLimit(1)
+                .accessibilityIdentifier("reader.title")
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 
     private var files: some View {
@@ -74,7 +93,9 @@ struct ReaderPanel: View {
 
     private func rows(_ entries: [ReaderEntry], scope: DiffScope) -> some View {
         ForEach(entries) { e in
-            NavigationLink(value: ReaderTarget(kind: kind, path: e.path, scope: scope)) {
+            Button {
+                path.append(ReaderTarget(kind: kind, path: e.path, scope: scope))
+            } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         if let status = e.status { Text(status.prefix(1).uppercased()).monospaced().foregroundStyle(.secondary) }
@@ -83,12 +104,22 @@ struct ReaderPanel: View {
                         if let added = e.added, let removed = e.removed {
                             Text("+\(added) −\(removed)").font(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }
+                        Image(systemName: "chevron.forward").font(.caption).foregroundStyle(.tertiary)
                     }
                     if e.title != nil { Text(e.path).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .accessibilityIdentifier("reader.file.\(e.path)")
         }
+    }
+
+    /// A Markdown document's relative link to another listed document opens it here.
+    private func follow(_ href: String, from: ReaderTarget) {
+        guard from.kind == .docs, kind == .docs, let entries = list?.entries,
+              let linked = ReaderLink.document(href, from: from.path, in: entries) else { return }
+        path.append(ReaderTarget(kind: .docs, path: linked))
     }
 
     private func reload() async {
@@ -105,6 +136,8 @@ struct ReaderDocument: View {
     @Environment(\.openURL) private var openURL
     let terminal: String
     let target: ReaderTarget
+    /// A link that is not a web link, by its `href`.
+    var follow: (String) -> Void = { _ in }
     @State private var reader: UInt32?
 
     var body: some View {
@@ -123,8 +156,6 @@ struct ReaderDocument: View {
                 ProgressView()
             }
         }
-        .navigationTitle((target.path as NSString).lastPathComponent)
-        .inlineTitle()
         .task { await open() }
         .onDisappear { close() }
     }
@@ -155,10 +186,13 @@ struct ReaderDocument: View {
         return ext == "html" || ext == "htm"
     }
 
-    /// Web links open in the browser; other links stay in the document.
+    /// Web links open in the browser; the panel decides about the others.
     private func link(_ href: String) {
-        guard let url = URL(string: href), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
-        openURL(url)
+        if let url = URL(string: href), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            openURL(url)
+        } else {
+            follow(href)
+        }
     }
 
     private func open() async {

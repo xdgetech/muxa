@@ -25,6 +25,8 @@ final class NextNavigation {
         didSet { if showChat { showInbox = false; showReader = false } }
     }
     var showPalette = false
+    /// The Start Task sheet is open with this seed.
+    var newTask: TaskSeed?
     var sidebar = NavigationSplitViewVisibility.all
 
     static let maxPanes = 4
@@ -49,6 +51,12 @@ final class NextNavigation {
     func open(_ t: MuxaV2.Terminal) {
         terminal = t.id
         focus = true
+    }
+
+    /// Closes the Start Task sheet; a started Task opens in Focus.
+    func taskStarted(_ t: MuxaV2.Terminal?) {
+        newTask = nil
+        if let t { open(t) }
     }
 
     /// A new pane with the first of `candidates` not shown yet.

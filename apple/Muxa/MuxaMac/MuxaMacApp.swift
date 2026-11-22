@@ -18,7 +18,7 @@ struct MuxaMacApp: App {
                 .frame(minWidth: 720, minHeight: 480)
                 .task {
                     if quickCapture == nil {
-                        let capture = QuickCapture(model: model)
+                        let capture = QuickCapture(model: model, nav: nav)
                         capture.register()
                         quickCapture = capture
                     }
@@ -35,6 +35,9 @@ struct MuxaMacApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("Quick Capture") { quickCapture?.show() }
                     .keyboardShortcut(.space, modifiers: [.control, .option])
+                Button("New Task…") { nav.newTask = TaskSeed() }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .disabled(!model.isConnected)
             }
             // The keys of docs/next.md, which follow VS Code (ADR 0070 decision 2).
             CommandMenu("Go") {

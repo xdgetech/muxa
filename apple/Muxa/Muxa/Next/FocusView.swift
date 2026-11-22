@@ -28,6 +28,9 @@ struct FocusView: View {
                 ToolbarItem(placement: .leadingBar) {
                     Button("Home", systemImage: "tray", action: showHome).accessibilityIdentifier("mode.home")
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    NewTaskButton(id: "focus.newtask")
+                }
             }
         } detail: {
             Group {
