@@ -1,5 +1,5 @@
 #!/bin/bash
-# Draws the debug Mac app's demo window into a PNG: scripts/mac-snapshot.sh OUT.png [home|focus|routines|shortcuts]
+# Draws the debug Mac app's demo window into a PNG: scripts/mac-snapshot.sh OUT.png [home|focus|routines|shortcuts|settings|settings-<tab>]
 # Needs `make build-mac-app` first. No screen-recording permission: the app draws itself.
 set -euo pipefail
 out="$1"

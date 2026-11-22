@@ -48,11 +48,11 @@ struct MuxaMacApp: App {
         .windowStyle(.hiddenTitleBar)
         // ⌘, opens it, as in every Mac app.
         Settings {
-            SettingsStack()
+            MacSettingsView()
                 .environment(model)
                 .environment(nav)
                 .environment(chrome)
-                .frame(minWidth: 640, minHeight: 560)
+                .frame(minWidth: 960, minHeight: 600)
                 .background(Palette.ground)
                 .preferredColorScheme(.dark)
         }

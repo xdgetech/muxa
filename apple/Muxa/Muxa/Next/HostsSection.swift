@@ -29,8 +29,28 @@ struct HostsSection: View {
 }
 
 extension View {
-    /// A Form or List on the mocks' ground.
+    /// A Form or List on the mocks' ground, or on `formGround` where a pane sets it.
     func groundList() -> some View {
-        scrollContentBackground(.hidden).background(Palette.ground)
+        modifier(GroundList())
+    }
+}
+
+private struct GroundList: ViewModifier {
+    @Environment(\.formGround) private var ground
+
+    func body(content: Content) -> some View {
+        content.scrollContentBackground(.hidden).background(ground)
+    }
+}
+
+private struct FormGroundKey: EnvironmentKey {
+    static let defaultValue = Palette.ground
+}
+
+extension EnvironmentValues {
+    /// What a Form is drawn on: the Mac's Settings pane is lighter than the ground.
+    var formGround: Color {
+        get { self[FormGroundKey.self] }
+        set { self[FormGroundKey.self] = newValue }
     }
 }

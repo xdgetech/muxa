@@ -103,7 +103,7 @@ struct SettingsDetail: View {
     }
 }
 
-/// Settings as one stack: the phone's tab and the Mac's Settings window.
+/// Settings as one stack: the phone's tab. The Mac has its own window (`MacSettingsView`).
 struct SettingsStack: View {
     @State private var path: [SettingsPlace] = []
 
