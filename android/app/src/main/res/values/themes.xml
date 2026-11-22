@@ -2,7 +2,10 @@
 <resources>
     <!--
         Compose draws everything. The window theme still matters: the Reader's WebView takes
-        prefers-color-scheme from it, and the system bars their icon color.
+        prefers-color-scheme from it, and the system bars their icon color. The design is dark only.
     -->
-    <style name="Theme.Muxa" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Muxa" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ground</item>
+    </style>
+    <color name="ground">#FF0E1014</color>
 </resources>
