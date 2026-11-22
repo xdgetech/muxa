@@ -10,6 +10,7 @@ import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
@@ -17,6 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import tech.xdge.muxa.app.ui.Palette
 
 /**
  * Shows one Markdown document, or one unified diff, with the bundled renderer
@@ -50,6 +52,8 @@ private class ReaderPage {
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
             .build()
         return WebView(context).apply {
+            // The page's own ground, so no white shows before it loads.
+            setBackgroundColor(Palette.ground.toArgb())
             settings.javaScriptEnabled = true
             settings.blockNetworkLoads = true
             settings.allowFileAccess = false

@@ -3,8 +3,24 @@
 "use strict";
 
 (function () {
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default" });
+  // The page is dark only (reader.css); diagrams take the same palette.
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    themeVariables: {
+      darkMode: true,
+      background: "#0E1014",
+      primaryColor: "#161A20",
+      primaryTextColor: "#E7E9EC",
+      primaryBorderColor: "#2C323C",
+      secondaryColor: "#14263F",
+      tertiaryColor: "#14171C",
+      lineColor: "#8B94A0",
+      textColor: "#E7E9EC",
+      fontFamily: "system-ui, -apple-system, Roboto, sans-serif",
+    },
+  });
 
   const escape = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 

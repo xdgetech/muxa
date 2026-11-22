@@ -1,30 +1,30 @@
+/* The design mocks' dark palette, as in Theme.swift and Theme.kt. The apps are
+   dark only, so the page is too, whatever the system's setting. */
 :root {
-  color-scheme: light dark;
-  --fg: #1d1d1f;
-  --muted: #6e6e73;
-  --bg: #ffffff;
-  --code-bg: #f2f2f7;
-  --border: #d2d2d7;
-  --link: #0066cc;
+  color-scheme: dark;
+  --bg: #0E1014;
+  --fg: #E7E9EC;
+  --muted: #A3ABB6;
+  --faint: #8B94A0;
+  --surface: #14171C;
+  --raised: #161A20;
+  --border: #262B33;
+  --border-strong: #2C323C;
+  --link: #6AA6FF;
+  --code-fg: #D5D9DF;
+  --error: #FF9B9B;
+  /* Installed fonts only: the page loads nothing (ADR 0065). */
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, "Roboto Mono", "Droid Sans Mono", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fg: #f5f5f7;
-    --muted: #a1a1a6;
-    --bg: #000000;
-    --code-bg: #1c1c1e;
-    --border: #38383a;
-    --link: #4da3ff;
-  }
-}
-
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; background: var(--bg); }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
+  /* Android drops the WebKit keyword below and keeps this one. */
+  font: 16px/1.6 system-ui, -apple-system, Roboto, sans-serif;
   font: -apple-system-body;
   line-height: 1.6;
 }
@@ -36,55 +36,65 @@ main {
   overflow-wrap: anywhere;
 }
 
-h1, h2, h3, h4 { line-height: 1.25; margin: 1.6em 0 0.6em; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 1.6em 0 0.6em; font-weight: 600; }
 h1 { font-size: 1.9em; margin-top: 0.4em; }
 h2 { font-size: 1.45em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
 h3 { font-size: 1.2em; }
+h4 { color: var(--muted); }
 
 a { color: var(--link); text-decoration: none; }
+strong { color: var(--fg); }
+::selection { background: rgba(106, 166, 255, 0.3); }
 
-code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; }
-:not(pre) > code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 5px; }
+code, pre { font-family: var(--mono); font-size: 0.86em; }
+:not(pre) > code {
+  background: var(--surface);
+  color: var(--code-fg);
+  border: 1px solid var(--border);
+  padding: 0.05em 0.35em;
+  border-radius: 5px;
+}
 pre {
-  background: var(--code-bg);
+  background: var(--surface);
+  color: var(--code-fg);
+  border: 1px solid var(--border);
   padding: 12px 14px;
   border-radius: 10px;
   overflow-x: auto;
-  line-height: 1.45;
+  line-height: 1.5;
 }
-pre.mermaid-error { border-left: 3px solid #ff3b30; }
+pre code { font-size: 1em; }
+pre.mermaid-error { border-left: 3px solid var(--error); }
 
 figure.mermaid { margin: 1.2em 0; text-align: center; overflow-x: auto; }
 figure.mermaid svg { max-width: 100%; height: auto; }
 
 table { border-collapse: collapse; display: block; overflow-x: auto; margin: 1em 0; }
 th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; vertical-align: top; }
-th { background: var(--code-bg); }
+th { background: var(--raised); color: var(--fg); font-weight: 600; border-color: var(--border-strong); }
 
-blockquote { margin: 1em 0; padding: 0 1em; color: var(--muted); border-left: 3px solid var(--border); }
+blockquote {
+  margin: 1em 0;
+  padding: 0.1em 1em;
+  color: var(--muted);
+  background: var(--surface);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 8px 8px 0;
+}
 hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
 img { max-width: 100%; }
 ul, ol { padding-left: 1.6em; }
+li::marker { color: var(--faint); }
 li + li { margin-top: 0.25em; }
-input[type=checkbox] { margin-right: 0.4em; }
+input[type=checkbox] { margin-right: 0.4em; accent-color: var(--link); }
 
-/* Diffs, laid out like GitHub's unified view. */
+/* Diffs, laid out like GitHub's unified view, in the mocks' muted green and red. */
 :root {
-  --add-bg: #e6ffec;
-  --add-num: #ccffd8;
-  --del-bg: #ffebe9;
-  --del-num: #ffd7d5;
-  --hunk-bg: #ddf4ff;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --add-bg: rgba(46, 160, 67, 0.15);
-    --add-num: rgba(46, 160, 67, 0.3);
-    --del-bg: rgba(248, 81, 73, 0.15);
-    --del-num: rgba(248, 81, 73, 0.3);
-    --hunk-bg: rgba(56, 139, 253, 0.15);
-  }
+  --add-bg: rgba(63, 199, 154, 0.10);
+  --add-num: rgba(63, 199, 154, 0.20);
+  --del-bg: rgba(255, 107, 107, 0.10);
+  --del-num: rgba(255, 107, 107, 0.20);
+  --hunk-bg: rgba(106, 166, 255, 0.10);
 }
 
 main.diff { max-width: none; padding: 0 0 64px; overflow-wrap: normal; }
@@ -94,23 +104,24 @@ table.diff {
   margin: 0;
   min-width: 100%;
   border-collapse: collapse;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
   font-size: 0.82em;
   line-height: 1.5;
+  color: var(--code-fg);
 }
 table.diff td { border: 0; padding: 0 10px; vertical-align: top; }
 table.diff td.num {
   width: 1%;
   min-width: 3ch;
   text-align: right;
-  color: var(--muted);
+  color: var(--faint);
   user-select: none;
   -webkit-user-select: none;
 }
 table.diff td.code { white-space: pre; width: 100%; }
 table.diff tr.add td { background: var(--add-bg); }
-table.diff tr.add td.num { background: var(--add-num); }
+table.diff tr.add td.num { background: var(--add-num); color: #7FE0B8; }
 table.diff tr.del td { background: var(--del-bg); }
-table.diff tr.del td.num { background: var(--del-num); }
+table.diff tr.del td.num { background: var(--del-num); color: var(--error); }
 table.diff tr.hunk td { background: var(--hunk-bg); color: var(--muted); padding-top: 4px; padding-bottom: 4px; }
-table.diff tr.note td.code { color: var(--muted); font-style: italic; }
+table.diff tr.note td.code { color: var(--faint); font-style: italic; }

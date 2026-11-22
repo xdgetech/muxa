@@ -42,7 +42,7 @@ extension WKWebView {
         allowsLinkPreview = false
         #if canImport(UIKit)
         isOpaque = false
-        backgroundColor = white ? .white : .systemBackground
+        backgroundColor = white ? .white : UIColor(Palette.ground)
         accessibilityIdentifier = identifier
         #else
         setAccessibilityIdentifier(identifier)
