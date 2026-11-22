@@ -48,11 +48,11 @@ flowchart LR
 
 ## Using it
 
-**Home** is the Inbox and Capture. Type a line such as `reply Anna about the launch #personal due fri`; muxa reads the kind, the workspace and the date into chips, and the item goes on top. Drag items into your order, swipe Done or Later, open one for its note and its Task. **Needs you** lists the agents that wait on you right now. **Routines** lists each Routine with its next run and last result, and runs one now.
+**Home** is the Inbox and Capture. Type a line such as `reply Anna about the launch #personal due fri`; muxa reads the kind, the workspace and the date into chips, and the item goes on top. Drag items into your order, swipe Done or Later, open one for its note and its Task. A Review's **Approve** (`⌘⏎`) closes its Task: the agent ends and its worktrees go, after a question when one holds work. **Request changes** (`⌘R`) types a one-line comment into the agent, and a Failed item's **Retry** (`⌘R`) runs it again. **New Task** (`⌘⇧N`, or Start Task on an item) picks a workspace, the places, the connections, plan mode and a Task Loop, then opens the agent in Focus. **Needs you** lists the agents that wait on you right now. **Routines** lists each Routine with its next run and last result, and runs one now.
 
 **Focus** is one Task's terminal, with the Tasks and other terminals beside it. The terminal takes the size of the view you look at it in. Beside it, one panel at a time:
 - **Inbox** (`⌘⇧I`);
-- **Reader** (`⌘⇧R`, `Ctrl+Shift+R` on Android): the Task folder's Markdown and HTML documents, its changed files and the branch's commits as diffs, and its images, kept current while open;
+- **Reader** (`⌘⇧R`, `Ctrl+Shift+R` on Android): the Task folder's Markdown and HTML documents, its changed files and the branch's commits as diffs, and its images, kept current while open; on iOS and the Mac a link to another of the documents opens it;
 - **Chat** (`⌘⇧C`, `Ctrl+Shift+C`): the agent's conversation from its own records, the approval card when it waits on you, and a line to send it.
 
 **Task Loop:** the Loop button runs a check after each finished turn of a Task's agent, for example `make check` (ADR 0019). A failed check types a fixed prompt: `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.` A pass makes a Review item; the last allowed failure (3 by default) makes a Failed item. While the agent waits on you, the loop pauses. Allow checks for a workspace with `[workspace.loop]` in `workspaces.toml`.
@@ -61,7 +61,7 @@ flowchart LR
 
 **Connections** (ADR 0069): a workspace names the tokens its agents may use in `[[workspace.connection]]`; the secrets live in the macOS Keychain and reach only the agents whose Task or Routine names them.
 
-On the Mac: the Go, Pane and Host menus, up to four Tasks side by side in Focus (`⌘\`), and `⌃⌥Space` for a Capture window from any app (ADR 0070).
+On the Mac: the Go, Pane and Host menus, up to four Tasks side by side in Focus (`⌘\`), and `⌃⌥Space` for a Capture window from any app, where `⌘⏎` adds the item and starts a Task from it (ADR 0070).
 
 On Android with a keyboard: `Ctrl+N` Capture, `Ctrl+Shift+N` a new Task (`Ctrl+Enter` starts it), `Ctrl+Enter` the item's main action (Approve, Retry or Done), `Ctrl+R` Request changes on a Review or Retry on a Failed item, `Ctrl+L` Later, `Ctrl+Backspace` Done, `Alt+↑↓` to reorder, and `Ctrl+Shift+H`, `Ctrl+Shift+F` for Home and Focus.
 

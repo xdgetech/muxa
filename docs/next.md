@@ -129,6 +129,8 @@ Shortcuts follow VS Code, not tmux (ADR 0070). `⌘` keys do not reach programs 
 | Inbox: select, reorder, preview, open | `↑↓`, `⌥↑⌥↓` or drag, `Space`, `⏎` |
 | Inbox: main action, later, done, due | `⌘⏎`, `⌘L`, `⌘⌫`, `⌘D` |
 | Review: request changes, open PR | `⌘R`, `⌘O` |
+| Failed: retry | `⌘R` |
+| New Task | `⌘⇧N` |
 | Routine: run now, edit brief, pause | `⌘R`, `⌘E`, `⌘.` (in Routines; `⌘R` means "run" there) |
 | Switch detail tab | `⌘[`, `⌘]` |
 | Inbox panel in Focus | `⌘⇧I` |
