@@ -99,6 +99,8 @@ extension DemoContent {
         2. Retry once when the refresh fails.
         3. Add a test for a session that expired while the app slept.
 
+        The goal is in [the Task's brief](.muxa/TASK.md).
+
         """
 
     private static let diff = """

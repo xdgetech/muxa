@@ -72,6 +72,7 @@ actor DemoServer {
     private var nextReader: UInt32 = 1
     private var loops: [String: LoopInfo] = [:]
     private var nextChat: UInt32 = 1
+    private var nextTerminal = 1
     private var watching = false
 
     init(content: DemoContent, out: AsyncThrowingStream<Data, any Error>.Continuation) {
@@ -133,7 +134,7 @@ actor DemoServer {
             write(Frame(channel: n, kind: .close, payload: []))
             reply(id, [:])
         case "start-task":
-            startTask(id, title: m["title"] as? String ?? "Task", places: m["places"] as? [[String: Any]] ?? [])
+            startTask(id, m)
         case "watch":
             watching = true
             reply(id, [:])
@@ -240,14 +241,8 @@ actor DemoServer {
             guard content.terminals.contains(where: { $0.id == terminal && $0.isTaskAgent }) else {
                 return send(["type": "error", "id": id, "code": "bad-request", "message": "\(terminal) is not a Task's agent"])
             }
-            let spec = m["loop"] as? [String: Any] ?? [:]
-            let now = Int64(Date().timeIntervalSince1970)
             let previous = (m["reset"] as? Bool) == true ? nil : loops[terminal]
-            let lp = LoopInfo(
-                terminal: terminal, check: spec["check"] as? String ?? "make test",
-                maxAttempts: (spec["max_attempts"] as? NSNumber)?.uint32Value ?? 3,
-                timeout: (spec["timeout"] as? NSNumber)?.uint64Value ?? 600, state: "armed",
-                attempts: previous?.attempts ?? 0, armedAt: now, since: now)
+            let lp = newLoop(terminal, m["loop"] as? [String: Any] ?? [:], previous: previous)
             setLoop(lp)
             reply(id, ["loop": json(lp)])
         case "loop-stop":
@@ -349,6 +344,16 @@ actor DemoServer {
         }
     }
 
+    /// An armed loop; `previous` keeps its failed checks.
+    private func newLoop(_ terminal: String, _ spec: [String: Any], previous: LoopInfo?) -> LoopInfo {
+        let now = Int64(Date().timeIntervalSince1970)
+        return LoopInfo(
+            terminal: terminal, check: spec["check"] as? String ?? "make test",
+            maxAttempts: (spec["max_attempts"] as? NSNumber)?.uint32Value ?? 3,
+            timeout: (spec["timeout"] as? NSNumber)?.uint64Value ?? 600, state: "armed",
+            attempts: previous?.attempts ?? 0, armedAt: now, since: now)
+    }
+
     private func setLoop(_ lp: LoopInfo) {
         loops[lp.terminal] = lp
         if watching { send(["type": "loops", "loops": json(loops.values.sorted { $0.terminal < $1.terminal })]) }
@@ -380,7 +385,18 @@ actor DemoServer {
     }
 
     /// The first branch is the working place; without one, a folder named after the title.
-    private func startTask(_ id: UInt64, title: String, places: [[String: Any]]) {
+    /// A `loop` arms the new agent's Task Loop, as the server does.
+    private func startTask(_ id: UInt64, _ m: [String: Any]) {
+        func refuse(_ message: String) { send(["type": "error", "id": id, "code": "bad-request", "message": message]) }
+        let title = (m["title"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty else { return refuse("a Task needs a title") }
+        let name = m["workspace"] as? String ?? ""
+        guard let workspace = content.taskWorkspaces.first(where: { $0.name == name }) else {
+            return refuse("no Workspace \(name)")
+        }
+        let loopSpec = m["loop"] as? [String: Any]
+        if let loopSpec, let refusal = loopRefusal(loopSpec, workspace) { return refuse(refusal) }
+        let places = m["places"] as? [[String: Any]] ?? []
         let firstBranch = places.first { $0["kind"] as? String == "branch" }
         let branch = firstBranch?["branch"] as? String
         let repo = firstBranch?["repo"] as? String
@@ -388,17 +404,38 @@ actor DemoServer {
         if let running = content.terminals.first(where: { $0.live && $0.isTaskAgent && $0.taskDir == dir }) {
             return reply(id, ["terminal": json(running), "existing": true])
         }
-        var labels = ["muxa.kind": "task", "muxa.role": "agent", "muxa.dir": dir]
+        var labels = ["muxa.kind": "task", "muxa.role": "agent", "muxa.dir": dir, "muxa.workspace": workspace.name]
         if let branch { labels["muxa.branch"] = branch }
         if let repo { labels["muxa.repo"] = repo }
         let t = Terminal(
-            id: "t\(content.terminals.count + 1)", name: title, live: true,
+            id: newTerminalID(), name: title, live: true,
             status: TerminalStatus(state: "working", app: "claude-code"),
             labels: labels, cols: 80, rows: 24)
         content.terminals.append(t)
         content.screens[t.id] = "Starting the agent for \(title)…\r\n"
+        if let loopSpec { setLoop(newLoop(t.id, loopSpec, previous: nil)) }
         reply(id, ["terminal": json(t), "existing": false])
         if watching { send(["type": "changed", "terminal": json(t)]) }
+    }
+
+    /// Why the Workspace refuses this loop, or nil.
+    private func loopRefusal(_ spec: [String: Any], _ workspace: Workspace) -> String? {
+        guard let checks = workspace.loop?.checks else { return "\(workspace.name) runs no Task Loops" }
+        let check = spec["check"] as? String
+        switch checks {
+        case .any:
+            return check?.isEmpty == false ? nil : "name the check: \(workspace.name) allows any"
+        case .list(let list):
+            if let check { return list.contains(check) ? nil : "\(workspace.name) does not allow the check \(check)" }
+            return list.count == 1 ? nil : "name the check: \(workspace.name) allows several"
+        }
+    }
+
+    /// A terminal id not used yet, also after a Task closed.
+    private func newTerminalID() -> String {
+        while content.terminals.contains(where: { $0.id == "t\(nextTerminal)" }) { nextTerminal += 1 }
+        defer { nextTerminal += 1 }
+        return "t\(nextTerminal)"
     }
 
     /// Applies an Inbox change; `false` means the item was not found.

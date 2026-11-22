@@ -60,6 +60,36 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func aTaskStartsWithItsLoopAndGetsANewID() async throws {
+        let c = try await open()
+        let review = try #require(try await c.inbox().items.first { $0.kind == .review })
+        _ = try await c.inbox(.inboxApprove(item: review.id))
+        let (t, _) = try await c.startTask(
+            workspace: "app", title: "Tests", loop: LoopSpec(check: "make lint", maxAttempts: 2))
+        // Approve closed one of three terminals: the new one must not take the shell's id.
+        #expect(try await c.terminals().filter { $0.id == t.id }.count == 1)
+        let loops = try await c.loops()
+        #expect(loops.map(\.terminal) == [t.id])
+        #expect(loops.first?.check == "make lint" && loops.first?.maxAttempts == 2)
+        await #expect(throws: V2Error.self) {
+            try await c.startTask(workspace: "app", title: "X", loop: LoopSpec(check: "rm -rf /"))
+        }
+        await #expect(throws: V2Error.self) {
+            try await c.startTask(workspace: "Personal", title: "X", loop: LoopSpec())
+        }
+        await #expect(throws: V2Error.self) { try await c.startTask(workspace: "app", title: " ") }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func thePlanLinksTheTasksBrief() async throws {
+        let c = try await open()
+        let docs = try await c.readerList("t1", kind: .docs)
+        let plan = try await c.readerOpen("t1", kind: .docs, path: "PLAN.md").content
+        let href = try #require(plan.text?.firstMatch(of: /\]\(([^)]+)\)/)).1
+        #expect(ReaderLink.document(String(href), from: plan.path, in: docs.entries) == ".muxa/TASK.md")
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func aTasksFolderHasAReader() async throws {
         let c = try await open()
         let terminals = try await c.terminals()
