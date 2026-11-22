@@ -82,7 +82,7 @@ fun NextRoot(model: NextModel) {
             Box(Modifier.fillMaxSize().safeDrawingPadding().then(modeKeys)) {
                 when (model.link) {
                     NextModel.Link.Connected, is NextModel.Link.Reconnecting -> {
-                        // A tablet has no Settings tab: its sidebar's footer holds the host.
+                        // A tablet has no Settings tab: the host in its sidebar's footer opens Settings as a sheet.
                         val shown = if (layout != WindowLayout.Phone && section == Section.SETTINGS) Section.INBOX else section
                         val nav = Nav(shown, { section = it }) { newTask = it }
                         when (shown) {

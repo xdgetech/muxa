@@ -23,6 +23,11 @@ object Palette {
     val textTertiary = Color(0xFF8B94A0)
     val accent = Color(0xFF6AA6FF)
     val terminal = Color(0xFF0A0C0F)
+
+    /** A note that explains, such as Settings' line about secrets. */
+    val infoBackground = Color(0xFF16202E)
+    val infoBorder = Color(0xFF24344A)
+    val infoText = Color(0xFFC9D8EE)
 }
 
 /** A Task's state as its program reports it (OSC 7501), by color. */

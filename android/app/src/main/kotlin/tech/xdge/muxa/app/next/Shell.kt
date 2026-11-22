@@ -46,7 +46,7 @@ import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.app.ui.StateColors
 import tech.xdge.muxa.v2.Terminal
 
-/** The app's places once connected. Settings is a phone tab; a tablet reaches the host from the sidebar's footer. */
+/** The app's places once connected. Settings is a phone tab; a tablet opens it from the host in the sidebar's footer. */
 enum class Section { INBOX, TASKS, ROUTINES, SETTINGS }
 
 /** Where a screen can send the user: another section, or a new Task. */
@@ -105,6 +105,7 @@ fun Sidebar(
 ) {
     val parts = listOf(Section.INBOX, Section.TASKS, Section.ROUTINES)
     val open = model.inbox.items.size
+    var settings by remember { mutableStateOf(false) }
     Column(modifier.width(SIDEBAR_WIDTH.dp).fillMaxHeight().background(Palette.surface).endBorder()) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -127,9 +128,10 @@ fun Sidebar(
         Column(Modifier.weight(1f).fillMaxWidth(), content = content)
         HorizontalDivider(color = Palette.border)
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            HostMenu(model)
+            HostMenu(model) { settings = true }
         }
     }
+    if (settings) SettingsDialog(model) { settings = false }
 }
 
 private fun sectionTitle(s: Section) = when (s) {
@@ -139,9 +141,9 @@ private fun sectionTitle(s: Section) = when (s) {
     Section.SETTINGS -> "Settings"
 }
 
-/** The host and its link, which opens Disconnect. */
+/** The host and its link, which opens Settings and Disconnect. */
 @Composable
-fun HostMenu(model: NextModel) {
+fun HostMenu(model: NextModel, settings: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Box {
         Row(
@@ -158,6 +160,10 @@ fun HostMenu(model: NextModel) {
             Text(hostLine(model), color = Palette.textTertiary, fontSize = 12.5.sp, maxLines = 1)
         }
         DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem({ Text("Settings") }, {
+                menu = false
+                settings()
+            }, leadingIcon = { Icon(Icons.settings, null) }, modifier = Modifier.testTag("home.host.settings"))
             DropdownMenuItem({ Text("Disconnect") }, {
                 menu = false
                 model.disconnect()
@@ -199,48 +205,6 @@ fun NeedsYouBanner(model: NextModel, open: (Terminal) -> Unit, showTasks: () -> 
         Dot(StateColors.needsYou)
         Text(if (one != null) "${one.title} needs you" else "${waiting.size} Tasks need you", Modifier.weight(1f), fontSize = 14.sp)
         Icon(Icons.chevron, null, Modifier.size(18.dp), tint = Palette.textSecondary)
-    }
-}
-
-/** The phone's Settings tab: the host this window is connected to. */
-@Composable
-fun SettingsScreen(model: NextModel, nav: Nav) {
-    PhoneTabs(nav) {
-        LargeTitle("Settings")
-        Column(
-            Modifier
-                .padding(12.dp)
-                .fillMaxWidth()
-                .background(Palette.raised, RoundedCornerShape(14.dp))
-                .border(1.dp, Palette.border, RoundedCornerShape(14.dp)),
-        ) {
-            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.host, null, tint = Palette.textSecondary)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(hostName(model), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Text(hostLine(model).substringAfter(" · "), color = Palette.textTertiary, fontSize = 12.5.sp)
-                }
-            }
-            HorizontalDivider(color = Palette.divider)
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clickable(role = Role.Button) { model.disconnect() }
-                    .padding(horizontal = 14.dp)
-                    .testTag("settings.disconnect"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(if (model.demo) "Leave the Demo" else "Disconnect", color = Palette.accent)
-            }
-        }
-        Text(
-            "Hosts are added and edited while disconnected.",
-            Modifier.padding(horizontal = 18.dp),
-            color = Palette.textTertiary,
-            fontSize = 12.5.sp,
-        )
     }
 }
 

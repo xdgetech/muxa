@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -75,6 +76,50 @@ class NextTest {
         compose.onNodeWithTag("detail.main").performClick()
         compose.backToList()
         compose.waitUntilDoesNotExist(hasTestTag("item.d1"), TIMEOUT)
+    }
+
+    @Test
+    fun removeAnywayClosesAReviewThatWouldLoseWork() {
+        launch()
+        compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d8"))
+        compose.onNodeWithTag("item.d8").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.title"), TIMEOUT)
+        compose.onNodeWithTag("detail.title").assertTextEquals("Review docs-audit")
+        compose.onNodeWithTag("detail.main").performClick()
+        // The demo refuses the first Approve with would-lose-work; the dialog shows its message.
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.loss"), TIMEOUT)
+        compose.onNodeWithTag("detail.loss").assert(hasText("has uncommitted changes", substring = true))
+        compose.onNodeWithTag("detail.force").assert(hasText("Remove Anyway")).performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("detail.loss"), TIMEOUT)
+        compose.backToList()
+        compose.waitUntilDoesNotExist(hasTestTag("item.d8"), TIMEOUT)
+    }
+
+    @Test
+    fun settingsShowsWhoUsesEachConnectionAndMcpServer() {
+        launch()
+        // A phone has a Settings tab; a tablet opens Settings from the host in the sidebar.
+        if (compose.onAllNodesWithTag("home.settings").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithTag("home.settings").performClick()
+        } else {
+            compose.onNodeWithTag("home.host").performClick()
+            compose.waitUntilAtLeastOneExists(hasTestTag("home.host.settings"), TIMEOUT)
+            compose.onNodeWithTag("home.host.settings").performClick()
+        }
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.workspace.app"), TIMEOUT)
+        compose.onNodeWithTag("settings.secrets").assert(hasText("Keychain", substring = true))
+        compose.onNodeWithTag("settings.connection.app.github").performScrollTo()
+        compose.waitUntil(TIMEOUT) {
+            val text = compose.nodeText(compose.onNodeWithTag("settings.connection.app.github").fetchSemanticsNode().id)
+            // A Task by its title, from the terminal list; a Routine by its name.
+            "Default" in text && "Tasks: fix-login, docs-audit" in text && "dependency-digest" in text && "last used" in text
+        }
+        val linear = compose.nodeText(compose.onNodeWithTag("settings.connection.app.linear").fetchSemanticsNode().id)
+        check("Default" !in linear) { linear }
+        compose.onNodeWithTag("settings.mcp.app.docs").performScrollTo()
+        compose.onNodeWithTag("settings.strict.app").performScrollTo().assert(hasText("only these MCP servers", substring = true))
+        compose.onNodeWithTag("settings.workspace.Personal").performScrollTo()
+        compose.onNodeWithTag("settings.strict.Personal").assertDoesNotExist()
     }
 
     @Test

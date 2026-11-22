@@ -165,7 +165,7 @@ fun Home(model: NextModel, nav: Nav, openTerminal: (Terminal) -> Unit) {
             if (shown == null) {
                 PhoneTabs(nav) {
                     LargeTitle(if (inboxPart) "Inbox" else "Routines") {
-                        if (inboxPart) HostMenu(model)
+                        if (inboxPart) HostMenu(model) { nav.go(Section.SETTINGS) }
                         tools()
                     }
                     list()
