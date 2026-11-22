@@ -44,6 +44,14 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.automirrored.filled.Rule
+import androidx.compose.material.icons.automirrored.outlined.ArrowBackIos
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.Loop
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Settings as OutlinedSettings
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.ViewAgenda
 
 /** One icon per concept, used everywhere that concept appears (as `Icon` on iOS). */
 object Icons {
@@ -94,4 +102,16 @@ object Icons {
     /** Protected: Delete Old keeps the item (ADR 0046). */
     val protect = Material.Filled.Lock
     val unprotect = Material.Filled.LockOpen
+
+    // The navigation and toolbar icons the design draws as outlines.
+    val inbox = Material.Outlined.Inbox
+    val workspaces = Material.Outlined.ViewAgenda
+    val routines = Material.Outlined.Schedule
+    val settingsTab = Material.Outlined.OutlinedSettings
+    val filter = Material.Outlined.FilterList
+    val reorder = Material.Outlined.SwapVert
+    val loop = Material.Outlined.Loop
+    val backChevron = Material.AutoMirrored.Outlined.ArrowBackIos
+    /** Send a line: an arrow up in a round button, as in the design. */
+    val sendUp = Material.Filled.ArrowUpward
 }

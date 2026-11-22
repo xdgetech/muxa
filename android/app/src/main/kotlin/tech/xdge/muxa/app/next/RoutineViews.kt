@@ -1,17 +1,12 @@
 package tech.xdge.muxa.app.next
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -22,8 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.Theme
@@ -115,34 +108,6 @@ private fun Fact(label: String, value: String) {
 private fun time(unix: Long): String =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
         .format(Instant.ofEpochSecond(unix).atZone(ZoneId.systemDefault()))
-
-/** Agents waiting on the user: short-lived, never Inbox items (ADR 0066 decision 3). */
-@Composable
-fun NeedsYouStrip(model: NextModel, open: (Terminal) -> Unit) {
-    val waiting = model.needsYou
-    if (waiting.isEmpty()) return
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Needs you", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = Theme.attention)
-        for (t in waiting) {
-            Row(
-                Modifier
-                    .background(Theme.attention.copy(alpha = 0.15f), RoundedCornerShape(50))
-                    .clickable(role = Role.Button) { open(t) }
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                    .testTag("needsyou.${t.id}"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.waiting, null, tint = Theme.attention)
-                Spacer(Modifier.padding(2.dp))
-                Text(t.title)
-            }
-        }
-    }
-}
 
 /** What a terminal is called in lists: its branch, name or id. */
 val Terminal.title: String get() = branch ?: name ?: id

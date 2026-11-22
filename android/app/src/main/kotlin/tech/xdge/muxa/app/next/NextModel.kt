@@ -545,7 +545,8 @@ class NextModel(
     fun resize(channel: Int, cols: Int, rows: Int) = scope.launch { client?.resize(channel, cols, rows) }
 
     companion object {
-        private val WAITING = setOf("blocked", "waiting")
+        /** The states in which an agent waits on the user. */
+        val WAITING = setOf("blocked", "waiting")
         private const val KEY_COMMENT = "muxa-android"
         private const val HISTORY = 2000
         private const val WOULD_LOSE_WORK = "would-lose-work"

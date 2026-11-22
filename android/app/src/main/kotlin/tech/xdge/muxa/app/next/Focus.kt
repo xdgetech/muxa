@@ -1,6 +1,8 @@
 package tech.xdge.muxa.app.next
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,13 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -32,175 +34,179 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
-import tech.xdge.muxa.app.ui.Theme
-import tech.xdge.muxa.v2.LoopInfo
+import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.V2Request
 
+/** What Focus shows of a Task. The terminal stays attached under Chat and the Reader. */
+private enum class View { CHAT, TERMINAL, READER }
+
 /**
- * Focus (ADR 0066 decision 1): one Task's terminal, with Needs you and the
- * Tasks on the left. The Inbox is a panel, closed by default.
+ * Focus (ADR 0066 decision 1): one Task as Chat, its terminal or the Reader,
+ * with the Tasks beside it on a tablet. The Inbox is a panel, closed by default.
  */
 @Composable
-fun Focus(model: NextModel, selected: String?, select: (String?) -> Unit, showHome: () -> Unit, newTask: () -> Unit) {
-    // The panel beside the terminal shows the Inbox or the Reader, never both.
-    var panel by rememberSaveable { mutableStateOf(Panel.NONE) }
-    fun toggle(p: Panel) {
-        panel = if (panel == p) Panel.NONE else p
-    }
-    var loopOpen by rememberSaveable { mutableStateOf(false) }
+fun Focus(model: NextModel, nav: Nav, selected: String?, select: (String?) -> Unit) {
     val phone = LocalPhoneLayout.current
     val terminal = model.terminals.firstOrNull { it.id == selected }
-
-    val list: @Composable (Modifier) -> Unit = { modifier ->
-        Column(modifier) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(showHome, Modifier.testTag("mode.home")) {
-                    Icon(Icons.list, null)
-                    Text(" Home")
-                }
-                Box(Modifier.weight(1f))
-                IconButton(newTask, Modifier.testTag("focus.newtask")) { Icon(Icons.newTask, "New Task") }
-            }
-            TerminalList(model, selected, select)
-        }
-    }
-    val detail: @Composable (Modifier) -> Unit = { modifier ->
-        // Ctrl+Shift+R opens the Reader and Ctrl+Shift+C Chat, as ⌘⇧R and ⌘⇧C do on iOS and the Mac.
-        val readerKey = Modifier.onPreviewKeyEvent { e ->
-            if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed || !e.isShiftPressed) return@onPreviewKeyEvent false
-            when (e.key) {
-                Key.R -> true.also { if (terminal?.taskDir != null) toggle(Panel.READER) }
-                Key.C -> true.also { if (terminal?.isTaskAgent == true) toggle(Panel.CHAT) }
-                else -> false
-            }
-        }
-        Column(modifier.then(readerKey)) {
-            if (terminal == null) {
-                Empty("Select a Task")
-                return@Column
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (phone) IconButton({ select(null) }, Modifier.testTag("focus.back")) { Icon(Icons.back, "Back") }
-                Text(terminal.title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                val lp = model.loops[terminal.id]
-                TextButton({ loopOpen = true }, Modifier.testTag("focus.loop"), enabled = terminal.isTaskAgent) {
-                    Text(if (lp?.isActive == true) "Loop ${lp.attempts}/${lp.maxAttempts}" else "Loop")
-                }
-                TextButton({ toggle(Panel.CHAT) }, Modifier.testTag("focus.chat"), enabled = terminal.isTaskAgent) {
-                    Text("Chat")
-                }
-                TextButton({ toggle(Panel.READER) }, Modifier.testTag("focus.reader"), enabled = terminal.taskDir != null) {
-                    Text("Reader")
-                }
-                TextButton({ toggle(Panel.INBOX) }, Modifier.testTag("focus.inbox")) { Text("Inbox") }
-            }
-            val shownPanel: @Composable (Modifier) -> Unit = { m ->
-                when (panel) {
-                    Panel.INBOX -> InboxPanel(model, m)
-                    Panel.READER -> key(terminal.id) { ReaderPanel(model, terminal, m) }
-                    Panel.CHAT -> key(terminal.id) { ChatPanel(model, terminal, m) }
-                    Panel.NONE -> {}
-                }
-            }
-            Row(Modifier.weight(1f)) {
-                key(terminal.id) { TerminalPane(model, terminal.id, Modifier.weight(1f)) }
-                if (panel != Panel.NONE && !phone) {
-                    VerticalDivider()
-                    val width = if (panel == Panel.INBOX) PANEL_WIDTH else READER_WIDTH
-                    shownPanel(Modifier.width(width.dp).fillMaxHeight())
-                }
-            }
-            // On a phone the panel shares the screen with the terminal, below it.
-            if (panel != Panel.NONE && phone) shownPanel(Modifier.fillMaxWidth().weight(1f))
-            if (loopOpen) LoopDialog(model, terminal) { loopOpen = false }
-        }
-    }
-
     if (phone) {
         if (terminal == null) {
-            list(Modifier.fillMaxSize())
+            PhoneTabs(nav) {
+                LargeTitle("Workspaces") {
+                    BoxedIconButton(Icons.add, "New Task", { nav.newTask(TaskSeed()) }, Modifier.testTag("home.newtask"), round = true)
+                }
+                Box(Modifier.weight(1f)) { WorkspaceList(model, select, nav.newTask) }
+            }
         } else {
             BackHandler { select(null) }
-            detail(Modifier.fillMaxSize())
+            key(terminal.id) { TaskView(model, terminal, Modifier.fillMaxSize()) { select(null) } }
         }
     } else {
         Row(Modifier.fillMaxSize()) {
-            list(Modifier.width(LIST_WIDTH.dp).fillMaxHeight())
-            VerticalDivider()
-            detail(Modifier.weight(1f).fillMaxHeight())
-        }
-    }
-}
-
-@Composable
-private fun TerminalList(model: NextModel, selected: String?, select: (String) -> Unit) {
-    val waiting = model.needsYou
-    val tasks = model.terminals.filter { it.live && it.isTaskAgent && it !in waiting }
-    val others = model.terminals.filter { it.live && !it.isTaskAgent }
-    LazyColumn(Modifier.fillMaxSize()) {
-        fun section(title: String, list: List<Terminal>) {
-            if (list.isEmpty()) return
-            item(key = "section-$title") { Text(title, Modifier.padding(16.dp, 12.dp, 16.dp, 4.dp), style = MaterialTheme.typography.titleSmall) }
-            items(list, key = { it.id }) { t ->
-                TerminalRow(t, model.loops[t.id], Modifier.selectable(t.id == selected) { select(t.id) })
+            Sidebar(model, nav) { StateList(model, selected, select) }
+            if (terminal == null) {
+                Box(Modifier.weight(1f).fillMaxHeight()) { Empty("Select a Task") }
+            } else {
+                key(terminal.id) { TaskView(model, terminal, Modifier.weight(1f).fillMaxHeight(), null) }
             }
         }
-        section("Needs you", waiting)
-        section("Tasks", tasks)
-        section("Terminals", others)
     }
 }
+
+/** One Task: its header, the view, and the line to answer it. [back] is the phone's way back. */
+@Composable
+private fun TaskView(model: NextModel, terminal: Terminal, modifier: Modifier, back: (() -> Unit)?) {
+    val phone = back != null
+    var view by rememberSaveable { mutableStateOf(View.TERMINAL) }
+    var inbox by rememberSaveable { mutableStateOf(false) }
+    var loopOpen by rememberSaveable { mutableStateOf(false) }
+    val chat = rememberChat(model, terminal)
+    val canRead = terminal.taskDir != null
+    val shown = when {
+        view == View.CHAT && chat == null -> View.TERMINAL
+        view == View.READER && !canRead -> View.TERMINAL
+        else -> view
+    }
+    fun toggle(v: View) {
+        view = if (shown == v) View.TERMINAL else v
+    }
+    // Ctrl+Shift+R opens the Reader and Ctrl+Shift+C Chat, as ⌘⇧R and ⌘⇧C do on iOS and the Mac.
+    val viewKeys = Modifier.onPreviewKeyEvent { e ->
+        if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed || !e.isShiftPressed) return@onPreviewKeyEvent false
+        when (e.key) {
+            Key.R -> true.also { if (canRead) toggle(View.READER) }
+            Key.C -> true.also { if (chat != null) toggle(View.CHAT) }
+            else -> false
+        }
+    }
+    val order = if (phone) listOf(View.CHAT, View.TERMINAL, View.READER) else listOf(View.CHAT, View.READER, View.TERMINAL)
+    val segments = order.map {
+        when (it) {
+            View.CHAT -> Segment("Chat", "focus.chat", chat != null)
+            View.TERMINAL -> Segment("Terminal", "focus.terminal")
+            View.READER -> Segment("Reader", "focus.reader", canRead)
+        }
+    }
+    val switcher: @Composable (Modifier) -> Unit = { m -> Segmented(segments, order.indexOf(shown), { view = order[it] }, m) }
+    val prompt = chat?.prompt
+    val needsYou: @Composable (Modifier) -> Unit = { m -> prompt?.let { p -> NeedsYouBar(p, { model.send(it, terminal.id) }, m) } }
+
+    Column(modifier.then(viewKeys)) {
+        Header(model, terminal, back, { loopOpen = true }, inbox, { inbox = !inbox }, if (phone) null else switcher)
+        if (phone) {
+            switcher(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 10.dp))
+            needsYou(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp))
+        }
+        Row(Modifier.weight(1f)) {
+            val inset = if (phone) Modifier.padding(horizontal = 6.dp).clip(RoundedCornerShape(10.dp)) else Modifier
+            Box(Modifier.weight(1f).fillMaxHeight().then(inset)) {
+                TerminalPane(model, terminal.id, Modifier.fillMaxSize())
+                // Chat and the Reader cover the terminal, which stays attached at its size so answers reach it.
+                when (shown) {
+                    View.CHAT -> chat?.let { ChatView(it, Cover) }
+                    View.READER -> ReaderPanel(model, terminal, Cover)
+                    View.TERMINAL -> {}
+                }
+                if (inbox && phone) InboxPanel(model, Cover)
+            }
+            if (inbox && !phone) InboxPanel(model, Modifier.width(PANEL_WIDTH.dp).fillMaxHeight().background(Palette.surface))
+        }
+        Column(
+            Modifier.fillMaxWidth().then(if (phone) Modifier else Modifier.background(Palette.surface).topBorder())
+                .padding(horizontal = if (phone) 10.dp else 24.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (!phone) needsYou(Modifier)
+            Composer(model, terminal, round = phone)
+        }
+    }
+    if (loopOpen) LoopDialog(model, terminal) { loopOpen = false }
+}
+
+/** Covers the terminal, and keeps touches from reaching it. */
+private val Cover = Modifier.fillMaxSize().background(Palette.ground).pointerInput(Unit) {}
 
 @Composable
-private fun TerminalRow(t: Terminal, loop: LoopInfo?, modifier: Modifier) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("terminal.${t.id}")) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t.title, Modifier.weight(1f))
-            t.status?.state?.let { state ->
-                Text(
-                    state, style = MaterialTheme.typography.labelMedium,
-                    color = if (state == "blocked") Theme.attention else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+private fun Header(
+    model: NextModel,
+    terminal: Terminal,
+    back: (() -> Unit)?,
+    openLoop: () -> Unit,
+    inbox: Boolean,
+    toggleInbox: () -> Unit,
+    switcher: (@Composable (Modifier) -> Unit)?,
+) {
+    val phone = back != null
+    Row(
+        Modifier.fillMaxWidth().then(if (phone) Modifier else Modifier.bottomBorder())
+            .padding(start = if (phone) 4.dp else 24.dp, end = if (phone) 4.dp else 16.dp, top = 8.dp, bottom = if (phone) 8.dp else 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        back?.let { IconButton(it, Modifier.testTag("focus.back")) { Icon(Icons.backChevron, "Back", tint = Palette.accent) } }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (phone) 0.dp else 4.dp)) {
+            Text(terminal.path(), fontSize = if (phone) 12.sp else 13.sp, color = Palette.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(terminal.title, fontSize = if (phone) 16.sp else 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        val lp = model.loops[terminal.id]
+        if (lp?.isActive == true) {
+            TextButton(openLoop, Modifier.testTag("focus.loop")) {
+                Icon(Icons.loop, null, Modifier.padding(end = 4.dp))
+                Text("Loop ${lp.attempts}/${lp.maxAttempts}")
             }
+        } else {
+            IconButton(openLoop, Modifier.testTag("focus.loop"), enabled = terminal.isTaskAgent) { Icon(Icons.loop, "Loop") }
         }
-        t.taskDir?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        IconButton(toggleInbox, Modifier.testTag("focus.inbox")) {
+            Icon(Icons.inbox, if (inbox) "Close the Inbox" else "Inbox", tint = if (inbox) Palette.accent else Palette.textSecondary)
         }
-        loop?.let {
-            Text(
-                LoopText.badge(it), style = MaterialTheme.typography.labelSmall,
-                color = if (it.reason == "limit") Theme.attention else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        switcher?.invoke(Modifier.padding(start = 8.dp).width(SWITCHER_WIDTH.dp))
     }
 }
 
-/** The Inbox beside a terminal: Capture and the open items; Done and Later by swipe. */
+/** The Inbox beside a terminal: Capture and the open items; Done by its button. */
 @Composable
 private fun InboxPanel(model: NextModel, modifier: Modifier) {
     val now = System.currentTimeMillis() / 1000
     Column(modifier.testTag("focus.inboxpanel")) {
-        Column(Modifier.padding(8.dp)) { CaptureField(model) }
-        LazyColumn {
+        Column(Modifier.padding(12.dp)) { CaptureField(model) }
+        LazyColumn(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(model.inbox.items.filter { !it.isLater(now) }, key = { it.id }) { item ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ItemRow(item, now, Modifier.weight(1f))
-                    IconButton({ model.inbox(V2Request.InboxDone(item.id)) }) { Icon(Icons.check, "Done") }
+                    IconButton({ model.inbox(V2Request.InboxDone(item.id)) }) { Icon(Icons.check, "Done", tint = Palette.textSecondary) }
                 }
             }
         }
     }
 }
 
-private enum class Panel { NONE, INBOX, READER, CHAT }
-
-private const val LIST_WIDTH = 300
-private const val PANEL_WIDTH = 320
-private const val READER_WIDTH = 440
+private const val PANEL_WIDTH = 340
+private const val SWITCHER_WIDTH = 300

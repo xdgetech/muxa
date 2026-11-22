@@ -112,6 +112,9 @@ class NextTest {
     @Test
     fun aTaskStartsFromTheSheetWithALoop() {
         launch()
+        // New Task sits with the Tasks: the phone's Workspaces tab, the tablet's sidebar.
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("home.newtask"), TIMEOUT)
         compose.onNodeWithTag("home.newtask").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("task.places.branch"), TIMEOUT)
         compose.onNodeWithTag("task.title").performTextInput("Add rate limits")

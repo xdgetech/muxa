@@ -1,6 +1,20 @@
 package tech.xdge.muxa.app.next
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
+import tech.xdge.muxa.app.ui.Palette
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,14 +22,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,22 +83,40 @@ fun CaptureField(model: NextModel, focus: FocusRequester = remember { FocusReque
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        OutlinedTextField(
-            text, { text = it },
-            Modifier.fillMaxWidth().focusRequester(focus).testTag("capture.field"),
-            placeholder = { Text("Capture: reply Anna #Personal due fri") },
-            leadingIcon = { Icon(Icons.add, null) },
-            trailingIcon = {
-                if (text.isNotEmpty()) {
-                    TextButton({ add() }, enabled = parsed?.title?.isNotEmpty() == true, modifier = Modifier.testTag("capture.add")) {
-                        Text("Add")
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .background(Palette.surface, RoundedCornerShape(12.dp))
+                .border(1.dp, Palette.borderStrong, RoundedCornerShape(12.dp))
+                .padding(start = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.add, null, tint = Palette.textTertiary)
+            BasicTextField(
+                text, { text = it },
+                Modifier.weight(1f).focusRequester(focus).testTag("capture.field").semantics { contentDescription = "Capture" },
+                textStyle = TextStyle(color = Palette.text, fontSize = 15.sp),
+                cursorBrush = SolidColor(Palette.accent),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { add() }),
+                decorationBox = { field ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (text.isEmpty()) Text("Capture something to do", color = Palette.textTertiary, fontSize = 15.sp)
+                        field()
                     }
+                },
+            )
+            if (text.isNotEmpty()) {
+                IconButton({ add() }, Modifier.testTag("capture.add"), enabled = parsed?.title?.isNotEmpty() == true) {
+                    Icon(Icons.check, "Add", tint = if (parsed?.title?.isNotEmpty() == true) Palette.accent else Palette.textTertiary)
                 }
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { add() }),
-        )
+            } else {
+                Spacer(Modifier.size(4.dp))
+            }
+        }
         parsed?.takeIf { text.isNotEmpty() }?.let { p -> Chips(p) { parsed = it } }
     }
 }
@@ -96,7 +126,9 @@ private fun Chips(p: Capture, change: (Capture) -> Unit) {
     var kinds by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         Box {
-            AssistChip({ kinds = true }, { KindLabel(p.kind) }, Modifier.testTag("capture.kind"))
+            Box(Modifier.clip(RoundedCornerShape(6.dp)).clickable { kinds = true }.testTag("capture.kind").semantics { contentDescription = "Kind ${p.kind.title}" }) {
+                KindChip(p.kind, Modifier.width(64.dp).padding(vertical = 4.dp))
+            }
             DropdownMenu(kinds, { kinds = false }) {
                 for (kind in ItemKind.entries.filter { it != ItemKind.REVIEW && it != ItemKind.FAILED }) {
                     DropdownMenuItem({ Text(kind.title) }, {

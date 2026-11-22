@@ -2,14 +2,18 @@ package tech.xdge.muxa.app.next
 
 import android.content.res.Configuration
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.sp
+import tech.xdge.muxa.app.ui.Palette
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -17,10 +21,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.ui.Theme
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -32,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -80,8 +81,9 @@ fun TerminalPane(model: NextModel, terminal: String, modifier: Modifier = Modifi
                 stateDescription = if (content >= 0) view?.screenText.orEmpty() else ""
             },
         )
-        // A hardware keyboard has these keys, and the bar would cover the bottom rows.
-        if (!hardware && WindowInsets.ime.getBottom(LocalDensity.current) > 0) KeyBarRow(bar) { view?.tap(it) }
+        // A hardware keyboard has these keys. The bar stays while typing and while not, so the
+        // keyboard's show and hide resize the terminal by its own height only.
+        if (!hardware) KeyBarRow(bar) { view?.tap(it) }
     }
     DisposableEffect(link) {
         onDispose {
@@ -175,26 +177,27 @@ private class TerminalLink(private val model: NextModel, private val terminal: S
 @Composable
 private fun KeyBarRow(bar: KeyBar, tap: (KeyBar.Key) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(48.dp).background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 6.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().padding(start = 2.dp, end = 2.dp, top = 8.dp, bottom = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         for (key in KeyBar.Key.entries) {
             val (face, label) = face(key)
             val selected = key == KeyBar.Key.CONTROL && bar.control
-            FilledTonalButton(
-                onClick = { tap(key) },
-                modifier = Modifier.weight(1f).testTag("keybar-$key").semantics { contentDescription = label },
-                contentPadding = PaddingValues(0.dp),
-                colors = if (selected) {
-                    ButtonDefaults.filledTonalButtonColors(
-                        containerColor = Theme.accent,
-                        contentColor = Color.White,
-                    )
-                } else {
-                    ButtonDefaults.filledTonalButtonColors()
-                },
-            ) { Text(face, fontFamily = FontFamily.Monospace) }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(KEY_HEIGHT.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) Theme.accent else KEY_FILL)
+                    .border(1.dp, Palette.borderStrong, RoundedCornerShape(8.dp))
+                    .clickable(role = Role.Button) { tap(key) }
+                    .testTag("keybar-$key")
+                    .semantics { contentDescription = label },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(face, fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = if (selected) Palette.ground else Palette.text, maxLines = 1)
+            }
         }
     }
 }
@@ -210,3 +213,6 @@ private fun face(key: KeyBar.Key): Pair<String, String> = when (key) {
     KeyBar.Key.RIGHT -> "→" to "Right"
     KeyBar.Key.INTERRUPT -> "^C" to "Control C"
 }
+
+private val KEY_FILL = Color(0xFF1A1E25)
+private const val KEY_HEIGHT = 48

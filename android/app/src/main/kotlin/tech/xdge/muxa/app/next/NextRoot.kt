@@ -41,7 +41,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.LocalWindowLayout
@@ -54,12 +57,12 @@ import tech.xdge.muxa.v2.Terminal
 @Composable
 fun NextRoot(model: NextModel) {
     val layout = currentWindowLayout()
-    var focus by rememberSaveable { mutableStateOf(false) }
+    var section by rememberSaveable { mutableStateOf(Section.INBOX) }
     var terminal by rememberSaveable { mutableStateOf<String?>(null) }
     var newTask by remember { mutableStateOf<TaskSeed?>(null) }
     fun open(t: Terminal) {
         terminal = t.id
-        focus = true
+        section = Section.TASKS
     }
 
     // Ctrl+Shift+H and Ctrl+Shift+F, as on the desktop (ADR 0070); Ctrl+Shift+N for a new Task,
@@ -67,8 +70,8 @@ fun NextRoot(model: NextModel) {
     val modeKeys = Modifier.onPreviewKeyEvent { e ->
         if (e.type != KeyEventType.KeyDown || !e.isCtrlPressed || !e.isShiftPressed) return@onPreviewKeyEvent false
         when (e.key) {
-            Key.H -> true.also { focus = false }
-            Key.F -> true.also { focus = true }
+            Key.H -> true.also { section = Section.INBOX }
+            Key.F -> true.also { section = Section.TASKS }
             Key.N -> true.also { if (model.isConnected) newTask = TaskSeed() }
             else -> false
         }
@@ -78,12 +81,16 @@ fun NextRoot(model: NextModel) {
         Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().safeDrawingPadding().then(modeKeys)) {
                 when (model.link) {
-                    NextModel.Link.Connected, is NextModel.Link.Reconnecting ->
-                        if (focus) {
-                            Focus(model, terminal, { terminal = it }, { focus = false }) { newTask = TaskSeed() }
-                        } else {
-                            Home(model, ::open, { focus = true }) { newTask = it }
+                    NextModel.Link.Connected, is NextModel.Link.Reconnecting -> {
+                        // A tablet has no Settings tab: its sidebar's footer holds the host.
+                        val shown = if (layout != WindowLayout.Phone && section == Section.SETTINGS) Section.INBOX else section
+                        val nav = Nav(shown, { section = it }) { newTask = it }
+                        when (shown) {
+                            Section.INBOX, Section.ROUTINES -> Home(model, nav, ::open)
+                            Section.TASKS -> Focus(model, nav, terminal) { terminal = it }
+                            Section.SETTINGS -> SettingsScreen(model, nav)
                         }
+                    }
                     else -> Hosts(model)
                 }
             }
@@ -107,8 +114,8 @@ private fun Hosts(model: NextModel) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).widthIn(max = 600.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("muxa", style = MaterialTheme.typography.headlineMedium)
-        Text(status(model), Modifier.testTag("next.link"))
+        Text("muxa", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        Text(status(model), Modifier.testTag("next.link"), color = Palette.textSecondary)
         HorizontalDivider()
         Text("Hosts", style = MaterialTheme.typography.titleSmall)
         for (host in hosts.hosts) {
