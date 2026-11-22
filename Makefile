@@ -112,8 +112,15 @@ build-app: app-project
 
 # The Mac app (ADR 0070), signed to run on this Mac only: the device key's keychain
 # entitlement needs a provisioning profile, which a human creates in Xcode.
+# MAC_SIGNED=1 (humans only) signs with DEVELOPMENT_TEAM from Local.xcconfig and
+# lets Xcode create that profile for the Mac it builds on, so SSH hosts work.
+ifeq ($(MAC_SIGNED),1)
+MAC_SIGNING = -allowProvisioningUpdates
+else
+MAC_SIGNING = CODE_SIGN_IDENTITY=- CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=
+endif
 MAC_XCODEBUILD = xcodebuild -project apple/Muxa/Muxa.xcodeproj -scheme MuxaMac -skipPackagePluginValidation \
-	-destination 'platform=macOS' CODE_SIGN_IDENTITY=- CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM=
+	-destination 'platform=macOS' $(MAC_SIGNING)
 build-mac-app: app-project
 	$(MAC_XCODEBUILD) build
 
