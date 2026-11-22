@@ -28,11 +28,14 @@ final class MacNextTests: XCTestCase {
     @MainActor
     func testACaptureGoesOnTop() throws {
         let app = launch()
+        // Home's Capture button opens the Quick Capture panel; ⏎ adds and closes it.
+        app.buttons["home.capture"].click()
         let field = app.textFields["capture.field"]
-        field.click()
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.typeText("reply Sam about the launch #personal due today")
         XCTAssertTrue(app.buttons["#Personal, remove"].waitForExistence(timeout: 5))
-        app.buttons["capture.add"].click()
+        field.typeText("\r")
+        XCTAssertTrue(waitForGone(field))
         let top = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'item.'")).firstMatch
         XCTAssertTrue(waitFor(top, labelContaining: "Sam about the launch"))
     }
