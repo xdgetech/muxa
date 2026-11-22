@@ -27,7 +27,7 @@ final class NextModel {
     private(set) var demo = false
     /// Connected to the server on this Mac through its socket, without SSH.
     private(set) var local = false
-    /// A host key the user has not trusted yet; `trust()` pins it.
+    /// A host key the user has not trusted yet; `trust(_:)` pins it.
     var untrustedKey: HostKey?
     /// Logging in with the password to add this device's key.
     private(set) var addingKey = false
@@ -136,9 +136,10 @@ final class NextModel {
 
     var currentHost: MuxaSession.Host? { hosts.host(hostID) }
 
-    /// Pins the presented host key, then goes on with what it stopped.
-    func trust() async {
-        guard let key = untrustedKey, let id = hostID, var host = hosts.host(id) else { return }
+    /// Pins the presented host key, then goes on with what it stopped. It takes
+    /// the key: on the Mac, closing the sheet clears `untrustedKey` first.
+    func trust(_ key: HostKey) async {
+        guard let id = hostID, var host = hosts.host(id) else { return }
         host.target.hostKey = key
         hosts.upsert(host)
         untrustedKey = nil

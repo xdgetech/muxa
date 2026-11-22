@@ -144,6 +144,9 @@ struct NextHostEditor: View {
                 }
             }
             .navigationTitle(draft.isNew ? "New Host" : "Edit Host")
+            #if os(macOS)
+            .frame(minWidth: 480, minHeight: 520)
+            #endif
             .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

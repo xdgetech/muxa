@@ -18,6 +18,7 @@ struct NextTrustSheet: View {
                         Label("If you did not reinstall or reconfigure the host, do not trust this key. Another machine may be answering at this address.",
                               systemImage: Icon.warning)
                             .foregroundStyle(Theme.failure)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Section {
@@ -26,9 +27,13 @@ struct NextTrustSheet: View {
                     Text(changed ? "Host Key Changed" : "New Host Key")
                 } footer: {
                     Text("Check that it matches the output of `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the host.")
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .navigationTitle(model.currentHost?.title ?? "Host Key")
+            #if os(macOS)
+            .frame(minWidth: 460, minHeight: 260)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -39,7 +44,7 @@ struct NextTrustSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(changed ? "Trust Anyway" : "Trust", role: changed ? .destructive : nil) {
                         dismiss()
-                        Task { await model.trust() }
+                        Task { await model.trust(key) }
                     }
                 }
             }
