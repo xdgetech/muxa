@@ -304,7 +304,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         let msg = match serde_json::from_slice::<ClientMsg>(payload) {
             Ok(msg) => msg,
             Err(e) => {
-                self.error(None, ErrorCode::BadRequest, format!("bad message: {e}"));
+                self.error(None, ErrorCode::BadRequest, bad_message(payload, &e));
                 return;
             }
         };
@@ -479,6 +479,16 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 let done =
                     task_actions::request_changes(self.backend, self.inbox, &item, &comment).await;
                 self.inbox_reply(id, done);
+            }
+            ClientMsg::Settings { id } => match self.host.settings().await {
+                Ok(settings) => self.reply(id, Reply::Settings { settings }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
+            ClientMsg::SettingsUpdate { id, revision, ops } => {
+                match self.host.settings_update(&revision, ops).await {
+                    Ok(settings) => self.reply(id, Reply::Settings { settings }),
+                    Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+                }
             }
             ClientMsg::InboxRetry { id, item } => {
                 let done = task_actions::retry(self.backend, self.host, self.inbox, &item).await;
@@ -907,11 +917,30 @@ async fn next_revision(revisions: &mut Option<watch::Receiver<u64>>) {
     }
 }
 
+/// A settings update can carry secrets, and serde quotes a value of the
+/// wrong type: only errors that name a field or an op are passed on.
+fn bad_message(payload: &[u8], e: &serde_json::Error) -> String {
+    let settings = serde_json::from_slice::<serde_json::Value>(payload)
+        .ok()
+        .is_some_and(|v| v["type"] == "settings-update");
+    let text = e.to_string();
+    let names_a_field = ["missing field", "unknown variant", "unknown field"]
+        .iter()
+        .any(|safe| text.starts_with(safe));
+    if settings && !names_a_field {
+        "bad message: settings-update does not match protocol/PROTOCOL-v2.md, Settings".into()
+    } else {
+        format!("bad message: {text}")
+    }
+}
+
 pub(crate) fn task_code(e: &TaskError) -> ErrorCode {
     match e {
         TaskError::Invalid(_) => ErrorCode::BadRequest,
         TaskError::Busy(_) => ErrorCode::Conflict,
         TaskError::Failed(_) => ErrorCode::Backend,
         TaskError::WouldLoseWork(_) => ErrorCode::WouldLoseWork,
+        TaskError::Stale(_) => ErrorCode::Conflict,
+        TaskError::ReadOnly(_) => ErrorCode::ReadOnly,
     }
 }

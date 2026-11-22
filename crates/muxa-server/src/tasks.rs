@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
 use muxa_protocol::v2::{
     ChatUpdate, LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList,
-    Routine, RoutineProblem, Workspace, WorktreeMode,
+    Routine, RoutineProblem, Settings, SettingsOp, Workspace, WorktreeMode,
 };
 use tokio::sync::watch;
 
@@ -90,6 +90,12 @@ pub enum TaskError {
     /// Closing a Task would lose work; the message says which.
     #[error("{0}")]
     WouldLoseWork(String),
+    /// The settings changed since the client read them.
+    #[error("{0}")]
+    Stale(String),
+    /// The host locked its settings.
+    #[error("{0}")]
+    ReadOnly(String),
 }
 
 /// The host's Routines, and the Workspaces whose Routines cannot be read.
@@ -221,6 +227,21 @@ pub trait Host: Send + Sync {
 
     fn chat_close(&self, _handle: u64) -> impl Future<Output = ()> + Send {
         async {}
+    }
+
+    /// The host's editable settings (ADR 0074). Never a secret or env value.
+    fn settings(&self) -> impl Future<Output = Result<Settings, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no settings".into())) }
+    }
+
+    /// Applies `ops`, all or none, when `revision` is still the current one;
+    /// else [`TaskError::Stale`]. The settings after them.
+    fn settings_update(
+        &self,
+        _revision: &str,
+        _ops: Vec<SettingsOp>,
+    ) -> impl Future<Output = Result<Settings, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no settings".into())) }
     }
 
     /// The files of `kind` in `dir` the Reader may open. Nothing else is served.

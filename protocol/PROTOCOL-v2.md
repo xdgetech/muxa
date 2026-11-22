@@ -103,6 +103,8 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"inbox-approve","item","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of a Review item; `worktree` is `remove` (the default) or `force`. See Task actions |
 | `{"type":"inbox-request-changes","item","comment"}` | `{"inbox":Inbox}`. Types the comment into the Task's agent and resolves the Review item |
 | `{"type":"inbox-retry","item"}` | `{"inbox":Inbox}`. Runs again what made a Failed item and resolves it |
+| `{"type":"settings"}` | `{"settings":Settings}`: the host's editable settings. See Settings |
+| `{"type":"settings-update","revision","ops":[Op...]}` | `{"settings":Settings}`: the settings after the ops. See Settings |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
@@ -247,9 +249,72 @@ A Review item with no `terminal`, or another kind, is `bad-request`. A terminal 
 - `terminal`, ended agent: the Workspace's agent starts again in the same working place, with the same places, labels and connections, but not in plan mode. The ended terminal is removed. A working place that is gone is `bad-request`.
 - Neither, or another kind: `bad-request`.
 
+### Settings
+
+ADR 0074. A client reads and edits the host's `workspaces.toml`, each Workspace's `.muxa/routines.toml` and the Routines' instruction files. The files stay the source of truth, and a person can still edit them by hand. The daemon edits them in place, so comments and order stay, and reads them again on its next use.
+
+`Settings`: `{"revision","read_only","problem","workspaces":[SettingsWorkspace...],"workers":[SettingsWorker...]}`.
+- `revision`: a hash of the files' bytes. It changes when any of them changes, by hand too.
+- `read_only`: the daemon runs with `--settings-read-only`; `settings-update` is refused.
+- `problem`: why `workspaces.toml` cannot be used as it is now, or `null`. The view still shows what the file says.
+- Paths and schedules are shown as written in the files, `~/` included.
+
+`SettingsWorkspace`: `{"name","root","repos":[...],"park_after","agent":{"command","env":[{"key","set"}...]},"loop","routines_enabled","direct_writes","connections":[SettingsConnection...],"mcp":[McpSpec...],"routines":[SettingsRoutine...],"routines_problem"}`.
+- `park_after`: `"30m"`, `"12h"`, `"2d"`, or `null` (ADR 0034). `agent.command`: `null` means the daemon's `--task-command`.
+- `agent.env` lists the keys of `[workspace.agent] env` with `"set": true`. A value never crosses the wire from the server.
+- `loop`: `null` (no Task Loops), else `{"checks":"any"}` or `{"checks":["make test",...]}`.
+- `routines_enabled` and `direct_writes`: `[workspace.routines]`.
+- `routines`: the Routines of `<root>/.muxa/routines.toml`, also while `routines_enabled` is false. `routines_problem`: why that file cannot be used, or `null`.
+
+`SettingsConnection`: `{"name","env","account","access","default","secret"}`. `account` is a label or `null`; `access` is `"read"`, `"write"` or `null`. `secret` is `"set"`, `"missing"`, `"locked"` (the host's Keychain is locked) or `"unavailable"` (the host has no macOS Keychain). The secret itself never crosses the wire from the server.
+
+`ConnectionSpec`, in ops: `{"name","env","account"?,"access"?,"default"?}`.
+
+`McpSpec`: `{"name","command"?,"args"?,"url"?,"type"?,"env":{},"headers":{},"connections":[...],"default"}`, as `[[workspace.mcp]]`: either `command` with `args`, or `url` with `type` `"http"` (default) or `"sse"`. Nothing here is a secret.
+
+`SettingsRoutine`: a `RoutineSpec` plus `"instructions_text"`, the instruction file's content, or `null` when it cannot be read.
+
+`RoutineSpec`: `{"name","at"?,"schedule"?,"timezone"?,"worker"?,"instructions","project"?,"enabled","items"?,"direct_writes"?,"connections"?,"mcp"?}`, as `[[routine]]` with `[routine.output]` flattened. `instructions` is the file's path relative to `.muxa/`.
+
+`SettingsWorker`, also `WorkerSpec` in ops: `{"name","description"?,"agent","args":[...],"instructions"?,"workspaces"?,"loop"?:{"check","max_attempts"?,"timeout"?}}`, as `[[worker]]`. `agent` is `claude-code` or `codex`.
+
+`settings-update` applies `ops` in order. Each `Op` is `{"op", ...}`:
+
+| `op` | Fields | Effect |
+|---|---|---|
+| `workspace-add` | `name`, `root`, `repos`? | A new `[[workspace]]` at the end |
+| `workspace-update` | `workspace`, `root`?, `repos`?, `agent_command`?, `park_after`? | Sets the fields that are present; `null` removes `agent_command` or `park_after` |
+| `workspace-remove` | `workspace` | Removes the Workspace and the Keychain secrets of its connections. Its folder and `.muxa/` stay |
+| `env-set` | `workspace`, `key`, `value` | Sets one `[workspace.agent] env` variable |
+| `env-unset` | `workspace`, `key` | Removes it |
+| `loop-checks` | `workspace`, `checks` | `"any"`, a list of commands, or `null` for no Task Loops |
+| `routines-gate` | `workspace`, `enabled`, `direct_writes`? | Sets `[workspace.routines]` |
+| `connection-add`, `connection-update` | `workspace`, `connection`: ConnectionSpec, `secret`? | Adds a connection, or changes the one named `connection.name`. `secret` goes to the Keychain |
+| `connection-secret` | `workspace`, `name`, `secret` | Replaces the connection's Keychain secret |
+| `connection-remove` | `workspace`, `name` | Removes the connection and its Keychain secret |
+| `mcp-add`, `mcp-update` | `workspace`, `mcp`: McpSpec | Adds a server, or replaces the one named `mcp.name` |
+| `mcp-remove` | `workspace`, `name` | |
+| `routine-add`, `routine-update` | `workspace`, `routine`: RoutineSpec, `instructions_text`? | Adds a Routine, or changes the one named `routine.name`. `instructions_text` replaces the instruction file's content |
+| `routine-remove` | `workspace`, `name` | Removes the Routine. Its instruction file stays |
+| `worker-add`, `worker-update` | `worker`: WorkerSpec | Adds a worker, or replaces the one named `worker.name` |
+| `worker-remove` | `name` | |
+
+Names are not renamed: a Keychain account, a Routine's state and a Task's labels hold them. To rename, remove and add.
+
+Rules:
+1. `revision` must be the current one, else `conflict` and nothing changes. The client reads `settings` again and shows the user what changed.
+2. The ops apply all or none. The result must pass the same checks as loading the files: a root and listed repos that exist, names, variables, loop checks, connections and MCP servers that a Routine names, workers and their workspaces, schedules and time zones. The Routines of every Workspace an op touched must load, also while `routines_enabled` is false. Any failure is `bad-request`, its message starts with the op's index (`ops[2] connection-add: …`), and nothing changes.
+3. `value` and `secret` are write-only. They are never sent back, never logged, and never in an error message. A `secret` goes only to the host's macOS Keychain (service `muxa`, account `<workspace>/<name>`), at most 1800 bytes of one line. An env `value` goes only into `workspaces.toml`, as before.
+4. An `instructions_text` is at most 12 KiB of UTF-8 without NUL. The file must stay inside `.muxa/`, also through a symlink.
+5. Each file is written whole to a temporary file and renamed over the old one; the old one is kept as `<file>.bak`. A file keeps its mode; a new file gets 0600.
+6. With `--settings-read-only`, `settings-update` is `read-only` and nothing changes.
+7. A Keychain or file failure is `backend`. The Keychain is written before the files, so a failed file write can leave a new secret without its connection.
+
+`[codex]` is not in the view and no op changes it; edit it by hand.
+
 ### Error codes
 
-`bad-request`, `version`, `not-found`, `backend`, `closed`, `conflict`, `would-lose-work` (closing a Task would lose work; nothing changed).
+`bad-request`, `version`, `not-found`, `backend`, `closed`, `conflict`, `would-lose-work` (closing a Task would lose work; nothing changed), `read-only` (the host locked its settings with `--settings-read-only`).
 
 ## Not yet specified
 

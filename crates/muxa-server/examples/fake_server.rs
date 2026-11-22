@@ -6,7 +6,9 @@
 //! has one fixed exchange and waits on a permission. `workspaces` lists one
 //! fixed Workspace, `Personal`, whose `github` connection the Routine
 //! `digest` uses and the live Tasks get by default. Approve closes a Task
-//! with no worktree check.
+//! with no worktree check. `settings` starts as the fixed view of
+//! [`start_settings`], revision `1`, and `settings-update` applies ops in
+//! memory (`muxa_server::memory_settings`).
 //!
 //! Usage: `fake_server SOCKET`. It runs until killed.
 
@@ -21,15 +23,34 @@ use muxa_protocol::v2::{
     ChatUpdate, LoopChecks, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
     UsedBy, Workspace, WorkspaceConnection, WorkspaceLoop, WorkspaceMcp,
 };
+use muxa_protocol::settings::{
+    Access, ConnectionSpec, EnvKey, McpSpec, RoutineSpec, SecretState, Settings, SettingsAgent,
+    SettingsConnection, SettingsLoop, SettingsOp, SettingsRoutine, SettingsWorkspace, WorkerSpec,
+};
+use muxa_server::memory_settings::MemorySettings;
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
     TaskSpec, serve,
 };
 use tokio::net::UnixListener;
 
-struct FakeHost;
+struct FakeHost {
+    settings: MemorySettings,
+}
 
 impl Host for FakeHost {
+    async fn settings(&self) -> Result<Settings, TaskError> {
+        Ok(self.settings.view())
+    }
+
+    async fn settings_update(
+        &self,
+        revision: &str,
+        ops: Vec<SettingsOp>,
+    ) -> Result<Settings, TaskError> {
+        self.settings.update(revision, ops)
+    }
+
     async fn prepare(&self, spec: &TaskSpec) -> Result<Prepared, TaskError> {
         let (repo, branch) = spec.branch().unwrap_or(("", &spec.title));
         Ok(Prepared {
@@ -244,6 +265,81 @@ fn fake_loop(terminal: &str, state: &str, reason: Option<&str>) -> LoopInfo {
     }
 }
 
+/// The settings the client cross tests expect.
+fn start_settings() -> Settings {
+    Settings {
+        revision: "1".into(),
+        read_only: false,
+        problem: None,
+        workers: vec![WorkerSpec {
+            name: "reviewer".into(),
+            description: Some("Reviews diffs".into()),
+            agent: "claude-code".into(),
+            args: Vec::new(),
+            instructions: None,
+            workspaces: None,
+            task_loop: None,
+        }],
+        workspaces: vec![SettingsWorkspace {
+            name: "Personal".into(),
+            root: "~/personal".into(),
+            repos: vec!["~/src/app".into()],
+            park_after: None,
+            agent: SettingsAgent {
+                command: Some("claude".into()),
+                env: vec![EnvKey {
+                    key: "CLAUDE_CONFIG_DIR".into(),
+                    set: true,
+                }],
+            },
+            task_loop: Some(SettingsLoop {
+                checks: LoopChecks::List(vec!["make test".into()]),
+            }),
+            routines_enabled: true,
+            direct_writes: false,
+            connections: vec![SettingsConnection {
+                spec: ConnectionSpec {
+                    name: "github".into(),
+                    env: "GITHUB_TOKEN".into(),
+                    account: Some("me@example.com".into()),
+                    access: Some(Access::Read),
+                    default: true,
+                },
+                secret: SecretState::Set,
+            }],
+            mcp: vec![McpSpec {
+                name: "docs".into(),
+                command: Some("npx".into()),
+                args: Some(vec!["-y".into(), "docs-mcp".into()]),
+                url: None,
+                kind: None,
+                env: Default::default(),
+                headers: Default::default(),
+                connections: Vec::new(),
+                default: false,
+            }],
+            routines: vec![SettingsRoutine {
+                spec: RoutineSpec {
+                    name: "digest".into(),
+                    at: Some("08:00".into()),
+                    schedule: None,
+                    timezone: Some("Europe/Berlin".into()),
+                    worker: None,
+                    instructions: "routines/digest.md".into(),
+                    project: None,
+                    enabled: true,
+                    items: None,
+                    direct_writes: false,
+                    connections: vec!["github".into()],
+                    mcp: Vec::new(),
+                },
+                instructions_text: Some("Summarize the day.\n".into()),
+            }],
+            routines_problem: None,
+        }],
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args().nth(1).ok_or("usage: fake_server SOCKET")?;
@@ -259,11 +355,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     backend.emit(&id, b"hello ");
     let sessions = Arc::new(Sessions::new());
     let inbox = Arc::new(Inbox::memory());
+    let host = Arc::new(FakeHost {
+        settings: MemorySettings::new(start_settings()),
+    });
     println!("ready");
     loop {
         let (stream, _) = listener.accept().await?;
-        let (backend, sessions, inbox) =
-            (backend.clone(), Arc::clone(&sessions), Arc::clone(&inbox));
+        let (backend, sessions, inbox, host) = (
+            backend.clone(),
+            Arc::clone(&sessions),
+            Arc::clone(&inbox),
+            Arc::clone(&host),
+        );
         tokio::spawn(async move {
             let (r, w) = stream.into_split();
             let config = Config {
@@ -273,7 +376,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let services = Services {
                 backend: &backend,
-                host: &FakeHost,
+                host: host.as_ref(),
                 sessions: &sessions,
                 inbox: &inbox,
             };

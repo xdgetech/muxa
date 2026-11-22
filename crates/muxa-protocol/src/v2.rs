@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::settings::{Settings, SettingsOp};
+
 pub const VERSION: u32 = 2;
 /// The largest payload of one frame.
 pub const MAX_PAYLOAD: usize = 16 * 1024 * 1024;
@@ -436,6 +438,16 @@ pub enum ClientMsg {
     InboxRetry {
         id: u64,
         item: String,
+    },
+    /// The host's editable settings (ADR 0074).
+    Settings {
+        id: u64,
+    },
+    /// Applies `ops` when `revision` is still the current one.
+    SettingsUpdate {
+        id: u64,
+        revision: String,
+        ops: Vec<SettingsOp>,
     },
 }
 
@@ -872,6 +884,8 @@ pub enum ErrorCode {
     Conflict,
     /// Closing a Task would lose uncommitted or unmerged work; nothing changed.
     WouldLoseWork,
+    /// The host locked its settings (`--settings-read-only`).
+    ReadOnly,
 }
 
 /// Server → client on channel 0.
@@ -981,6 +995,9 @@ pub enum Reply {
     },
     Workspaces {
         workspaces: Vec<Workspace>,
+    },
+    Settings {
+        settings: Settings,
     },
     Empty {},
 }

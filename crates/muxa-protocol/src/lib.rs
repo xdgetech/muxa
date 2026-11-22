@@ -2,6 +2,7 @@
 //! (`v2`): agent conversations, the Reader's entries, and Routine state.
 
 mod routines;
+pub mod settings;
 pub mod v2;
 pub use routines::{
     Disposition, InboxEntry, InboxEntryKind, Proposal, RoutineFailure, RoutineInfo, RoutineProblem,

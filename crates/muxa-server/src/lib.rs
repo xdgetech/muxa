@@ -4,6 +4,7 @@
 
 mod attachment;
 mod inbox;
+pub mod memory_settings;
 pub mod reader;
 mod ring;
 mod session;
