@@ -23,7 +23,7 @@ struct MacConnectionPane: View {
             .frame(maxWidth: MacSettingsLayout.formWidth)
             .padding(.horizontal, 8)
         }
-        .sheet(item: $editingHost) { NextHostEditor(draft: $0) }
+        .sheet(item: $editingHost) { MacHostEditor(draft: $0) }
     }
 
     private var status: String {
