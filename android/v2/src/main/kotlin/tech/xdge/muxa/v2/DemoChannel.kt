@@ -283,8 +283,10 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         val loop = m["loop"] as? JsonObject
         val wsName = m.str("workspace") ?: "app"
         val workspace = workspaces.firstOrNull { it.name == wsName }
-        val named = m.names("connections")
-        val servers = workspace?.mcp.orEmpty().filter { it.isDefault || it.name in m.names("mcp") }.map { it.name }
+        // Every agent gets all the Workspace's connections and servers (ADR 0075);
+        // `connections` and `mcp` in the request are ignored.
+        val named = workspace?.connections.orEmpty().map { it.name }
+        val servers = workspace?.mcp.orEmpty().map { it.name }
         val first = places.mapNotNull { it as? JsonObject }.firstOrNull { it.str("kind") == "branch" }
         val branch = first?.str("branch")
         val repo = first?.str("repo")
@@ -310,15 +312,12 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         loop?.let { armLoop(t.id, json.decodeFromJsonElement<LoopSpec>(it), null) }
     }
 
-    /** [ws] with the live Task agents that got each connection and MCP server, from their labels, as the server answers. */
+    /** [ws] with its live Task agents under every connection and MCP server, as the server answers (ADR 0075). */
     private fun withTasks(ws: Workspace): Workspace {
-        val agents = terminals.filter { it.live && it.isTaskAgent && it.labels["muxa.workspace"] == ws.name }
-        fun users(label: String, name: String, isDefault: Boolean) = agents.filter { t ->
-            isDefault || name in t.labels[label]?.let { runCatching { json.decodeFromString<List<String>>(it) }.getOrNull() }.orEmpty()
-        }.map { it.id }
+        val agents = terminals.filter { it.live && it.isTaskAgent && it.labels["muxa.workspace"] == ws.name }.map { it.id }
         return ws.copy(
-            connections = ws.connections.map { it.copy(usedBy = it.usedBy.copy(tasks = users("muxa.connections", it.name, it.isDefault))) },
-            mcp = ws.mcp.map { it.copy(usedBy = it.usedBy.copy(tasks = users("muxa.mcp", it.name, it.isDefault))) },
+            connections = ws.connections.map { it.copy(usedBy = it.usedBy.copy(tasks = agents)) },
+            mcp = ws.mcp.map { it.copy(usedBy = it.usedBy.copy(tasks = agents)) },
         )
     }
 
@@ -533,7 +532,7 @@ private fun standardContent(): DemoContent {
                 loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
                 connections = listOf(
                     WorkspaceConnection("github", isDefault = true, usedBy = UsedBy(routines = everyRoutine), lastUsed = 1_764_000_000),
-                    WorkspaceConnection("linear", isDefault = false, usedBy = UsedBy(routines = listOf("dependency-digest")), lastUsed = 1_763_990_000),
+                    WorkspaceConnection("linear", isDefault = true, usedBy = UsedBy(routines = everyRoutine), lastUsed = 1_763_990_000),
                 ),
                 mcp = listOf(WorkspaceMcp("docs", isDefault = true, usedBy = UsedBy(routines = everyRoutine), lastUsed = 1_764_000_000)),
             ),
@@ -617,13 +616,13 @@ private val DEMO_SETTINGS = Settings(
             loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
             routinesEnabled = true,
             connections = listOf(
-                SettingsConnection("github", "GITHUB_TOKEN", "demo@example.com", "read", isDefault = true, secret = SecretState.SET),
+                SettingsConnection("github", "GITHUB_TOKEN", "demo@example.com", "read", secret = SecretState.SET),
             ),
-            mcp = listOf(McpSpec("docs", command = "npx", args = listOf("-y", "docs-mcp"), isDefault = true)),
+            mcp = listOf(McpSpec("docs", command = "npx", args = listOf("-y", "docs-mcp"))),
             routines = listOf(
                 SettingsRoutine(
                     "dependency-digest", at = "09:00", timezone = "Europe/Berlin", instructions = "routines/dependency-digest.md",
-                    connections = listOf("github"), instructionsText = "List the dependency updates of the week.\n",
+                    instructionsText = "List the dependency updates of the week.\n",
                 ),
             ),
         ),

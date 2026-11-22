@@ -434,9 +434,11 @@ actor DemoServer {
         var labels = ["muxa.kind": "task", "muxa.role": "agent", "muxa.dir": dir, "muxa.workspace": workspace.name]
         if let branch { labels["muxa.branch"] = branch }
         if let repo { labels["muxa.repo"] = repo }
-        let named = m["connections"] as? [String] ?? []
-        if !named.isEmpty { labels["muxa.connections"] = jsonText(named) }
-        let servers = workspace.mcp.filter { $0.isDefault || (m["mcp"] as? [String] ?? []).contains($0.name) }.map(\.name)
+        // Every agent gets all the Workspace's connections and servers (ADR 0075);
+        // `connections` and `mcp` in the request are ignored.
+        let connections = workspace.connections.map(\.name)
+        if !connections.isEmpty { labels["muxa.connections"] = jsonText(connections) }
+        let servers = workspace.mcp.map(\.name)
         if !servers.isEmpty { labels["muxa.mcp"] = jsonText(servers) }
         let t = Terminal(
             id: newTerminalID(), name: title, live: true,
@@ -449,25 +451,15 @@ actor DemoServer {
         if watching { send(["type": "changed", "terminal": json(t)]) }
     }
 
-    /// `ws` with the live Task agents that got each connection and MCP server,
-    /// from their labels, as the server answers `workspaces`.
+    /// `ws` with its live Task agents under every connection and MCP server,
+    /// as the server answers `workspaces` (ADR 0075).
     private func withTasks(_ ws: Workspace) -> Workspace {
-        let agents = content.terminals.filter { $0.live && $0.isTaskAgent && $0.labels["muxa.workspace"] == ws.name }
-        func users(_ label: String, _ name: String, _ isDefault: Bool) -> [String] {
-            agents.filter { t in
-                let names = t.labels[label].flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) }
-                return isDefault || (names ?? []).contains(name)
-            }.map(\.id)
-        }
+        let agents = content.terminals
+            .filter { $0.live && $0.isTaskAgent && $0.labels["muxa.workspace"] == ws.name }
+            .map(\.id)
         var out = ws
-        for i in out.connections.indices {
-            let c = out.connections[i]
-            out.connections[i].usedBy.tasks = users("muxa.connections", c.name, c.isDefault)
-        }
-        for i in out.mcp.indices {
-            let m = out.mcp[i]
-            out.mcp[i].usedBy.tasks = users("muxa.mcp", m.name, m.isDefault)
-        }
+        for i in out.connections.indices { out.connections[i].usedBy.tasks = agents }
+        for i in out.mcp.indices { out.mcp[i].usedBy.tasks = agents }
         return out
     }
 

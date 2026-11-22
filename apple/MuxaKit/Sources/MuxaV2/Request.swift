@@ -6,7 +6,8 @@ public enum V2Request: Sendable {
     case attach(terminal: String, cols: UInt16, rows: UInt16, history: UInt32 = 0)
     case detach(channel: UInt32)
     /// No places: one folder (ADR 0068).
-    /// `connections` and `mcp`: the Workspace's, besides the default ones (ADR 0069).
+    /// `connections` and `mcp` are deprecated and ignored: every agent gets all the
+    /// Workspace's connections and MCP servers (ADR 0075).
     case startTask(
         workspace: String, title: String, goal: String? = nil, places: [PlaceSpec] = [], connections: [String] = [],
         mcp: [String] = [], plan: Bool = false, loop: LoopSpec? = nil)

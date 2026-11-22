@@ -157,12 +157,13 @@ internal object LoopChecksSerializer : KSerializer<LoopChecks> {
 @Serializable
 data class WorkspaceConnection(
     val name: String,
+    /** Always true since ADR 0075: every agent of the Workspace gets it. */
     @SerialName("default") val isDefault: Boolean,
     @SerialName("used_by") val usedBy: UsedBy = UsedBy(),
     @SerialName("last_used") val lastUsed: Long? = null,
 )
 
-/** An MCP server of a Workspace, by name only; default ones go to every Task (ADR 0069). */
+/** An MCP server of a Workspace, by name only; every agent of the Workspace gets it (ADR 0075). */
 @Serializable
 data class WorkspaceMcp(
     val name: String,

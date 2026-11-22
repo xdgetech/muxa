@@ -157,7 +157,7 @@ class DemoTest {
             val (app, personal) = c.workspaces()
             assertEquals(listOf("app", "docs"), app.repos)
             assertEquals(LoopChecks.List(listOf("make test", "make lint")), app.loop?.checks)
-            assertEquals(listOf("github"), app.connections.filter { it.isDefault }.map { it.name })
+            assertEquals(listOf("github", "linear"), app.connections.filter { it.isDefault }.map { it.name })
             assertEquals(Triple("Personal", "claude", null), Triple(personal.name, personal.agent, personal.loop))
             c.close()
         }
@@ -207,12 +207,13 @@ class DemoTest {
             val every = listOf("dependency-digest", "nightly-backup", "release-notes")
             assertEquals(UsedBy(every, listOf("t1", "t2")), app.connections[0].usedBy)
             assertEquals(1_764_000_000L, app.connections[0].lastUsed)
-            assertEquals(UsedBy(listOf("dependency-digest")), app.connections[1].usedBy)
+            assertEquals(UsedBy(every, listOf("t1", "t2")), app.connections[1].usedBy)
+            // A named connection is ignored: every agent gets all of them (ADR 0075).
             val (t, _) = c.startTask("app", "Triage", connections = listOf("linear"))
-            assertEquals("""["linear"]""", t.labels["muxa.connections"])
-            assertEquals("a default server counts", """["docs"]""", t.labels["muxa.mcp"])
+            assertEquals("""["github","linear"]""", t.labels["muxa.connections"])
+            assertEquals("""["docs"]""", t.labels["muxa.mcp"])
             val after = c.workspaces().first()
-            assertEquals(listOf(t.id), after.connections[1].usedBy.tasks)
+            assertEquals(listOf("t1", "t2", t.id), after.connections[1].usedBy.tasks)
             assertEquals(listOf("t1", "t2", t.id), after.mcp[0].usedBy.tasks)
             c.close()
         }

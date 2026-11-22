@@ -178,6 +178,7 @@ public enum SecretState: Codable, Equatable, Sendable {
 }
 
 /// `[[workspace.connection]]` without its secret; also what the ops take.
+/// Every agent of the Workspace gets it (ADR 0075), so there is no `default`.
 public struct ConnectionSpec: Codable, Equatable, Sendable {
     public var name: String
     /// The variable the agent gets the secret in.
@@ -186,20 +187,16 @@ public struct ConnectionSpec: Codable, Equatable, Sendable {
     public var account: String?
     /// `read`, `write` or nil.
     public var access: String?
-    /// On for every Task and Routine of the Workspace.
-    public var isDefault: Bool
 
-    public init(name: String, env: String, account: String? = nil, access: String? = nil, isDefault: Bool = false) {
+    public init(name: String, env: String, account: String? = nil, access: String? = nil) {
         self.name = name
         self.env = env
         self.account = account
         self.access = access
-        self.isDefault = isDefault
     }
 
     enum CodingKeys: String, CodingKey {
         case name, env, account, access
-        case isDefault = "default"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -208,7 +205,6 @@ public struct ConnectionSpec: Codable, Equatable, Sendable {
         env = try c.decode(String.self, forKey: .env)
         account = try c.decodeIfPresent(String.self, forKey: .account)
         access = try c.decodeIfPresent(String.self, forKey: .access)
-        isDefault = try c.decode(.isDefault, or: false)
     }
 }
 
@@ -241,7 +237,7 @@ public struct SettingsConnection: Codable, Equatable, Sendable, Identifiable {
 }
 
 /// `[[workspace.mcp]]`: `command` with `args`, or `url` with `transport`.
-/// Nothing here is a secret.
+/// Nothing here is a secret. Every agent of the Workspace gets it (ADR 0075).
 public struct McpSpec: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     public var command: String?
@@ -253,13 +249,11 @@ public struct McpSpec: Codable, Equatable, Sendable, Identifiable {
     public var headers: [String: String]
     /// The connections whose variables the server gets.
     public var connections: [String]
-    public var isDefault: Bool
 
     public var id: String { name }
 
     public init(name: String, command: String? = nil, args: [String]? = nil, url: String? = nil, transport: String? = nil,
-                env: [String: String] = [:], headers: [String: String] = [:], connections: [String] = [],
-                isDefault: Bool = false) {
+                env: [String: String] = [:], headers: [String: String] = [:], connections: [String] = []) {
         self.name = name
         self.command = command
         self.args = args
@@ -268,13 +262,11 @@ public struct McpSpec: Codable, Equatable, Sendable, Identifiable {
         self.env = env
         self.headers = headers
         self.connections = connections
-        self.isDefault = isDefault
     }
 
     enum CodingKeys: String, CodingKey {
         case name, command, args, url, env, headers, connections
         case transport = "type"
-        case isDefault = "default"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -287,11 +279,11 @@ public struct McpSpec: Codable, Equatable, Sendable, Identifiable {
         env = try c.decode(.env, or: [:])
         headers = try c.decode(.headers, or: [:])
         connections = try c.decode(.connections, or: [])
-        isDefault = try c.decode(.isDefault, or: false)
     }
 }
 
-/// `[[routine]]` with `[routine.output]` flattened.
+/// `[[routine]]` with `[routine.output]` flattened. A run gets all its
+/// Workspace's connections and MCP servers (ADR 0075).
 public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
     public var name: String
     /// `HH:MM` in `timezone`.
@@ -306,14 +298,12 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
     public var enabled: Bool
     public var items: UInt32?
     public var directWrites: Bool
-    public var connections: [String]
-    public var mcp: [String]
 
     public var id: String { name }
 
     public init(name: String, at: String? = nil, schedule: String? = nil, timezone: String? = nil, worker: String? = nil,
                 instructions: String, project: String? = nil, enabled: Bool = true, items: UInt32? = nil,
-                directWrites: Bool = false, connections: [String] = [], mcp: [String] = []) {
+                directWrites: Bool = false) {
         self.name = name
         self.at = at
         self.schedule = schedule
@@ -324,12 +314,10 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
         self.enabled = enabled
         self.items = items
         self.directWrites = directWrites
-        self.connections = connections
-        self.mcp = mcp
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, at, schedule, timezone, worker, instructions, project, enabled, items, connections, mcp
+        case name, at, schedule, timezone, worker, instructions, project, enabled, items
         case directWrites = "direct_writes"
     }
 
@@ -346,8 +334,6 @@ public struct RoutineSpec: Codable, Equatable, Sendable, Identifiable {
         enabled = try c.decode(.enabled, or: true)
         items = try c.decodeIfPresent(UInt32.self, forKey: .items)
         directWrites = try c.decode(.directWrites, or: false)
-        connections = try c.decode(.connections, or: [])
-        mcp = try c.decode(.mcp, or: [])
     }
 }
 

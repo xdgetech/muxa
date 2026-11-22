@@ -18,12 +18,12 @@ class SettingsTest {
             SettingsOp.SetLoopChecks("w", LoopChecks.Any) to """{"op":"loop-checks","workspace":"w","checks":"any"}""",
             SettingsOp.RoutinesGate("w", true) to """{"op":"routines-gate","workspace":"w","enabled":true}""",
             SettingsOp.ConnectionAdd("w", ConnectionSpec("gh", "GH_TOKEN", access = "read"), "s3cret") to
-                """{"op":"connection-add","workspace":"w","connection":{"name":"gh","env":"GH_TOKEN","access":"read","default":false},"secret":"s3cret"}""",
+                """{"op":"connection-add","workspace":"w","connection":{"name":"gh","env":"GH_TOKEN","access":"read"},"secret":"s3cret"}""",
             SettingsOp.ConnectionSecret("w", "gh", "x") to """{"op":"connection-secret","workspace":"w","name":"gh","secret":"x"}""",
             SettingsOp.McpAdd("w", McpSpec("api", url = "https://api.example.com/mcp", type = "sse")) to
-                """{"op":"mcp-add","workspace":"w","mcp":{"name":"api","url":"https://api.example.com/mcp","type":"sse","env":{},"headers":{},"connections":[],"default":false}}""",
+                """{"op":"mcp-add","workspace":"w","mcp":{"name":"api","url":"https://api.example.com/mcp","type":"sse","env":{},"headers":{},"connections":[]}}""",
             SettingsOp.RoutineAdd("w", RoutineSpec("d", at = "08:00", instructions = "routines/d.md"), "Hi.\n") to
-                """{"op":"routine-add","workspace":"w","routine":{"name":"d","at":"08:00","instructions":"routines/d.md","enabled":true,"direct_writes":false,"connections":[],"mcp":[]},"instructions_text":"Hi.\n"}""",
+                """{"op":"routine-add","workspace":"w","routine":{"name":"d","at":"08:00","instructions":"routines/d.md","enabled":true,"direct_writes":false},"instructions_text":"Hi.\n"}""",
             SettingsOp.WorkerAdd(WorkerSpec("r", agent = "codex", loop = WorkerLoop("make test", maxAttempts = 2))) to
                 """{"op":"worker-add","worker":{"name":"r","agent":"codex","args":[],"loop":{"check":"make test","max_attempts":2}}}""",
             SettingsOp.WorkerRemove("r") to """{"op":"worker-remove","name":"r"}""",

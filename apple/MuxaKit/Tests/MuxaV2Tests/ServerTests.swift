@@ -113,13 +113,13 @@ struct ServerTests {
                       loop: WorkspaceLoop(checks: .list(["make test"])),
                       connections: [WorkspaceConnection(name: "github", isDefault: true,
                                                         usedBy: UsedBy(routines: ["digest"]), lastUsed: 1_700_000_000)],
-                      mcp: [WorkspaceMcp(name: "docs", isDefault: false)]),
+                      mcp: [WorkspaceMcp(name: "docs", isDefault: true)]),
         ])
-        // github is on by default: the new Task's agent uses it.
-        let (agent, _) = try await c.startTask(workspace: "Personal", title: "uses", mcp: ["docs"])
+        // Every Task agent uses every connection and server of its Workspace (ADR 0075).
+        let (agent, _) = try await c.startTask(workspace: "Personal", title: "uses")
         let after = try #require(try await c.workspaces().first)
         #expect(after.connections[0].usedBy.tasks.contains(agent.id))
-        #expect(after.mcp[0].usedBy.tasks == [agent.id])
+        #expect(after.mcp[0].usedBy.tasks.contains(agent.id))
         await c.close()
     }
 
@@ -135,13 +135,12 @@ struct ServerTests {
                     agent: SettingsAgent(command: "claude", env: [EnvKey(key: "CLAUDE_CONFIG_DIR")]),
                     loop: WorkspaceLoop(checks: .list(["make test"])), routinesEnabled: true,
                     connections: [SettingsConnection(
-                        spec: ConnectionSpec(name: "github", env: "GITHUB_TOKEN", account: "me@example.com", access: "read",
-                                             isDefault: true),
+                        spec: ConnectionSpec(name: "github", env: "GITHUB_TOKEN", account: "me@example.com", access: "read"),
                         secret: .set)],
                     mcp: [McpSpec(name: "docs", command: "npx", args: ["-y", "docs-mcp"])],
                     routines: [SettingsRoutine(
                         spec: RoutineSpec(name: "digest", at: "08:00", timezone: "Europe/Berlin",
-                                          instructions: "routines/digest.md", connections: ["github"]),
+                                          instructions: "routines/digest.md"),
                         instructionsText: "Summarize the day.\n")]),
             ],
             workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")]))

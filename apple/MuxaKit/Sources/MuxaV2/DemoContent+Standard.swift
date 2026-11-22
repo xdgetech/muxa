@@ -68,8 +68,8 @@ extension DemoContent {
                           connections: [
                               WorkspaceConnection(name: "github", isDefault: true, usedBy: UsedBy(routines: everyRoutine),
                                                   lastUsed: 1_764_000_000),
-                              WorkspaceConnection(name: "linear", isDefault: false,
-                                                  usedBy: UsedBy(routines: ["dependency-digest"]), lastUsed: 1_763_990_000),
+                              WorkspaceConnection(name: "linear", isDefault: true,
+                                                  usedBy: UsedBy(routines: everyRoutine), lastUsed: 1_763_990_000),
                           ],
                           mcp: [WorkspaceMcp(name: "docs", isDefault: true, usedBy: UsedBy(routines: everyRoutine),
                                              lastUsed: 1_764_000_000)]),
@@ -123,14 +123,14 @@ extension DemoContent {
                 loop: WorkspaceLoop(checks: .list(["make test", "make lint"])), routinesEnabled: true,
                 connections: [
                     SettingsConnection(spec: ConnectionSpec(name: "github", env: "GITHUB_TOKEN", account: "me@example.com",
-                                                            access: "read", isDefault: true), secret: .set),
+                                                            access: "read"), secret: .set),
                     SettingsConnection(spec: ConnectionSpec(name: "linear", env: "LINEAR_API_KEY"), secret: .missing),
                 ],
-                mcp: [McpSpec(name: "docs", command: "npx", args: ["-y", "docs-mcp"], isDefault: true)],
+                mcp: [McpSpec(name: "docs", command: "npx", args: ["-y", "docs-mcp"])],
                 routines: [
                     SettingsRoutine(
                         spec: RoutineSpec(name: "dependency-digest", at: "09:00", timezone: "Europe/Berlin",
-                                          instructions: "routines/dependency-digest.md", connections: ["github", "linear"]),
+                                          instructions: "routines/dependency-digest.md"),
                         instructionsText: "List the dependency updates of the week, security fixes first.\n"),
                 ]),
             SettingsWorkspace(name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude")),

@@ -90,13 +90,12 @@ data class SettingsConnection(
     val account: String? = null,
     /** `read`, `write` or null. */
     val access: String? = null,
-    @SerialName("default") val isDefault: Boolean = false,
     val secret: SecretState = SecretState.UNKNOWN,
 ) {
-    val spec: ConnectionSpec get() = ConnectionSpec(name, env, account, access, isDefault)
+    val spec: ConnectionSpec get() = ConnectionSpec(name, env, account, access)
 }
 
-/** A connection in an op, without its secret. */
+/** A connection in an op, without its secret. Every agent of the Workspace gets it (ADR 0075). */
 @Serializable
 data class ConnectionSpec(
     val name: String,
@@ -104,10 +103,10 @@ data class ConnectionSpec(
     val account: String? = null,
     /** `read`, `write` or null. */
     val access: String? = null,
-    @SerialName("default") val isDefault: Boolean = false,
 )
 
-/** A `[[workspace.mcp]]`: [command] with [args], or [url] with [type] `http` (default) or `sse`. Nothing here is a secret. */
+/** A `[[workspace.mcp]]`: [command] with [args], or [url] with [type] `http` (default) or `sse`. Nothing here is a secret.
+ * Every agent of the Workspace gets it (ADR 0075). */
 @Serializable
 data class McpSpec(
     val name: String,
@@ -118,10 +117,12 @@ data class McpSpec(
     val env: Map<String, String> = emptyMap(),
     val headers: Map<String, String> = emptyMap(),
     val connections: List<String> = emptyList(),
-    @SerialName("default") val isDefault: Boolean = false,
 )
 
-/** A `[[routine]]` with `[routine.output]` flattened. [instructions] is relative to `.muxa/`. */
+/**
+ * A `[[routine]]` with `[routine.output]` flattened. [instructions] is relative to `.muxa/`.
+ * A run gets all its Workspace's connections and MCP servers (ADR 0075).
+ */
 @Serializable
 data class RoutineSpec(
     val name: String,
@@ -134,8 +135,6 @@ data class RoutineSpec(
     val enabled: Boolean = true,
     val items: Int? = null,
     @SerialName("direct_writes") val directWrites: Boolean = false,
-    val connections: List<String> = emptyList(),
-    val mcp: List<String> = emptyList(),
 )
 
 /** A Routine as the files define it, with its instruction file's content; null when it cannot be read. */
@@ -151,16 +150,14 @@ data class SettingsRoutine(
     val enabled: Boolean = true,
     val items: Int? = null,
     @SerialName("direct_writes") val directWrites: Boolean = false,
-    val connections: List<String> = emptyList(),
-    val mcp: List<String> = emptyList(),
     @SerialName("instructions_text") val instructionsText: String? = null,
 ) {
     val spec: RoutineSpec
-        get() = RoutineSpec(name, at, schedule, timezone, worker, instructions, project, enabled, items, directWrites, connections, mcp)
+        get() = RoutineSpec(name, at, schedule, timezone, worker, instructions, project, enabled, items, directWrites)
 
     companion object {
         fun of(spec: RoutineSpec, instructionsText: String?) = with(spec) {
-            SettingsRoutine(name, at, schedule, timezone, worker, instructions, project, enabled, items, directWrites, connections, mcp, instructionsText)
+            SettingsRoutine(name, at, schedule, timezone, worker, instructions, project, enabled, items, directWrites, instructionsText)
         }
     }
 }

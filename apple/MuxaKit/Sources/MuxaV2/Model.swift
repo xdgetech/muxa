@@ -93,7 +93,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
 /// An MCP server's name only; its command and variables stay on the host.
 public struct WorkspaceMcp: Codable, Equatable, Sendable, Identifiable {
     public var name: String
-    /// On for every Task and Routine of the Workspace.
+    /// Always true since ADR 0075: every agent of the Workspace gets it.
     public var isDefault: Bool
     /// Who gets it now (ADR 0069 §7).
     public var usedBy: UsedBy
@@ -192,7 +192,7 @@ public enum LoopChecks: Codable, Equatable, Sendable {
 /// A connection's name only; its secret never crosses the wire (ADR 0069).
 public struct WorkspaceConnection: Codable, Equatable, Sendable, Identifiable {
     public var name: String
-    /// On for every Task and Routine of the Workspace.
+    /// Always true since ADR 0075: every agent of the Workspace gets it.
     public var isDefault: Bool
     /// Who gets it now (ADR 0069 §7).
     public var usedBy: UsedBy

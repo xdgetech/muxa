@@ -166,14 +166,14 @@ class ServerTest {
                 connections = listOf(
                     WorkspaceConnection("github", isDefault = true, usedBy = UsedBy(routines = listOf("digest")), lastUsed = 1_700_000_000),
                 ),
-                mcp = listOf(WorkspaceMcp("docs", isDefault = false)),
+                mcp = listOf(WorkspaceMcp("docs", isDefault = true)),
             )
             assertEquals(listOf(expected), c.workspaces())
-            // github is on by default: the new Task's agent uses it.
-            val (agent, _) = c.startTask("Personal", "uses", mcp = listOf("docs"))
+            // Every Task agent uses every connection and server of its Workspace (ADR 0075).
+            val (agent, _) = c.startTask("Personal", "uses")
             val after = c.workspaces().single()
             assertTrue(agent.id in after.connections[0].usedBy.tasks)
-            assertEquals(listOf(agent.id), after.mcp[0].usedBy.tasks)
+            assertTrue(agent.id in after.mcp[0].usedBy.tasks)
             c.close()
         }
     }
@@ -229,12 +229,12 @@ class ServerTest {
                         agent = SettingsAgent("claude", listOf(EnvKey("CLAUDE_CONFIG_DIR", true))),
                         loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
                         routinesEnabled = true, directWrites = false,
-                        connections = listOf(SettingsConnection("github", "GITHUB_TOKEN", "me@example.com", "read", true, SecretState.SET)),
+                        connections = listOf(SettingsConnection("github", "GITHUB_TOKEN", "me@example.com", "read", SecretState.SET)),
                         mcp = listOf(McpSpec("docs", command = "npx", args = listOf("-y", "docs-mcp"))),
                         routines = listOf(
                             SettingsRoutine(
                                 "digest", at = "08:00", timezone = "Europe/Berlin", instructions = "routines/digest.md",
-                                enabled = true, connections = listOf("github"), instructionsText = "Summarize the day.\n",
+                                enabled = true, instructionsText = "Summarize the day.\n",
                             ),
                         ),
                     ),

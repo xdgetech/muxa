@@ -138,7 +138,7 @@ struct DemoTests {
         #expect(workspaces.map(\.name) == ["app", "Personal"])
         #expect(workspaces[0].repos == ["app", "docs"])
         #expect(workspaces[0].loop?.checks == .list(["make test", "make lint"]))
-        #expect(workspaces[0].connections.filter(\.isDefault).map(\.name) == ["github"])
+        #expect(workspaces[0].connections.filter(\.isDefault).map(\.name) == ["github", "linear"])
         #expect(workspaces[0].mcp.map(\.name) == ["docs"])
         #expect(workspaces[1].loop == nil && workspaces[1].connections.isEmpty)
     }
@@ -187,12 +187,14 @@ struct DemoTests {
         #expect(app.connections[0].usedBy == UsedBy(
             routines: ["dependency-digest", "nightly-backup", "release-notes"], tasks: ["t1", "t2"]))
         #expect(app.connections[0].lastUsed == 1_764_000_000)
-        #expect(app.connections[1].usedBy == UsedBy(routines: ["dependency-digest"], tasks: []))
+        #expect(app.connections[1].usedBy == UsedBy(
+            routines: ["dependency-digest", "nightly-backup", "release-notes"], tasks: ["t1", "t2"]))
+        // A named connection is ignored: every agent gets all of them (ADR 0075).
         let (t, _) = try await c.startTask(workspace: "app", title: "Triage", connections: ["linear"])
-        #expect(t.labels["muxa.connections"] == #"["linear"]"#)
-        #expect(t.labels["muxa.mcp"] == #"["docs"]"#, "a default server counts")
+        #expect(t.labels["muxa.connections"] == #"["github","linear"]"#)
+        #expect(t.labels["muxa.mcp"] == #"["docs"]"#)
         let after = try #require(try await c.workspaces().first)
-        #expect(after.connections[1].usedBy.tasks == [t.id])
+        #expect(after.connections[1].usedBy.tasks == ["t1", "t2", t.id])
         #expect(after.mcp[0].usedBy.tasks == ["t1", "t2", t.id])
     }
 

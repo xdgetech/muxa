@@ -18,9 +18,9 @@ sealed interface V2Request {
         val title: String,
         val goal: String? = null,
         val places: List<PlaceSpec> = emptyList(),
-        /** The Workspace's connections, besides the default ones (ADR 0069). */
+        /** Deprecated and ignored: every agent gets all the Workspace's connections and MCP servers (ADR 0075). */
         val connections: List<String> = emptyList(),
-        /** The Workspace's MCP servers, besides the default ones (ADR 0069). */
+        /** Deprecated and ignored (ADR 0075). */
         val mcp: List<String> = emptyList(),
         val plan: Boolean = false,
         val loop: LoopSpec? = null,

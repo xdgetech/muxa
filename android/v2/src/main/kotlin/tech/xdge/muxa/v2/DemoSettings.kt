@@ -129,5 +129,5 @@ internal class DemoSettings(initial: Settings) {
     }
 
     private fun connection(spec: ConnectionSpec, secret: SecretState) =
-        SettingsConnection(spec.name, spec.env, spec.account, spec.access, spec.isDefault, secret)
+        SettingsConnection(spec.name, spec.env, spec.account, spec.access, secret)
 }
