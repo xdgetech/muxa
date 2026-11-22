@@ -20,7 +20,11 @@ struct NextRoot: View {
                     .background { modeKeys }
                     .sheet(isPresented: Bindable(nav).showPalette) { GoToTask() }
             default:
+                #if os(macOS)
+                MacConnectView()
+                #else
                 connect
+                #endif
             }
         }
         .background(Palette.ground)
@@ -40,24 +44,14 @@ struct NextRoot: View {
         .accessibilityHidden(true)
     }
 
+    #if os(iOS)
     private var connect: some View {
         NavigationStack {
             List {
                 Section {
-                    Text(status).accessibilityIdentifier("next.link")
+                    Text(model.linkStatus).accessibilityIdentifier("next.link")
                 }
                 .listRowBackground(Palette.card)
-                #if os(macOS)
-                if model.serverIsLocal {
-                    Section {
-                        Button("This Mac") { Task { await model.connectLocal() } }
-                            .accessibilityIdentifier("next.local")
-                    } footer: {
-                        Text("The muxa server runs here. The app reaches it without SSH.")
-                    }
-                    .listRowBackground(Palette.card)
-                }
-                #endif
                 HostsSection(editing: $editing)
                 Section {
                     Button("Try the Demo") { Task { await model.startDemo() } }
@@ -73,12 +67,16 @@ struct NextRoot: View {
             .sheet(item: Bindable(model).untrustedKey) { NextTrustSheet(key: $0) }
         }
     }
+    #endif
+}
 
-    private var status: String {
-        switch model.link {
+extension NextModel {
+    /// The connection's state, or why it failed: the not-connected screens show it.
+    var linkStatus: String {
+        switch link {
         case .offline: "Not connected"
-        case .connecting: model.addingKey ? "Adding this device's key…" : "Connecting…"
-        case .connected: model.demo ? "Connected to the demo" : "Connected"
+        case .connecting: addingKey ? "Adding this device's key…" : "Connecting…"
+        case .connected: demo ? "Connected to the demo" : "Connected"
         case .reconnecting(let why): "Reconnecting: \(why)"
         case .failed(let why): why
         }

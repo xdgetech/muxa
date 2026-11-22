@@ -94,8 +94,8 @@ struct NextHostEditor: View {
                     SecureField("Password for \(draft.trimmedUser.isEmpty ? "the user" : draft.trimmedUser)", text: $password)
                         .textContentType(.password)
                         .submitLabel(.go)
-                        .onSubmit { if canSetUp { setUp() } }
-                    Button("Add This Device's Key and Connect") { setUp() }
+                        .onSubmit { if canSetUp { connect() } }
+                    Button("Add This Device's Key and Connect") { connect() }
                         .disabled(!canSetUp)
                 } header: {
                     Text("First Connection")
@@ -170,36 +170,41 @@ struct NextHostEditor: View {
 
     private var canSetUp: Bool { draft.isValid && !password.isEmpty }
 
-    /// A changed address, port or user means the saved host key no longer applies.
-    private var keepsHostKey: Bool {
-        model.hosts.host(draft.id).map(draft.keepsHostKey(of:)) ?? false
-    }
+    private var keepsHostKey: Bool { model.keepsHostKey(draft) }
 
-    /// A new host connects right away. With a password, it adds this device's key first;
-    /// without one, a host that refuses the key says how to set it up.
+    private func save() { model.save(draft) }
+
     private func connect() {
-        if !password.isEmpty {
-            setUp()
-            return
-        }
-        save()
-        let id = draft.id
-        dismiss()
-        Task { await model.connect(to: id) }
-    }
-
-    private func save() {
-        model.hosts.upsert(draft.host(replacing: model.hosts.host(draft.id)))
-    }
-
-    /// Saves, closes the editor, then runs the one-time key setup. The trust sheet
-    /// and any error appear on the main screen.
-    private func setUp() {
-        save()
         let entered = password
         password = ""
-        let id = draft.id
         dismiss()
-        Task { await model.setUpKey(on: id, password: entered) }
+        model.connect(draft, password: entered)
+    }
+}
+
+/// What both host editors, the touch one and the Mac's, do with a draft.
+extension NextModel {
+    func save(_ draft: HostDraft) {
+        hosts.upsert(draft.host(replacing: hosts.host(draft.id)))
+    }
+
+    /// A changed address, port or user means the saved host key no longer applies.
+    func keepsHostKey(_ draft: HostDraft) -> Bool {
+        hosts.host(draft.id).map(draft.keepsHostKey(of:)) ?? false
+    }
+
+    /// Saves the host and connects to it. With a password it first adds this
+    /// device's key; without one, a host that refuses the key says how to set it up.
+    /// The editor closes first: the trust sheet and any error show on the main screen.
+    func connect(_ draft: HostDraft, password: String) {
+        save(draft)
+        let id = draft.id
+        Task {
+            if password.isEmpty {
+                await connect(to: id)
+            } else {
+                await setUpKey(on: id, password: password)
+            }
+        }
     }
 }

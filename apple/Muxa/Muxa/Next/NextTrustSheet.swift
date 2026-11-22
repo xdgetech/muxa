@@ -7,8 +7,7 @@ struct NextTrustSheet: View {
     @Environment(\.dismiss) private var dismiss
     let key: HostKey
 
-    /// The host had a trusted key, and now presents another one.
-    private var changed: Bool { model.currentHost?.target.hostKey != nil }
+    private var changed: Bool { model.hostKeyChanged }
 
     var body: some View {
         NavigationStack {
@@ -50,4 +49,9 @@ struct NextTrustSheet: View {
             }
         }
     }
+}
+
+extension NextModel {
+    /// The host had a trusted key, and now presents another one.
+    var hostKeyChanged: Bool { currentHost?.target.hostKey != nil }
 }
