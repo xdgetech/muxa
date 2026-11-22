@@ -59,8 +59,9 @@ import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
 
 /**
- * Start Task (ADR 0068, 0069): a Workspace, the title and goal, the places, the
- * connections and MCP servers, plan mode and an optional Task Loop. Full screen
+ * Start Task (ADR 0068, 0075): a Workspace, the title and goal, the places, plan
+ * mode and an optional Task Loop. A line says which connections and MCP servers
+ * the Workspace's agents get; they all get every one. Full screen
  * on a phone. `Ctrl+Enter` starts it; on success [started] gets the agent terminal.
  */
 @Composable
@@ -150,14 +151,7 @@ private fun WorkspacePicker(list: List<Workspace>, picked: String, pick: (Worksp
 @Composable
 private fun TaskOptions(ws: Workspace, choices: TaskChoices, change: (TaskChoices) -> Unit) {
     Places(ws, choices, change)
-    if (ws.connections.isNotEmpty()) {
-        Toggles("Connections", "connection", ws.connections.map { it.name to it.isDefault }, choices.connections) {
-            change(choices.copy(connections = it))
-        }
-    }
-    if (ws.mcp.isNotEmpty()) {
-        Toggles("MCP servers", "mcp", ws.mcp.map { it.name to it.isDefault }, choices.mcp) { change(choices.copy(mcp = it)) }
-    }
+    toolsLine(ws)?.let { Text(it, Modifier.testTag("task.tools"), color = Palette.textSecondary, style = MaterialTheme.typography.bodyMedium) }
     SwitchRow("Plan mode", "task.plan", choices.plan) { change(choices.copy(plan = it)) }
     ws.loop?.let { LoopOptions(it.checks, choices, change) }
 }
@@ -190,7 +184,7 @@ private fun Places(ws: Workspace, choices: TaskChoices, change: (TaskChoices) ->
     }
     if (ws.repos.isNotEmpty()) {
         val taken = if (choices.worktrees) choices.branches.map { it.repo }.toSet() else emptySet()
-        Toggles("Read only", "read", ws.repos.filter { it !in taken }.map { it to false }, choices.readOnly) {
+        Toggles("Read only", "read", ws.repos.filter { it !in taken }, choices.readOnly) {
             change(choices.copy(readOnly = it))
         }
     }
@@ -219,19 +213,13 @@ private fun BranchRow(repos: List<String>, row: BranchChoice, index: Int, change
     }
 }
 
-/** Chips for names; a default one is always on and says so. */
+/** Chips for names. */
 @Composable
-private fun Toggles(title: String, tag: String, names: List<Pair<String, Boolean>>, on: Set<String>, change: (Set<String>) -> Unit) {
+private fun Toggles(title: String, tag: String, names: List<String>, on: Set<String>, change: (Set<String>) -> Unit) {
     Text(title, style = MaterialTheme.typography.titleSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        for ((name, isDefault) in names) {
-            FilterChip(
-                isDefault || name in on,
-                { change(if (name in on) on - name else on + name) },
-                { Text(if (isDefault) "$name (default)" else name) },
-                Modifier.testTag("task.$tag.$name"),
-                enabled = !isDefault,
-            )
+        for (name in names) {
+            FilterChip(name in on, { change(if (name in on) on - name else on + name) }, { Text(name) }, Modifier.testTag("task.$tag.$name"))
         }
     }
 }

@@ -46,6 +46,10 @@ class FrameTest {
         val start = V2Request.StartTask("w", "Fix", connections = listOf("linear"), mcp = listOf("docs")).json(5)
         assertEquals("""["linear"]""", start["connections"].toString())
         assertEquals("""["docs"]""", start["mcp"].toString())
+        // The deprecated names (ADR 0075) stay off the wire when none are given.
+        val plain = V2Request.StartTask("w", "Fix").json(6)
+        assertEquals(null, plain["connections"])
+        assertEquals(null, plain["mcp"])
     }
 
     @Test

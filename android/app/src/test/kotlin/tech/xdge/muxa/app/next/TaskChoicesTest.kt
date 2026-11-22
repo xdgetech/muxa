@@ -8,7 +8,9 @@ import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.PlaceSpec
 import tech.xdge.muxa.v2.Workspace
+import tech.xdge.muxa.v2.WorkspaceConnection
 import tech.xdge.muxa.v2.WorkspaceLoop
+import tech.xdge.muxa.v2.WorkspaceMcp
 
 class TaskChoicesTest {
     private val app = Workspace("app", "/w", listOf("app", "docs"), loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))))
@@ -34,12 +36,22 @@ class TaskChoicesTest {
     }
 
     @Test
-    fun aNewWorkspacePicksItsFirstCheckAndClearsTheTools() {
-        val choices = TaskChoices(title = "t", connections = setOf("linear"), loop = true).inWorkspace(app)
+    fun aNewWorkspacePicksItsFirstCheckAndClearsTheLoop() {
+        val choices = TaskChoices(title = "t", loop = true).inWorkspace(app)
         assertEquals("make test", choices.check)
-        assertEquals(emptySet<String>(), choices.connections)
         assertFalse(choices.loop)
         assertEquals(LoopSpec("make test", 5), choices.copy(loop = true, maxAttempts = 5).draft().loop)
+    }
+
+    @Test
+    fun theToolsLineNamesEveryConnectionAndMcpServer() {
+        val ws = app.copy(
+            connections = listOf(WorkspaceConnection("github", true), WorkspaceConnection("linear", true)),
+            mcp = listOf(WorkspaceMcp("docs", true)),
+        )
+        assertEquals("This Workspace's agents get: github, linear · MCP: docs", toolsLine(ws))
+        assertEquals("This Workspace's agents get: MCP: docs", toolsLine(ws.copy(connections = emptyList())))
+        assertNull(toolsLine(app))
     }
 
     @Test

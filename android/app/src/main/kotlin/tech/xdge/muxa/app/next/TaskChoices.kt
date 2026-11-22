@@ -14,18 +14,25 @@ data class TaskDraft(
     val title: String,
     val goal: String?,
     val places: List<PlaceSpec>,
-    val connections: List<String>,
-    val mcp: List<String>,
     val plan: Boolean,
     val loop: LoopSpec?,
 )
 
+/**
+ * What every agent of [ws] gets (ADR 0075), as "This Workspace's agents get: github, linear · MCP: docs";
+ * null when it has neither.
+ */
+fun toolsLine(ws: Workspace): String? {
+    val parts = listOfNotNull(
+        ws.connections.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name },
+        ws.mcp.takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "MCP: ") { it.name },
+    )
+    return if (parts.isEmpty()) null else "This Workspace's agents get: " + parts.joinToString(" · ")
+}
+
 data class BranchChoice(val repo: String, val branch: String = "")
 
-/**
- * What the user picked in the Start Task sheet. Connections and MCP servers on
- * by default are always on, so [connections] and [mcp] hold only the others.
- */
+/** What the user picked in the Start Task sheet. */
 data class TaskChoices(
     val workspace: String = "",
     val title: String = "",
@@ -33,8 +40,6 @@ data class TaskChoices(
     val worktrees: Boolean = false,
     val branches: List<BranchChoice> = emptyList(),
     val readOnly: Set<String> = emptySet(),
-    val connections: Set<String> = emptySet(),
-    val mcp: Set<String> = emptySet(),
     val plan: Boolean = false,
     val loop: Boolean = false,
     val check: String = "",
@@ -42,10 +47,10 @@ data class TaskChoices(
 ) {
     val canStart: Boolean get() = workspace.isNotEmpty() && title.isNotBlank()
 
-    /** A new Workspace keeps the title and the goal; its places, tools and loop start over. */
+    /** A new Workspace keeps the title and the goal; its places and loop start over. */
     fun inWorkspace(ws: Workspace): TaskChoices = copy(
         workspace = ws.name, worktrees = false, branches = emptyList(), readOnly = emptySet(),
-        connections = emptySet(), mcp = emptySet(), loop = false,
+        loop = false,
         check = (ws.loop?.checks as? LoopChecks.List)?.commands?.firstOrNull().orEmpty(),
     )
 
@@ -63,8 +68,6 @@ data class TaskChoices(
             title = title.trim(),
             goal = goal.trim().ifEmpty { null },
             places = working + reads,
-            connections = connections.sorted(),
-            mcp = mcp.sorted(),
             plan = plan,
             loop = if (loop) LoopSpec(check = check.trim().ifEmpty { null }, maxAttempts = maxAttempts) else null,
         )

@@ -30,6 +30,7 @@ import tech.xdge.muxa.v2.ReaderKind
 import tech.xdge.muxa.v2.ReaderList
 import tech.xdge.muxa.v2.Routine
 import tech.xdge.muxa.v2.RoutineProblem
+import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.V2Client
 import tech.xdge.muxa.v2.V2Error
@@ -411,11 +412,19 @@ class NextModel(
         return list
     }
 
+    /** The host's settings (ADR 0074) over this window's connection. */
+    val settingsHost: SettingsHost = object : SettingsHost {
+        override suspend fun settings() = connected().settings()
+        override suspend fun settingsUpdate(revision: String, ops: List<SettingsOp>) = connected().settingsUpdate(revision, ops)
+    }
+
+    private fun connected(): V2Client = client ?: throw IllegalStateException("Not connected.")
+
     /** Starts a Task; its agent terminal, or null with [requestError] set. */
     suspend fun startTask(draft: TaskDraft): Terminal? {
         var started: Terminal? = null
         request { c ->
-            val (t, _) = c.startTask(draft.workspace, draft.title, draft.goal, draft.places, draft.connections, draft.mcp, draft.plan, draft.loop)
+            val (t, _) = c.startTask(draft.workspace, draft.title, draft.goal, draft.places, plan = draft.plan, loop = draft.loop)
             if (terminals.none { it.id == t.id }) terminals = terminals + t
             started = t
         }

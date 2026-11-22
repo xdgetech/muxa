@@ -1,10 +1,7 @@
 package tech.xdge.muxa.app.next
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,14 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,20 +29,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.ui.Icons
-import tech.xdge.muxa.app.ui.KindPalette
 import tech.xdge.muxa.app.ui.Palette
-import tech.xdge.muxa.app.ui.StateColors
-import tech.xdge.muxa.v2.UsedBy
 import tech.xdge.muxa.v2.Workspace
 
-/** The phone's Settings tab: the host this window is connected to and its Workspaces. */
+/** The phone's Settings tab: the host this window is connected to and its settings. */
 @Composable
 fun SettingsScreen(model: NextModel, nav: Nav) {
     PhoneTabs(nav) {
@@ -78,18 +68,48 @@ fun SettingsDialog(model: NextModel, close: () -> Unit) {
     }
 }
 
+/** The host, then its settings (ADR 0074): the Workspaces list or one Workspace, and the workers. */
 @Composable
 private fun SettingsContent(model: NextModel) {
+    val editor = remember(model) { SettingsEditor(model.settingsHost) }
+    var usage by remember { mutableStateOf<List<Workspace>>(emptyList()) }
+    var open by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(editor) { editor.load() }
+    // Tasks that start or end change who uses what: ask again when the live terminals change.
+    val live = model.terminals.filter { it.live }.map { it.id }
+    LaunchedEffect(live) { model.workspaces()?.let { usage = it } }
+
     Column(Modifier.padding(bottom = 16.dp)) {
-        HostCard(model)
-        Note("Hosts are added and edited while disconnected.")
-        WorkspacesSection(model)
+        val settings = editor.settings
+        val ws = settings?.workspaces?.firstOrNull { it.name == open }
+        if (ws == null) {
+            HostCard(model)
+            SettingsNote("Hosts are added and edited while disconnected.")
+        }
+        Notices(editor)
+        when {
+            settings == null && editor.loadError != null -> SettingsNote(editor.loadError.orEmpty())
+            settings == null -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            ws != null -> WorkspaceSettings(editor, ws, usage.firstOrNull { it.name == ws.name }, model) { open = null }
+            else -> {
+                WorkspaceList(editor) { open = it }
+                WorkersSection(editor, settings.workspaces.map { it.name })
+            }
+        }
     }
 }
 
 @Composable
+private fun Notices(editor: SettingsEditor) {
+    val notice = editor.notice
+    if (notice != null) SettingsWarning(notice, "settings.notice")
+    if (editor.readOnly && notice != SettingsEditor.LOCKED) SettingsWarning(SettingsEditor.LOCKED, "settings.readonly")
+    editor.settings?.problem?.let { SettingsWarning("workspaces.toml cannot be used as it is: $it", "settings.problem") }
+}
+
+@Composable
 private fun HostCard(model: NextModel) {
-    Card {
+    SettingsCard {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.host, null, tint = Palette.textSecondary)
             Spacer(Modifier.width(12.dp))
@@ -98,7 +118,7 @@ private fun HostCard(model: NextModel) {
                 Text(hostLine(model).substringAfter(" · "), color = Palette.textTertiary, fontSize = 12.5.sp)
             }
         }
-        HorizontalDivider(color = Palette.divider)
+        CardDivider()
         Row(
             Modifier
                 .fillMaxWidth()
@@ -113,193 +133,43 @@ private fun HostCard(model: NextModel) {
     }
 }
 
-/** Each Workspace as the host defines it, read only (ADR 0069 §7). */
 @Composable
-private fun WorkspacesSection(model: NextModel) {
-    var workspaces by remember { mutableStateOf<List<Workspace>?>(null) }
-    var failed by remember { mutableStateOf<String?>(null) }
-    // Tasks that start or end change who uses what: ask again when the live terminals change.
-    val live = model.terminals.filter { it.live }.map { it.id }
-    LaunchedEffect(live) {
-        val list = model.workspaces()
-        if (list != null) {
-            workspaces = list
-            failed = null
-        } else {
-            failed = model.requestError ?: "The Workspaces could not be read."
-        }
-    }
+private fun WorkspaceList(editor: SettingsEditor, open: (String) -> Unit) {
+    var adding by remember { mutableStateOf(false) }
+    val list = editor.settings?.workspaces.orEmpty()
     Column(Modifier.testTag("settings.workspaces")) {
-        Header("Workspaces")
-        InfoBanner(
-            "Secrets stay in the host's Keychain. muxa never shows them. " +
-                "A Default one goes to every Task and Routine of its Workspace. " +
-                "This is read only: edit workspaces.toml on the host to change it.",
+        SettingsHeader("Workspaces")
+        SettingsInfo(
+            "Secrets and env values stay on the host, secrets in its Keychain. muxa never shows them: it only says whether one is set.",
+            "settings.secrets",
         )
-        val list = workspaces
-        when {
-            list == null && failed != null -> Note(failed.orEmpty())
-            list == null -> Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            list.isEmpty() -> Note("This host has no Workspaces. Add one in workspaces.toml on the host.")
-            else -> for (ws in list) WorkspaceCard(ws, model)
+        SettingsCard {
+            if (list.isEmpty()) SettingsNote("This host has no Workspaces yet.", Modifier.padding(vertical = 8.dp))
+            for (w in list) {
+                val parts = listOf(w.root, count(w.connections.size, "connection"), count(w.mcp.size, "MCP server"))
+                NavRow(w.name, parts.joinToString(" · "), "settings.workspace.${w.name}", { open(w.name) })
+                CardDivider()
+            }
+            ActionRow("+ New Workspace", "settings.workspace.add", !editor.readOnly) { adding = true }
         }
+    }
+    if (adding) NewWorkspaceDialog(editor) { adding = false }
+}
+
+@Composable
+private fun NewWorkspaceDialog(editor: SettingsEditor, close: () -> Unit) {
+    var draft by remember { mutableStateOf(WorkspaceDraft()) }
+    FormDialog("New Workspace", "settings.workspace.form", draft.isValid, { editor.save(listOf(draft.op())) }, close) {
+        Field(draft.name, { draft = draft.copy(name = it) }, "Name", "workspace.name")
+        Field(draft.root, { draft = draft.copy(root = it) }, "Root folder", "workspace.root", mono = true, placeholder = "~/Projects/app")
+        Field(
+            draft.repos, { draft = draft.copy(repos = it) }, "Repos", "workspace.repos", mono = true, lines = 2,
+            help = "One per line, relative to the root. Optional.",
+        )
     }
 }
 
-@Composable
-private fun WorkspaceCard(ws: Workspace, model: NextModel) {
-    val now = System.currentTimeMillis() / 1000
-    Card(Modifier.testTag("settings.workspace.${ws.name}")) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column {
-                Text(ws.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(ws.root, color = Palette.textTertiary, fontSize = 12.5.sp, fontFamily = FontFamily.Monospace)
-            }
-            Fact("Agent", ws.agent ?: "the host's default")
-            Fact("Loops", loopText(ws.loop))
-        }
-        Group("Connections", "No connections.", ws.connections.isEmpty()) {
-            for (c in ws.connections) {
-                UsageRow(c.name, null, c.isDefault, c.usedBy, c.lastUsed, now, model, "settings.connection.${ws.name}.${c.name}")
-            }
-        }
-        Group("MCP servers", "No MCP servers: agents get their own.", ws.mcp.isEmpty()) {
-            for (m in ws.mcp) {
-                UsageRow(m.name, m.name.take(2).uppercase(), m.isDefault, m.usedBy, m.lastUsed, now, model, "settings.mcp.${ws.name}.${m.name}")
-            }
-            Text(
-                "Strict: agents in this Workspace get only these MCP servers.",
-                Modifier.padding(horizontal = 14.dp, vertical = 10.dp).testTag("settings.strict.${ws.name}"),
-                color = Palette.textTertiary,
-                fontSize = 12.5.sp,
-            )
-        }
-    }
-}
-
-/** A titled part of a Workspace's card, or [empty] when it has nothing. */
-@Composable
-private fun Group(title: String, empty: String, isEmpty: Boolean, rows: @Composable () -> Unit) {
-    HorizontalDivider(color = Palette.divider)
-    Text(
-        title.uppercase(),
-        Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 2.dp),
-        color = Palette.textTertiary,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.6.sp,
-    )
-    if (isEmpty) {
-        Text(empty, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = Palette.textSecondary, fontSize = 13.sp)
-    } else {
-        rows()
-    }
-}
-
-/** A connection or MCP server: Default, who uses it and when it was last used. */
-@Composable
-private fun UsageRow(
-    name: String,
-    badge: String?,
-    isDefault: Boolean,
-    usedBy: UsedBy,
-    lastUsed: Long?,
-    now: Long,
-    model: NextModel,
-    tag: String,
-) {
-    val users = usedBy.named(model.terminals)
-    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp).testTag(tag), verticalAlignment = Alignment.Top) {
-        if (badge != null) {
-            Box(Modifier.size(30.dp).background(Palette.control, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                Text(badge, color = KindPalette.todo.content, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
-            }
-        } else {
-            Dot(if (users.isEmpty) StateColors.idle else StateColors.working, 8.dp, Modifier.padding(top = 6.dp))
-        }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                if (isDefault) DefaultChip()
-            }
-            if (users.isEmpty) UsageLine("Not used now")
-            if (users.routines.isNotEmpty()) UsageLine("Routines: " + users.routines.joinToString(", "))
-            if (users.tasks.isNotEmpty()) UsageLine("Tasks: " + users.tasks.joinToString(", "))
-        }
-        Text("last used " + lastUsedText(lastUsed, now), color = Palette.textTertiary, fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun UsageLine(text: String) {
-    Text(text, color = Palette.textSecondary, fontSize = 12.5.sp)
-}
-
-/** Default: every Task and Routine of the Workspace gets it. */
-@Composable
-private fun DefaultChip() {
-    Text(
-        "Default",
-        Modifier.background(KindPalette.read.background, RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 1.dp),
-        color = KindPalette.read.content,
-        fontSize = 11.5.sp,
-    )
-}
-
-@Composable
-private fun Fact(label: String, value: String) {
-    Row {
-        Text(label, Modifier.width(FACT_LABEL_WIDTH.dp), color = Palette.textTertiary, fontSize = 13.sp)
-        Text(value, Modifier.weight(1f), fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun Card(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Column(
-        modifier
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .fillMaxWidth()
-            .background(Palette.raised, RoundedCornerShape(14.dp))
-            .border(1.dp, Palette.border, RoundedCornerShape(14.dp)),
-    ) { content() }
-}
-
-@Composable
-private fun Header(title: String) {
-    Text(
-        title.uppercase(),
-        Modifier.padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 6.dp),
-        color = Palette.textTertiary,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.6.sp,
-    )
-}
-
-@Composable
-private fun InfoBanner(text: String) {
-    Text(
-        text,
-        Modifier
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .fillMaxWidth()
-            .background(Palette.infoBackground, RoundedCornerShape(10.dp))
-            .border(1.dp, Palette.infoBorder, RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .testTag("settings.secrets"),
-        color = Palette.infoText,
-        fontSize = 13.sp,
-        lineHeight = 19.sp,
-    )
-}
-
-@Composable
-private fun Note(text: String) {
-    Text(text, Modifier.padding(horizontal = 18.dp, vertical = 4.dp), color = Palette.textTertiary, fontSize = 12.5.sp)
-}
+fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"
 
 private const val SHEET_WIDTH = 640
 private const val SHEET_HEIGHT = 760
-private const val FACT_LABEL_WIDTH = 64

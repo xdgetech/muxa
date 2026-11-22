@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -95,31 +96,89 @@ class NextTest {
         compose.waitUntilDoesNotExist(hasTestTag("item.d8"), TIMEOUT)
     }
 
+    // Settings reads the host's settings since ADR 0074, and ADR 0075 gives every agent all its
+    // Workspace's connections: the demo's settings have no linear connection, and nothing is "Default".
     @Test
     fun settingsShowsWhoUsesEachConnectionAndMcpServer() {
         launch()
-        // A phone has a Settings tab; a tablet opens Settings from the host in the sidebar.
-        if (compose.onAllNodesWithTag("home.settings").fetchSemanticsNodes().isNotEmpty()) {
-            compose.onNodeWithTag("home.settings").performClick()
-        } else {
-            compose.onNodeWithTag("home.host").performClick()
-            compose.waitUntilAtLeastOneExists(hasTestTag("home.host.settings"), TIMEOUT)
-            compose.onNodeWithTag("home.host.settings").performClick()
-        }
-        compose.waitUntilAtLeastOneExists(hasTestTag("settings.workspace.app"), TIMEOUT)
-        compose.onNodeWithTag("settings.secrets").assert(hasText("Keychain", substring = true))
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.CONNECTIONS").performClick()
+        compose.onNodeWithTag("settings.tools.app").assert(hasText("gets all its connections and MCP servers", substring = true))
         compose.onNodeWithTag("settings.connection.app.github").performScrollTo()
         compose.waitUntil(TIMEOUT) {
             val text = compose.nodeText(compose.onNodeWithTag("settings.connection.app.github").fetchSemanticsNode().id)
             // A Task by its title, from the terminal list; a Routine by its name.
-            "Default" in text && "Tasks: fix-login, docs-audit" in text && "dependency-digest" in text && "last used" in text
+            "Tasks: fix-login, docs-audit" in text && "dependency-digest" in text && "last used" in text
         }
-        val linear = compose.nodeText(compose.onNodeWithTag("settings.connection.app.linear").fetchSemanticsNode().id)
-        check("Default" !in linear) { linear }
+        compose.onNodeWithTag("settings.connection.app.github.secret", useUnmergedTree = true).assert(hasText("set"))
+        compose.onNodeWithTag("settings.tab.MCP").performScrollTo().performClick()
         compose.onNodeWithTag("settings.mcp.app.docs").performScrollTo()
         compose.onNodeWithTag("settings.strict.app").performScrollTo().assert(hasText("only these MCP servers", substring = true))
-        compose.onNodeWithTag("settings.workspace.Personal").performScrollTo()
+        compose.onNodeWithTag("settings.back").performScrollTo().performClick()
+        compose.openWorkspaceSettings("Personal")
+        compose.onNodeWithTag("settings.tab.MCP").performClick()
         compose.onNodeWithTag("settings.strict.Personal").assertDoesNotExist()
+    }
+
+    @Test
+    fun aWorkspaceIsAdded() {
+        launch()
+        compose.openSettings()
+        compose.onNodeWithTag("settings.workspace.add").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("workspace.name"), TIMEOUT)
+        compose.onNodeWithTag("workspace.name").performTextInput("Lab")
+        compose.onNodeWithTag("workspace.root").performTextInput("/demo/lab")
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.workspace.Lab"), TIMEOUT)
+        compose.onNodeWithTag("settings.workspace.Lab").assert(hasText("/demo/lab", substring = true))
+    }
+
+    @Test
+    fun aConnectionWithASecretShowsSet() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.CONNECTIONS").performClick()
+        compose.onNodeWithTag("settings.connection.add").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("connection.name"), TIMEOUT)
+        compose.onNodeWithTag("connection.name").performTextInput("linear")
+        compose.onNodeWithTag("connection.env").performTextInput("LINEAR_API_KEY")
+        compose.onNodeWithTag("connection.secret").performScrollTo().performTextInput("s3cret-value")
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.connection.app.linear"), TIMEOUT)
+        compose.onNodeWithTag("settings.connection.app.linear.secret", useUnmergedTree = true).assert(hasText("set"))
+        // The secret is write-only: nothing shows it.
+        check(compose.onAllNodes(hasText("s3cret-value", substring = true), useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun anMcpServerIsAdded() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.MCP").performClick()
+        compose.onNodeWithTag("settings.mcp.add").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("mcp.name"), TIMEOUT)
+        compose.onNodeWithTag("mcp.name").performTextInput("search")
+        compose.onNodeWithTag("mcp.command").performTextInput("npx")
+        compose.onNodeWithTag("mcp.args").performTextInput("search-mcp")
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("settings.mcp.app.search"), TIMEOUT)
+        compose.onNodeWithTag("settings.mcp.app.search").assert(hasText("npx search-mcp", substring = true))
+    }
+
+    @Test
+    fun aRoutinesInstructionsAreEdited() {
+        launch()
+        compose.openWorkspaceSettings("app")
+        compose.onNodeWithTag("settings.tab.ROUTINES").performClick()
+        compose.onNodeWithTag("settings.routine.app.dependency-digest").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("routine.instructions"), TIMEOUT)
+        compose.onNodeWithTag("routine.instructions").assert(hasText("List the dependency updates", substring = true))
+        compose.onNodeWithTag("routine.instructions").performScrollTo().performTextReplacement("Only the security fixes.")
+        compose.onNodeWithTag("settings.form.save").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("routine.instructions"), TIMEOUT)
+        compose.onNodeWithTag("settings.routine.app.dependency-digest").performScrollTo().performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("routine.instructions"), TIMEOUT)
+        compose.onNodeWithTag("routine.instructions").assert(hasText("Only the security fixes."))
     }
 
     @Test
@@ -165,14 +224,23 @@ class NextTest {
         compose.onNodeWithTag("task.title").performTextInput("Add rate limits")
         compose.onNodeWithTag("task.places.branch").performScrollTo().performClick()
         compose.onNodeWithTag("task.branch.0").performScrollTo().performTextInput("rate-limits")
-        compose.onNodeWithTag("task.connection.github").assertIsNotEnabled()
-        compose.onNodeWithTag("task.connection.linear").performScrollTo().performClick()
         compose.onNodeWithTag("task.loop").performScrollTo().performClick()
         compose.onNodeWithTag("task.check.make lint").performScrollTo().performClick()
         compose.onNodeWithTag("task.start").performClick()
         compose.waitUntilAtLeastOneExists(screenContains("Starting the agent for Add rate limits"), TIMEOUT)
         compose.onNodeWithTag("task.sheet").assertDoesNotExist()
         compose.waitUntilAtLeastOneExists(hasText("Loop 0/3"), TIMEOUT)
+    }
+
+    @Test
+    fun startTaskSaysWhatTheWorkspacesAgentsGet() {
+        launch()
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("home.newtask"), TIMEOUT)
+        compose.onNodeWithTag("home.newtask").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.tools"), TIMEOUT)
+        compose.onNodeWithTag("task.tools").performScrollTo().assert(hasText("This Workspace's agents get: github, linear · MCP: docs"))
+        compose.onNodeWithTag("task.connection.github").assertDoesNotExist()
     }
 
     @Test
@@ -371,6 +439,29 @@ private fun ComposeTestRule.nodeText(id: Int): String {
     walk(node)
     return texts.joinToString(" ")
 }
+
+/** A phone has a Settings tab; a tablet opens Settings from the host in the sidebar. */
+@OptIn(ExperimentalTestApi::class)
+private fun ComposeTestRule.openSettings() {
+    if (onAllNodesWithTag("home.settings").fetchSemanticsNodes().isNotEmpty()) {
+        onNodeWithTag("home.settings").performClick()
+    } else {
+        onNodeWithTag("home.host").performClick()
+        waitUntilAtLeastOneExists(hasTestTag("home.host.settings"), WAIT)
+        onNodeWithTag("home.host.settings").performClick()
+    }
+    waitUntilAtLeastOneExists(hasTestTag("settings.workspaces"), WAIT)
+    onNodeWithTag("settings.secrets").assert(hasText("Keychain", substring = true))
+}
+
+@OptIn(ExperimentalTestApi::class)
+private fun ComposeTestRule.openWorkspaceSettings(name: String) {
+    if (onAllNodesWithTag("settings.workspaces").fetchSemanticsNodes().isEmpty()) openSettings()
+    onNodeWithTag("settings.workspace.$name").performScrollTo().performClick()
+    waitUntilAtLeastOneExists(hasTestTag("settings.detail.$name"), WAIT)
+}
+
+private const val WAIT = 10_000L
 
 /** A phone shows the detail over the list; go back to it. A tablet shows both. */
 @OptIn(ExperimentalTestApi::class)
