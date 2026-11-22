@@ -2,7 +2,8 @@
 //! other languages (`make test-apple-v2`). One terminal, `demo`, shows
 //! `hello ` and echoes input as `echo:<bytes>`. Its folder's Reader has one
 //! document, one changed file and one image, all fixed. A Task Loop with the
-//! check `make test` starts and stops, and runs nothing.
+//! check `make test` starts and stops, and runs nothing. A Task agent's Chat
+//! has one fixed exchange and waits on a permission.
 //!
 //! Usage: `fake_server SOCKET`. It runs until killed.
 
@@ -13,7 +14,9 @@ use muxa_backend::TerminalInfo;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
-use muxa_protocol::v2::{LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList};
+use muxa_protocol::v2::{
+    ChatUpdate, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
+};
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
     TaskSpec, serve,
@@ -92,6 +95,49 @@ impl Host for FakeHost {
 
     async fn loop_stop(&self, terminal: &str) -> Result<LoopInfo, TaskError> {
         Ok(fake_loop(terminal, "stopped", Some("user")))
+    }
+
+    async fn chat_open(&self, _dir: &Path) -> Result<(u64, ChatUpdate), TaskError> {
+        let entry = |id: &str, kind, text: &str| muxa_protocol::ChatEntry {
+            id: id.into(),
+            kind,
+            text: text.into(),
+            tool: None,
+        };
+        let update = ChatUpdate {
+            reset: true,
+            entries: vec![
+                entry(
+                    "u1",
+                    muxa_protocol::ChatKind::User,
+                    "Clean the build folder",
+                ),
+                entry("a1", muxa_protocol::ChatKind::Assistant, "Removing it."),
+            ],
+            truncated: false,
+            prompt: Some(muxa_protocol::v2::ChatPrompt {
+                entry: "a1".into(),
+                kind: muxa_protocol::PromptKind::Permission,
+                question: None,
+                options: vec![
+                    muxa_protocol::v2::ChatOption {
+                        label: "Allow".into(),
+                        input: "1".into(),
+                        cancel: false,
+                    },
+                    muxa_protocol::v2::ChatOption {
+                        label: "Deny".into(),
+                        input: "\u{1b}".into(),
+                        cancel: true,
+                    },
+                ],
+            }),
+        };
+        Ok((1, update))
+    }
+
+    async fn chat_poll(&self, _handle: u64) -> Result<Option<ChatUpdate>, TaskError> {
+        Ok(None)
     }
 
     async fn reader_list(

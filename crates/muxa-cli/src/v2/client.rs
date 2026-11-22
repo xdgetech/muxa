@@ -251,9 +251,8 @@ where
                 }
                 Some(Event::Paint { channel })
             }
-            "changed" | "removed" | "resync" | "reader" | "reader-ended" => {
-                Some(Event::Notice(msg))
-            }
+            "changed" | "removed" | "resync" | "reader" | "reader-ended" | "chat"
+            | "chat-ended" => Some(Event::Notice(msg)),
             _ => None,
         }
     }

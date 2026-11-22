@@ -53,6 +53,16 @@ pub trait AgentAdapter: Send + Sync {
         procs: &Processes,
     ) -> Result<Option<Box<dyn ChatSource>>, Error>;
 
+    /// A source for this adapter's agent working in `dir`, a Task's working
+    /// place (protocol v2 has no pane). None when it sees none there.
+    fn open_folder(
+        &self,
+        _dir: &std::path::Path,
+        _procs: &Processes,
+    ) -> Result<Option<Box<dyn ChatSource>>, Error> {
+        Ok(None)
+    }
+
     /// This adapter's agent, when it runs in `pane`, and its state. Cheaper than
     /// `open`; it decides a pane's role and state when no tag does.
     fn find(&self, _pane: &PaneInfo, _procs: &Processes) -> Option<Found> {
@@ -170,6 +180,17 @@ impl Registry {
             .find_map(|a| a.find(pane, procs).map(|found| (a.id(), found)))
     }
 
+    /// The first adapter that sees its agent working in `dir`.
+    pub fn open_folder(&self, dir: &std::path::Path) -> Result<Option<Opened>, Error> {
+        let procs = Processes::list()?;
+        for adapter in &self.adapters {
+            if let Some(source) = adapter.open_folder(dir, &procs)? {
+                return Ok(Some((adapter.id(), source)));
+            }
+        }
+        Ok(None)
+    }
+
     pub fn open(&self, pane: &PaneInfo) -> Result<Option<Opened>, Error> {
         let procs = Processes::list()?;
         for adapter in &self.adapters {
@@ -282,6 +303,11 @@ impl Processes {
             .collect();
         pids.sort_unstable();
         pids
+    }
+
+    /// `pid` was running when the list was made.
+    pub fn alive(&self, pid: u32) -> bool {
+        self.parent.contains_key(&pid)
     }
 
     /// When `pid` started, to the second.

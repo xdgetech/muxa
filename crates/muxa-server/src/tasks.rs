@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
 use muxa_protocol::v2::{
-    LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList, Routine,
-    RoutineProblem,
+    ChatUpdate, LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList,
+    Routine, RoutineProblem,
 };
 use tokio::sync::watch;
 
@@ -143,6 +143,28 @@ pub trait Host: Send + Sync {
     /// Bumped when a loop changes, for `watch`. None: no loops here.
     fn loop_changes(&self) -> Option<watch::Receiver<u64>> {
         None
+    }
+
+    /// Opens the conversation of the agent working in `dir`: a handle for
+    /// [`Host::chat_poll`], and everything it holds now.
+    fn chat_open(
+        &self,
+        _dir: &Path,
+    ) -> impl Future<Output = Result<(u64, ChatUpdate), TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no Chat".into())) }
+    }
+
+    /// What changed since the last poll; None when nothing did. An error
+    /// ends the chat, and its message says why.
+    fn chat_poll(
+        &self,
+        _handle: u64,
+    ) -> impl Future<Output = Result<Option<ChatUpdate>, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host has no Chat".into())) }
+    }
+
+    fn chat_close(&self, _handle: u64) -> impl Future<Output = ()> + Send {
+        async {}
     }
 
     /// The files of `kind` in `dir` the Reader may open. Nothing else is served.

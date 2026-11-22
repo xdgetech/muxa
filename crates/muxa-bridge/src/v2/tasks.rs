@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
+use super::chat::Chats;
 use super::places;
 use super::runner::Runner;
 use super::task_loop::TaskLoops;
@@ -21,6 +22,7 @@ pub struct BridgeHost {
     /// Runs Routines on the session backend, for Run now.
     runner: Option<Arc<Runner>>,
     loops: Option<Arc<TaskLoops>>,
+    chats: Option<Arc<Chats>>,
 }
 
 impl BridgeHost {
@@ -30,6 +32,7 @@ impl BridgeHost {
             records,
             runner: None,
             loops: None,
+            chats: None,
         }
     }
 
@@ -37,6 +40,13 @@ impl BridgeHost {
         self.loops
             .as_deref()
             .ok_or_else(|| TaskError::Invalid("this host runs no Task Loops".into()))
+    }
+
+    pub fn with_chats(self, chats: Arc<Chats>) -> Self {
+        BridgeHost {
+            chats: Some(chats),
+            ..self
+        }
     }
 
     pub fn with_loops(self, loops: Arc<TaskLoops>) -> Self {
@@ -191,6 +201,32 @@ impl Host for BridgeHost {
 
     fn loop_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
         self.loops.as_ref().map(|l| l.subscribe())
+    }
+
+    async fn chat_open(
+        &self,
+        dir: &std::path::Path,
+    ) -> Result<(u64, muxa_protocol::v2::ChatUpdate), TaskError> {
+        match &self.chats {
+            Some(c) => c.open(dir).await,
+            None => Err(TaskError::Invalid("this host has no Chat".into())),
+        }
+    }
+
+    async fn chat_poll(
+        &self,
+        handle: u64,
+    ) -> Result<Option<muxa_protocol::v2::ChatUpdate>, TaskError> {
+        match &self.chats {
+            Some(c) => c.poll(handle).await,
+            None => Err(TaskError::Invalid("this host has no Chat".into())),
+        }
+    }
+
+    async fn chat_close(&self, handle: u64) {
+        if let Some(c) = &self.chats {
+            c.close(handle);
+        }
     }
 
     async fn reader_list(

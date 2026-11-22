@@ -311,7 +311,10 @@ async fn serve(daemon: Arc<Daemon>, path: &Path) -> std::io::Result<()> {
                 Arc::clone(&daemon.records.records),
             )
             .with_runner(Arc::clone(&runner))
-            .with_loops(Arc::clone(&loops));
+            .with_loops(Arc::clone(&loops))
+            .with_chats(Arc::new(crate::v2::chat::Chats::new(Arc::clone(
+                &daemon.records.agents,
+            ))));
             crate::v2::feed::spawn(Arc::clone(&inbox), Arc::clone(&daemon.records.records));
             let herdr = Arc::new(crate::v2::Herdr::new(program, host, inbox));
             crate::v2::spawn_task_watch(Arc::clone(&herdr));

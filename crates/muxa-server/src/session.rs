@@ -26,6 +26,9 @@ use crate::{inbox, task_items};
 /// The most scrollback lines one attach may ask for.
 const MAX_HISTORY: u32 = 10_000;
 
+/// How often followed conversations are read again.
+const CHAT_TICK: Duration = Duration::from_millis(700);
+
 /// How long a client's attachments wait for its resume.
 pub const PARK: Duration = Duration::from_secs(10 * 60);
 
@@ -74,6 +77,9 @@ struct Session<'a, B: SessionBackend, H: Host> {
     next_channel: u32,
     park_for: Duration,
     readers: Readers,
+    /// Followed conversations: chat number to the host's handle.
+    chats: HashMap<u32, u64>,
+    next_chat: u32,
 }
 
 /// What to start on a resumed channel once `welcome` is out.
@@ -129,7 +135,11 @@ where
         next_channel: 1,
         park_for: config.park,
         readers: Readers::default(),
+        chats: HashMap::new(),
+        next_chat: 1,
     };
+    let mut chat_tick = tokio::time::interval(CHAT_TICK);
+    chat_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut reader_tick = tokio::time::interval(reader::TICK);
     reader_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let (token, resumed, starts) = match resume {
@@ -160,6 +170,9 @@ where
                 session.attachments.remove(&channel);
             }
             change = next_change(&mut session.changes) => session.change(change).await,
+            _ = chat_tick.tick(), if !session.chats.is_empty() => {
+                session.poll_chats().await;
+            }
             _ = reader_tick.tick(), if !session.readers.open.is_empty() => {
                 session.refresh_readers().await;
             }
@@ -177,6 +190,10 @@ where
             }
         }
     };
+    // A resume opens its chats again.
+    for handle in session.chats.values() {
+        session.host.chat_close(*handle).await;
+    }
     for handle in session.attachments.values() {
         let _ = handle.cmds.send(Cmd::Park);
     }
@@ -368,6 +385,14 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     Err((code, message)) => self.error(Some(id), code, message),
                 }
             }
+            ClientMsg::ChatOpen { id, terminal } => self.open_chat(id, &terminal).await,
+            ClientMsg::ChatClose { id, chat } => match self.chats.remove(&chat) {
+                Some(handle) => {
+                    self.host.chat_close(handle).await;
+                    self.reply(id, Reply::Empty {});
+                }
+                None => self.error(Some(id), ErrorCode::NotFound, format!("no chat {chat}")),
+            },
             ClientMsg::LoopStop { id, terminal } => match self.host.loop_stop(&terminal).await {
                 Ok(info) => self.reply(id, Reply::Loop { info }),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
@@ -485,6 +510,47 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     self.readers.open.remove(&reader);
                     let reason = e.to_string();
                     send(&self.out, &ServerMsg::ReaderEnded { reader, reason });
+                }
+            }
+        }
+    }
+
+    async fn open_chat(&mut self, id: u64, terminal: &str) {
+        let dir = match self.agent(terminal).await {
+            Ok(t) => t.labels.get(tasks::DIR).map(std::path::PathBuf::from),
+            Err((code, message)) => return self.error(Some(id), code, message),
+        };
+        let Some(dir) = dir else {
+            return self.error(
+                Some(id),
+                ErrorCode::BadRequest,
+                format!("{terminal} has no folder"),
+            );
+        };
+        match self.host.chat_open(&dir).await {
+            Ok((handle, update)) => {
+                let chat = self.next_chat;
+                self.next_chat += 1;
+                self.chats.insert(chat, handle);
+                self.reply(id, Reply::Chat { chat, update });
+            }
+            Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+        }
+    }
+
+    /// Sends what changed in each followed conversation, and ends the ones
+    /// that are over.
+    async fn poll_chats(&mut self) {
+        let open: Vec<(u32, u64)> = self.chats.iter().map(|(c, h)| (*c, *h)).collect();
+        for (chat, handle) in open {
+            match self.host.chat_poll(handle).await {
+                Ok(Some(update)) => send(&self.out, &ServerMsg::Chat { chat, update }),
+                Ok(None) => {}
+                Err(e) => {
+                    self.chats.remove(&chat);
+                    self.host.chat_close(handle).await;
+                    let reason = e.to_string();
+                    send(&self.out, &ServerMsg::ChatEnded { chat, reason });
                 }
             }
         }

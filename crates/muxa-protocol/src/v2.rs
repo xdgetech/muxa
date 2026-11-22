@@ -400,6 +400,53 @@ pub enum ClientMsg {
         id: u64,
         terminal: String,
     },
+    /// Follows the conversation of a Task's agent until `chat-close`.
+    ChatOpen {
+        id: u64,
+        terminal: String,
+    },
+    ChatClose {
+        id: u64,
+        chat: u32,
+    },
+}
+
+/// What changed in a followed conversation (plan F4).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatUpdate {
+    /// `entries` replace everything the client has; else each one replaces
+    /// the entry with its id, or is added.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset: bool,
+    pub entries: Vec<crate::ChatEntry>,
+    /// Older entries exist than the reset carries.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    /// What the agent waits on now; absent: nothing known. Every update
+    /// carries the current one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<ChatPrompt>,
+}
+
+/// A choice the agent waits on, with the bytes that pick each option.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatPrompt {
+    /// The tool entry the agent waits on.
+    pub entry: String,
+    pub kind: crate::PromptKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
+    pub options: Vec<ChatOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatOption {
+    pub label: String,
+    /// What to send as the terminal's input to pick this option.
+    pub input: String,
+    /// Declines or cancels, e.g. a deny.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cancel: bool,
 }
 
 /// A Task Loop a client asks for (ADR 0019): after each finished turn the
@@ -727,6 +774,16 @@ pub enum ServerMsg {
     Loops {
         loops: Vec<LoopInfo>,
     },
+    /// A followed conversation changed.
+    Chat {
+        chat: u32,
+        update: ChatUpdate,
+    },
+    /// A followed conversation ended, e.g. the agent exited.
+    ChatEnded {
+        chat: u32,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -765,6 +822,10 @@ pub enum Reply {
     Loop {
         #[serde(rename = "loop")]
         info: LoopInfo,
+    },
+    Chat {
+        chat: u32,
+        update: ChatUpdate,
     },
     Empty {},
 }

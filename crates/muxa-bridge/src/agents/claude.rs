@@ -48,6 +48,15 @@ impl AgentAdapter for ClaudeAdapter {
             .map(|(dir, s)| Box::new(ClaudeSource::new(dir, s)) as Box<dyn ChatSource>))
     }
 
+    fn open_folder(
+        &self,
+        dir: &Path,
+        procs: &Processes,
+    ) -> Result<Option<Box<dyn ChatSource>>, Error> {
+        Ok(session_in_folder(&self.dirs, dir, procs)?
+            .map(|(dir, s)| Box::new(ClaudeSource::new(dir, s)) as Box<dyn ChatSource>))
+    }
+
     fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
         let (dir, session) = find_session(&self.dirs, pane, procs).ok()??;
         Some(Found {
@@ -199,6 +208,50 @@ fn find_session(
         );
     }
     found.sort_by_key(|(_, s)| (s.cwd != pane.path, std::cmp::Reverse(s.mtime)));
+    Ok(found.into_iter().next())
+}
+
+/// The live, interactive instance whose cwd is `folder`, newest first, and
+/// the config dir it writes to. Its process must still run: files of exited
+/// instances can remain.
+fn session_in_folder(
+    dirs: &[PathBuf],
+    folder: &Path,
+    procs: &Processes,
+) -> Result<Option<(PathBuf, SessionFile)>, Error> {
+    let want = folder.canonicalize().unwrap_or_else(|_| folder.to_owned());
+    let mut found = Vec::new();
+    for dir in dirs {
+        let sessions = dir.join("sessions");
+        let entries = match std::fs::read_dir(&sessions) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(source) => {
+                return Err(Error::Io {
+                    path: sessions,
+                    source,
+                });
+            }
+        };
+        for path in entries.filter_map(Result::ok).map(|e| e.path()) {
+            if path.extension().is_none_or(|x| x != "json") {
+                continue;
+            }
+            let interactive = std::fs::read(&path)
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .is_some_and(|v| v.get("kind").and_then(Value::as_str) == Some("interactive"));
+            let Some(s) = SessionFile::read(&path).filter(|_| interactive) else {
+                continue;
+            };
+            let cwd = Path::new(&s.cwd);
+            let same = cwd.canonicalize().map_or(cwd == want, |c| c == want);
+            if same && procs.alive(s.pid) {
+                found.push((dir.clone(), s));
+            }
+        }
+    }
+    found.sort_by_key(|(_, s)| std::cmp::Reverse(s.mtime));
     Ok(found.into_iter().next())
 }
 

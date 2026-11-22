@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
 use muxa_protocol::v2::{
-    Frame, INITIAL_CREDIT, Kind, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind,
-    ReaderList,
+    ChatUpdate, Frame, INITIAL_CREDIT, Kind, LoopInfo, LoopSpec, ReaderContent, ReaderEntry,
+    ReaderKind, ReaderList,
 };
 use muxa_server::{
     Config, Host, Inbox, Prepared, ReaderOpen, RoutineList, ServeError, Services, Sessions,
@@ -107,6 +107,19 @@ impl Host for FakeTasks {
         Some(LOOP_CHANGES.with(|c| c.subscribe()))
     }
 
+    /// One user entry and a permission prompt; the agent in `/work/gone` has exited.
+    async fn chat_open(&self, dir: &Path) -> Result<(u64, ChatUpdate), TaskError> {
+        let handle = if dir.ends_with("gone") { 2 } else { 1 };
+        Ok((handle, chat_update()))
+    }
+
+    async fn chat_poll(&self, handle: u64) -> Result<Option<ChatUpdate>, TaskError> {
+        match handle {
+            2 => Err(TaskError::Failed("Claude Code exited".into())),
+            _ => Ok(None),
+        }
+    }
+
     /// The Markdown files directly in `dir`.
     async fn reader_list(
         &self,
@@ -138,6 +151,29 @@ impl Host for FakeTasks {
             text: Some(text),
             ..ReaderContent::default()
         })
+    }
+}
+
+fn chat_update() -> ChatUpdate {
+    ChatUpdate {
+        reset: true,
+        entries: vec![muxa_protocol::ChatEntry {
+            id: "u1".into(),
+            kind: muxa_protocol::ChatKind::User,
+            text: "Clean the build".into(),
+            tool: None,
+        }],
+        truncated: false,
+        prompt: Some(muxa_protocol::v2::ChatPrompt {
+            entry: "t:1".into(),
+            kind: muxa_protocol::PromptKind::Permission,
+            question: None,
+            options: vec![muxa_protocol::v2::ChatOption {
+                label: "Allow".into(),
+                input: "1".into(),
+                cancel: false,
+            }],
+        }),
     }
 }
 
@@ -1141,4 +1177,58 @@ async fn a_task_starts_with_its_loop_and_watchers_see_loop_changes() {
     )
     .await;
     assert_eq!(not_agent["code"], "bad-request");
+}
+
+#[tokio::test]
+async fn a_chat_opens_with_the_conversation_and_ends_with_the_agent() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let fix = request(
+        &mut client,
+        json!({"type": "start-task", "id": 1, "workspace": "w", "title": "fix"}),
+    )
+    .await;
+    let opened = request(
+        &mut client,
+        json!({"type": "chat-open", "id": 2, "terminal": fix["terminal"]["id"]}),
+    )
+    .await;
+    assert_eq!(opened["chat"], 1);
+    assert_eq!(opened["update"]["reset"], true);
+    assert_eq!(opened["update"]["entries"][0]["text"], "Clean the build");
+    assert_eq!(
+        opened["update"]["prompt"]["options"][0],
+        json!({"label": "Allow", "input": "1"})
+    );
+    let gone = request(
+        &mut client,
+        json!({"type": "start-task", "id": 3, "workspace": "w", "title": "gone"}),
+    )
+    .await;
+    let second = request(
+        &mut client,
+        json!({"type": "chat-open", "id": 4, "terminal": gone["terminal"]["id"]}),
+    )
+    .await;
+    assert_eq!(second["chat"], 2);
+    let ended = client.read_for(Duration::from_secs(3)).await;
+    let ended: Value = serde_json::from_slice(&ended.payload).unwrap();
+    assert_eq!(
+        ended,
+        json!({"type": "chat-ended", "chat": 2, "reason": "Claude Code exited"})
+    );
+    let closed = request(
+        &mut client,
+        json!({"type": "chat-close", "id": 5, "chat": 1}),
+    )
+    .await;
+    assert_eq!(closed["type"], "reply");
+    let shell = terminal(&backend).await;
+    let refused = request(
+        &mut client,
+        json!({"type": "chat-open", "id": 6, "terminal": shell.as_str()}),
+    )
+    .await;
+    assert_eq!(refused["code"], "bad-request");
 }

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend, TerminalId};
-use muxa_protocol::v2::{ReaderContent, ReaderEntry, ReaderKind, ReaderList};
+use muxa_protocol::v2::{ChatUpdate, ReaderContent, ReaderEntry, ReaderKind, ReaderList};
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, Services, Sessions, TaskError, TaskSpec, serve,
 };
@@ -52,6 +52,30 @@ impl Host for WorkTasks {
             env: Default::default(),
             places: Vec::new(),
         })
+    }
+
+    async fn chat_open(&self, _dir: &Path) -> Result<(u64, ChatUpdate), TaskError> {
+        let entry = |id: &str, kind, text: &str| muxa_protocol::ChatEntry {
+            id: id.into(),
+            kind,
+            text: text.into(),
+            tool: None,
+        };
+        Ok((
+            1,
+            ChatUpdate {
+                reset: true,
+                entries: vec![
+                    entry("u1", muxa_protocol::ChatKind::User, "Clean it"),
+                    entry("a1", muxa_protocol::ChatKind::Assistant, "Done."),
+                ],
+                ..ChatUpdate::default()
+            },
+        ))
+    }
+
+    async fn chat_poll(&self, _handle: u64) -> Result<Option<ChatUpdate>, TaskError> {
+        Ok(None)
     }
 
     /// The Markdown files in `dir`, with a title.
@@ -328,4 +352,18 @@ async fn reader_lists_and_follows_a_tasks_file() {
         String::from_utf8_lossy(&refused.stderr).contains("no folder"),
         "{refused:?}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn chat_prints_a_tasks_conversation() {
+    let host = TestHost::start("chat").await;
+    let started: Value = serde_json::from_str(&stdout(
+        &host
+            .cli(&["start-task", "--workspace", "w", "--title", "fix", "--json"])
+            .await,
+    ))
+    .unwrap();
+    let agent = started["terminal"]["id"].as_str().unwrap();
+    let out = stdout(&host.cli(&["chat", agent]).await);
+    assert_eq!(out, "user: Clean it\nassistant: Done.\n");
 }

@@ -94,6 +94,8 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"reader-list","terminal","kind","html"?}` | `{"list":ReaderList}`: the files of the terminal's folder. See Reader |
 | `{"type":"reader-open","terminal","kind","path","html"?,"scope"?}` | `{"reader","content":ReaderContent}`. `reader` and `reader-ended` notifications follow |
 | `{"type":"reader-close","reader"}` | `{}`. `not-found` after `reader-ended` |
+| `{"type":"chat-open","terminal"}` | `{"chat","update":ChatUpdate}`: the conversation of a Task's agent. `chat` and `chat-ended` notifications follow |
+| `{"type":"chat-close","chat"}` | `{}`. `not-found` after `chat-ended` |
 | `{"type":"loops"}` | `{"loops":[Loop...]}`: the Task Loops of the live Task agents |
 | `{"type":"loop-start","terminal","loop":LoopSpec,"reset"?}` | `{"loop":Loop}`. Starts or restarts the loop of a Task's agent |
 | `{"type":"loop-stop","terminal"}` | `{"loop":Loop}`. Stopped with reason `user` |
@@ -128,6 +130,8 @@ An unknown Workspace or connection, a missing title, a wrong repo or branch, or 
 | `{"type":"removed","terminal":"<id>"}` | After `watch`: the terminal is gone |
 | `{"type":"resync"}` | After `watch`: changes were lost. The client sends `terminals` again |
 | `{"type":"loops","loops":[Loop...]}` | After `watch`: a Task Loop changed. It carries every loop |
+| `{"type":"chat","chat","update":ChatUpdate}` | A followed conversation changed |
+| `{"type":"chat-ended","chat","reason"}` | A followed conversation ended, e.g. the agent exited. The chat is closed |
 | `{"type":"reader","reader","content":ReaderContent}` | An open Reader file changed. It carries the whole file as it is now |
 | `{"type":"reader-ended","reader","reason"}` | An open Reader file is gone, no longer listed, or cannot be read. The reader is closed |
 
@@ -149,6 +153,17 @@ ADR 0019, on herdr-core (plan F3). After each finished turn of a Task's agent (`
 - `last_check`: `{"attempt","exit"?,"seconds","at"}`; `exit` is absent when the check timed out. Times are Unix seconds.
 
 The check's output is in `.muxa/CHECK.md` and `.muxa/checks/<n>.log`, which the Reader lists. Neither the check command's output nor the loop file reaches the server's log.
+
+### Chat
+
+Plan F4. The conversation of a Task's agent, read from the agent's own records through its adapter (`docs/agents.md`): Claude Code's session whose working folder is the agent's `muxa.dir`. Another terminal, or a folder where no Claude Code runs, is `bad-request`. The server reads each open chat about every 0.7 s. A chat ends with the connection; after a resume the client opens it again.
+
+`ChatUpdate`: `{"reset"?,"entries":[ChatEntry...],"truncated"?,"prompt"?}`.
+- With `reset`, `entries` replace everything the client has; `truncated` says older entries exist. Without it, each entry replaces the one with its `id`, or is added at the end. `chat-open`'s update always has `reset`.
+- `ChatEntry`: `{"id","kind","text"?,"tool"?}`, as in protocol v1: `kind` is `user`, `assistant`, `tool` or `notice`; `tool` is `{"name","summary","result"?,"error"?}`.
+- `prompt`: what the agent waits on now, `{"entry","kind","question"?,"options":[{"label","input","cancel"?}]}`; `kind` is `permission`, `question` or `plan`. Every update carries the current one; absent means none is known. A client picks an option by sending its `input` as the terminal's input. The server offers only keys the adapter checked against that agent's menu; muxa never answers a menu by itself (ADR 0009).
+
+Conversation text never reaches the server's log.
 
 ### Reader
 

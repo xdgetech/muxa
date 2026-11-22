@@ -2,6 +2,7 @@
 //! served by `muxa-server` on herdr-core, and `muxa-bridge connect`, which
 //! relays an SSH client's stdin and stdout to it.
 
+pub mod chat;
 pub mod feed;
 mod places;
 pub mod reader;

@@ -2,6 +2,7 @@
 //! talks to `muxa-bridge connect`, locally or over SSH, and resumes a lost
 //! connection the way the apps will.
 
+mod chat;
 pub mod client;
 mod inbox;
 mod reader;
@@ -33,6 +34,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] run-routine WORKSPACE NAME
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
+       muxa-cli v2 [--bridge CMD] chat TERMINAL [--seconds N] [--json]
        muxa-cli v2 [--bridge CMD] loops [--json]
        muxa-cli v2 [--bridge CMD] loop-start TERMINAL [--check CMD] [--max-attempts N]
                 [--timeout SECONDS] [--reset]
@@ -48,6 +50,7 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                  $HC_TERMINAL_ID, so its agent can say so itself
   --loop         a Task Loop: after each finished turn the host runs the check;
                  without --check, the Workspace's only allowed one
+  chat           the conversation of a Task's agent, from its own records
   reader         the files of a Task's or a Routine run's folder; read prints
                  one (an image as its bytes), and with --seconds each change;
                  --commits: a change's diff over the branch's commits";
@@ -92,6 +95,11 @@ enum Cmd {
         json: bool,
     },
     Loops {
+        json: bool,
+    },
+    Chat {
+        terminal: String,
+        seconds: Option<u64>,
         json: bool,
     },
     LoopStart {
@@ -209,6 +217,11 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             json,
         },
         ["loops"] => Cmd::Loops { json },
+        ["chat", t] => Cmd::Chat {
+            terminal: (*t).to_owned(),
+            seconds,
+            json,
+        },
         ["loop-start", t] => Cmd::LoopStart {
             terminal: (*t).to_owned(),
             spec,
@@ -347,6 +360,11 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             }
             Ok(())
         }
+        Cmd::Chat {
+            terminal,
+            seconds,
+            json,
+        } => chat::run(bridge, &terminal, seconds, json).await,
         Cmd::Loops { json } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let reply = c.request(json!({"type": "loops"})).await?;
