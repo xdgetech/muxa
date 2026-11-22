@@ -69,6 +69,8 @@ class DemoTest {
             assertEquals("fix-2", first.branch)
             val (again, running) = c.startTask("app", "Fix", places = fix)
             assertEquals(first.id to true, again.id to running)
+            val (looped, _) = c.startTask("app", "Lint", loop = LoopSpec("make lint", 5))
+            assertEquals(listOf(Triple(looped.id, "make lint", 5)), c.loops().map { Triple(it.terminal, it.check, it.maxAttempts) })
             c.close()
         }
     }
@@ -91,6 +93,8 @@ class DemoTest {
             assertEquals(listOf("PLAN.md", ".muxa/TASK.md"), c.readerList(agent.id, ReaderKind.DOCS).entries.map { it.path })
             val (reader, plan) = c.readerOpen(agent.id, ReaderKind.DOCS, "PLAN.md")
             assertEquals(true, plan.text?.startsWith("# Plan"))
+            // The plan links another listed document, for the Reader's links.
+            assertEquals(true, plan.text?.contains("](.muxa/TASK.md)"))
             c.readerClose(reader)
             assertEquals("modified", c.readerList(agent.id, ReaderKind.CHANGES).entries.first().status)
             val image = c.readerOpen(agent.id, ReaderKind.IMAGES, "screenshots/login.png").second

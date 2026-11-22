@@ -142,7 +142,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 write(Frame(n, FrameKind.CLOSE, ByteArray(0)))
                 reply(id)
             }
-            "start-task" -> startTask(id, m.str("title") ?: "Task", (m["places"] as? JsonArray).orEmpty())
+            "start-task" -> startTask(id, m.str("title") ?: "Task", (m["places"] as? JsonArray).orEmpty(), m["loop"] as? JsonObject)
             "watch" -> {
                 watching = true
                 reply(id)
@@ -225,12 +225,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 }
                 val spec = (m["loop"] as? JsonObject)?.let { json.decodeFromJsonElement<LoopSpec>(it) } ?: LoopSpec()
                 val previous = if ((m["reset"] as? JsonPrimitive)?.booleanOrNull == true) null else loops[terminal]
-                val lp = LoopInfo(
-                    terminal, spec.check ?: "make test", spec.maxAttempts ?: 3, spec.timeout ?: 600, "armed",
-                    previous?.attempts ?: 0, now(), now(),
-                )
-                setLoop(lp)
-                reply(id, "loop" to enc(lp))
+                reply(id, "loop" to enc(armLoop(terminal, spec, previous)))
             }
             "loop-stop" -> {
                 val terminal = m.str("terminal") ?: ""
@@ -268,8 +263,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         offsets[n] = screen.size.toLong()
     }
 
-    /** The first branch is the working place; without one, a folder named after the title. */
-    private fun startTask(id: Long, title: String, places: List<JsonElement>) {
+    /** The first branch is the working place; without one, a folder named after the title. [loop] starts its Task Loop. */
+    private fun startTask(id: Long, title: String, places: List<JsonElement>, loop: JsonObject?) {
         val first = places.mapNotNull { it as? JsonObject }.firstOrNull { it.str("kind") == "branch" }
         val branch = first?.str("branch")
         val repo = first?.str("repo")
@@ -290,6 +285,16 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         screens[t.id] = "Starting the agent for $title…\r\n"
         reply(id, "terminal" to enc(t), "existing" to JsonPrimitive(false))
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+        loop?.let { armLoop(t.id, json.decodeFromJsonElement<LoopSpec>(it), null) }
+    }
+
+    private fun armLoop(terminal: String, spec: LoopSpec, previous: LoopInfo?): LoopInfo {
+        val lp = LoopInfo(
+            terminal, spec.check ?: "make test", spec.maxAttempts ?: 3, spec.timeout ?: 600, "armed",
+            previous?.attempts ?: 0, now(), now(),
+        )
+        setLoop(lp)
+        return lp
     }
 
     /** Marks the Routine at [at] running; false after an error. */
@@ -534,6 +539,8 @@ private val DEMO_PLAN = """
     1. Refresh the session 60 s before it expires.
     2. Retry once when the refresh fails.
     3. Add a test for a session that expired while the app slept.
+
+    The goal is in [the Task](.muxa/TASK.md).
 
 """.trimIndent()
 
