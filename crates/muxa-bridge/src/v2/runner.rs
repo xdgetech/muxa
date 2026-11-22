@@ -340,6 +340,8 @@ fn ready(
     })
 }
 
+// A run acts on `done`, which only OSC 7501 reports. Whether Codex sends it
+// by itself is unchecked (docs/findings/session-backends.md).
 const CODEX: &str =
     "a Routine on herdr-core needs Claude Code; Codex Routines are not supported yet";
 

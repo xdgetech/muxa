@@ -6,19 +6,18 @@
 //! never reaches the log.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use muxa_protocol::v2::{ChatOption, ChatPrompt, ChatUpdate};
 use muxa_server::TaskError;
 
-use crate::agents::{ChatEvent, ChatSource, Error, PaneInfo, Registry};
+use crate::agents::{ChatEvent, ChatSource, Error, Registry};
 
 /// One open chat. The source is out of the map while a poll runs.
 struct Slot {
     source: Option<Box<dyn ChatSource>>,
-    dir: PathBuf,
     /// The prompt last sent, so an unchanged one is not sent again.
     prompt: Option<ChatPrompt>,
 }
@@ -40,14 +39,15 @@ impl Chats {
 
     pub async fn open(&self, dir: &Path) -> Result<(u64, ChatUpdate), TaskError> {
         let (registry, dir) = (Arc::clone(&self.registry), dir.to_path_buf());
-        let (dir, source, update) = tokio::task::spawn_blocking(move || {
+        let (source, update) = tokio::task::spawn_blocking(move || {
             let (agent, mut source) =
                 registry.open_folder(&dir).map_err(failed)?.ok_or_else(|| {
                     TaskError::Invalid(
-                        "no Claude Code runs in this Task's folder, so it has no Chat".into(),
+                        "no Claude Code or Codex runs in this Task's folder, so it has no Chat"
+                            .into(),
                     )
                 })?;
-            let events = source.poll(&pane(&dir)).map_err(failed)?;
+            let events = source.poll().map_err(failed)?;
             let mut update = update_of(events, source.as_ref());
             if !update.reset {
                 update = ChatUpdate {
@@ -57,14 +57,13 @@ impl Chats {
                 };
             }
             tracing::info!(dir = %dir.display(), agent, "v2 chat opened");
-            Ok::<_, TaskError>((dir, source, update))
+            Ok::<_, TaskError>((source, update))
         })
         .await
         .map_err(|e| TaskError::Failed(format!("the chat stopped: {e}")))??;
         let handle = self.next.fetch_add(1, Ordering::Relaxed);
         let slot = Slot {
             source: Some(source),
-            dir,
             prompt: update.prompt.clone(),
         };
         self.lock().insert(handle, slot);
@@ -73,19 +72,19 @@ impl Chats {
 
     /// What changed; None when nothing did. An error ends the chat.
     pub async fn poll(&self, handle: u64) -> Result<Option<ChatUpdate>, TaskError> {
-        let (mut source, dir) = {
+        let mut source = {
             let mut open = self.lock();
             let slot = open
                 .get_mut(&handle)
                 .ok_or_else(|| TaskError::Invalid(format!("no chat {handle}")))?;
             match slot.source.take() {
-                Some(s) => (s, slot.dir.clone()),
+                Some(s) => s,
                 // A poll still runs.
                 None => return Ok(None),
             }
         };
         let (source, polled) = tokio::task::spawn_blocking(move || {
-            let polled = source.poll(&pane(&dir));
+            let polled = source.poll();
             let update = polled.map(|events| update_of(events, source.as_ref()));
             (source, update)
         })
@@ -119,17 +118,6 @@ impl Chats {
         self.open
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-}
-
-/// The adapters read only the folder; protocol v2 has no pane.
-fn pane(dir: &Path) -> PaneInfo {
-    PaneInfo {
-        pane: String::new(),
-        session: String::new(),
-        pid: 0,
-        path: dir.display().to_string(),
-        shell_foreground: false,
     }
 }
 

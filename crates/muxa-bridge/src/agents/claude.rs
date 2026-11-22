@@ -1,5 +1,5 @@
 //! Claude Code. Each running instance writes `<dir>/sessions/<pid>.json` (its
-//! session id, cwd, status and tmux pane) and appends its conversation to
+//! session id, cwd and status) and appends its conversation to
 //! `<dir>/projects/<escaped cwd>/<session id>.jsonl`. Both formats are private to
 //! Claude Code; anything unexpected is skipped, never guessed.
 
@@ -12,9 +12,7 @@ use serde_json::Value;
 
 use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, cap};
 use super::tail::{INITIAL_TAIL, JsonlTail, Poll};
-use super::{
-    AgentAdapter, AgentDoc, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes,
-};
+use super::{AgentAdapter, ChatEvent, ChatSource, Error, Processes};
 
 pub(crate) mod prompt;
 
@@ -38,15 +36,6 @@ impl AgentAdapter for ClaudeAdapter {
         ID
     }
 
-    fn open(
-        &self,
-        pane: &PaneInfo,
-        procs: &Processes,
-    ) -> Result<Option<Box<dyn ChatSource>>, Error> {
-        Ok(find_session(&self.dirs, pane, procs)?
-            .map(|(dir, s)| Box::new(ClaudeSource::new(dir, s)) as Box<dyn ChatSource>))
-    }
-
     fn open_folder(
         &self,
         dir: &Path,
@@ -54,49 +43,6 @@ impl AgentAdapter for ClaudeAdapter {
     ) -> Result<Option<Box<dyn ChatSource>>, Error> {
         Ok(session_in_folder(&self.dirs, dir, procs)?
             .map(|(dir, s)| Box::new(ClaudeSource::new(dir, s)) as Box<dyn ChatSource>))
-    }
-
-    fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
-        let (dir, session) = find_session(&self.dirs, pane, procs).ok()??;
-        Some(Found {
-            process_bound: true,
-            status: session.agent().filter(|_| !pane.shell_foreground),
-            session: Some(AgentSession {
-                id: session.session_id.clone(),
-                transcript: transcript(&dir, &session),
-            }),
-        })
-    }
-
-    /// The plan of the instance in `pane`: every transcript line names it as `slug`,
-    /// and plan mode writes it to `plans/<slug>.md`.
-    fn documents(&self, pane: &PaneInfo, procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
-        let Some((dir, session)) = find_session(&self.dirs, pane, procs)? else {
-            return Ok(Vec::new());
-        };
-        let Some(path) = transcript(&dir, &session) else {
-            return Ok(Vec::new());
-        };
-        let (_, lines, _) = JsonlTail::open(&path, INITIAL_TAIL)?;
-        let slug = lines.iter().rev().find_map(|l| {
-            let v: Value = serde_json::from_slice(l).ok()?;
-            Some(v.get("slug")?.as_str()?.to_owned())
-        });
-        let plans = dir.join("plans");
-        Ok(slug
-            .filter(|s| valid_slug(s))
-            .map(|s| plans.join(format!("{s}.md")))
-            .filter(|p| p.is_file())
-            .map(|path| AgentDoc {
-                name: path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                path,
-                root: plans,
-            })
-            .into_iter()
-            .collect())
     }
 }
 
@@ -133,18 +79,6 @@ impl SessionFile {
         })
     }
 
-    /// Only interactive instances own a pane. Some instances record no pane: then the
-    /// pane's directory must match, and the caller checks the process runs in the pane.
-    fn belongs_to(v: &Value, pane: &PaneInfo) -> bool {
-        if v.get("kind").and_then(Value::as_str) != Some("interactive") {
-            return false;
-        }
-        match recorded_pane(v) {
-            Some((session, p)) => p == pane.pane && session == pane.session,
-            None => v.get("cwd").and_then(Value::as_str) == Some(pane.path.as_str()),
-        }
-    }
-
     fn agent(&self) -> Option<Agent> {
         Some(Agent {
             state: self.status?,
@@ -157,16 +91,6 @@ impl SessionFile {
     }
 }
 
-/// The session and pane id of `tmux`, "<session>:@<window>.%<pane>". None when the
-/// instance left it out or empty (":.").
-fn recorded_pane(v: &Value) -> Option<(&str, &str)> {
-    let tmux = v.get("tmux")?.as_str()?;
-    // A session name can contain ':' and '.', so split from the right.
-    let (session, place) = tmux.rsplit_once(':')?;
-    let (_, pane) = place.rsplit_once('.')?;
-    (!session.is_empty() && !pane.is_empty()).then_some((session, pane))
-}
-
 fn state(s: &str) -> Option<AgentState> {
     match s {
         "busy" => Some(AgentState::Running),
@@ -176,38 +100,9 @@ fn state(s: &str) -> Option<AgentState> {
     }
 }
 
-/// A plan's slug becomes a file name; allow only lowercase words and dashes.
-fn valid_slug(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 128
-        && s.chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-}
-
 /// The session id becomes part of a path; allow nothing but a UUID's characters.
 fn valid_session_id(s: &str) -> bool {
     !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-}
-
-/// The live, interactive Claude Code instance in `pane`, and the config dir
-/// it writes to. Pane ids restart with the tmux server, so the session name
-/// must match too, and the process must still run inside the pane: files of
-/// exited instances can remain. Every dir's files compete under one order.
-fn find_session(
-    dirs: &[PathBuf],
-    pane: &PaneInfo,
-    procs: &Processes,
-) -> Result<Option<(PathBuf, SessionFile)>, Error> {
-    let mut found = Vec::new();
-    for dir in dirs {
-        found.extend(
-            sessions_in(dir, pane, procs)?
-                .into_iter()
-                .map(|s| (dir.clone(), s)),
-        );
-    }
-    found.sort_by_key(|(_, s)| (s.cwd != pane.path, std::cmp::Reverse(s.mtime)));
-    Ok(found.into_iter().next())
 }
 
 /// The live, interactive instance whose cwd is `folder`, newest first, and
@@ -252,34 +147,6 @@ fn session_in_folder(
     }
     found.sort_by_key(|(_, s)| std::cmp::Reverse(s.mtime));
     Ok(found.into_iter().next())
-}
-
-/// The session files in `dir` that match `pane`.
-fn sessions_in(dir: &Path, pane: &PaneInfo, procs: &Processes) -> Result<Vec<SessionFile>, Error> {
-    let sessions = dir.join("sessions");
-    let entries = match std::fs::read_dir(&sessions) {
-        Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(source) => {
-            return Err(Error::Io {
-                path: sessions,
-                source,
-            });
-        }
-    };
-    Ok(entries
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .filter(|p| {
-            std::fs::read(p)
-                .ok()
-                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-                .is_some_and(|v| SessionFile::belongs_to(&v, pane))
-        })
-        .filter_map(|p| SessionFile::read(&p))
-        .filter(|s| procs.is_within(s.pid, pane.pid))
-        .collect())
 }
 
 /// `projects/<cwd with every non-alphanumeric as '-'>/<id>.jsonl`, or a search of
@@ -376,14 +243,9 @@ impl ClaudeSource {
 }
 
 impl ChatSource for ClaudeSource {
-    fn poll(&mut self, pane: &PaneInfo) -> Result<Vec<ChatEvent>, Error> {
+    fn poll(&mut self) -> Result<Vec<ChatEvent>, Error> {
         self.refresh_session()?;
-        // Back at a shell, the reported state is stale.
-        self.status = if pane.shell_foreground {
-            None
-        } else {
-            self.session.agent()
-        };
+        self.status = self.session.agent();
         let mut events = Vec::new();
         let replaced = match self.tail.as_mut() {
             None => true,

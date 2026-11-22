@@ -19,17 +19,10 @@ fn normalize(text: &str) -> Vec<ChatEntry> {
     conv.log.all().to_vec()
 }
 
-fn pane() -> PaneInfo {
-    PaneInfo {
-        pane: "%7".into(),
-        session: "work".into(),
-        pid: 100,
-        path: "/work/app".into(),
-        shell_foreground: false,
-    }
-}
+/// The folder the sample session works in.
+const FOLDER: &str = "/work/app";
 
-/// A Claude Code data directory with one session file per (file, pid, tmux, kind).
+/// A Claude Code data directory with one session file per (file, pid, kind).
 struct Fixture {
     dir: PathBuf,
 }
@@ -42,11 +35,10 @@ impl Fixture {
         Self { dir }
     }
 
-    fn session(&self, file: &str, pid: u32, id: &str, tmux: &str, edit: impl Fn(&mut Value)) {
+    fn session(&self, file: &str, pid: u32, id: &str, edit: impl Fn(&mut Value)) {
         let mut v: Value = serde_json::from_str(&sample("session.json")).unwrap();
         v["pid"] = pid.into();
         v["sessionId"] = id.into();
-        v["tmux"] = tmux.into();
         edit(&mut v);
         std::fs::write(self.dir.join("sessions").join(file), v.to_string()).unwrap();
     }
@@ -61,14 +53,18 @@ impl Fixture {
 
     fn open(&self, procs: &Processes) -> Option<Box<dyn ChatSource>> {
         ClaudeAdapter::new(vec![self.dir.clone()])
-            .open(&pane(), procs)
+            .open_folder(Path::new(FOLDER), procs)
             .unwrap()
     }
 }
 
-/// pid 100 is the pane's shell; 200 runs below it; 300 is elsewhere.
+/// pids 200 and 300 run; 999 has exited.
 fn procs() -> Processes {
     Processes::parse("1 0\n100 1\n200 100\n300 1\n")
+}
+
+fn session_id(source: Option<(PathBuf, SessionFile)>) -> Option<String> {
+    source.map(|(_, s)| s.session_id)
 }
 
 #[test]
@@ -157,209 +153,161 @@ fn many_entries_keep_only_the_newest() {
     );
 }
 
-/// Some instances leave `tmux` out, or empty: the process tree and the directory decide.
+/// Some instances leave `tmux` out, or empty: only the folder and the process count.
 #[test]
-fn an_instance_without_its_pane_matches_by_process_and_directory() {
-    let f = Fixture::new("no-tmux");
+fn an_instance_matches_by_folder_and_live_process() {
+    let f = Fixture::new("folder");
     let no_tmux = |v: &mut Value| {
         v.as_object_mut().unwrap().remove("tmux");
     };
-    // Running elsewhere.
-    f.session(
-        "1.json",
-        300,
-        "11111111-0000-0000-0000-000000000000",
-        "",
-        no_tmux,
-    );
-    // In the pane, but started in another directory.
-    f.session(
-        "2.json",
-        200,
-        "22222222-0000-0000-0000-000000000000",
-        "",
-        |v| {
-            no_tmux(v);
-            v["cwd"] = "/elsewhere".into();
-        },
-    );
+    // Live, but started in another folder.
+    f.session("2.json", 200, "22222222-0000-0000-0000-000000000000", |v| {
+        no_tmux(v);
+        v["cwd"] = "/elsewhere".into();
+    });
     assert!(f.open(&procs()).is_none());
 
-    f.session("3.json", 200, SESSION_ID, ":.", |_| {});
-    let (_, found) = find_session(std::slice::from_ref(&f.dir), &pane(), &procs())
-        .unwrap()
-        .unwrap();
-    assert_eq!(found.session_id, SESSION_ID);
+    f.session("3.json", 200, SESSION_ID, |v| v["tmux"] = ":.".into());
+    let found = session_in_folder(std::slice::from_ref(&f.dir), Path::new(FOLDER), &procs());
+    assert_eq!(session_id(found.unwrap()).as_deref(), Some(SESSION_ID));
 
-    let g = Fixture::new("no-tmux-key");
-    g.session("1.json", 200, SESSION_ID, "", no_tmux);
+    let g = Fixture::new("folder-no-tmux-key");
+    g.session("1.json", 300, SESSION_ID, no_tmux);
     assert!(g.open(&procs()).is_some());
 }
 
 #[test]
-fn finds_only_the_live_interactive_instance_of_this_pane() {
+fn finds_only_the_live_interactive_instance_in_the_folder() {
     let f = Fixture::new("locate");
-    // Exited: its pid no longer runs in the pane.
+    // Exited: its pid no longer runs.
     f.session(
         "1.json",
         999,
         "11111111-0000-0000-0000-000000000000",
-        "work:@1.%7",
         |_| {},
     );
-    // Running elsewhere.
-    f.session(
-        "2.json",
-        300,
-        "22222222-0000-0000-0000-000000000000",
-        "work:@1.%7",
-        |_| {},
-    );
-    // A background task, not the pane's agent.
-    f.session(
-        "3.json",
-        200,
-        "33333333-0000-0000-0000-000000000000",
-        "work:@1.%7",
-        |v| v["kind"] = "bg".into(),
-    );
-    // Same pane id on another server's session.
-    f.session(
-        "4.json",
-        200,
-        "44444444-0000-0000-0000-000000000000",
-        "other:@1.%7",
-        |_| {},
-    );
+    // A background task, not the Task's agent.
+    f.session("3.json", 200, "33333333-0000-0000-0000-000000000000", |v| {
+        v["kind"] = "bg".into()
+    });
     // An id that would escape the projects directory.
-    f.session("5.json", 200, "../../etc", "work:@1.%7", |_| {});
+    f.session("5.json", 200, "../../etc", |_| {});
     assert!(f.open(&procs()).is_none());
 
-    f.session("6.json", 200, SESSION_ID, "work:@1.%7", |_| {});
-    let (_, found) = find_session(std::slice::from_ref(&f.dir), &pane(), &procs())
-        .unwrap()
-        .unwrap();
-    assert_eq!(found.session_id, SESSION_ID);
+    f.session("6.json", 200, SESSION_ID, |_| {});
+    let dirs = std::slice::from_ref(&f.dir);
+    let found = session_in_folder(dirs, Path::new(FOLDER), &procs()).unwrap();
+    assert_eq!(session_id(found).as_deref(), Some(SESSION_ID));
 
-    // Two live instances: the one in the pane's directory wins.
-    f.session(
-        "7.json",
-        200,
-        "77777777-0000-0000-0000-000000000000",
-        "work:@1.%7",
-        |v| v["cwd"] = "/elsewhere".into(),
-    );
-    let (_, found) = find_session(std::slice::from_ref(&f.dir), &pane(), &procs())
-        .unwrap()
-        .unwrap();
-    assert_eq!(found.session_id, SESSION_ID);
+    // Two live instances in the folder: the newest file wins.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let newer = "77777777-0000-0000-0000-000000000000";
+    f.session("7.json", 300, newer, |_| {});
+    let found = session_in_folder(dirs, Path::new(FOLDER), &procs()).unwrap();
+    assert_eq!(session_id(found).as_deref(), Some(newer));
+    // One in another folder never wins, however new.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    f.session("8.json", 300, "88888888-0000-0000-0000-000000000000", |v| {
+        v["cwd"] = "/elsewhere".into()
+    });
+    let found = session_in_folder(dirs, Path::new(FOLDER), &procs()).unwrap();
+    assert_eq!(session_id(found).as_deref(), Some(newer));
 }
 
 #[test]
 fn every_config_dir_is_searched_with_the_same_rules() {
     let default = Fixture::new("dirs-default");
     let company = Fixture::new("dirs-company");
-    // The default dir holds a stale file for this pane, from an exited instance.
+    // The default dir holds a stale file for this folder, from an exited instance.
     default.session(
-        "300.json",
-        300,
+        "999.json",
+        999,
         "33333333-0000-0000-0000-000000000000",
-        "work:@1.%7",
         |_| {},
     );
-    // The workspace's dir holds the live one, and one for another session's %7.
-    company.session("200.json", 200, SESSION_ID, "work:@1.%7", |_| {});
+    // The workspace's dir holds the live one, and one for another folder.
+    company.session("200.json", 200, SESSION_ID, |_| {});
     company.session(
         "201.json",
         200,
         "22222222-0000-0000-0000-000000000000",
-        "other:@1.%7",
-        |_| {},
+        |v| v["cwd"] = "/elsewhere".into(),
     );
     company.transcript(SESSION_ID, &sample("transcript.jsonl"));
     let dirs = vec![default.dir.clone(), company.dir.clone()];
 
-    let (dir, found) = find_session(&dirs, &pane(), &procs()).unwrap().unwrap();
+    let (dir, found) = session_in_folder(&dirs, Path::new(FOLDER), &procs())
+        .unwrap()
+        .unwrap();
     assert_eq!(found.session_id, SESSION_ID);
     assert_eq!(
         dir, company.dir,
         "the transcript is read where the session file is"
     );
     let adapter = ClaudeAdapter::new(dirs.clone());
-    assert!(adapter.find(&pane(), &procs()).unwrap().process_bound);
-    let mut source = adapter.open(&pane(), &procs()).unwrap().unwrap();
-    let events = source.poll(&pane()).unwrap();
+    let mut source = adapter
+        .open_folder(Path::new(FOLDER), &procs())
+        .unwrap()
+        .unwrap();
+    let events = source.poll().unwrap();
     assert!(
         matches!(events.as_slice(), [ChatEvent::Reset { entries, .. }] if entries.len() == 7),
         "{events:?}"
     );
-    assert_eq!(
-        adapter
-            .find(&pane(), &procs())
-            .unwrap()
-            .status
-            .unwrap()
-            .state,
-        AgentState::Running
-    );
+    assert_eq!(source.status().unwrap().state, AgentState::Running);
 
     // Only the default dir: nothing live matches, so nothing is reported.
     let only_default = ClaudeAdapter::new(vec![default.dir.clone()]);
-    assert!(only_default.find(&pane(), &procs()).is_none());
+    assert!(
+        only_default
+            .open_folder(Path::new(FOLDER), &procs())
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
 fn streams_new_lines_and_reports_status() {
     let f = Fixture::new("stream");
-    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |_| {});
+    f.session("200.json", 200, SESSION_ID, |_| {});
     let path = f.transcript(SESSION_ID, &sample("transcript.jsonl"));
     let mut source = f.open(&procs()).unwrap();
 
-    let events = source.poll(&pane()).unwrap();
+    let events = source.poll().unwrap();
     let [ChatEvent::Reset { entries, truncated }] = events.as_slice() else {
         panic!("expected one reset, got {events:?}")
     };
     assert_eq!(entries.len(), 7);
     assert!(!truncated);
     assert_eq!(source.status().unwrap().state, AgentState::Running);
-    assert!(source.poll(&pane()).unwrap().is_empty());
+    assert!(source.poll().unwrap().is_empty());
 
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open(&path)
         .unwrap();
     writeln!(file, r#"{{"type":"assistant","uuid":"a9","message":{{"id":"msg_2","content":[{{"type":"text","text":"Fixed."}}]}}}}"#).unwrap();
-    let events = source.poll(&pane()).unwrap();
+    let events = source.poll().unwrap();
     let [ChatEvent::Upsert(entry)] = events.as_slice() else {
         panic!("expected one upsert, got {events:?}")
     };
     assert_eq!(entry.id, "a:msg_2");
     assert_eq!(entry.text, "The test expects a trailing newline.\n\nFixed.");
-
-    // Back at a shell, the state is stale.
-    let shell = PaneInfo {
-        shell_foreground: true,
-        ..pane()
-    };
-    source.poll(&shell).unwrap();
-    assert_eq!(source.status(), None);
 }
 
 #[test]
 fn a_new_session_id_resets_to_its_transcript() {
     let f = Fixture::new("clear");
-    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |_| {});
+    f.session("200.json", 200, SESSION_ID, |_| {});
     f.transcript(SESSION_ID, &sample("transcript.jsonl"));
     let mut source = f.open(&procs()).unwrap();
-    source.poll(&pane()).unwrap();
+    source.poll().unwrap();
 
     // `/clear`: same process, new session, its transcript not written yet.
     std::thread::sleep(std::time::Duration::from_millis(20));
     let next = "99999999-0000-0000-0000-000000000000";
-    f.session("200.json", 200, next, "work:@1.%7", |v| {
-        v["status"] = "idle".into()
-    });
-    let events = source.poll(&pane()).unwrap();
+    f.session("200.json", 200, next, |v| v["status"] = "idle".into());
+    let events = source.poll().unwrap();
     assert_eq!(
         events,
         [ChatEvent::Reset {
@@ -369,7 +317,7 @@ fn a_new_session_id_resets_to_its_transcript() {
     );
     assert_eq!(source.status().unwrap().state, AgentState::Idle);
     assert!(
-        source.poll(&pane()).unwrap().is_empty(),
+        source.poll().unwrap().is_empty(),
         "no reset again while waiting"
     );
 
@@ -377,7 +325,7 @@ fn a_new_session_id_resets_to_its_transcript() {
         next,
         "{\"type\":\"user\",\"uuid\":\"n1\",\"message\":{\"content\":\"hello\"}}\n",
     );
-    let events = source.poll(&pane()).unwrap();
+    let events = source.poll().unwrap();
     let [ChatEvent::Reset { entries, .. }] = events.as_slice() else {
         panic!("expected a reset, got {events:?}")
     };
@@ -387,21 +335,21 @@ fn a_new_session_id_resets_to_its_transcript() {
 #[test]
 fn an_exited_instance_ends_the_chat() {
     let f = Fixture::new("exit");
-    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |_| {});
+    f.session("200.json", 200, SESSION_ID, |_| {});
     let mut source = f.open(&procs()).unwrap();
-    source.poll(&pane()).unwrap();
+    source.poll().unwrap();
     std::fs::remove_file(f.dir.join("sessions/200.json")).unwrap();
-    assert!(matches!(source.poll(&pane()), Err(Error::Gone(_))));
+    assert!(matches!(source.poll(), Err(Error::Gone(_))));
 }
 
 /// A source over `transcript` whose session file says `waiting`.
 fn waiting(f: &Fixture, transcript: &str) -> (Box<dyn ChatSource>, PathBuf) {
-    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |v| {
+    f.session("200.json", 200, SESSION_ID, |v| {
         v["status"] = "waiting".into()
     });
     let path = f.transcript(SESSION_ID, &sample(transcript));
     let mut source = f.open(&procs()).unwrap();
-    source.poll(&pane()).unwrap();
+    source.poll().unwrap();
     (source, path)
 }
 
@@ -434,7 +382,7 @@ fn a_waiting_permission_offers_allow_and_deny() {
         .open(&path)
         .unwrap();
     writeln!(file, r#"{{"type":"user","uuid":"u2","message":{{"role":"user","content":[{{"tool_use_id":"toolu_p1","type":"tool_result","content":"The user doesn't want to proceed","is_error":true}}]}}}}"#).unwrap();
-    source.poll(&pane()).unwrap();
+    source.poll().unwrap();
     assert_eq!(source.prompt(), None);
 }
 
@@ -467,22 +415,22 @@ fn a_plan_offers_to_keep_planning() {
 fn no_prompt_unless_waiting_on_one_known_call() {
     let f = Fixture::new("noprompt");
     // Running, not waiting.
-    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |_| {});
+    f.session("200.json", 200, SESSION_ID, |_| {});
     f.transcript(SESSION_ID, &sample("waiting-permission.jsonl"));
     let mut source = f.open(&procs()).unwrap();
-    source.poll(&pane()).unwrap();
+    source.poll().unwrap();
     assert_eq!(source.prompt(), None);
 
     // Several questions, or several answers, use keys not checked.
     let multi =
         sample("waiting-question.jsonl").replace(r#""multiSelect":false"#, r#""multiSelect":true"#);
     let f = Fixture::new("multiselect");
-    f.session("200.json", 200, SESSION_ID, "work:@1.%7", |v| {
+    f.session("200.json", 200, SESSION_ID, |v| {
         v["status"] = "waiting".into()
     });
     f.transcript(SESSION_ID, &multi);
     let mut source = f.open(&procs()).unwrap();
-    source.poll(&pane()).unwrap();
+    source.poll().unwrap();
     assert_eq!(source.prompt(), None);
 
     // A subagent asks about its own calls, which the chat does not show.

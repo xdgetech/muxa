@@ -15,19 +15,6 @@ use std::time::{Duration, SystemTime};
 
 use muxa_protocol::{Agent, ChatEntry, ChatPrompt};
 
-/// What an adapter knows about the pane it is asked about.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PaneInfo {
-    /// `%n`
-    pub pane: String,
-    pub session: String,
-    /// The pane's first process.
-    pub pid: u32,
-    pub path: String,
-    /// The pane is back at a shell: the agent most likely exited.
-    pub shell_foreground: bool,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{path}: {source}")]
@@ -41,74 +28,24 @@ pub enum Error {
     Gone(String),
 }
 
-/// A kind of agent, e.g. Claude Code. One instance serves every pane.
+/// A kind of agent, e.g. Claude Code. One instance serves every Task.
 pub trait AgentAdapter: Send + Sync {
     /// Stable, shown to clients: `claude-code`.
     fn id(&self) -> &'static str;
-    /// A source for the agent running in `pane`, or None when this adapter
-    /// does not see its agent there.
-    fn open(
-        &self,
-        pane: &PaneInfo,
-        procs: &Processes,
-    ) -> Result<Option<Box<dyn ChatSource>>, Error>;
 
     /// A source for this adapter's agent working in `dir`, a Task's working
-    /// place (protocol v2 has no pane). None when it sees none there.
+    /// place. None when it sees none there.
     fn open_folder(
         &self,
-        _dir: &std::path::Path,
-        _procs: &Processes,
-    ) -> Result<Option<Box<dyn ChatSource>>, Error> {
-        Ok(None)
-    }
-
-    /// This adapter's agent, when it runs in `pane`, and its state. Cheaper than
-    /// `open`; it decides a pane's role and state when no tag does.
-    fn find(&self, _pane: &PaneInfo, _procs: &Processes) -> Option<Found> {
-        None
-    }
-
-    /// Documents the agent in `pane` is writing, such as its current plan.
-    fn documents(&self, _pane: &PaneInfo, _procs: &Processes) -> Result<Vec<AgentDoc>, Error> {
-        Ok(Vec::new())
-    }
-}
-
-/// An agent an adapter sees in a pane.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Found {
-    /// The session file identifies a live process inside this pane. A cwd/time
-    /// match alone cannot prove which execution owns a transcript.
-    pub process_bound: bool,
-    /// As the agent records it; None when it records none, or the pane is back at a shell.
-    pub status: Option<Agent>,
-    /// The agent's own session, when the adapter knows it (ADR 0018).
-    pub session: Option<AgentSession>,
-}
-
-/// An agent's own session: its id, and where its transcript is. A path only;
-/// the transcript stays the agent's (invariant 5).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentSession {
-    pub id: String,
-    pub transcript: Option<PathBuf>,
-}
-
-/// A document an agent keeps outside the repo, e.g. a plan.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentDoc {
-    /// Shown to the user, e.g. the file name.
-    pub name: String,
-    pub path: PathBuf,
-    /// Files may only be served from inside this directory.
-    pub root: PathBuf,
+        dir: &std::path::Path,
+        procs: &Processes,
+    ) -> Result<Option<Box<dyn ChatSource>>, Error>;
 }
 
 /// One agent conversation, polled for changes.
 pub trait ChatSource: Send {
     /// What changed since the last call. The first call returns a `Reset`.
-    fn poll(&mut self, pane: &PaneInfo) -> Result<Vec<ChatEvent>, Error>;
+    fn poll(&mut self) -> Result<Vec<ChatEvent>, Error>;
     /// Everything currently known, for a client that missed updates.
     fn entries(&self) -> Vec<ChatEntry>;
     /// The agent's state now; None when unknown.
@@ -158,43 +95,11 @@ impl Registry {
         Self::new(adapters)
     }
 
-    /// Every adapter's documents for `pane`.
-    pub fn documents(&self, pane: &PaneInfo) -> Result<Vec<AgentDoc>, Error> {
-        let procs = Processes::list()?;
-        let mut docs = Vec::new();
-        for adapter in &self.adapters {
-            docs.extend(adapter.documents(pane, &procs)?);
-        }
-        Ok(docs)
-    }
-
-    /// The first adapter that sees its agent running in `pane`.
-    pub fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
-        self.identify(pane, procs).map(|(_, found)| found)
-    }
-
-    /// Like `find`, with the id of the adapter that saw the agent.
-    pub fn identify(&self, pane: &PaneInfo, procs: &Processes) -> Option<(&'static str, Found)> {
-        self.adapters
-            .iter()
-            .find_map(|a| a.find(pane, procs).map(|found| (a.id(), found)))
-    }
-
     /// The first adapter that sees its agent working in `dir`.
     pub fn open_folder(&self, dir: &std::path::Path) -> Result<Option<Opened>, Error> {
         let procs = Processes::list()?;
         for adapter in &self.adapters {
             if let Some(source) = adapter.open_folder(dir, &procs)? {
-                return Ok(Some((adapter.id(), source)));
-            }
-        }
-        Ok(None)
-    }
-
-    pub fn open(&self, pane: &PaneInfo) -> Result<Option<Opened>, Error> {
-        let procs = Processes::list()?;
-        for adapter in &self.adapters {
-            if let Some(source) = adapter.open(pane, &procs)? {
                 return Ok(Some((adapter.id(), source)));
             }
         }
@@ -293,12 +198,12 @@ impl Processes {
         }
     }
 
-    /// The processes named `name` at or below `root`.
-    pub fn named_within(&self, name: &str, root: u32) -> Vec<u32> {
+    /// The processes named `name`.
+    pub fn named(&self, name: &str) -> Vec<u32> {
         let mut pids: Vec<u32> = self
             .info
             .iter()
-            .filter(|(pid, (_, n))| n == name && self.is_within(**pid, root))
+            .filter(|(_, (_, n))| n == name)
             .map(|(pid, _)| *pid)
             .collect();
         pids.sort_unstable();
@@ -313,25 +218,6 @@ impl Processes {
     /// When `pid` started, to the second.
     pub fn started(&self, pid: u32) -> Option<SystemTime> {
         self.at.checked_sub(self.info.get(&pid)?.0)
-    }
-
-    /// `pid` is alive and is `root` or runs below it.
-    pub fn is_within(&self, pid: u32, root: u32) -> bool {
-        if root == 0 || !self.parent.contains_key(&pid) {
-            return false;
-        }
-        let mut p = pid;
-        // The depth cap guards against a cycle from a racy listing.
-        for _ in 0..64 {
-            if p == root {
-                return true;
-            }
-            match self.parent.get(&p) {
-                Some(&up) if up != p && up != 0 => p = up,
-                _ => return false,
-            }
-        }
-        false
     }
 }
 
@@ -352,58 +238,97 @@ fn elapsed(s: &str) -> Option<Duration> {
     Some(Duration::from_secs(days * 86_400 + secs))
 }
 
+/// The working directory of each of `pids` that still runs and that this
+/// user may inspect. `ps` cannot print it: Linux has `/proc/<pid>/cwd`, macOS
+/// has `lsof`, which ships with the system.
+pub fn process_cwds(pids: &[u32]) -> Result<HashMap<u32, PathBuf>, Error> {
+    if pids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Ok(pids
+            .iter()
+            .filter_map(|pid| Some((*pid, std::fs::read_link(format!("/proc/{pid}/cwd")).ok()?)))
+            .collect())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let list: Vec<String> = pids.iter().map(u32::to_string).collect();
+        let out = Command::new("/usr/sbin/lsof")
+            .args(["-w", "-a", "-d", "cwd", "-Fn", "-p", &list.join(",")])
+            .output()
+            .map_err(|e| Error::Processes(format!("lsof: {e}")))?;
+        // lsof exits 1 when one of the pids is gone; its output still counts.
+        Ok(parse_lsof_cwds(&String::from_utf8_lossy(&out.stdout)))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        Ok(HashMap::new())
+    }
+}
+
+/// `lsof -F n` output: a `p<pid>` line, then `n<path>` for its cwd.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+fn parse_lsof_cwds(text: &str) -> HashMap<u32, PathBuf> {
+    let mut out = HashMap::new();
+    let mut pid = None;
+    for line in text.lines() {
+        if let Some(p) = line.strip_prefix('p') {
+            pid = p.parse::<u32>().ok();
+        } else if let (Some(path), Some(p)) = (line.strip_prefix('n'), pid) {
+            out.insert(p, PathBuf::from(path));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// W0: registry selection is fresh per snapshot; this is not a native-role probe.
+    /// The registry asks the adapters in order, fresh for each folder.
     #[test]
-    fn registry_rematches_replaced_processes_in_the_same_pane() {
-        struct FixtureAdapter(&'static str, u32);
+    fn the_first_adapter_that_sees_an_agent_in_the_folder_wins() {
+        struct Empty;
+        impl ChatSource for Empty {
+            fn poll(&mut self) -> Result<Vec<ChatEvent>, Error> {
+                Ok(Vec::new())
+            }
+            fn entries(&self) -> Vec<ChatEntry> {
+                Vec::new()
+            }
+            fn status(&self) -> Option<Agent> {
+                None
+            }
+        }
+        struct FixtureAdapter(&'static str, &'static str);
         impl AgentAdapter for FixtureAdapter {
             fn id(&self) -> &'static str {
                 self.0
             }
-            fn open(
+            fn open_folder(
                 &self,
-                _: &PaneInfo,
+                dir: &std::path::Path,
                 _: &Processes,
             ) -> Result<Option<Box<dyn ChatSource>>, Error> {
-                Ok(None)
-            }
-            fn find(&self, pane: &PaneInfo, _: &Processes) -> Option<Found> {
-                (pane.pid == self.1 && !pane.shell_foreground).then_some(Found {
-                    process_bound: false,
-                    status: None,
-                    session: None,
-                })
+                Ok((dir == std::path::Path::new(self.1)).then(|| Box::new(Empty) as _))
             }
         }
         let registry = Registry::new(vec![
-            Box::new(FixtureAdapter("fixture-a", 101)),
-            Box::new(FixtureAdapter("fixture-b", 202)),
-            Box::new(FixtureAdapter("fixture-a", 303)),
+            Box::new(FixtureAdapter("fixture-a", "/a")),
+            Box::new(FixtureAdapter("fixture-b", "/b")),
+            Box::new(FixtureAdapter("fixture-c", "/a")),
         ]);
-        let mut pane = PaneInfo {
-            pane: "%1".into(),
-            session: "fixture".into(),
-            pid: 101,
-            path: "/fixture".into(),
-            shell_foreground: false,
+        let opened = |dir: &str| {
+            registry
+                .open_folder(std::path::Path::new(dir))
+                .unwrap()
+                .map(|(id, _)| id)
         };
-        let procs = Processes::default();
-        for (pid, expected) in [
-            (101, Some("fixture-a")),
-            (202, Some("fixture-b")),
-            (303, Some("fixture-a")),
-            (404, None),
-        ] {
-            pane.pid = pid;
-            assert_eq!(registry.identify(&pane, &procs).map(|(id, _)| id), expected);
-        }
-        pane.pid = 303;
-        pane.shell_foreground = true;
-        assert!(registry.identify(&pane, &procs).is_none());
+        assert_eq!(opened("/a"), Some("fixture-a"));
+        assert_eq!(opened("/b"), Some("fixture-b"));
+        assert_eq!(opened("/c"), None);
     }
 
     #[test]
@@ -411,11 +336,11 @@ mod tests {
         let procs = Processes::parse(
             "  1     0 21-15:34:52 /sbin/launchd\n 100     1    01:02 -zsh\n 200   100 1:00:05 /opt/homebrew/bin/codex\n 300   200    00:03 /Applications/My App.app/x\n",
         );
-        assert_eq!(procs.named_within("codex", 100), vec![200]);
-        assert!(procs.named_within("codex", 1).contains(&200));
+        assert_eq!(procs.named("codex"), vec![200]);
+        assert_eq!(procs.named("x"), vec![300], "a path with spaces");
         assert!(
-            procs.named_within("x", 100).contains(&300),
-            "a path with spaces"
+            procs.named("zsh").is_empty(),
+            "a login shell's name keeps its dash"
         );
         let age = procs
             .at
@@ -455,15 +380,22 @@ mod tests {
     }
 
     #[test]
-    fn descendants_are_within_their_pane() {
-        let procs = Processes::parse("  1     0\n 100     1\n 200   100\n 300   200\n 400     1\n");
-        assert!(procs.is_within(300, 100));
-        assert!(procs.is_within(100, 100));
-        assert!(!procs.is_within(400, 100));
-        assert!(
-            !procs.is_within(999, 100),
-            "a dead pid is not within anything"
-        );
-        assert!(!procs.is_within(300, 0));
+    fn cwds_come_from_lsof_fields() {
+        let cwds = parse_lsof_cwds("p200\nfcwd\nn/work/my app\np300\nfcwd\nn/tmp\npjunk\nn/x\n");
+        assert_eq!(cwds.len(), 2);
+        assert_eq!(cwds[&200], PathBuf::from("/work/my app"));
+        assert_eq!(cwds[&300], PathBuf::from("/tmp"));
+        assert!(process_cwds(&[]).unwrap().is_empty());
+    }
+
+    /// This test process runs; its cwd is a fact the host reports.
+    #[test]
+    fn a_live_process_reports_its_cwd() {
+        let me = std::process::id();
+        let cwds = process_cwds(&[me]).unwrap();
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
+            let want = std::env::current_dir().unwrap().canonicalize().unwrap();
+            assert_eq!(cwds[&me].canonicalize().unwrap(), want);
+        }
     }
 }

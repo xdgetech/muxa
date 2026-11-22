@@ -37,7 +37,7 @@ A Routine (ADR 0026, 0036, `src/routines/`) is a `[[routine]]` in a workspace's 
 - **Output.** The agent writes `.muxa/routine/output.json` (below), then ends its turn. The state the last successful run committed is in `.muxa/routine/state.json`. The folder is the run's private stage; nothing outside the run reads it before the check.
 - **The check** runs in the daemon's process on each `done` (`routines/check.rs`). On a pass, one locked write of `<state dir>/routines/r-<hash>.json` stores the new entries, skips keys the Routine already stored, commits the state and closes the run; the runner ends the terminal. On a fail, the reasons go to `.muxa/checks/<attempt>.log`, and the runner types `The Routine output did not pass the check. The reasons are in .muxa/checks/<attempt>.log. Fix .muxa/routine/output.json, then end your turn.` After 3 fails, the run fails and the Routine shows the failure. A run fails too when its agent ends without a publish, is gone, or runs past 2 h.
 - **The Inbox.** `src/v2/feed.rs` copies new briefings as Read items, proposals as Decide items and failures as Failed items, every 15 s.
-- **Codex.** A Routine whose worker or default command is Codex is refused before it starts.
+- **Codex.** A Routine whose worker or default command is Codex is refused before it starts. A run acts on `done`, which only OSC 7501 reports, and whether Codex sends it by itself is unchecked (`docs/findings/session-backends.md`).
 - **Logs.** Ids, counts and outcomes only. Never instructions, titles, bodies, links or state.
 
 ### Routine output
@@ -76,16 +76,15 @@ trait AgentAdapter: Send + Sync {
 }
 
 trait ChatSource: Send {
-    fn poll(&mut self, pane: &PaneInfo) -> Result<Vec<ChatEvent>, Error>; // first call: a Reset
+    fn poll(&mut self) -> Result<Vec<ChatEvent>, Error>; // first call: a Reset
     fn entries(&self) -> Vec<ChatEntry>;  // everything current
     fn status(&self) -> Option<Agent>;    // None when unknown
     fn prompt(&self) -> Option<ChatPrompt>; // what the agent waits on, with its keys
 }
 ```
 
-- The trait still has protocol v1's pane-based `open`, `find` and `documents`, which only the adapters' own tests use; removing them is a follow-up.
 - **`open_folder`** returns a source for the adapter's agent working in a Task's working place, or `None`. The registry (`Registry::standard`) asks the adapters in order; the first source wins.
-- **`poll`** runs about every 0.7 s on the blocking pool. It returns `Reset` (replace everything) or `Upsert` (add an entry, or replace the one with its id). `Error::Gone` ends the chat, for example when the agent exited. `PaneInfo` carries only the folder now; its pane fields are empty.
+- **`poll`** runs about every 0.7 s on the blocking pool. It returns `Reset` (replace everything) or `Upsert` (add an entry, or replace the one with its id). `Error::Gone` ends the chat, for example when the agent exited.
 - **`prompt`** names what the agent waits on and the keys that pick each choice (ADR 0009). The daemon turns the keys into the terminal input each option sends; an unknown key drops the whole prompt.
 - **Data directories.** An adapter searches a list of directories (ADR 0016): every `--agent-dir <id>=PATH`, else its default, then each workspace's value of the adapter's variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) from `[workspace.agent]`. The daemon reads them when it starts.
 
@@ -118,8 +117,10 @@ Rules for an adapter:
 
 ### Codex
 
-Checked with Codex CLI 0.160.0. Codex runs as a Task's agent, but has no folder lookup yet, so a Codex agent has no Chat, and it cannot run a Routine.
+Checked with Codex CLI 0.160.0. Codex runs as a Task's agent and has Chat. It cannot run a Routine (above).
 
 - `CODEX_HOME` (default `~/.codex`) moves `sessions/`.
 - `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`: one conversation. The first line, `session_meta`, holds its `cwd`. `response_item` lines hold the messages and tool calls; `event_msg` lines `task_started` and `task_complete` give the state.
-- Codex does not record an approval prompt.
+- Codex records no process id. The adapter takes the `codex` processes whose working directory is the folder: `ps` cannot show it, so it reads `/proc/<pid>/cwd` on Linux and asks `/usr/sbin/lsof` on macOS. With none, there is no Chat. The conversation is the newest rollout whose `cwd` is the folder, changed since the oldest such process started. Only the newest 7 day directories and the newest 64 rollouts are read. A Chat opened before the first prompt picks up the rollout when Codex writes it, and follows `/new`. The Chat ends when no `codex` runs in the folder. Not checked with a real Codex yet: that its process keeps the folder as its working directory.
+- The state comes only from `task_started` (working) and `task_complete` or `turn_aborted` (idle).
+- Codex does not record an approval prompt, so its Chat offers none.

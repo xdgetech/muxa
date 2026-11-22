@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::PathBuf;
 
 use muxa_protocol::{ChatKind, PromptKind};
 use serde_json::Value;

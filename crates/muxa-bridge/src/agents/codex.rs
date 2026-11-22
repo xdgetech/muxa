@@ -1,13 +1,15 @@
 //! Codex CLI. Each conversation is appended to
 //! `<dir>/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`, whose first line
-//! (`session_meta`) names its cwd. Codex records no pane, so a pane's `codex`
-//! process is matched to the newest rollout in its cwd written since it started.
+//! (`session_meta`) names its cwd. Codex records no process id, so a folder's
+//! agent is a `codex` process whose cwd is the folder, and its conversation is
+//! the newest rollout for that folder written since the process started.
 //! The format is private to Codex; anything unexpected is skipped, never guessed.
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use muxa_protocol::{Agent, AgentState, ChatEntry, ChatKind, ChatTool};
@@ -15,7 +17,7 @@ use serde_json::Value;
 
 use super::log::{EntryLog, INITIAL_ENTRIES, MAX_RESULT, MAX_SUMMARY, MAX_TEXT, cap};
 use super::tail::{INITIAL_TAIL, JsonlTail, MAX_LINE, Poll};
-use super::{AgentAdapter, AgentSession, ChatEvent, ChatSource, Error, Found, PaneInfo, Processes};
+use super::{AgentAdapter, ChatEvent, ChatSource, Error, Processes};
 
 pub const ID: &str = "codex";
 /// Moves Codex's state, and with it the rollouts (ADR 0016).
@@ -24,20 +26,33 @@ pub const DIR_ENV: &str = "CODEX_HOME";
 const PROCESS: &str = "codex";
 /// How often, in polls, the source checks the process and looks for a newer rollout.
 const CHECK_EVERY: u32 = 8;
-/// Enough of a rollout's end to find its last turn event.
-const STATE_TAIL: u64 = 256 << 10;
 const DAY: Duration = Duration::from_secs(86_400);
+/// The newest day directories searched. A Codex that runs longer than this
+/// on one conversation has no Chat.
+const MAX_DAYS: usize = 7;
+/// The newest rollouts whose first line is read, across every Codex home.
+const MAX_FILES: usize = 64;
 
 type ListProcesses = Box<dyn Fn() -> Result<Processes, Error> + Send>;
+/// Each pid's working directory (`super::process_cwds`); tests stand in for the host.
+type CwdsFn = dyn Fn(&[u32]) -> Result<HashMap<u32, PathBuf>, Error> + Send + Sync;
+type Cwds = Arc<CwdsFn>;
 
 pub struct CodexAdapter {
     /// Codex homes, searched together: one per account (ADR 0016).
     dirs: Vec<PathBuf>,
+    /// What a source lists to check that Codex still runs.
+    list: fn() -> Result<Processes, Error>,
+    cwds: Cwds,
 }
 
 impl CodexAdapter {
     pub fn new(dirs: Vec<PathBuf>) -> Self {
-        Self { dirs }
+        Self {
+            dirs,
+            list: Processes::list,
+            cwds: Arc::new(super::process_cwds),
+        }
     }
 }
 
@@ -46,107 +61,88 @@ impl AgentAdapter for CodexAdapter {
         ID
     }
 
-    fn open(
+    fn open_folder(
         &self,
-        pane: &PaneInfo,
+        dir: &Path,
         procs: &Processes,
     ) -> Result<Option<Box<dyn ChatSource>>, Error> {
-        let Some(started) = started(pane, procs) else {
+        let dir = canonical(dir);
+        let Some(started) = started_in(&dir, procs, self.cwds.as_ref())? else {
             return Ok(None);
         };
-        let rollout = find_rollout(&self.dirs, &pane.path, started)?;
+        // None until Codex writes the rollout with the first prompt.
+        let rollout = find_rollout(&self.dirs, &dir, started)?;
         Ok(Some(Box::new(CodexSource::new(
             self.dirs.clone(),
+            dir,
             started,
             rollout,
-            Box::new(Processes::list),
+            Box::new(self.list),
+            Arc::clone(&self.cwds),
         ))))
-    }
-
-    fn find(&self, pane: &PaneInfo, procs: &Processes) -> Option<Found> {
-        let started = started(pane, procs)?;
-        let rollout = find_rollout(&self.dirs, &pane.path, started).ok().flatten();
-        let status = rollout
-            .as_deref()
-            .and_then(last_turn)
-            .filter(|_| !pane.shell_foreground);
-        let session = rollout.and_then(|path| {
-            Some(AgentSession {
-                id: meta(&path)?.id?,
-                transcript: Some(path),
-            })
-        });
-        Some(Found {
-            process_bound: false,
-            status,
-            session,
-        })
     }
 }
 
-/// When the `codex` process in `pane` started, or None when there is none.
-fn started(pane: &PaneInfo, procs: &Processes) -> Option<SystemTime> {
-    procs
-        .named_within(PROCESS, pane.pid)
+fn canonical(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_owned())
+}
+
+/// When the first `codex` process whose cwd is `dir` started, or None when
+/// none runs there.
+fn started_in(dir: &Path, procs: &Processes, cwds: &CwdsFn) -> Result<Option<SystemTime>, Error> {
+    let pids = procs.named(PROCESS);
+    let cwd = cwds(&pids)?;
+    Ok(pids
         .into_iter()
+        .filter(|pid| cwd.get(pid).is_some_and(|c| canonical(c) == dir))
         .filter_map(|pid| procs.started(pid))
-        .min()
+        .min())
 }
 
 /// The newest rollout for `cwd` written since `started`, in any of `dirs`.
+/// Day directories are searched back to the day before `started`, which
+/// covers time zones, and at most the newest `MAX_DAYS` of them.
 fn find_rollout(
     dirs: &[PathBuf],
-    cwd: &str,
+    cwd: &Path,
     started: SystemTime,
 ) -> Result<Option<PathBuf>, Error> {
-    let mut best: Option<(SystemTime, PathBuf)> = None;
-    for dir in dirs {
-        if let Some(found) = newest_rollout(dir, cwd, started)? {
-            if best.as_ref().is_none_or(|(t, _)| found.0 > *t) {
-                best = Some(found);
-            }
-        }
-    }
-    Ok(best.map(|(_, p)| p))
-}
-
-/// The newest rollout for `cwd` in `dir` written since `started`, with its
-/// mtime. Day directories are searched back to the day before `started`,
-/// which covers time zones.
-fn newest_rollout(
-    dir: &Path,
-    cwd: &str,
-    started: SystemTime,
-) -> Result<Option<(SystemTime, PathBuf)>, Error> {
     // `ps` ages are whole seconds.
     let since = started
         .checked_sub(Duration::from_secs(1))
         .unwrap_or(UNIX_EPOCH);
     let first_day = day_key(since.checked_sub(DAY).unwrap_or(UNIX_EPOCH));
-    let mut best: Option<(SystemTime, PathBuf)> = None;
-    for day in day_dirs(&dir.join("sessions"), &first_day)? {
-        let Ok(files) = std::fs::read_dir(&day) else {
-            continue;
-        };
-        for path in files.filter_map(Result::ok).map(|e| e.path()) {
-            if path.extension().is_none_or(|x| x != "jsonl") {
-                continue;
-            }
-            let Some(mtime) = std::fs::metadata(&path)
-                .ok()
-                .and_then(|m| m.modified().ok())
-            else {
-                continue;
-            };
-            if mtime < since || best.as_ref().is_some_and(|(t, _)| *t >= mtime) {
-                continue;
-            }
-            if meta_cwd(&path).as_deref() == Some(cwd) {
-                best = Some((mtime, path));
-            }
+    let mut found: Vec<(SystemTime, PathBuf)> = Vec::new();
+    for dir in dirs {
+        let mut days = day_dirs(&dir.join("sessions"), &first_day)?;
+        days.sort_unstable_by(|a, b| b.cmp(a));
+        for day in days.into_iter().take(MAX_DAYS) {
+            found.extend(rollouts_since(&day, since));
         }
     }
-    Ok(best)
+    found.sort_unstable_by_key(|(mtime, _)| std::cmp::Reverse(*mtime));
+    Ok(found
+        .into_iter()
+        .take(MAX_FILES)
+        .map(|(_, path)| path)
+        .find(|path| meta_cwd(path).is_some_and(|c| canonical(Path::new(&c)) == cwd)))
+}
+
+/// The `.jsonl` files in `day` changed since `since`, with their mtime. A day
+/// that cannot be read is skipped: Codex may be writing it.
+fn rollouts_since(day: &Path, since: SystemTime) -> Vec<(SystemTime, PathBuf)> {
+    let Ok(files) = std::fs::read_dir(day) else {
+        return Vec::new();
+    };
+    files
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|path| path.extension().is_some_and(|x| x == "jsonl"))
+        .filter_map(|path| {
+            let mtime = std::fs::metadata(&path).ok()?.modified().ok()?;
+            (mtime >= since).then_some((mtime, path))
+        })
+        .collect()
 }
 
 /// `sessions/YYYY/MM/DD` directories whose date is `first` ("YYYY/MM/DD") or later.
@@ -190,14 +186,8 @@ fn day_key(t: SystemTime) -> String {
     format!("{year:04}/{month:02}/{day:02}")
 }
 
-/// What a rollout's first line (`session_meta`) says.
-struct Meta {
-    cwd: String,
-    /// The session id, when it looks like one.
-    id: Option<String>,
-}
-
-fn meta(path: &Path) -> Option<Meta> {
+/// The cwd in a rollout's first line (`session_meta`).
+fn meta_cwd(path: &Path) -> Option<String> {
     let file = File::open(path).ok()?;
     let mut line = Vec::new();
     BufReader::new(file.take(MAX_LINE as u64))
@@ -207,34 +197,7 @@ fn meta(path: &Path) -> Option<Meta> {
     if v.get("type")?.as_str()? != "session_meta" {
         return None;
     }
-    let payload = &v["payload"];
-    Some(Meta {
-        cwd: payload.get("cwd")?.as_str()?.to_owned(),
-        id: payload
-            .get("id")
-            .and_then(Value::as_str)
-            .filter(|id| valid_id(id))
-            .map(str::to_owned),
-    })
-}
-
-/// The cwd in a rollout's first line.
-fn meta_cwd(path: &Path) -> Option<String> {
-    meta(path).map(|m| m.cwd)
-}
-
-/// A UUID's characters only: the id is shown and stored, never trusted further.
-fn valid_id(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-}
-
-/// The state after the last turn event near the end of a rollout.
-fn last_turn(path: &Path) -> Option<Agent> {
-    let (_, lines, _) = JsonlTail::open(path, STATE_TAIL).ok()?;
-    lines.iter().rev().find_map(|l| {
-        let v: Value = serde_json::from_slice(l).ok()?;
-        turn_event(&v)
-    })
+    Some(v["payload"].get("cwd")?.as_str()?.to_owned())
 }
 
 /// Codex records when a turn starts and ends; it records no approval wait.
@@ -257,6 +220,8 @@ fn turn_event(v: &Value) -> Option<Agent> {
 
 pub struct CodexSource {
     dirs: Vec<PathBuf>,
+    /// The folder, canonical.
+    dir: PathBuf,
     started: SystemTime,
     path: Option<PathBuf>,
     tail: Option<JsonlTail>,
@@ -265,21 +230,22 @@ pub struct CodexSource {
     /// The rollout a reset was sent for; None before the first.
     reset_for: Option<Option<PathBuf>>,
     list: ListProcesses,
+    cwds: Cwds,
     polls: u32,
-    /// An owned thread's rollout (ADR 0028): never another file, and no
-    /// process check; the caller proved the run.
-    fixed: bool,
 }
 
 impl CodexSource {
     fn new(
         dirs: Vec<PathBuf>,
+        dir: PathBuf,
         started: SystemTime,
         path: Option<PathBuf>,
         list: ListProcesses,
+        cwds: Cwds,
     ) -> Self {
         Self {
             dirs,
+            dir,
             started,
             path,
             tail: None,
@@ -287,19 +253,19 @@ impl CodexSource {
             status: None,
             reset_for: None,
             list,
+            cwds,
             polls: 0,
-            fixed: false,
         }
     }
 
-    /// Ends the chat when Codex exited; follows a newer rollout (`/new`) or the
-    /// first one, which Codex writes with the first prompt.
-    fn check(&mut self, pane: &PaneInfo) -> Result<(), Error> {
+    /// Ends the chat when Codex left the folder; follows a newer rollout
+    /// (`/new`) or the first one, which Codex writes with the first prompt.
+    fn check(&mut self) -> Result<(), Error> {
         let procs = (self.list)()?;
-        if procs.named_within(PROCESS, pane.pid).is_empty() {
+        if started_in(&self.dir, &procs, self.cwds.as_ref())?.is_none() {
             return Err(Error::Gone("Codex exited".into()));
         }
-        let newest = find_rollout(&self.dirs, &pane.path, self.started)?;
+        let newest = find_rollout(&self.dirs, &self.dir, self.started)?;
         if newest.is_some() && newest != self.path {
             self.path = newest;
             self.tail = None;
@@ -312,9 +278,6 @@ impl CodexSource {
         let Some(path) = self.path.clone() else {
             return Ok(self.mark_reset(Vec::new(), false));
         };
-        if self.fixed && !path.exists() {
-            return Ok(self.mark_reset(Vec::new(), false));
-        }
         let (tail, lines, cut) = JsonlTail::open(&path, INITIAL_TAIL)?;
         self.tail = Some(tail);
         for line in &lines {
@@ -334,9 +297,9 @@ impl CodexSource {
 }
 
 impl ChatSource for CodexSource {
-    fn poll(&mut self, pane: &PaneInfo) -> Result<Vec<ChatEvent>, Error> {
-        if !self.fixed && self.polls % CHECK_EVERY == 0 {
-            self.check(pane)?;
+    fn poll(&mut self) -> Result<Vec<ChatEvent>, Error> {
+        if self.polls % CHECK_EVERY == 0 {
+            self.check()?;
         }
         self.polls = self.polls.wrapping_add(1);
         let mut events = Vec::new();
@@ -356,8 +319,7 @@ impl ChatSource for CodexSource {
             self.tail = None;
             events.extend(self.reset()?);
         }
-        // Back at a shell, the recorded state is stale.
-        self.status = self.conv.turn.clone().filter(|_| !pane.shell_foreground);
+        self.status = self.conv.turn.clone();
         Ok(events)
     }
 
