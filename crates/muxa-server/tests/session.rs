@@ -100,6 +100,7 @@ impl Host for FakeTasks {
                 used_by: UsedBy::default(),
                 last_used: None,
             }],
+            branches: [("app".into(), "main".into())].into(),
         }])
     }
 
@@ -1440,7 +1441,8 @@ async fn workspaces_list_what_a_task_may_use() {
                 "connections": [{"name": "github", "default": true,
                     "used_by": {"routines": ["digest"], "tasks": []}, "last_used": 1_700_000_000}],
                 "mcp": [{"name": "docs", "default": true,
-                    "used_by": {"routines": [], "tasks": []}, "last_used": null}]}])
+                    "used_by": {"routines": [], "tasks": []}, "last_used": null}],
+                "branches": {"app": "main"}}])
     );
 }
 

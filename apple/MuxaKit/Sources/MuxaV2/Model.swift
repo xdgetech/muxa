@@ -72,11 +72,13 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
     public var connections: [WorkspaceConnection]
     /// The MCP servers a Task can name (ADR 0069).
     public var mcp: [WorkspaceMcp]
+    /// Each repo's checked-out branch, by its name in `repos`.
+    public var branches: [String: String]
 
     public var id: String { name }
 
     public init(name: String, root: String, repos: [String] = [], agent: String? = nil, loop: WorkspaceLoop? = nil,
-                connections: [WorkspaceConnection] = [], mcp: [WorkspaceMcp] = []) {
+                connections: [WorkspaceConnection] = [], mcp: [WorkspaceMcp] = [], branches: [String: String] = [:]) {
         self.name = name
         self.root = root
         self.repos = repos
@@ -84,10 +86,11 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         self.loop = loop
         self.connections = connections
         self.mcp = mcp
+        self.branches = branches
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, root, repos, agent, loop, connections, mcp
+        case name, root, repos, agent, loop, connections, mcp, branches
     }
 
     public init(from decoder: any Decoder) throws {
@@ -100,6 +103,7 @@ public struct Workspace: Codable, Equatable, Sendable, Identifiable {
         connections = try c.decode([WorkspaceConnection].self, forKey: .connections)
         // Servers before E2b send no list.
         mcp = try c.decodeIfPresent([WorkspaceMcp].self, forKey: .mcp) ?? []
+        branches = try c.decodeIfPresent([String: String].self, forKey: .branches) ?? [:]
     }
 }
 

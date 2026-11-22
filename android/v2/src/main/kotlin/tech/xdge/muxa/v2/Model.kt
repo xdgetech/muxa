@@ -119,6 +119,8 @@ data class Workspace(
     val connections: List<WorkspaceConnection> = emptyList(),
     /** The MCP servers a Task can name (ADR 0069). */
     val mcp: List<WorkspaceMcp> = emptyList(),
+    /** Each repo's checked-out branch, by its name in [repos]. */
+    val branches: Map<String, String> = emptyMap(),
 )
 
 @Serializable

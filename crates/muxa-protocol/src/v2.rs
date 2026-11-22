@@ -496,6 +496,10 @@ pub struct Workspace {
     /// The `[[workspace.mcp]]` servers every agent gets (ADR 0069, 0075).
     #[serde(default)]
     pub mcp: Vec<WorkspaceMcp>,
+    /// Each repo's checked-out branch, by its name in `repos`. A repo on a
+    /// detached HEAD has none.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub branches: std::collections::BTreeMap<String, String>,
 }
 
 /// An MCP server's name only; its command, URL and variables stay on the host.
@@ -1257,6 +1261,7 @@ mod tests {
                 used_by: UsedBy::default(),
                 last_used: None,
             }],
+            branches: Default::default(),
         };
         let wire = serde_json::to_value(&ws).unwrap();
         assert_eq!(

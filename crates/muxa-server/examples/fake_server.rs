@@ -100,6 +100,7 @@ impl Host for FakeHost {
                 used_by: UsedBy::default(),
                 last_used: None,
             }],
+            branches: [("app".into(), "main".into())].into(),
         }])
     }
 

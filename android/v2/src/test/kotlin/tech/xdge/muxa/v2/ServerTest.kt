@@ -167,6 +167,7 @@ class ServerTest {
                     WorkspaceConnection("github", isDefault = true, usedBy = UsedBy(routines = listOf("digest")), lastUsed = 1_700_000_000),
                 ),
                 mcp = listOf(WorkspaceMcp("docs", isDefault = true)),
+                branches = mapOf("app" to "main"),
             )
             assertEquals(listOf(expected), c.workspaces())
             // Every Task agent uses every connection and server of its Workspace (ADR 0075).

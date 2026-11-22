@@ -92,6 +92,7 @@ mod tests {
                 used_by: UsedBy::default(),
                 last_used: None,
             }],
+            branches: Default::default(),
         }
     }
 

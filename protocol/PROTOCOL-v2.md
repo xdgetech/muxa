@@ -241,7 +241,7 @@ ADR 0076. `migrate-v1` reads the open Task records of protocol v1 (status `open`
 
 ADR 0072. The actions of a Review or Failed item, and the Workspaces a client offers when it starts a Task.
 
-`Workspace`: `{"name","root","repos":[...],"agent"?,"loop","connections":[Use...],"mcp":[Use...]}`.
+`Workspace`: `{"name","root","repos":[...],"agent"?,"loop","connections":[Use...],"mcp":[Use...],"branches"?:{repo: branch}}`. `branches` gives the branch each repo's own checkout is on, by its name in `repos`; a repo on a detached HEAD is missing.
 - `repos`: the Workspace's repos as `start-task` takes them, relative to the root, or a listed repo's folder name.
 - `agent`: the program name of the Workspace's agent, such as `claude` or `codex`. Never its arguments or environment.
 - `loop`: `null` when the Workspace runs no Task Loops, else `{"checks":"any"}` or `{"checks":["make test",...]}`.

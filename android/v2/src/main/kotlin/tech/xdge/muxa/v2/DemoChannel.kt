@@ -556,6 +556,7 @@ private fun standardContent(): DemoContent {
                     WorkspaceConnection("linear", isDefault = true, usedBy = UsedBy(routines = everyRoutine), lastUsed = 1_763_990_000),
                 ),
                 mcp = listOf(WorkspaceMcp("docs", isDefault = true, usedBy = UsedBy(routines = everyRoutine), lastUsed = 1_764_000_000)),
+                branches = mapOf("app" to "main", "docs" to "main"),
             ),
             Workspace("Personal", "/demo/personal", emptyList(), agent = "claude"),
         ),

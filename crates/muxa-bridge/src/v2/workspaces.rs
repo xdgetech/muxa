@@ -29,13 +29,17 @@ pub fn to_v2(
         .as_ref()
         .and_then(|a| a.command.clone())
         .unwrap_or_else(|| default_command.to_owned());
-    let mut repos: Vec<String> = ws
-        .repo_list()
+    let listed = ws.repo_list();
+    let mut repos: Vec<String> = listed
         .iter()
         .filter_map(|r| repo_name(&ws.root, r))
         .collect();
     repos.sort();
     repos.dedup();
+    let branches = listed
+        .iter()
+        .filter_map(|r| Some((repo_name(&ws.root, r)?, head_branch(r)?)))
+        .collect();
     v2::Workspace {
         name: ws.name.clone(),
         root: ws.root.to_string_lossy().into_owned(),
@@ -67,7 +71,17 @@ pub fn to_v2(
                 last_used: usage.mcp.get(&m.name).copied(),
             })
             .collect(),
+        branches,
     }
+}
+
+/// The branch `repo`'s own checkout is on, read from `.git/HEAD` without
+/// running git: one request lists every repo. None on a detached HEAD.
+fn head_branch(repo: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(repo.join(".git").join("HEAD")).ok()?;
+    head.trim()
+        .strip_prefix("ref: refs/heads/")
+        .map(str::to_owned)
 }
 
 /// Every Routine of the Workspace gets every connection and MCP server
@@ -137,9 +151,16 @@ mod tests {
         for repo in ["app", "group/lib"] {
             std::fs::create_dir_all(root.join(repo).join(".git")).unwrap();
         }
+        std::fs::write(root.join("app/.git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(root.join("group/lib/.git/HEAD"), "4f2a9c0\n").unwrap();
         let root = root.canonicalize().unwrap();
         let shown = to_v2(&workspace(&root), "codex", &[], &WorkspaceUsage::default());
         assert_eq!(shown.repos, ["app", "group/lib", "tools"]);
+        assert_eq!(
+            shown.branches,
+            [("app".to_owned(), "main".to_owned())].into(),
+            "a detached HEAD and a missing repo have no branch"
+        );
         assert_eq!(shown.agent.as_deref(), Some("claude"));
         assert_eq!(
             shown.task_loop,

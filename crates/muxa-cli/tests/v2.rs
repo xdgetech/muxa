@@ -120,6 +120,7 @@ impl Host for WorkTasks {
                 used_by: UsedBy::default(),
                 last_used: None,
             }],
+            branches: Default::default(),
         }])
     }
 

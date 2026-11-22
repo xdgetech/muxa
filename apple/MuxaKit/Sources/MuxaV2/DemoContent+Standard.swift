@@ -77,7 +77,8 @@ extension DemoContent {
                                                   usedBy: UsedBy(routines: everyRoutine), lastUsed: 1_763_990_000),
                           ],
                           mcp: [WorkspaceMcp(name: "docs", isDefault: true, usedBy: UsedBy(routines: everyRoutine),
-                                             lastUsed: 1_764_000_000)]),
+                                             lastUsed: 1_764_000_000)],
+                          branches: ["app": "main", "docs": "main"]),
                 Workspace(name: "Personal", root: "/demo/personal", agent: "claude"),
             ],
             files: [

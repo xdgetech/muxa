@@ -113,7 +113,8 @@ struct ServerTests {
                       loop: WorkspaceLoop(checks: .list(["make test"])),
                       connections: [WorkspaceConnection(name: "github", isDefault: true,
                                                         usedBy: UsedBy(routines: ["digest"]), lastUsed: 1_700_000_000)],
-                      mcp: [WorkspaceMcp(name: "docs", isDefault: true)]),
+                      mcp: [WorkspaceMcp(name: "docs", isDefault: true)],
+                      branches: ["app": "main"]),
         ])
         // Every Task agent uses every connection and server of its Workspace (ADR 0075).
         let (agent, _) = try await c.startTask(workspace: "Personal", title: "uses")
