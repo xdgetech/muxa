@@ -4,6 +4,8 @@ import SwiftUI
 /// under it. It replaces the window toolbar on screens that use it.
 struct MacHeaderBar<Leading: View, Trailing: View>: View {
     var height: CGFloat = 52
+    /// The main window hides its title bar; this keeps clear of the window buttons.
+    var leadingInset: CGFloat = 78
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
@@ -13,7 +15,8 @@ struct MacHeaderBar<Leading: View, Trailing: View>: View {
             Spacer(minLength: 8)
             trailing
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, leadingInset)
+        .padding(.trailing, 16)
         .frame(height: height)
         .background(Palette.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Palette.border).frame(height: 1) }

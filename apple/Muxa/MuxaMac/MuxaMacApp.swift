@@ -23,6 +23,7 @@ struct MuxaMacApp: App {
                 .containerBackground(Palette.ground, for: .window)
                 .toolbarBackground(Palette.ground, for: .windowToolbar)
                 .sheet(isPresented: $chrome.showShortcuts) { ShortcutsSheet() }
+                .ignoresSafeArea(.container, edges: .top)
                 .modifier(OnWindowStart { openWindow in
                     let capture = quickCapture ?? QuickCapture(model: model, nav: nav)
                     capture.register()
@@ -43,6 +44,8 @@ struct MuxaMacApp: App {
                     }
                 })
         }
+        // The screens draw the mocks' own header bar.
+        .windowStyle(.hiddenTitleBar)
         // ⌘, opens it, as in every Mac app.
         Settings {
             SettingsStack()
