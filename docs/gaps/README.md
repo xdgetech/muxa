@@ -20,9 +20,9 @@ What is built but not verified, and what is left after the F phases and their fo
 
 ## Not built
 
-- **Settings** that show who uses which connection and MCP server, and when it was last used (ADR 0069 §7). The `workspaces` reply carries it (`used_by`, `last_used`). Android shows it in Settings, read only; iOS and the Mac show it beside each connection and MCP server in Settings.
-- **Editable Settings screens** (ADR 0074): `settings` and `settings-update` are on the wire, in the daemon, in `muxa-cli` and in the MuxaV2 and `:v2` clients with their demo servers. iOS and the Mac have the screens (the phone's Settings tab, the tablet's Settings place, the Mac's `⌘,` window); Android does not yet.
+- **Android Settings** do not edit `direct_writes` (the Routines gate's and a Routine's) or a Routine's `project`; they keep them as the file has them. iOS and the Mac edit `direct_writes`.
 - **Codex**: no MCP servers, no Routines (whether Codex sends OSC 7501 by itself is unchecked), no approval prompt in Chat.
+- **The Android demo's Start Task line** comes from the demo's fixed `workspaces`, so a connection added in the demo's Settings does not show there.
 - **Edit Routine** on a Failed item (`docs/next.md`), in every app.
 - **Adding a place** to an open Task.
 - **Review from a draft PR**: only a passed check or the user makes a Review item. Approve's "merged" is by ancestry, so a squash-merged branch needs Remove anyway.
