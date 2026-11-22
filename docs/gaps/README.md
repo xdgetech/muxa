@@ -22,7 +22,7 @@ What is built but not verified, and what is left after the F phases and their fo
 
 - **Settings** that show who uses which connection and MCP server, and when it was last used (ADR 0069 §7).
 - **Codex**: no MCP servers, no Routines (whether Codex sends OSC 7501 by itself is unchecked), no approval prompt in Chat.
-- **Edit Routine** on a Failed item and **Make it a Task** on a Read item (`docs/next.md`).
+- **Edit Routine** on a Failed item and **Make it a Task** on a Read item (`docs/next.md`), in every app.
 - **Adding a place** to an open Task.
 - **Review from a draft PR**: only a passed check or the user makes a Review item. Approve's "merged" is by ancestry, so a squash-merged branch needs Remove anyway.
 - **A restarted agent** (Retry) is not in plan mode and does not continue the old conversation.
@@ -33,6 +33,7 @@ What is built but not verified, and what is left after the F phases and their fo
 ## Tests missing
 
 - No UI test reaches "Remove anyway": the demo servers never answer `would-lose-work`.
+- The Mac Capture window's `⌘⏎` opens Start Task in the main window; with the main window closed, the sheet has nowhere to show.
 - Server-level Retry of a live agent's loop is untested (fake host ids differ).
 - No end-to-end test of `muxa-cli v2 workspaces|approve|request-changes|retry`.
 - `BridgeHost::prepare` is long; the adapters' and runner's MCP paths are tested, the shape is not refactored.

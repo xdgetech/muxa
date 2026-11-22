@@ -52,7 +52,7 @@ flowchart LR
 
 **Focus** is one Task's terminal, with the Tasks and other terminals beside it. The terminal takes the size of the view you look at it in. Beside it, one panel at a time:
 - **Inbox** (`⌘⇧I`);
-- **Reader** (`⌘⇧R`, `Ctrl+Shift+R` on Android): the Task folder's Markdown and HTML documents, its changed files and the branch's commits as diffs, and its images, kept current while open; on iOS and the Mac a link to another of the documents opens it;
+- **Reader** (`⌘⇧R`, `Ctrl+Shift+R` on Android): the Task folder's Markdown and HTML documents, its changed files and the branch's commits as diffs, and its images, kept current while open; a link to another of the documents opens it;
 - **Chat** (`⌘⇧C`, `Ctrl+Shift+C`): the agent's conversation from its own records, the approval card when it waits on you, and a line to send it.
 
 **Task Loop:** the Loop button runs a check after each finished turn of a Task's agent, for example `make check` (ADR 0019). A failed check types a fixed prompt: `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.` A pass makes a Review item; the last allowed failure (3 by default) makes a Failed item. While the agent waits on you, the loop pauses. Allow checks for a workspace with `[workspace.loop]` in `workspaces.toml`.
