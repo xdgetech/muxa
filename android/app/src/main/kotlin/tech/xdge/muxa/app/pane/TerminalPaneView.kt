@@ -104,7 +104,7 @@ class TerminalPaneView(context: Context) : View(context) {
         isFocusable = true
         isFocusableInTouchMode = true
         contentDescription = "Pane"
-        setBackgroundColor(Color.BLACK)
+        setBackgroundColor(Palette.BACKGROUND)
     }
 
     /** The screen as text, for accessibility and UI tests. */
@@ -293,7 +293,7 @@ class TerminalPaneView(context: Context) : View(context) {
         val x = min(l, max(0f, gridWidth - w))
         fill.color = Palette.BACKGROUND
         canvas.drawRect(x, t, x + w, t + cellHeight, fill)
-        paint.color = Color.WHITE
+        paint.color = Palette.FOREGROUND
         paint.isFakeBoldText = false
         paint.textSkewX = 0f
         paint.isUnderlineText = true

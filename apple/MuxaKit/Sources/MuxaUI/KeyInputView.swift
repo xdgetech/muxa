@@ -28,7 +28,8 @@ public final class KeyInputView: UIView, UITextInput {
     public override init(frame: CGRect) {
         super.init(frame: frame)
         compositionLabel.isHidden = true
-        compositionLabel.backgroundColor = .black
+        compositionLabel.backgroundColor = PaneTerminalView.background
+        compositionLabel.textColor = PaneTerminalView.foreground
         addSubview(compositionLabel)
         // With a hardware keyboard, iPadOS shows these groups (input mode, dictation,
         // shortcuts) as a bar over the bottom of the pane. The pane has no use for them.
@@ -157,6 +158,8 @@ public final class KeyInputView: UIView, UITextInput {
     public var smartDashesType: UITextSmartDashesType { get { .no } set {} }
     public var spellCheckingType: UITextSpellCheckingType { get { .no } set {} }
     public var inlinePredictionType: UITextInlinePredictionType { get { .no } set {} }
+    /// The app is dark only, as the terminal is.
+    public var keyboardAppearance: UIKeyboardAppearance { get { .dark } set {} }
     @available(iOS 18.0, *)
     public var writingToolsBehavior: UIWritingToolsBehavior { get { .none } set {} }
 

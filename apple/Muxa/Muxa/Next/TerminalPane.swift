@@ -16,7 +16,7 @@ final class V2PaneView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .black
+        backgroundColor = PaneTerminalView.background
         addSubview(screen)
         addSubview(input)
         input.screenText = { [weak self] in self?.screen.screenText ?? "" }

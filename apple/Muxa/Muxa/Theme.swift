@@ -11,6 +11,7 @@ enum Theme {
     static let composer = Palette.surface
     /// Behind the pane: the terminal's own background.
     static let terminal = Palette.terminal
+    static let terminalText = Palette.terminalText
 
     static let connected = TaskState.working.color
     static let attention = TaskState.needsYou.color
@@ -45,6 +46,7 @@ enum Palette {
     static let textTertiary = Color(hex: 0x8B94A0)
     static let accent = Color(hex: 0x6AA6FF)
     static let terminal = Color(hex: 0x0A0C0F)
+    static let terminalText = Color(hex: 0xD5D9DF)
     /// A due date that has passed, and errors.
     static let late = Color(hex: 0xFF9B9B)
     /// The Needs-you banner on Home.

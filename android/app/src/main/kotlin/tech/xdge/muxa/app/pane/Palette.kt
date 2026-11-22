@@ -3,10 +3,10 @@ package tech.xdge.muxa.app.pane
 import android.graphics.Color
 import tech.xdge.muxa.terminal.TermColor
 
-/** The terminal's colors: xterm's 256, on a black background. */
+/** The terminal's colors: xterm's 256, on the design's terminal ground. */
 object Palette {
-    val BACKGROUND = Color.BLACK
-    private val FOREGROUND = Color.rgb(229, 229, 229)
+    val BACKGROUND = Color.rgb(0x0A, 0x0C, 0x0F)
+    val FOREGROUND = Color.rgb(0xD5, 0xD9, 0xDF)
 
     private val base = intArrayOf(
         Color.rgb(0, 0, 0), Color.rgb(205, 49, 49), Color.rgb(13, 188, 121), Color.rgb(229, 229, 16),

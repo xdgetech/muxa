@@ -10,6 +10,10 @@ import UIKit
 public final class PaneTerminalView: UIView {
     public typealias FitMode = PaneFit
 
+    /// The terminal's default colors, as in the design mocks. ANSI colors stay SwiftTerm's.
+    public static let background = UIColor(red: 0x0A / 255, green: 0x0C / 255, blue: 0x0F / 255, alpha: 1)
+    public static let foreground = UIColor(red: 0xD5 / 255, green: 0xD9 / 255, blue: 0xDF / 255, alpha: 1)
+
     public let terminalView: TerminalView
     public private(set) var cols = 80
     public private(set) var rows = 24
@@ -40,7 +44,10 @@ public final class PaneTerminalView: UIView {
         terminalView.terminalDelegate = replies
         // Keys come from KeyInputView; the terminal view never becomes first responder.
         terminalView.isUserInteractionEnabled = false
-        backgroundColor = .black
+        terminalView.nativeForegroundColor = Self.foreground
+        terminalView.nativeBackgroundColor = Self.background
+        terminalView.layer.backgroundColor = Self.background.cgColor
+        backgroundColor = Self.background
         addSubview(terminalView)
     }
 

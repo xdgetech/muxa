@@ -22,6 +22,9 @@ struct TerminalPane: NSViewRepresentable {
         let view = FocusReportingTerminalView(frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
         view.onFocus = { context.coordinator.onActivate() }
         view.terminalDelegate = context.coordinator
+        // ANSI colors stay SwiftTerm's.
+        view.nativeBackgroundColor = NSColor(Theme.terminal)
+        view.nativeForegroundColor = NSColor(Theme.terminalText)
         view.setAccessibilityIdentifier("focus.pane")
         context.coordinator.view = view
         return view
