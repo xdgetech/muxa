@@ -63,7 +63,7 @@ final class QuickCapture {
 
     private func makePanel() -> NSPanel {
         let panel = CapturePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 96),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 110),
             styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered, defer: false)
         panel.titleVisibility = .hidden
@@ -97,18 +97,20 @@ private struct QuickCaptureView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Group {
+            HStack(alignment: .top, spacing: 12) {
+                LogoTile(size: 26)
                 if model.isConnected {
-                    CaptureField(onAdded: close, focusOnAppear: true, onStartTask: startTask)
+                    CaptureField(onAdded: close, focusOnAppear: true, onStartTask: startTask, bare: true)
                 } else {
                     Text("Not connected. Open muxa to connect to a host.")
                         .foregroundStyle(Palette.textSecondary)
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
             keys
         }
-        .frame(width: 560, alignment: .leading)
+        .frame(width: 580, alignment: .leading)
         .background(Palette.surface)
         .preferredColorScheme(.dark)
     }
@@ -120,13 +122,13 @@ private struct QuickCaptureView: View {
             key("⌘⏎", "add and start a Task")
             key("esc", "close")
             Spacer()
-            Text("⌃⌥Space anywhere")
+            Text("\(Shortcut.captureAnywhere.display) anywhere")
         }
         .font(.system(size: 12))
         .foregroundStyle(Palette.textSecondary)
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
-        .background(Color(hex: 0x12151A))
+        .background(Palette.pane)
         .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
     }
 

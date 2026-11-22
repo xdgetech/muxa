@@ -12,6 +12,9 @@ struct CaptureField: View {
     var focusOnAppear = false
     /// `⌘⏎` adds the item and starts a Task from it: the Mac's Capture window.
     var onStartTask: ((Capture) -> Void)?
+    /// The Mac's Capture panel draws a bare 18 pt line: no well, no + and no
+    /// Add button, since ⏎ adds.
+    var bare = false
     @State private var text = ""
     @State private var parsed: Capture?
     @State private var parsing: Task<Void, Never>?
@@ -20,24 +23,28 @@ struct CaptureField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Palette.textTertiary)
-                    .accessibilityHidden(true)
+                if !bare {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Palette.textTertiary)
+                        .accessibilityHidden(true)
+                }
                 TextField("Capture: reply Anna #Personal due fri", text: $text)
+                    .font(bare ? .system(size: 18) : nil)
+                    .textFieldStyle(.plain)
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { Task { await add() } }
                     .accessibilityLabel("Capture")
                     .accessibilityIdentifier("capture.field")
-                if !text.isEmpty {
+                if !text.isEmpty, !bare {
                     SendButton(title: "Add", symbol: "plus", disabled: parsed?.title.isEmpty ?? true) {
                         Task { await add() }
                     }
                     .accessibilityIdentifier("capture.add")
                 }
             }
-            .fieldWell()
+            .modifier(Well(on: !bare))
             if let p = parsed, !text.isEmpty { chips(p) }
         }
         .onChange(of: text) { _, new in parse(new) }
@@ -125,5 +132,14 @@ struct CaptureField: View {
         parsed = nil
         onAdded()
         return capture
+    }
+}
+
+/// The field's well, left out on the Mac's bare Capture line.
+private struct Well: ViewModifier {
+    let on: Bool
+
+    func body(content: Content) -> some View {
+        if on { content.fieldWell() } else { content }
     }
 }
