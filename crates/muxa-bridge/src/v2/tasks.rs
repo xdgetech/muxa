@@ -445,10 +445,23 @@ impl Host for BridgeHost {
         let listed = tokio::task::spawn_blocking(move || crate::routines::list(&records))
             .await
             .map_err(|e| TaskError::Failed(e.to_string()))?;
-        let (routines, problems) = listed.map_err(TaskError::Failed)?;
+        let listed = listed.map_err(TaskError::Failed)?;
         Ok(RoutineList {
-            routines: routines.into_iter().map(super::routines::to_v2).collect(),
-            problems: problems.into_iter().map(super::routines::problem).collect(),
+            routines: listed
+                .routines
+                .into_iter()
+                .map(super::routines::to_v2)
+                .collect(),
+            problems: listed
+                .problems
+                .into_iter()
+                .map(super::routines::problem)
+                .collect(),
+            off: listed
+                .off
+                .into_iter()
+                .map(|(workspace, count)| muxa_protocol::v2::RoutinesOff { workspace, count })
+                .collect(),
         })
     }
 

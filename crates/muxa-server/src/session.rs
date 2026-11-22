@@ -406,6 +406,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     Reply::Routines {
                         routines: list.routines,
                         problems: list.problems,
+                        off: list.off,
                     },
                 ),
                 Err(e) => self.error(Some(id), task_code(&e), e.to_string()),

@@ -220,7 +220,7 @@ actor DemoServer {
         case "settings-update":
             updateSettings(id, m)
         case "routines":
-            reply(id, ["routines": json(content.routines), "problems": []])
+            reply(id, ["routines": json(content.routines), "problems": [], "off": json(routinesOff)])
         case "run-routine":
             guard runRoutine(id, workspace: m["workspace"] as? String ?? "", name: m["name"] as? String ?? "") else { return }
             reply(id, [:])
@@ -274,6 +274,13 @@ actor DemoServer {
             reply(id, ["loop": json(lp)])
         default:
             send(["type": "error", "id": id, "code": "bad-request", "message": "unknown request"])
+        }
+    }
+
+    /// Settings' Workspaces whose Routines are turned off, as the daemon reports them.
+    private var routinesOff: [RoutinesOff] {
+        content.settings.workspaces.compactMap { w in
+            w.routinesEnabled || w.routines.isEmpty ? nil : RoutinesOff(workspace: w.name, count: UInt32(w.routines.count))
         }
     }
 

@@ -871,6 +871,14 @@ pub struct RoutineLast {
     pub published: Option<u32>,
 }
 
+/// A Workspace whose `.muxa/routines.toml` has Routines while
+/// `[workspace.routines]` turns them off: none of them run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutinesOff {
+    pub workspace: String,
+    pub count: u32,
+}
+
 /// A Workspace whose Routines could not be read; it lists none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineProblem {
@@ -1020,6 +1028,8 @@ pub enum Reply {
     Routines {
         routines: Vec<Routine>,
         problems: Vec<RoutineProblem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        off: Vec<RoutinesOff>,
     },
     Listed {
         list: ReaderList,

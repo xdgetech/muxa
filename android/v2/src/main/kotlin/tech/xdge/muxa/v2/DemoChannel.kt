@@ -108,6 +108,11 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         }
     }
 
+    /** Settings' Workspaces whose Routines are turned off, as the daemon reports them. */
+    private fun routinesOff(): List<RoutinesOff> = settings.current.workspaces
+        .filter { !it.routinesEnabled && it.routines.isNotEmpty() }
+        .map { RoutinesOff(it.name, it.routines.size) }
+
     private fun input(n: Int, f: Frame) {
         val (seq, bytes) = f.splitU64() ?: return
         val id = channels[n] ?: return
@@ -199,7 +204,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             "inbox-request-changes" -> requestChanges(id, item, m.str("comment") ?: "")
             "inbox-retry" -> retry(id, item)
             "workspaces" -> reply(id, "workspaces" to enc(workspaces.map(::withTasks)))
-            "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {})
+            "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {}, "off" to enc(routinesOff()))
             "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
             "reader-list" -> {
                 val kind = readerKind(id, m) ?: return
@@ -639,7 +644,15 @@ private val DEMO_SETTINGS = Settings(
                 ),
             ),
         ),
-        SettingsWorkspace("Personal", "/demo/personal", agent = SettingsAgent("claude")),
+        SettingsWorkspace(
+            "Personal", "/demo/personal", agent = SettingsAgent("claude"),
+            routines = listOf(
+                SettingsRoutine(
+                    "weekly-review", at = "18:00", timezone = "Europe/Berlin", instructions = "routines/weekly-review.md",
+                    instructionsText = "Sum up the week's Done items.\n",
+                ),
+            ),
+        ),
     ),
     workers = listOf(WorkerSpec("reviewer", "Reviews diffs", "claude-code")),
 )

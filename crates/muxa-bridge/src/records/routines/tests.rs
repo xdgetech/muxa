@@ -123,7 +123,16 @@ fn routines_need_the_hosts_gate() {
         let config = f.load_with(gate, BRIEF).unwrap();
         assert!(config.routines().is_empty(), "gate {gate:?}");
         assert!(config.routine_problems().is_empty());
+        let company = config.all().iter().find(|w| w.name == "Company").unwrap();
+        assert_eq!(
+            count(company),
+            Some(1),
+            "the turned-off count, gate {gate:?}"
+        );
     }
+    let config = f.load_with("", "").unwrap();
+    let company = config.all().iter().find(|w| w.name == "Company").unwrap();
+    assert_eq!(count(company), None, "an empty file names none");
 }
 
 #[test]

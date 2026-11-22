@@ -171,9 +171,10 @@ public actor V2Client {
                   decoder: Coding.plainDecoder)
     }
 
-    public func routines() async throws -> (routines: [Routine], problems: [RoutineProblem]) {
+    public func routines() async throws -> (routines: [Routine], problems: [RoutineProblem], off: [RoutinesOff]) {
         let reply = try await request(.routines)
-        return (try field("routines", of: reply), try field("problems", of: reply))
+        let off: [RoutinesOff] = try optionalField("off", of: reply) ?? []
+        return (try field("routines", of: reply), try field("problems", of: reply), off)
     }
 
     /// Runs a Routine now; `refused(code: "conflict")` while it already runs.
@@ -373,6 +374,12 @@ public actor V2Client {
 
 private func refusal(_ msg: [String: Any]) -> V2Error {
     .refused(code: msg["code"] as? String ?? "?", message: msg["message"] as? String ?? "")
+}
+
+/// `key` of a reply, decoded; nil when the reply has no `key` (an older server).
+func optionalField<T: Decodable>(_ key: String, of data: Data) throws -> T? {
+    guard let msg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], msg[key] != nil else { return nil }
+    return try field(key, of: data) as T
 }
 
 /// `key` of a reply, decoded.

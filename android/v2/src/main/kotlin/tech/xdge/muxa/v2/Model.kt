@@ -103,6 +103,10 @@ data class RoutineLast(val at: Long, val ok: Boolean, val reason: String? = null
 @Serializable
 data class RoutineProblem(val workspace: String, val reason: String)
 
+/** A Workspace whose Routines are in its file but turned off: none run. */
+@Serializable
+data class RoutinesOff(val workspace: String, val count: Int)
+
 /** A Workspace as the host defines it, for starting a Task. */
 @Serializable
 data class Workspace(

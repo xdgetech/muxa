@@ -117,6 +117,10 @@ impl Host for FakeHost {
         Ok(RoutineList {
             routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
             problems: vec![],
+            off: vec![muxa_protocol::v2::RoutinesOff {
+                workspace: "lab".into(),
+                count: 2,
+            }],
         })
     }
 

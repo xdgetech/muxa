@@ -39,6 +39,8 @@ final class NextModel {
     private(set) var terminals: [Terminal] = []
     private(set) var routines: [Routine] = []
     private(set) var routineProblems: [RoutineProblem] = []
+    /// Workspaces whose Routines are in their file but turned off.
+    private(set) var routinesOff: [RoutinesOff] = []
     /// Why the last request failed, shown until the next one.
     var requestError: String?
     /// Followed conversations by chat number.
@@ -297,7 +299,7 @@ final class NextModel {
         do {
             inbox = try await c.inbox()
             terminals = try await c.terminals()
-            (routines, routineProblems) = try await c.routines()
+            (routines, routineProblems, routinesOff) = try await c.routines()
             loops = Dictionary(try await c.loops().map { ($0.terminal, $0) }) { _, b in b }
         } catch {
             requestError = Self.describe(error)
@@ -394,12 +396,12 @@ final class NextModel {
     func runRoutine(_ r: Routine) async {
         await run {
             try await $0.runRoutine(workspace: r.workspace, name: r.name)
-            (self.routines, self.routineProblems) = try await $0.routines()
+            (self.routines, self.routineProblems, self.routinesOff) = try await $0.routines()
         }
     }
 
     func refreshRoutines() async {
-        await run { (self.routines, self.routineProblems) = try await $0.routines() }
+        await run { (self.routines, self.routineProblems, self.routinesOff) = try await $0.routines() }
     }
 
     private func run(_ body: (V2Client) async throws -> Void) async {

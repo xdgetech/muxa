@@ -19,9 +19,17 @@ use crate::config::Config;
 use crate::records::routines::Routine;
 use store::{RoutineState, RoutineStore};
 
-/// Blocking. Every configured Routine with its state, in file order, and
-/// the workspaces whose routines file is broken.
-pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), String> {
+/// Every configured Routine with its state, in file order; the workspaces
+/// whose routines file is broken; and those that turn their Routines off.
+pub struct Listed {
+    pub routines: Vec<RoutineInfo>,
+    pub problems: Vec<RoutineProblem>,
+    /// Workspace name and how many Routines its file has.
+    pub off: Vec<(String, u32)>,
+}
+
+/// Blocking. See [`Listed`].
+pub fn list(config: &Config) -> Result<Listed, String> {
     let workspaces = runs::load(config).map_err(|e| e.to_string())?;
     let store = match config.state_dir.as_ref().filter(|d| d.is_dir()) {
         Some(dir) => Some(RoutineStore::open(dir).map_err(|e| {
@@ -54,7 +62,22 @@ pub fn list(config: &Config) -> Result<(Vec<RoutineInfo>, Vec<RoutineProblem>), 
         })
         .collect();
     problems.extend(missing_repos(&workspaces));
-    Ok((entries, problems))
+    Ok(Listed {
+        routines: entries,
+        problems,
+        off: turned_off(&workspaces),
+    })
+}
+
+/// Workspaces without `[workspace.routines] enabled = true` whose file has
+/// Routines: the loader skips them, so the apps say so.
+fn turned_off(workspaces: &crate::records::Workspaces) -> Vec<(String, u32)> {
+    workspaces
+        .all()
+        .iter()
+        .filter(|w| w.routines.is_none())
+        .filter_map(|w| Some((w.name.clone(), crate::records::routines::count(w)?)))
+        .collect()
 }
 
 /// Listed repos that do not exist. The load skipped and logged them; the

@@ -88,7 +88,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"inbox-move","item","index"}` | `{"inbox":Inbox}`. An index past the end means last |
 | `{"type":"inbox-later","item","until"}` | `{"inbox":Inbox}`. `until` is Unix seconds, in the future |
 | `{"type":"inbox-done","item"}`, `inbox-reopen`, `inbox-delete` | `{"inbox":Inbox}` |
-| `{"type":"routines"}` | `{"routines":[Routine...],"problems":[{"workspace","reason"}...]}` |
+| `{"type":"routines"}` | `{"routines":[Routine...],"problems":[{"workspace","reason"}...],"off"?:[{"workspace","count"}...]}` |
 | `{"type":"run-routine","workspace","name"}` | `{}`. The run reports through the Inbox; `conflict` while it already runs |
 | `{"type":"task-review","terminal","note"?}` | `{"inbox":Inbox}`. One open Review item for the Task of this agent terminal; `bad-request` for a terminal that is not a Task's agent |
 | `{"type":"reader-list","terminal","kind","html"?}` | `{"list":ReaderList}`: the files of the terminal's folder. See Reader |
@@ -202,7 +202,7 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ### Routines
 
-`Routine`: `{"workspace","name","enabled","at"?,"timezone"?,"schedule"?,"next_due"?,"running_since"?,"last"?}`. `at` is `HH:MM` in `timezone`; `schedule` the five cron fields (absent: every day). A Routine without `at` runs only on `run-routine`. `last`: `{"at","ok","reason"?,"published"?}`, the newer of the last success and failure. Times are Unix seconds.
+`Routine`: `{"workspace","name","enabled","at"?,"timezone"?,"schedule"?,"next_due"?,"running_since"?,"last"?}`. `at` is `HH:MM` in `timezone`; `schedule` the five cron fields (absent: every day). A Routine without `at` runs only on `run-routine`. `off` lists the Workspaces whose `.muxa/routines.toml` has Routines while `[workspace.routines] enabled` is not true: none of them run or appear in `routines`. `count` is the number of `[[routine]]` tables. A client turns them on with the `routines-gate` op of `settings-update`. `last`: `{"at","ok","reason"?,"published"?}`, the newer of the last success and failure. Times are Unix seconds.
 
 ### Inbox
 

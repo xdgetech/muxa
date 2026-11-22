@@ -113,6 +113,7 @@ pub enum TaskError {
 pub struct RoutineList {
     pub routines: Vec<Routine>,
     pub problems: Vec<RoutineProblem>,
+    pub off: Vec<muxa_protocol::v2::RoutinesOff>,
 }
 
 /// What the server asks of the host: Task places and Workspace names.

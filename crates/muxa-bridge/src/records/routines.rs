@@ -163,6 +163,16 @@ pub fn routines_dir(workspace: &Workspace) -> Result<Option<PathBuf>, String> {
     Ok(Some(dir))
 }
 
+/// How many `[[routine]]` tables `workspace`'s file has, read without the
+/// loading rules: the count a turned-off Workspace shows. None when the file
+/// is missing, unreadable or names none.
+pub fn count(workspace: &Workspace) -> Option<u32> {
+    let (_, text) = read_file(workspace).ok()??;
+    let value: toml::Table = toml::from_str(&text).ok()?;
+    let n = value.get("routine")?.as_array()?.len();
+    u32::try_from(n).ok().filter(|n| *n > 0)
+}
+
 /// The `.muxa/` folder and the routines file's text; None when either is missing.
 pub fn read_file(workspace: &Workspace) -> Result<Option<(PathBuf, String)>, String> {
     let Some(dir) = routines_dir(workspace)? else {

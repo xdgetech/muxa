@@ -168,10 +168,11 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** The host's Workspaces, with what starting a Task in each may use. */
     suspend fun workspaces(): List<Workspace> = field("workspaces", request(V2Request.Workspaces))
 
-    /** The Routines, and the Workspaces whose Routines could not be read. */
-    suspend fun routines(): Pair<List<Routine>, List<RoutineProblem>> {
+    /** The Routines, the Workspaces whose Routines could not be read, and those that turn them off. */
+    suspend fun routines(): Triple<List<Routine>, List<RoutineProblem>, List<RoutinesOff>> {
         val reply = request(V2Request.Routines)
-        return field<List<Routine>>("routines", reply) to field<List<RoutineProblem>>("problems", reply)
+        val off = if (reply.containsKey("off")) field<List<RoutinesOff>>("off", reply) else emptyList()
+        return Triple(field("routines", reply), field("problems", reply), off)
     }
 
     /** Runs a Routine now; [V2Error.Refused] with code `conflict` while it already runs. */

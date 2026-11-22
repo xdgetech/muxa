@@ -36,9 +36,19 @@ struct DemoTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func turnedOffRoutinesAreReportedUntilTurnedOn() async throws {
+        let c = try await open()
+        #expect(try await c.routines().off == [RoutinesOff(workspace: "Personal", count: 1)])
+        let settings = try await c.settings()
+        _ = try await c.settingsUpdate(revision: settings.revision,
+                                       ops: [.routinesGate(workspace: "Personal", enabled: true)])
+        #expect(try await c.routines().off.isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func aRunningRoutineIsAConflict() async throws {
         let c = try await open()
-        let (routines, _) = try await c.routines()
+        let routines = try await c.routines().routines
         #expect(routines.map(\.name) == ["dependency-digest", "nightly-backup", "release-notes"])
         try await c.runRoutine(workspace: "app", name: "release-notes")
         await #expect(throws: V2Error.refused(code: "conflict", message: "release-notes already runs")) {
@@ -235,7 +245,7 @@ struct DemoTests {
         let c = try await open()
         let routine = try await c.inbox(.inboxRetry(item: "d5"))
         #expect(routine.done.first?.id == "d5")
-        let (routines, _) = try await c.routines()
+        let routines = try await c.routines().routines
         #expect(routines.first { $0.name == "nightly-backup" }?.runningSince != nil)
         let task = try await c.inbox(.inboxRetry(item: "d7"))
         #expect(task.done.first?.id == "d7")

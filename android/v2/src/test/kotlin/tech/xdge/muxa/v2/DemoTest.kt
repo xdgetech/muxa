@@ -43,6 +43,16 @@ class DemoTest {
     }
 
     @Test
+    fun turnedOffRoutinesAreReportedUntilTurnedOn() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            assertEquals(listOf(RoutinesOff("Personal", 1)), c.routines().third)
+            c.settingsUpdate(c.settings().revision, listOf(SettingsOp.RoutinesGate("Personal", true)))
+            assertTrue(c.routines().third.isEmpty())
+        }
+    }
+
+    @Test
     fun aRunningRoutineIsAConflict() = runBlocking {
         withTimeout(10_000) {
             val c = open()

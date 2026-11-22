@@ -299,6 +299,17 @@ public struct RoutineProblem: Codable, Equatable, Sendable {
     public var reason: String
 }
 
+/// A Workspace whose Routines are in its file but turned off: none run.
+public struct RoutinesOff: Codable, Equatable, Sendable {
+    public var workspace: String
+    public var count: UInt32
+
+    public init(workspace: String, count: UInt32) {
+        self.workspace = workspace
+        self.count = count
+    }
+}
+
 /// A place a client asks for (ADR 0068). A repo is absolute, or relative to
 /// the Workspace's root.
 public enum PlaceSpec: Equatable, Sendable {

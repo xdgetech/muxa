@@ -138,7 +138,14 @@ extension DemoContent {
                                           instructions: "routines/dependency-digest.md"),
                         instructionsText: "List the dependency updates of the week, security fixes first.\n"),
                 ]),
-            SettingsWorkspace(name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude")),
+            SettingsWorkspace(
+                name: "Personal", root: "/demo/personal", agent: SettingsAgent(command: "claude"),
+                routines: [
+                    SettingsRoutine(
+                        spec: RoutineSpec(name: "weekly-review", at: "18:00", timezone: "Europe/Berlin",
+                                          instructions: "routines/weekly-review.md"),
+                        instructionsText: "Sum up the week's Done items.\n"),
+                ]),
         ],
         workers: [WorkerSpec(name: "reviewer", description: "Reviews diffs", agent: "claude-code")])
 

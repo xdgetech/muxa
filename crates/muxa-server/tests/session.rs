@@ -144,6 +144,10 @@ impl Host for FakeTasks {
         Ok(RoutineList {
             routines: vec![routine("digest", Some("09:00")), routine("audit", None)],
             problems: vec![],
+            off: vec![muxa_protocol::v2::RoutinesOff {
+                workspace: "lab".into(),
+                count: 2,
+            }],
         })
     }
 
@@ -1195,6 +1199,11 @@ async fn routines_are_listed_and_run_now() {
     assert_eq!(list["routines"][0]["name"], "digest");
     assert_eq!(list["routines"][0]["at"], "09:00");
     assert!(list["routines"][1].get("at").is_none());
+    assert_eq!(
+        list["off"],
+        json!([{"workspace": "lab", "count": 2}]),
+        "a Workspace with its Routines turned off"
+    );
     let ran = request(
         &mut client,
         json!({"type": "run-routine", "id": 2, "workspace": "Personal", "name": "audit"}),

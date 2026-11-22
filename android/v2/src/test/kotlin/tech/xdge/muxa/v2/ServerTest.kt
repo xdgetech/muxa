@@ -202,10 +202,11 @@ class ServerTest {
     fun routinesListAndRunOnce() = runBlocking {
         withTimeout(10_000) {
             val c = connect()
-            val (routines, problems) = c.routines()
+            val (routines, problems, off) = c.routines()
             assertEquals(listOf("digest", "audit"), routines.map { it.name })
             assertEquals("09:00", routines[0].at)
             assertTrue(problems.isEmpty())
+            assertEquals(listOf(RoutinesOff("lab", 2)), off)
             c.runRoutine("Personal", "audit")
             try {
                 c.runRoutine("Personal", "digest")
