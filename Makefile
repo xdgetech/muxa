@@ -122,9 +122,15 @@ endif
 MAC_XCODEBUILD = xcodebuild -project apple/Muxa/Muxa.xcodeproj -scheme MuxaMac -skipPackagePluginValidation \
 	-destination 'platform=macOS' $(MAC_SIGNING)
 build-mac-app: app-project
+ifeq ($(MAC_SIGNED),1)
+	@team="$$($(MAC_XCODEBUILD) -showBuildSettings 2>/dev/null | awk '$$1 == "DEVELOPMENT_TEAM" { print $$3 }')"; \
+	test -n "$$team" || { echo "No team: put DEVELOPMENT_TEAM = <team id> in apple/Muxa/Config/Local.xcconfig."; exit 1; }; \
+	security find-identity -v -p codesigning | grep -q "Apple Development" || { \
+	  echo "No Apple Development certificate on this Mac. In Xcode: Settings > Accounts, sign in,"; \
+	  echo "pick team $$team, Manage Certificates > + > Apple Development. Then run this again."; exit 1; }
+endif
 	$(MAC_XCODEBUILD) build
 
-# Its UI tests on the in-app v2 demo server. macOS asks once to allow UI automation.
 # Humans only: builds the Mac app (signed to run on this Mac), replaces
 # /Applications/Muxa.app (MAC_APPS picks another folder) and opens it. The app
 # keeps running with its window closed, so a running one is quit first.
@@ -137,6 +143,7 @@ install-mac: build-mac-app
 	rm -rf "$(MAC_APPS)/Muxa.app" && cp -R "$$app" "$(MAC_APPS)/" && open "$(MAC_APPS)/Muxa.app" && \
 	echo "Muxa is installed in $(MAC_APPS) and open."
 
+# Its UI tests on the in-app v2 demo server. macOS asks once to allow UI automation.
 test-mac-app: app-project
 	$(MAC_XCODEBUILD) test
 
