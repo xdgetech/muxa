@@ -35,8 +35,8 @@ struct HomeView: View {
             ])
         }
         .background(Palette.ground)
-        .onAppear(perform: keepSelection)
-        .onChange(of: visible.map(\.id)) { keepSelection() }
+        .onAppear { keepSelection(was: []) }
+        .onChange(of: visible.map(\.id)) { old, _ in keepSelection(was: old) }
         .task {
             // Later items come back on their own; the clock decides what shows.
             while !Task.isCancelled {
@@ -52,7 +52,10 @@ struct HomeView: View {
     private var detail: some View {
         if let id = selected, let item = (model.inbox.items + model.inbox.done).first(where: { $0.id == id }) {
             let position = model.inbox.items.firstIndex(where: { $0.id == id }).map { $0 + 1 }
-            HomeDetailPane(item: item, position: position) { selected = filter.next(after: id, in: visible) }
+            HomeDetailPane(item: item, position: position) {
+                // The list may have dropped the item already; keepSelection then picked the one below.
+                if visible.contains(where: { $0.id == id }) { selected = filter.next(after: id, in: visible) }
+            }
                 .id(item.id)
         } else {
             ContentUnavailableView(
@@ -61,11 +64,17 @@ struct HomeView: View {
         }
     }
 
-    /// The mock always shows an item: the first, once the picked one is gone.
-    private func keepSelection() {
+    /// The mock always shows an item. When the picked one leaves the list
+    /// (Done, Later), the item that took its place, the one below, is picked;
+    /// the last one when it was at the end.
+    private func keepSelection(was old: [String]) {
         let all = model.inbox.items + (filter.showDone ? model.inbox.done : [])
-        if let selected, all.contains(where: { $0.id == selected }) { return }
-        selected = visible.first?.id
+        if let selected, all.contains(where: { $0.id == selected }), visible.contains(where: { $0.id == selected }) || filter.showDone {
+            return
+        }
+        guard !visible.isEmpty else { return selected = nil }
+        let at = selected.flatMap { old.firstIndex(of: $0) } ?? 0
+        selected = visible[min(at, visible.count - 1)].id
     }
 
     /// `⏎` on a row: the item's Task in Focus, while its agent runs.

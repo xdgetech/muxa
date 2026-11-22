@@ -74,13 +74,23 @@ struct TabletRoot: View {
                 ContentUnavailableView("Select a Routine", systemImage: "clock")
             }
         default:
-            if let id = selectedItem, let item = (model.inbox.items + model.inbox.done).first(where: { $0.id == id }) {
-                let position = model.inbox.items.firstIndex(where: { $0.id == id }).map { $0 + 1 }
-                let visible = filter.apply(model.inbox.items, now: now)
-                InboxItemPane(item: item, position: position) { selectedItem = filter.next(after: id, in: visible) }
+            Group {
+                if let id = selectedItem, let item = (model.inbox.items + model.inbox.done).first(where: { $0.id == id }) {
+                    let position = model.inbox.items.firstIndex(where: { $0.id == id }).map { $0 + 1 }
+                    let visible = filter.apply(model.inbox.items, now: now)
+                    InboxItemPane(item: item, position: position) {
+                        // The list may have dropped the item already; the onChange below picked the one below.
+                        if visible.contains(where: { $0.id == id }) { selectedItem = filter.next(after: id, in: visible) }
+                    }
                     .id(item.id)
-            } else {
-                ContentUnavailableView(model.inbox.items.isEmpty ? "Inbox zero" : "Select an item", systemImage: "tray")
+                } else {
+                    ContentUnavailableView(model.inbox.items.isEmpty ? "Inbox zero" : "Select an item", systemImage: "tray")
+                }
+            }
+            .onChange(of: filter.apply(model.inbox.items, now: now).map(\.id)) { old, new in
+                // Done or Later took the picked item away: pick the one that took its place.
+                guard let id = selectedItem, let at = old.firstIndex(of: id), !new.contains(id), !new.isEmpty else { return }
+                selectedItem = new[min(at, new.count - 1)]
             }
         }
     }
