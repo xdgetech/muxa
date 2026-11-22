@@ -57,13 +57,15 @@ private enum class View { CHAT, TERMINAL, READER }
 fun Focus(model: NextModel, nav: Nav, selected: String?, select: (String?) -> Unit) {
     val phone = LocalPhoneLayout.current
     val terminal = model.terminals.firstOrNull { it.id == selected }
+    // Here, not in the list: the phone's list leaves the screen while a terminal is open.
+    val othersOpen = rememberSaveable { mutableStateOf(false) }
     if (phone) {
         if (terminal == null) {
             PhoneTabs(nav) {
                 LargeTitle("Workspaces") {
                     BoxedIconButton(Icons.add, "New Task", { nav.newTask(TaskSeed()) }, Modifier.testTag("home.newtask"), round = true)
                 }
-                Box(Modifier.weight(1f)) { WorkspaceList(model, select, nav.newTask) }
+                Box(Modifier.weight(1f)) { WorkspaceList(model, othersOpen, select, nav.newTask) }
             }
         } else {
             BackHandler { select(null) }
@@ -71,7 +73,7 @@ fun Focus(model: NextModel, nav: Nav, selected: String?, select: (String?) -> Un
         }
     } else {
         Row(Modifier.fillMaxSize()) {
-            Sidebar(model, nav) { StateList(model, selected, select) }
+            Sidebar(model, nav) { StateList(model, othersOpen, selected, select) }
             if (terminal == null) {
                 Box(Modifier.weight(1f).fillMaxHeight()) { Empty("Select a Task") }
             } else {

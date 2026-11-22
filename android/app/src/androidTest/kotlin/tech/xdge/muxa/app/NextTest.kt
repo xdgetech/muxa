@@ -142,6 +142,36 @@ class NextTest {
     }
 
     @Test
+    fun makeItATaskOnAReadItemTakesItsTitleAndNote() {
+        launch()
+        compose.onNodeWithTag("item.d4").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.maketask"), TIMEOUT)
+        compose.onNodeWithTag("detail.starttask").assertDoesNotExist()
+        compose.onNodeWithTag("detail.maketask").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.title"), TIMEOUT)
+        compose.onNodeWithTag("task.title").assert(hasText("Weekly dependency digest"))
+        compose.onNodeWithTag("task.goal").assert(hasText("3 updates, 1 security fix."))
+        compose.waitUntilAtLeastOneExists(hasTestTag("task.workspace") and hasText("Workspace: app"), TIMEOUT)
+    }
+
+    @Test
+    fun otherTerminalsSitApartFromTheTasksAndStartClosed() {
+        launch()
+        compose.onNodeWithTag("mode.focus").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t1"), TIMEOUT)
+        compose.onNodeWithTag("terminal.t2").assertExists()
+        compose.onNodeWithTag("terminal.t3").assertDoesNotExist()
+        compose.onNodeWithTag("terminal.t4").assertDoesNotExist()
+        compose.onNodeWithTag("terminals.other").assert(hasText("Other terminals", ignoreCase = true)).performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t4"), TIMEOUT)
+        // Without a name or a label, a terminal is called by its id.
+        compose.onNodeWithTag("terminal.t4").assert(hasText("Terminal t4"))
+        compose.onNodeWithTag("terminal.t3").assert(hasText("shell"))
+        compose.onNodeWithTag("terminals.other").performClick()
+        compose.waitUntilDoesNotExist(hasTestTag("terminal.t4"), TIMEOUT)
+    }
+
+    @Test
     fun aRoutineRunsNow() {
         launch()
         compose.onNodeWithTag("home.part.Routines").performClick()
@@ -164,6 +194,9 @@ class NextTest {
     fun typingInFocusReachesTheTerminal() {
         launch()
         compose.onNodeWithTag("mode.focus").performClick()
+        // The shell has no muxa labels: it is under Other terminals, closed by default.
+        compose.waitUntilAtLeastOneExists(hasTestTag("terminals.other"), TIMEOUT)
+        compose.onNodeWithTag("terminals.other").performClick()
         compose.waitUntilAtLeastOneExists(hasTestTag("terminal.t3"), TIMEOUT)
         compose.onNodeWithTag("terminal.t3").performClick()
         compose.waitUntilAtLeastOneExists(screenContains("$"), TIMEOUT)

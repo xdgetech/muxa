@@ -66,7 +66,7 @@ import tech.xdge.muxa.v2.Workspace
 @Composable
 fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started: (Terminal) -> Unit) {
     var workspaces by remember { mutableStateOf<List<Workspace>?>(null) }
-    var choices by remember { mutableStateOf(TaskChoices(title = seed.title)) }
+    var choices by remember { mutableStateOf(TaskChoices(title = seed.title, goal = seed.goal)) }
     var starting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val phone = LocalPhoneLayout.current

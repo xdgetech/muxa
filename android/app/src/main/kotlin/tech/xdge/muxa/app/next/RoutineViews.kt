@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.v2.Routine
-import tech.xdge.muxa.v2.Terminal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -109,5 +108,3 @@ private fun time(unix: Long): String =
     DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
         .format(Instant.ofEpochSecond(unix).atZone(ZoneId.systemDefault()))
 
-/** What a terminal is called in lists: its branch, name or id. */
-val Terminal.title: String get() = branch ?: name ?: id

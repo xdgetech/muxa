@@ -142,7 +142,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 write(Frame(n, FrameKind.CLOSE, ByteArray(0)))
                 reply(id)
             }
-            "start-task" -> startTask(id, m.str("title") ?: "Task", (m["places"] as? JsonArray).orEmpty(), m["loop"] as? JsonObject)
+            "start-task" -> startTask(id, m.str("workspace") ?: "app", m.str("title") ?: "Task", (m["places"] as? JsonArray).orEmpty(), m["loop"] as? JsonObject)
             "watch" -> {
                 watching = true
                 reply(id)
@@ -264,7 +264,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
     }
 
     /** The first branch is the working place; without one, a folder named after the title. [loop] starts its Task Loop. */
-    private fun startTask(id: Long, title: String, places: List<JsonElement>, loop: JsonObject?) {
+    private fun startTask(id: Long, workspace: String, title: String, places: List<JsonElement>, loop: JsonObject?) {
         val first = places.mapNotNull { it as? JsonObject }.firstOrNull { it.str("kind") == "branch" }
         val branch = first?.str("branch")
         val repo = first?.str("repo")
@@ -273,7 +273,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
             return reply(id, "terminal" to enc(it), "existing" to JsonPrimitive(true))
         }
         val labels = buildMap {
-            put("muxa.kind", "task"); put("muxa.role", "agent"); put("muxa.dir", dir)
+            put("muxa.kind", "task"); put("muxa.role", "agent"); put("muxa.dir", dir); put("muxa.workspace", workspace)
             if (branch != null) put("muxa.branch", branch)
             if (repo != null) put("muxa.repo", repo)
         }
@@ -437,6 +437,7 @@ private fun JsonObject.long(key: String) = (this[key] as? JsonPrimitive)?.longOr
 
 internal fun agentLabels(branch: String, repo: String, dir: String) = mapOf(
     "muxa.kind" to "task", "muxa.role" to "agent", "muxa.branch" to branch, "muxa.repo" to repo, "muxa.dir" to dir,
+    "muxa.workspace" to "app",
 )
 
 private fun standardContent(): DemoContent {
@@ -465,11 +466,14 @@ private fun standardContent(): DemoContent {
             agent("t1", "fix-login", "working"),
             agent("t2", "docs-audit", "blocked"),
             Terminal("t3", "shell", live = true, cols = 80, rows = 24),
+            // No name and no labels: a terminal muxa did not start, as the Other terminals show it.
+            Terminal("t4", live = true, cols = 80, rows = 24),
         ),
         screens = mapOf(
             "t1" to "● Reading src/auth/session.ts\r\n● Editing src/auth/session.ts\r\n  The session now refreshes before it expires.\r\n",
             "t2" to "● The README links three pages that moved.\r\n\r\n  Allow edits to README.md? (y/n) ",
             "t3" to "$ ",
+            "t4" to "$ ",
         ),
         inbox = listOf(
             item("d1", ItemKind.REVIEW, "Review fix-login", note = "Draft PR #42: refresh the session before it expires.", source = "task", terminal = "t1"),

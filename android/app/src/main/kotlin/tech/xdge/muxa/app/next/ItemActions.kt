@@ -122,6 +122,11 @@ fun ItemActions(
             if (item.kind in TASK_KINDS) {
                 OutlinedButton({ newTask(TaskSeed(item.title, item.workspace)) }, Modifier.testTag("detail.starttask")) { Text("Start Task") }
             }
+            if (item.kind == ItemKind.READ) {
+                OutlinedButton({ newTask(TaskSeed(item.title, item.workspace, item.note.orEmpty())) }, Modifier.testTag("detail.maketask")) {
+                    Text("Make it a Task")
+                }
+            }
             if (terminal != null) {
                 OutlinedButton({ openTerminal(terminal) }, Modifier.testTag("detail.open")) { Text("Open in Focus") }
             }

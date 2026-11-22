@@ -5,8 +5,8 @@ import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.PlaceSpec
 import tech.xdge.muxa.v2.Workspace
 
-/** What a new Task starts from: an Inbox item's title and Workspace, or nothing. */
-data class TaskSeed(val title: String = "", val workspace: String? = null)
+/** What a new Task starts from: an Inbox item's title, Workspace and note, or nothing. */
+data class TaskSeed(val title: String = "", val workspace: String? = null, val goal: String = "")
 
 /** A `start-task` request, as the sheet builds it. */
 data class TaskDraft(
