@@ -19,6 +19,7 @@ What is built but not verified, and what is left after the F phases and their fo
 - **Bracketed paste** for multi-line Request changes: unverified for Claude Code and Codex, so the apps send one line only (ADR 0072).
 - **`claude --continue`** in an adopted place resumes the newest conversation whose `projects/` folder name is the folder with every non-alphanumeric as `-`. That Claude Code picks the same one is assumed from `docs/agents.md`, not probed.
 - **The agent check** for an adopted place knows `claude` and `codex` by their process names only; an agent run under another name (for example through `node`) is not seen.
+- **Terminal names**: herdr-core gets a slug of the Task title (`Name::from_title`). Whether it requires names to be unique is not probed; two Tasks with the same title would then fail to start. A title with no ASCII letters gives no name.
 - **Japanese input in the terminal**: claimed in the store text, not re-checked on a device after D4.
 
 ## Not built

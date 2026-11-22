@@ -6,6 +6,7 @@ extension Terminal {
     /// A Task's branch, a Routine run's Routine, the terminal's name, its
     /// folder or the program it reports; `Terminal t3` when it has none.
     var title: String {
+        if let taskTitle, !taskTitle.isEmpty { return taskTitle }
         if let branch { return branch }
         if let routine = routineName { return "\(routine) run" }
         if let name, !name.isEmpty { return name }

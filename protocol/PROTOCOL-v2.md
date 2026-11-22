@@ -120,10 +120,11 @@ A `repo` is absolute, or relative to the Workspace's root. The working place is 
 
 An `existing` path is absolute. With its symlinks resolved, it is a folder inside the Workspace's root, or a linked worktree of one of the Workspace's repos; else `bad-request`. A worktree on a branch is a `branch` place with that branch on `muxa.places`, so Approve closes it as below; any other path is a `folder` place. `.muxa/TASK.md` is written only when it is missing, and `.muxa/` goes into the repo's `info/exclude`. When muxa's agent already runs there (`muxa.dir` is the path), the reply has it with `existing: true`. When another `claude` or `codex` process works in the folder, the request is `conflict` and nothing is written. Claude Code gets `--continue` when its config dir holds a conversation for the folder.
 
-If the Task's agent is still running in that working place, the reply has it with `existing: true` and nothing new starts. A folder is new each time, so a folder Task always starts a new agent. The agent terminal's `name` is the title, and it has these labels:
+If the Task's agent is still running in that working place, the reply has it with `existing: true` and nothing new starts. A folder is new each time, so a folder Task always starts a new agent. The agent terminal's `name` is a slug of the title (herdr-core takes 1-32 of `a-z 0-9 - _ .`; a title with none of them gives no name), and it has these labels:
 
 - `muxa.kind` = `task`, `muxa.role` = `agent` and `muxa.dir`, the working place;
 - `muxa.workspace`;
+- `muxa.title`: the title as the user wrote it. Clients show it;
 - `muxa.repo` (the main checkout) and `muxa.branch`, when the working place is a branch;
 - `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
 - `muxa.connections`: a JSON list of every connection the agent got, when it got any. Names only.

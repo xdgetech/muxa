@@ -299,6 +299,7 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         }
         val labels = buildMap {
             put("muxa.kind", "task"); put("muxa.role", "agent"); put("muxa.dir", dir); put("muxa.workspace", wsName)
+            put("muxa.title", title)
             if (branch != null) put("muxa.branch", branch)
             if (repo != null) put("muxa.repo", repo)
             if (named.isNotEmpty()) put("muxa.connections", enc(named).toString())

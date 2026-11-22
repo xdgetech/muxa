@@ -94,10 +94,8 @@ impl SessionBackend for HerdrBackend {
     }
 
     async fn run(&self, launch: &Launch) -> Result<TerminalInfo> {
-        let name = match &launch.name {
-            Some(n) => Some(Name::new(n).map_err(err("run"))?),
-            None => None,
-        };
+        // A Task's title is free text; herdr-core takes only a short slug.
+        let name = launch.name.as_deref().and_then(Name::from_title);
         let spec = RunSpec {
             argv: launch.argv.clone(),
             cwd: launch

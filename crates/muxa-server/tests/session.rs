@@ -824,11 +824,15 @@ async fn start_task_runs_the_agent_in_its_worktree_once() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;
     client.welcome().await;
-    let start = json!({"type": "start-task", "id": 1, "workspace": "w", "title": "fix", "places": [{"kind": "branch", "repo": "/src/app", "branch": "fix"}], "plan": true});
+    let start = json!({"type": "start-task", "id": 1, "workspace": "w", "title": "Fix login", "places": [{"kind": "branch", "repo": "/src/app", "branch": "fix"}], "plan": true});
     client.control(start.clone()).await;
     let reply = client.read_control().await;
     assert_eq!(reply["existing"], false, "{reply}");
     let labels = &reply["terminal"]["labels"];
+    assert_eq!(
+        labels["muxa.title"], "Fix login",
+        "the apps show the title as written"
+    );
     assert_eq!(
         (
             &labels["muxa.kind"],
@@ -846,8 +850,8 @@ async fn start_task_runs_the_agent_in_its_worktree_once() {
     assert_eq!(labels["muxa.workspace"], "w");
     assert_eq!(labels["muxa.places"], "[]");
     assert_eq!(
-        reply["terminal"]["name"], "fix",
-        "the title names the terminal"
+        reply["terminal"]["name"], "Fix login",
+        "the title names the terminal; herdr's backend slugs it"
     );
     let launches = backend.launches();
     assert_eq!(launches[0].argv, vec!["agent", "--plan"]);

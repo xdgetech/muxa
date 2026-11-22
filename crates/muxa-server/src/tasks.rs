@@ -24,6 +24,9 @@ pub const DIR: &str = "muxa.dir";
 pub const REPO: &str = "muxa.repo";
 pub const BRANCH: &str = "muxa.branch";
 pub const WORKSPACE: &str = "muxa.workspace";
+/// The Task's title as the user wrote it. The terminal's name is a slug of
+/// it, since herdr-core takes only `a-z 0-9 - _ .`.
+pub const TITLE: &str = "muxa.title";
 /// A JSON list of [`Place`], the working place first.
 pub const PLACES: &str = "muxa.places";
 /// A JSON list of the connections the agent got: all its Workspace's (ADR
@@ -313,6 +316,7 @@ fn labels(p: &Prepared) -> Labels {
         (ROLE.to_owned(), "agent".to_owned()),
         (DIR.to_owned(), p.dir.to_string_lossy().into_owned()),
         (WORKSPACE.to_owned(), p.workspace.clone()),
+        (TITLE.to_owned(), p.title.clone()),
     ]);
     if let Some(repo) = &p.repo {
         labels.insert(REPO.to_owned(), repo.to_string_lossy().into_owned());

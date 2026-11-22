@@ -26,6 +26,24 @@ impl Name {
         }
     }
 
+    /// The closest name herdr-core accepts to a free title such as a Task's
+    /// "Fix login" or a branch `feature/wbb-2319`: lowercase, other characters
+    /// as `-`, at most 32. None when nothing is left.
+    pub fn from_title(title: &str) -> Option<Self> {
+        let mut out = String::new();
+        for c in title.chars().flat_map(char::to_lowercase) {
+            let keep = c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.');
+            if keep {
+                out.push(c);
+            } else if !out.is_empty() && !out.ends_with('-') {
+                out.push('-');
+            }
+        }
+        out.truncate(32);
+        let out = out.trim_end_matches('-');
+        Name::new(out).ok()
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -133,6 +151,30 @@ mod tests {
         for bad in ["", "Upper", "has space", "slash/no", &"x".repeat(33)] {
             assert!(Name::new(bad).is_err(), "{bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn titles_become_names() {
+        let name = |t: &str| Name::from_title(t).map(|n| n.as_str().to_owned());
+        assert_eq!(
+            name("feature/wbb-2319").as_deref(),
+            Some("feature-wbb-2319")
+        );
+        assert_eq!(
+            name("Fix the Login  bug!").as_deref(),
+            Some("fix-the-login-bug")
+        );
+        assert_eq!(
+            name("lisk-app.review_1").as_deref(),
+            Some("lisk-app.review_1")
+        );
+        assert!(name(&"a b".repeat(20)).is_some_and(|n| n.len() <= 32 && !n.ends_with('-')));
+        assert_eq!(
+            name("ab cdefghijklmnopqrstuvwxyz01234 x").as_deref(),
+            Some("ab-cdefghijklmnopqrstuvwxyz01234")
+        );
+        assert_eq!(name("監査の返信"), None);
+        assert_eq!(name(""), None);
     }
 
     #[test]

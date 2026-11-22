@@ -28,8 +28,8 @@ data class TerminalGroups(val tasks: List<Terminal>, val others: List<Terminal>)
  */
 val Terminal.isTask: Boolean get() = labels["muxa.kind"] == TASK_KIND && taskDir != null
 
-/** What a terminal is called in lists: a Task's branch or name, a Routine run's Routine, else its id. */
+/** What a terminal is called in lists: a Task's title, branch or name, a Routine run's Routine, else its id. */
 val Terminal.title: String
-    get() = branch ?: name ?: labels["muxa.routine"]?.let { "Routine $it" } ?: "Terminal $id"
+    get() = taskTitle?.ifEmpty { null } ?: branch ?: name ?: labels["muxa.routine"]?.let { "Routine $it" } ?: "Terminal $id"
 
 private const val TASK_KIND = "task"

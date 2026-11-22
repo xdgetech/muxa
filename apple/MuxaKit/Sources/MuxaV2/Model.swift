@@ -353,6 +353,8 @@ public struct Terminal: Codable, Equatable, Sendable, Identifiable {
     /// The worktree of a Task's agent.
     public var taskDir: String? { labels["muxa.dir"] }
     public var branch: String? { labels["muxa.branch"] }
+    /// A Task's title as the user wrote it; the name is only a slug of it.
+    public var taskTitle: String? { labels["muxa.title"] }
     public var isTaskAgent: Bool { labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent" }
     /// A Task's places, the working place first; empty for other terminals.
     public var places: [Place] {

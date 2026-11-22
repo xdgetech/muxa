@@ -435,7 +435,8 @@ actor DemoServer {
         if let running = content.terminals.first(where: { $0.live && $0.isTaskAgent && $0.taskDir == dir }) {
             return reply(id, ["terminal": json(running), "existing": true])
         }
-        var labels = ["muxa.kind": "task", "muxa.role": "agent", "muxa.dir": dir, "muxa.workspace": workspace.name]
+        var labels = ["muxa.kind": "task", "muxa.role": "agent", "muxa.dir": dir, "muxa.workspace": workspace.name,
+                      "muxa.title": title]
         if let branch { labels["muxa.branch"] = branch }
         if let repo { labels["muxa.repo"] = repo }
         // Every agent gets all the Workspace's connections and servers (ADR 0075);

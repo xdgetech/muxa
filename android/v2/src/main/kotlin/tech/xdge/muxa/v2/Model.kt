@@ -227,6 +227,8 @@ data class Terminal(
 ) {
     val taskDir: String? get() = labels["muxa.dir"]
     val branch: String? get() = labels["muxa.branch"]
+    /** A Task's title as the user wrote it; the name is only a slug of it. */
+    val taskTitle: String? get() = labels["muxa.title"]
     val isTaskAgent: Boolean get() = labels["muxa.kind"] == "task" && labels["muxa.role"] == "agent"
 
     /** A Task's places, the working place first; empty for other terminals. */
