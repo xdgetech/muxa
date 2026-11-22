@@ -106,7 +106,7 @@ impl Host for WorkTasks {
             }),
             connections: vec![WorkspaceConnection {
                 name: "github".into(),
-                default: false,
+                default: true,
                 used_by: UsedBy {
                     routines: vec!["digest".into()],
                     tasks: Vec::new(),
@@ -476,12 +476,24 @@ async fn reader_lists_and_follows_a_tasks_file() {
 #[tokio::test(flavor = "multi_thread")]
 async fn chat_prints_a_tasks_conversation() {
     let host = TestHost::start("chat").await;
-    let started: Value = serde_json::from_str(&stdout(
-        &host
-            .cli(&["start-task", "--workspace", "w", "--title", "fix", "--json"])
-            .await,
-    ))
-    .unwrap();
+    let out = host
+        .cli(&[
+            "start-task",
+            "--workspace",
+            "w",
+            "--title",
+            "fix",
+            "--connection",
+            "github",
+            "--json",
+        ])
+        .await;
+    let note = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        note.contains("--connection and --mcp are deprecated"),
+        "{note}"
+    );
+    let started: Value = serde_json::from_str(&stdout(&out)).unwrap();
     let agent = started["terminal"]["id"].as_str().unwrap();
     let out = stdout(&host.cli(&["chat", agent]).await);
     assert_eq!(out, "user: Clean it\nassistant: Done.\n");
@@ -504,12 +516,12 @@ async fn workspaces_lists_what_a_task_may_use_and_who_uses_it() {
     let agent = started["terminal"]["id"].as_str().unwrap();
     let listed: Value =
         serde_json::from_str(&stdout(&host.cli(&["workspaces", "--json"]).await)).unwrap();
+    // Every Task agent of the Workspace uses every connection and server (ADR 0075).
     assert_eq!(
         listed[0]["connections"][0],
-        serde_json::json!({"name": "github", "default": false,
-            "used_by": {"routines": ["digest"], "tasks": []}, "last_used": 1_700_000_000})
+        serde_json::json!({"name": "github", "default": true,
+            "used_by": {"routines": ["digest"], "tasks": [agent]}, "last_used": 1_700_000_000})
     );
-    // docs is on by default, so the new Task uses it.
     assert_eq!(
         listed[0]["mcp"][0]["used_by"],
         serde_json::json!({"routines": [], "tasks": [agent]})

@@ -386,7 +386,7 @@ fn made(
     }
     brief::write_file(&dir, "TASK.md", &text)?;
     crate::routines::prepare_at(config, &routine.workspace, &routine.name, &dir)?;
-    let servers = mcp::chosen(ws, &routine.mcp)?;
+    let servers = mcp::chosen(ws);
     let command = if !mcp::managed(ws) {
         resolved.command
     } else if crate::launch::is_claude_code(&resolved.command) {
@@ -396,11 +396,9 @@ fn made(
         mcp::only_claude(crate::launch::program(&resolved.command), &servers)?;
         resolved.command
     };
-    let named = mcp::with_connections(&routine.connections, &servers);
-    let given = crate::connections::env(ws, &named)?;
+    let given = crate::connections::env(ws)?;
     crate::connections::merge(&mut resolved.environment.env, given);
-    let server_names: Vec<String> = servers.iter().map(|s| s.name.clone()).collect();
-    let (connections, mcp) = crate::usage::given(ws, &named, &server_names);
+    let (connections, mcp) = crate::usage::given(ws);
     Ok(Ready {
         argv: argv(&command, START_PROMPT),
         env: resolved.environment.env.into_iter().collect(),

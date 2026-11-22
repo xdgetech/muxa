@@ -304,19 +304,18 @@ fn a_keychain_failure_writes_no_file() {
 }
 
 #[test]
-fn a_connection_a_routine_uses_stays_until_the_routine_lets_go() {
+fn a_routine_never_blocks_removing_a_connection_and_an_edit_drops_its_old_choice() {
     let h = host("uses");
     let rev = h.store.view().unwrap().revision;
+    // `digest` still lists `connections = ["linear"]` from before ADR 0075.
     let remove = op(json!({"op": "connection-remove", "workspace": "Work", "name": "linear"}));
-    let err = h
-        .store
-        .update(&rev, vec![remove.clone()])
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("linear"), "{err}");
+    let s = h.store.update(&rev, vec![remove]).unwrap();
+    assert!(s.workspaces[0].connections.is_empty());
+    assert!(s.workspaces[0].routines_problem.is_none());
+    assert!(!h.secrets.items.lock().unwrap().contains_key("Work/linear"));
     let routine = RoutineSpec {
         name: "digest".into(),
-        at: Some("08:00".into()),
+        at: Some("09:00".into()),
         schedule: None,
         timezone: Some("Europe/Berlin".into()),
         worker: None,
@@ -325,28 +324,22 @@ fn a_connection_a_routine_uses_stays_until_the_routine_lets_go() {
         enabled: true,
         items: None,
         direct_writes: false,
-        connections: Vec::new(),
-        mcp: Vec::new(),
     };
-    let s = h
-        .store
+    h.store
         .update(
-            &rev,
-            vec![
-                SettingsOp::RoutineUpdate {
-                    workspace: "Work".into(),
-                    routine,
-                    instructions_text: None,
-                },
-                remove,
-            ],
+            &s.revision,
+            vec![SettingsOp::RoutineUpdate {
+                workspace: "Work".into(),
+                routine,
+                instructions_text: None,
+            }],
         )
         .unwrap();
-    assert!(s.workspaces[0].connections.is_empty());
-    assert!(!h.secrets.items.lock().unwrap().contains_key("Work/linear"));
     let routines = fs::read_to_string(h.dir.join("work/.muxa/routines.toml")).unwrap();
     assert!(
-        routines.starts_with("# Daily.\n") && !routines.contains("connections"),
+        routines.starts_with("# Daily.\n")
+            && routines.contains("at = \"09:00\"")
+            && !routines.contains("connections"),
         "{routines}"
     );
 }
@@ -366,8 +359,6 @@ fn a_new_routine_gets_its_file_and_its_instructions() {
         enabled: false,
         items: Some(5),
         direct_writes: false,
-        connections: Vec::new(),
-        mcp: Vec::new(),
     };
     let add = |instructions: &str| SettingsOp::RoutineAdd {
         workspace: "Home".into(),
@@ -407,7 +398,6 @@ fn mcp_servers_workers_and_workspaces_come_and_go() {
         env: Default::default(),
         headers: Default::default(),
         connections: vec!["linear".into()],
-        default: false,
     };
     let worker = WorkerSpec {
         name: "reviewer".into(),

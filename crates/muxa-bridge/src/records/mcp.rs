@@ -1,15 +1,17 @@
-//! A workspace's `[[workspace.mcp]]` tables (ADR 0069): MCP servers an
-//! agent gets only when its Task or Routine names them, or when they are on
-//! by default. Nothing here is a secret: a server's secrets come from the
+//! A workspace's `[[workspace.mcp]]` tables (ADR 0069, 0075): MCP servers
+//! every agent of the workspace gets. Nothing here is a secret: a server's secrets come from the
 //! connections it names, as `${VAR}` references.
 
 use std::collections::BTreeMap;
+
+use std::sync::atomic::AtomicBool;
 
 use serde::Deserialize;
 
 use super::connections::{Connection, is_env_key, is_name};
 
 const MAX_VALUE: usize = 4096;
+static DEFAULT_IGNORED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Transport {
@@ -29,8 +31,6 @@ pub struct McpServer {
     pub headers: BTreeMap<String, String>,
     /// The workspace's connections whose variables the server needs.
     pub connections: Vec<String>,
-    /// Given to every Task and Routine of the workspace.
-    pub default: bool,
 }
 
 #[derive(Deserialize)]
@@ -48,8 +48,8 @@ pub(super) struct RawMcp {
     headers: BTreeMap<String, String>,
     #[serde(default)]
     connections: Vec<String>,
-    #[serde(default)]
-    default: bool,
+    /// Read and ignored: every agent gets every server (ADR 0075).
+    default: Option<bool>,
 }
 
 impl RawMcp {
@@ -109,13 +109,18 @@ impl RawMcp {
                 )));
             }
         }
+        if self.default.is_some() {
+            super::ignored_once(
+                &DEFAULT_IGNORED,
+                "default in [[workspace.mcp]] is no longer used: every agent of a workspace gets all its MCP servers (ADR 0075); remove it",
+            );
+        }
         Ok(McpServer {
             name: self.name,
             transport,
             env: self.env,
             headers: self.headers,
             connections: self.connections,
-            default: self.default,
         })
     }
 

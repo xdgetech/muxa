@@ -1,9 +1,12 @@
-//! A workspace's `[[workspace.connection]]` tables (ADR 0069): a named
-//! secret an agent gets as one environment variable, only when its Task or
-//! Routine names it, or when it is on by default. The secret lives in the
-//! macOS Keychain, never here.
+//! A workspace's `[[workspace.connection]]` tables (ADR 0069, 0075): a named
+//! secret every agent of the workspace gets as one environment variable. The
+//! secret lives in the macOS Keychain, never here.
+
+use std::sync::atomic::AtomicBool;
 
 use serde::Deserialize;
+
+static DEFAULT_IGNORED: AtomicBool = AtomicBool::new(false);
 
 const MAX_NAME: usize = 64;
 const MAX_LABEL: usize = 200;
@@ -26,8 +29,6 @@ pub struct Connection {
     pub env: String,
     pub account: Option<String>,
     pub access: Access,
-    /// Given to every Task and Routine of the workspace.
-    pub default: bool,
 }
 
 #[derive(Deserialize)]
@@ -37,8 +38,8 @@ pub(super) struct RawConnection {
     env: String,
     account: Option<String>,
     access: Option<String>,
-    #[serde(default)]
-    default: bool,
+    /// Read and ignored: every agent gets every connection (ADR 0075).
+    default: Option<bool>,
 }
 
 impl RawConnection {
@@ -81,12 +82,17 @@ impl RawConnection {
                 "account must be one line of at most {MAX_LABEL} bytes"
             )));
         }
+        if self.default.is_some() {
+            super::ignored_once(
+                &DEFAULT_IGNORED,
+                "default in [[workspace.connection]] is no longer used: every agent of a workspace gets all its connections (ADR 0075); remove it",
+            );
+        }
         Ok(Connection {
             name: self.name,
             env: self.env,
             account,
             access,
-            default: self.default,
         })
     }
 }

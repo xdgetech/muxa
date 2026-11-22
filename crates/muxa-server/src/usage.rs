@@ -1,54 +1,42 @@
-//! Who uses which connection and MCP server (ADR 0069 §7), from the labels
-//! of the live Task agents. The host fills in the Routines and the times.
+//! Who uses which connection and MCP server (ADR 0069 §7, ADR 0075): every
+//! live Task agent of the Workspace gets all of them. The host fills in the
+//! Routines and the times.
 
 use muxa_backend::TerminalInfo;
 use muxa_protocol::v2::{UsedBy, Workspace};
 
 use crate::task_items::is_agent;
-use crate::tasks::{CONNECTIONS, MCP, WORKSPACE};
+use crate::tasks::WORKSPACE;
 
 /// Adds each live Task agent of a Workspace to the `tasks` of every
-/// connection and MCP server it got. A default one counts for all of them.
+/// connection and MCP server of that Workspace.
 pub(crate) fn with_tasks(workspaces: Vec<Workspace>, terminals: &[TerminalInfo]) -> Vec<Workspace> {
     let agents: Vec<&TerminalInfo> = terminals.iter().filter(|t| t.live && is_agent(t)).collect();
     workspaces
         .into_iter()
         .map(|mut ws| {
-            let mine: Vec<&TerminalInfo> = agents
+            let mine: Vec<String> = agents
                 .iter()
-                .copied()
                 .filter(|t| t.labels.get(WORKSPACE) == Some(&ws.name))
+                .map(|t| t.id.as_str().to_owned())
                 .collect();
             for c in &mut ws.connections {
-                add(&mut c.used_by, &mine, CONNECTIONS, &c.name, c.default);
+                add(&mut c.used_by, &mine);
             }
             for m in &mut ws.mcp {
-                add(&mut m.used_by, &mine, MCP, &m.name, m.default);
+                add(&mut m.used_by, &mine);
             }
             ws
         })
         .collect()
 }
 
-fn add(used: &mut UsedBy, agents: &[&TerminalInfo], label: &str, name: &str, default: bool) {
-    for t in agents {
-        if (default || names(t, label).iter().any(|n| n == name))
-            && !used.tasks.iter().any(|id| id == t.id.as_str())
-        {
-            used.tasks.push(t.id.as_str().to_owned());
+fn add(used: &mut UsedBy, agents: &[String]) {
+    for id in agents {
+        if !used.tasks.contains(id) {
+            used.tasks.push(id.clone());
         }
     }
-}
-
-/// The names on a JSON list label; none when it is missing or unreadable.
-fn names(t: &TerminalInfo, label: &str) -> Vec<String> {
-    let Some(raw) = t.labels.get(label) else {
-        return Vec::new();
-    };
-    serde_json::from_str(raw).unwrap_or_else(|e| {
-        tracing::warn!(terminal = %t.id, label, error = %e, "unreadable names label");
-        Vec::new()
-    })
 }
 
 #[cfg(test)]
@@ -57,6 +45,7 @@ mod tests {
     use muxa_protocol::v2::{WorkspaceConnection, WorkspaceMcp};
 
     use super::*;
+    use crate::tasks::{CONNECTIONS, MCP};
 
     fn agent(id: &str, ws: &str, live: bool, extra: &[(&str, &str)]) -> TerminalInfo {
         let mut labels = Labels::from([
@@ -107,7 +96,7 @@ mod tests {
     }
 
     #[test]
-    fn live_task_agents_are_listed_under_what_they_got() {
+    fn every_live_task_agent_of_the_workspace_uses_everything_whatever_its_labels() {
         let terminals = [
             agent(
                 "t1",
@@ -122,10 +111,14 @@ mod tests {
         ];
         let shown = with_tasks(vec![workspace("app")], &terminals);
         let ws = &shown[0];
-        assert_eq!(ws.connections[0].used_by.tasks, ["t1"]);
+        for used in [
+            &ws.connections[0].used_by,
+            &ws.connections[1].used_by,
+            &ws.mcp[0].used_by,
+        ] {
+            assert_eq!(used.tasks, ["t1", "t2", "t5"]);
+        }
         assert_eq!(ws.connections[0].used_by.routines, ["triage"]);
         assert_eq!(ws.connections[0].last_used, Some(5));
-        assert_eq!(ws.connections[1].used_by.tasks, ["t1", "t2", "t5"]);
-        assert_eq!(ws.mcp[0].used_by.tasks, ["t1"]);
     }
 }

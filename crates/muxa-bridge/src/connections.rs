@@ -1,13 +1,11 @@
-//! What an agent gets of its workspace's connections (ADR 0069): the ones
-//! on by default and the ones its Task or Routine names, each as one
-//! environment variable whose value comes from the macOS Keychain. Less
-//! ambient access, not a boundary: every agent runs as the same user.
-//! Secrets never reach a log or an error message.
+//! What an agent gets of its workspace's connections (ADR 0069, 0075):
+//! every one, each as one environment variable whose value comes from the
+//! macOS Keychain. Every agent runs as the same user, so this was never a
+//! boundary. Secrets never reach a log or an error message.
 
 use std::process::{Command, Stdio};
 
 use crate::records::Workspace;
-use crate::records::connections::Connection;
 
 /// The Keychain items' service; the account is `<workspace>/<connection>`.
 pub const SERVICE: &str = "muxa";
@@ -17,33 +15,13 @@ pub fn account(workspace: &str, connection: &str) -> String {
     format!("{workspace}/{connection}")
 }
 
-/// The connections an agent gets: the default ones and `named`, once each,
-/// in the workspace's order. An unknown name is an error.
-pub fn chosen<'a>(ws: &'a Workspace, named: &[String]) -> Result<Vec<&'a Connection>, String> {
-    if let Some(unknown) = named
-        .iter()
-        .find(|n| !ws.connections.iter().any(|c| &c.name == *n))
-    {
-        return Err(format!(
-            "Workspace {} has no connection {unknown:?}; add it as [[workspace.connection]] in workspaces.toml",
-            ws.name
-        ));
-    }
-    Ok(ws
-        .connections
-        .iter()
-        .filter(|c| c.default || named.contains(&c.name))
-        .collect())
-}
-
-/// The variables for [`chosen`], each read with `secret`. Blocking.
+/// The variables of every connection of `ws`, each read with `secret`. Blocking.
 pub fn env_with(
     ws: &Workspace,
-    named: &[String],
     secret: impl Fn(&str) -> Result<String, String>,
 ) -> Result<Vec<(String, String)>, String> {
     let mut out = Vec::new();
-    for c in chosen(ws, named)? {
+    for c in &ws.connections {
         let value = secret(&account(&ws.name, &c.name))
             .map_err(|why| format!("connection {:?}: {why}", c.name))?;
         out.push((c.env.clone(), value));
@@ -52,13 +30,18 @@ pub fn env_with(
 }
 
 /// [`env_with`] from the Keychain. Blocking.
-pub fn env(ws: &Workspace, named: &[String]) -> Result<Vec<(String, String)>, String> {
-    let out = env_with(ws, named, keychain)?;
+pub fn env(ws: &Workspace) -> Result<Vec<(String, String)>, String> {
+    let out = env_with(ws, keychain)?;
     if !out.is_empty() {
-        let names: Vec<&str> = chosen(ws, named)?.iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<&str> = ws.connections.iter().map(|c| c.name.as_str()).collect();
         tracing::info!(workspace = %ws.name, connections = ?names, "connections given");
     }
     Ok(out)
+}
+
+/// The names of every connection of `ws`.
+pub fn names(ws: &Workspace) -> Vec<String> {
+    ws.connections.iter().map(|c| c.name.clone()).collect()
 }
 
 /// Adds `extra` to an agent's variables, keeping them sorted by key.
@@ -115,12 +98,11 @@ mod tests {
     use crate::records::connections::Access;
 
     fn ws() -> Workspace {
-        let c = |name: &str, env: &str, default: bool| Connection {
+        let c = |name: &str, env: &str| crate::records::connections::Connection {
             name: name.into(),
             env: env.into(),
             account: None,
             access: Access::Read,
-            default,
         };
         Workspace {
             name: "work".into(),
@@ -131,11 +113,7 @@ mod tests {
             loop_checks: None,
             park_after: None,
             routines: None,
-            connections: vec![
-                c("docs", "DOCS_TOKEN", true),
-                c("linear", "LINEAR_API_KEY", false),
-                c("slack", "SLACK_TOKEN", false),
-            ],
+            connections: vec![c("docs", "DOCS_TOKEN"), c("linear", "LINEAR_API_KEY")],
             mcp: Vec::new(),
         }
     }
@@ -148,8 +126,8 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_gets_the_default_and_the_named_connections_only() {
-        let env = env_with(&ws(), &["linear".into()], fake).unwrap();
+    fn every_agent_gets_every_connection_of_its_workspace() {
+        let env = env_with(&ws(), fake).unwrap();
         assert_eq!(
             env,
             [
@@ -160,15 +138,14 @@ mod tests {
                 ),
             ]
         );
-        let none_named = env_with(&ws(), &[], fake).unwrap();
-        assert_eq!(none_named.len(), 1, "the default one alone");
+        assert_eq!(names(&ws()), ["docs", "linear"]);
     }
 
     #[test]
-    fn an_unknown_name_and_a_missing_secret_say_which_connection() {
-        let e = env_with(&ws(), &["github".into()], fake).unwrap_err();
-        assert!(e.contains("no connection \"github\""), "{e}");
-        let e = env_with(&ws(), &["slack".into()], fake).unwrap_err();
+    fn a_missing_secret_says_which_connection() {
+        let mut w = ws();
+        w.connections[1].name = "slack".into();
+        let e = env_with(&w, fake).unwrap_err();
         assert_eq!(e, "connection \"slack\": no secret");
     }
 

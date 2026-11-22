@@ -42,8 +42,9 @@ impl Host for FakeTasks {
             argv,
             env: [("K".to_owned(), "v".to_owned())].into(),
             places: Vec::new(),
-            connections: spec.connections.clone(),
-            mcp: spec.mcp.clone(),
+            // Every agent gets all the Workspace's (ADR 0075); a choice is ignored.
+            connections: vec!["github".into()],
+            mcp: vec!["docs".into()],
         })
     }
 
@@ -66,7 +67,7 @@ impl Host for FakeTasks {
             }),
             connections: vec![WorkspaceConnection {
                 name: "github".into(),
-                default: false,
+                default: true,
                 used_by: UsedBy {
                     routines: vec!["digest".into()],
                     tasks: Vec::new(),
@@ -75,7 +76,7 @@ impl Host for FakeTasks {
             }],
             mcp: vec![WorkspaceMcp {
                 name: "docs".into(),
-                default: false,
+                default: true,
                 used_by: UsedBy::default(),
                 last_used: None,
             }],
@@ -1324,15 +1325,15 @@ async fn workspaces_list_what_a_task_may_use() {
         reply["workspaces"],
         json!([{"name": "Personal", "root": "/work", "repos": ["app"], "agent": "claude",
                 "loop": {"checks": "any"},
-                "connections": [{"name": "github", "default": false,
+                "connections": [{"name": "github", "default": true,
                     "used_by": {"routines": ["digest"], "tasks": []}, "last_used": 1_700_000_000}],
-                "mcp": [{"name": "docs", "default": false,
+                "mcp": [{"name": "docs", "default": true,
                     "used_by": {"routines": [], "tasks": []}, "last_used": null}]}])
     );
 }
 
 #[tokio::test]
-async fn workspaces_show_the_live_tasks_that_got_each_connection_and_server() {
+async fn workspaces_show_every_live_task_agent_under_each_connection_and_server() {
     let backend = FakeBackend::new();
     let mut client = Client::start(&backend, 2).await;
     client.welcome().await;
@@ -1369,23 +1370,21 @@ async fn workspaces_show_the_live_tasks_that_got_each_connection_and_server() {
     // Only a new agent counts as a start.
     assert_eq!(STARTED.with(|s| s.borrow().clone()), ["both", "plain"]);
 
-    let launch = &backend.launches()[0];
-    assert_eq!(
-        launch.labels.get("muxa.mcp").map(String::as_str),
-        Some(r#"["docs"]"#)
-    );
-    assert_eq!(
-        backend.launches()[1].labels.get("muxa.mcp"),
-        None,
-        "no servers, no label"
-    );
+    let plain = plain["terminal"]["id"].as_str().unwrap().to_owned();
+    for launch in backend.launches() {
+        assert_eq!(
+            launch.labels.get("muxa.mcp").map(String::as_str),
+            Some(r#"["docs"]"#),
+            "named or not, every agent got the Workspace's server"
+        );
+    }
     let reply = request(&mut client, json!({"type": "workspaces", "id": 4})).await;
     let ws = &reply["workspaces"][0];
     assert_eq!(
         ws["connections"][0]["used_by"],
-        json!({"routines": ["digest"], "tasks": [both]})
+        json!({"routines": ["digest"], "tasks": [both, plain]})
     );
-    assert_eq!(ws["mcp"][0]["used_by"]["tasks"], json!([both]));
+    assert_eq!(ws["mcp"][0]["used_by"]["tasks"], json!([both, plain]));
 
     backend
         .end(
@@ -1400,7 +1399,7 @@ async fn workspaces_show_the_live_tasks_that_got_each_connection_and_server() {
     let reply = request(&mut client, json!({"type": "workspaces", "id": 5})).await;
     assert_eq!(
         reply["workspaces"][0]["connections"][0]["used_by"]["tasks"],
-        json!([]),
+        json!([plain]),
         "an ended agent uses nothing"
     );
 }

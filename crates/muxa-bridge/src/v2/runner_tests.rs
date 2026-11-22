@@ -275,7 +275,7 @@ fn a_worker_gets_the_prompt_as_its_last_argument() {
 }
 
 #[tokio::test]
-async fn a_run_gets_only_the_mcp_servers_its_routine_names() {
+async fn a_run_gets_every_mcp_server_of_its_workspace_whatever_it_names() {
     let h = Host::with_workspace(
         "mcp",
         "mcp = [\"docs\"]\n",
@@ -294,12 +294,15 @@ async fn a_run_gets_only_the_mcp_servers_its_routine_names() {
     let config = std::fs::read_to_string(dir.join(".muxa/mcp.json")).unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&config).unwrap(),
-        json!({"mcpServers": {"docs": {"type": "stdio", "command": "docs-mcp", "args": [], "env": {}}}})
+        json!({"mcpServers": {
+            "docs": {"type": "stdio", "command": "docs-mcp", "args": [], "env": {}},
+            "web": {"type": "http", "url": "https://web.example/mcp"},
+        }})
     );
     let usage = crate::usage::read(&h.base.join("state")).unwrap().of("w");
     assert_eq!(
         usage.mcp.keys().collect::<Vec<_>>(),
-        ["docs"],
+        ["docs", "web"],
         "the run's start is noted for the servers it got"
     );
 }

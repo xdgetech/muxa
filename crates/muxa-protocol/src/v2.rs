@@ -282,12 +282,10 @@ pub enum ClientMsg {
         /// Empty: one folder.
         #[serde(default)]
         places: Vec<PlaceSpec>,
-        /// The Workspace's connections the agent gets besides the default
-        /// ones (ADR 0069).
+        /// Deprecated and ignored: the agent gets all the Workspace's
+        /// connections and MCP servers (ADR 0075). Still accepted.
         #[serde(default)]
         connections: Vec<String>,
-        /// The Workspace's MCP servers the agent gets besides the default
-        /// ones (ADR 0069).
         #[serde(default)]
         mcp: Vec<String>,
         /// Claude Code starts in plan mode (ADR 0060).
@@ -478,7 +476,7 @@ pub struct Workspace {
     #[serde(rename = "loop")]
     pub task_loop: Option<WorkspaceLoop>,
     pub connections: Vec<WorkspaceConnection>,
-    /// The `[[workspace.mcp]]` servers a Task can name (ADR 0069).
+    /// The `[[workspace.mcp]]` servers every agent gets (ADR 0069, 0075).
     #[serde(default)]
     pub mcp: Vec<WorkspaceMcp>,
 }
@@ -487,7 +485,7 @@ pub struct Workspace {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceMcp {
     pub name: String,
-    /// On for every Task and Routine of the Workspace.
+    /// Always true since ADR 0075: every agent of the Workspace gets it.
     pub default: bool,
     #[serde(default)]
     pub used_by: UsedBy,
@@ -496,8 +494,8 @@ pub struct WorkspaceMcp {
     pub last_used: Option<u64>,
 }
 
-/// Who gets a connection or MCP server now (ADR 0069 §7): the default ones
-/// count for every Task and Routine of the Workspace.
+/// Who gets a connection or MCP server now (ADR 0069 §7, ADR 0075): every
+/// live Task agent and every Routine of the Workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UsedBy {
     /// The names of the Routines in `routines.toml` that get it.
@@ -551,7 +549,7 @@ impl<'de> Deserialize<'de> for LoopChecks {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceConnection {
     pub name: String,
-    /// On for every Task and Routine of the Workspace.
+    /// Always true since ADR 0075: every agent of the Workspace gets it.
     pub default: bool,
     #[serde(default)]
     pub used_by: UsedBy,

@@ -468,7 +468,8 @@ fn write_connection(t: &mut Table, c: &ConnectionSpec) {
         Access::Write => "write",
     });
     set_str(t, "access", access);
-    set_bool(t, "default", c.default, false);
+    // Ignored since ADR 0075: an edit drops it.
+    t.remove("default");
 }
 
 fn write_mcp(t: &mut Table, m: &McpSpec) {
@@ -484,7 +485,7 @@ fn write_mcp(t: &mut Table, m: &McpSpec) {
     set_map(t, "env", &m.env);
     set_map(t, "headers", &m.headers);
     set_list(t, "connections", &m.connections);
-    set_bool(t, "default", m.default, false);
+    t.remove("default");
 }
 
 fn write_routine(t: &mut Table, r: &RoutineSpec) -> Result<(), String> {
@@ -494,8 +495,9 @@ fn write_routine(t: &mut Table, r: &RoutineSpec) -> Result<(), String> {
     set_str(t, "worker", r.worker.as_deref());
     set_str(t, "instructions", Some(&r.instructions));
     set_str(t, "project", r.project.as_deref());
-    set_list(t, "connections", &r.connections);
-    set_list(t, "mcp", &r.mcp);
+    // Ignored since ADR 0075: an edit drops them.
+    t.remove("connections");
+    t.remove("mcp");
     set_bool(t, "enabled", r.enabled, true);
     if r.items.is_none() && !r.direct_writes {
         t.remove("output");

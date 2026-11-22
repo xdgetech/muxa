@@ -81,10 +81,6 @@ struct FileRoutine {
     #[serde(default)]
     enabled: bool,
     output: Option<FileOutput>,
-    #[serde(default)]
-    connections: Vec<String>,
-    #[serde(default)]
-    mcp: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -171,8 +167,6 @@ fn routines(
                     enabled: r.enabled,
                     items: output.items,
                     direct_writes: output.direct_writes,
-                    connections: r.connections,
-                    mcp: r.mcp,
                 },
                 instructions_text: text,
             }

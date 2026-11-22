@@ -41,16 +41,13 @@ impl Usage {
     }
 }
 
-/// What an agent of `ws` got: the connections `named` and the default ones,
-/// with the MCP servers `mcp`, as names for [`record`].
-pub fn given(ws: &Workspace, named: &[String], mcp: &[String]) -> (Vec<String>, Vec<String>) {
-    let connections = ws
-        .connections
-        .iter()
-        .filter(|c| c.default || named.contains(&c.name))
-        .map(|c| c.name.clone())
-        .collect();
-    (connections, mcp.to_vec())
+/// What every agent of `ws` gets (ADR 0075): all its connections and MCP
+/// servers, as names for [`record`].
+pub fn given(ws: &Workspace) -> (Vec<String>, Vec<String>) {
+    (
+        crate::connections::names(ws),
+        ws.mcp.iter().map(|m| m.name.clone()).collect(),
+    )
 }
 
 /// Blocking. The file as it is; empty when there is none.

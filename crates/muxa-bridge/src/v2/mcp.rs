@@ -1,5 +1,5 @@
-//! What an agent gets of its workspace's MCP servers (ADR 0069): the ones on
-//! by default and the ones its Task or Routine names. Once a workspace lists
+//! What an agent gets of its workspace's MCP servers (ADR 0069, 0075): all
+//! of them. Once a workspace lists
 //! any `[[workspace.mcp]]`, Claude Code gets them in `.muxa/mcp.json` with
 //! `--strict-mcp-config`, so no other configured server loads. The file holds
 //! `${VAR}` references, never a secret: the values reach the agent's
@@ -26,32 +26,9 @@ pub fn managed(ws: &Workspace) -> bool {
     !ws.mcp.is_empty()
 }
 
-/// The servers an agent gets: the default ones and `named`, in the
-/// workspace's order. An unknown name is an error.
-pub fn chosen(ws: &Workspace, named: &[String]) -> Result<Vec<McpServer>, String> {
-    if let Some(unknown) = named.iter().find(|n| !ws.mcp.iter().any(|m| &m.name == *n)) {
-        return Err(format!(
-            "Workspace {} has no MCP server {unknown:?}; add it as [[workspace.mcp]] in workspaces.toml",
-            ws.name
-        ));
-    }
-    Ok(ws
-        .mcp
-        .iter()
-        .filter(|m| m.default || named.contains(&m.name))
-        .cloned()
-        .collect())
-}
-
-/// `named` and the connections `servers` need, once each.
-pub fn with_connections(named: &[String], servers: &[McpServer]) -> Vec<String> {
-    let mut out = named.to_vec();
-    for c in servers.iter().flat_map(|s| &s.connections) {
-        if !out.contains(c) {
-            out.push(c.clone());
-        }
-    }
-    out
+/// The servers every agent of `ws` gets: all of them, in the workspace's order.
+pub fn chosen(ws: &Workspace) -> Vec<McpServer> {
+    ws.mcp.clone()
 }
 
 /// Only Claude Code takes muxa's MCP config. `program` is the agent's.

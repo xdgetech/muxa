@@ -23,8 +23,8 @@ use client::{Client, Event, State};
 
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
-                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--connection NAME]...
-                [--mcp NAME]... [--plan] [--loop [--check CMD]] [--json]
+                [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--plan]
+                [--loop [--check CMD]] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
        muxa-cli v2 [--bridge CMD] inbox [--json]
@@ -72,6 +72,10 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
                  one (an image as its bytes), and with --seconds each change;
                  --commits: a change's diff over the branch's commits";
 
+/// ADR 0075: every agent of a Workspace gets all its connections and servers.
+const CHOICE_DEPRECATED: &str = "muxa-cli: --connection and --mcp are deprecated and ignored: \
+every agent of a Workspace gets all its connections and MCP servers (ADR 0075)";
+
 const NAME: &str = concat!("muxa-cli ", env!("CARGO_PKG_VERSION"));
 const QUIT: u8 = 0x1d; // Ctrl-]
 const RECONNECTS: u32 = 5;
@@ -112,10 +116,6 @@ enum Cmd {
         goal: Option<String>,
         /// In the order given; none is one folder (ADR 0068).
         places: Vec<PlaceSpec>,
-        /// Besides the Workspace's default ones (ADR 0069).
-        connections: Vec<String>,
-        /// Besides the Workspace's default ones (ADR 0069).
-        mcp: Vec<String>,
         plan: bool,
         task_loop: Option<LoopSpec>,
         json: bool,
@@ -178,8 +178,7 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut spec = LoopSpec::default();
     let (mut workspace, mut title, mut goal) = (None, None, None);
     let mut places: Vec<PlaceSpec> = Vec::new();
-    let mut connections: Vec<String> = Vec::new();
-    let mut mcp: Vec<String> = Vec::new();
+    let mut chose = false;
     let mut words = Vec::new();
     let mut minutes: Option<u32> = None;
     let mut note: Option<String> = None;
@@ -221,8 +220,12 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
                     _ => return Err("--base follows a --branch".into()),
                 }
             }
-            Long("connection") => connections.push(p.value()?.string()?),
-            Long("mcp") => mcp.push(p.value()?.string()?),
+            Long("connection") | Long("mcp") => {
+                p.value()?;
+                if !std::mem::replace(&mut chose, true) {
+                    eprintln!("{CHOICE_DEPRECATED}");
+                }
+            }
             Long("read") => places.push(PlaceSpec::Read {
                 repo: p.value()?.string()?,
             }),
@@ -262,8 +265,6 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             title: title.ok_or("start-task needs --title")?,
             goal,
             places,
-            connections,
-            mcp,
             plan,
             task_loop: (with_loop || spec.check.is_some()).then(|| spec.clone()),
             json,
@@ -393,16 +394,13 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             title,
             goal,
             places,
-            connections,
-            mcp,
             plan,
             task_loop,
             json,
         } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
             let mut msg = json!({"type": "start-task", "workspace": workspace, "title": title,
-                             "goal": goal, "places": places, "connections": connections,
-                             "mcp": mcp, "plan": plan});
+                             "goal": goal, "places": places, "plan": plan});
             if let Some(l) = task_loop {
                 msg["loop"] = json!(l);
             }
@@ -847,8 +845,6 @@ mod tests {
                         base: Some("main".into()),
                     },
                 ],
-                connections: vec!["linear".into()],
-                mcp: vec!["docs".into()],
                 plan: true,
                 task_loop: None,
                 json: false

@@ -12,6 +12,7 @@ pub mod routines;
 pub mod workers;
 pub mod workspaces;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use agent_env::AgentSettings;
@@ -29,6 +30,14 @@ pub fn is_valid_id(id: &str) -> bool {
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     })
+}
+
+/// Logs `what` once per process: a key that is still read but no longer
+/// used (ADR 0075). The files are read on every use, so once is enough.
+pub fn ignored_once(flag: &AtomicBool, what: &str) {
+    if !flag.swap(true, Ordering::Relaxed) {
+        tracing::warn!("{what}");
+    }
 }
 
 /// Unix seconds now.

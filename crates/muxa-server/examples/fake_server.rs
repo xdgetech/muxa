@@ -91,7 +91,7 @@ impl Host for FakeHost {
             }],
             mcp: vec![WorkspaceMcp {
                 name: "docs".into(),
-                default: false,
+                default: true,
                 used_by: UsedBy::default(),
                 last_used: None,
             }],
@@ -303,7 +303,6 @@ fn start_settings() -> Settings {
                     env: "GITHUB_TOKEN".into(),
                     account: Some("me@example.com".into()),
                     access: Some(Access::Read),
-                    default: true,
                 },
                 secret: SecretState::Set,
             }],
@@ -316,7 +315,6 @@ fn start_settings() -> Settings {
                 env: Default::default(),
                 headers: Default::default(),
                 connections: Vec::new(),
-                default: false,
             }],
             routines: vec![SettingsRoutine {
                 spec: RoutineSpec {
@@ -330,8 +328,6 @@ fn start_settings() -> Settings {
                     enabled: true,
                     items: None,
                     direct_writes: false,
-                    connections: vec!["github".into()],
-                    mcp: Vec::new(),
                 },
                 instructions_text: Some("Summarize the day.\n".into()),
             }],

@@ -335,7 +335,7 @@ fn paths_that_leave_the_root_are_refused() {
 
 /// W0 counterexample: record CAS cannot undo external effects that happened first.
 #[test]
-fn connections_load_and_a_routine_names_only_its_own() {
+fn connections_load_and_a_routines_old_choice_is_ignored() {
     let dir = temp("connections");
     std::fs::create_dir_all(dir.join(".muxa")).unwrap();
     std::fs::write(dir.join(".muxa/brief.md"), "Read.\n").unwrap();
@@ -362,12 +362,12 @@ fn connections_load_and_a_routine_names_only_its_own() {
     let w = &loaded.all()[0];
     assert_eq!(w.connections.len(), 2);
     assert_eq!(w.connections[0].access, super::connections::Access::Read);
-    assert!(w.connections[1].default);
-    assert_eq!(loaded.routine("w", "r").unwrap().connections, ["linear"]);
-    // A Routine that names another connection loads no Routines of its workspace.
+    assert_eq!(w.connections[1].name, "docs", "default is read and ignored");
+    assert!(loaded.routine("w", "r").is_some());
+    // An old choice of another connection neither fails nor hides the Routine (ADR 0075).
     let other = ws(two, "connections = [\"github\"]\n").unwrap();
-    assert!(other.routine("w", "r").is_none());
-    assert!(other.routine_problems()[0].reason.contains("\"github\""));
+    assert!(other.routine("w", "r").is_some());
+    assert!(other.routine_problems().is_empty());
     for bad in [
         "[[workspace.connection]]\nname = \"Linear\"\nenv = \"X\"\n",
         "[[workspace.connection]]\nname = \"a\"\nenv = \"1X\"\n",
@@ -381,7 +381,7 @@ fn connections_load_and_a_routine_names_only_its_own() {
 }
 
 #[test]
-fn mcp_servers_load_and_a_routine_names_only_its_own() {
+fn mcp_servers_load_and_a_routines_old_choice_is_ignored() {
     let dir = temp("mcp");
     std::fs::create_dir_all(dir.join(".muxa")).unwrap();
     std::fs::write(dir.join(".muxa/brief.md"), "Read.\n").unwrap();
@@ -417,16 +417,16 @@ fn mcp_servers_load_and_a_routine_names_only_its_own() {
         }
     );
     assert_eq!(w.mcp[0].connections, ["linear"]);
-    assert!(!w.mcp[0].default && w.mcp[1].default);
+    assert_eq!(w.mcp[1].name, "docs", "default is read and ignored");
     assert!(matches!(
         w.mcp[1].transport,
         super::mcp::Transport::Sse { .. }
     ));
-    assert_eq!(loaded.routine("w", "r").unwrap().mcp, ["linear"]);
-    // A Routine that names another server loads no Routines of its workspace.
+    assert!(loaded.routine("w", "r").is_some());
+    // An old choice of another server neither fails nor hides the Routine (ADR 0075).
     let other = ws(two, "mcp = [\"github\"]\n").unwrap();
-    assert!(other.routine("w", "r").is_none());
-    assert!(other.routine_problems()[0].reason.contains("\"github\""));
+    assert!(other.routine("w", "r").is_some());
+    assert!(other.routine_problems().is_empty());
     let unknown = ws(
         "[[workspace.mcp]]\nname = \"a\"\ncommand = \"x\"\nconnections = [\"slack\"]\n",
         "",

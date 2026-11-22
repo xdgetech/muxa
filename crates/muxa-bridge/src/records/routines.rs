@@ -6,6 +6,8 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
+use std::sync::atomic::AtomicBool;
+
 use serde::Deserialize;
 
 use super::Workspace;
@@ -23,6 +25,7 @@ pub const ROUTINES_FILE: &str = "routines.toml";
 const MAX_ROUTINES_FILE: usize = 256 * 1024;
 const MAX_NAME: usize = 64;
 const MAX_PROJECT: usize = 200;
+static CHOICE_IGNORED: AtomicBool = AtomicBool::new(false);
 
 /// One local time on the days of a schedule, in an IANA time zone.
 #[derive(Clone, PartialEq, Eq)]
@@ -73,10 +76,6 @@ pub struct Routine {
     pub direct_writes: bool,
     pub project: Option<String>,
     pub enabled: bool,
-    /// The workspace's connections its agent gets, besides the default ones (ADR 0069).
-    pub connections: Vec<String>,
-    /// The workspace's MCP servers its agent gets, besides the default ones (ADR 0069).
-    pub mcp: Vec<String>,
 }
 
 /// A workspace whose routines file could not be used. It lists no Routines.
@@ -106,10 +105,10 @@ struct RawRoutine {
     project: Option<String>,
     enabled: bool,
     output: Option<RawOutput>,
-    #[serde(default)]
-    connections: Vec<String>,
-    #[serde(default)]
-    mcp: Vec<String>,
+    /// Read and ignored: a run gets all its workspace's connections and
+    /// MCP servers (ADR 0075).
+    connections: Option<toml::Value>,
+    mcp: Option<toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -249,23 +248,11 @@ impl RawRoutine {
                 "direct_writes needs direct_writes = true in [workspace.routines] of workspaces.toml",
             ));
         }
-        if let Some(unknown) = self
-            .connections
-            .iter()
-            .find(|n| !workspace.connections.iter().any(|c| &c.name == *n))
-        {
-            return Err(at(&format!(
-                "connection {unknown:?} is not a [[workspace.connection]] of its workspace"
-            )));
-        }
-        if let Some(unknown) = self
-            .mcp
-            .iter()
-            .find(|n| !workspace.mcp.iter().any(|m| &m.name == *n))
-        {
-            return Err(at(&format!(
-                "mcp {unknown:?} is not a [[workspace.mcp]] of its workspace"
-            )));
+        if self.connections.is_some() || self.mcp.is_some() {
+            super::ignored_once(
+                &CHOICE_IGNORED,
+                "connections and mcp in routines.toml are no longer used: a run gets all its workspace's connections and MCP servers (ADR 0075); remove them",
+            );
         }
         Ok(Routine {
             workspace: workspace.name.clone(),
@@ -278,8 +265,6 @@ impl RawRoutine {
             direct_writes: output.direct_writes,
             project: self.project,
             enabled: self.enabled,
-            connections: self.connections,
-            mcp: self.mcp,
         })
     }
 }

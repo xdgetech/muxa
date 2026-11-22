@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use muxa_protocol::v2::{Place, PlaceKind};
-use muxa_server::tasks::{BRANCH, CONNECTIONS, DIR, MCP, PLACES, REPO, WORKSPACE};
+use muxa_server::tasks::{BRANCH, DIR, PLACES, REPO, WORKSPACE};
 use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::chat::Chats;
@@ -180,28 +180,26 @@ fn made_of(ended: &muxa_backend::TerminalInfo, dir: &str) -> Result<places::Made
     })
 }
 
-/// The secrets of the connections `named` and the default ones, from the
-/// Keychain. A missing or locked one fails.
-async fn connection_env(
-    ws: &Workspace,
-    named: &[String],
-) -> Result<Vec<(String, String)>, TaskError> {
-    crate::connections::chosen(ws, named).map_err(TaskError::Invalid)?;
-    let (ws, named) = (ws.clone(), named.to_vec());
-    blocking(move || crate::connections::env(&ws, &named)).await
+/// The secrets of every connection of `ws`, from the Keychain (ADR 0075).
+/// A missing or locked one fails.
+async fn connection_env(ws: &Workspace) -> Result<Vec<(String, String)>, TaskError> {
+    let ws = ws.clone();
+    blocking(move || crate::connections::env(&ws)).await
 }
 
-/// The names on a JSON list label of `ended`; none when it has none.
-fn label_names(ended: &muxa_backend::TerminalInfo, key: &str) -> Vec<String> {
-    ended
-        .labels
-        .get(key)
-        .and_then(|c| serde_json::from_str(c).ok())
-        .unwrap_or_default()
+/// What every agent of `ws` gets, its secrets read.
+async fn given(ws: &Workspace) -> Result<Given, TaskError> {
+    let (connections, mcp) = crate::usage::given(ws);
+    Ok(Given {
+        env: connection_env(ws).await?,
+        connections,
+        mcp,
+    })
 }
 
-/// What the agent gets of its Workspace: the connections it names and its
-/// MCP servers, the default ones too.
+static CHOICE_IGNORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What the agent gets of its Workspace: all its connections and MCP servers.
 struct Given {
     connections: Vec<String>,
     mcp: Vec<String>,
@@ -286,20 +284,20 @@ impl Host for BridgeHost {
         }
         let ws = self.workspace(&spec.workspace).await?;
         let checked = places::check(&ws, &spec.places).await?;
-        let servers = mcp::chosen(&ws, &spec.mcp).map_err(TaskError::Invalid)?;
+        if !spec.connections.is_empty() || !spec.mcp.is_empty() {
+            crate::records::ignored_once(
+                &CHOICE_IGNORED,
+                "start-task connections and mcp are no longer used: a Task gets all its workspace's connections and MCP servers (ADR 0075)",
+            );
+        }
+        let servers = mcp::chosen(&ws);
         let launch = LaunchCommand::Shell(self.agent_command(&ws));
         if !crate::launch::is_claude_code(&launch) {
             mcp::only_claude(crate::launch::program(&launch), &servers)
                 .map_err(TaskError::Invalid)?;
         }
-        // The servers' connections too, so a restart gives them again.
-        let connections = mcp::with_connections(&spec.connections, &servers);
         // Before any place is made: a missing secret stops the start.
-        let given = Given {
-            env: connection_env(&ws, &connections).await?,
-            connections,
-            mcp: servers.iter().map(|s| s.name.clone()).collect(),
-        };
+        let given = given(&ws).await?;
         let made = places::make(&ws, title, checked).await?;
         let (title_owned, goal) = (title.to_owned(), spec.goal.clone());
         let made = blocking(move || {
@@ -326,14 +324,9 @@ impl Host for BridgeHost {
         };
         let ws = self.workspace(&label(WORKSPACE)?).await?;
         let made = made_of(ended, &label(DIR)?)?;
-        let connections = label_names(ended, CONNECTIONS);
-        // The `.muxa/mcp.json` the Task started with stays, so its servers too.
-        let given = Given {
-            env: connection_env(&ws, &connections).await?,
-            connections,
-            mcp: label_names(ended, MCP),
-        };
-        let (made, line) = self.agent_line(&ws, made, None).await?;
+        // The Workspace's connections and servers as they are now.
+        let given = given(&ws).await?;
+        let (made, line) = self.agent_line(&ws, made, Some(mcp::chosen(&ws))).await?;
         let title = ended
             .name
             .clone()
@@ -350,7 +343,7 @@ impl Host for BridgeHost {
                 return;
             }
         };
-        let (connections, mcp) = crate::usage::given(&ws, &prepared.connections, &prepared.mcp);
+        let (connections, mcp) = crate::usage::given(&ws);
         let state_dir = self.records.state_dir.clone();
         let noted = tokio::task::spawn_blocking(move || {
             crate::usage::note(state_dir.as_deref(), &ws.name, &connections, &mcp);
@@ -593,9 +586,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn claude_code_gets_only_the_named_mcp_servers_strictly() {
+    async fn claude_code_gets_every_mcp_server_strictly_and_a_named_one_is_ignored() {
         let (host, base) = host("mcp", "");
-        let ready = host.prepare(&spec(&["docs"])).await.unwrap();
+        let ready = host.prepare(&spec(&[])).await.unwrap();
+        assert_eq!(ready.mcp, ["docs"]);
         let config = ready.dir.join(".muxa/mcp.json");
         assert_eq!(
             ready.argv[2],
@@ -607,18 +601,16 @@ mod tests {
         let text = std::fs::read_to_string(&config).unwrap();
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["mcpServers"]["docs"]["command"], "docs-mcp");
-        let unknown = host.prepare(&spec(&["web"])).await;
-        assert!(
-            matches!(&unknown, Err(TaskError::Invalid(m)) if m.contains("no MCP server \"web\"")),
-            "{unknown:?}"
-        );
+        // A name from an older client neither fails nor narrows (ADR 0075).
+        let named = host.prepare(&spec(&["web"])).await.unwrap();
+        assert_eq!(named.mcp, ["docs"]);
         let _ = std::fs::remove_dir_all(base);
     }
 
     #[tokio::test]
     async fn a_started_agent_notes_when_its_mcp_servers_were_used() {
         let (host, base) = host("usage", "");
-        let ready = host.prepare(&spec(&["docs"])).await.unwrap();
+        let ready = host.prepare(&spec(&[])).await.unwrap();
         assert_eq!(ready.mcp, ["docs"]);
         let before = host.workspace_list().await.unwrap();
         assert_eq!(before[0].mcp[0].last_used, None);
@@ -634,14 +626,15 @@ mod tests {
     #[tokio::test]
     async fn a_codex_task_with_mcp_servers_is_refused_before_its_places() {
         let (host, base) = host("codex", "[workspace.agent]\ncommand = \"codex\"\n");
-        let refused = host.prepare(&spec(&["docs"])).await;
-        assert!(
-            matches!(&refused, Err(TaskError::Invalid(m)) if m.contains("need Claude Code")),
-            "{refused:?}"
-        );
+        // The Workspace's servers go to every agent, so naming none is refused too.
+        for named in [&[][..], &["docs"][..]] {
+            let refused = host.prepare(&spec(named)).await;
+            assert!(
+                matches!(&refused, Err(TaskError::Invalid(m)) if m.contains("need Claude Code")),
+                "{refused:?}"
+            );
+        }
         assert!(!base.join("root/tasks").exists(), "no place was made");
-        let ready = host.prepare(&spec(&[])).await.unwrap();
-        assert_eq!(ready.argv[2], "codex");
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -684,7 +677,7 @@ mod tests {
                 (WORKSPACE.to_owned(), "w".to_owned()),
                 (DIR.to_owned(), dir.display().to_string()),
                 (PLACES.to_owned(), places.to_string()),
-                (MCP.to_owned(), r#"["docs"]"#.to_owned()),
+                (muxa_server::tasks::MCP.to_owned(), r#"["docs"]"#.to_owned()),
             ]),
             status: None,
             size: muxa_backend::Size { cols: 80, rows: 24 },
@@ -696,7 +689,10 @@ mod tests {
             (dir.as_path(), "Fix login")
         );
         assert_eq!(p.places.len(), 2);
-        assert_eq!(p.mcp, ["docs"], "the servers it started with");
+        assert!(
+            p.mcp.is_empty(),
+            "the Workspace's servers now, not the old label"
+        );
         let line = &p.argv[2];
         assert!(line.starts_with("claude --x --settings "), "{line}");
         assert!(dir.join(".muxa/claude-settings.json").is_file());

@@ -26,11 +26,10 @@ pub const BRANCH: &str = "muxa.branch";
 pub const WORKSPACE: &str = "muxa.workspace";
 /// A JSON list of [`Place`], the working place first.
 pub const PLACES: &str = "muxa.places";
-/// A JSON list of the connections the Task named (ADR 0069), so a restart
-/// gives the agent the same ones. Names only.
+/// A JSON list of the connections the agent got: all its Workspace's (ADR
+/// 0075). Names only.
 pub const CONNECTIONS: &str = "muxa.connections";
-/// A JSON list of every MCP server the agent got, the default ones too, so
-/// `workspaces` can say who uses which. Names only.
+/// A JSON list of every MCP server the agent got. Names only.
 pub const MCP: &str = "muxa.mcp";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,9 +39,9 @@ pub struct TaskSpec {
     pub goal: Option<String>,
     /// Empty: one folder.
     pub places: Vec<PlaceSpec>,
-    /// Besides the default ones (ADR 0069).
+    /// Deprecated and ignored (ADR 0075): every agent gets them all.
     pub connections: Vec<String>,
-    /// MCP servers, besides the default ones (ADR 0069).
+    /// Deprecated and ignored (ADR 0075).
     pub mcp: Vec<String>,
     pub plan: bool,
 }
@@ -69,9 +68,9 @@ pub struct Prepared {
     pub branch: Option<String>,
     /// Every place, the working place first.
     pub places: Vec<Place>,
-    /// The connections the Task named, besides the default ones.
+    /// Every connection the agent gets: all its Workspace's (ADR 0075).
     pub connections: Vec<String>,
-    /// Every MCP server the agent gets, the default ones too.
+    /// Every MCP server the agent gets: all its Workspace's.
     pub mcp: Vec<String>,
     pub argv: Vec<String>,
     pub env: BTreeMap<String, String>,

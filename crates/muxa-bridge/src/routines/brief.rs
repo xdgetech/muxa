@@ -52,8 +52,6 @@ mod tests {
             direct_writes: false,
             project: None,
             enabled: true,
-            connections: Vec::new(),
-            mcp: Vec::new(),
         };
         let full = "x".repeat(crate::records::routines::MAX_INSTRUCTIONS);
         let g = goal(&routine, &full);

@@ -112,7 +112,8 @@ pub struct SettingsConnection {
     pub secret: SecretState,
 }
 
-/// `[[workspace.connection]]` without its secret.
+/// `[[workspace.connection]]` without its secret. Every agent of the
+/// Workspace gets it (ADR 0075); there is no `default`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConnectionSpec {
     pub name: String,
@@ -121,11 +122,10 @@ pub struct ConnectionSpec {
     pub account: Option<String>,
     #[serde(default)]
     pub access: Option<Access>,
-    #[serde(default)]
-    pub default: bool,
 }
 
-/// `[[workspace.mcp]]`. Nothing here is a secret.
+/// `[[workspace.mcp]]`. Nothing here is a secret. Every agent of the
+/// Workspace gets it (ADR 0075); there is no `default`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpSpec {
     pub name: String,
@@ -143,11 +143,10 @@ pub struct McpSpec {
     pub headers: BTreeMap<String, String>,
     #[serde(default)]
     pub connections: Vec<String>,
-    #[serde(default)]
-    pub default: bool,
 }
 
-/// `[[routine]]` with `[routine.output]` flattened.
+/// `[[routine]]` with `[routine.output]` flattened. A run gets all its
+/// Workspace's connections and MCP servers (ADR 0075).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutineSpec {
     pub name: String,
@@ -168,10 +167,6 @@ pub struct RoutineSpec {
     pub items: Option<u32>,
     #[serde(default)]
     pub direct_writes: bool,
-    #[serde(default)]
-    pub connections: Vec<String>,
-    #[serde(default)]
-    pub mcp: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -440,14 +435,13 @@ mod tests {
                 env: "GH_TOKEN".into(),
                 account: None,
                 access: Some(Access::Read),
-                default: true,
             },
             secret: SecretState::Missing,
         };
         assert_eq!(
             serde_json::to_value(&c).unwrap(),
             json!({"name": "gh", "env": "GH_TOKEN", "account": null, "access": "read",
-                "default": true, "secret": "missing"})
+                "secret": "missing"})
         );
     }
 }
