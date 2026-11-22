@@ -89,6 +89,7 @@ android {
 
 dependencies {
     implementation(project(":session"))
+    implementation(project(":terminal"))
     implementation(project(":v2"))
     implementation(libs.bcprov)
     implementation(libs.serialization.json)

@@ -2,7 +2,7 @@ package tech.xdge.muxa.session
 
 /** What a key press or the input method sends to the pane. */
 sealed interface KeyOutput {
-    /** Named keys for the bridge's `keys` request. */
+    /** tmux key names, which `KeyBytes` turns into bytes. */
     data class Keys(val keys: List<String>) : KeyOutput
 
     /** Typed literally. */
@@ -16,8 +16,8 @@ sealed interface KeyOutput {
 }
 
 /**
- * Turns a hardware key press into what the bridge sends. Named keys go to `send-keys`
- * on the host, which encodes them for the pane's modes; text is typed literally.
+ * Turns a hardware key press into what the pane gets. Special keys and chords become
+ * tmux key names; text is typed literally.
  */
 object KeyMap {
     sealed interface Special {

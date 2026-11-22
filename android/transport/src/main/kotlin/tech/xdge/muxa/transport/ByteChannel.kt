@@ -99,10 +99,10 @@ class SshExec private constructor(
     runCatching { client.disconnect() }
 }) {
     companion object {
-        /** Connects and runs [command] (default: the target's). Host keys as [SshBridge.connect]. */
+        /** Connects and runs [command] (default: the target's). Host keys as [SshLogin.login]. */
         suspend fun connect(target: SshTarget, key: ClientKey, command: String = target.command): SshExec =
             withContext(Dispatchers.IO) {
-                val client = SshBridge.login(target) { it.authPublickey(target.user, KeyPairWrapper(key.keyPair())) }
+                val client = SshLogin.login(target) { it.authPublickey(target.user, KeyPairWrapper(key.keyPair())) }
                 try {
                     val session = client.startSession()
                     val cmd = session.exec(command)

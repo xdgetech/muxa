@@ -7,7 +7,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
-import tech.xdge.muxa.protocol.AgentState
 
 /**
  * The app's colors by meaning, as on iOS (`Theme.swift`). Views use these names only.
@@ -29,14 +28,6 @@ object Theme {
     /** Lines a change adds and removes. */
     val added = Color(0xFF34C759)
     val removed = Color(0xFFFF3B30)
-
-    fun state(s: AgentState): Color = when (s) {
-        AgentState.RUNNING -> Color(0xFF0A84FF)
-        AgentState.WAITING -> attention
-        AgentState.IDLE -> Color(0xFF8E8E93)
-        AgentState.DONE -> connected
-        AgentState.ERROR -> failure
-    }
 
     val chatBackground: Color
         @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.background

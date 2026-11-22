@@ -23,7 +23,6 @@ class HostStoreTest {
         store.upsert(a)
         store.upsert(b)
         store.markUsed(b.id)
-        store.remember(LastPane("work", "%3"), b.id)
         store.move(1, 0)
         val edited = a.copy(
             target = a.target.copy(hostKey = HostKey.parse("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICmVLvUbABi5WZoMHwkY/jy0DxNDGNMw2TRDgtxMPf9x")),
@@ -34,14 +33,25 @@ class HostStoreTest {
         val c = again.contents.value
         assertEquals(listOf(b, edited), c.hosts)
         assertEquals(b.id, c.lastUsed)
-        assertEquals(mapOf(b.id to LastPane("work", "%3")), c.lastPanes)
         assertEquals("box.example", c.hosts[0].title)
         assertNull(again.storageError.value)
 
         again.delete(b.id)
         assertEquals(listOf(edited), HostStore(file).contents.value.hosts)
         assertNull(again.contents.value.lastUsed)
-        assertTrue(again.contents.value.lastPanes.isEmpty())
+    }
+
+    @Test
+    fun aFileFromAnOlderVersionStillLoads() {
+        val file = dir.root.resolve("hosts.json")
+        file.writeText(
+            """{"hosts":[{"id":"h1","name":"mini","target":{"host":"mini.example","user":"me"}}],""" +
+                """"lastUsed":"h1","lastPanes":{"h1":{"session":"work","pane":"%3"}}}""",
+        )
+        val store = HostStore(file)
+        assertEquals(listOf("h1"), store.contents.value.hosts.map { it.id })
+        assertEquals("h1", store.contents.value.lastUsed)
+        assertNull(store.storageError.value)
     }
 
     @Test

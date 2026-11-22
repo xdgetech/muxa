@@ -1,14 +1,10 @@
 package tech.xdge.muxa.session
 
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import tech.xdge.muxa.protocol.Request
-import tech.xdge.muxa.terminal.PaneScreen
 
 class ViewportTest {
     @Test
@@ -43,68 +39,15 @@ class ViewportTest {
         assertFalse(viewport.showsWhole(160, 39))
     }
 
-    private suspend fun connected(capabilities: List<String>, viewport: PaneViewport?): Pair<PaneSession, FakeBridge> {
-        val bridge = FakeBridge()
-        bridge.capabilities = capabilities
-        val session = PaneSession(oneThread())
-        session.renderer = PaneScreen()
-        viewport?.let(session::setViewport)
-        session.connect {
-            bridge.start()
-            bridge
-        }
-        return session to bridge
-    }
-
-    private fun FakeBridge.viewports() = received.filterIsInstance<Request.Viewport>().map { PaneViewport(it.cols, it.rows) }
-
     @Test
-    fun theViewportGoesBeforeTheWatchOnConnect() = runBlocking {
-        val (session, bridge) = connected(listOf("viewport"), PaneViewport(120, 40))
-        session.watch("%1")
-        val kinds = bridge.received.mapNotNull {
-            when (it) {
-                is Request.Viewport -> "viewport"
-                is Request.Watch -> "watch"
-                else -> null
-            }
-        }
-        assertEquals(listOf("viewport", "watch"), kinds)
-        assertEquals(listOf(PaneViewport(120, 40)), bridge.viewports())
-    }
-
-    @Test
-    fun aBridgeWithoutTheCapabilityGetsNoViewport() = runBlocking {
-        val (session, bridge) = connected(emptyList(), PaneViewport(120, 40))
-        session.setViewport(PaneViewport(90, 30))
-        session.watch("%1")
-        delay(400)
-        assertEquals(emptyList<PaneViewport>(), bridge.viewports())
-    }
-
-    @Test
-    fun changesAreSentOnceTheySettle() = runBlocking {
-        val (session, bridge) = connected(listOf("viewport"), PaneViewport(120, 40))
-        // A rotation animates through several sizes.
-        session.setViewport(PaneViewport(100, 50))
-        session.setViewport(PaneViewport(90, 60))
-        session.setViewport(PaneViewport(90, 60))
-        delay(100)
-        assertEquals(listOf(PaneViewport(120, 40)), bridge.viewports())
-        delay(500)
-        assertEquals(listOf(PaneViewport(120, 40), PaneViewport(90, 60)), bridge.viewports())
-    }
-
-    @Test
-    fun aReconnectSendsTheViewportAgain() = runBlocking {
-        val (session, first) = connected(listOf("viewport"), PaneViewport(120, 40))
-        assertEquals(1, first.viewports().size)
-        val second = FakeBridge()
-        second.capabilities = listOf("viewport")
-        session.connect {
-            second.start()
-            second
-        }
-        assertEquals(listOf(PaneViewport(120, 40)), second.viewports())
+    fun fitKeepsTheFontReadable() {
+        assertEquals(PaneFit.WHOLE, PaneFit.automatic(wide = false, wholeFont = 12f, widthFont = 14f))
+        assertEquals(PaneFit.WIDTH, PaneFit.automatic(wide = true, wholeFont = 12f, widthFont = 14f))
+        assertEquals(PaneFit.WIDTH, PaneFit.automatic(wide = false, wholeFont = 6f, widthFont = 10f))
+        assertEquals(PaneFit.READABLE, PaneFit.automatic(wide = false, wholeFont = 4f, widthFont = 6f))
+        assertEquals(9f, PaneFit.READABLE.fontSize(4f, 6f))
+        assertEquals(PaneFit.WHOLE, PaneFit.pinched(0.5f))
+        assertEquals(PaneFit.READABLE, PaneFit.pinched(2f))
+        assertNull(PaneFit.pinched(1f))
     }
 }

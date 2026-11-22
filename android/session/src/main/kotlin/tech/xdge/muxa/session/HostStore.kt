@@ -24,7 +24,7 @@ data class Host(
 }
 
 /**
- * The saved hosts, the last one used and each one's last pane, as JSON in one file.
+ * The saved hosts and the last one used, as JSON in one file.
  * Passwords are never stored; the pinned host key is public.
  */
 class HostStore(private val file: File?) {
@@ -32,8 +32,6 @@ class HostStore(private val file: File?) {
     data class Contents(
         val hosts: List<Host> = emptyList(),
         val lastUsed: String? = null,
-        /** The pane last shown on each host, opened first on the next connect. */
-        val lastPanes: Map<String, LastPane> = emptyMap(),
     )
 
     private val _contents = MutableStateFlow(Contents())
@@ -68,7 +66,6 @@ class HostStore(private val file: File?) {
         c.copy(
             hosts = c.hosts.filter { it.id != id },
             lastUsed = c.lastUsed.takeIf { it != id },
-            lastPanes = c.lastPanes - id,
         )
     }
 
@@ -79,8 +76,6 @@ class HostStore(private val file: File?) {
     }
 
     fun markUsed(id: String) = change { c -> c.copy(lastUsed = id) }
-
-    fun remember(pane: LastPane, id: String) = change { c -> c.copy(lastPanes = c.lastPanes + (id to pane)) }
 
     private fun change(edit: (Contents) -> Contents) {
         val before = _contents.value

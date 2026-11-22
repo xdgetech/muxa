@@ -9,11 +9,5 @@ dependencies {
     api(libs.jediterm.core)
     // JediTerm logs escape sequences, which are pane bytes; they never reach a log.
     runtimeOnly(libs.slf4j.nop)
-    testImplementation(project(":protocol"))
-    testImplementation(libs.serialization.json)
     testImplementation(libs.junit)
-}
-
-tasks.test {
-    systemProperty("muxa.fixtures", rootDir.resolve("../protocol/fixtures").absolutePath)
 }

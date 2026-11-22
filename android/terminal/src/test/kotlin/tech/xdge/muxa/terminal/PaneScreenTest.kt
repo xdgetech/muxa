@@ -1,0 +1,40 @@
+package tech.xdge.muxa.terminal
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PaneScreenTest {
+    @Test
+    fun aCharacterCutBetweenTwoFeedsStaysWhole() {
+        val screen = PaneScreen()
+        val bytes = "日本".toByteArray()
+        screen.reset(10, 2, byteArrayOf(0x1b, 'c'.code.toByte()) + bytes.copyOfRange(0, 2))
+        screen.feed(bytes.copyOfRange(2, bytes.size))
+        assertTrue(screen.awaitIdle())
+        assertEquals(listOf("日本"), screen.rows())
+        screen.close()
+    }
+
+    @Test
+    fun textAfterAWideCharacterInAnotherStyleKeepsItsColumn() {
+        val screen = PaneScreen()
+        screen.reset(10, 1, "\u001bc日本\u001b[31mx".toByteArray())
+        assertTrue(screen.awaitIdle())
+        assertEquals(listOf("日本x"), screen.rows())
+        screen.close()
+    }
+
+    @Test
+    fun colorsSetBySgrReachTheSnapshot() {
+        val screen = PaneScreen()
+        screen.reset(20, 1, "\u001bc\u001b[31mred\u001b[32m green\u001b[0m x".toByteArray())
+        assertTrue(screen.awaitIdle())
+        val runs = screen.snapshot().lines[0]
+        val color = { col: Int -> runs.first { col >= it.column && col < it.column + it.text.length }.style.foreground }
+        assertEquals(TermColor.Indexed(1), color(0))
+        assertEquals(TermColor.Indexed(2), color(4))
+        assertEquals(TermColor.Default, color(10))
+        screen.close()
+    }
+}

@@ -15,19 +15,6 @@ class TransportTest {
     val dir = TemporaryFolder()
 
     @Test
-    fun framerSplitsLinesAcrossChunks() {
-        val f = LineFramer()
-        assertTrue(f.push("{\"a\":".toByteArray()).isEmpty())
-        assertEquals(listOf("{\"a\":1}", "{\"b\":2}"), f.push("1}\n{\"b\":2}\n{\"c\"".toByteArray()))
-        assertEquals(listOf("{\"c\":3}"), f.push(":3}\n".toByteArray()))
-    }
-
-    @Test(expected = TransportError.LineTooLong::class)
-    fun framerRejectsAnEndlessLine() {
-        LineFramer().push(ByteArray(LineFramer.MAX_LINE + 1))
-    }
-
-    @Test
     fun clientKeyRoundTripsAndFormatsForAuthorizedKeys() {
         val key = ClientKey.generate()
         val again = ClientKey.fromRaw(key.raw)
@@ -47,11 +34,15 @@ class TransportTest {
     }
 
     @Test
-    fun processBridgeCarriesLinesBothWays() = runBlocking {
-        val bridge = ProcessBridge("cat")
-        bridge.send("""{"type":"ping","id":1}""")
-        assertEquals("""{"type":"ping","id":1}""", bridge.lines.receive())
-        bridge.close()
+    fun processBytesCarriesRawBytesBothWays() = runBlocking {
+        val channel = ProcessBytes("cat")
+        // Not UTF-8: bytes must pass through unchanged.
+        val sent = byteArrayOf(0, 0xff.toByte(), 0x80.toByte(), '\n'.code.toByte())
+        channel.send(sent)
+        val received = java.io.ByteArrayOutputStream()
+        while (received.size() < sent.size) received.write(channel.bytes.receive())
+        assertTrue(sent.contentEquals(received.toByteArray()))
+        channel.close()
     }
 
     @Test

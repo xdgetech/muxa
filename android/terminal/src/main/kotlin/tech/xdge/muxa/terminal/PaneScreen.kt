@@ -29,18 +29,19 @@ import kotlin.concurrent.withLock
  * JediTerm parses on its own thread, which blocks for input. [onIdle] runs there each
  * time every fed byte is parsed, so a view redraws once per batch.
  */
-class PaneScreen(private val onIdle: () -> Unit = {}) : PaneRenderer, AutoCloseable {
+class PaneScreen(private val onIdle: () -> Unit = {}) : AutoCloseable {
     @Volatile
     private var engine: Engine? = null
 
-    override fun reset(cols: Int, rows: Int, data: ByteArray) {
+    /** A fresh emulator of exactly this size, then [data]. */
+    fun reset(cols: Int, rows: Int, data: ByteArray) {
         val next = Engine(cols.coerceAtLeast(1), rows.coerceAtLeast(1), onIdle)
         engine?.close()
         engine = next
         next.feed(data)
     }
 
-    override fun feed(data: ByteArray) {
+    fun feed(data: ByteArray) {
         engine?.feed(data)
     }
 

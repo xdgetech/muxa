@@ -7,17 +7,8 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 
 dependencies {
-    api(project(":protocol"))
     api(project(":transport"))
-    api(project(":terminal"))
     api(libs.coroutines.core)
     implementation(libs.serialization.json)
     testImplementation(libs.junit)
-    testImplementation(libs.coroutines.test)
 }
-
-tasks.test {
-    // protocol/fixtures/inbox pins the Inbox rule shared with Swift and muxa-cli.
-    systemProperty("muxa.fixtures", rootDir.resolve("../protocol/fixtures").absolutePath)
-}
-

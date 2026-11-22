@@ -45,10 +45,10 @@ object KeySetup {
 
     /**
      * Logs in to [target] with [password] and adds [line]. The host key must already be
-     * pinned; otherwise this fails with [TransportError.HostKeyMismatch] like [SshBridge.connect].
+     * pinned; otherwise this fails with [TransportError.HostKeyMismatch] like [SshExec.connect].
      */
     suspend fun install(line: String, target: SshTarget, password: String): Outcome = withContext(Dispatchers.IO) {
-        val client = SshBridge.login(target) { it.authPassword(target.user, password) }
+        val client = SshLogin.login(target) { it.authPassword(target.user, password) }
         try {
             client.startSession().use { session ->
                 val command = session.exec(script(line))
