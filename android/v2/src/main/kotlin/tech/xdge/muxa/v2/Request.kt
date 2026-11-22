@@ -136,5 +136,6 @@ private fun placeJson(p: PlaceSpec): JsonObject = buildJsonObject {
             if (p.base != null) put("base", p.base)
         }
         is PlaceSpec.Read -> { put("kind", "read"); put("repo", p.repo) }
+        is PlaceSpec.Existing -> { put("kind", "existing"); put("path", p.path) }
     }
 }

@@ -23,6 +23,7 @@ import tech.xdge.muxa.v2.ChatPrompt
 import tech.xdge.muxa.v2.DemoChannel
 import tech.xdge.muxa.v2.DiffScope
 import tech.xdge.muxa.v2.Inbox
+import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.LoopInfo
 import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.ReaderContent
@@ -428,6 +429,14 @@ class NextModel(
             if (terminals.none { it.id == t.id }) terminals = terminals + t
             started = t
         }
+        return started
+    }
+
+    /** Resume Task: starts the agent in the item's place, then marks the item Done. The agent, or null with [requestError] set. */
+    suspend fun resumeTask(item: InboxItem): Terminal? {
+        val draft = TaskDraft.resume(item) ?: return null
+        val started = startTask(draft) ?: return null
+        inboxNow(V2Request.InboxDone(item.id))
         return started
     }
 

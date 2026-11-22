@@ -67,7 +67,7 @@ data class DemoContent(
     val settings: Settings = Settings("1"),
 ) {
     companion object {
-        /** Two Tasks (one waits on the user), a shell, every Inbox kind, and three Routines. Approving `d8` needs force. */
+        /** Two Tasks (one waits on the user), a shell, every Inbox kind, a v1 item to resume (`d9`), and three Routines. Approving `d8` needs force. */
         val STANDARD: DemoContent = standardContent()
     }
 }
@@ -287,10 +287,13 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         // `connections` and `mcp` in the request are ignored.
         val named = workspace?.connections.orEmpty().map { it.name }
         val servers = workspace?.mcp.orEmpty().map { it.name }
-        val first = places.mapNotNull { it as? JsonObject }.firstOrNull { it.str("kind") == "branch" }
+        val specs = places.mapNotNull { it as? JsonObject }
+        val first = specs.firstOrNull { it.str("kind") == "branch" }
         val branch = first?.str("branch")
         val repo = first?.str("repo")
-        val dir = if (branch != null) "${repo ?: "/demo"}-$branch" else "/demo/tasks/$title"
+        // An `existing` place is adopted as it is: it is the Task's folder.
+        val adopted = specs.firstOrNull { it.str("kind") == "existing" }?.str("path")
+        val dir = adopted ?: if (branch != null) "${repo ?: "/demo"}-$branch" else "/demo/tasks/$title"
         terminals.firstOrNull { it.live && it.isTaskAgent && it.taskDir == dir }?.let {
             return reply(id, "terminal" to enc(it), "existing" to JsonPrimitive(true))
         }
@@ -492,7 +495,11 @@ private fun standardContent(): DemoContent {
         source: String,
         terminal: String? = null,
         routine: RoutineRef? = null,
-    ) = InboxItem(id, kind, title, note, workspace, due, created = 1_764_000_000, source = source, terminal = terminal, routine = routine)
+        place: ItemPlace? = null,
+    ) = InboxItem(
+        id, kind, title, note, workspace, due, created = 1_764_000_000, source = source, terminal = terminal, routine = routine,
+        place = place,
+    )
 
     fun routine(name: String, at: String?, last: RoutineLast?) =
         Routine("app", name, enabled = true, at = at, timezone = at?.let { "Europe/Berlin" }, last = last)
@@ -520,6 +527,11 @@ private fun standardContent(): DemoContent {
             item("d5", ItemKind.FAILED, "nightly-backup failed", note = "gh login expired.", source = "routine", routine = RoutineRef("app", "nightly-backup")),
             item("d6", ItemKind.TODO, "Renew the domain", workspace = "Personal", due = "2026-12-01", source = "capture"),
             item("d8", ItemKind.REVIEW, "Review docs-audit", note = "Two links still to check.", source = "task", terminal = "t2"),
+            item(
+                "d9", ItemKind.TODO, "Resume: Tidy the release notes",
+                note = "From the old muxa. Resume Task starts the agent where it worked.", source = "v1",
+                place = ItemPlace("app", "/demo/tasks/tidy-the-release-notes-t-1a2b3c"),
+            ),
         ),
         routines = listOf(
             routine("dependency-digest", "09:00", RoutineLast(1_764_000_000, ok = true, published = 1)),

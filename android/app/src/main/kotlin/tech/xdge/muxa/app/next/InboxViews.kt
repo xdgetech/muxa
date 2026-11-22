@@ -219,6 +219,7 @@ fun InboxItemPane(
 private fun source(item: InboxItem) = when (item.source) {
     "task" -> "From a Task"
     "routine" -> "From a Routine"
+    "v1" -> "From the old muxa"
     else -> "Captured"
 }
 

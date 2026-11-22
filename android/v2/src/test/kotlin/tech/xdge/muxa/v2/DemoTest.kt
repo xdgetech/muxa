@@ -77,6 +77,22 @@ class DemoTest {
     }
 
     @Test
+    fun aV1ItemResumesInItsPlaceOnce() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val item = c.inbox().items.first { it.id == "d9" }
+            val place = checkNotNull(item.place)
+            assertEquals(ItemPlace("app", "/demo/tasks/tidy-the-release-notes-t-1a2b3c"), place)
+            val existing = listOf(PlaceSpec.Existing(place.path))
+            val (agent, running) = c.startTask(place.workspace, "Tidy the release notes", places = existing)
+            assertEquals(Triple("Tidy the release notes", false, place.path), Triple(agent.name, running, agent.taskDir))
+            val (again, found) = c.startTask(place.workspace, "Tidy the release notes", places = existing)
+            assertEquals(agent.id to true, again.id to found)
+            c.close()
+        }
+    }
+
+    @Test
     fun placesDecodeFromTheLabel() {
         val t = Terminal(
             "t9", "Audit", live = true, cols = 80, rows = 24,

@@ -40,18 +40,24 @@ data class InboxItem(
     /** Hidden until then (Unix seconds). */
     @SerialName("later_until") val laterUntil: Long? = null,
     val created: Long,
-    /** `capture`, `task` or `routine`. */
+    /** `capture`, `task`, `routine` or `v1`. */
     val source: String,
     /** The Task's agent terminal this item is about. */
     val terminal: String? = null,
     /** The Routine whose run made this item. */
     val routine: RoutineRef? = null,
+    /** Where a v1 Task worked: Resume Task adopts it as a [PlaceSpec.Existing] place. */
+    val place: ItemPlace? = null,
 ) {
     fun isLater(now: Long) = (laterUntil ?: 0) > now
 }
 
 @Serializable
 data class RoutineRef(val workspace: String, val name: String)
+
+/** A working place that already exists in [workspace]. */
+@Serializable
+data class ItemPlace(val workspace: String, val path: String)
 
 /** What happens to a Task's branch worktree when its Review item is approved. */
 enum class WorktreeChoice(val wire: String) {
@@ -189,6 +195,9 @@ sealed interface PlaceSpec {
 
     /** The repo's main checkout, never written. */
     data class Read(val repo: String) : PlaceSpec
+
+    /** A folder or worktree that already exists: nothing is made. It is the only working place. */
+    data class Existing(val path: String) : PlaceSpec
 }
 
 /** A Task's place as it is, from its agent's `muxa.places` label; the working place comes first. */

@@ -1,5 +1,6 @@
 package tech.xdge.muxa.app.next
 
+import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.PlaceSpec
@@ -16,7 +17,19 @@ data class TaskDraft(
     val places: List<PlaceSpec>,
     val plan: Boolean,
     val loop: LoopSpec?,
-)
+) {
+    companion object {
+        /**
+         * Resume Task of an item migrated from v1: the agent starts in the old
+         * Task's place as it is. Null when the item has no place.
+         */
+        fun resume(item: InboxItem): TaskDraft? = item.place?.let {
+            TaskDraft(it.workspace, item.title.removePrefix(RESUME_PREFIX), null, listOf(PlaceSpec.Existing(it.path)), plan = false, loop = null)
+        }
+
+        private const val RESUME_PREFIX = "Resume: "
+    }
+}
 
 /**
  * What every agent of [ws] gets (ADR 0075), as "This Workspace's agents get: github, linear · MCP: docs";

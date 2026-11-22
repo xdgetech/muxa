@@ -50,6 +50,8 @@ class FrameTest {
         val plain = V2Request.StartTask("w", "Fix").json(6)
         assertEquals(null, plain["connections"])
         assertEquals(null, plain["mcp"])
+        val resume = V2Request.StartTask("app", "Tidy", places = listOf(PlaceSpec.Existing("/w/tasks/tidy"))).json(7)
+        assertEquals("""[{"kind":"existing","path":"/w/tasks/tidy"}]""", resume["places"].toString())
     }
 
     @Test
@@ -58,6 +60,17 @@ class FrameTest {
         val inbox = field<Inbox>("inbox", json.parseToJsonElement(wire) as JsonObject)
         assertEquals(200L, inbox.items[0].laterUntil)
         assertTrue(inbox.items[0].isLater(100))
+    }
+
+    @Test
+    fun anItemFromV1HasItsPlace() {
+        val wire = """{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"Resume: Tidy","created":5,"source":"v1",""" +
+            """"place":{"workspace":"app","path":"/w/tasks/tidy"}},{"id":"i2","kind":"todo","title":"milk","created":5,"source":"capture"}],"done":[]}}"""
+        val inbox = field<Inbox>("inbox", json.parseToJsonElement(wire) as JsonObject)
+        assertEquals(ItemPlace("app", "/w/tasks/tidy"), inbox.items[0].place)
+        assertEquals(null, inbox.items[1].place)
+        // An item without a place sends none.
+        assertEquals(null, (json.encodeToJsonElement(InboxItem.serializer(), inbox.items[1]) as JsonObject)["place"])
     }
 
     @Test

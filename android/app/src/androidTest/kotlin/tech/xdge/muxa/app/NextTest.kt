@@ -255,6 +255,28 @@ class NextTest {
     }
 
     @Test
+    fun resumeTaskOpensTheAgentAndTakesTheItemOutOfTheInbox() {
+        launch()
+        compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d9"))
+        compose.onNodeWithTag("item.d9").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("detail.resume"), TIMEOUT)
+        compose.onNodeWithTag("detail.title").assertTextEquals("Resume: Tidy the release notes")
+        compose.onNodeWithTag("detail.starttask").assertDoesNotExist()
+        compose.onNodeWithTag("detail.resume").performClick()
+        compose.waitUntilAtLeastOneExists(screenContains("Starting the agent for Tidy the release notes"), TIMEOUT)
+        // A phone shows the terminal alone: Back leads to the tabs.
+        if (compose.onAllNodesWithTag("focus.back").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithTag("focus.back").performClick()
+        compose.waitUntilAtLeastOneExists(hasTestTag("home.part.Inbox"), TIMEOUT)
+        compose.onNodeWithTag("home.part.Inbox").performClick()
+        compose.backToList()
+        compose.waitUntilAtLeastOneExists(hasTestTag("item.d1"), TIMEOUT)
+        // Scrolling the whole list finds no d9.
+        compose.waitUntil(TIMEOUT) {
+            runCatching { compose.onNodeWithTag("inbox.list").performScrollToNode(hasTestTag("item.d9")) }.isFailure
+        }
+    }
+
+    @Test
     fun makeItATaskOnAReadItemTakesItsTitleAndNote() {
         launch()
         compose.onNodeWithTag("item.d4").performClick()

@@ -4,6 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
+import tech.xdge.muxa.v2.InboxItem
+import tech.xdge.muxa.v2.ItemKind
+import tech.xdge.muxa.v2.ItemPlace
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.LoopSpec
 import tech.xdge.muxa.v2.PlaceSpec
@@ -52,6 +55,14 @@ class TaskChoicesTest {
         assertEquals("This Workspace's agents get: github, linear · MCP: docs", toolsLine(ws))
         assertEquals("This Workspace's agents get: MCP: docs", toolsLine(ws.copy(connections = emptyList())))
         assertNull(toolsLine(app))
+    }
+
+    @Test
+    fun resumeStartsInTheItemsPlaceWithoutThePrefix() {
+        val item = InboxItem("i1", ItemKind.TODO, "Resume: Tidy the notes", created = 0, source = "v1", place = ItemPlace("app", "/w/tasks/tidy"))
+        val draft = TaskDraft.resume(item)
+        assertEquals(TaskDraft("app", "Tidy the notes", null, listOf(PlaceSpec.Existing("/w/tasks/tidy")), plan = false, loop = null), draft)
+        assertNull(TaskDraft.resume(item.copy(place = null)))
     }
 
     @Test

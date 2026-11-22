@@ -42,7 +42,7 @@ import tech.xdge.muxa.v2.V2Request
 
 /**
  * The Task actions of an Inbox item (ADR 0072), shared by the detail's buttons
- * and Home's keys: Approve, Request changes and Retry.
+ * and Home's keys: Approve, Request changes, Retry and Resume Task.
  */
 @Stable
 class ItemActionState(private val model: NextModel, private val scope: CoroutineScope) {
@@ -78,6 +78,18 @@ class ItemActionState(private val model: NextModel, private val scope: Coroutine
     }, done)
 
     fun retry(item: String, done: () -> Unit) = act({ model.retry(item) }, done)
+
+    /** Resume Task of an item from v1; its agent opens in Focus with [open]. */
+    fun resume(item: InboxItem, open: (Terminal) -> Unit, done: () -> Unit) {
+        var started: Terminal? = null
+        act({
+            started = model.resumeTask(item)
+            started != null
+        }) {
+            done()
+            started?.let(open)
+        }
+    }
 
     /** Runs [body]; [done] follows only when it worked, so a failure stays on the item. */
     private fun act(body: suspend () -> Boolean, done: () -> Unit) {
@@ -119,7 +131,11 @@ fun ItemActions(
                     Text("Request Changes")
                 }
             }
-            if (item.kind in TASK_KINDS) {
+            if (item.place != null) {
+                OutlinedButton({ actions.resume(item, openTerminal, onDone) }, Modifier.testTag("detail.resume"), enabled = !actions.busy) {
+                    Text("Resume Task")
+                }
+            } else if (item.kind in TASK_KINDS) {
                 OutlinedButton({ newTask(TaskSeed(item.title, item.workspace)) }, Modifier.testTag("detail.starttask")) { Text("Start Task") }
             }
             if (item.kind == ItemKind.READ) {
