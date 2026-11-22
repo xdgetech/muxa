@@ -99,6 +99,10 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"loops"}` | `{"loops":[Loop...]}`: the Task Loops of the live Task agents |
 | `{"type":"loop-start","terminal","loop":LoopSpec,"reset"?}` | `{"loop":Loop}`. Starts or restarts the loop of a Task's agent |
 | `{"type":"loop-stop","terminal"}` | `{"loop":Loop}`. Stopped with reason `user` |
+| `{"type":"workspaces"}` | `{"workspaces":[Workspace...]}`: what a Task may use. See Task actions |
+| `{"type":"inbox-approve","item","worktree"?}` | `{"inbox":Inbox}`. Closes the Task of a Review item; `worktree` is `remove` (the default) or `force`. See Task actions |
+| `{"type":"inbox-request-changes","item","comment"}` | `{"inbox":Inbox}`. Types the comment into the Task's agent and resolves the Review item |
+| `{"type":"inbox-retry","item"}` | `{"inbox":Inbox}`. Runs again what made a Failed item and resolves it |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
@@ -116,6 +120,7 @@ If the Task's agent is still running in that working place, the reply has it wit
 - `muxa.workspace`;
 - `muxa.repo` (the main checkout) and `muxa.branch`, when the working place is a branch;
 - `muxa.places`: a JSON list of `{"kind","path","branch"?}`, the working place first.
+- `muxa.connections`: a JSON list of the connection names `start-task` named, when it named any. Names only.
 
 `connections` names the Workspace's connections the agent gets as environment variables, besides the ones on by default (ADR 0069). Their secrets come from the host's Keychain and never cross the wire. A missing or locked secret fails the start before any place is made.
 
@@ -193,11 +198,12 @@ The server reads each open file every 2 s and sends `reader` only when it change
 
 ADR 0066. `Inbox`: `{"revision","items":[Item...],"done":[Item...]}`. `items` are the open items in the user's order; `done` the last 100 done, newest first. Each change adds 1 to `revision`.
 
-`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source"}`.
+`Item`: `{"id","kind","title","note"?,"workspace"?,"due"?,"later_until"?,"created","source","terminal"?,"routine"?}`.
 - `kind`: `review`, `reply`, `decide`, `read`, `todo`, `failed`.
 - `due`: `YYYY-MM-DD`. `created` and `later_until`: Unix seconds.
 - An item with `later_until` in the future stays in `items` and the client hides it. At that time the server puts it back on top, clears `later_until` and sends `inbox`.
 - `source`: `capture`, `task` or `routine`.
+- `terminal`: the Task agent terminal that made the item (Review, and Failed of an agent or a Task Loop). `routine`: `{"workspace","name"}`, the Routine that made it. Items made before these fields have neither.
 
 `parse-capture` reads a line by ADR 0066's rules: a first word `reply`, `read` or `decide` sets the kind (else `todo`); `#name` sets the Workspace only when one has that name; `due` takes `today`, `tomorrow`, a weekday (the next one, today included), `M/D` (the next one) or `YYYY-MM-DD`. The client shows the fields, lets the user change them, and sends `inbox-add`. A title is 1 to 300 characters; a note at most 4 KiB.
 
@@ -206,10 +212,36 @@ Items the server makes:
 - **Failed** (`source: task`): a Task's agent ended with a non-zero code, on a signal it did not get from a kill, or was lost. Once per terminal. A clean exit or a kill makes none.
 - **Read** and **Decide** (`source: routine`): a Routine's briefing and proposal entries; **Failed** for a Routine's failure. Once each. Entries from before the server first ran are not copied.
 
+### Task actions
+
+ADR 0072. The actions of a Review or Failed item, and the Workspaces a client offers when it starts a Task.
+
+`Workspace`: `{"name","root","repos":[...],"agent"?,"loop","connections":[{"name","default"}]}`.
+- `repos`: the Workspace's repos as `start-task` takes them, relative to the root, or a listed repo's folder name.
+- `agent`: the program name of the Workspace's agent, such as `claude` or `codex`. Never its arguments or environment.
+- `loop`: `null` when the Workspace runs no Task Loops, else `{"checks":"any"}` or `{"checks":["make test",...]}`.
+- `connections`: names only, and whether each is on by default. A connection's variable, account and secret never cross the wire.
+
+`inbox-approve` closes the Task of an open Review item that has `terminal` (ADR 0068 §7, ADR 0043):
+1. With `worktree: "remove"`, the host checks each branch worktree on the agent's `muxa.places`. Uncommitted changes, or a branch whose commits are not in the default base (`origin/HEAD`, else the main checkout's branch) or the main checkout's branch, is `would-lose-work`. Its message says which. Nothing changes.
+2. A live Task Loop of the agent stops. The agent is killed and its terminal removed.
+3. Each branch worktree goes with `git worktree remove`, its branch with `git branch -d`. With `force`: `git worktree remove --force` and `git branch -D`. Read-only places and the folder stay. Only places on the label are touched, so worktrees muxa did not make never are.
+4. The item is Done.
+
+A Review item with no `terminal`, or another kind, is `bad-request`. A terminal that is gone is `not-found`; the client offers Done instead.
+
+`inbox-request-changes` types `comment` into the live agent of an open Review item as the user's input, then Enter, and marks the item Done. A comment is 1 to 8192 bytes, of text, newlines and tabs; `\r\n` counts as a newline. One line is typed as it is; several lines go as one bracketed paste (`ESC [200~` … `ESC [201~`). An ended agent is `bad-request`. The comment never reaches the server's log.
+
+`inbox-retry` marks an open Failed item Done after it runs again what made it:
+- `routine`: the Routine runs now, as `run-routine`; `conflict` while it already runs.
+- `terminal`, live agent: its Task Loop starts again with the same check and `reset` (a failed loop). No loop is `bad-request`.
+- `terminal`, ended agent: the Workspace's agent starts again in the same working place, with the same places, labels and connections, but not in plan mode. The ended terminal is removed. A working place that is gone is `bad-request`.
+- Neither, or another kind: `bad-request`.
+
 ### Error codes
 
-`bad-request`, `version`, `not-found`, `backend`, `closed`, `conflict`.
+`bad-request`, `version`, `not-found`, `backend`, `closed`, `conflict`, `would-lose-work` (closing a Task would lose work; nothing changed).
 
 ## Not yet specified
 
-Review from a check or a draft PR, closing a Task, Task places (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.
+Review from a draft PR, adding a place to an open Task (ADR 0068), and everything from protocol v1 beyond terminals: Tasks, Inbox, Reader, Chat, Routines. Each is added here when it is built.
