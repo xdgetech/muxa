@@ -1,8 +1,18 @@
 package tech.xdge.muxa.v2
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonPrimitive
 
 /** What an Inbox item asks of the user (ADR 0066). */
 @Serializable
@@ -32,8 +42,23 @@ data class InboxItem(
     val created: Long,
     /** `capture`, `task` or `routine`. */
     val source: String,
+    /** The Task's agent terminal this item is about. */
+    val terminal: String? = null,
+    /** The Routine whose run made this item. */
+    val routine: RoutineRef? = null,
 ) {
     fun isLater(now: Long) = (laterUntil ?: 0) > now
+}
+
+@Serializable
+data class RoutineRef(val workspace: String, val name: String)
+
+/** What happens to a Task's branch worktree when its Review item is approved. */
+enum class WorktreeChoice(val wire: String) {
+    REMOVE("remove"),
+
+    /** Remove it even with uncommitted or unmerged work. */
+    FORCE("force"),
 }
 
 /** Open items in the user's order, then recent done ones. */
@@ -71,6 +96,61 @@ data class RoutineLast(val at: Long, val ok: Boolean, val reason: String? = null
 
 @Serializable
 data class RoutineProblem(val workspace: String, val reason: String)
+
+/** A Workspace as the host defines it, for starting a Task. */
+@Serializable
+data class Workspace(
+    val name: String,
+    val root: String,
+    val repos: List<String>,
+    val agent: String? = null,
+    /** Null: the Workspace has no Task Loop. */
+    val loop: WorkspaceLoop? = null,
+    val connections: List<WorkspaceConnection> = emptyList(),
+)
+
+@Serializable
+data class WorkspaceLoop(val checks: LoopChecks)
+
+/** The check commands a Task Loop may run: any, or only the listed ones. */
+@Serializable(with = LoopChecksSerializer::class)
+sealed interface LoopChecks {
+    data object Any : LoopChecks
+    data class List(val commands: kotlin.collections.List<String>) : LoopChecks
+}
+
+/** `"any"` or an array of commands. */
+internal object LoopChecksSerializer : KSerializer<LoopChecks> {
+    private const val ANY = "any"
+
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: LoopChecks) {
+        val out = encoder as? JsonEncoder ?: throw SerializationException("loop checks are JSON only")
+        out.encodeJsonElement(
+            when (value) {
+                LoopChecks.Any -> JsonPrimitive(ANY)
+                is LoopChecks.List -> JsonArray(value.commands.map(::JsonPrimitive))
+            },
+        )
+    }
+
+    override fun deserialize(decoder: Decoder): LoopChecks {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("loop checks are JSON only")
+        return when (val e = input.decodeJsonElement()) {
+            is JsonPrimitive if e.isString && e.content == ANY -> LoopChecks.Any
+            is JsonArray -> LoopChecks.List(e.map(::command))
+            else -> throw SerializationException("checks are \"$ANY\" or a list of commands")
+        }
+    }
+
+    private fun command(e: JsonElement): String =
+        (e as? JsonPrimitive)?.takeIf { it.isString }?.content ?: throw SerializationException("a check is a string")
+}
+
+/** A connection of a Workspace; default ones go to every Task (ADR 0069). */
+@Serializable
+data class WorkspaceConnection(val name: String, @SerialName("default") val isDefault: Boolean)
 
 /** A place a client asks for (ADR 0068). A repo is absolute, or relative to the Workspace's root. */
 sealed interface PlaceSpec {

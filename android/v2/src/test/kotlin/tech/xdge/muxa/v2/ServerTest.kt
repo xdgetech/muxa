@@ -157,6 +157,40 @@ class ServerTest {
     }
 
     @Test
+    fun workspacesListTheHostsWorkspace() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val expected = Workspace(
+                "Personal", "/work", listOf("app", "docs"), agent = "claude",
+                loop = WorkspaceLoop(LoopChecks.List(listOf("make test"))),
+                connections = listOf(WorkspaceConnection("github", isDefault = true)),
+            )
+            assertEquals(listOf(expected), c.workspaces())
+            c.close()
+        }
+    }
+
+    @Test
+    fun aReviewIsApprovedOrSentBackToItsAgent() = runBlocking {
+        withTimeout(10_000) {
+            val c = connect()
+            val (agent, _) = c.startTask("w", "close")
+            val review = c.inbox(V2Request.TaskReview(agent.id)).items.first { it.terminal == agent.id }
+            assertEquals(ItemKind.REVIEW, review.kind)
+            val approved = c.inbox(V2Request.InboxApprove(review.id))
+            assertTrue(approved.done.any { it.id == review.id })
+            assertTrue(c.terminals().none { it.id == agent.id })
+
+            val (other, _) = c.startTask("w", "again")
+            val second = c.inbox(V2Request.TaskReview(other.id)).items.first { it.terminal == other.id }
+            val sent = c.inbox(V2Request.InboxRequestChanges(second.id, "Add a test."))
+            assertTrue(sent.done.any { it.id == second.id })
+            assertTrue(sent.items.none { it.id == second.id })
+            c.close()
+        }
+    }
+
+    @Test
     fun routinesListAndRunOnce() = runBlocking {
         withTimeout(10_000) {
             val c = connect()

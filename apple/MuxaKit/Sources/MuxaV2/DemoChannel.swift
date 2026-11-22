@@ -26,19 +26,23 @@ public struct DemoContent: Sendable {
     public var screens: [String: String]
     public var inbox: [InboxItem]
     public var routines: [Routine]
+    /// The names Capture knows.
     public var workspaces: [String]
+    /// What `workspaces` answers.
+    public var taskWorkspaces: [Workspace]
     /// What the Reader shows in every Task's folder, by kind.
     public var files: [ReaderKind: [DemoFile]]
     /// Each Task agent's conversation, by terminal id.
     public var chats: [String: ChatUpdate]
 
     public init(terminals: [Terminal], screens: [String: String], inbox: [InboxItem], routines: [Routine], workspaces: [String],
-                files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:]) {
+                taskWorkspaces: [Workspace] = [], files: [ReaderKind: [DemoFile]] = [:], chats: [String: ChatUpdate] = [:]) {
         self.terminals = terminals
         self.screens = screens
         self.inbox = inbox
         self.routines = routines
         self.workspaces = workspaces
+        self.taskWorkspaces = taskWorkspaces
         self.files = files
         self.chats = chats
     }
@@ -161,11 +165,7 @@ actor DemoServer {
                 return true
             }
         case "inbox-done":
-            change(id) { inbox in
-                guard let at = inbox.items.firstIndex(where: { $0.id == item }) else { return false }
-                inbox.done.insert(inbox.items.remove(at: at), at: 0)
-                return true
-            }
+            resolve(id, item)
         case "inbox-reopen":
             change(id) { inbox in
                 guard let at = inbox.done.firstIndex(where: { $0.id == item }) else { return false }
@@ -184,20 +184,29 @@ actor DemoServer {
             let review = InboxItem(
                 id: "d\(nextItem)", kind: .review, title: "Review \(t?.branch ?? "the Task")",
                 note: m["note"] as? String, workspace: nil, due: nil, laterUntil: nil,
-                created: Int64(Date().timeIntervalSince1970), source: "task")
+                created: Int64(Date().timeIntervalSince1970), source: "task", terminal: t?.id)
             nextItem += 1
             change(id) { $0.items.insert(review, at: 0) }
+        case "inbox-approve":
+            guard let review = reviewItem(id, item), let terminal = review.terminal else { return }
+            close(terminal)
+            resolve(id, item)
+        case "inbox-request-changes":
+            guard let review = reviewItem(id, item), let terminal = review.terminal else { return }
+            let comment = m["comment"] as? String ?? ""
+            guard !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return send(["type": "error", "id": id, "code": "bad-request", "message": "the comment is empty"])
+            }
+            type(terminal, Array((comment + "\r\n").utf8))
+            resolve(id, item)
+        case "inbox-retry":
+            retry(id, item)
+        case "workspaces":
+            reply(id, ["workspaces": json(content.taskWorkspaces)])
         case "routines":
             reply(id, ["routines": json(content.routines), "problems": []])
         case "run-routine":
-            let name = m["name"] as? String
-            guard let at = content.routines.firstIndex(where: { $0.name == name }) else {
-                return send(["type": "error", "id": id, "code": "bad-request", "message": "no Routine \(name ?? "")"])
-            }
-            if content.routines[at].runningSince != nil {
-                return send(["type": "error", "id": id, "code": "conflict", "message": "\(name ?? "") already runs"])
-            }
-            content.routines[at].runningSince = Int64(Date().timeIntervalSince1970)
+            guard runRoutine(id, workspace: m["workspace"] as? String ?? "", name: m["name"] as? String ?? "") else { return }
             reply(id, [:])
         case "reader-list":
             guard let kind = readerKind(id, m) else { return }
@@ -255,6 +264,88 @@ actor DemoServer {
             reply(id, ["loop": json(lp)])
         default:
             send(["type": "error", "id": id, "code": "bad-request", "message": "unknown request"])
+        }
+    }
+
+    /// Starts a Routine; `false` after an error was sent.
+    private func runRoutine(_ id: UInt64, workspace: String, name: String) -> Bool {
+        guard let at = content.routines.firstIndex(where: { $0.workspace == workspace && $0.name == name }) else {
+            send(["type": "error", "id": id, "code": "bad-request", "message": "no Routine \(name)"])
+            return false
+        }
+        if content.routines[at].runningSince != nil {
+            send(["type": "error", "id": id, "code": "conflict", "message": "\(name) already runs"])
+            return false
+        }
+        content.routines[at].runningSince = Int64(Date().timeIntervalSince1970)
+        return true
+    }
+
+    /// An open item, or nil after an error was sent.
+    private func openItem(_ id: UInt64, _ item: String) -> InboxItem? {
+        guard let found = inbox.items.first(where: { $0.id == item }) else {
+            send(["type": "error", "id": id, "code": "not-found", "message": "no such item"])
+            return nil
+        }
+        return found
+    }
+
+    /// An open Review item of a Task, or nil after an error was sent.
+    private func reviewItem(_ id: UInt64, _ item: String) -> InboxItem? {
+        guard let found = openItem(id, item) else { return nil }
+        guard found.kind == .review, let terminal = found.terminal,
+              content.terminals.contains(where: { $0.id == terminal }) else {
+            send(["type": "error", "id": id, "code": "bad-request", "message": "this item is not the Review of a running Task"])
+            return nil
+        }
+        return found
+    }
+
+    /// Runs again the Routine or the Task agent that made a Failed item.
+    private func retry(_ id: UInt64, _ item: String) {
+        guard let failed = openItem(id, item) else { return }
+        func refuse() {
+            send(["type": "error", "id": id, "code": "bad-request", "message": "only a Failed item of a Routine or a Task can run again"])
+        }
+        guard failed.kind == .failed else { return refuse() }
+        if let routine = failed.routine {
+            guard runRoutine(id, workspace: routine.workspace, name: routine.name) else { return }
+        } else if let terminal = failed.terminal, let at = content.terminals.firstIndex(where: { $0.id == terminal }) {
+            content.terminals[at].live = true
+            content.terminals[at].status = TerminalStatus(state: "working", app: content.terminals[at].status?.app)
+            if watching { send(["type": "changed", "terminal": json(content.terminals[at])]) }
+        } else {
+            return refuse()
+        }
+        resolve(id, item)
+    }
+
+    /// Moves an open item to done.
+    private func resolve(_ id: UInt64, _ item: String) {
+        change(id) { inbox in
+            guard let at = inbox.items.firstIndex(where: { $0.id == item }) else { return false }
+            inbox.done.insert(inbox.items.remove(at: at), at: 0)
+            return true
+        }
+    }
+
+    /// Closes a Task's terminal and its channels.
+    private func close(_ terminal: String) {
+        content.terminals.removeAll { $0.id == terminal }
+        content.screens[terminal] = nil
+        for (n, t) in channels where t == terminal {
+            channels[n] = nil
+            write(Frame(channel: n, kind: .close, payload: []))
+        }
+        if watching { send(["type": "removed", "terminal": terminal]) }
+    }
+
+    /// Input as if the user typed it: the screen and every attached channel show it.
+    private func type(_ terminal: String, _ bytes: [UInt8]) {
+        content.screens[terminal, default: ""] += String(decoding: bytes, as: UTF8.self)
+        for (n, t) in channels where t == terminal {
+            write(Frame.withU64(n, offsets[n, default: 0], bytes))
+            offsets[n, default: 0] += UInt64(bytes.count)
         }
     }
 

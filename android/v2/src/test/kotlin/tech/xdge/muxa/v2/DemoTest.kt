@@ -3,6 +3,7 @@ package tech.xdge.muxa.v2
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -142,6 +143,112 @@ class DemoTest {
             }
             c.close()
         }
+    }
+
+    @Test
+    fun workspacesListWhatATaskMayUse() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val (app, personal) = c.workspaces()
+            assertEquals(listOf("app", "docs"), app.repos)
+            assertEquals(LoopChecks.List(listOf("make test", "make lint")), app.loop?.checks)
+            assertEquals(listOf("github"), app.connections.filter { it.isDefault }.map { it.name })
+            assertEquals(Triple("Personal", "claude", null), Triple(personal.name, personal.agent, personal.loop))
+            c.close()
+        }
+    }
+
+    @Test
+    fun approveClosesTheTaskAndResolvesTheReview() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            c.watch()
+            val review = c.inbox().items.first { it.kind == ItemKind.REVIEW }
+            assertEquals("t1", review.terminal)
+            val inbox = c.inbox(V2Request.InboxApprove(review.id))
+            assertEquals(V2Event.Removed("t1"), c.events.receive())
+            assertEquals(V2Event.InboxChanged(inbox), c.events.receive())
+            assertEquals(review.id, inbox.done.first().id)
+            assertEquals(false, c.terminals().any { it.id == "t1" })
+            c.close()
+        }
+    }
+
+    @Test
+    fun requestChangesTypesTheCommentToTheAgent() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            try {
+                c.inbox(V2Request.InboxRequestChanges("d1", " "))
+                fail("an empty comment")
+            } catch (e: V2Error.Refused) {
+                assertEquals("bad-request", e.code)
+            }
+            val inbox = c.inbox(V2Request.InboxRequestChanges("d1", "Add a test."))
+            assertEquals("d1", inbox.done.first().id)
+            val ch = c.attach("t1", 80, 24)
+            assertEquals(V2Event.Paint(ch), c.events.receive())
+            val screen = (c.events.receive() as V2Event.Output).bytes.toString(Charsets.UTF_8)
+            assertEquals(true, screen.endsWith("Add a test.\r\n"))
+            c.close()
+        }
+    }
+
+    @Test
+    fun retryRunsTheRoutineOfAFailedItem() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            val failed = c.inbox().items.first { it.kind == ItemKind.FAILED }
+            assertEquals(RoutineRef("app", "nightly-backup"), failed.routine)
+            assertEquals(failed.id, c.inbox(V2Request.InboxRetry(failed.id)).done.first().id)
+            assertNotNull(c.routines().first.first { it.name == "nightly-backup" }.runningSince)
+            try {
+                c.runRoutine("app", "nightly-backup")
+                fail("nightly-backup already runs")
+            } catch (e: V2Error.Refused) {
+                assertEquals("conflict", e.code)
+            }
+            c.close()
+        }
+    }
+
+    @Test
+    fun onlyAFailedItemIsRetried() = runBlocking {
+        withTimeout(10_000) {
+            val c = open()
+            for ((item, code) in listOf("d1" to "bad-request", "nope" to "not-found")) {
+                try {
+                    c.inbox(V2Request.InboxRetry(item))
+                    fail("retry of $item")
+                } catch (e: V2Error.Refused) {
+                    assertEquals(code, e.code)
+                }
+            }
+            c.close()
+        }
+    }
+
+    @Test
+    fun itemsDecodeWithAndWithoutTheirTaskOrRoutine() {
+        val old = json.decodeFromString<InboxItem>("""{"id":"a","kind":"todo","title":"x","created":1,"source":"capture"}""")
+        assertEquals(null to null, old.terminal to old.routine)
+        val linked = json.decodeFromString<InboxItem>(
+            """{"id":"b","kind":"failed","title":"y","created":1,"source":"routine","terminal":"t9","routine":{"workspace":"w","name":"r"}}""",
+        )
+        assertEquals("t9" to RoutineRef("w", "r"), linked.terminal to linked.routine)
+    }
+
+    @Test
+    fun aWorkspaceLoopIsNoneAnyOrAList() {
+        fun ws(loop: String) = json.decodeFromString<Workspace>(
+            """{"name":"w","root":"/w","repos":[],"loop":$loop,"connections":[{"name":"github","default":true}]}""",
+        )
+        assertEquals(null, ws("null").loop)
+        assertEquals(LoopChecks.Any, ws("""{"checks":"any"}""").loop?.checks)
+        assertEquals(LoopChecks.List(listOf("make test")), ws("""{"checks":["make test"]}""").loop?.checks)
+        assertEquals(WorkspaceConnection("github", isDefault = true), ws("null").connections.single())
+        val back = json.decodeFromString<WorkspaceLoop>(json.encodeToString(WorkspaceLoop(LoopChecks.Any)))
+        assertEquals(LoopChecks.Any, back.checks)
     }
 
     @Test

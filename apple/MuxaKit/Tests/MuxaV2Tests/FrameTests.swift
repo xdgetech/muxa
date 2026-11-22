@@ -43,6 +43,36 @@ struct FrameTests {
         #expect(fields?["mcp"] as? [String] == ["docs"])
     }
 
+    @Test func taskActionsMatchTheSpec() throws {
+        func wire(_ r: V2Request) throws -> String { String(decoding: try r.json(id: 1), as: UTF8.self) }
+        #expect(try wire(.inboxApprove(item: "i3")) == #"{"id":1,"item":"i3","type":"inbox-approve"}"#)
+        #expect(try wire(.inboxApprove(item: "i3", worktree: .force))
+            == #"{"id":1,"item":"i3","type":"inbox-approve","worktree":"force"}"#)
+        #expect(try wire(.inboxRequestChanges(item: "i3", comment: "more"))
+            == #"{"comment":"more","id":1,"item":"i3","type":"inbox-request-changes"}"#)
+        #expect(try wire(.inboxRetry(item: "i3")) == #"{"id":1,"item":"i3","type":"inbox-retry"}"#)
+        #expect(try wire(.workspaces) == #"{"id":1,"type":"workspaces"}"#)
+    }
+
+    @Test func itemsSayWhatMadeThem() throws {
+        let wire = #"{"inbox":{"revision":1,"items":[{"id":"i1","kind":"review","title":"a","created":1,"source":"task","terminal":"t4"},{"id":"i2","kind":"failed","title":"b","created":1,"source":"routine","routine":{"workspace":"app","name":"digest"}},{"id":"i3","kind":"todo","title":"c","created":1,"source":"capture"}],"done":[]}}"#
+        let items = try (field("inbox", of: Data(wire.utf8)) as Inbox).items
+        #expect(items[0].terminal == "t4" && items[0].routine == nil)
+        #expect(items[1].routine == RoutineRef(workspace: "app", name: "digest") && items[1].terminal == nil)
+        #expect(items[2].terminal == nil && items[2].routine == nil)
+    }
+
+    @Test func workspacesDecodeEachLoopShape() throws {
+        let wire = #"{"workspaces":[{"name":"a","root":"/a","repos":["app"],"agent":"claude","loop":{"checks":"any"},"connections":[{"name":"github","default":true}]},{"name":"b","root":"/b","repos":[],"loop":{"checks":["make test"]},"connections":[]},{"name":"c","root":"/c","repos":[],"loop":null,"connections":[]}]}"#
+        let ws: [Workspace] = try field("workspaces", of: Data(wire.utf8))
+        #expect(ws[0] == Workspace(name: "a", root: "/a", repos: ["app"], agent: "claude", loop: WorkspaceLoop(checks: .any),
+                                   connections: [WorkspaceConnection(name: "github", isDefault: true)]))
+        #expect(ws[1].loop?.checks == .list(["make test"]) && ws[1].agent == nil)
+        #expect(ws[2].loop == nil)
+        let bad = #"{"workspaces":[{"name":"d","root":"/d","repos":[],"loop":{"checks":"all"},"connections":[]}]}"#
+        #expect(throws: (any Error).self) { let _: [Workspace] = try field("workspaces", of: Data(bad.utf8)) }
+    }
+
     @Test func itemsDecodeFromTheWire() throws {
         let wire = #"{"inbox":{"revision":3,"items":[{"id":"i1","kind":"todo","title":"milk","later_until":200,"created":5,"source":"capture"}],"done":[]}}"#
         let inbox: Inbox = try field("inbox", of: Data(wire.utf8))

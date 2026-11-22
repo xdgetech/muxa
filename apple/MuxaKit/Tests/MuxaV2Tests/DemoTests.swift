@@ -101,6 +101,71 @@ struct DemoTests {
         await #expect(throws: V2Error.self) { try await c.chatOpen("t3") }
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func workspacesListTheirReposChecksAndConnections() async throws {
+        let c = try await open()
+        let workspaces = try await c.workspaces()
+        #expect(workspaces.map(\.name) == ["app", "Personal"])
+        #expect(workspaces[0].repos == ["app", "docs"])
+        #expect(workspaces[0].loop?.checks == .list(["make test", "make lint"]))
+        #expect(workspaces[0].connections.filter(\.isDefault).map(\.name) == ["github"])
+        #expect(workspaces[1].loop == nil && workspaces[1].connections.isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func approveClosesTheTaskAndWatchersSeeIt() async throws {
+        let c = try await open()
+        try await c.watch()
+        var events = c.events.makeAsyncIterator()
+        let inbox = try await c.inbox(.inboxApprove(item: "d1"))
+        #expect(inbox.done.first?.id == "d1")
+        #expect(!inbox.items.contains { $0.id == "d1" })
+        #expect(await events.next() == .removed(terminal: "t1"))
+        #expect(await events.next() == .inbox(inbox))
+        #expect(try await c.terminals().map(\.id) == ["t2", "t3"])
+        await #expect(throws: V2Error.self) { try await c.inbox(.inboxApprove(item: "d2")) }
+        do {
+            _ = try await c.inbox(.inboxApprove(item: "nope"))
+            Issue.record("approve on a missing item")
+        } catch let V2Error.refused(code, _) {
+            #expect(code == "not-found")
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func requestChangesTypesTheCommentIntoTheAgent() async throws {
+        let c = try await open()
+        var events = c.events.makeAsyncIterator()
+        let ch = try await c.attach("t1", cols: 80, rows: 24)
+        _ = await events.next()
+        _ = await events.next()
+        await #expect(throws: V2Error.refused(code: "bad-request", message: "the comment is empty")) {
+            try await c.inbox(.inboxRequestChanges(item: "d1", comment: " "))
+        }
+        let inbox = try await c.inbox(.inboxRequestChanges(item: "d1", comment: "Add a test"))
+        #expect(inbox.done.first?.id == "d1")
+        #expect(await events.next() == .output(channel: ch, bytes: Array("Add a test\r\n".utf8)))
+        #expect(try await c.terminals().contains { $0.id == "t1" })
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func retryRunsWhatFailedAgain() async throws {
+        let c = try await open()
+        let routine = try await c.inbox(.inboxRetry(item: "d5"))
+        #expect(routine.done.first?.id == "d5")
+        let (routines, _) = try await c.routines()
+        #expect(routines.first { $0.name == "nightly-backup" }?.runningSince != nil)
+        let task = try await c.inbox(.inboxRetry(item: "d7"))
+        #expect(task.done.first?.id == "d7")
+        #expect(try await c.terminals().first { $0.id == "t2" }?.status?.state == "working")
+        do {
+            _ = try await c.inbox(.inboxRetry(item: "d1"))
+            Issue.record("retry on a Review item")
+        } catch let V2Error.refused(code, _) {
+            #expect(code == "bad-request")
+        }
+    }
+
     @Test func anUpdateReplacesEntriesByID() {
         let before = [ChatEntry(id: "a", kind: "user", text: "1"), ChatEntry(id: "b", kind: "tool")]
         let update = ChatUpdate(entries: [ChatEntry(id: "b", kind: "tool", text: "done"), ChatEntry(id: "c", kind: "notice")])

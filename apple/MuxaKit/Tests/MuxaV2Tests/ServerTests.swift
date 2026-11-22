@@ -105,6 +105,38 @@ struct ServerTests {
     }
 
     @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func workspacesListTheHostsWorkspaces() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        #expect(try await c.workspaces() == [
+            Workspace(name: "Personal", root: "/work", repos: ["app", "docs"], agent: "claude",
+                      loop: WorkspaceLoop(checks: .list(["make test"])),
+                      connections: [WorkspaceConnection(name: "github", isDefault: true)]),
+        ])
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
+    func approveClosesTheTaskAndRequestChangesResolves() async throws {
+        let server = try Server()
+        let c = try await server.connect()
+        let (agent, _) = try await c.startTask(workspace: "w", title: "close")
+        let review = try #require(try await c.inbox(.taskReview(terminal: agent.id)).items.first)
+        #expect(review.kind == .review && review.terminal == agent.id)
+        let approved = try await c.inbox(.inboxApprove(item: review.id))
+        #expect(approved.done.contains { $0.id == review.id })
+        #expect(!approved.items.contains { $0.id == review.id })
+        #expect(try await !c.terminals().contains { $0.id == agent.id })
+
+        let (other, _) = try await c.startTask(workspace: "w", title: "more")
+        let second = try #require(try await c.inbox(.taskReview(terminal: other.id)).items.first)
+        let changed = try await c.inbox(.inboxRequestChanges(item: second.id, comment: "Add a test"))
+        #expect(changed.done.contains { $0.id == second.id })
+        #expect(try await c.terminals().contains { $0.id == other.id })
+        await c.close()
+    }
+
+    @Test(.enabled(if: program != nil), .timeLimit(.minutes(1)))
     func aResumeContinuesWithoutAPaint() async throws {
         let server = try Server()
         let first = try await server.connect()

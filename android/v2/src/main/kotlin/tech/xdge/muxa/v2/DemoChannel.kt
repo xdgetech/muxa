@@ -55,7 +55,8 @@ data class DemoContent(
     val screens: Map<String, String>,
     val inbox: List<InboxItem>,
     val routines: List<Routine>,
-    val workspaces: List<String>,
+    /** Capture knows their names as `#Workspace`. */
+    val workspaces: List<Workspace>,
     /** What the Reader shows in every Task's folder, by kind. */
     val files: Map<ReaderKind, List<DemoFile>> = emptyMap(),
     /** Each Task agent's conversation, by terminal id. */
@@ -107,13 +108,19 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         if (seq > (applied[n] ?: 0)) {
             applied[n] = seq
             // The demo's program echoes; Return starts a new line.
-            val echo = bytes.flatMap { if (it == CR) listOf(CR, LF) else listOf(it) }.toByteArray()
-            screens[id] = (screens[id] ?: "") + echo.toString(Charsets.UTF_8)
-            val offset = offsets[n] ?: 0
-            write(Frame.withU64(n, offset, echo))
-            offsets[n] = offset + echo.size
+            show(id, bytes.flatMap { if (it == CR) listOf(CR, LF) else listOf(it) }.toByteArray())
         }
         write(Frame.ack(n, seq))
+    }
+
+    /** Adds [bytes] to the terminal's screen and to every channel attached to it. */
+    private fun show(terminal: String, bytes: ByteArray) {
+        screens[terminal] = (screens[terminal] ?: "") + bytes.toString(Charsets.UTF_8)
+        channels.filterValues { it == terminal }.keys.sorted().forEach { n ->
+            val offset = offsets[n] ?: 0
+            write(Frame.withU64(n, offset, bytes))
+            offsets[n] = offset + bytes.size
+        }
     }
 
     private fun control(m: JsonObject) {
@@ -182,8 +189,12 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
                 )
                 change(id) { it.copy(items = listOf(review) + it.items) }
             }
+            "inbox-approve" -> approve(id, item)
+            "inbox-request-changes" -> requestChanges(id, item, m.str("comment") ?: "")
+            "inbox-retry" -> retry(id, item)
+            "workspaces" -> reply(id, "workspaces" to enc(workspaces))
             "routines" -> reply(id, "routines" to enc(routines), "problems" to buildJsonArray {})
-            "run-routine" -> runRoutine(id, m.str("name") ?: "")
+            "run-routine" -> if (startRoutine(id, routines.indexOfFirst { it.name == m.str("name") })) reply(id)
             "reader-list" -> {
                 val kind = readerKind(id, m) ?: return
                 reply(id, "list" to enc(ReaderList(root = "app", entries = files[kind].orEmpty().map { it.entry })))
@@ -281,13 +292,70 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
     }
 
-    private fun runRoutine(id: Long, name: String) {
-        val at = routines.indexOfFirst { it.name == name }
-        if (at < 0) return send(error(id, "bad-request", "no Routine $name"))
-        if (routines[at].runningSince != null) return send(error(id, "conflict", "$name already runs"))
-        routines[at] = routines[at].copy(runningSince = now())
-        reply(id)
+    /** Marks the Routine at [at] running; false after an error. */
+    private fun startRoutine(id: Long, at: Int): Boolean {
+        if (at < 0) return false.also { send(error(id, "bad-request", "no such Routine")) }
+        val r = routines[at]
+        if (r.runningSince != null) return false.also { send(error(id, "conflict", "${r.name} already runs")) }
+        routines[at] = r.copy(runningSince = now())
+        return true
     }
+
+    /** Closes the Task: its agent terminal goes away. The demo has no unsaved work, so `worktree` is not needed. */
+    private fun approve(id: Long, item: String) {
+        val review = openItem(id, item, ItemKind.REVIEW) ?: return
+        val terminal = review.terminal ?: return send(error(id, "bad-request", "$item has no Task"))
+        channels.filterValues { it == terminal }.keys.sorted().forEach { n ->
+            channels.remove(n)
+            write(Frame(n, FrameKind.CLOSE, ByteArray(0)))
+        }
+        if (terminals.removeAll { it.id == terminal }) {
+            screens.remove(terminal)
+            if (watching) send(buildJsonObject { put("type", "removed"); put("terminal", terminal) })
+        }
+        resolve(id, review)
+    }
+
+    /** Types the comment to the Task's agent, as the user would. */
+    private fun requestChanges(id: Long, item: String, comment: String) {
+        val review = openItem(id, item, ItemKind.REVIEW) ?: return
+        val terminal = review.terminal ?: return send(error(id, "bad-request", "$item has no Task"))
+        if (comment.isBlank()) return send(error(id, "bad-request", "the comment is empty"))
+        show(terminal, "$comment\r\n".toByteArray(Charsets.UTF_8))
+        resolve(id, review)
+    }
+
+    /** Runs the item's Routine again, or wakes its Task's agent. */
+    private fun retry(id: Long, item: String) {
+        val failed = openItem(id, item, ItemKind.FAILED) ?: return
+        val routine = failed.routine
+        val terminal = failed.terminal
+        when {
+            routine != null -> {
+                val at = routines.indexOfFirst { it.workspace == routine.workspace && it.name == routine.name }
+                if (!startRoutine(id, at)) return
+            }
+            terminal != null -> {
+                val at = terminals.indexOfFirst { it.id == terminal }
+                if (at < 0) return send(error(id, "bad-request", "the Task's agent is gone"))
+                val t = terminals[at].copy(live = true, status = TerminalStatus("working", terminals[at].status?.app))
+                terminals[at] = t
+                if (watching) send(buildJsonObject { put("type", "changed"); put("terminal", enc(t)) })
+            }
+            else -> return send(error(id, "bad-request", "$item has no Routine or Task to retry"))
+        }
+        resolve(id, failed)
+    }
+
+    /** The open item of [kind], or null after an error. */
+    private fun openItem(id: Long, item: String, kind: ItemKind): InboxItem? {
+        val open = inbox.items.firstOrNull { it.id == item }
+        if (open == null && inbox.done.none { it.id == item }) return null.also { send(error(id, "not-found", "no such item")) }
+        if (open == null || open.kind != kind) return null.also { send(error(id, "bad-request", "$item is not an open ${kind.wire} item")) }
+        return open
+    }
+
+    private fun resolve(id: Long, item: InboxItem) = change(id) { i -> i.copy(items = i.items - item, done = listOf(item) + i.done) }
 
     /** Applies an Inbox change; null from [f] means the item was not found. */
     private fun change(id: Long, f: (Inbox) -> Inbox?) {
@@ -313,8 +381,8 @@ private class DemoServer(content: DemoContent, private val write: (Frame) -> Uni
         var workspace: String? = null
         words.removeAll { w ->
             if (workspace != null || !w.startsWith("#")) return@removeAll false
-            val ws = workspaces.firstOrNull { it.lowercase() == w.drop(1).lowercase() } ?: return@removeAll false
-            workspace = ws
+            val ws = workspaces.firstOrNull { it.name.lowercase() == w.drop(1).lowercase() } ?: return@removeAll false
+            workspace = ws.name
             true
         }
         return Capture(kind, words.joinToString(" "), workspace, due)
@@ -372,8 +440,17 @@ private fun standardContent(): DemoContent {
         labels = agentLabels(branch, "/demo/app", "/demo/app-$branch"), cols = 80, rows = 24,
     )
 
-    fun item(id: String, kind: ItemKind, title: String, note: String? = null, workspace: String? = "app", due: String? = null, source: String) =
-        InboxItem(id, kind, title, note, workspace, due, created = 1_764_000_000, source = source)
+    fun item(
+        id: String,
+        kind: ItemKind,
+        title: String,
+        note: String? = null,
+        workspace: String? = "app",
+        due: String? = null,
+        source: String,
+        terminal: String? = null,
+        routine: RoutineRef? = null,
+    ) = InboxItem(id, kind, title, note, workspace, due, created = 1_764_000_000, source = source, terminal = terminal, routine = routine)
 
     fun routine(name: String, at: String?, last: RoutineLast?) =
         Routine("app", name, enabled = true, at = at, timezone = at?.let { "Europe/Berlin" }, last = last)
@@ -390,11 +467,11 @@ private fun standardContent(): DemoContent {
             "t3" to "$ ",
         ),
         inbox = listOf(
-            item("d1", ItemKind.REVIEW, "Review fix-login", note = "Draft PR #42: refresh the session before it expires.", source = "task"),
+            item("d1", ItemKind.REVIEW, "Review fix-login", note = "Draft PR #42: refresh the session before it expires.", source = "task", terminal = "t1"),
             item("d2", ItemKind.REPLY, "Reply to Anna about the launch date", workspace = "Personal", due = "2026-11-27", source = "capture"),
             item("d3", ItemKind.DECIDE, "Upgrade the database to Postgres 17?", note = "Two extensions need a new version first.", source = "routine"),
             item("d4", ItemKind.READ, "Weekly dependency digest", note = "3 updates, 1 security fix.", source = "routine"),
-            item("d5", ItemKind.FAILED, "nightly-backup failed", note = "gh login expired.", source = "routine"),
+            item("d5", ItemKind.FAILED, "nightly-backup failed", note = "gh login expired.", source = "routine", routine = RoutineRef("app", "nightly-backup")),
             item("d6", ItemKind.TODO, "Renew the domain", workspace = "Personal", due = "2026-12-01", source = "capture"),
         ),
         routines = listOf(
@@ -402,7 +479,14 @@ private fun standardContent(): DemoContent {
             routine("nightly-backup", "02:00", RoutineLast(1_764_000_000, ok = false, reason = "gh login expired.")),
             routine("release-notes", null, null),
         ),
-        workspaces = listOf("app", "Personal"),
+        workspaces = listOf(
+            Workspace(
+                "app", "/demo", listOf("app", "docs"), agent = "claude",
+                loop = WorkspaceLoop(LoopChecks.List(listOf("make test", "make lint"))),
+                connections = listOf(WorkspaceConnection("github", isDefault = true), WorkspaceConnection("linear", isDefault = false)),
+            ),
+            Workspace("Personal", "/demo/personal", emptyList(), agent = "claude"),
+        ),
         files = mapOf(
             ReaderKind.DOCS to listOf(
                 DemoFile(ReaderEntry("PLAN.md"), ReaderContent("PLAN.md", text = DEMO_PLAN)),

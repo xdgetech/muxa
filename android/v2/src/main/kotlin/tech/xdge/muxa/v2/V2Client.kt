@@ -165,6 +165,9 @@ class V2Client private constructor(private val channel: ByteChannel, initial: St
     /** Any Inbox request; the reply is the whole Inbox. */
     suspend fun inbox(r: V2Request = V2Request.GetInbox): Inbox = field("inbox", request(r))
 
+    /** The host's Workspaces, with what starting a Task in each may use. */
+    suspend fun workspaces(): List<Workspace> = field("workspaces", request(V2Request.Workspaces))
+
     /** The Routines, and the Workspaces whose Routines could not be read. */
     suspend fun routines(): Pair<List<Routine>, List<RoutineProblem>> {
         val reply = request(V2Request.Routines)

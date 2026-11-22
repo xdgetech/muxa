@@ -39,6 +39,16 @@ sealed interface V2Request {
     data class InboxReopen(val item: String) : V2Request
     data class InboxDelete(val item: String) : V2Request
     data class TaskReview(val terminal: String, val note: String? = null) : V2Request
+
+    /** Closes the Task of a Review item. Refused with `would-lose-work` unless [worktree] is [WorktreeChoice.FORCE]. */
+    data class InboxApprove(val item: String, val worktree: WorktreeChoice? = null) : V2Request
+
+    /** Types [comment] to the Task's agent and resolves the Review item. */
+    data class InboxRequestChanges(val item: String, val comment: String) : V2Request
+
+    /** Runs a Failed item's Routine or Task again. */
+    data class InboxRetry(val item: String) : V2Request
+    data object Workspaces : V2Request
     data object Routines : V2Request
     data class RunRoutine(val workspace: String, val name: String) : V2Request
     data class ReaderListOf(val terminal: String, val kind: ReaderKind, val html: Boolean = false) : V2Request
@@ -84,6 +94,10 @@ sealed interface V2Request {
             is InboxReopen -> { type("inbox-reopen"); put("item", r.item) }
             is InboxDelete -> { type("inbox-delete"); put("item", r.item) }
             is TaskReview -> { type("task-review"); put("terminal", r.terminal); opt("note", r.note) }
+            is InboxApprove -> { type("inbox-approve"); put("item", r.item); opt("worktree", r.worktree?.wire) }
+            is InboxRequestChanges -> { type("inbox-request-changes"); put("item", r.item); put("comment", r.comment) }
+            is InboxRetry -> { type("inbox-retry"); put("item", r.item) }
+            Workspaces -> type("workspaces")
             Routines -> type("routines")
             is RunRoutine -> { type("run-routine"); put("workspace", r.workspace); put("name", r.name) }
             is ReaderListOf -> { type("reader-list"); put("terminal", r.terminal); put("kind", r.kind.wire); put("html", r.html) }

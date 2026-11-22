@@ -18,9 +18,109 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
     public var created: Int64
     /// `capture`, `task` or `routine`.
     public var source: String
+    /// The Task agent terminal that made the item.
+    public var terminal: String?
+    /// The Routine that made the item.
+    public var routine: RoutineRef?
 
     /// Hidden by Later at `now` (Unix seconds).
     public func isLater(now: Int64) -> Bool { (laterUntil ?? 0) > now }
+}
+
+/// A Routine's id.
+public struct RoutineRef: Codable, Equatable, Sendable {
+    public var workspace: String
+    public var name: String
+
+    public init(workspace: String, name: String) {
+        self.workspace = workspace
+        self.name = name
+    }
+}
+
+/// What closing a Task does with a branch worktree that holds work.
+public enum WorktreeChoice: String, Codable, Sendable {
+    /// Only a clean and merged worktree goes; else `refused(code: "would-lose-work")`.
+    case remove
+    /// It goes anyway, with its branch.
+    case force
+}
+
+/// A Workspace as a client may see it, for starting a Task. Nothing secret.
+public struct Workspace: Codable, Equatable, Sendable, Identifiable {
+    public var name: String
+    public var root: String
+    /// The repos as `startTask` takes them.
+    public var repos: [String]
+    /// The agent's program name, e.g. `claude`.
+    public var agent: String?
+    /// Nil when the Workspace runs no Task Loops.
+    public var loop: WorkspaceLoop?
+    public var connections: [WorkspaceConnection]
+
+    public var id: String { name }
+
+    public init(name: String, root: String, repos: [String] = [], agent: String? = nil, loop: WorkspaceLoop? = nil,
+                connections: [WorkspaceConnection] = []) {
+        self.name = name
+        self.root = root
+        self.repos = repos
+        self.agent = agent
+        self.loop = loop
+        self.connections = connections
+    }
+}
+
+public struct WorkspaceLoop: Codable, Equatable, Sendable {
+    public var checks: LoopChecks
+
+    public init(checks: LoopChecks) { self.checks = checks }
+}
+
+/// The checks a Task Loop may run: `"any"` or a list on the wire.
+public enum LoopChecks: Codable, Equatable, Sendable {
+    case any
+    case list([String])
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let list = try? c.decode([String].self) {
+            self = .list(list)
+            return
+        }
+        let word = try c.decode(String.self)
+        guard word == "any" else {
+            throw DecodingError.dataCorruptedError(in: c, debugDescription: "checks is \"any\" or a list, not \(word)")
+        }
+        self = .any
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .any: try c.encode("any")
+        case let .list(list): try c.encode(list)
+        }
+    }
+}
+
+/// A connection's name only; its secret never crosses the wire (ADR 0069).
+public struct WorkspaceConnection: Codable, Equatable, Sendable, Identifiable {
+    public var name: String
+    /// On for every Task and Routine of the Workspace.
+    public var isDefault: Bool
+
+    public var id: String { name }
+
+    public init(name: String, isDefault: Bool) {
+        self.name = name
+        self.isDefault = isDefault
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case isDefault = "default"
+    }
 }
 
 /// Open items in the user's order, then recent done ones.

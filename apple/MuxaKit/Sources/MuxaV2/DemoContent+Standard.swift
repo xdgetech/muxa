@@ -11,9 +11,9 @@ extension DemoContent {
                 cols: 80, rows: 24)
         }
         func item(_ id: String, _ kind: ItemKind, _ title: String, note: String? = nil, workspace: String? = "app",
-                  due: String? = nil, source: String) -> InboxItem {
+                  due: String? = nil, source: String, terminal: String? = nil, routine: RoutineRef? = nil) -> InboxItem {
             InboxItem(id: id, kind: kind, title: title, note: note, workspace: workspace, due: due,
-                      laterUntil: nil, created: 1_764_000_000, source: source)
+                      laterUntil: nil, created: 1_764_000_000, source: source, terminal: terminal, routine: routine)
         }
         func routine(_ name: String, at: String?, last: RoutineLast?) -> Routine {
             Routine(workspace: "app", name: name, enabled: true, at: at, timezone: at.map { _ in "Europe/Berlin" },
@@ -31,12 +31,16 @@ extension DemoContent {
                 "t3": "$ ",
             ],
             inbox: [
-                item("d1", .review, "Review fix-login", note: "Draft PR #42: refresh the session before it expires.", source: "task"),
+                item("d1", .review, "Review fix-login", note: "Draft PR #42: refresh the session before it expires.", source: "task",
+                     terminal: "t1"),
                 item("d2", .reply, "Reply to Anna about the launch date", workspace: "Personal", due: "2026-11-27", source: "capture"),
                 item("d3", .decide, "Upgrade the database to Postgres 17?", note: "Two extensions need a new version first.", source: "routine"),
                 item("d4", .read, "Weekly dependency digest", note: "3 updates, 1 security fix.", source: "routine"),
-                item("d5", .failed, "nightly-backup failed", note: "gh login expired.", source: "routine"),
+                item("d5", .failed, "nightly-backup failed", note: "gh login expired.", source: "routine",
+                     routine: RoutineRef(workspace: "app", name: "nightly-backup")),
                 item("d6", .todo, "Renew the domain", workspace: "Personal", due: "2026-12-01", source: "capture"),
+                item("d7", .failed, "The agent of docs-audit stopped", note: "It exited with code 1.", source: "task",
+                     terminal: "t2"),
             ],
             routines: [
                 routine("dependency-digest", at: "09:00", last: RoutineLast(at: 1_764_000_000, ok: true, reason: nil, published: 1)),
@@ -44,6 +48,13 @@ extension DemoContent {
                 routine("release-notes", at: nil, last: nil),
             ],
             workspaces: ["app", "Personal"],
+            taskWorkspaces: [
+                Workspace(name: "app", root: "/demo", repos: ["app", "docs"], agent: "claude",
+                          loop: WorkspaceLoop(checks: .list(["make test", "make lint"])),
+                          connections: [WorkspaceConnection(name: "github", isDefault: true),
+                                        WorkspaceConnection(name: "linear", isDefault: false)]),
+                Workspace(name: "Personal", root: "/demo/personal", agent: "claude"),
+            ],
             files: [
                 .docs: [
                     DemoFile(entry: ReaderEntry(path: "PLAN.md"), content: ReaderContent(path: "PLAN.md", text: plan)),

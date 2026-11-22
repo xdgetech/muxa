@@ -147,9 +147,15 @@ public actor V2Client {
         try field("capture", of: await request(.parseCapture(text: text, today: today)))
     }
 
-    /// Any Inbox request; the reply is the whole Inbox.
+    /// Any Inbox request; the reply is the whole Inbox. `inboxApprove` is
+    /// `refused(code: "would-lose-work")` while the Task's worktree holds work.
     public func inbox(_ r: V2Request = .inbox) async throws -> Inbox {
         try field("inbox", of: await request(r))
+    }
+
+    /// The host's Workspaces, for starting a Task.
+    public func workspaces() async throws -> [Workspace] {
+        try field("workspaces", of: await request(.workspaces))
     }
 
     public func routines() async throws -> (routines: [Routine], problems: [RoutineProblem]) {

@@ -21,6 +21,12 @@ public enum V2Request: Sendable {
     case inboxDone(item: String)
     case inboxReopen(item: String)
     case inboxDelete(item: String)
+    /// Closes the Review item's Task. `worktree` nil means `remove`.
+    case inboxApprove(item: String, worktree: WorktreeChoice? = nil)
+    /// Types `comment` into the Review item's Task agent and resolves the item.
+    case inboxRequestChanges(item: String, comment: String)
+    /// Runs again what made a Failed item and resolves it.
+    case inboxRetry(item: String)
     case taskReview(terminal: String, note: String? = nil)
     case routines
     case runRoutine(workspace: String, name: String)
@@ -32,6 +38,7 @@ public enum V2Request: Sendable {
     case loopStop(terminal: String)
     case chatOpen(terminal: String)
     case chatClose(chat: UInt32)
+    case workspaces
 
     func json(id: UInt64) throws -> Data {
         var m: [String: Any] = ["id": id]
@@ -59,6 +66,11 @@ public enum V2Request: Sendable {
         case let .inboxDone(item): set("inbox-done", ["item": item])
         case let .inboxReopen(item): set("inbox-reopen", ["item": item])
         case let .inboxDelete(item): set("inbox-delete", ["item": item])
+        case let .inboxApprove(item, worktree):
+            set("inbox-approve", ["item": item, "worktree": worktree?.rawValue])
+        case let .inboxRequestChanges(item, comment):
+            set("inbox-request-changes", ["item": item, "comment": comment])
+        case let .inboxRetry(item): set("inbox-retry", ["item": item])
         case let .taskReview(terminal, note): set("task-review", ["terminal": terminal, "note": note])
         case .routines: set("routines", [:])
         case let .runRoutine(workspace, name): set("run-routine", ["workspace": workspace, "name": name])
@@ -74,6 +86,7 @@ public enum V2Request: Sendable {
         case let .loopStop(terminal): set("loop-stop", ["terminal": terminal])
         case let .chatOpen(terminal): set("chat-open", ["terminal": terminal])
         case let .chatClose(chat): set("chat-close", ["chat": chat])
+        case .workspaces: set("workspaces", [:])
         }
         return try JSONSerialization.data(withJSONObject: m, options: [.sortedKeys])
     }
