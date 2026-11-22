@@ -9,8 +9,10 @@ use std::path::{Path, PathBuf};
 
 use muxa_backend::{Labels, Launch, SessionBackend, TerminalInfo};
 use muxa_protocol::v2::{
-    Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList, Routine, RoutineProblem,
+    LoopInfo, LoopSpec, Place, PlaceSpec, ReaderContent, ReaderKind, ReaderList, Routine,
+    RoutineProblem,
 };
+use tokio::sync::watch;
 
 use crate::reader::ReaderOpen;
 
@@ -105,6 +107,42 @@ pub trait Host: Send + Sync {
         _name: &str,
     ) -> impl Future<Output = Result<(), TaskError>> + Send {
         async { Err(TaskError::Invalid("this host runs no Routines".into())) }
+    }
+
+    /// Checks a Task Loop for `workspace` before its Task starts.
+    fn loop_check(
+        &self,
+        _workspace: &str,
+        _spec: &LoopSpec,
+    ) -> impl Future<Output = Result<(), TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host runs no Task Loops".into())) }
+    }
+
+    /// Starts the Task Loop of `agent`, a Task's agent terminal.
+    fn loop_start(
+        &self,
+        _agent: &TerminalInfo,
+        _spec: &LoopSpec,
+        _reset: bool,
+    ) -> impl Future<Output = Result<LoopInfo, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host runs no Task Loops".into())) }
+    }
+
+    fn loop_stop(
+        &self,
+        _terminal: &str,
+    ) -> impl Future<Output = Result<LoopInfo, TaskError>> + Send {
+        async { Err(TaskError::Invalid("this host runs no Task Loops".into())) }
+    }
+
+    /// The loops of the live Task agents.
+    fn loops(&self) -> impl Future<Output = Vec<LoopInfo>> + Send {
+        async { Vec::new() }
+    }
+
+    /// Bumped when a loop changes, for `watch`. None: no loops here.
+    fn loop_changes(&self) -> Option<watch::Receiver<u64>> {
+        None
     }
 
     /// The files of `kind` in `dir` the Reader may open. Nothing else is served.

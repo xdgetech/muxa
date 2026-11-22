@@ -5,9 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use muxa_backend::fake::FakeBackend;
-use muxa_backend::{Exit, Launch, SessionBackend, TerminalId};
+use muxa_backend::{Exit, Launch, SessionBackend, TerminalId, TerminalInfo};
 use muxa_protocol::v2::{
-    Frame, INITIAL_CREDIT, Kind, ReaderContent, ReaderEntry, ReaderKind, ReaderList,
+    Frame, INITIAL_CREDIT, Kind, LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind,
+    ReaderList,
 };
 use muxa_server::{
     Config, Host, Inbox, Prepared, ReaderOpen, RoutineList, ServeError, Services, Sessions,
@@ -76,6 +77,36 @@ impl Host for FakeTasks {
         }
     }
 
+    async fn loop_check(&self, _workspace: &str, spec: &LoopSpec) -> Result<(), TaskError> {
+        match spec.check.as_deref() {
+            Some("make test") => Ok(()),
+            _ => Err(TaskError::Invalid("that check is not allowed".into())),
+        }
+    }
+
+    async fn loop_start(
+        &self,
+        agent: &TerminalInfo,
+        spec: &LoopSpec,
+        _reset: bool,
+    ) -> Result<LoopInfo, TaskError> {
+        self.loop_check("", spec).await?;
+        bump_loops();
+        Ok(loop_info(agent.id.as_str(), "armed"))
+    }
+
+    async fn loop_stop(&self, terminal: &str) -> Result<LoopInfo, TaskError> {
+        Ok(loop_info(terminal, "stopped"))
+    }
+
+    async fn loops(&self) -> Vec<LoopInfo> {
+        vec![loop_info("t1", "armed")]
+    }
+
+    fn loop_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        Some(LOOP_CHANGES.with(|c| c.subscribe()))
+    }
+
     /// The Markdown files directly in `dir`.
     async fn reader_list(
         &self,
@@ -107,6 +138,30 @@ impl Host for FakeTasks {
             text: Some(text),
             ..ReaderContent::default()
         })
+    }
+}
+
+thread_local! {
+    /// Per test: each test's runtime, server included, runs on its own thread.
+    static LOOP_CHANGES: tokio::sync::watch::Sender<u64> = tokio::sync::watch::channel(0).0;
+}
+
+fn bump_loops() {
+    LOOP_CHANGES.with(|c| c.send_modify(|n| *n += 1));
+}
+
+fn loop_info(terminal: &str, state: &str) -> LoopInfo {
+    LoopInfo {
+        terminal: terminal.into(),
+        check: "make test".into(),
+        max_attempts: 3,
+        timeout: 600,
+        state: state.into(),
+        attempts: 0,
+        armed_at: 1,
+        since: 1,
+        reason: None,
+        last_check: None,
     }
 }
 
@@ -1029,4 +1084,61 @@ async fn the_reader_follows_a_file_of_the_terminals_folder() {
     .await;
     assert_eq!(refused["code"], "bad-request");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_task_starts_with_its_loop_and_watchers_see_loop_changes() {
+    let backend = FakeBackend::new();
+    let mut client = Client::start(&backend, 2).await;
+    client.welcome().await;
+    let refused = request(
+        &mut client,
+        json!({"type": "start-task", "id": 1, "workspace": "w", "title": "bad",
+               "loop": {"check": "rm -rf /"}}),
+    )
+    .await;
+    assert_eq!(refused["code"], "bad-request");
+    assert!(
+        backend.launches().is_empty(),
+        "a refused loop starts no agent"
+    );
+    let started = request(
+        &mut client,
+        json!({"type": "start-task", "id": 2, "workspace": "w", "title": "fix",
+               "loop": {"check": "make test"}}),
+    )
+    .await;
+    let agent = started["terminal"]["id"].clone();
+    assert_eq!(
+        request(&mut client, json!({"type": "watch", "id": 3})).await["type"],
+        "reply"
+    );
+    let again = request(
+        &mut client,
+        json!({"type": "loop-start", "id": 4, "terminal": agent, "loop": {"check": "make test"}, "reset": true}),
+    )
+    .await;
+    assert_eq!(again["loop"]["state"], "armed");
+    let note = loop {
+        let n = client.read_control().await;
+        if n["type"] == "loops" {
+            break n;
+        }
+    };
+    assert_eq!(note["loops"][0]["check"], "make test");
+    let stopped = request(
+        &mut client,
+        json!({"type": "loop-stop", "id": 5, "terminal": agent}),
+    )
+    .await;
+    assert_eq!(stopped["loop"]["state"], "stopped");
+    let listed = request(&mut client, json!({"type": "loops", "id": 6})).await;
+    assert_eq!(listed["loops"].as_array().unwrap().len(), 1);
+    let shell = terminal(&backend).await;
+    let not_agent = request(
+        &mut client,
+        json!({"type": "loop-start", "id": 7, "terminal": shell.as_str(), "loop": {"check": "make test"}}),
+    )
+    .await;
+    assert_eq!(not_agent["code"], "bad-request");
 }

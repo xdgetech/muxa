@@ -497,7 +497,8 @@ fn close(s: &mut RoutineState, occurrence: &str, id: &str, why: &str, at: u64) {
 }
 
 /// Types `line` and Return into the terminal.
-async fn type_line<B: SessionBackend>(
+/// Types `line` and Enter into the terminal.
+pub(crate) async fn type_line<B: SessionBackend>(
     backend: &B,
     id: &TerminalId,
     line: &str,

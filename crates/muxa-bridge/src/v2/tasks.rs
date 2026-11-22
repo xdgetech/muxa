@@ -8,6 +8,7 @@ use muxa_server::{Host, Prepared, RoutineList, TaskError, TaskSpec};
 
 use super::places;
 use super::runner::Runner;
+use super::task_loop::TaskLoops;
 use crate::records::workers::LaunchCommand;
 use crate::routines::runs::{StartError, When};
 use crate::task_records;
@@ -19,6 +20,7 @@ pub struct BridgeHost {
     records: Arc<task_records::Config>,
     /// Runs Routines on the session backend, for Run now.
     runner: Option<Arc<Runner>>,
+    loops: Option<Arc<TaskLoops>>,
 }
 
 impl BridgeHost {
@@ -27,6 +29,20 @@ impl BridgeHost {
             command,
             records,
             runner: None,
+            loops: None,
+        }
+    }
+
+    fn task_loops(&self) -> Result<&TaskLoops, TaskError> {
+        self.loops
+            .as_deref()
+            .ok_or_else(|| TaskError::Invalid("this host runs no Task Loops".into()))
+    }
+
+    pub fn with_loops(self, loops: Arc<TaskLoops>) -> Self {
+        BridgeHost {
+            loops: Some(loops),
+            ..self
         }
     }
 
@@ -143,6 +159,38 @@ impl Host for BridgeHost {
                 StartError::Handled => TaskError::Busy(e.to_string()),
                 StartError::Failed(m) => TaskError::Failed(m),
             })
+    }
+
+    async fn loop_check(
+        &self,
+        workspace: &str,
+        spec: &muxa_protocol::v2::LoopSpec,
+    ) -> Result<(), TaskError> {
+        self.task_loops()?.resolve(workspace, spec).await.map(drop)
+    }
+
+    async fn loop_start(
+        &self,
+        agent: &muxa_backend::TerminalInfo,
+        spec: &muxa_protocol::v2::LoopSpec,
+        reset: bool,
+    ) -> Result<muxa_protocol::v2::LoopInfo, TaskError> {
+        self.task_loops()?.start(agent, spec, reset).await
+    }
+
+    async fn loop_stop(&self, terminal: &str) -> Result<muxa_protocol::v2::LoopInfo, TaskError> {
+        self.task_loops()?.stop(terminal).await
+    }
+
+    async fn loops(&self) -> Vec<muxa_protocol::v2::LoopInfo> {
+        match &self.loops {
+            Some(l) => l.list().await,
+            None => Vec::new(),
+        }
+    }
+
+    fn loop_changes(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        self.loops.as_ref().map(|l| l.subscribe())
     }
 
     async fn reader_list(

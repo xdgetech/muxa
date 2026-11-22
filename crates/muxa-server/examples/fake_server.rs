@@ -1,17 +1,19 @@
 //! The v2 server on the fake backend at a Unix socket, for client tests in
 //! other languages (`make test-apple-v2`). One terminal, `demo`, shows
 //! `hello ` and echoes input as `echo:<bytes>`. Its folder's Reader has one
-//! document, one changed file and one image, all fixed.
+//! document, one changed file and one image, all fixed. A Task Loop with the
+//! check `make test` starts and stops, and runs nothing.
 //!
 //! Usage: `fake_server SOCKET`. It runs until killed.
 
 use std::path::Path;
 use std::sync::Arc;
 
+use muxa_backend::TerminalInfo;
 use muxa_backend::fake::FakeBackend;
 use muxa_backend::{Launch, SessionBackend};
 use muxa_protocol::ChangeStatus;
-use muxa_protocol::v2::{ReaderContent, ReaderEntry, ReaderKind, ReaderList};
+use muxa_protocol::v2::{LoopInfo, LoopSpec, ReaderContent, ReaderEntry, ReaderKind, ReaderList};
 use muxa_server::{
     Config, Host, Inbox, PARK, Prepared, ReaderOpen, RoutineList, Services, Sessions, TaskError,
     TaskSpec, serve,
@@ -69,6 +71,29 @@ impl Host for FakeHost {
         }
     }
 
+    async fn loop_check(&self, _workspace: &str, spec: &LoopSpec) -> Result<(), TaskError> {
+        match spec.check.as_deref() {
+            Some("make test") | None => Ok(()),
+            Some(_) => Err(TaskError::Invalid(
+                "the workspace allows only make test".into(),
+            )),
+        }
+    }
+
+    async fn loop_start(
+        &self,
+        agent: &TerminalInfo,
+        spec: &LoopSpec,
+        _reset: bool,
+    ) -> Result<LoopInfo, TaskError> {
+        self.loop_check("", spec).await?;
+        Ok(fake_loop(agent.id.as_str(), "armed", None))
+    }
+
+    async fn loop_stop(&self, terminal: &str) -> Result<LoopInfo, TaskError> {
+        Ok(fake_loop(terminal, "stopped", Some("user")))
+    }
+
     async fn reader_list(
         &self,
         _dir: &Path,
@@ -122,6 +147,21 @@ impl Host for FakeHost {
             data: data.map(str::to_owned),
             ..ReaderContent::default()
         })
+    }
+}
+
+fn fake_loop(terminal: &str, state: &str, reason: Option<&str>) -> LoopInfo {
+    LoopInfo {
+        terminal: terminal.into(),
+        check: "make test".into(),
+        max_attempts: 3,
+        timeout: 600,
+        state: state.into(),
+        attempts: 0,
+        armed_at: 1,
+        since: 1,
+        reason: reason.map(str::to_owned),
+        last_check: None,
     }
 }
 

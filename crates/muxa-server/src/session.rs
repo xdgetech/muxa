@@ -64,6 +64,8 @@ struct Session<'a, B: SessionBackend, H: Host> {
     inbox: &'a Inbox,
     /// The Inbox's revisions, after `watch`.
     inbox_watch: Option<watch::Receiver<u64>>,
+    /// The host's Task Loop changes, after `watch`.
+    loop_watch: Option<watch::Receiver<u64>>,
     /// The backend's changes, after `watch`.
     changes: Option<B::Changes>,
     out: mpsc::UnboundedSender<Frame>,
@@ -119,6 +121,7 @@ where
         host,
         inbox,
         inbox_watch: None,
+        loop_watch: None,
         changes: None,
         out,
         ended,
@@ -159,6 +162,10 @@ where
             change = next_change(&mut session.changes) => session.change(change).await,
             _ = reader_tick.tick(), if !session.readers.open.is_empty() => {
                 session.refresh_readers().await;
+            }
+            () = next_revision(&mut session.loop_watch) => {
+                let loops = session.host.loops().await;
+                send(&session.out, &ServerMsg::Loops { loops });
             }
             () = next_revision(&mut session.inbox_watch) => {
                 let inbox = session.inbox.view();
@@ -326,6 +333,7 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 places,
                 connections,
                 plan,
+                task_loop,
             } => {
                 let spec = TaskSpec {
                     workspace,
@@ -335,8 +343,35 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                     connections,
                     plan,
                 };
-                self.start_task(id, &spec).await;
+                self.start_task(id, &spec, task_loop).await;
             }
+            ClientMsg::Loops { id } => {
+                let loops = self.host.loops().await;
+                self.reply(id, Reply::Loops { loops });
+            }
+            ClientMsg::LoopStart {
+                id,
+                terminal,
+                spec,
+                reset,
+            } => {
+                let started = match self.agent(&terminal).await {
+                    Ok(t) => self
+                        .host
+                        .loop_start(&t, &spec, reset)
+                        .await
+                        .map_err(|e| (task_code(&e), e.to_string())),
+                    Err(e) => Err(e),
+                };
+                match started {
+                    Ok(info) => self.reply(id, Reply::Loop { info }),
+                    Err((code, message)) => self.error(Some(id), code, message),
+                }
+            }
+            ClientMsg::LoopStop { id, terminal } => match self.host.loop_stop(&terminal).await {
+                Ok(info) => self.reply(id, Reply::Loop { info }),
+                Err(e) => self.error(Some(id), task_code(&e), e.to_string()),
+            },
             ClientMsg::Watch { id } => self.watch(id).await,
             ClientMsg::Routines { id } => match self.host.routines().await {
                 Ok(list) => self.reply(
@@ -455,7 +490,29 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         }
     }
 
-    async fn start_task(&mut self, id: u64, spec: &TaskSpec) {
+    /// `terminal` when it is a Task's agent.
+    async fn agent(&self, terminal: &str) -> Result<TerminalInfo, (ErrorCode, String)> {
+        let t = self
+            .backend
+            .get(&TerminalId::new(terminal.to_owned()))
+            .await
+            .map_err(|e| (code_of(&e), e.to_string()))?;
+        if task_items::is_agent(&t) {
+            Ok(t)
+        } else {
+            Err((
+                ErrorCode::BadRequest,
+                format!("{terminal} is not a Task's agent; start Tasks with start-task"),
+            ))
+        }
+    }
+
+    async fn start_task(&mut self, id: u64, spec: &TaskSpec, task_loop: Option<v2::LoopSpec>) {
+        if let Some(l) = &task_loop
+            && let Err(e) = self.host.loop_check(&spec.workspace, l).await
+        {
+            return self.error(Some(id), task_code(&e), e.to_string());
+        }
         let prepared = match self.host.prepare(spec).await {
             Ok(p) => p,
             Err(e) => {
@@ -467,6 +524,12 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
         match tasks::start(self.backend, prepared).await {
             Ok((terminal, existing)) => {
                 tracing::info!(terminal = %terminal.id, existing, "task agent");
+                if let Some(l) = &task_loop
+                    && let Err(e) = self.host.loop_start(&terminal, l, false).await
+                {
+                    let message = format!("the Task started, but its loop did not: {e}");
+                    return self.error(Some(id), task_code(&e), message);
+                }
                 self.reply(
                     id,
                     Reply::Started {
@@ -487,6 +550,10 @@ impl<B: SessionBackend, H: Host> Session<'_, B, H> {
                 let mut revisions = self.inbox.subscribe();
                 revisions.mark_unchanged();
                 self.inbox_watch = Some(revisions);
+                self.loop_watch = self.host.loop_changes().map(|mut r| {
+                    r.mark_unchanged();
+                    r
+                });
                 self.reply(id, Reply::Empty {});
             }
             Err(e) => self.error(Some(id), code_of(&e), e.to_string()),

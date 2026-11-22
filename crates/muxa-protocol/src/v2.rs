@@ -287,6 +287,9 @@ pub enum ClientMsg {
         /// Claude Code starts in plan mode (ADR 0060).
         #[serde(default)]
         plan: bool,
+        /// A Task Loop on the agent from its start.
+        #[serde(default, rename = "loop")]
+        task_loop: Option<LoopSpec>,
     },
     /// Asks for `changed`, `removed`, `resync` and `inbox` notifications.
     Watch {
@@ -379,6 +382,70 @@ pub enum ClientMsg {
         id: u64,
         reader: u32,
     },
+    /// The Task Loops of the live Task agents.
+    Loops {
+        id: u64,
+    },
+    /// Starts or restarts the Task Loop of an agent terminal.
+    LoopStart {
+        id: u64,
+        terminal: String,
+        #[serde(rename = "loop")]
+        spec: LoopSpec,
+        /// The failed checks count from 0 again.
+        #[serde(default)]
+        reset: bool,
+    },
+    LoopStop {
+        id: u64,
+        terminal: String,
+    },
+}
+
+/// A Task Loop a client asks for (ADR 0019): after each finished turn the
+/// host runs `check` in the working place.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoopSpec {
+    /// Absent: the Workspace's only allowed check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<String>,
+    /// 1 to 10, default 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_attempts: Option<u32>,
+    /// Seconds one check may run: 10 to 3600, default 600.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
+}
+
+/// Where a Task Loop stands. Times are Unix seconds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoopInfo {
+    pub terminal: String,
+    pub check: String,
+    pub max_attempts: u32,
+    pub timeout: u64,
+    /// `armed`, `checking`, `paused`, `passed` or `stopped`.
+    pub state: String,
+    /// Failed checks so far.
+    pub attempts: u32,
+    pub armed_at: u64,
+    /// When `state` last changed.
+    pub since: u64,
+    /// Why it is paused or stopped: `waiting`, `limit`, `error`, `no-agent`, `user`…
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_check: Option<LastCheck>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LastCheck {
+    pub attempt: u32,
+    /// Absent when the check timed out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit: Option<i32>,
+    pub seconds: u64,
+    pub at: u64,
 }
 
 /// What the Reader lists and opens.
@@ -656,6 +723,10 @@ pub enum ServerMsg {
         reader: u32,
         reason: String,
     },
+    /// After `watch`: a Task Loop changed. It carries every loop.
+    Loops {
+        loops: Vec<LoopInfo>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -687,6 +758,13 @@ pub enum Reply {
     Opened {
         reader: u32,
         content: ReaderContent,
+    },
+    Loops {
+        loops: Vec<LoopInfo>,
+    },
+    Loop {
+        #[serde(rename = "loop")]
+        info: LoopInfo,
     },
     Empty {},
 }

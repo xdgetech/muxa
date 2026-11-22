@@ -87,7 +87,6 @@ pub fn log_path(dir: &Path, attempt: u32) -> PathBuf {
 /// Runs the check to its end or its timeout, then writes `CHECK.md` and
 /// drops the oldest logs. The process group is gone when this returns, also
 /// when the future is dropped.
-#[cfg(test)]
 pub async fn run(spec: CheckRun) -> Result<CheckEnd, CheckError> {
     run_with_claim(spec, None).await
 }

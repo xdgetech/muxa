@@ -80,7 +80,7 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"terminals"}` | `{"terminals":[Terminal...]}`: the live terminals |
 | `{"type":"attach","terminal","cols","rows","history"}` | `{"channel"}`. A `paint` notification and the first output follow |
 | `{"type":"detach","channel"}` | `{}`. Same as CLOSE on the channel |
-| `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"plan"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal |
+| `{"type":"start-task","workspace","title","goal"?,"places"?,"connections"?,"plan"?,"loop"?}` | `{"terminal":Terminal,"existing"}`: the Task's agent terminal. `loop` (LoopSpec) also starts its Task Loop |
 | `{"type":"watch"}` | `{}`. `changed`, `removed`, `resync` and `inbox` notifications follow |
 | `{"type":"inbox"}` | `{"inbox":Inbox}` |
 | `{"type":"parse-capture","text","today"}` | `{"capture":{"kind","title","workspace","due"}}`. `today` is the device's date, `YYYY-MM-DD` |
@@ -94,6 +94,9 @@ A client that lost its connection sends `hello` with `resume`: its token and, pe
 | `{"type":"reader-list","terminal","kind","html"?}` | `{"list":ReaderList}`: the files of the terminal's folder. See Reader |
 | `{"type":"reader-open","terminal","kind","path","html"?,"scope"?}` | `{"reader","content":ReaderContent}`. `reader` and `reader-ended` notifications follow |
 | `{"type":"reader-close","reader"}` | `{}`. `not-found` after `reader-ended` |
+| `{"type":"loops"}` | `{"loops":[Loop...]}`: the Task Loops of the live Task agents |
+| `{"type":"loop-start","terminal","loop":LoopSpec,"reset"?}` | `{"loop":Loop}`. Starts or restarts the loop of a Task's agent |
+| `{"type":"loop-stop","terminal"}` | `{"loop":Loop}`. Stopped with reason `user` |
 
 `Terminal`: `{"id","name","live","status":{"state","app"}|null,"labels":{},"cols","rows"}`. It never carries screen text. `status` is what the program last reported with OSC 7501 (`state` such as `working`, `blocked`, `done`); `null` when it reported nothing. The server never guesses one.
 
@@ -124,10 +127,28 @@ An unknown Workspace or connection, a missing title, a wrong repo or branch, or 
 | `{"type":"changed","terminal":Terminal}` | After `watch`: a terminal started, or its status, size or liveness changed. It carries the whole terminal as it is now |
 | `{"type":"removed","terminal":"<id>"}` | After `watch`: the terminal is gone |
 | `{"type":"resync"}` | After `watch`: changes were lost. The client sends `terminals` again |
+| `{"type":"loops","loops":[Loop...]}` | After `watch`: a Task Loop changed. It carries every loop |
 | `{"type":"reader","reader","content":ReaderContent}` | An open Reader file changed. It carries the whole file as it is now |
 | `{"type":"reader-ended","reader","reason"}` | An open Reader file is gone, no longer listed, or cannot be read. The reader is closed |
 
 A watch ends with the connection, and so do open Reader files. After a resume the client sends `watch` and `inbox` again, and opens its Reader files again.
+
+### Task Loop
+
+ADR 0019, on herdr-core (plan F3). After each finished turn of a Task's agent (`done` or `idle` through OSC 7501), the host runs the loop's check in the working place. A pass makes one Review item in the Inbox and ends the loop. A fail types a fixed prompt, `The check failed. Its output is in .muxa/checks/<n>.log. Fix the cause, then end your turn.`, until `max_attempts` failed checks; the last one stops the loop and makes a Failed item. While the agent waits for the user (`blocked`, `waiting`), the loop is paused; it goes on when the agent works again. The loop never answers the agent's menus. It lives in the working place's `.muxa/loop.json`, so a restarted daemon goes on with it.
+
+`LoopSpec`: `{"check"?,"max_attempts"?,"timeout"?}`.
+- `check` is a shell command run in the working place. The Workspace's `[workspace.loop] checks` must allow it: one of the listed commands exactly, or any command of at most 4096 bytes with no control character for `"any"`. Without `check`, the Workspace's only listed command.
+- `max_attempts` is 1 to 10, default 3. `timeout` is the seconds one check may run: 10 to 3600, default 600.
+- A Workspace without `checks`, or a check it does not allow, is `bad-request`; `start-task` then starts nothing.
+
+`Loop`: `{"terminal","check","max_attempts","timeout","state","attempts","armed_at","since","reason"?,"last_check"?}`.
+- `state`: `armed` (waits for the next finished turn), `checking`, `paused`, `passed` or `stopped`.
+- `attempts`: the failed checks so far; `loop-start` keeps them unless `reset`.
+- `reason`, when paused or stopped: `waiting`, `limit`, `error` (the check could not run), `no-agent` (the agent ended), `not-sent` (the prompt was not typed) or `user`.
+- `last_check`: `{"attempt","exit"?,"seconds","at"}`; `exit` is absent when the check timed out. Times are Unix seconds.
+
+The check's output is in `.muxa/CHECK.md` and `.muxa/checks/<n>.log`, which the Reader lists. Neither the check command's output nor the loop file reaches the server's log.
 
 ### Reader
 

@@ -7,6 +7,7 @@ mod places;
 pub mod reader;
 mod routines;
 pub mod runner;
+pub mod task_loop;
 mod tasks;
 
 use std::path::{Path, PathBuf};
@@ -115,27 +116,48 @@ pub fn spawn_task_watch(herdr: Arc<Herdr>) {
     });
 }
 
-/// Runs Routines on herdr-core: a watch follows the run terminals, and every
-/// [`RUNNER_TICK`] due runs start and lost ones close.
-pub fn spawn_runner(herdr: Arc<Herdr>, runner: Arc<runner::Runner>) {
+/// Runs `watch` on herdr-core again each time it ends, waiting longer while
+/// herdr-core is not there.
+fn keep_watching<F, Fut>(herdr: Arc<Herdr>, what: &'static str, watch: F)
+where
+    F: Fn(HerdrBackend) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<(), String>> + Send,
+{
     const FIRST: Duration = Duration::from_secs(2);
     const MOST: Duration = Duration::from_secs(60);
-    let (h, r) = (Arc::clone(&herdr), Arc::clone(&runner));
     tokio::spawn(async move {
         let mut wait = FIRST;
         loop {
-            match h.backend().await {
+            match herdr.backend().await {
                 Ok(backend) => {
                     wait = FIRST;
-                    if let Err(e) = r.watch(&backend).await {
-                        tracing::info!(error = %e, "the Routine run watch ended");
+                    if let Err(e) = watch(backend).await {
+                        tracing::info!(error = %e, what, "a herdr-core watch ended");
                     }
                 }
-                Err(e) => tracing::info!(error = %e, "no herdr-core for Routine runs yet"),
+                Err(e) => tracing::info!(error = %e, what, "no herdr-core yet"),
             }
             tokio::time::sleep(wait).await;
             wait = (wait * 2).min(MOST);
         }
+    });
+}
+
+/// Runs Task Loops on herdr-core.
+pub fn spawn_loops(herdr: Arc<Herdr>, loops: Arc<task_loop::TaskLoops>) {
+    keep_watching(herdr, "task loops", move |backend| {
+        let loops = Arc::clone(&loops);
+        async move { loops.watch(&backend).await }
+    });
+}
+
+/// Runs Routines on herdr-core: a watch follows the run terminals, and every
+/// [`RUNNER_TICK`] due runs start and lost ones close.
+pub fn spawn_runner(herdr: Arc<Herdr>, runner: Arc<runner::Runner>) {
+    let r = Arc::clone(&runner);
+    keep_watching(Arc::clone(&herdr), "routine runs", move |backend| {
+        let r = Arc::clone(&r);
+        async move { r.watch(&backend).await }
     });
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(RUNNER_TICK);

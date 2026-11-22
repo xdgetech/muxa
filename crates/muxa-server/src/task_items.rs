@@ -16,7 +16,7 @@ fn agents() -> Labels {
     ])
 }
 
-fn is_agent(t: &TerminalInfo) -> bool {
+pub(crate) fn is_agent(t: &TerminalInfo) -> bool {
     agents().iter().all(|(k, v)| t.labels.get(k) == Some(v))
 }
 

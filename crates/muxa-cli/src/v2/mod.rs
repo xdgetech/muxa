@@ -11,7 +11,7 @@ use std::io::Write;
 use std::process::Stdio;
 use std::time::Duration;
 
-use muxa_protocol::v2::PlaceSpec;
+use muxa_protocol::v2::{LoopSpec, PlaceSpec};
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, ChildStdin, ChildStdout};
@@ -22,7 +22,7 @@ use client::{Client, Event, State};
 const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] start-task --workspace W --title T [--goal G] [--folder]
                 [--branch REPO:BRANCH [--base REF]]... [--read REPO]... [--connection NAME]...
-                [--plan] [--json]
+                [--plan] [--loop [--check CMD]] [--json]
        muxa-cli v2 [--bridge CMD] watch [--seconds N]
        muxa-cli v2 [--bridge CMD] capture TEXT... [--json]
        muxa-cli v2 [--bridge CMD] inbox [--json]
@@ -33,6 +33,10 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
        muxa-cli v2 [--bridge CMD] routines [--json]
        muxa-cli v2 [--bridge CMD] run-routine WORKSPACE NAME
        muxa-cli v2 [--bridge CMD] attach TERMINAL [--seconds N]
+       muxa-cli v2 [--bridge CMD] loops [--json]
+       muxa-cli v2 [--bridge CMD] loop-start TERMINAL [--check CMD] [--max-attempts N]
+                [--timeout SECONDS] [--reset]
+       muxa-cli v2 [--bridge CMD] loop-stop TERMINAL
        muxa-cli v2 [--bridge CMD] reader TERMINAL docs|changes|images [--html] [--json]
        muxa-cli v2 [--bridge CMD] read TERMINAL docs|changes|images PATH [--html] [--commits]
                 [--seconds N]
@@ -42,6 +46,8 @@ const USAGE: &str = "usage: muxa-cli v2 [--bridge CMD] terminals [--json]
   attach         Ctrl-] leaves. A lost connection is resumed.
   review         the Task is ready for review; TERMINAL defaults to
                  $HC_TERMINAL_ID, so its agent can say so itself
+  --loop         a Task Loop: after each finished turn the host runs the check;
+                 without --check, the Workspace's only allowed one
   reader         the files of a Task's or a Routine run's folder; read prints
                  one (an image as its bytes), and with --seconds each change;
                  --commits: a change's diff over the branch's commits";
@@ -82,7 +88,19 @@ enum Cmd {
         /// Besides the Workspace's default ones (ADR 0069).
         connections: Vec<String>,
         plan: bool,
+        task_loop: Option<LoopSpec>,
         json: bool,
+    },
+    Loops {
+        json: bool,
+    },
+    LoopStart {
+        terminal: String,
+        spec: LoopSpec,
+        reset: bool,
+    },
+    LoopStop {
+        terminal: String,
     },
     Watch {
         seconds: Option<u64>,
@@ -122,6 +140,8 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
     let mut bridge = "muxa-bridge connect".to_owned();
     let (mut json, mut plan, mut seconds) = (false, false, None);
     let (mut html, mut branch) = (false, false);
+    let (mut with_loop, mut reset) = (false, false);
+    let mut spec = LoopSpec::default();
     let (mut workspace, mut title, mut goal) = (None, None, None);
     let mut places: Vec<PlaceSpec> = Vec::new();
     let mut connections: Vec<String> = Vec::new();
@@ -135,6 +155,11 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             Long("plan") => plan = true,
             Long("html") => html = true,
             Long("commits") => branch = true,
+            Long("loop") => with_loop = true,
+            Long("reset") => reset = true,
+            Long("check") => spec.check = Some(p.value()?.string()?),
+            Long("max-attempts") => spec.max_attempts = Some(p.value()?.parse()?),
+            Long("timeout") => spec.timeout = Some(p.value()?.parse()?),
             Long("seconds") => seconds = Some(p.value()?.parse()?),
             Long("workspace") => workspace = Some(p.value()?.string()?),
             Long("title") => title = Some(p.value()?.string()?),
@@ -180,7 +205,17 @@ fn parse(args: Vec<OsString>) -> Result<Option<(String, Cmd)>, lexopt::Error> {
             places,
             connections,
             plan,
+            task_loop: (with_loop || spec.check.is_some()).then(|| spec.clone()),
             json,
+        },
+        ["loops"] => Cmd::Loops { json },
+        ["loop-start", t] => Cmd::LoopStart {
+            terminal: (*t).to_owned(),
+            spec,
+            reset,
+        },
+        ["loop-stop", t] => Cmd::LoopStop {
+            terminal: (*t).to_owned(),
         },
         ["watch"] => Cmd::Watch { seconds },
         ["capture", text @ ..] if !text.is_empty() => Cmd::Inbox {
@@ -289,12 +324,16 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
             places,
             connections,
             plan,
+            task_loop,
             json,
         } => {
             let (mut c, _child) = open(bridge, State::default()).await?;
-            let msg = json!({"type": "start-task", "workspace": workspace, "title": title,
+            let mut msg = json!({"type": "start-task", "workspace": workspace, "title": title,
                              "goal": goal, "places": places, "connections": connections,
                              "plan": plan});
+            if let Some(l) = task_loop {
+                msg["loop"] = json!(l);
+            }
             let reply = c.request(msg).await?;
             if json {
                 println!("{reply}");
@@ -306,6 +345,38 @@ async fn run(bridge: &str, cmd: Cmd) -> Result<(), String> {
                 };
                 println!("{how} {}", row(&reply["terminal"]));
             }
+            Ok(())
+        }
+        Cmd::Loops { json } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c.request(json!({"type": "loops"})).await?;
+            if json {
+                println!("{}", reply["loops"]);
+            } else {
+                for l in reply["loops"].as_array().into_iter().flatten() {
+                    println!("{}", loop_row(l));
+                }
+            }
+            Ok(())
+        }
+        Cmd::LoopStart {
+            terminal,
+            spec,
+            reset,
+        } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let msg =
+                json!({"type": "loop-start", "terminal": terminal, "loop": spec, "reset": reset});
+            let reply = c.request(msg).await?;
+            println!("{}", loop_row(&reply["loop"]));
+            Ok(())
+        }
+        Cmd::LoopStop { terminal } => {
+            let (mut c, _child) = open(bridge, State::default()).await?;
+            let reply = c
+                .request(json!({"type": "loop-stop", "terminal": terminal}))
+                .await?;
+            println!("{}", loop_row(&reply["loop"]));
             Ok(())
         }
         Cmd::Watch { seconds } => watch(bridge, seconds).await,
@@ -428,6 +499,18 @@ async fn watch(bridge: &str, seconds: Option<u64>) -> Result<(), String> {
             () = &mut deadline => return Ok(()),
         }
     }
+}
+
+/// `TERMINAL\tSTATE\tATTEMPTS/MAX\tREASON`; the check is not shown.
+fn loop_row(l: &Value) -> String {
+    format!(
+        "{}\t{}\t{}/{}\t{}",
+        l["terminal"].as_str().unwrap_or("?"),
+        l["state"].as_str().unwrap_or("?"),
+        l["attempts"],
+        l["max_attempts"],
+        l["reason"].as_str().unwrap_or("")
+    )
 }
 
 fn deadline(seconds: Option<u64>) -> tokio::time::Sleep {
@@ -601,10 +684,34 @@ mod tests {
                 ],
                 connections: vec!["linear".into()],
                 plan: true,
+                task_loop: None,
                 json: false
             }
         );
         assert!(parse(args(&["start-task", "--workspace", "w"])).is_err());
+        let (_, looped) = parse(args(&[
+            "start-task",
+            "--workspace",
+            "w",
+            "--title",
+            "t",
+            "--loop",
+            "--max-attempts",
+            "5",
+        ]))
+        .unwrap()
+        .unwrap();
+        let Cmd::StartTask { task_loop, .. } = looped else {
+            panic!("{looped:?}")
+        };
+        assert_eq!(
+            task_loop,
+            Some(LoopSpec {
+                check: None,
+                max_attempts: Some(5),
+                timeout: None
+            })
+        );
         assert!(
             parse(args(&[
                 "start-task",
