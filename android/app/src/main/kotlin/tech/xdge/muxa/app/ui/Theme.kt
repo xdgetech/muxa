@@ -1,6 +1,7 @@
 package tech.xdge.muxa.app.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -28,6 +29,15 @@ object Palette {
     val infoBackground = Color(0xFF16202E)
     val infoBorder = Color(0xFF24344A)
     val infoText = Color(0xFFC9D8EE)
+
+    /** A secondary button's fill and border. */
+    val secondaryFill = Color(0xFF232831)
+    val secondaryBorder = Color(0xFF323843)
+
+    /** Delete and Remove: a muted red on a dark red fill, as the design's failed chip. */
+    val destructive = Color(0xFFFF9B9B)
+    val destructiveFill = Color(0xFF3A1717)
+    val destructiveBorder = Color(0xFF5A2626)
 }
 
 /** A Task's state as its program reports it (OSC 7501), by color. */
@@ -120,8 +130,11 @@ private val scheme = darkColorScheme(
     scrim = Color.Black,
 )
 
+/** Dialogs and menus as the design's 16 dp cards, not Material's 28 dp. */
+private val shapes = Shapes(extraLarge = Corners.dialog)
+
 /** The design is dark only: the app wears it whatever the system's setting. */
 @Composable
 fun MuxaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, shapes = shapes, content = content)
 }

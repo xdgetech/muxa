@@ -13,10 +13,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,11 +29,15 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import java.util.UUID
+import tech.xdge.muxa.app.ui.DestructiveButton
+import tech.xdge.muxa.app.ui.LinkButton
+import tech.xdge.muxa.app.ui.PrimaryButton
+import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.session.Host
 import tech.xdge.muxa.transport.HostKey
 import tech.xdge.muxa.transport.SshTarget
-import java.util.UUID
 
 /** The editable fields of a host, as text. A new host has no saved id yet. */
 data class HostDraft(
@@ -127,7 +129,7 @@ fun HostEditor(model: NextModel, initial: HostDraft, onDismiss: () -> Unit) {
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { if (canSetUp) setUp() }))
-                OutlinedButton(::setUp, enabled = canSetUp) { Text("Add This Device's Key and Connect") }
+                SecondaryButton("Add This Device's Key and Connect", ::setUp, enabled = canSetUp)
                 Text(
                     "Logs in once with your password and adds this device's key to ~/.ssh/authorized_keys, restricted to the bridge. The password is not stored.",
                     style = MaterialTheme.typography.bodySmall,
@@ -136,10 +138,10 @@ fun HostEditor(model: NextModel, initial: HostDraft, onDismiss: () -> Unit) {
                 model.authorizedKeyLine(draft.command)?.let { line ->
                     Text("This Device's Key", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                     SelectionContainer { Text(line, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
-                    TextButton({
+                    LinkButton(if (copied) "Copied" else "Copy Key Line", {
                         context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("muxa key", line))
                         copied = true
-                    }) { Text(if (copied) "Copied" else "Copy Key Line") }
+                    })
                     Text("Or add this line to ~/.ssh/authorized_keys on the host yourself.", style = MaterialTheme.typography.bodySmall)
                 }
 
@@ -152,24 +154,24 @@ fun HostEditor(model: NextModel, initial: HostDraft, onDismiss: () -> Unit) {
                 if (key != null && keepsKey) {
                     Text("Trusted Host Key", style = MaterialTheme.typography.titleSmall)
                     SelectionContainer { Text(key.fingerprint, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
-                    TextButton({ draft = draft.copy(hostKey = null) }) { Text("Forget Host Key", color = Theme.failure) }
+                    DestructiveButton("Forget Host Key", { draft = draft.copy(hostKey = null) })
                 }
                 if (!draft.isNew) {
-                    TextButton({
+                    DestructiveButton("Delete Host", {
                         model.hosts.delete(draft.id)
                         onDismiss()
-                    }) { Text("Delete Host", color = Theme.failure) }
+                    })
                 }
             }
         },
         confirmButton = {
             if (draft.isNew) {
-                TextButton(::connect, enabled = draft.isValid, modifier = Modifier.testTag("host-connect")) { Text("Connect") }
+                PrimaryButton("Connect", ::connect, Modifier.testTag("host-connect"), enabled = draft.isValid)
             } else {
-                TextButton({ save(); onDismiss() }, enabled = draft.isValid) { Text("Save") }
+                PrimaryButton("Save", { save(); onDismiss() }, enabled = draft.isValid)
             }
         },
-        dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+        dismissButton = { LinkButton("Cancel", onDismiss) },
     )
 }
 
@@ -198,8 +200,8 @@ fun TrustHostDialog(model: NextModel, key: HostKey) {
             }
         },
         confirmButton = {
-            TextButton({ model.trust() }) { Text(if (changed) "Trust Anyway" else "Trust", color = if (changed) Theme.failure else Theme.accent) }
+            if (changed) DestructiveButton("Trust Anyway", { model.trust() }) else PrimaryButton("Trust", { model.trust() })
         },
-        dismissButton = { TextButton({ model.cancelTrust() }) { Text("Cancel") } },
+        dismissButton = { LinkButton("Cancel", { model.cancelTrust() }) },
     )
 }

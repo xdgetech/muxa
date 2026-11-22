@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tech.xdge.muxa.app.ui.Corners
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.v2.ItemKind
@@ -138,7 +139,7 @@ fun KindChip(kind: ItemKind, modifier: Modifier = Modifier) {
     val c = kind.colors
     Text(
         kind.title,
-        modifier.background(c.background, RoundedCornerShape(6.dp)).padding(horizontal = 4.dp, vertical = 3.dp),
+        modifier.background(c.background, Corners.chip).padding(horizontal = 4.dp, vertical = 3.dp),
         color = c.content,
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,

@@ -8,7 +8,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -22,6 +21,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import tech.xdge.muxa.app.ui.LinkButton
+import tech.xdge.muxa.app.ui.PrimaryButton
 import tech.xdge.muxa.v2.LastCheck
 import tech.xdge.muxa.v2.LoopInfo
 import tech.xdge.muxa.v2.LoopSpec
@@ -57,8 +58,8 @@ fun LoopDialog(model: NextModel, terminal: Terminal, close: () -> Unit) {
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Stop after $attempts failed checks", Modifier.weight(1f))
-                    TextButton({ attempts = (attempts - 1).coerceAtLeast(1) }) { Text("−") }
-                    TextButton({ attempts = (attempts + 1).coerceAtMost(MAX_ATTEMPTS) }) { Text("+") }
+                    LinkButton("−", { attempts = (attempts - 1).coerceAtLeast(1) })
+                    LinkButton("+", { attempts = (attempts + 1).coerceAtMost(MAX_ATTEMPTS) })
                 }
                 Text(
                     "After each finished turn the host runs the check in the Task's folder. " +
@@ -69,18 +70,18 @@ fun LoopDialog(model: NextModel, terminal: Terminal, close: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton({
+            PrimaryButton(if (lp == null) "Start" else "Start again", {
                 scope.launch {
                     val spec = LoopSpec(check = check.trim().ifEmpty { null }, maxAttempts = attempts)
                     model.startLoop(terminal.id, spec, reset = true)
                     if (model.requestError == null) close()
                 }
-            }, Modifier.testTag("loop.start")) { Text(if (lp == null) "Start" else "Start again") }
+            }, Modifier.testTag("loop.start"))
         },
         dismissButton = {
             Row {
-                if (lp?.isActive == true) TextButton({ model.stopLoop(terminal.id) }, Modifier.testTag("loop.stop")) { Text("Stop") }
-                TextButton(close) { Text("Close") }
+                if (lp?.isActive == true) LinkButton("Stop", { model.stopLoop(terminal.id) }, Modifier.testTag("loop.stop"))
+                LinkButton("Close", close)
             }
         },
     )

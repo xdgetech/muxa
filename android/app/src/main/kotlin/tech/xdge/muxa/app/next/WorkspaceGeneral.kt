@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +20,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import tech.xdge.muxa.app.ui.Icons
+import tech.xdge.muxa.app.ui.LinkButton
+import tech.xdge.muxa.app.ui.PrimaryButton
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.Patch
 import tech.xdge.muxa.v2.SettingsOp
@@ -70,9 +71,9 @@ private fun SavedField(value: String, label: String, tag: String, enabled: Boole
     var text by remember(value) { mutableStateOf(value) }
     Field(text, { text = it }, label, tag, enabled = enabled, mono = true, placeholder = placeholder)
     if (text != value) {
-        Row {
-            TextButton({ save(text) }, Modifier.testTag("$tag.save"), enabled = enabled) { Text("Save") }
-            TextButton({ text = value }) { Text("Undo") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PrimaryButton("Save", { save(text) }, Modifier.testTag("$tag.save"), enabled = enabled)
+            LinkButton("Undo", { text = value })
         }
     }
 }

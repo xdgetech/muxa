@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -14,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import tech.xdge.muxa.app.ui.KindPalette
+import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.v2.SettingsOp
 import tech.xdge.muxa.v2.SettingsRoutine
 import tech.xdge.muxa.v2.SettingsWorkspace
@@ -78,7 +78,7 @@ private fun RoutineDialog(editor: SettingsEditor, workspace: String, workers: Li
 private fun WorkerPicker(workers: List<String>, picked: String?, pick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton({ open = true }, Modifier.testTag("routine.worker")) { Text("Worker: ${picked ?: "none"}") }
+        SecondaryButton("Worker: ${picked ?: "none"}", { open = true }, Modifier.testTag("routine.worker"))
         DropdownMenu(open, { open = false }) {
             for (w in listOf<String?>(null) + workers) {
                 DropdownMenuItem({ Text(w ?: "none") }, {

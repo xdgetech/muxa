@@ -12,9 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -27,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tech.xdge.muxa.app.ui.Corners
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.Palette
@@ -179,7 +180,7 @@ private fun Header(
         }
         val lp = model.loops[terminal.id]
         if (lp?.isActive == true) {
-            TextButton(openLoop, Modifier.testTag("focus.loop")) {
+            TextButton(openLoop, Modifier.testTag("focus.loop"), shape = Corners.link) {
                 Icon(Icons.loop, null, Modifier.padding(end = 4.dp))
                 Text("Loop ${lp.attempts}/${lp.maxAttempts}")
             }

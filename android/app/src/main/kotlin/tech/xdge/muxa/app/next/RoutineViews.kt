@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -18,13 +17,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import tech.xdge.muxa.app.ui.Icons
-import tech.xdge.muxa.app.ui.Theme
-import tech.xdge.muxa.v2.Routine
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import tech.xdge.muxa.app.ui.Icons
+import tech.xdge.muxa.app.ui.PrimaryButton
+import tech.xdge.muxa.app.ui.Theme
+import tech.xdge.muxa.v2.Routine
 
 /** `09:00 Europe/Berlin`, `09:00 Europe/Berlin · 0 9 * * 1-5`, `On request` or `Off`. */
 val Routine.whenText: String
@@ -87,11 +87,12 @@ fun RoutinePane(model: NextModel, routine: Routine) {
             last.reason?.let { Text(it, color = Theme.failure) }
         }
         HorizontalDivider()
-        Button(
+        PrimaryButton(
+            "Run Now",
             { model.runRoutine(routine) },
+            Modifier.testTag("routine.run"),
             enabled = routine.enabled && routine.runningSince == null,
-            modifier = Modifier.testTag("routine.run"),
-        ) { Text("Run Now") }
+        )
         model.requestError?.let { Text(it, color = Theme.failure) }
     }
 }

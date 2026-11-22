@@ -15,7 +15,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,10 +43,12 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import tech.xdge.muxa.app.ui.Palette
+import tech.xdge.muxa.app.ui.Corners
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.LocalWindowLayout
+import tech.xdge.muxa.app.ui.Palette
+import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.app.ui.WindowLayout
 import tech.xdge.muxa.app.ui.currentWindowLayout
 import tech.xdge.muxa.v2.Terminal
@@ -120,18 +121,18 @@ private fun Hosts(model: NextModel) {
         Text("Hosts", style = MaterialTheme.typography.titleSmall)
         for (host in hosts.hosts) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton({ model.connect(host.id) }, Modifier.weight(1f).testTag("host.${host.title}")) {
+                TextButton({ model.connect(host.id) }, Modifier.weight(1f).testTag("host.${host.title}"), shape = Corners.link) {
                     Text(host.title, Modifier.fillMaxWidth())
                 }
                 IconButton({ editing = HostDraft.of(host) }) { Icon(Icons.edit, "Edit ${host.title}") }
             }
         }
-        TextButton({ editing = HostDraft.new() }, Modifier.testTag("next.addhost").semantics { contentDescription = "Add Host" }) {
+        TextButton({ editing = HostDraft.new() }, Modifier.testTag("next.addhost").semantics { contentDescription = "Add Host" }, shape = Corners.link) {
             Icon(Icons.add, null)
             Text(" Add Host")
         }
         HorizontalDivider()
-        OutlinedButton({ model.startDemo() }, Modifier.testTag("next.demo")) { Text("Try the Demo") }
+        SecondaryButton("Try the Demo", { model.startDemo() }, Modifier.testTag("next.demo"))
         Text("The demo runs in the app. Nothing reaches a host.", style = MaterialTheme.typography.bodySmall)
     }
     editing?.let { HostEditor(model, it) { editing = null } }

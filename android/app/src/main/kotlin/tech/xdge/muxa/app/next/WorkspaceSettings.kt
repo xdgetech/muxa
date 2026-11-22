@@ -76,7 +76,7 @@ private fun RemoveWorkspace(editor: SettingsEditor, ws: SettingsWorkspace, back:
     var asking by remember { mutableStateOf(false) }
     val save = rememberInlineSave(editor)
     SettingsCard {
-        ActionRow("Remove Workspace", "settings.workspace.remove", !editor.readOnly, Theme.failure) { asking = true }
+        ActionRow("Remove Workspace", "settings.workspace.remove", !editor.readOnly, Palette.destructive) { asking = true }
     }
     save.Error()
     if (asking) {

@@ -8,15 +8,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -33,8 +30,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import tech.xdge.muxa.app.ui.DestructiveButton
 import tech.xdge.muxa.app.ui.Icons
-import tech.xdge.muxa.app.ui.Theme
+import tech.xdge.muxa.app.ui.LinkButton
+import tech.xdge.muxa.app.ui.Palette
+import tech.xdge.muxa.app.ui.PrimaryButton
+import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.ItemKind
 import tech.xdge.muxa.v2.Terminal
@@ -125,29 +126,23 @@ fun ItemActions(
     var more by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Button({ actions.main(item, onDone) }, Modifier.testTag("detail.main"), enabled = !actions.busy) { Text(item.kind.mainAction) }
+            PrimaryButton(item.kind.mainAction, { actions.main(item, onDone) }, Modifier.testTag("detail.main"), enabled = !actions.busy)
             if (item.kind == ItemKind.REVIEW) {
-                OutlinedButton({ actions.commenting = item.id }, Modifier.testTag("detail.changes"), enabled = !actions.busy) {
-                    Text("Request Changes")
-                }
+                SecondaryButton("Request Changes", { actions.commenting = item.id }, Modifier.testTag("detail.changes"), enabled = !actions.busy)
             }
             if (item.place != null) {
-                OutlinedButton({ actions.resume(item, openTerminal, onDone) }, Modifier.testTag("detail.resume"), enabled = !actions.busy) {
-                    Text("Resume Task")
-                }
+                SecondaryButton("Resume Task", { actions.resume(item, openTerminal, onDone) }, Modifier.testTag("detail.resume"), enabled = !actions.busy)
             } else if (item.kind in TASK_KINDS) {
-                OutlinedButton({ newTask(TaskSeed(item.title, item.workspace)) }, Modifier.testTag("detail.starttask")) { Text("Start Task") }
+                SecondaryButton("Start Task", { newTask(TaskSeed(item.title, item.workspace)) }, Modifier.testTag("detail.starttask"))
             }
             if (item.kind == ItemKind.READ) {
-                OutlinedButton({ newTask(TaskSeed(item.title, item.workspace, item.note.orEmpty())) }, Modifier.testTag("detail.maketask")) {
-                    Text("Make it a Task")
-                }
+                SecondaryButton("Make it a Task", { newTask(TaskSeed(item.title, item.workspace, item.note.orEmpty())) }, Modifier.testTag("detail.maketask"))
             }
             if (terminal != null) {
-                OutlinedButton({ openTerminal(terminal) }, Modifier.testTag("detail.open")) { Text("Open in Focus") }
+                SecondaryButton("Open in Focus", { openTerminal(terminal) }, Modifier.testTag("detail.open"))
             }
             Column {
-                OutlinedButton({ later = true }, Modifier.testTag("detail.later")) { Text("Later") }
+                SecondaryButton("Later", { later = true }, Modifier.testTag("detail.later"))
                 DropdownMenu(later, { later = false }) {
                     for (choice in LaterChoice.entries) {
                         DropdownMenuItem({ Text(choice.title) }, {
@@ -158,12 +153,12 @@ fun ItemActions(
                 }
             }
             if (item.kind.mainAction != "Done") {
-                OutlinedButton({ act(V2Request.InboxDone(item.id)) }, Modifier.testTag("detail.done")) { Text("Done") }
+                SecondaryButton("Done", { act(V2Request.InboxDone(item.id)) }, Modifier.testTag("detail.done"))
             }
             Column {
                 IconButton({ more = true }) { Icon(Icons.more, "More") }
                 DropdownMenu(more, { more = false }) {
-                    DropdownMenuItem({ Text("Delete", color = Theme.failure) }, {
+                    DropdownMenuItem({ Text("Delete", color = Palette.destructive) }, {
                         more = false
                         act(V2Request.InboxDelete(item.id))
                     })
@@ -196,8 +191,8 @@ private fun CommentField(item: InboxItem, actions: ItemActionState, onDone: () -
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = { send() }),
         )
-        TextButton({ actions.commenting = null }) { Text("Cancel") }
-        Button(::send, Modifier.testTag("detail.comment.send"), enabled = comment.isNotBlank() && !actions.busy) { Text("Send") }
+        LinkButton("Cancel", { actions.commenting = null })
+        PrimaryButton("Send", ::send, Modifier.testTag("detail.comment.send"), enabled = comment.isNotBlank() && !actions.busy)
     }
 }
 
@@ -208,11 +203,9 @@ private fun LoseWorkDialog(item: InboxItem, message: String, actions: ItemAction
         title = { Text("Remove the worktrees anyway?") },
         text = { Text(message, Modifier.fillMaxWidth().testTag("detail.loss")) },
         confirmButton = {
-            TextButton({ actions.approve(item.id, force = true, onDone) }, Modifier.testTag("detail.force")) {
-                Text("Remove Anyway", color = Theme.failure)
-            }
+            DestructiveButton("Remove Anyway", { actions.approve(item.id, force = true, onDone) }, Modifier.testTag("detail.force"))
         },
-        dismissButton = { TextButton({ actions.loss = null }) { Text("Cancel") } },
+        dismissButton = { LinkButton("Cancel", { actions.loss = null }) },
     )
 }
 

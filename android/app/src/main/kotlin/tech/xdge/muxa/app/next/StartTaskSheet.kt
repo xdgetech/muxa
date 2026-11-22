@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -21,7 +20,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -51,9 +49,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
+import tech.xdge.muxa.app.ui.Corners
 import tech.xdge.muxa.app.ui.Icons
+import tech.xdge.muxa.app.ui.LinkButton
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
 import tech.xdge.muxa.app.ui.Palette
+import tech.xdge.muxa.app.ui.PrimaryButton
+import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.v2.LoopChecks
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.Workspace
@@ -105,8 +107,8 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("New Task", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    TextButton(close, Modifier.testTag("task.cancel")) { Text("Cancel") }
-                    Button(::start, Modifier.testTag("task.start"), enabled = choices.canStart && !starting) { Text("Start") }
+                    LinkButton("Cancel", close, Modifier.testTag("task.cancel"))
+                    PrimaryButton("Start", ::start, Modifier.testTag("task.start"), enabled = choices.canStart && !starting)
                 }
                 model.requestError?.let { Text(it, Modifier.testTag("task.error"), color = MaterialTheme.colorScheme.error) }
                 val list = workspaces
@@ -135,7 +137,7 @@ fun StartTaskSheet(model: NextModel, seed: TaskSeed, close: () -> Unit, started:
 private fun WorkspacePicker(list: List<Workspace>, picked: String, pick: (Workspace) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton({ open = true }, Modifier.fillMaxWidth().testTag("task.workspace")) { Text("Workspace: $picked") }
+        SecondaryButton("Workspace: $picked", { open = true }, Modifier.fillMaxWidth().testTag("task.workspace"))
         DropdownMenu(open, { open = false }) {
             for (w in list) {
                 DropdownMenuItem({ Text(w.name) }, {
@@ -160,7 +162,7 @@ private fun TaskOptions(ws: Workspace, choices: TaskChoices, change: (TaskChoice
 private fun Places(ws: Workspace, choices: TaskChoices, change: (TaskChoices) -> Unit) {
     Text("Places", style = MaterialTheme.typography.titleSmall)
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        SegmentedButton(!choices.worktrees, { change(choices.copy(worktrees = false)) }, SegmentedButtonDefaults.itemShape(0, 2),
+        SegmentedButton(!choices.worktrees, { change(choices.copy(worktrees = false)) }, SegmentedButtonDefaults.itemShape(0, 2, Corners.button),
             Modifier.testTag("task.places.folder")) { Text("New folder") }
         SegmentedButton(
             choices.worktrees,
@@ -168,7 +170,7 @@ private fun Places(ws: Workspace, choices: TaskChoices, change: (TaskChoices) ->
                 val rows = choices.branches.ifEmpty { listOf(BranchChoice(ws.repos.first())) }
                 change(choices.copy(worktrees = true, branches = rows))
             },
-            SegmentedButtonDefaults.itemShape(1, 2), Modifier.testTag("task.places.branch"), enabled = ws.repos.isNotEmpty(),
+            SegmentedButtonDefaults.itemShape(1, 2, Corners.button), Modifier.testTag("task.places.branch"), enabled = ws.repos.isNotEmpty(),
         ) { Text("Branch worktrees") }
     }
     if (choices.worktrees) {
@@ -177,7 +179,7 @@ private fun Places(ws: Workspace, choices: TaskChoices, change: (TaskChoices) ->
                 change(choices.copy(branches = choices.branches.filterIndexed { at, _ -> at != i }))
             }
         }
-        TextButton({ change(choices.copy(branches = choices.branches + BranchChoice(ws.repos.first()))) }, Modifier.testTag("task.addbranch")) {
+        TextButton({ change(choices.copy(branches = choices.branches + BranchChoice(ws.repos.first()))) }, Modifier.testTag("task.addbranch"), shape = Corners.link) {
             Icon(Icons.add, null)
             Text(" Add Worktree")
         }
@@ -195,7 +197,7 @@ private fun BranchRow(repos: List<String>, row: BranchChoice, index: Int, change
     var open by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box {
-            OutlinedButton({ open = true }, Modifier.testTag("task.repo.$index")) { Text(row.repo) }
+            SecondaryButton(row.repo, { open = true }, Modifier.testTag("task.repo.$index"))
             DropdownMenu(open, { open = false }) {
                 for (r in repos) {
                     DropdownMenuItem({ Text(r) }, {
@@ -243,8 +245,8 @@ private fun LoopOptions(checks: LoopChecks, choices: TaskChoices, change: (TaskC
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Stop after ${choices.maxAttempts} failed checks", Modifier.weight(1f))
-        TextButton({ change(choices.copy(maxAttempts = (choices.maxAttempts - 1).coerceAtLeast(1))) }) { Text("−") }
-        TextButton({ change(choices.copy(maxAttempts = (choices.maxAttempts + 1).coerceAtMost(TaskChoices.MAX_ATTEMPTS))) }) { Text("+") }
+        LinkButton("−", { change(choices.copy(maxAttempts = (choices.maxAttempts - 1).coerceAtLeast(1))) })
+        LinkButton("+", { change(choices.copy(maxAttempts = (choices.maxAttempts + 1).coerceAtMost(TaskChoices.MAX_ATTEMPTS))) })
     }
 }
 

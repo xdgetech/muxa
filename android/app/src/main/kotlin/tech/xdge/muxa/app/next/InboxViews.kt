@@ -3,19 +3,6 @@ package tech.xdge.muxa.app.next
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.unit.sp
-import tech.xdge.muxa.app.ui.KindColors
-import tech.xdge.muxa.app.ui.KindPalette
-import tech.xdge.muxa.app.ui.Palette
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
-import java.time.temporal.ChronoUnit
-import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,34 +10,47 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.time.temporal.ChronoUnit
+import java.time.temporal.TemporalAdjusters
+import java.util.Locale
 import tech.xdge.muxa.app.ui.Icons
+import tech.xdge.muxa.app.ui.KindColors
+import tech.xdge.muxa.app.ui.KindPalette
 import tech.xdge.muxa.app.ui.LocalPhoneLayout
+import tech.xdge.muxa.app.ui.Palette
+import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.app.ui.Theme
 import tech.xdge.muxa.v2.InboxItem
 import tech.xdge.muxa.v2.ItemKind
 import tech.xdge.muxa.v2.Terminal
 import tech.xdge.muxa.v2.V2Request
-import java.time.DayOfWeek
-import java.time.ZonedDateTime
-import java.time.temporal.TemporalAdjusters
 
 val ItemKind.title: String
     get() = when (this) {
@@ -208,7 +208,7 @@ fun InboxItemPane(
             }
         }
         if (position == null) {
-            OutlinedButton({ model.inbox(V2Request.InboxReopen(item.id)) }) { Text("Reopen") }
+            SecondaryButton("Reopen", { model.inbox(V2Request.InboxReopen(item.id)) })
         } else {
             ItemActions(model, item, actions, openTerminal, newTask, onDone)
         }

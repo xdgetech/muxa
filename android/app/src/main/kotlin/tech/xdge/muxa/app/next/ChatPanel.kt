@@ -1,12 +1,12 @@
 package tech.xdge.muxa.app.next
 
 
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,12 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -42,13 +38,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tech.xdge.muxa.app.ui.LinkButton
 import tech.xdge.muxa.app.ui.Palette
+import tech.xdge.muxa.app.ui.PrimaryButton
+import tech.xdge.muxa.app.ui.SecondaryButton
 import tech.xdge.muxa.app.ui.StateColors
 import tech.xdge.muxa.app.ui.Theme
+import tech.xdge.muxa.app.ui.Tone
 import tech.xdge.muxa.v2.ChatEntry
 import tech.xdge.muxa.v2.ChatPrompt
 import tech.xdge.muxa.v2.Terminal
@@ -96,7 +95,7 @@ fun ChatView(link: ChatLink, modifier: Modifier) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(ended, color = Palette.textSecondary)
-                TextButton(link::reopen) { Text("Open again") }
+                LinkButton("Open again", link::reopen)
             }
             entries != null -> Conversation(entries, Modifier.fillMaxSize())
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -172,12 +171,9 @@ fun NeedsYouBar(p: ChatPrompt, pick: (String) -> Unit, modifier: Modifier = Modi
             p.options.forEachIndexed { i, o ->
                 val tag = Modifier.testTag("chat.option.${o.label}")
                 if (i == 0) {
-                    Button(
-                        { pick(o.input) }, tag, shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(StateColors.needsYou, StateColors.onNeedsYou),
-                    ) { Text(o.label, fontWeight = FontWeight.SemiBold) }
+                    PrimaryButton(o.label, { pick(o.input) }, tag, tone = Tone.NEEDS_YOU)
                 } else {
-                    OutlinedButton({ pick(o.input) }, tag, shape = RoundedCornerShape(8.dp)) { Text(o.label, color = Palette.text) }
+                    SecondaryButton(o.label, { pick(o.input) }, tag)
                 }
             }
         }

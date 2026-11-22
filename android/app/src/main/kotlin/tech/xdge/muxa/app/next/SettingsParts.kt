@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tech.xdge.muxa.app.ui.Corners
 import tech.xdge.muxa.app.ui.Icons
 import tech.xdge.muxa.app.ui.KindColors
 import tech.xdge.muxa.app.ui.KindPalette
@@ -155,7 +156,7 @@ fun NavRow(title: String, detail: String?, tag: String, onClick: () -> Unit, tra
 fun Chip(text: String, colors: KindColors, modifier: Modifier = Modifier) {
     Text(
         text,
-        modifier.background(colors.background, RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 1.dp),
+        modifier.background(colors.background, Corners.chip).padding(horizontal = 7.dp, vertical = 1.dp),
         color = colors.content,
         fontSize = 11.5.sp,
     )

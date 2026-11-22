@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import tech.xdge.muxa.app.ui.Icons
+import tech.xdge.muxa.app.ui.LinkButton
 import tech.xdge.muxa.app.ui.Palette
 import tech.xdge.muxa.v2.Workspace
 
@@ -60,7 +60,7 @@ fun SettingsDialog(model: NextModel, close: () -> Unit) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Settings", Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    TextButton(close, Modifier.testTag("settings.close")) { Text("Done") }
+                    LinkButton("Done", close, Modifier.testTag("settings.close"))
                 }
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { SettingsContent(model) }
             }

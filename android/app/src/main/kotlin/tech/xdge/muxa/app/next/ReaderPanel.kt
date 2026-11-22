@@ -21,7 +21,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +42,7 @@ import kotlinx.coroutines.launch
 import tech.xdge.muxa.app.reader.HtmlWebView
 import tech.xdge.muxa.app.reader.ReaderWebView
 import tech.xdge.muxa.app.ui.Icons
+import tech.xdge.muxa.app.ui.LinkButton
 import tech.xdge.muxa.v2.DiffScope
 import tech.xdge.muxa.v2.ReaderContent
 import tech.xdge.muxa.v2.ReaderEntry
@@ -196,12 +196,12 @@ private fun ReaderDocument(model: NextModel, terminal: String, target: ReaderTar
         when {
             ended != null -> Column(Modifier.align(Alignment.Center).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(ended, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton({
+                LinkButton("Open again", {
                     scope.launch {
                         n.let(model::closeReader)
                         attempt += 1
                     }
-                }) { Text("Open again") }
+                })
             }
             content != null -> Shown(target, content, follow)
             else -> CircularProgressIndicator(Modifier.align(Alignment.Center))

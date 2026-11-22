@@ -15,7 +15,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +30,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import tech.xdge.muxa.app.ui.DestructiveButton
+import tech.xdge.muxa.app.ui.LinkButton
+import tech.xdge.muxa.app.ui.PrimaryButton
 import tech.xdge.muxa.app.ui.Theme
 
 /**
@@ -66,16 +68,14 @@ fun FormDialog(
                 content()
                 error?.let { Text(it, Modifier.testTag("settings.form.error"), color = Theme.failure) }
                 if (remove != null) {
-                    TextButton({ run(remove) }, Modifier.testTag("settings.form.remove"), enabled = !busy) {
-                        Text(removeTitle, color = Theme.failure)
-                    }
+                    DestructiveButton(removeTitle, { run(remove) }, Modifier.testTag("settings.form.remove"), enabled = !busy)
                 }
             }
         },
         confirmButton = {
-            TextButton({ run(save) }, Modifier.testTag("settings.form.save"), enabled = canSave && !busy) { Text("Save") }
+            PrimaryButton("Save", { run(save) }, Modifier.testTag("settings.form.save"), enabled = canSave && !busy)
         },
-        dismissButton = { TextButton(close) { Text("Cancel") } },
+        dismissButton = { LinkButton("Cancel", close) },
     )
 }
 
@@ -86,8 +86,8 @@ fun ConfirmDialog(title: String, text: String, action: String, confirm: () -> Un
         onDismissRequest = close,
         title = { Text(title) },
         text = { Text(text) },
-        confirmButton = { TextButton(confirm, Modifier.testTag("settings.confirm")) { Text(action, color = Theme.failure) } },
-        dismissButton = { TextButton(close) { Text("Cancel") } },
+        confirmButton = { DestructiveButton(action, confirm, Modifier.testTag("settings.confirm")) },
+        dismissButton = { LinkButton("Cancel", close) },
     )
 }
 
